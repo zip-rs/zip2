@@ -5,6 +5,7 @@
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
 use crate::aes_ctr;
+use crate::aes_ctr::AesCipher;
 use crate::types::AesMode;
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
@@ -18,19 +19,38 @@ const AUTH_CODE_LENGTH: usize = 10;
 /// The number of iterations used with PBKDF2
 const ITERATION_COUNT: u32 = 1000;
 
-/// Create a AesCipher depending on the used `AesMode` and the given `key`.
-///
-/// # Panics
-///
-/// This panics if `key` doesn't have the correct size for the chosen aes mode.
-fn cipher_from_mode(aes_mode: AesMode, key: &[u8]) -> Box<dyn aes_ctr::AesCipher> {
-    match aes_mode {
-        AesMode::Aes128 => Box::new(aes_ctr::AesCtrZipKeyStream::<aes_ctr::Aes128>::new(key))
-            as Box<dyn aes_ctr::AesCipher>,
-        AesMode::Aes192 => Box::new(aes_ctr::AesCtrZipKeyStream::<aes_ctr::Aes192>::new(key))
-            as Box<dyn aes_ctr::AesCipher>,
-        AesMode::Aes256 => Box::new(aes_ctr::AesCtrZipKeyStream::<aes_ctr::Aes256>::new(key))
-            as Box<dyn aes_ctr::AesCipher>,
+enum Cipher {
+    Aes128(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes128>>),
+    Aes192(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes192>>),
+    Aes256(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes256>>),
+}
+
+impl Cipher {
+    /// Create a `Cipher` depending on the used `AesMode` and the given `key`.
+    ///
+    /// # Panics
+    ///
+    /// This panics if `key` doesn't have the correct size for the chosen aes mode.
+    fn from_mode(aes_mode: AesMode, key: &[u8]) -> Self {
+        match aes_mode {
+            AesMode::Aes128 => Cipher::Aes128(Box::new(aes_ctr::AesCtrZipKeyStream::<
+                aes_ctr::Aes128,
+            >::new(key))),
+            AesMode::Aes192 => Cipher::Aes192(Box::new(aes_ctr::AesCtrZipKeyStream::<
+                aes_ctr::Aes192,
+            >::new(key))),
+            AesMode::Aes256 => Cipher::Aes256(Box::new(aes_ctr::AesCtrZipKeyStream::<
+                aes_ctr::Aes256,
+            >::new(key))),
+        }
+    }
+
+    fn crypt_in_place(&mut self, target: &mut [u8]) {
+        match self {
+            Self::Aes128(cipher) => cipher.crypt_in_place(target),
+            Self::Aes192(cipher) => cipher.crypt_in_place(target),
+            Self::Aes256(cipher) => cipher.crypt_in_place(target),
+        }
     }
 }
 
@@ -96,7 +116,7 @@ impl<R: Read> AesReader<R> {
             return Ok(None);
         }
 
-        let cipher = cipher_from_mode(self.aes_mode, decrypt_key);
+        let cipher = Cipher::from_mode(self.aes_mode, decrypt_key);
         let hmac = Hmac::<Sha1>::new_from_slice(hmac_key).unwrap();
 
         Ok(Some(AesReaderValid {
@@ -117,7 +137,7 @@ impl<R: Read> AesReader<R> {
 pub struct AesReaderValid<R: Read> {
     reader: R,
     data_remaining: u64,
-    cipher: Box<dyn aes_ctr::AesCipher>,
+    cipher: Cipher,
     hmac: Hmac<Sha1>,
     finalized: bool,
 }
