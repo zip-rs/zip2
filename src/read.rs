@@ -7,7 +7,7 @@ use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
-use crate::spec;
+use crate::spec::{self, read_u16, read_u32, read_u64, read_u8};
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use std::borrow::{Borrow, Cow};
@@ -38,30 +38,6 @@ pub(crate) mod stream;
 
 #[cfg(feature = "lzma")]
 pub(crate) mod lzma;
-
-fn read_u8(reader: &mut impl Read) -> ZipResult<u8> {
-    let mut data = [0; 1];
-    reader.read_exact(&mut data)?;
-    Ok(u8::from_le_bytes(data))
-}
-
-fn read_u16(reader: &mut impl Read) -> ZipResult<u16> {
-    let mut data = [0; 2];
-    reader.read_exact(&mut data)?;
-    Ok(u16::from_le_bytes(data))
-}
-
-fn read_u32(reader: &mut impl Read) -> ZipResult<u32> {
-    let mut data = [0; 4];
-    reader.read_exact(&mut data)?;
-    Ok(u32::from_le_bytes(data))
-}
-
-fn read_u64(reader: &mut impl Read) -> ZipResult<u64> {
-    let mut data = [0; 8];
-    reader.read_exact(&mut data)?;
-    Ok(u64::from_le_bytes(data))
-}
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
