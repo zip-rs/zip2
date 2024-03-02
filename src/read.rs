@@ -910,6 +910,12 @@ impl<R: Read + Seek> ZipArchive<R> {
             }
             let mut file = self.by_index(i)?;
             let mut outfile = fs::File::create(&outpath)?;
+
+            // Set original timestamp.
+            if let Some(t) = datetime_to_systemtime(&file.last_modified()) {
+                file.set_modified(t)?;
+            }
+
             io::copy(&mut file, &mut outfile)?;
             #[cfg(unix)]
             {
@@ -2054,6 +2060,33 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
     }
 
     true
+}
+
+/// Generate a `SystemTime` from a `DateTime`.
+fn datetime_to_systemtime(datetime: &DateTime) -> Option<std::time::SystemTime> {
+    if let Some(t) = generate_chrono_datetime(datetime) {
+        let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(t, chrono::Utc);
+        return Some(time.into());
+    }
+    None
+}
+
+/// Generate a `NaiveDateTime` from a `DateTime`.
+fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime> {
+    if let Some(d) = chrono::NaiveDate::from_ymd_opt(
+        datetime.year().into(),
+        datetime.month().into(),
+        datetime.day().into(),
+    ) {
+        if let Some(d) = d.and_hms_opt(
+            datetime.hour().into(),
+            datetime.minute().into(),
+            datetime.second().into(),
+        ) {
+            return Some(d);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
