@@ -338,7 +338,7 @@ pub const DEFAULT_VERSION: u8 = 46;
 pub struct AtomicU64(atomic::AtomicU64);
 
 impl AtomicU64 {
-    pub const fn new(v: u64) -> Self {
+    pub fn new(v: u64) -> Self {
         Self(atomic::AtomicU64::new(v))
     }
 
