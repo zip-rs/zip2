@@ -3,9 +3,7 @@ use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::Cursor;
 use zip_next::result::ZipResult;
-use zip_next::write::ExtendedFileOptions;
 use zip_next::write::FileOptions;
-use zip_next::write::SimpleFileOptions;
 use zip_next::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
 
 // This test asserts that after creating a zip file, then reading its contents back out,
@@ -86,7 +84,7 @@ fn append() {
                 let mut zip = ZipWriter::new_append(&mut file).unwrap();
                 zip.start_file(
                     COPY_ENTRY_NAME,
-                    SimpleFileOptions::default()
+                    FileOptions::default()
                         .compression_method(method)
                         .unix_permissions(0o755),
                 )
@@ -107,31 +105,23 @@ fn append() {
 fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, shallow_copy: bool) {
     let mut zip = ZipWriter::new(file);
 
-    zip.add_directory("test/", SimpleFileOptions::default())
+    zip.add_directory("test/", FileOptions::default())
         .unwrap();
 
-    let mut options = FileOptions::<ExtendedFileOptions>::default()
+    let mut options = FileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
 
     zip.start_file(ENTRY_NAME, options.clone()).unwrap();
     zip.write_all(LOREM_IPSUM).unwrap();
 
-    if shallow_copy {
-        zip.shallow_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
-            .unwrap();
-    } else {
-        zip.deep_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
-            .unwrap();
-    }
-
     zip.start_file("test/☃.txt", options.clone()).unwrap();
     zip.write_all(b"Hello, World!\n").unwrap();
 
-    options.add_extra_data(0xbeef, EXTRA_DATA, false).unwrap();
-
-    zip.start_file("test_with_extra_data/🐢.txt", options)
+    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options)
         .unwrap();
+    zip.write_all(EXTRA_DATA).unwrap();
+    zip.end_extra_data().unwrap();
     zip.write_all(b"Hello, World! Again.\n").unwrap();
 
     zip.finish().unwrap();
@@ -164,7 +154,7 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip_next::ZipArc
         extra_data.write_all(EXTRA_DATA)?;
         assert_eq!(
             file_with_extra_data.extra_data(),
-            Some(extra_data.as_slice())
+            extra_data.as_slice()
         );
     }
 

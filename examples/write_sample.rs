@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use zip_next::write::SimpleFileOptions;
+use zip_next::write::FileOptions;
 
 fn main() {
     std::process::exit(real_main());
@@ -27,9 +27,9 @@ fn doit(filename: &str) -> zip_next::result::ZipResult<()> {
 
     let mut zip = zip_next::ZipWriter::new(file);
 
-    zip.add_directory("test/", SimpleFileOptions::default())?;
+    zip.add_directory("test/", FileOptions::default())?;
 
-    let options = SimpleFileOptions::default()
+    let options = FileOptions::default()
         .compression_method(zip_next::CompressionMethod::Stored)
         .unix_permissions(0o755);
     zip.start_file("test/☃.txt", options)?;

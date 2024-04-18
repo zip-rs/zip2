@@ -1,6 +1,6 @@
 use anyhow::Context;
 use std::io::prelude::*;
-use zip_next::{result::ZipError, write::SimpleFileOptions};
+use zip_next::{result::ZipError, write::FileOptions};
 
 use std::fs::File;
 use std::path::Path;
@@ -75,7 +75,7 @@ where
     T: Write + Seek,
 {
     let mut zip = zip_next::ZipWriter::new(writer);
-    let options = SimpleFileOptions::default()
+    let options = FileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
 

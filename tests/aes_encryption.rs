@@ -15,7 +15,8 @@ fn aes256_encrypted_uncompressed_file() {
 
     let mut file = archive
         .by_name_decrypt("secret_data_256_uncompressed", PASSWORD)
-        .expect("couldn't find file in archive");
+        .expect("couldn't find file in archive")
+        .unwrap();
     assert_eq!("secret_data_256_uncompressed", file.name());
 
     let mut content = String::new();
@@ -32,7 +33,8 @@ fn aes256_encrypted_file() {
 
     let mut file = archive
         .by_name_decrypt("secret_data_256", PASSWORD)
-        .expect("couldn't find file in archive");
+        .expect("couldn't find file in archive")
+        .unwrap();
     assert_eq!("secret_data_256", file.name());
 
     let mut content = String::new();
@@ -49,7 +51,8 @@ fn aes192_encrypted_file() {
 
     let mut file = archive
         .by_name_decrypt("secret_data_192", PASSWORD)
-        .expect("couldn't find file in archive");
+        .expect("couldn't find file in archive")
+        .unwrap();
     assert_eq!("secret_data_192", file.name());
 
     let mut content = String::new();
@@ -66,7 +69,8 @@ fn aes128_encrypted_file() {
 
     let mut file = archive
         .by_name_decrypt("secret_data_128", PASSWORD)
-        .expect("couldn't find file in archive");
+        .expect("couldn't find file in archive")
+        .unwrap();
     assert_eq!("secret_data_128", file.name());
 
     let mut content = String::new();
