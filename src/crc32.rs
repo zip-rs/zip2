@@ -55,6 +55,7 @@ impl<R: Read> Read for Crc32Reader<R> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::io::Read;
 
     #[test]
     fn test_empty_reader() {

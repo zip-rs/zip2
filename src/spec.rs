@@ -5,9 +5,9 @@ use std::io::prelude::*;
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
-pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: u32 = 0x06054b50;
+const CENTRAL_DIRECTORY_END_SIGNATURE: u32 = 0x06054b50;
 pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: u32 = 0x06064b50;
-pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: u32 = 0x07064b50;
+const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: u32 = 0x07064b50;
 
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
@@ -23,6 +23,18 @@ pub struct CentralDirectoryEnd {
 }
 
 impl CentralDirectoryEnd {
+    // Per spec 4.4.1.4 - a CentralDirectoryEnd field might be insufficient to hold the
+    // required data. In this case the file SHOULD contain a ZIP64 format record
+    // and the field of this record will be set to -1
+    pub(crate) fn record_too_small(&self) -> bool {
+        self.disk_number == 0xFFFF
+            || self.disk_with_central_directory == 0xFFFF
+            || self.number_of_files_on_this_disk == 0xFFFF
+            || self.number_of_files == 0xFFFF
+            || self.central_directory_size == 0xFFFFFFFF
+            || self.central_directory_offset == 0xFFFFFFFF
+    }
+
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd> {
         let magic = reader.read_u32::<LittleEndian>()?;
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
@@ -49,12 +61,14 @@ impl CentralDirectoryEnd {
         })
     }
 
-    pub fn find_and_parse<T: Read + Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u64)> {
+    pub fn find_and_parse<T: Read + io::Seek>(
+        reader: &mut T,
+    ) -> ZipResult<(CentralDirectoryEnd, u64)> {
         const HEADER_SIZE: u64 = 22;
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + u16::MAX as u64);
+        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + ::std::u16::MAX as u64);
 
         if file_length < HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
@@ -141,15 +155,14 @@ pub struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn find_and_parse<T: Read + Seek>(
+    pub fn find_and_parse<T: Read + io::Seek>(
         reader: &mut T,
         nominal_offset: u64,
         search_upper_bound: u64,
-    ) -> ZipResult<Vec<(Zip64CentralDirectoryEnd, u64)>> {
-        let mut results = Vec::new();
-        let mut pos = search_upper_bound;
+    ) -> ZipResult<(Zip64CentralDirectoryEnd, u64)> {
+        let mut pos = nominal_offset;
 
-        while pos >= nominal_offset {
+        while pos <= search_upper_bound {
             reader.seek(io::SeekFrom::Start(pos))?;
 
             if reader.read_u32::<LittleEndian>()? == ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
@@ -167,7 +180,7 @@ impl Zip64CentralDirectoryEnd {
                 let central_directory_size = reader.read_u64::<LittleEndian>()?;
                 let central_directory_offset = reader.read_u64::<LittleEndian>()?;
 
-                results.push((
+                return Ok((
                     Zip64CentralDirectoryEnd {
                         version_made_by,
                         version_needed_to_extract,
@@ -181,19 +194,13 @@ impl Zip64CentralDirectoryEnd {
                     archive_offset,
                 ));
             }
-            if pos > 0 {
-                pos -= 1;
-            } else {
-                break;
-            }
+
+            pos += 1;
         }
-        if results.is_empty() {
-            Err(ZipError::InvalidArchive(
-                "Could not find ZIP64 central directory end",
-            ))
-        } else {
-            Ok(results)
-        }
+
+        Err(ZipError::InvalidArchive(
+            "Could not find ZIP64 central directory end",
+        ))
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {

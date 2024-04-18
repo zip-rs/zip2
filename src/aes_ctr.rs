@@ -5,6 +5,7 @@
 //! See [AesCtrZipKeyStream] for more information.
 
 use aes::cipher::generic_array::GenericArray;
+// use aes::{BlockEncrypt, NewBlockCipher};
 use aes::cipher::{BlockEncrypt, KeyInit};
 use byteorder::WriteBytesExt;
 use std::{any, fmt};
@@ -27,7 +28,7 @@ pub trait AesKind {
     /// Key type.
     type Key: AsRef<[u8]>;
     /// Cipher used to decrypt.
-    type Cipher: KeyInit;
+    type Cipher;
 }
 
 impl AesKind for Aes128 {
@@ -161,14 +162,14 @@ mod tests {
     {
         let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
 
-        let mut plaintext = ciphertext.to_vec().into_boxed_slice();
-        key_stream.crypt_in_place(&mut plaintext);
-        assert_eq!(*plaintext, *expected_plaintext);
+        let mut plaintext: Vec<u8> = ciphertext.to_vec();
+        key_stream.crypt_in_place(plaintext.as_mut_slice());
+        assert_eq!(plaintext, expected_plaintext.to_vec());
 
         // Round-tripping should yield the ciphertext again.
         let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
         key_stream.crypt_in_place(&mut plaintext);
-        assert_eq!(*plaintext, *ciphertext);
+        assert_eq!(plaintext, ciphertext.to_vec());
     }
 
     #[test]

@@ -3,15 +3,24 @@
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::io::IntoInnerError;
-use std::num::TryFromIntError;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
+/// The given password is wrong
+#[derive(Debug)]
+pub struct InvalidPassword;
+
+impl fmt::Display for InvalidPassword {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "invalid password for file in archive")
+    }
+}
+
+impl Error for InvalidPassword {}
+
 /// Error type for Zip
 #[derive(Debug)]
-#[non_exhaustive]
 pub enum ZipError {
     /// An Error caused by I/O
     Io(io::Error),
@@ -24,20 +33,11 @@ pub enum ZipError {
 
     /// The requested file could not be found in the archive
     FileNotFound,
-
-    /// The password provided is incorrect
-    InvalidPassword,
 }
 
 impl From<io::Error> for ZipError {
     fn from(err: io::Error) -> ZipError {
         ZipError::Io(err)
-    }
-}
-
-impl<W> From<IntoInnerError<W>> for ZipError {
-    fn from(value: IntoInnerError<W>) -> Self {
-        ZipError::Io(value.into_error())
     }
 }
 
@@ -48,7 +48,6 @@ impl fmt::Display for ZipError {
             ZipError::InvalidArchive(err) => write!(fmt, "invalid Zip archive: {err}"),
             ZipError::UnsupportedArchive(err) => write!(fmt, "unsupported Zip archive: {err}"),
             ZipError::FileNotFound => write!(fmt, "specified file not found in archive"),
-            ZipError::InvalidPassword => write!(fmt, "incorrect password for encrypted file"),
         }
     }
 }
@@ -66,8 +65,8 @@ impl ZipError {
     /// The text used as an error when a password is required and not supplied
     ///
     /// ```rust,no_run
-    /// # use zip_next::result::ZipError;
-    /// # let mut archive = zip_next::ZipArchive::new(std::io::Cursor::new(&[])).unwrap();
+    /// # use zip::result::ZipError;
+    /// # let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&[])).unwrap();
     /// match archive.by_index(1) {
     ///     Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)) => eprintln!("a password is needed to unzip this file"),
     ///     _ => (),
@@ -86,13 +85,6 @@ impl From<ZipError> for io::Error {
 /// Error type for time parsing
 #[derive(Debug)]
 pub struct DateTimeRangeError;
-
-// TryFromIntError is also an out-of-range error.
-impl From<TryFromIntError> for DateTimeRangeError {
-    fn from(_value: TryFromIntError) -> Self {
-        DateTimeRangeError
-    }
-}
 
 impl fmt::Display for DateTimeRangeError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {

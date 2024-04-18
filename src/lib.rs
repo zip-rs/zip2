@@ -9,7 +9,7 @@
 //!
 //! ---
 //!
-//! [`zip_next`](`crate`) has support for the most common ZIP archives found in common use.
+//! [`zip`](`crate`) has support for the most common ZIP archives found in common use.
 //! However, in special cases,
 //! there are some zip archives that are difficult to read or write.
 //!
@@ -18,13 +18,10 @@
 //! |         | Reading | Writing |
 //! | ------- | ------  | ------- |
 //! | Deflate | ✅ [->](`crate::ZipArchive::by_name`)      | ✅ [->](`crate::write::FileOptions::compression_method`) |
-//! | Deflate64 | ✅ | |
-//! | Bzip2 | ✅ | ✅ |
-//! | LZMA | ✅ | |
-//! | AES encryption | ✅ | ✅ |
-//! | ZipCrypto deprecated encryption | ✅ | ✅ |
 //!
 //!
+//!
+
 #![warn(missing_docs)]
 
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
@@ -53,6 +50,6 @@ mod zipcrypto;
 ///
 /// ```toml
 /// [dependencies]
-/// zip_next = "=1.1.0"
+/// zip = "=0.6.6"
 /// ```
 pub mod unstable;

@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::{
     central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
@@ -15,7 +15,7 @@ pub struct ZipStreamReader<R>(R);
 
 impl<R> ZipStreamReader<R> {
     /// Create a new ZipStreamReader
-    pub const fn new(reader: R) -> Self {
+    pub fn new(reader: R) -> Self {
         Self(reader)
     }
 }
@@ -162,7 +162,7 @@ impl ZipStreamFileMetadata {
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> PathBuf {
+    pub fn mangled_name(&self) -> ::std::path::PathBuf {
         self.0.file_name_sanitized()
     }
 
@@ -176,7 +176,7 @@ impl ZipStreamFileMetadata {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<PathBuf> {
+    pub fn enclosed_name(&self) -> Option<&Path> {
         self.0.enclosed_name()
     }
 
@@ -184,7 +184,8 @@ impl ZipStreamFileMetadata {
     pub fn is_dir(&self) -> bool {
         self.name()
             .chars()
-            .next_back()
+            .rev()
+            .next()
             .map_or(false, |c| c == '/' || c == '\\')
     }
 
@@ -200,11 +201,11 @@ impl ZipStreamFileMetadata {
 
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> u64 {
-        *self.0.data_start.get().unwrap_or(&0)
+        self.0.data_start.load()
     }
 
     /// Get unix mode for the file
-    pub const fn unix_mode(&self) -> Option<u32> {
+    pub fn unix_mode(&self) -> Option<u32> {
         self.0.unix_mode()
     }
 }
@@ -213,6 +214,7 @@ impl ZipStreamFileMetadata {
 mod test {
     use super::*;
     use std::collections::BTreeSet;
+    use std::io;
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {

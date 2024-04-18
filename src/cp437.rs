@@ -23,16 +23,15 @@ impl<'a> FromCp437 for &'a [u8] {
     }
 }
 
-impl FromCp437 for Box<[u8]> {
-    type Target = Box<str>;
+impl FromCp437 for Vec<u8> {
+    type Target = String;
 
     fn from_cp437(self) -> Self::Target {
         if self.iter().all(|c| *c < 0x80) {
-            String::from_utf8(self.into()).unwrap()
+            String::from_utf8(self).unwrap()
         } else {
-            self.iter().copied().map(to_char).collect()
+            self.into_iter().map(to_char).collect()
         }
-        .into_boxed_str()
     }
 }
 
@@ -188,8 +187,6 @@ mod test {
     }
 
     #[test]
-    #[allow(unknown_lints)] // invalid_from_utf8 was added in rust 1.72
-    #[allow(invalid_from_utf8)]
     fn example_slice() {
         use super::FromCp437;
         let data = b"Cura\x87ao";
@@ -202,6 +199,6 @@ mod test {
         use super::FromCp437;
         let data = vec![0xCC, 0xCD, 0xCD, 0xB9];
         assert!(String::from_utf8(data.clone()).is_err());
-        assert_eq!(&*data.from_cp437(), "╠══╣");
+        assert_eq!(&data.from_cp437(), "╠══╣");
     }
 }

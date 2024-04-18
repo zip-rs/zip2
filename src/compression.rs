@@ -11,7 +11,6 @@ use std::fmt;
 /// When creating ZIP files, you may choose the method to use with
 /// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub enum CompressionMethod {
     /// Store the file as is
@@ -20,15 +19,9 @@ pub enum CompressionMethod {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng",
-        feature = "deflate-zopfli"
+        feature = "deflate-zlib"
     ))]
     Deflated,
-    /// Compress the file using Deflate64.
-    /// Decoding deflate64 is supported but encoding deflate64 is not supported.
-    #[cfg(feature = "deflate64")]
-    Deflate64,
     /// Compress the file using BZIP2
     #[cfg(feature = "bzip2")]
     Bzip2,
@@ -41,14 +34,8 @@ pub enum CompressionMethod {
     /// Compress the file using ZStandard
     #[cfg(feature = "zstd")]
     Zstd,
-    /// Compress the file using LZMA
-    #[cfg(feature = "lzma")]
-    Lzma,
     /// Unsupported compression method
-    #[cfg_attr(
-        not(fuzzing),
-        deprecated(since = "0.5.7", note = "use the constants instead")
-    )]
+    #[deprecated(since = "0.5.7", note = "use the constants instead")]
     Unsupported(u16),
 }
 #[allow(deprecated, missing_docs)]
@@ -64,32 +51,22 @@ impl CompressionMethod {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng",
-        feature = "deflate-zopfli"
+        feature = "deflate-zlib"
     ))]
     pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng",
-        feature = "deflate-zopfli"
+        feature = "deflate-zlib"
     )))]
     pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
-    #[cfg(feature = "deflate64")]
-    pub const DEFLATE64: Self = CompressionMethod::Deflate64;
-    #[cfg(not(feature = "deflate64"))]
     pub const DEFLATE64: Self = CompressionMethod::Unsupported(9);
     pub const PKWARE_IMPLODE: Self = CompressionMethod::Unsupported(10);
     #[cfg(feature = "bzip2")]
     pub const BZIP2: Self = CompressionMethod::Bzip2;
     #[cfg(not(feature = "bzip2"))]
     pub const BZIP2: Self = CompressionMethod::Unsupported(12);
-    #[cfg(not(feature = "lzma"))]
     pub const LZMA: Self = CompressionMethod::Unsupported(14);
-    #[cfg(feature = "lzma")]
-    pub const LZMA: Self = CompressionMethod::Lzma;
     pub const IBM_ZOS_CMPSC: Self = CompressionMethod::Unsupported(16);
     pub const IBM_TERSE: Self = CompressionMethod::Unsupported(18);
     pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
@@ -113,24 +90,18 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "use a constant to construct a compression method"
     )]
-    pub const fn from_u16(val: u16) -> CompressionMethod {
+    pub fn from_u16(val: u16) -> CompressionMethod {
         #[allow(deprecated)]
         match val {
             0 => CompressionMethod::Stored,
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng",
-                feature = "deflate-zopfli"
+                feature = "deflate-zlib"
             ))]
             8 => CompressionMethod::Deflated,
-            #[cfg(feature = "deflate64")]
-            9 => CompressionMethod::Deflate64,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
-            #[cfg(feature = "lzma")]
-            14 => CompressionMethod::Lzma,
             #[cfg(feature = "zstd")]
             93 => CompressionMethod::Zstd,
             #[cfg(feature = "aes-crypto")]
@@ -145,80 +116,25 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "to match on other compression methods, use a constant"
     )]
-    pub const fn to_u16(self) -> u16 {
+    pub fn to_u16(self) -> u16 {
         #[allow(deprecated)]
         match self {
             CompressionMethod::Stored => 0,
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng",
-                feature = "deflate-zopfli"
+                feature = "deflate-zlib"
             ))]
             CompressionMethod::Deflated => 8,
-            #[cfg(feature = "deflate64")]
-            CompressionMethod::Deflate64 => 9,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
             #[cfg(feature = "aes-crypto")]
             CompressionMethod::Aes => 99,
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => 93,
-            #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => 14,
 
             CompressionMethod::Unsupported(v) => v,
         }
-    }
-}
-
-impl Default for CompressionMethod {
-    fn default() -> Self {
-        #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib",
-            feature = "deflate-zlib-ng",
-            feature = "deflate-zopfli"
-        ))]
-        return CompressionMethod::Deflated;
-
-        #[cfg(all(
-            not(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng",
-                feature = "deflate-zopfli"
-            )),
-            feature = "bzip2"
-        ))]
-        return CompressionMethod::Bzip2;
-
-        #[cfg(all(
-            not(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng",
-                feature = "deflate-zopfli",
-                feature = "bzip2"
-            )),
-            feature = "zstd"
-        ))]
-        return CompressionMethod::Zstd;
-
-        #[cfg(not(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib",
-            feature = "deflate-zlib-ng",
-            feature = "deflate-zopfli",
-            feature = "bzip2",
-            feature = "zstd"
-        )))]
-        return CompressionMethod::Stored;
     }
 }
 
@@ -235,13 +151,9 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng",
-        feature = "deflate-zopfli"
+        feature = "deflate-zlib"
     ))]
     CompressionMethod::Deflated,
-    #[cfg(feature = "deflate64")]
-    CompressionMethod::Deflate64,
     #[cfg(feature = "bzip2")]
     CompressionMethod::Bzip2,
     #[cfg(feature = "zstd")]
