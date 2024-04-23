@@ -68,7 +68,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
         }
     }
 }
-enum GenericZipWriter<W: Write + Seek> {
+enum GenericZipWriter<W: Write> {
     Closed,
     Storer(MaybeEncrypted<W>),
     #[cfg(any(
@@ -119,7 +119,7 @@ pub(crate) mod zip_writer {
     /// # }
     /// # doit().unwrap();
     /// ```
-    pub struct ZipWriter<W: Write + Seek> {
+    pub struct ZipWriter<W: Write> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: Vec<ZipFileData>,
         pub(super) files_by_name: HashMap<Box<str>, usize>,
@@ -1260,7 +1260,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 }
 
-impl<W: Write + Seek> Drop for ZipWriter<W> {
+impl<W: Write> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
@@ -1272,7 +1272,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
 
 type SwitchWriterFunction<W> = Box<dyn FnOnce(MaybeEncrypted<W>) -> GenericZipWriter<W>>;
 
-impl<W: Write + Seek> GenericZipWriter<W> {
+impl<W: Write> GenericZipWriter<W> {
     fn prepare_next_writer(
         &self,
         compression: CompressionMethod,
