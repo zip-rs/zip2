@@ -51,7 +51,6 @@ zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
 lzma-rust2 = { version = "0.13", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io =  { version = "4.5.0", optional = true }
-chrono = { version = "0.4.34" }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
