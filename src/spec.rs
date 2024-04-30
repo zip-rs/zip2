@@ -55,7 +55,7 @@ impl CentralDirectoryEnd {
         const HEADER_SIZE: usize = 22;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let last_chunk_start = reader.seek(io::SeekFrom::End(-(std::cmp::min(file_length as usize, HEADER_SIZE + ::std::u16::MAX as usize) as i64)))?;
+        let last_chunk_start = reader.seek(io::SeekFrom::End(-(std::cmp::min(file_length as usize, HEADER_SIZE + u16::MAX as usize) as i64)))?;
         let mut last_chunk = Vec::with_capacity(HEADER_SIZE + u16::MAX as usize);
         reader.read_to_end(&mut last_chunk)?;
 
