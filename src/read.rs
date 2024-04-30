@@ -11,8 +11,8 @@ use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use byteorder::{LittleEndian, ReadBytesExt};
+use indexmap::IndexMap;
 use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
 use std::io::{self, prelude::*};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -47,8 +47,7 @@ pub(crate) mod zip_archive {
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
     pub(crate) struct Shared {
-        pub(crate) files: Box<[super::ZipFileData]>,
-        pub(crate) names_map: super::HashMap<Box<str>, usize>,
+        pub(super) files: super::IndexMap<String, super::ZipFileData>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
         pub(super) dir_end: u64,
@@ -487,13 +486,12 @@ impl<R: Read + Seek> ZipArchive<R> {
                     } else {
                         dir_info.number_of_files
                     };
-                    let mut files = Vec::with_capacity(file_capacity);
-                    let mut names_map = HashMap::with_capacity(file_capacity);
+                    let mut files = IndexMap::with_capacity(file_capacity);
                     reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
-                        names_map.insert(file.file_name.clone(), files.len());
-                        files.push(file);
+                        /* Ignoring duplicate entry names. */
+            files.insert(file.file_name.clone(), file);
                     }
                     let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
@@ -501,7 +499,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     } else {
                         Ok(Shared {
                             files: files.into(),
-                            names_map,
+
                             offset: dir_info.archive_offset,
                             dir_start: dir_info.directory_start,
                             dir_end,
@@ -606,7 +604,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.shared.names_map.keys().map(Box::borrow)
+        self.shared.files.keys().map(Box::borrow)
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -692,17 +690,16 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get a contained file by index without decompressing it
     pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         let reader = &mut self.reader;
-        self.shared
+        let (_, data) = self
+            .shared
             .files
-            .get(file_number)
-            .ok_or(ZipError::FileNotFound)
-            .and_then(move |data| {
-                Ok(ZipFile {
-                    crypto_reader: None,
-                    reader: ZipFileReader::Raw(find_content(data, reader)?),
-                    data: Cow::Borrowed(data),
-                })
-            })
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        Ok(ZipFile {
+            crypto_reader: None,
+            reader: ZipFileReader::Raw(find_content(data, reader)?),
+            data: Cow::Borrowed(data),
+        })
     }
 
     fn by_index_with_optional_password(
@@ -710,10 +707,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         file_number: usize,
         mut password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'_>> {
-        let data = self
+        let (_, data) = self
             .shared
             .files
-            .get(file_number)
+            .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
 
         match (password, data.encrypted) {
