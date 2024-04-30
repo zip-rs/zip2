@@ -38,7 +38,6 @@ zstd = { version = "0.13.1", optional = true, default-features = false }
 zopfli = { version = "0.8.0", optional = true }
 deflate64 = { version = "0.1.8", optional = true }
 lzma-rs = { version = "0.3.0", optional = true }
-chrono = { version = "0.4.34" }
 
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
 crossbeam-utils = "0.8.19"
