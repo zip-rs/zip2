@@ -24,11 +24,11 @@ pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: u32 = 0x07064b50
 ///```
 /// # fn main() -> Result<(), zip::result::ZipError> {
 /// use std::io::{self, Cursor, prelude::*};
-/// use zip::{ZipWriter, write::FileOptions};
+/// use zip::{ZipWriter, write::SimpleFileOptions};
 ///
 /// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
 /// // Writing an extremely large file for this test is faster without compression.
-/// let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+/// let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 ///
 /// let big_len: usize = (zip::ZIP64_BYTES_THR as usize) + 1;
 /// let big_buf = vec![0u8; big_len];
