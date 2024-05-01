@@ -1874,13 +1874,13 @@ mod test {
     #[test]
     fn write_non_utf8() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        let options = FileOptions {
+        let options = SimpleFileOptions {
             compression_method: CompressionMethod::Stored,
             compression_level: None,
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
             large_file: false,
-            encrypt_with: None,
+            ..Default::default()
         };
 
         // GB18030
