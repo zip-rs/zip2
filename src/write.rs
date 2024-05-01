@@ -654,7 +654,9 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Set the file length and crc32 manually.
     ///
-    /// SAFETY: This overwrites the internal crc32 calculation. It should only be used in case
+    /// # Safety
+    ///
+    /// This overwrites the internal crc32 calculation. It should only be used in case
     /// the underlying [Write] is written independently and you need to adjust the zip metadata.
     pub unsafe fn set_file_metadata(&mut self, length: u64, crc32: u32) -> ZipResult<()> {
         if !self.writing_to_file {
