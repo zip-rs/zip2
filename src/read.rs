@@ -759,7 +759,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
     let central_header_start = reader.stream_position()?;
-
+    let central_header = spec::CentralDirectoryHeader::parse(reader)?;
     // Parse central header
     let signature = reader.read_u32::<LittleEndian>()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
@@ -775,6 +775,23 @@ fn central_header_to_zip_file_inner<R: Read>(
     archive_offset: u64,
     central_header_start: u64,
 ) -> ZipResult<ZipFileData> {
+/// Parse a central directory entry to collect the information for the file.
+fn central_header_to_zip_file_inner<R: Read>(
+    reader: &mut R,
+    archive_offset: u64,
+    central_header_start: u64,
+) -> ZipResult<ZipFileData> {
+    let central_header_start = reader.seek(io::SeekFrom::Current(0))?;
+    let central_header = spec::CentralDirectoryHeader::parse(reader)?;
+
+    let file_name = match central_header.flags.is_utf8() {
+        true => String::from_utf8_lossy(&*central_header.file_name_raw).into_owned(),
+        false => central_header.file_name_raw.clone().from_cp437(),
+    };
+    let file_comment = match central_header.flags.is_utf8() {
+        true => String::from_utf8_lossy(&*central_header.file_comment_raw).into_owned(),
+        false => central_header.file_comment_raw.clone().from_cp437(),
+    };
     let version_made_by = reader.read_u16::<LittleEndian>()?;
     let _version_to_extract = reader.read_u16::<LittleEndian>()?;
     let flags = reader.read_u16::<LittleEndian>()?;
@@ -812,28 +829,30 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     // Construct the result
     let mut result = ZipFileData {
-        system: System::from_u8((version_made_by >> 8) as u8),
-        version_made_by: version_made_by as u8,
-        encrypted,
-        using_data_descriptor,
+        system: System::from_u8((central_header.version_made_by >> 8) as u8),
+        version_made_by: central_header.version_made_by as u8,
+        encrypted: central_header.flags.encrypted(),
+        using_data_descriptor: central_header.flags.using_data_descriptor(),
         compression_method: {
             #[allow(deprecated)]
-            CompressionMethod::from_u16(compression_method)
+            CompressionMethod::from_u16(central_header.compression_method)
         },
         compression_level: None,
-        last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
-        crc32,
-        compressed_size: compressed_size as u64,
-        uncompressed_size: uncompressed_size as u64,
+        last_modified_time: DateTime::from_msdos(
+            central_header.last_mod_date,
+            central_header.last_mod_time,
+        ),
+        crc32: central_header.crc32,
+        compressed_size: central_header.compressed_size as u64,
+        uncompressed_size: central_header.uncompressed_size as u64,
         file_name,
-        file_name_raw: file_name_raw.into(),
-        extra_field: Some(Arc::new(extra_field)),
-        central_extra_field: None,
+        file_name_raw: central_header.file_name_raw,
+        extra_field: Some(Arc::new(central_header.extra_field)),
         file_comment,
-        header_start: offset,
+        header_start: central_header.offset as u64,
         central_header_start,
         data_start: OnceLock::new(),
-        external_attributes: external_file_attributes,
+        external_attributes: central_header.external_file_attributes,
         large_file: false,
         aes_mode: None,
     };
