@@ -1,28 +1,32 @@
 //! Error types that can be emitted from this library
 
+use displaydoc::Display;
+use thiserror::Error;
+
 use std::error::Error;
 use std::fmt;
 use std::io;
 use std::io::IntoInnerError;
 use std::num::TryFromIntError;
+use std::ops::{Range, RangeInclusive};
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
-#[derive(Debug)]
+#[derive(Debug, Display, Error)]
 #[non_exhaustive]
 pub enum ZipError {
-    /// An Error caused by I/O
-    Io(io::Error),
+    /// i/o error: {0}
+    Io(#[from] io::Error),
 
-    /// This file is probably not a zip archive
+    /// invalid Zip archive: {0}
     InvalidArchive(&'static str),
 
-    /// This archive is not supported
+    /// unsupported Zip archive: {0}
     UnsupportedArchive(&'static str),
 
-    /// The requested file could not be found in the archive
+    /// specified file not found in archive
     FileNotFound,
 
     /// The password provided is incorrect
@@ -110,5 +114,3 @@ impl fmt::Display for DateTimeRangeError {
         )
     }
 }
-
-impl Error for DateTimeRangeError {}

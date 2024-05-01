@@ -2,6 +2,7 @@ use anyhow::Context;
 use std::io::prelude::*;
 use zip::{result::ZipError, write::SimpleFileOptions};
 
+use cfg_if::cfg_if;
 use std::fs::File;
 use std::path::Path;
 use walkdir::{DirEntry, WalkDir};
@@ -17,15 +18,21 @@ const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMet
 #[cfg(not(feature = "_deflate-any"))]
 const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
 
-#[cfg(feature = "bzip2")]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
-#[cfg(not(feature = "bzip2"))]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
+cfg_if! {
+    if #[cfg(feature = "bzip2")] {
+        const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
+    } else {
+        const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
+    }
+}
 
-#[cfg(feature = "zstd")]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
-#[cfg(not(feature = "zstd"))]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
+cfg_if! {
+    if #[cfg(feature = "zstd")] {
+        const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
+    } else {
+        const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
+    }
+}
 
 fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();

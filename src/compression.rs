@@ -1,5 +1,6 @@
 //! Possible ZIP compression methods.
 
+use cfg_if::cfg_if;
 use std::fmt;
 
 #[allow(deprecated)]
@@ -18,6 +19,14 @@ pub enum CompressionMethod {
     Stored,
     /// Compress the file using Deflate
     #[cfg(feature = "_deflate-any")]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib"
+        )))
+    )]
     Deflated,
     /// Compress the file using Deflate64.
     /// Decoding deflate64 is supported but encoding deflate64 is not supported.
@@ -25,15 +34,18 @@ pub enum CompressionMethod {
     Deflate64,
     /// Compress the file using BZIP2
     #[cfg(feature = "bzip2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "bzip2")))]
     Bzip2,
     /// Encrypted using AES.
     ///
     /// The actual compression method has to be taken from the AES extra data field
     /// or from `ZipFileData`.
     #[cfg(feature = "aes-crypto")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "aes-crypto")))]
     Aes,
     /// Compress the file using ZStandard
     #[cfg(feature = "zstd")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zstd")))]
     Zstd,
     /// Compress the file using LZMA
     #[cfg(feature = "lzma")]
@@ -68,26 +80,33 @@ impl CompressionMethod {
     pub const BZIP2: Self = CompressionMethod::Bzip2;
     #[cfg(not(feature = "bzip2"))]
     pub const BZIP2: Self = CompressionMethod::Unsupported(12);
-    #[cfg(not(feature = "lzma"))]
     pub const LZMA: Self = CompressionMethod::Unsupported(14);
     #[cfg(feature = "lzma")]
     pub const LZMA: Self = CompressionMethod::Lzma;
     pub const IBM_ZOS_CMPSC: Self = CompressionMethod::Unsupported(16);
     pub const IBM_TERSE: Self = CompressionMethod::Unsupported(18);
     pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
-    #[cfg(feature = "zstd")]
-    pub const ZSTD: Self = CompressionMethod::Zstd;
-    #[cfg(not(feature = "zstd"))]
-    pub const ZSTD: Self = CompressionMethod::Unsupported(93);
+    cfg_if! {
+        if #[cfg(feature = "zstd")] {
+            #[cfg_attr(docsrs, doc(cfg(feature = "zstd")))]
+            pub const ZSTD: Self = CompressionMethod::Zstd;
+        } else {
+            pub const ZSTD: Self = CompressionMethod::Unsupported(93);
+        }
+    }
     pub const MP3: Self = CompressionMethod::Unsupported(94);
     pub const XZ: Self = CompressionMethod::Unsupported(95);
     pub const JPEG: Self = CompressionMethod::Unsupported(96);
     pub const WAVPACK: Self = CompressionMethod::Unsupported(97);
     pub const PPMD: Self = CompressionMethod::Unsupported(98);
-    #[cfg(feature = "aes-crypto")]
-    pub const AES: Self = CompressionMethod::Aes;
-    #[cfg(not(feature = "aes-crypto"))]
-    pub const AES: Self = CompressionMethod::Unsupported(99);
+    cfg_if! {
+        if #[cfg(feature = "aes-crypto")] {
+            #[cfg_attr(docsrs, doc(cfg(feature = "aes-crypto")))]
+            pub const AES: Self = CompressionMethod::Aes;
+        } else {
+            pub const AES: Self = CompressionMethod::Unsupported(99);
+        }
+    }
 }
 impl CompressionMethod {
     /// Converts an u16 to its corresponding CompressionMethod
@@ -174,12 +193,20 @@ impl fmt::Display for CompressionMethod {
 pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     CompressionMethod::Stored,
     #[cfg(feature = "_deflate-any")]
+    /* NB: these don't appear to show up in the docs. */
+    #[cfg_attr(docsrs, doc(cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))))]
     CompressionMethod::Deflated,
     #[cfg(feature = "deflate64")]
     CompressionMethod::Deflate64,
     #[cfg(feature = "bzip2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "bzip2")))]
     CompressionMethod::Bzip2,
     #[cfg(feature = "zstd")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zstd")))]
     CompressionMethod::Zstd,
 ];
 

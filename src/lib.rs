@@ -25,7 +25,12 @@
 //! | ZipCrypto deprecated encryption | ✅ | ✅ |
 //!
 //!
+//!
+
+#![feature(can_vector)]
+
 #![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::ZipArchive;
@@ -59,3 +64,6 @@ zip = \"="]
 #[doc = "\"\n\
 ```"]
 pub mod unstable;
+
+#[cfg(feature = "tokio-async")]
+pub mod tokio;

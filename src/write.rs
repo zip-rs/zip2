@@ -132,16 +132,26 @@ use crate::CompressionMethod::Stored;
 pub use zip_writer::ZipWriter;
 
 #[derive(Default)]
-struct ZipWriterStats {
-    hasher: Hasher,
-    start: u64,
-    bytes_written: u64,
+pub(crate) struct ZipWriterStats {
+    pub(crate) hasher: Hasher,
+    pub(crate) start: u64,
+    pub(crate) bytes_written: u64,
 }
 
-struct ZipRawValues {
-    crc32: u32,
-    compressed_size: u64,
-    uncompressed_size: u64,
+pub(crate) struct ZipRawValues {
+    pub(crate) crc32: u32,
+    pub(crate) compressed_size: u64,
+    pub(crate) uncompressed_size: u64,
+}
+
+impl Default for ZipRawValues {
+    fn default() -> Self {
+        Self {
+            crc32: 0,
+            compressed_size: 0,
+            uncompressed_size: 0,
+        }
+    }
 }
 mod sealed {
     use std::sync::Arc;
@@ -207,12 +217,12 @@ pub struct ExtendedFileOptions {
 impl arbitrary::Arbitrary<'_> for FileOptions<ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
         let mut options = FullFileOptions {
-            compression_method: CompressionMethod::arbitrary(u)?,
-            compression_level: None,
-            last_modified_time: DateTime::arbitrary(u)?,
-            permissions: Option::<u32>::arbitrary(u)?,
-            large_file: bool::arbitrary(u)?,
-            encrypt_with: Option::<ZipCryptoKeys>::arbitrary(u)?,
+            pub(crate) compression_method: CompressionMethod::arbitrary(u)?,
+            pub(crate) compression_level: None,
+            pub(crate) last_modified_time: DateTime::arbitrary(u)?,
+            pub(crate) permissions: Option::<u32>::arbitrary(u)?,
+            pub(crate) large_file: bool::arbitrary(u)?,
+            pub(crate) encrypt_with: Option::<ZipCryptoKeys>::arbitrary(u)?,
             alignment: u16::arbitrary(u)?,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
@@ -403,10 +413,7 @@ impl<T: FileOptionExtension> Default for FileOptions<T> {
         Self {
             compression_method: Default::default(),
             compression_level: None,
-            #[cfg(feature = "time")]
-            last_modified_time: OffsetDateTime::now_utc().try_into().unwrap_or_default(),
-            #[cfg(not(feature = "time"))]
-            last_modified_time: DateTime::default(),
+            last_modified_time,
             permissions: None,
             large_file: false,
             encrypt_with: None,
@@ -465,7 +472,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
 }
 
 impl ZipWriterStats {
-    fn update(&mut self, buf: &[u8]) {
+    pub(crate) fn update(&mut self, buf: &[u8]) {
         self.hasher.update(buf);
         self.bytes_written += buf.len() as u64;
     }
@@ -1747,7 +1754,7 @@ mod test {
             .add_directory(
                 "test",
                 SimpleFileOptions::default().last_modified_time(
-                    DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
+                    DateTime::parse_from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
                 ),
             )
             .unwrap();
@@ -1776,7 +1783,7 @@ mod test {
                 "name",
                 "target",
                 SimpleFileOptions::default().last_modified_time(
-                    DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
+                    DateTime::parse_from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
                 ),
             )
             .unwrap();
@@ -1821,7 +1828,7 @@ mod test {
                 "directory\\link",
                 "/absolute/symlink\\with\\mixed/slashes",
                 SimpleFileOptions::default().last_modified_time(
-                    DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
+                    DateTime::parse_from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
                 ),
             )
             .unwrap();
@@ -2171,7 +2178,7 @@ mod test {
 
     #[test]
     fn crash_with_no_features() -> ZipResult<()> {
-        const ORIGINAL_FILE_NAME: &str = "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\u{2}g\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\u{7}\0\t'";
+        pub(crate) const ORIGINAL_FILE_NAME: &str = "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\u{2}g\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\u{7}\0\t'";
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
         let mut options = SimpleFileOptions::default();
         options = options
