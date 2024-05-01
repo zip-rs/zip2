@@ -1562,7 +1562,9 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let offset = file.header_start.min(spec::ZIP64_BYTES_THR) as u32;
 
     let mut extra_field = zip64_extra_field[..zip64_extra_field_length as usize].to_vec();
-    extra_field.extend_from_slice(&file.extra_field[..]);
+    if let Some(extra) = file.extra_field {
+        extra_field.extend_from_slice(extra);
+    }
     #[allow(deprecated)]
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time + date
@@ -1609,7 +1611,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let header = spec::CentralDirectoryHeader {
         version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
         version_to_extract: file.version_needed(),
-        flags: spec::GeneralPurposeBitFlags(flags),
+        flags: spec::GeneralPurposeBitFlags(flag),
         compression_method,
         last_mod_time: file.last_modified_time.timepart(),
         last_mod_date: file.last_modified_time.datepart(),

@@ -770,13 +770,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 }
 
 /// Parse a central directory entry to collect the information for the file.
-fn central_header_to_zip_file_inner<R: Read>(
-    reader: &mut R,
-    archive_offset: u64,
-    central_header_start: u64,
-) -> ZipResult<ZipFileData> {
-/// Parse a central directory entry to collect the information for the file.
-fn central_header_to_zip_file_inner<R: Read>(
+fn central_header_to_zip_file_inner<R: Read + Seek>(
     reader: &mut R,
     archive_offset: u64,
     central_header_start: u64,
