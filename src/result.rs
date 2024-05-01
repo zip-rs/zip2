@@ -6,7 +6,6 @@ use thiserror::Error;
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::io::IntoInnerError;
 use std::num::TryFromIntError;
 
 /// Generic result type with ZipError as its error variant
