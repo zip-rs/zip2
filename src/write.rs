@@ -1,7 +1,7 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{find_content, central_header_to_zip_file, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
@@ -10,6 +10,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;

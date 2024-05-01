@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::{
     central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
-    ZipFileData, ZipResult,
+    ZipFileData, ZipResult, HasZipMetadata,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt};
