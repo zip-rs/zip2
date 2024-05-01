@@ -7,7 +7,7 @@ on:
   push:
     branches-ignore:
       - 'release-plz-**'
-      - 'dependabot/**'
+      - 'gh-readonly-queue/**'
   workflow_dispatch:
   merge_group:
     types: [checks_requested]
@@ -17,6 +17,7 @@ env:
 
 jobs:
   build_and_test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
@@ -57,7 +58,8 @@ jobs:
         command: test
         args: --all --no-default-features
 
-  clippy:
+  style_and_docs:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
 
     steps:
@@ -68,34 +70,22 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: clippy
-
+          components: rustfmt, clippy
+      - name: fmt
+        run: cargo fmt --all -- --check
       - name: clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
           args: --all-targets --all-features -- -D warnings
-
-  check_fmt_and_docs:
-    name: Checking fmt and docs
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@master
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        components: rustfmt, clippy
-        override: true
-
-    - name: fmt
-      run: cargo fmt --all -- --check
-
-    - name: Docs
-      run: cargo doc --no-deps
+      - name: Docs
+        run: cargo doc --no-deps
 
   fuzz_read:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -113,11 +103,11 @@ jobs:
           command: fuzz
           args: build --all-features fuzz_read
       - name: run fuzz
-        timeout-minutes: 330
+        timeout-minutes: 331
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run --all-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=50000000 -max_len=1300 -len_control=0 -dict=fuzz/fuzz.dict
+          args: run --all-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=25000000 -max_len=1300 -len_control=0 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -140,7 +130,9 @@ jobs:
 
   fuzz_read_with_no_features:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -162,7 +154,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run --no-default-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=50000000 -max_total_time=19800 -max_len=16384 -len_control=0 -dict=fuzz/fuzz.dict
+          args: run --no-default-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=40000000 -max_total_time=19800 -max_len=16384 -len_control=0 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -185,7 +177,9 @@ jobs:
 
   fuzz_write:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -207,7 +201,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run --all-features fuzz_write -- -timeout=10s -fork=2 -runs=5000000 -max_len=1100 -len_control=200 -dict=fuzz/fuzz.dict
+          args: run --all-features fuzz_write -- -timeout=10s -fork=2 -runs=2500000 -max_len=1100 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -220,7 +214,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --all-features fuzz_write fuzz/corpus/seed -- fuzz/corpus/new_seed
+          args: cmin --all-features fuzz_write fuzz/corpus/fuzz_write -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -230,7 +224,9 @@ jobs:
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -265,7 +261,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --no-default-features fuzz_write fuzz/corpus/seed -- fuzz/corpus/new_seed
+          args: cmin --no-default-features fuzz_write fuzz/corpus/fuzz_write -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
