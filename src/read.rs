@@ -326,9 +326,9 @@ pub(crate) fn make_reader(
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: Vec<ZipFileData>,
-        comment: Vec<u8>,
         reader: R,
-    ) -> ZipResult<Self> {
+        comment: Vec<u8>,
+    ) -> ZipResult<ZipArchive<R>> {
         if files.is_empty() {
             return Err(ZipError::InvalidArchive(
                 "attempt to finalize empty zip writer into readable",
@@ -336,18 +336,23 @@ impl<R> ZipArchive<R> {
         }
         /* This is where the whole file starts. */
         let initial_offset = files[0].header_start;
-        let names_map: HashMap<String, usize> = files
+        let names_map: HashMap<Box<str>, usize> = files
             .iter()
             .enumerate()
             .map(|(i, d)| (d.file_name.clone(), i))
             .collect();
         let shared = Arc::new(zip_archive::Shared {
-            files,
+            files: files.into_boxed_slice(),
             names_map,
             offset: initial_offset,
-            comment,
+            dir_start: 0,
+            dir_end: 0,
         });
-        Ok(Self { reader, shared })
+        Ok(Self {
+            reader,
+            shared,
+            comment: comment.into_boxed_slice().into(),
+        })
     }
 }
 
@@ -362,13 +367,13 @@ pub(crate) struct CentralDirectoryInfo {
 impl<R: Read + Seek> ZipArchive<R> {
     fn get_directory_info_zip32(
         footer: &spec::CentralDirectoryEnd,
-        cde_end_pos: u64,
+        cde_start_pos: u64,
     ) -> ZipResult<CentralDirectoryInfo> {
         // Some zip files have data prepended to them, resulting in the
         // offsets all being too small. Get the amount of error by comparing
         // the actual file position we found the CDE at with the offset
         // recorded in the CDE.
-        let archive_offset = cde_end_pos
+        let archive_offset = cde_start_pos
             .checked_sub(footer.central_directory_size as u64)
             .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
             .ok_or(ZipError::InvalidArchive(
@@ -411,7 +416,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let mut results = Vec::new();
 
-        let search_upper_bound = cde_end_pos
+        let search_upper_bound = cde_start_pos
             .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
             .ok_or(ZipError::InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
@@ -482,17 +487,13 @@ impl<R: Read + Seek> ZipArchive<R> {
                         *result = Err(ZipError::InvalidArchive(
                             "ZIP32 and ZIP64 file counts don't match",
                         ));
-                        return;
-                    }
-                    if central_dir.disk_number != zip32_central_dir.disk_number
+                    } else if central_dir.disk_number != zip32_central_dir.disk_number
                         && zip32_central_dir.disk_number != u16::MAX as u32
                     {
                         *result = Err(ZipError::InvalidArchive(
                             "ZIP32 and ZIP64 disk numbers don't match",
                         ));
-                        return;
-                    }
-                    if central_dir.disk_with_central_directory
+                    } else if central_dir.disk_with_central_directory
                         != zip32_central_dir.disk_with_central_directory
                         && zip32_central_dir.disk_with_central_directory != u16::MAX as u32
                     {
@@ -523,7 +524,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                         names_map.insert(file.file_name.clone(), files.len());
                         files.push(file);
                     }
-                    let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
+                    let dir_end = reader.stream_position()?;
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
                         unsupported_zip_error("Support for multi-disk files is not implemented")
                     } else {

@@ -534,7 +534,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let inner = self.finish()?;
         let comment = mem::take(&mut self.comment);
         let files = mem::take(&mut self.files);
-        let archive = ZipArchive::from_finalized_writer(files, comment, inner)?;
+        let archive = ZipArchive::from_finalized_writer(files, inner, comment)?;
         Ok(archive)
     }
 }
