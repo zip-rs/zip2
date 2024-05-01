@@ -1,3 +1,4 @@
+#![allow(non_local_definitions)]
 //! Error types that can be emitted from this library
 
 use displaydoc::Display;
