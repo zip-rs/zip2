@@ -886,17 +886,17 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///```
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
-    /// use zip::{ZipArchive, ZipWriter, write::FileOptions};
+    /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
     /// let buf = Cursor::new(Vec::new());
     /// let mut zip = ZipWriter::new(buf);
-    /// zip.start_file("a.txt", FileOptions::default())?;
+    /// zip.start_file("a.txt", SimpleFileOptions::default())?;
     /// zip.write_all(b"hello\n")?;
     /// let src = ZipArchive::new(zip.finish()?)?;
     ///
     /// let buf = Cursor::new(Vec::new());
     /// let mut zip = ZipWriter::new(buf);
-    /// zip.start_file("b.txt", FileOptions::default())?;
+    /// zip.start_file("b.txt", SimpleFileOptions::default())?;
     /// zip.write_all(b"hey\n")?;
     /// let src2 = ZipArchive::new(zip.finish()?)?;
     ///
