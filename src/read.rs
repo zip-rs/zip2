@@ -323,6 +323,34 @@ pub(crate) fn make_reader(
     }
 }
 
+impl<R> ZipArchive<R> {
+    pub(crate) fn from_finalized_writer(
+        files: Vec<ZipFileData>,
+        comment: Vec<u8>,
+        reader: R,
+    ) -> ZipResult<Self> {
+        if files.is_empty() {
+            return Err(ZipError::InvalidArchive(
+                "attempt to finalize empty zip writer into readable",
+            ));
+        }
+        /* This is where the whole file starts. */
+        let initial_offset = files[0].header_start;
+        let names_map: HashMap<String, usize> = files
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.file_name.clone(), i))
+            .collect();
+        let shared = Arc::new(zip_archive::Shared {
+            files,
+            names_map,
+            offset: initial_offset,
+            comment,
+        });
+        Ok(Self { reader, shared })
+    }
+}
+
 pub(crate) struct CentralDirectoryInfo {
     pub(crate) archive_offset: u64,
     pub(crate) directory_start: u64,
@@ -334,13 +362,13 @@ pub(crate) struct CentralDirectoryInfo {
 impl<R: Read + Seek> ZipArchive<R> {
     fn get_directory_info_zip32(
         footer: &spec::CentralDirectoryEnd,
-        cde_start_pos: u64,
+        cde_end_pos: u64,
     ) -> ZipResult<CentralDirectoryInfo> {
         // Some zip files have data prepended to them, resulting in the
         // offsets all being too small. Get the amount of error by comparing
         // the actual file position we found the CDE at with the offset
         // recorded in the CDE.
-        let archive_offset = cde_start_pos
+        let archive_offset = cde_end_pos
             .checked_sub(footer.central_directory_size as u64)
             .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
             .ok_or(ZipError::InvalidArchive(
@@ -383,7 +411,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let mut results = Vec::new();
 
-        let search_upper_bound = cde_start_pos
+        let search_upper_bound = cde_end_pos
             .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
             .ok_or(ZipError::InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
