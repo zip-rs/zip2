@@ -931,21 +931,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         let new_files = source.merge_contents(writer)?;
 
         /* These file entries are now ours! */
-        self.files.extend(new_files);
+        self.files.extend(new_files.into_vec());
 
-        Ok(())
-    }
-
-    /// Create a file in the archive and start writing its' contents.
-    ///
-    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
-    pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
-    where
-        S: Into<String>,
-    {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o644);
-        }
         Ok(())
     }
 

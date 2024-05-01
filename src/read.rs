@@ -50,7 +50,6 @@ pub(crate) mod zip_archive {
         pub(crate) files: Box<[super::ZipFileData]>,
         pub(crate) names_map: super::HashMap<Box<str>, usize>,
         pub(super) offset: u64,
-        pub(super) cde_start: u64,
         pub(super) dir_start: u64,
         pub(super) dir_end: u64,
     }
@@ -336,7 +335,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + io::Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<Vec<ZipFileData>> {
+    ) -> ZipResult<Box<[ZipFileData]>> {
         let mut new_files = self.shared.files.clone();
         if new_files.is_empty() {
             return Ok(new_files);
@@ -350,33 +349,24 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 
         let new_initial_header_start = w.stream_position()?;
         /* Push back file header starts for all entries in the covered files. */
-        new_files
-            .iter_mut()
-            .map(|f| {
-                /* This is probably the only really important thing to change. */
-                f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
-                    ZipError::InvalidArchive(
-                        "new header start from merge would have been too large",
-                    ),
+        new_files.iter_mut().try_for_each(|f| {
+            /* This is probably the only really important thing to change. */
+            f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
+                ZipError::InvalidArchive("new header start from merge would have been too large"),
+            )?;
+            /* This is only ever used internally to cache metadata lookups (it's not part of the
+             * zip spec), and 0 is the sentinel value. */
+            f.central_header_start = 0;
+            /* This is an atomic variable so it can be updated from another thread in the
+             * implementation (which is good!). */
+            if let Some(old_data_start) = f.data_start.take() {
+                let new_data_start = old_data_start.checked_add(new_initial_header_start).ok_or(
+                    ZipError::InvalidArchive("new data start from merge would have been too large"),
                 )?;
-                /* This is only ever used internally to cache metadata lookups (it's not part of the
-                 * zip spec), and 0 is the sentinel value. */
-                f.central_header_start = 0;
-                /* This is an atomic variable so it can be updated from another thread in the
-                 * implementation (which is good!). */
-                let new_data_start = f
-                    .data_start
-                    /* NB: it's annoying there's no .checked_fetch_add(), but we don't need it here
-                     * because nothing else has any reference to this data. */
-                    .load()
-                    .checked_add(new_initial_header_start)
-                    .ok_or(ZipError::InvalidArchive(
-                        "new data start from merge would have been too large",
-                    ))?;
-                f.data_start.store(new_data_start);
-                Ok(())
-            })
-            .collect::<Result<(), ZipError>>()?;
+                f.data_start.get_or_init(|| new_data_start);
+            }
+            Ok::<(), ZipError>(())
+        })?;
 
         /* Rewind to the beginning of the file.
          *
@@ -391,7 +381,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
          */
         self.reader.rewind()?;
         /* Find the end of the file data. */
-        let length_to_read = self.shared.cde_start;
+        let length_to_read = self.shared.dir_start;
         /* Produce a Read that reads bytes up until the start of the central directory header.
          * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
          * handle, which it really shouldn't need to anyway. */
@@ -403,10 +393,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         Ok(new_files)
     }
 
-    /// Get the directory start offset and number of files. This is done in a
-    /// separate function to ease the control flow design.
-    pub(crate) fn get_directory_counts(
-        reader: &mut R,
+    fn get_directory_info_zip32(
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<CentralDirectoryInfo> {
