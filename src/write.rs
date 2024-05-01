@@ -515,11 +515,11 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///```
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
-    /// use zip::{ZipArchive, ZipWriter, write::FileOptions};
+    /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
     /// let buf = Cursor::new(Vec::new());
     /// let mut zip = ZipWriter::new(buf);
-    /// let options = FileOptions::default();
+    /// let options = SimpleFileOptions::default();
     /// zip.start_file("a.txt", options)?;
     /// zip.write_all(b"hello\n")?;
     ///
