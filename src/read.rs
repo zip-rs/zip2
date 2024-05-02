@@ -927,11 +927,13 @@ fn central_header_to_zip_file_inner<R: Read>(
         central_extra_field: None,
         file_comment,
         header_start: offset,
+        extra_data_start: None,
         central_header_start,
         data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
+        aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
 
@@ -1316,6 +1318,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
         header_start: 0,
+        extra_data_start: None,
         data_start: OnceLock::new(),
         central_header_start: 0,
         // The external_attributes field is only available in the central directory.
@@ -1324,6 +1327,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         external_attributes: 0,
         large_file: false,
         aes_mode: None,
+        aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
 

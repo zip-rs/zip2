@@ -318,7 +318,7 @@ mod tests {
         let mut read_buffer = vec![];
 
         {
-            let mut writer = AesWriter::new(&mut buf, aes_mode, &password)?;
+            let mut writer = AesWriter::new(&mut buf, aes_mode, password)?;
             writer.write_all(plaintext)?;
             writer.finish()?;
         }
@@ -329,7 +329,7 @@ mod tests {
         {
             let compressed_length = buf.get_ref().len() as u64;
             let mut reader =
-                match AesReader::new(&mut buf, aes_mode, compressed_length).validate(&password)? {
+                match AesReader::new(&mut buf, aes_mode, compressed_length).validate(password)? {
                     None => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
@@ -341,7 +341,7 @@ mod tests {
             reader.read_to_end(&mut read_buffer)?;
         }
 
-        return Ok(plaintext == read_buffer);
+        Ok(plaintext == read_buffer)
     }
 
     #[test]

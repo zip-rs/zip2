@@ -7,38 +7,38 @@ use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
 
 #[derive(Arbitrary, Clone, Debug)]
-pub enum BasicFileOperation {
+pub enum BasicFileOperation<'k> {
     WriteNormalFile {
         contents: Vec<Vec<u8>>,
-        options: zip::write::FullFileOptions,
+        options: zip::write::FullFileOptions<'k>,
     },
-    WriteDirectory(zip::write::FullFileOptions),
+    WriteDirectory(zip::write::FullFileOptions<'k>),
     WriteSymlinkWithTarget {
         target: PathBuf,
-        options: zip::write::FullFileOptions,
+        options: zip::write::FullFileOptions<'k>,
     },
-    ShallowCopy(Box<FileOperation>),
-    DeepCopy(Box<FileOperation>),
+    ShallowCopy(Box<FileOperation<'k>>),
+    DeepCopy(Box<FileOperation<'k>>),
 }
 
 #[derive(Arbitrary, Clone, Debug)]
-pub struct FileOperation {
-    basic: BasicFileOperation,
+pub struct FileOperation<'k> {
+    basic: BasicFileOperation<'k>,
     path: PathBuf,
     reopen: bool,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
 #[derive(Arbitrary, Clone, Debug)]
-pub struct FuzzTestCase {
+pub struct FuzzTestCase<'k> {
     comment: Vec<u8>,
-    operations: Vec<(FileOperation, bool)>,
+    operations: Vec<(FileOperation<'k>, bool)>,
     flush_on_finish_file: bool,
 }
 
 fn do_operation<T>(
     writer: &mut zip::ZipWriter<T>,
-    operation: &FileOperation,
+    operation: &FileOperation<'k>,
     abort: bool,
     flush_on_finish_file: bool,
 ) -> Result<(), Box<dyn std::error::Error>>
