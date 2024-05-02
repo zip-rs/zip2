@@ -55,7 +55,9 @@ impl CentralDirectoryEnd {
         const HEADER_SIZE: usize = 22;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let last_chunk_start = reader.seek(io::SeekFrom::End(-(std::cmp::min(file_length as usize, HEADER_SIZE + ::std::u16::MAX as usize) as i64)))?;
+        let last_chunk_start = reader.seek(io::SeekFrom::End(
+            -(std::cmp::min(file_length as usize, HEADER_SIZE + ::std::u16::MAX as usize) as i64),
+        ))?;
         let mut last_chunk = Vec::with_capacity(HEADER_SIZE + u16::MAX as usize);
         reader.read_to_end(&mut last_chunk)?;
 
@@ -156,7 +158,10 @@ impl Zip64CentralDirectoryEnd {
         while pos >= nominal_offset {
             reader.seek(io::SeekFrom::Start(pos))?;
 
-            buffer.resize(std::cmp::min(4096, HEADER_SIZE + (search_upper_bound-pos) as usize), 0u8);
+            buffer.resize(
+                std::cmp::min(4096, HEADER_SIZE + (search_upper_bound - pos) as usize),
+                0u8,
+            );
             reader.read_exact(&mut buffer)?;
             for i in 0..=buffer.len() - HEADER_SIZE {
                 let mut bufreader = &buffer[i..];
@@ -262,12 +267,15 @@ mod test {
         use std::io;
 
         // This is a valid CDE that _just_ fits (though there's nothing in front of it, so the offsets are wrong)
-        let v = vec![0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xe5, 0x00, 0x00, 0x00, 0xd3, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let v = vec![
+            0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xe5, 0x00,
+            0x00, 0x00, 0xd3, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
         let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v));
         assert!(cde.is_ok()); // This is ok, the offsets are checked elsewhere.
 
         // This is the same except the CDE is truncated by 4 bytes
-        let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v[0..v.len()-4]));
+        let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v[0..v.len() - 4]));
         assert!(cde.is_err());
     }
 
@@ -290,16 +298,23 @@ mod test {
         use std::io;
 
         // 56 byte zip64 Central Directory End (extracted manually from tests/data/zip64_demo.zip)
-        let cde64 = vec![0x50, 0x4b, 0x06, 0x06, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1e, 0x03, 0x2d, 0x00,
-                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                         0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                         0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let cde64 = vec![
+            0x50, 0x4b, 0x06, 0x06, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1e, 0x03,
+            0x2d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2f, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
 
         let mut haystack = vec![];
         haystack.resize(cde_start_pos, 0u8);
         haystack.extend_from_slice(&cde64);
         haystack.resize(total_size, 0u8);
-        let (_, offset) = Zip64CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&haystack), 0, haystack.len() as u64 - 56).expect("find_and_parse");
+        let (_, offset) = Zip64CentralDirectoryEnd::find_and_parse(
+            &mut io::Cursor::new(&haystack),
+            0,
+            haystack.len() as u64 - 56,
+        )
+        .expect("find_and_parse");
         offset
     }
 
@@ -330,11 +345,11 @@ mod test {
 
     #[test]
     fn zip64_cde_search_more_than_chunk_at_chunk_end() {
-        assert_eq!(8192-56, zip64_cde_search(8192-56, 8192));
+        assert_eq!(8192 - 56, zip64_cde_search(8192 - 56, 8192));
     }
 
     #[test]
     fn zip64_cde_search_more_than_chunk_straddling_chunk_end() {
-        assert_eq!(4096-30, zip64_cde_search(4096-30, 4200));
+        assert_eq!(4096 - 30, zip64_cde_search(4096 - 30, 4200));
     }
 }
