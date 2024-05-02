@@ -309,12 +309,16 @@ mod test {
         haystack.resize(cde_start_pos, 0u8);
         haystack.extend_from_slice(&cde64);
         haystack.resize(total_size, 0u8);
-        let (_, offset) = Zip64CentralDirectoryEnd::find_and_parse(
+        let results = Zip64CentralDirectoryEnd::find_and_parse(
             &mut io::Cursor::new(&haystack),
             0,
             haystack.len() as u64 - 56,
         )
         .expect("find_and_parse");
+        let (_, offset) = results
+            .into_iter()
+            .max_by_key(|(_, offset)| *offset)
+            .unwrap();
         offset
     }
 
