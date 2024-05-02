@@ -238,7 +238,7 @@ pub(crate) fn make_crypto_reader<'a>(
     using_data_descriptor: bool,
     reader: io::Take<&'a mut dyn Read>,
     password: Option<&[u8]>,
-    aes_info: Option<(AesMode, AesVendorVersion)>,
+    aes_info: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
     #[cfg(feature = "aes-crypto")] compressed_size: u64,
 ) -> ZipResult<CryptoReader<'a>> {
     #[allow(deprecated)]
@@ -256,7 +256,7 @@ pub(crate) fn make_crypto_reader<'a>(
             ))
         }
         #[cfg(feature = "aes-crypto")]
-        (Some(password), Some((aes_mode, vendor_version))) => {
+        (Some(password), Some((aes_mode, vendor_version, _))) => {
             match AesReader::new(reader, aes_mode, compressed_size).validate(password)? {
                 None => return Err(InvalidPassword),
                 Some(r) => CryptoReader::Aes {
@@ -996,7 +996,8 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 let mut out = [0u8];
                 reader.read_exact(&mut out)?;
                 let aes_mode = out[0];
-                let compression_method = reader.read_u16_le()?;
+                #[allow(deprecated)]
+                let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
 
                 if vendor_id != 0x4541 {
                     return Err(ZipError::InvalidArchive("Invalid AES vendor"));
@@ -1007,15 +1008,18 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                     _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
                 };
                 match aes_mode {
-                    0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version)),
-                    0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version)),
-                    0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version)),
+                    0x01 => {
+                        file.aes_mode = Some((AesMode::Aes128, vendor_version, compression_method))
+                    }
+                    0x02 => {
+                        file.aes_mode = Some((AesMode::Aes192, vendor_version, compression_method))
+                    }
+                    0x03 => {
+                        file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method))
+                    }
                     _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
                 };
-                file.compression_method = {
-                    #[allow(deprecated)]
-                    CompressionMethod::from_u16(compression_method)
-                };
+                file.compression_method = compression_method;
             }
             0x5455 => {
                 // extended timestamp

@@ -48,6 +48,7 @@ mod atomic {
 
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
+use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
@@ -362,7 +363,7 @@ pub struct ZipFileData {
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
     /// AES mode if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
+    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
 
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
     pub extra_fields: Vec<ExtraField>,
