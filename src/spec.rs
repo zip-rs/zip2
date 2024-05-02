@@ -56,7 +56,7 @@ impl CentralDirectoryEnd {
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
         let last_chunk_start = reader.seek(io::SeekFrom::End(
-            -(std::cmp::min(file_length as usize, HEADER_SIZE + ::std::u16::MAX as usize) as i64),
+            -(std::cmp::min(file_length as usize, HEADER_SIZE + u16::MAX as usize) as i64),
         ))?;
         let mut last_chunk = Vec::with_capacity(HEADER_SIZE + u16::MAX as usize);
         reader.read_to_end(&mut last_chunk)?;
@@ -305,8 +305,7 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
 
-        let mut haystack = vec![];
-        haystack.resize(cde_start_pos, 0u8);
+        let mut haystack = vec![0u8; cde_start_pos];
         haystack.extend_from_slice(&cde64);
         haystack.resize(total_size, 0u8);
         let results = Zip64CentralDirectoryEnd::find_and_parse(
