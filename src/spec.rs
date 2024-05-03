@@ -3,6 +3,7 @@ use crate::unstable::{LittleEndianReadExt, LittleEndianWriteExt};
 use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
+use std::mem::size_of_val;
 use std::path::{Component, Path};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
@@ -198,15 +199,15 @@ impl Zip64CentralDirectoryEnd {
                     ));
                 }
             }
-            if pos > 0 {
-                pos -= if has_end_sig {
-                    
+            let Some(new_pos) = pos.checked_sub(if has_end_sig {
+                    size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE)
                 } else {
                     1
-                };
-            } else {
+                }
+            ) else {
                 break;
-            }
+            };
+            pos = new_pos;
         }
         if results.is_empty() {
             Err(ZipError::InvalidArchive(
