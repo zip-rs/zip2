@@ -48,7 +48,7 @@ fn generate_random_zip32_archive_with_comment(comment_length: usize) -> ZipResul
 
     let mut bytes = vec![0u8; comment_length];
     getrandom(&mut bytes).unwrap();
-    writer.set_raw_comment(bytes.into());
+    writer.set_raw_comment(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
@@ -77,7 +77,7 @@ fn generate_random_zip64_archive_with_comment(comment_length: usize) -> ZipResul
 
     let mut bytes = vec![0u8; comment_length];
     getrandom(&mut bytes).unwrap();
-    writer.set_raw_comment(bytes.into());
+    writer.set_raw_comment(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;

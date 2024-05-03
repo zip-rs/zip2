@@ -1,13 +1,18 @@
 //! Types that specify what is contained in a ZIP.
+use crate::cp437::FromCp437;
+use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
 use std::fmt;
 use std::path;
 use std::sync::{Arc, OnceLock};
 
+#[cfg(doc)]
+use crate::read::ZipFile;
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-#[cfg(doc)]
-use {crate::read::ZipFile, crate::write::FileOptions};
+
+use crate::result::{ZipError, ZipResult};
+use crate::spec::{self, Block};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -22,6 +27,12 @@ use crate::types::ffi::S_IFDIR;
 use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+
+pub(crate) struct ZipRawValues {
+    pub(crate) crc32: u32,
+    pub(crate) compressed_size: u64,
+    pub(crate) uncompressed_size: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -545,6 +556,408 @@ impl ZipFileData {
             .as_ref()
             .map(|v| v.len())
             .unwrap_or_default()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
+        name: S,
+        options: &FileOptions<T>,
+        raw_values: ZipRawValues,
+        header_start: u64,
+        extra_data_start: Option<u64>,
+        aes_extra_data_start: u64,
+        compression_method: crate::compression::CompressionMethod,
+        aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+        extra_field: Option<Arc<Vec<u8>>>,
+    ) -> Self
+    where
+        S: Into<Box<str>>,
+    {
+        let permissions = options.permissions.unwrap_or(0o100644);
+        let file_name: Box<str> = name.into();
+        let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        ZipFileData {
+            system: System::Unix,
+            version_made_by: DEFAULT_VERSION,
+            encrypted: options.encrypt_with.is_some(),
+            using_data_descriptor: false,
+            compression_method,
+            compression_level: options.compression_level,
+            last_modified_time: Some(options.last_modified_time),
+            crc32: raw_values.crc32,
+            compressed_size: raw_values.compressed_size,
+            uncompressed_size: raw_values.uncompressed_size,
+            file_name, // Never used for saving, but used as map key in insert_file_data()
+            file_name_raw,
+            extra_field,
+            central_extra_field: options.extended_options.central_extra_data().cloned(),
+            file_comment: String::with_capacity(0).into_boxed_str(),
+            header_start,
+            data_start: OnceLock::new(),
+            central_header_start: 0,
+            external_attributes: permissions << 16,
+            large_file: options.large_file,
+            aes_mode,
+            extra_fields: Vec::new(),
+            extra_data_start,
+            aes_extra_data_start,
+        }
+    }
+
+    pub(crate) fn from_local_block<R: std::io::Read>(
+        block: ZipLocalEntryBlock,
+        reader: &mut R,
+    ) -> ZipResult<Self> {
+        let ZipLocalEntryBlock {
+            // magic,
+            version_made_by,
+            flags,
+            compression_method,
+            last_mod_time,
+            last_mod_date,
+            crc32,
+            compressed_size,
+            uncompressed_size,
+            file_name_length,
+            extra_field_length,
+            ..
+        } = block;
+
+        let encrypted: bool = flags & 1 == 1;
+        /* FIXME: these were previously incorrect: add testing! */
+        /* flags & (1 << 1) != 0 */
+        let is_utf8: bool = flags & (1 << 11) != 0;
+        /* flags & (1 << 3) != 0 */
+        let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
+        #[allow(deprecated)]
+        let compression_method = crate::CompressionMethod::from_u16(compression_method);
+        let file_name_length: usize = file_name_length.into();
+        let extra_field_length: usize = extra_field_length.into();
+
+        if encrypted {
+            return Err(ZipError::UnsupportedArchive(
+                "Encrypted files are not supported",
+            ));
+        }
+        if using_data_descriptor {
+            return Err(ZipError::UnsupportedArchive(
+                "The file length is not available in the local header",
+            ));
+        }
+
+        let mut file_name_raw = vec![0u8; file_name_length];
+        reader.read_exact(&mut file_name_raw)?;
+        let mut extra_field = vec![0u8; extra_field_length];
+        reader.read_exact(&mut extra_field)?;
+
+        let file_name: Box<str> = match is_utf8 {
+            true => String::from_utf8_lossy(&file_name_raw).into(),
+            false => file_name_raw.clone().from_cp437().into(),
+        };
+
+        let system: u8 = (version_made_by >> 8).try_into().unwrap();
+        Ok(ZipFileData {
+            system: System::from(system),
+            /* NB: this strips the top 8 bits! */
+            version_made_by: version_made_by as u8,
+            encrypted,
+            using_data_descriptor,
+            compression_method,
+            compression_level: None,
+            last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
+            crc32,
+            compressed_size: compressed_size.into(),
+            uncompressed_size: uncompressed_size.into(),
+            file_name,
+            file_name_raw: file_name_raw.into(),
+            extra_field: Some(Arc::new(extra_field)),
+            central_extra_field: None,
+            file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
+            // header_start and data start are not available, but also don't matter, since seeking is
+            // not available.
+            header_start: 0,
+            data_start: OnceLock::new(),
+            central_header_start: 0,
+            // The external_attributes field is only available in the central directory.
+            // We set this to zero, which should be valid as the docs state 'If input came
+            // from standard input, this field is set to zero.'
+            external_attributes: 0,
+            large_file: false,
+            aes_mode: None,
+            extra_fields: Vec::new(),
+            extra_data_start: None,
+            aes_extra_data_start: 0,
+        })
+    }
+
+    fn is_utf8(&self) -> bool {
+        std::str::from_utf8(&self.file_name_raw).is_ok()
+    }
+
+    fn is_ascii(&self) -> bool {
+        self.file_name_raw.is_ascii()
+    }
+
+    fn flags(&self) -> u16 {
+        (if self.is_utf8() && !self.is_ascii() {
+            1u16 << 11
+        } else {
+            0
+        }) | if self.encrypted { 1u16 << 0 } else { 0 }
+    }
+
+    pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
+        let (compressed_size, uncompressed_size) = if self.large_file {
+            (spec::ZIP64_BYTES_THR as u32, spec::ZIP64_BYTES_THR as u32)
+        } else {
+            (
+                self.compressed_size.try_into().unwrap(),
+                self.uncompressed_size.try_into().unwrap(),
+            )
+        };
+
+        let mut extra_field_length = self.extra_field_len();
+        if self.large_file {
+            /* TODO: magic number */
+            extra_field_length += 20;
+        }
+        if extra_field_length + self.central_extra_field_len() > u16::MAX as usize {
+            return Err(ZipError::InvalidArchive("Extra data field is too large"));
+        }
+        let extra_field_length: u16 = extra_field_length.try_into().unwrap();
+
+        let last_modified_time = self
+            .last_modified_time
+            .unwrap_or_else(DateTime::default_for_write);
+        Ok(ZipLocalEntryBlock {
+            magic: spec::LOCAL_FILE_HEADER_SIGNATURE,
+            version_made_by: self.version_needed(),
+            flags: self.flags(),
+            #[allow(deprecated)]
+            compression_method: self.compression_method.to_u16(),
+            last_mod_time: last_modified_time.timepart(),
+            last_mod_date: last_modified_time.datepart(),
+            crc32: self.crc32,
+            compressed_size,
+            uncompressed_size,
+            file_name_length: self.file_name_raw.len().try_into().unwrap(),
+            extra_field_length,
+        })
+    }
+
+    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipEntryBlock {
+        let extra_field_len: u16 = self.extra_field_len().try_into().unwrap();
+        let central_extra_field_len: u16 = self.central_extra_field_len().try_into().unwrap();
+        let last_modified_time = self
+            .last_modified_time
+            .unwrap_or_else(DateTime::default_for_write);
+        ZipEntryBlock {
+            magic: spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE,
+            version_made_by: (self.system as u16) << 8 | (self.version_made_by as u16),
+            version_to_extract: self.version_needed(),
+            flags: self.flags(),
+            #[allow(deprecated)]
+            compression_method: self.compression_method.to_u16(),
+            last_mod_time: last_modified_time.timepart(),
+            last_mod_date: last_modified_time.datepart(),
+            crc32: self.crc32,
+            compressed_size: self
+                .compressed_size
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .unwrap(),
+            uncompressed_size: self
+                .uncompressed_size
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .unwrap(),
+            file_name_length: self.file_name_raw.len().try_into().unwrap(),
+            extra_field_length: zip64_extra_field_length
+                + extra_field_len
+                + central_extra_field_len,
+            /* FIXME: this appears to be set to 0 in write_central_directory_header() on master? */
+            file_comment_length: self.file_comment.as_bytes().len().try_into().unwrap(),
+            disk_number: 0,
+            internal_file_attributes: 0,
+            external_file_attributes: self.external_attributes,
+            offset: self
+                .header_start
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .unwrap(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed)]
+pub(crate) struct ZipEntryBlock {
+    pub magic: spec::Magic,
+    pub version_made_by: u16,
+    pub version_to_extract: u16,
+    pub flags: u16,
+    pub compression_method: u16,
+    pub last_mod_time: u16,
+    pub last_mod_date: u16,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub file_name_length: u16,
+    pub extra_field_length: u16,
+    pub file_comment_length: u16,
+    pub disk_number: u16,
+    pub internal_file_attributes: u16,
+    pub external_file_attributes: u32,
+    pub offset: u32,
+}
+
+impl ZipEntryBlock {
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    fn from_le(mut self) -> Self {
+        from_le![
+            self,
+            [
+                (magic, spec::Magic),
+                (version_made_by, u16),
+                (version_to_extract, u16),
+                (flags, u16),
+                (compression_method, u16),
+                (last_mod_time, u16),
+                (last_mod_date, u16),
+                (crc32, u32),
+                (compressed_size, u32),
+                (uncompressed_size, u32),
+                (file_name_length, u16),
+                (extra_field_length, u16),
+                (file_comment_length, u16),
+                (disk_number, u16),
+                (internal_file_attributes, u16),
+                (external_file_attributes, u32),
+                (offset, u32),
+            ]
+        ];
+        self
+    }
+
+    #[inline(always)]
+    fn to_le(mut self) -> Self {
+        to_le![
+            self,
+            [
+                (magic, spec::Magic),
+                (version_made_by, u16),
+                (version_to_extract, u16),
+                (flags, u16),
+                (compression_method, u16),
+                (last_mod_time, u16),
+                (last_mod_date, u16),
+                (crc32, u32),
+                (compressed_size, u32),
+                (uncompressed_size, u32),
+                (file_name_length, u16),
+                (extra_field_length, u16),
+                (file_comment_length, u16),
+                (disk_number, u16),
+                (internal_file_attributes, u16),
+                (external_file_attributes, u32),
+                (offset, u32),
+            ]
+        ];
+        self
+    }
+}
+
+impl Block for ZipEntryBlock {
+    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+        let block = Self::deserialize(&bytes).from_le();
+
+        if block.magic != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
+        }
+
+        Ok(block)
+    }
+
+    fn encode(self) -> Box<[u8]> {
+        self.to_le().serialize()
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed)]
+pub(crate) struct ZipLocalEntryBlock {
+    magic: spec::Magic,
+    pub version_made_by: u16,
+    pub flags: u16,
+    pub compression_method: u16,
+    pub last_mod_time: u16,
+    pub last_mod_date: u16,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub file_name_length: u16,
+    pub extra_field_length: u16,
+}
+
+impl ZipLocalEntryBlock {
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    fn from_le(mut self) -> Self {
+        from_le![
+            self,
+            [
+                (magic, spec::Magic),
+                (version_made_by, u16),
+                (flags, u16),
+                (compression_method, u16),
+                (last_mod_time, u16),
+                (last_mod_date, u16),
+                (crc32, u32),
+                (compressed_size, u32),
+                (uncompressed_size, u32),
+                (file_name_length, u16),
+                (extra_field_length, u16),
+            ]
+        ];
+        self
+    }
+
+    #[inline(always)]
+    fn to_le(mut self) -> Self {
+        to_le![
+            self,
+            [
+                (magic, spec::Magic),
+                (version_made_by, u16),
+                (flags, u16),
+                (compression_method, u16),
+                (last_mod_time, u16),
+                (last_mod_date, u16),
+                (crc32, u32),
+                (compressed_size, u32),
+                (uncompressed_size, u32),
+                (file_name_length, u16),
+                (extra_field_length, u16),
+            ]
+        ];
+        self
+    }
+}
+
+impl Block for ZipLocalEntryBlock {
+    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+        let block = Self::deserialize(&bytes).from_le();
+
+        if block.magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid local file header"));
+        }
+
+        Ok(block)
+    }
+
+    fn encode(self) -> Box<[u8]> {
+        self.to_le().serialize()
     }
 }
 

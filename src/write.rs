@@ -5,10 +5,10 @@ use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
 use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
-use crate::spec;
+use crate::spec::{self, Block};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
-use crate::types::{ffi, AesVendorVersion, DateTime, System, ZipFileData, DEFAULT_VERSION};
+use crate::types::{ffi, AesVendorVersion, DateTime, ZipFileData, ZipRawValues, DEFAULT_VERSION};
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
@@ -22,7 +22,7 @@ use std::io::{BufReader, SeekFrom};
 use std::marker::PhantomData;
 use std::mem;
 use std::str::{from_utf8, Utf8Error};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 #[cfg(any(
     feature = "deflate",
@@ -147,11 +147,6 @@ struct ZipWriterStats {
     bytes_written: u64,
 }
 
-struct ZipRawValues {
-    crc32: u32,
-    compressed_size: u64,
-    uncompressed_size: u64,
-}
 mod sealed {
     use std::sync::Arc;
 
@@ -188,7 +183,7 @@ mod sealed {
 }
 
 #[derive(Copy, Clone, Debug)]
-enum EncryptWith<'k> {
+pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
         mode: AesMode,
@@ -223,9 +218,9 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) last_modified_time: DateTime,
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
-    encrypt_with: Option<EncryptWith<'k>>,
-    extended_options: T,
-    alignment: u16,
+    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
+    pub(crate) extended_options: T,
+    pub(crate) alignment: u16,
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
 }
@@ -509,7 +504,8 @@ impl ZipWriterStats {
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
     pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
-        let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
+        let (footer, cde_start_pos) =
+            spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
         let metadata = ZipArchive::get_metadata(&mut readwriter, &footer, cde_start_pos)?;
 
         Ok(ZipWriter {
@@ -777,7 +773,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             let header_start = self.inner.get_plain().stream_position()?;
 
-            let permissions = options.permissions.unwrap_or(0o100644);
             let (compression_method, aes_mode) = match options.encrypt_with {
                 #[cfg(feature = "aes-crypto")]
                 Some(EncryptWith::Aes { mode, .. }) => (
@@ -786,76 +781,38 @@ impl<W: Write + Seek> ZipWriter<W> {
                 ),
                 _ => (options.compression_method, None),
             };
-            let last_modified_time = options.last_modified_time;
-            let file = ZipFileData {
-                system: System::Unix,
-                version_made_by: DEFAULT_VERSION,
-                encrypted: options.encrypt_with.is_some(),
-                using_data_descriptor: false,
-                compression_method,
-                compression_level: options.compression_level,
-                last_modified_time: Some(options.last_modified_time),
-                crc32: raw_values.crc32,
-                compressed_size: raw_values.compressed_size,
-                uncompressed_size: raw_values.uncompressed_size,
-                file_name: name.to_owned().into(), // Never used for saving, but used as map key in insert_file_data()
-                file_name_raw: name.into().bytes().collect(),
-                extra_field,
-                central_extra_field: options.extended_options.central_extra_data().cloned(),
-                file_comment: String::with_capacity(0).into_boxed_str(),
-                header_start,
-                extra_data_start: None,
-                data_start: OnceLock::new(),
-                central_header_start: 0,
-                external_attributes: permissions << 16,
-                large_file: options.large_file,
-                aes_mode,
-                aes_extra_data_start,
 
-                extra_fields: Vec::new(),
-            };
+            let file = ZipFileData::initialize_local_block(
+                name,
+                &options,
+                raw_values,
+                header_start,
+                None,
+                aes_extra_data_start,
+                compression_method,
+                aes_mode,
+                extra_field,
+            );
+
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
             let writer = self.inner.get_plain();
-            // local file header signature
-            writer.write_u32_le(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
-            // version needed to extract
-            writer.write_u16_le(file.version_needed())?;
-            // general purpose bit flag
-            let is_utf8 = std::str::from_utf8(&file.file_name_raw).is_ok();
-            let is_ascii = file.file_name_raw.is_ascii();
-            let flag = if is_utf8 && !is_ascii { 1u16 << 11 } else { 0 }
-                | if file.encrypted { 1u16 << 0 } else { 0 };
-            writer.write_u16_le(flag)?;
-            // Compression method
-            #[allow(deprecated)]
-            writer.write_u16_le(file.compression_method.to_u16())?;
-            // last mod file time and last mod file date
-            writer.write_u16_le(last_modified_time.timepart())?;
-            writer.write_u16_le(last_modified_time.datepart())?;
-            // crc-32
-            writer.write_u32_le(file.crc32)?;
-            // compressed size and uncompressed size
-            if file.large_file {
-                writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-                writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-            } else {
-                writer.write_u32_le(file.compressed_size as u32)?;
-                writer.write_u32_le(file.uncompressed_size as u32)?;
+
+            let block = match file.local_block() {
+                Ok(block) => block,
+                Err(e) => {
+                    let _ = self.abort_file();
+                    return Err(e);
+                }
+            };
+            match block.write(writer) {
+                Ok(()) => (),
+                Err(e) => {
+                    let _ = self.abort_file();
+                    return Err(e);
+                }
             }
-            // file name length
-            writer.write_u16_le(file.file_name_raw.len() as u16)?;
-            // extra field length
-            let mut extra_field_length = file.extra_field_len();
-            if file.large_file {
-                extra_field_length += 20;
-            }
-            if extra_field_length + file.central_extra_field_len() > u16::MAX as usize {
-                let _ = self.abort_file();
-                return Err(InvalidArchive("Extra data field is too large"));
-            }
-            let extra_field_length = extra_field_length as u16;
-            writer.write_u16_le(extra_field_length)?;
+
             // file name
             writer.write_all(&file.file_name_raw)?;
             // zip64 extra field
@@ -873,7 +830,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 if unaligned_header_bytes != 0 {
                     let pad_length = (align - unaligned_header_bytes) as usize;
                     let Some(new_extra_field_length) =
-                        (pad_length as u16).checked_add(extra_field_length)
+                        (pad_length as u16).checked_add(block.extra_field_length)
                     else {
                         let _ = self.abort_file();
                         return Err(InvalidArchive(
@@ -1431,7 +1388,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         let number_of_files = self.files.len().min(spec::ZIP64_ENTRY_THR) as u16;
-        let footer = spec::CentralDirectoryEnd {
+        let footer = spec::Zip32CentralDirectoryEnd {
             disk_number: 0,
             disk_with_central_directory: 0,
             zip_file_comment: self.comment.clone(),
@@ -1805,52 +1762,9 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let zip64_extra_field_length =
         write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
 
-    // central file header signature
-    writer.write_u32_le(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
-    // version made by
-    let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
-    writer.write_u16_le(version_made_by)?;
-    // version needed to extract
-    writer.write_u16_le(file.version_needed())?;
-    // general puprose bit flag
-    let is_utf8 = std::str::from_utf8(&file.file_name_raw).is_ok();
-    let is_ascii = file.file_name_raw.is_ascii();
-    let flag = if is_utf8 && !is_ascii { 1u16 << 11 } else { 0 }
-        | if file.encrypted { 1u16 << 0 } else { 0 };
-    writer.write_u16_le(flag)?;
-    // compression method
-    #[allow(deprecated)]
-    writer.write_u16_le(file.compression_method.to_u16())?;
-    let last_modified_time = file
-        .last_modified_time
-        .unwrap_or_else(DateTime::default_for_write);
-    // last mod file time + date
-    writer.write_u16_le(last_modified_time.timepart())?;
-    writer.write_u16_le(last_modified_time.datepart())?;
-    // crc-32
-    writer.write_u32_le(file.crc32)?;
-    // compressed size
-    writer.write_u32_le(file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
-    // uncompressed size
-    writer.write_u32_le(file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
-    // file name length
-    writer.write_u16_le(file.file_name_raw.len() as u16)?;
-    // extra field length
-    writer.write_u16_le(
-        zip64_extra_field_length
-            + file.extra_field_len() as u16
-            + file.central_extra_field_len() as u16,
-    )?;
-    // file comment length
-    writer.write_u16_le(0)?;
-    // disk number start
-    writer.write_u16_le(0)?;
-    // internal file attributes
-    writer.write_u16_le(0)?;
-    // external file attributes
-    writer.write_u32_le(file.external_attributes)?;
-    // relative offset of local header
-    writer.write_u32_le(file.header_start.min(spec::ZIP64_BYTES_THR) as u32)?;
+    let block = file.block(zip64_extra_field_length);
+    block.write(writer)?;
+
     // file name
     writer.write_all(&file.file_name_raw)?;
     // zip64 extra field
@@ -1926,6 +1840,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     Ok(())
 }
 
+/* TODO: make this use the Block trait somehow! */
 fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<u16> {
     // The order of the fields in the zip64 extended
     // information record is fixed, but the fields MUST
@@ -2074,7 +1989,7 @@ mod test {
         writer
             .start_file_from_path(path, SimpleFileOptions::default())
             .unwrap();
-        let archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
+        let archive = writer.finish_into_readable().unwrap();
         assert_eq!(Some("foo/example.txt"), archive.name_for_index(0));
     }
 
@@ -2227,8 +2142,7 @@ mod test {
         writer
             .shallow_copy_file(SECOND_FILENAME, SECOND_FILENAME)
             .expect_err("Duplicate filename");
-        let zip = writer.finish().unwrap();
-        let mut reader = ZipArchive::new(zip).unwrap();
+        let mut reader = writer.finish_into_readable().unwrap();
         let mut file_names: Vec<&str> = reader.file_names().collect();
         file_names.sort();
         let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME];
@@ -2512,7 +2426,7 @@ mod test {
         let contents = b"sleeping";
         let () = zip.start_file("sleep", options).unwrap();
         let _count = zip.write(&contents[..]).unwrap();
-        let mut zip = ZipArchive::new(zip.finish().unwrap()).unwrap();
+        let mut zip = zip.finish_into_readable().unwrap();
         let file = zip.by_index(0).unwrap();
         assert_eq!(file.name(), "sleep");
         assert_eq!(file.data_start(), page_size.into());
