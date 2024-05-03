@@ -322,6 +322,7 @@ pub(crate) fn make_reader(
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct CentralDirectoryInfo {
     pub(crate) archive_offset: u64,
     pub(crate) directory_start: u64,

@@ -56,7 +56,7 @@ impl CentralDirectoryEnd {
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + u16::MAX as u64);
+        let search_upper_bound = 0;
 
         if file_length < HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
