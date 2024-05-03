@@ -200,11 +200,10 @@ impl Zip64CentralDirectoryEnd {
                 }
             }
             let Some(new_pos) = pos.checked_sub(if has_end_sig {
-                    size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE) as u64
-                } else {
-                    1
-                }
-            ) else {
+                size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE) as u64
+            } else {
+                1
+            }) else {
                 break;
             };
             pos = new_pos;
