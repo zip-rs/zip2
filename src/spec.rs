@@ -1,19 +1,156 @@
+#![allow(clippy::wrong_self_convention)]
+#![macro_use]
+
 use crate::result::{ZipError, ZipResult};
-use crate::unstable::{LittleEndianReadExt, LittleEndianWriteExt};
+use memchr::memmem::FinderRev;
 use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
+use std::mem;
 use std::path::{Component, Path, MAIN_SEPARATOR};
 
-pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
-pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
-pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: u32 = 0x06054b50;
-pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: u32 = 0x06064b50;
-pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: u32 = 0x07064b50;
+pub type Magic = u32;
+
+pub const LOCAL_FILE_HEADER_SIGNATURE: Magic = 0x04034b50;
+pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Magic = 0x02014b50;
+pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: Magic = 0x06054b50;
+pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Magic = 0x06064b50;
+pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Magic = 0x07064b50;
 
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
+pub trait Block: Sized + Copy {
+    /* TODO: use smallvec? */
+    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self>;
+
+    fn deserialize(block: &[u8]) -> Self {
+        assert_eq!(block.len(), mem::size_of::<Self>());
+        let block_ptr: *const Self = block.as_ptr().cast();
+        unsafe { block_ptr.read() }
+    }
+
+    fn parse<T: Read>(reader: &mut T) -> ZipResult<Self> {
+        let mut block = vec![0u8; mem::size_of::<Self>()];
+        reader.read_exact(&mut block)?;
+        Self::interpret(block.into_boxed_slice())
+    }
+
+    fn encode(self) -> Box<[u8]>;
+
+    fn serialize(self) -> Box<[u8]> {
+        let mut out_block = vec![0u8; mem::size_of::<Self>()];
+        let out_view: &mut [u8] = out_block.as_mut();
+        let out_ptr: *mut Self = out_view.as_mut_ptr().cast();
+        unsafe {
+            out_ptr.write(self);
+        }
+        out_block.into_boxed_slice()
+    }
+
+    fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        let block = self.encode();
+        writer.write_all(&block)?;
+        Ok(())
+    }
+}
+
+/// Convert all the fields of a struct *from* little-endian representations.
+macro_rules! from_le {
+    ($obj:ident, $field:ident, $type:ty) => {
+        $obj.$field = <$type>::from_le($obj.$field);
+    };
+    ($obj:ident, [($field:ident, $type:ty) $(,)?]) => {
+        from_le![$obj, $field, $type];
+    };
+    ($obj:ident, [($field:ident, $type:ty), $($rest:tt),+ $(,)?]) => {
+        from_le![$obj, $field, $type];
+        from_le!($obj, [$($rest),+]);
+    };
+}
+
+/// Convert all the fields of a struct *into* little-endian representations.
+macro_rules! to_le {
+    ($obj:ident, $field:ident, $type:ty) => {
+        $obj.$field = <$type>::to_le($obj.$field);
+    };
+    ($obj:ident, [($field:ident, $type:ty) $(,)?]) => {
+        to_le![$obj, $field, $type];
+    };
+    ($obj:ident, [($field:ident, $type:ty), $($rest:tt),+ $(,)?]) => {
+        to_le![$obj, $field, $type];
+        to_le!($obj, [$($rest),+]);
+    };
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed)]
+pub struct CDEBlock {
+    pub magic: Magic,
+    pub disk_number: u16,
+    pub disk_with_central_directory: u16,
+    pub number_of_files_on_this_disk: u16,
+    pub number_of_files: u16,
+    pub central_directory_size: u32,
+    pub central_directory_offset: u32,
+    pub zip_file_comment_length: u16,
+}
+
+impl CDEBlock {
+    #[inline(always)]
+    fn from_le(mut self) -> Self {
+        from_le![
+            self,
+            [
+                (magic, Magic),
+                (disk_number, u16),
+                (disk_with_central_directory, u16),
+                (number_of_files_on_this_disk, u16),
+                (number_of_files, u16),
+                (central_directory_size, u32),
+                (central_directory_offset, u32),
+                (zip_file_comment_length, u16)
+            ]
+        ];
+        self
+    }
+
+    #[inline(always)]
+    fn to_le(mut self) -> Self {
+        to_le![
+            self,
+            [
+                (magic, Magic),
+                (disk_number, u16),
+                (disk_with_central_directory, u16),
+                (number_of_files_on_this_disk, u16),
+                (number_of_files, u16),
+                (central_directory_size, u32),
+                (central_directory_offset, u32),
+                (zip_file_comment_length, u16)
+            ]
+        ];
+        self
+    }
+}
+
+impl Block for CDEBlock {
+    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+        let block = Self::deserialize(&bytes).from_le();
+
+        if block.magic != CENTRAL_DIRECTORY_END_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
+        }
+
+        Ok(block)
+    }
+
+    fn encode(self) -> Box<[u8]> {
+        self.to_le().serialize()
+    }
+}
+
+#[derive(Debug)]
 pub struct CentralDirectoryEnd {
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
@@ -21,23 +158,49 @@ pub struct CentralDirectoryEnd {
     pub number_of_files: u16,
     pub central_directory_size: u32,
     pub central_directory_offset: u32,
+    /* TODO: box instead? */
     pub zip_file_comment: Vec<u8>,
 }
 
 impl CentralDirectoryEnd {
+    fn block_and_comment(self) -> ZipResult<(CDEBlock, Vec<u8>)> {
+        let Self {
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment,
+        } = self;
+        let block = CDEBlock {
+            magic: CENTRAL_DIRECTORY_END_SIGNATURE,
+
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment_length: zip_file_comment.len().try_into().unwrap_or(u16::MAX),
+        };
+        Ok((block, zip_file_comment))
+    }
+
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd> {
-        let magic = reader.read_u32_le()?;
-        if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
-        }
-        let disk_number = reader.read_u16_le()?;
-        let disk_with_central_directory = reader.read_u16_le()?;
-        let number_of_files_on_this_disk = reader.read_u16_le()?;
-        let number_of_files = reader.read_u16_le()?;
-        let central_directory_size = reader.read_u32_le()?;
-        let central_directory_offset = reader.read_u32_le()?;
-        let zip_file_comment_length = reader.read_u16_le()? as usize;
-        let mut zip_file_comment = vec![0; zip_file_comment_length];
+        let CDEBlock {
+            // magic,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment_length,
+            ..
+        } = CDEBlock::parse(reader)?;
+
+        let mut zip_file_comment = vec![0u8; zip_file_comment_length as usize];
         reader.read_exact(&mut zip_file_comment)?;
 
         Ok(CentralDirectoryEnd {
@@ -52,49 +215,121 @@ impl CentralDirectoryEnd {
     }
 
     pub fn find_and_parse<T: Read + Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u64)> {
-        const HEADER_SIZE: u64 = 22;
-        const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let search_upper_bound = 0;
-
-        if file_length < HEADER_SIZE {
+        if file_length < mem::size_of::<CDEBlock>() as u64 {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
         }
 
-        let mut pos = file_length - HEADER_SIZE;
-        while pos >= search_upper_bound {
-            reader.seek(io::SeekFrom::Start(pos))?;
-            if reader.read_u32_le()? == CENTRAL_DIRECTORY_END_SIGNATURE {
-                reader.seek(io::SeekFrom::Current(
-                    BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
-                ))?;
-                let cde_start_pos = reader.seek(io::SeekFrom::Start(pos))?;
-                if let Ok(end_header) = CentralDirectoryEnd::parse(reader) {
-                    return Ok((end_header, cde_start_pos));
+        let search_upper_bound = 0;
+
+        const END_WINDOW_SIZE: usize = 512;
+
+        let sig_bytes = CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        let finder = FinderRev::new(&sig_bytes);
+
+        let mut window_start: u64 = file_length.saturating_sub(END_WINDOW_SIZE as u64);
+        let mut window = [0u8; END_WINDOW_SIZE];
+        while window_start >= search_upper_bound {
+            /* Go to the start of the window in the file. */
+            reader.seek(io::SeekFrom::Start(window_start))?;
+
+            /* Identify how many bytes to read (this may be less than the window size for files
+             * smaller than END_WINDOW_SIZE). */
+            let end = (window_start + END_WINDOW_SIZE as u64).min(file_length);
+            let cur_len = (end - window_start) as usize;
+            debug_assert!(cur_len <= END_WINDOW_SIZE);
+            let cur_window: &mut [u8] = &mut window[..cur_len];
+            /* Read the window into the bytes! */
+            reader.read_exact(cur_window)?;
+
+            /* Find instances of the magic signature. */
+            for offset in finder.rfind_iter(cur_window) {
+                let cde_start_pos = window_start + offset as u64;
+                reader.seek(io::SeekFrom::Start(cde_start_pos))?;
+                if let Ok(cde) = Self::parse(reader) {
+                    return Ok((cde, cde_start_pos));
                 }
             }
-            pos = match pos.checked_sub(1) {
-                Some(p) => p,
-                None => break,
-            };
+            if window_start == search_upper_bound {
+                break;
+            }
+            debug_assert!(END_WINDOW_SIZE > mem::size_of_val(&CENTRAL_DIRECTORY_END_SIGNATURE));
+            window_start = window_start
+                .saturating_sub(
+                    END_WINDOW_SIZE as u64
+                        - mem::size_of_val(&CENTRAL_DIRECTORY_END_SIGNATURE) as u64,
+                )
+                .max(search_upper_bound);
         }
+
         Err(ZipError::InvalidArchive(
             "Could not find central directory end",
         ))
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        writer.write_u32_le(CENTRAL_DIRECTORY_END_SIGNATURE)?;
-        writer.write_u16_le(self.disk_number)?;
-        writer.write_u16_le(self.disk_with_central_directory)?;
-        writer.write_u16_le(self.number_of_files_on_this_disk)?;
-        writer.write_u16_le(self.number_of_files)?;
-        writer.write_u32_le(self.central_directory_size)?;
-        writer.write_u32_le(self.central_directory_offset)?;
-        writer.write_u16_le(self.zip_file_comment.len() as u16)?;
-        writer.write_all(&self.zip_file_comment)?;
+    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        let (block, comment) = self.block_and_comment()?;
+        block.write(writer)?;
+        writer.write_all(&comment)?;
         Ok(())
+    }
+}
+
+#[derive(Copy, Clone)]
+#[repr(packed)]
+pub struct Zip64CDELocatorBlock {
+    pub magic: Magic,
+    pub disk_with_central_directory: u32,
+    pub end_of_central_directory_offset: u64,
+    pub number_of_disks: u32,
+}
+
+impl Zip64CDELocatorBlock {
+    #[inline(always)]
+    fn from_le(mut self) -> Self {
+        from_le![
+            self,
+            [
+                (magic, Magic),
+                (disk_with_central_directory, u32),
+                (end_of_central_directory_offset, u64),
+                (number_of_disks, u32),
+            ]
+        ];
+        self
+    }
+
+    #[inline(always)]
+    fn to_le(mut self) -> Self {
+        to_le![
+            self,
+            [
+                (magic, Magic),
+                (disk_with_central_directory, u32),
+                (end_of_central_directory_offset, u64),
+                (number_of_disks, u32),
+            ]
+        ];
+        self
+    }
+}
+
+impl Block for Zip64CDELocatorBlock {
+    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+        let block = Self::deserialize(&bytes).from_le();
+
+        if block.magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
+            return Err(ZipError::InvalidArchive(
+                "Invalid zip64 locator digital signature header",
+            ));
+        }
+
+        Ok(block)
+    }
+
+    fn encode(self) -> Box<[u8]> {
+        self.to_le().serialize()
     }
 }
 
@@ -106,15 +341,13 @@ pub struct Zip64CentralDirectoryEndLocator {
 
 impl Zip64CentralDirectoryEndLocator {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
-        let magic = reader.read_u32_le()?;
-        if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
-            return Err(ZipError::InvalidArchive(
-                "Invalid zip64 locator digital signature header",
-            ));
-        }
-        let disk_with_central_directory = reader.read_u32_le()?;
-        let end_of_central_directory_offset = reader.read_u64_le()?;
-        let number_of_disks = reader.read_u32_le()?;
+        let Zip64CDELocatorBlock {
+            // magic,
+            disk_with_central_directory,
+            end_of_central_directory_offset,
+            number_of_disks,
+            ..
+        } = Zip64CDELocatorBlock::parse(reader)?;
 
         Ok(Zip64CentralDirectoryEndLocator {
             disk_with_central_directory,
@@ -123,12 +356,95 @@ impl Zip64CentralDirectoryEndLocator {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        writer.write_u32_le(ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE)?;
-        writer.write_u32_le(self.disk_with_central_directory)?;
-        writer.write_u64_le(self.end_of_central_directory_offset)?;
-        writer.write_u32_le(self.number_of_disks)?;
-        Ok(())
+    pub fn block(self) -> Zip64CDELocatorBlock {
+        let Self {
+            disk_with_central_directory,
+            end_of_central_directory_offset,
+            number_of_disks,
+        } = self;
+        Zip64CDELocatorBlock {
+            magic: ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE,
+            disk_with_central_directory,
+            end_of_central_directory_offset,
+            number_of_disks,
+        }
+    }
+
+    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        self.block().write(writer)
+    }
+}
+
+#[derive(Copy, Clone)]
+#[repr(packed)]
+pub struct Zip64CDEBlock {
+    pub magic: Magic,
+    pub record_size: u64,
+    pub version_made_by: u16,
+    pub version_needed_to_extract: u16,
+    pub disk_number: u32,
+    pub disk_with_central_directory: u32,
+    pub number_of_files_on_this_disk: u64,
+    pub number_of_files: u64,
+    pub central_directory_size: u64,
+    pub central_directory_offset: u64,
+}
+
+impl Zip64CDEBlock {
+    #[inline(always)]
+    fn from_le(mut self) -> Self {
+        from_le![
+            self,
+            [
+                (magic, Magic),
+                (record_size, u64),
+                (version_made_by, u16),
+                (version_needed_to_extract, u16),
+                (disk_number, u32),
+                (disk_with_central_directory, u32),
+                (number_of_files_on_this_disk, u64),
+                (number_of_files, u64),
+                (central_directory_size, u64),
+                (central_directory_offset, u64),
+            ]
+        ];
+        self
+    }
+
+    #[inline(always)]
+    fn to_le(mut self) -> Self {
+        to_le![
+            self,
+            [
+                (magic, Magic),
+                (record_size, u64),
+                (version_made_by, u16),
+                (version_needed_to_extract, u16),
+                (disk_number, u32),
+                (disk_with_central_directory, u32),
+                (number_of_files_on_this_disk, u64),
+                (number_of_files, u64),
+                (central_directory_size, u64),
+                (central_directory_offset, u64),
+            ]
+        ];
+        self
+    }
+}
+
+impl Block for Zip64CDEBlock {
+    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+        let block = Self::deserialize(&bytes).from_le();
+
+        if block.magic != ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
+        }
+
+        Ok(block)
+    }
+
+    fn encode(self) -> Box<[u8]> {
+        self.to_le().serialize()
     }
 }
 
@@ -145,52 +461,83 @@ pub struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
+    pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEnd> {
+        let Zip64CDEBlock {
+            // record_size,
+            version_made_by,
+            version_needed_to_extract,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            ..
+        } = Zip64CDEBlock::parse(reader)?;
+        Ok(Self {
+            version_made_by,
+            version_needed_to_extract,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+        })
+    }
+
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
         nominal_offset: u64,
         search_upper_bound: u64,
     ) -> ZipResult<Vec<(Zip64CentralDirectoryEnd, u64)>> {
         let mut results = Vec::new();
-        let mut pos = search_upper_bound;
 
-        while pos >= nominal_offset {
-            reader.seek(io::SeekFrom::Start(pos))?;
+        const END_WINDOW_SIZE: usize = 2048;
 
-            if reader.read_u32_le()? == ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
-                let archive_offset = pos - nominal_offset;
+        let sig_bytes = ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        let finder = FinderRev::new(&sig_bytes);
 
-                let _record_size = reader.read_u64_le()?;
-                // We would use this value if we did anything with the "zip64 extensible data sector".
+        let mut window_start: u64 = search_upper_bound
+            .saturating_sub(END_WINDOW_SIZE as u64)
+            .max(nominal_offset);
+        let mut window = [0u8; END_WINDOW_SIZE];
+        while window_start >= nominal_offset {
+            reader.seek(io::SeekFrom::Start(window_start))?;
 
-                let version_made_by = reader.read_u16_le()?;
-                let version_needed_to_extract = reader.read_u16_le()?;
-                let disk_number = reader.read_u32_le()?;
-                let disk_with_central_directory = reader.read_u32_le()?;
-                let number_of_files_on_this_disk = reader.read_u64_le()?;
-                let number_of_files = reader.read_u64_le()?;
-                let central_directory_size = reader.read_u64_le()?;
-                let central_directory_offset = reader.read_u64_le()?;
+            /* Identify how many bytes to read (this may be less than the window size for files
+             * smaller than END_WINDOW_SIZE). */
+            let end = (window_start + END_WINDOW_SIZE as u64).min(search_upper_bound);
+            let cur_len = (end - window_start) as usize;
+            debug_assert!(cur_len <= END_WINDOW_SIZE);
+            let cur_window: &mut [u8] = &mut window[..cur_len];
+            /* Read the window into the bytes! */
+            reader.read_exact(cur_window)?;
 
-                results.push((
-                    Zip64CentralDirectoryEnd {
-                        version_made_by,
-                        version_needed_to_extract,
-                        disk_number,
-                        disk_with_central_directory,
-                        number_of_files_on_this_disk,
-                        number_of_files,
-                        central_directory_size,
-                        central_directory_offset,
-                    },
-                    archive_offset,
-                ));
+            /* Find instances of the magic signature. */
+            for offset in finder.rfind_iter(cur_window) {
+                let cde_start_pos = window_start + offset as u64;
+                reader.seek(io::SeekFrom::Start(cde_start_pos))?;
+
+                let archive_offset = cde_start_pos - nominal_offset;
+                let cde = Self::parse(reader)?;
+
+                results.push((cde, archive_offset));
             }
-            if pos > 0 {
-                pos -= 1;
-            } else {
+            if window_start == nominal_offset {
                 break;
             }
+            debug_assert!(
+                END_WINDOW_SIZE > mem::size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE)
+            );
+            window_start = window_start
+                .saturating_sub(
+                    END_WINDOW_SIZE as u64
+                        - mem::size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE) as u64,
+                )
+                .max(nominal_offset);
         }
+
         if results.is_empty() {
             Err(ZipError::InvalidArchive(
                 "Could not find ZIP64 central directory end",
@@ -200,18 +547,34 @@ impl Zip64CentralDirectoryEnd {
         }
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        writer.write_u32_le(ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE)?;
-        writer.write_u64_le(44)?; // record size
-        writer.write_u16_le(self.version_made_by)?;
-        writer.write_u16_le(self.version_needed_to_extract)?;
-        writer.write_u32_le(self.disk_number)?;
-        writer.write_u32_le(self.disk_with_central_directory)?;
-        writer.write_u64_le(self.number_of_files_on_this_disk)?;
-        writer.write_u64_le(self.number_of_files)?;
-        writer.write_u64_le(self.central_directory_size)?;
-        writer.write_u64_le(self.central_directory_offset)?;
-        Ok(())
+    pub fn block(self) -> Zip64CDEBlock {
+        let Self {
+            version_made_by,
+            version_needed_to_extract,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+        } = self;
+        Zip64CDEBlock {
+            magic: ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE,
+            /* currently unused */
+            record_size: 44,
+            version_made_by,
+            version_needed_to_extract,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+        }
+    }
+
+    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        self.block().write(writer)
     }
 }
 
@@ -273,5 +636,52 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
         } else {
             original.to_string()
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::io::Cursor;
+
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+    #[repr(packed)]
+    pub struct TestBlock {
+        pub magic: Magic,
+        pub file_name_length: u16,
+    }
+
+    impl TestBlock {
+        fn from_le(mut self) -> Self {
+            from_le![self, [(magic, Magic), (file_name_length, u16)]];
+            self
+        }
+        fn to_le(mut self) -> Self {
+            to_le![self, [(magic, Magic), (file_name_length, u16)]];
+            self
+        }
+    }
+
+    impl Block for TestBlock {
+        fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+            Ok(Self::deserialize(&bytes).from_le())
+        }
+        fn encode(self) -> Box<[u8]> {
+            self.to_le().serialize()
+        }
+    }
+
+    /// Demonstrate that a block object can be safely written to memory and deserialized back out.
+    #[test]
+    fn block_serde() {
+        let block = TestBlock {
+            magic: 0x01111,
+            file_name_length: 3,
+        };
+        let mut c = Cursor::new(Vec::new());
+        block.write(&mut c).unwrap();
+        c.set_position(0);
+        let block2 = TestBlock::parse(&mut c).unwrap();
+        assert_eq!(block, block2);
     }
 }
