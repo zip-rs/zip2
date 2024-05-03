@@ -4,9 +4,9 @@
 //! Note that using CRC with AES depends on the used encryption specification, AE-1 or AE-2.
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
-use crate::aes_ctr;
 use crate::aes_ctr::AesCipher;
 use crate::types::AesMode;
+use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use rand::RngCore;
@@ -84,12 +84,7 @@ impl<R: Read> AesReader<R> {
     /// password was provided.
     /// It isn't possible to check the authentication code in this step. This will be done after
     /// reading and decrypting the file.
-    ///
-    /// # Returns
-    ///
-    /// If the password verification failed `Ok(None)` will be returned to match the validate
-    /// method of ZipCryptoReader.
-    pub fn validate(mut self, password: &[u8]) -> io::Result<Option<AesReaderValid<R>>> {
+    pub fn validate(mut self, password: &[u8]) -> Result<AesReaderValid<R>, ZipError> {
         let salt_length = self.aes_mode.salt_length();
         let key_length = self.aes_mode.key_length();
 
@@ -115,19 +110,19 @@ impl<R: Read> AesReader<R> {
         // the last 2 bytes should equal the password verification value
         if pwd_verification_value != pwd_verify {
             // wrong password
-            return Ok(None);
+            return Err(ZipError::InvalidPassword);
         }
 
         let cipher = Cipher::from_mode(self.aes_mode, decrypt_key);
         let hmac = Hmac::<Sha1>::new_from_slice(hmac_key).unwrap();
 
-        Ok(Some(AesReaderValid {
+        Ok(AesReaderValid {
             reader: self.reader,
             data_remaining: self.data_length,
             cipher,
             hmac,
             finalized: false,
-        }))
+        })
     }
 }
 
@@ -309,11 +304,12 @@ mod tests {
 
     use crate::{
         aes::{AesReader, AesWriter},
+        result::ZipError,
         types::AesMode,
     };
 
     /// Checks whether `AesReader` can successfully decrypt what `AesWriter` produces.
-    fn roundtrip(aes_mode: AesMode, password: &[u8], plaintext: &[u8]) -> io::Result<bool> {
+    fn roundtrip(aes_mode: AesMode, password: &[u8], plaintext: &[u8]) -> Result<bool, ZipError> {
         let mut buf = io::Cursor::new(vec![]);
         let mut read_buffer = vec![];
 
@@ -329,15 +325,7 @@ mod tests {
         {
             let compressed_length = buf.get_ref().len() as u64;
             let mut reader =
-                match AesReader::new(&mut buf, aes_mode, compressed_length).validate(password)? {
-                    None => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Invalid authentication code",
-                        ))
-                    }
-                    Some(r) => r,
-                };
+                AesReader::new(&mut buf, aes_mode, compressed_length).validate(password)?;
             reader.read_to_end(&mut read_buffer)?;
         }
 

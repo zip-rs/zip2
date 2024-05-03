@@ -256,25 +256,17 @@ pub(crate) fn make_crypto_reader<'a>(
             ))
         }
         #[cfg(feature = "aes-crypto")]
-        (Some(password), Some((aes_mode, vendor_version, _))) => {
-            match AesReader::new(reader, aes_mode, compressed_size).validate(password)? {
-                None => return Err(InvalidPassword),
-                Some(r) => CryptoReader::Aes {
-                    reader: r,
-                    vendor_version,
-                },
-            }
-        }
+        (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
+            reader: AesReader::new(reader, aes_mode, compressed_size).validate(password)?,
+            vendor_version,
+        },
         (Some(password), None) => {
             let validator = if using_data_descriptor {
                 ZipCryptoValidator::InfoZipMsdosTime(last_modified_time.timepart())
             } else {
                 ZipCryptoValidator::PkzipCrc32(crc32)
             };
-            match ZipCryptoReader::new(reader, password).validate(validator)? {
-                None => return Err(InvalidPassword),
-                Some(r) => CryptoReader::ZipCrypto(r),
-            }
+            CryptoReader::ZipCrypto(ZipCryptoReader::new(reader, password).validate(validator)?)
         }
         (None, Some(_)) => return Err(InvalidPassword),
         (None, None) => CryptoReader::Plaintext(reader),
