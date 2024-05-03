@@ -67,7 +67,8 @@ impl CentralDirectoryEnd {
         }
 
         let mut pos = last_chunk.len() - HEADER_SIZE;
-        loop {
+        while pos >= search_upper_bound {
+            reader.seek(io::SeekFrom::Start(pos))?;
             if (&last_chunk[pos..]).read_u32_le()? == CENTRAL_DIRECTORY_END_SIGNATURE {
                 let cde_start_pos = last_chunk_start + pos as u64;
                 if let Ok(end_header) = CentralDirectoryEnd::parse(&mut &last_chunk[pos..]) {
