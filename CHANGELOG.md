@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.4](https://github.com/zip-rs/zip2/compare/v1.1.3...v1.1.4) - 2024-05-03
+
+### <!-- 1 -->🐛 Bug Fixes
+- Build was failing with bzip2 enabled
+- use is_dir in more places where Windows paths might be handled incorrectly
+
+### <!-- 9 -->◀️ Revert
+- [#58](https://github.com/zip-rs/zip2/pull/58) (partial): `bzip2-rs` can't replace `bzip2` because it's decompress-only
+
 ## [1.1.3](https://github.com/zip-rs/zip2/compare/v1.1.2...v1.1.3) - 2024-04-30
 
 ### <!-- 1 -->🐛 Bug Fixes
