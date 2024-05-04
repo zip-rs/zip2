@@ -516,10 +516,13 @@ impl Zip64CentralDirectoryEnd {
              * smaller than END_WINDOW_SIZE). */
             let end = (window_start + END_WINDOW_SIZE as u64).min(search_upper_bound);
 
+            debug_assert!(end >= window_start);
             let cur_len = (end - window_start) as usize;
+            if cur_len == 0 {
+                break;
+            }
             debug_assert!(cur_len <= END_WINDOW_SIZE);
             let cur_window: &mut [u8] = &mut window[..cur_len];
-            assert!(!cur_window.is_empty());
             /* Read the window into the bytes! */
             reader.read_exact(cur_window)?;
 
