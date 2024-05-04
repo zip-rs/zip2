@@ -247,19 +247,26 @@ impl CentralDirectoryEnd {
             for offset in finder.rfind_iter(cur_window) {
                 let cde_start_pos = window_start + offset as u64;
                 reader.seek(io::SeekFrom::Start(cde_start_pos))?;
+                /* Drop any headers that don't parse. */
                 if let Ok(cde) = Self::parse(reader) {
                     return Ok((cde, cde_start_pos));
                 }
             }
+
             if window_start == search_upper_bound {
                 break;
             }
             debug_assert!(END_WINDOW_SIZE > mem::size_of_val(&CENTRAL_DIRECTORY_END_SIGNATURE));
             window_start = window_start
                 .saturating_sub(
+                    /* Shift the window upon each iteration. */
                     END_WINDOW_SIZE as u64
+                        /* But don't shift all the way -- make sure to catch matches across window
+                         * boundaries! */
                         - mem::size_of_val(&CENTRAL_DIRECTORY_END_SIGNATURE) as u64,
                 )
+                /* This will never go below the value of `search_upper_bound`, so we have a special
+                 * `if window_start == search_upper_bound` check above. */
                 .max(search_upper_bound);
         }
 
@@ -512,6 +519,7 @@ impl Zip64CentralDirectoryEnd {
             let cur_len = (end - window_start) as usize;
             debug_assert!(cur_len <= END_WINDOW_SIZE);
             let cur_window: &mut [u8] = &mut window[..cur_len];
+            assert!(!cur_window.is_empty());
             /* Read the window into the bytes! */
             reader.read_exact(cur_window)?;
 
@@ -526,6 +534,7 @@ impl Zip64CentralDirectoryEnd {
 
                 results.push((cde, archive_offset));
             }
+
             if window_start == nominal_offset {
                 break;
             }
@@ -534,9 +543,14 @@ impl Zip64CentralDirectoryEnd {
             );
             window_start = window_start
                 .saturating_sub(
+                    /* Shift the window upon each iteration. */
                     END_WINDOW_SIZE as u64
+                        /* But don't shift all the way -- make sure to catch matches across window
+                         * boundaries! */
                         - mem::size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE) as u64,
                 )
+                /* This will never go below the value of `nominal_offset`, so we have a special
+                 * `if window_start == nominal_offset` check above. */
                 .max(nominal_offset);
         }
 
