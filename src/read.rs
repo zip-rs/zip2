@@ -480,11 +480,18 @@ impl<R: Read + Seek> ZipArchive<R> {
             .ok_or(ZipError::InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
             ))?;
-        let search_results = spec::Zip64CentralDirectoryEnd::find_and_parse(
-            reader,
-            locator64.end_of_central_directory_offset,
-            search_upper_bound,
-        )?;
+        let (lower, upper) = if locator64.end_of_central_directory_offset > search_upper_bound {
+            (
+                search_upper_bound,
+                locator64.end_of_central_directory_offset,
+            )
+        } else {
+            (
+                locator64.end_of_central_directory_offset,
+                search_upper_bound,
+            )
+        };
+        let search_results = spec::Zip64CentralDirectoryEnd::find_and_parse(reader, lower, upper)?;
         search_results.into_iter().for_each(|(footer64, archive_offset)| {
             results.push({
                 let directory_start_result = footer64

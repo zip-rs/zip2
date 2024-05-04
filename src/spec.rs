@@ -508,6 +508,7 @@ impl Zip64CentralDirectoryEnd {
             /* Identify how many bytes to read (this may be less than the window size for files
              * smaller than END_WINDOW_SIZE). */
             let end = (window_start + END_WINDOW_SIZE as u64).min(search_upper_bound);
+
             let cur_len = (end - window_start) as usize;
             debug_assert!(cur_len <= END_WINDOW_SIZE);
             let cur_window: &mut [u8] = &mut window[..cur_len];
@@ -519,6 +520,7 @@ impl Zip64CentralDirectoryEnd {
                 let cde_start_pos = window_start + offset as u64;
                 reader.seek(io::SeekFrom::Start(cde_start_pos))?;
 
+                debug_assert!(cde_start_pos >= nominal_offset);
                 let archive_offset = cde_start_pos - nominal_offset;
                 let cde = Self::parse(reader)?;
 
