@@ -13,7 +13,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::io::{self, empty, Empty, prelude::*};
+use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -171,13 +171,10 @@ impl<'a> Read for ZipFileReader<'a> {
     }
 }
 
-static EMPTY: Empty = empty();
-
 impl<'a> ZipFileReader<'a> {
-    
     /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> io::Take<&'a mut dyn Read> {
-        match self {
+    pub fn drain(self) {
+        let mut inner = match self {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Raw(r) => r,
             ZipFileReader::Stored(r) => r.into_inner().into_inner(),
@@ -191,10 +188,15 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::Zstd(r) => r.into_inner().finish().into_inner().into_inner(),
             #[cfg(feature = "lzma")]
             ZipFileReader::Lzma(r) => {
-                let _ = r.into_inner().finish();
-                Read::take(unsafe {((&EMPTY as *const Empty) as *mut Empty).as_mut()}.unwrap(), 0)
+                // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
+                // it separately
+                if let Ok(mut remaining) = r.into_inner().finish() {
+                    let _ = copy(&mut remaining, &mut sink());
+                }
+                return;
             }
-        }
+        };
+        let _ = copy(&mut inner, &mut sink());
     }
 }
 
@@ -1212,30 +1214,20 @@ impl<'a> Drop for ZipFile<'a> {
         // self.data is Owned, this reader is constructed by a streaming reader.
         // In this case, we want to exhaust the reader so that the next file is accessible.
         if let Cow::Owned(_) = self.data {
-            let mut buffer = [0; 1 << 16];
-
             // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
-            let mut reader: io::Take<&mut dyn Read> = match &mut self.reader {
+            match &mut self.reader {
                 ZipFileReader::NoReader => {
                     let innerreader = self.crypto_reader.take();
-                    innerreader.expect("Invalid reader state").into_inner()
+                    let _ = copy(
+                        &mut innerreader.expect("Invalid reader state").into_inner(),
+                        &mut sink(),
+                    );
                 }
                 reader => {
                     let innerreader = std::mem::replace(reader, ZipFileReader::NoReader);
-                    innerreader.into_inner()
+                    innerreader.drain();
                 }
             };
-
-            #[allow(clippy::unused_io_amount)]
-            loop {
-                match reader.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(_read) => (),
-                    Err(e) => {
-                        panic!("Could not consume all of the output of the current ZipFile: {e:?}")
-                    }
-                }
-            }
         }
     }
 }
