@@ -13,7 +13,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::io::{self, prelude::*};
+use std::io::{self, empty, Empty, prelude::*};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -171,7 +171,10 @@ impl<'a> Read for ZipFileReader<'a> {
     }
 }
 
+static EMPTY: Empty = empty();
+
 impl<'a> ZipFileReader<'a> {
+    
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> io::Take<&'a mut dyn Read> {
         match self {
@@ -188,8 +191,8 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::Zstd(r) => r.into_inner().finish().into_inner().into_inner(),
             #[cfg(feature = "lzma")]
             ZipFileReader::Lzma(r) => {
-                let inner: Box<_> = r.into_inner().finish().unwrap().into();
-                Read::take(Box::leak(inner), u64::MAX)
+                let _ = r.into_inner().finish();
+                Read::take(unsafe {((&EMPTY as *const Empty) as *mut Empty).as_mut()}.unwrap(), 0)
             }
         }
     }
