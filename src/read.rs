@@ -238,7 +238,7 @@ pub(crate) fn make_crypto_reader<'a>(
     using_data_descriptor: bool,
     reader: io::Take<&'a mut dyn Read>,
     password: Option<&[u8]>,
-    aes_info: Option<(AesMode, AesVendorVersion)>,
+    aes_info: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
     #[cfg(feature = "aes-crypto")] compressed_size: u64,
 ) -> ZipResult<CryptoReader<'a>> {
     #[allow(deprecated)]
@@ -256,25 +256,17 @@ pub(crate) fn make_crypto_reader<'a>(
             ))
         }
         #[cfg(feature = "aes-crypto")]
-        (Some(password), Some((aes_mode, vendor_version))) => {
-            match AesReader::new(reader, aes_mode, compressed_size).validate(password)? {
-                None => return Err(InvalidPassword),
-                Some(r) => CryptoReader::Aes {
-                    reader: r,
-                    vendor_version,
-                },
-            }
-        }
+        (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
+            reader: AesReader::new(reader, aes_mode, compressed_size).validate(password)?,
+            vendor_version,
+        },
         (Some(password), None) => {
             let validator = if using_data_descriptor {
                 ZipCryptoValidator::InfoZipMsdosTime(last_modified_time.timepart())
             } else {
                 ZipCryptoValidator::PkzipCrc32(crc32)
             };
-            match ZipCryptoReader::new(reader, password).validate(validator)? {
-                None => return Err(InvalidPassword),
-                Some(r) => CryptoReader::ZipCrypto(r),
-            }
+            CryptoReader::ZipCrypto(ZipCryptoReader::new(reader, password).validate(validator)?)
         }
         (None, Some(_)) => return Err(InvalidPassword),
         (None, None) => CryptoReader::Plaintext(reader),
@@ -927,11 +919,13 @@ fn central_header_to_zip_file_inner<R: Read>(
         central_extra_field: None,
         file_comment,
         header_start: offset,
+        extra_data_start: None,
         central_header_start,
         data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
+        aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
 
@@ -996,7 +990,8 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 let mut out = [0u8];
                 reader.read_exact(&mut out)?;
                 let aes_mode = out[0];
-                let compression_method = reader.read_u16_le()?;
+                #[allow(deprecated)]
+                let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
 
                 if vendor_id != 0x4541 {
                     return Err(ZipError::InvalidArchive("Invalid AES vendor"));
@@ -1007,15 +1002,18 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                     _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
                 };
                 match aes_mode {
-                    0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version)),
-                    0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version)),
-                    0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version)),
+                    0x01 => {
+                        file.aes_mode = Some((AesMode::Aes128, vendor_version, compression_method))
+                    }
+                    0x02 => {
+                        file.aes_mode = Some((AesMode::Aes192, vendor_version, compression_method))
+                    }
+                    0x03 => {
+                        file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method))
+                    }
                     _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
                 };
-                file.compression_method = {
-                    #[allow(deprecated)]
-                    CompressionMethod::from_u16(compression_method)
-                };
+                file.compression_method = compression_method;
             }
             0x5455 => {
                 // extended timestamp
@@ -1312,6 +1310,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
         header_start: 0,
+        extra_data_start: None,
         data_start: OnceLock::new(),
         central_header_start: 0,
         // The external_attributes field is only available in the central directory.
@@ -1320,6 +1319,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         external_attributes: 0,
         large_file: false,
         aes_mode: None,
+        aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
 
