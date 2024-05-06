@@ -2,7 +2,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use replace_with::replace_with_or_abort;
+use replace_with::replace_with;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
 
@@ -83,7 +83,9 @@ where
     }
     if operation.reopen {
         let old_comment = writer.get_raw_comment().to_owned();
-        replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+        replace_with(writer, || {
+            panic!("Failed to reopen writer");
+        }, |old_writer: zip::ZipWriter<T>| {
             let new_writer =
                 zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap();
             assert_eq!(&old_comment, new_writer.get_raw_comment());
