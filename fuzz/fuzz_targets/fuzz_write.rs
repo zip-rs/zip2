@@ -9,7 +9,7 @@ use std::path::PathBuf;
 #[derive(Arbitrary, Clone, Debug)]
 pub enum BasicFileOperation<'k> {
     WriteNormalFile {
-        contents: Vec<Vec<u8>>,
+        contents: Box<[Box<[u8]>]>,
         options: zip::write::FullFileOptions<'k>,
     },
     WriteDirectory(zip::write::FullFileOptions<'k>),
@@ -19,13 +19,21 @@ pub enum BasicFileOperation<'k> {
     },
     ShallowCopy(Box<FileOperation<'k>>),
     DeepCopy(Box<FileOperation<'k>>),
+    MergeWithOtherFile(Box<[FileOperation<'k>]>)
+}
+
+#[derive(Arbitrary, Clone, Debug)]
+pub enum ReopenOption {
+    DoNotReopen,
+    ViaFinish,
+    ViaFinishIntoReadable
 }
 
 #[derive(Arbitrary, Clone, Debug)]
 pub struct FileOperation<'k> {
     basic: BasicFileOperation<'k>,
     path: PathBuf,
-    reopen: bool,
+    reopen: ReopenOption,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
@@ -53,14 +61,14 @@ where
             options,
             ..
         } => {
-            let uncompressed_size = contents.iter().map(Vec::len).sum::<usize>();
+            let uncompressed_size = contents.iter().map(|chunk| chunk.len()).sum::<usize>();
             let mut options = (*options).to_owned();
             if uncompressed_size >= u32::MAX as usize {
                 options = options.large_file(true);
             }
             writer.start_file_from_path(path, options)?;
-            for chunk in contents {
-                writer.write_all(chunk.as_slice())?;
+            for chunk in contents.iter() {
+                writer.write_all(&chunk)?;
             }
         }
         BasicFileOperation::WriteDirectory(options) => {
@@ -77,19 +85,33 @@ where
             do_operation(writer, &base, false, flush_on_finish_file)?;
             writer.deep_copy_file_from_path(&base.path, &path)?;
         }
+        BasicFileOperation::MergeWithOtherFile(other_ops) => {
+            let mut other_writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            other_ops.iter().for_each(|operation| {
+                let _ = do_operation(
+                    &mut other_writer,
+                    &operation,
+                    abort,
+                    false,
+                );
+            });
+            writer.merge_archive(other_writer.finish_into_readable()?)?;
+        }
     }
     if abort {
         writer.abort_file().unwrap();
     }
-    if operation.reopen {
-        let old_comment = writer.get_raw_comment().to_owned();
-        replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-            let new_writer =
-                zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap();
-            assert_eq!(&old_comment, new_writer.get_raw_comment());
-            new_writer
-        });
+    let old_comment = writer.get_raw_comment().to_owned();
+    match operation.reopen {
+        ReopenOption::DoNotReopen => {},
+        ReopenOption::ViaFinish => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+            zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap()
+        }),
+        ReopenOption::ViaFinishIntoReadable => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+            zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
+        }),
     }
+    assert_eq!(&old_comment, writer.get_raw_comment());
     Ok(())
 }
 
