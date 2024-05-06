@@ -14,38 +14,6 @@ pub(crate) mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
-#[cfg(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-))]
-mod atomic {
-    use crossbeam_utils::sync::ShardedLock;
-    pub use std::sync::atomic::Ordering;
-
-    #[derive(Debug, Default)]
-    pub struct AtomicU64 {
-        value: ShardedLock<u64>,
-    }
-
-    impl AtomicU64 {
-        pub fn new(v: u64) -> Self {
-            Self {
-                value: ShardedLock::new(v),
-            }
-        }
-        pub fn get_mut(&mut self) -> &mut u64 {
-            self.value.get_mut().unwrap()
-        }
-        pub fn load(&self, _: Ordering) -> u64 {
-            *self.value.read().unwrap()
-        }
-        pub fn store(&self, value: u64, _: Ordering) {
-            *self.value.write().unwrap() = value;
-        }
-    }
-}
-
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
 use crate::types::ffi::S_IFDIR;
