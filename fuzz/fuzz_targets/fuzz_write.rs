@@ -19,7 +19,10 @@ pub enum BasicFileOperation<'k> {
     },
     ShallowCopy(Box<FileOperation<'k>>),
     DeepCopy(Box<FileOperation<'k>>),
-    MergeWithOtherFile(Box<[FileOperation<'k>]>)
+    MergeWithOtherFile {
+        first: Box<FileOperation<'k>>,
+        rest: Box<[FileOperation<'k>]>
+    }
 }
 
 #[derive(Arbitrary, Clone, Debug)]
@@ -85,13 +88,14 @@ where
             do_operation(writer, &base, false, flush_on_finish_file)?;
             writer.deep_copy_file_from_path(&base.path, &path)?;
         }
-        BasicFileOperation::MergeWithOtherFile(other_ops) => {
+        BasicFileOperation::MergeWithOtherFile { first, rest } => {
             let mut other_writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-            other_ops.iter().for_each(|operation| {
+            let _ = do_operation(&mut other_writer, &first, false, flush_on_finish_file);
+            rest.iter().for_each(|operation| {
                 let _ = do_operation(
                     &mut other_writer,
                     &operation,
-                    abort,
+                    false,
                     false,
                 );
             });

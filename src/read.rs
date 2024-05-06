@@ -329,14 +329,10 @@ impl<R> ZipArchive<R> {
         reader: R,
         central_start: u64,
     ) -> ZipResult<Self> {
-        if files.is_empty() {
-            return Err(ZipError::InvalidArchive(
-                "attempt to finalize empty zip writer into readable",
-            ));
-        }
-        /* This is where the whole file starts. */
-        let (_, first_header) = files.first().unwrap();
-        let initial_offset = first_header.header_start;
+        let initial_offset = match files.first() {
+            Some((_, file)) => file.header_start,
+            None => 0,
+        };
         let shared = Arc::new(zip_archive::Shared {
             files,
             offset: initial_offset,
@@ -368,10 +364,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         mut w: W,
     ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
-        let mut new_files = self.shared.files.clone();
-        if new_files.is_empty() {
+        if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
+        let mut new_files = self.shared.files.clone();
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
          * definitely be greater than 0.
