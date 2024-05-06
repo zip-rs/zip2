@@ -1902,7 +1902,7 @@ mod test {
             .start_file_from_path(path, SimpleFileOptions::default())
             .unwrap();
         let archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
-        assert_eq!(Some("/foo/example.txt"), archive.name_for_index(0));
+        assert_eq!(Some("foo/example.txt"), archive.name_for_index(0));
     }
 
     #[test]
