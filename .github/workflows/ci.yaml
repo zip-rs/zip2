@@ -221,7 +221,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_bad_inputs
-          path: fuzz/artifacts/fuzz_write/crash-*
+          path: |
+            fuzz/artifacts/fuzz_write/crash-*
+            fuzz/artifacts/fuzz_write/leak-*
           if-no-files-found: ignore
       - name: Minimize seed corpus
         if: always()
