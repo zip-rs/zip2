@@ -2301,4 +2301,16 @@ mod test {
         let written = writer.finish().unwrap();
         let _ = ZipWriter::new_append(written).unwrap();
     }
+    
+    #[cfg(bzip2)]
+    #[test]
+    fn test_crash_bzip2_level_0() {
+        let options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Bzip2)
+            .compression_level(Some(0));
+        writer.start_file("foo", options).unwrap();
+        writer.write_all(&[255, 255, 44, 255, 0]).unwrap();
+        let written = writer.finish().unwrap();
+        let _ = ZipWriter::new_append(written).unwrap();
+    }
 }
