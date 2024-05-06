@@ -3,8 +3,8 @@
 use crate::compression::CompressionMethod;
 use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
-use crate::{HasZipMetadata, spec};
 use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
+use crate::{spec, HasZipMetadata};
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
