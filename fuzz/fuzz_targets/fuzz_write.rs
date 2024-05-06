@@ -5,6 +5,7 @@ use libfuzzer_sys::fuzz_target;
 use replace_with::replace_with_or_abort;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
+use zip::result::ZipError;
 
 #[derive(Arbitrary, Clone, Debug)]
 pub enum BasicFileOperation<'k> {
@@ -103,7 +104,11 @@ where
         }
     }
     if abort {
-        writer.abort_file().unwrap();
+        match writer.abort_file() {
+            Ok(()) => {},
+            Err(ZipError::FileNotFound) => {},
+            Err(e) => return Err(Box::new(e))
+        }
     }
     let old_comment = writer.get_raw_comment().to_owned();
     match operation.reopen {
