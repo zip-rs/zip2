@@ -82,7 +82,7 @@ pub(crate) mod zip_archive {
 
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
-use crate::result::ZipError::InvalidPassword;
+use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
 use crate::spec::path_to_string;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
@@ -283,39 +283,61 @@ pub(crate) fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
     reader: CryptoReader,
-) -> ZipFileReader {
+) -> ZipResult<ZipFileReader> {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
     match compression_method {
-        CompressionMethod::Stored => {
-            ZipFileReader::Stored(Crc32Reader::new(reader, crc32, ae2_encrypted))
-        }
+        CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(
+            reader,
+            crc32,
+            ae2_encrypted,
+        ))),
         #[cfg(feature = "_deflate-any")]
         CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
-            ZipFileReader::Deflated(Crc32Reader::new(deflate_reader, crc32, ae2_encrypted))
+            Ok(ZipFileReader::Deflated(Crc32Reader::new(
+                deflate_reader,
+                crc32,
+                ae2_encrypted,
+            )))
         }
         #[cfg(feature = "deflate64")]
         CompressionMethod::Deflate64 => {
             let deflate64_reader = Deflate64Decoder::new(reader);
-            ZipFileReader::Deflate64(Crc32Reader::new(deflate64_reader, crc32, ae2_encrypted))
+            Ok(ZipFileReader::Deflate64(Crc32Reader::new(
+                deflate64_reader,
+                crc32,
+                ae2_encrypted,
+            )))
         }
         #[cfg(feature = "bzip2")]
         CompressionMethod::Bzip2 => {
             let bzip2_reader = BzDecoder::new(reader);
-            ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32, ae2_encrypted))
+            Ok(ZipFileReader::Bzip2(Crc32Reader::new(
+                bzip2_reader,
+                crc32,
+                ae2_encrypted,
+            )))
         }
         #[cfg(feature = "zstd")]
         CompressionMethod::Zstd => {
             let zstd_reader = ZstdDecoder::new(reader).unwrap();
-            ZipFileReader::Zstd(Crc32Reader::new(zstd_reader, crc32, ae2_encrypted))
+            Ok(ZipFileReader::Zstd(Crc32Reader::new(
+                zstd_reader,
+                crc32,
+                ae2_encrypted,
+            )))
         }
         #[cfg(feature = "lzma")]
         CompressionMethod::Lzma => {
             let reader = LzmaDecoder::new(reader);
-            ZipFileReader::Lzma(Crc32Reader::new(Box::new(reader), crc32, ae2_encrypted))
+            Ok(ZipFileReader::Lzma(Crc32Reader::new(
+                Box::new(reader),
+                crc32,
+                ae2_encrypted,
+            )))
         }
-        _ => panic!("Compression method not supported"),
+        _ => Err(UnsupportedArchive("Compression method not supported")),
     }
 }
 
@@ -1042,13 +1064,13 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
-    fn get_reader(&mut self) -> &mut ZipFileReader<'a> {
+    fn get_reader(&mut self) -> ZipResult<&mut ZipFileReader<'a>> {
         if let ZipFileReader::NoReader = self.reader {
             let data = &self.data;
             let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
-            self.reader = make_reader(data.compression_method, data.crc32, crypto_reader)
+            self.reader = make_reader(data.compression_method, data.crc32, crypto_reader)?;
         }
-        &mut self.reader
+        Ok(&mut self.reader)
     }
 
     pub(crate) fn get_raw_reader(&mut self) -> &mut dyn Read {
@@ -1205,7 +1227,7 @@ impl<'a> ZipFile<'a> {
 
 impl<'a> Read for ZipFile<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.get_reader().read(buf)
+        self.get_reader()?.read(buf)
     }
 }
 
@@ -1345,7 +1367,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
         crypto_reader: None,
-        reader: make_reader(result_compression_method, result_crc32, crypto_reader),
+        reader: make_reader(result_compression_method, result_crc32, crypto_reader)?,
     }))
 }
 
