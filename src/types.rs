@@ -48,8 +48,8 @@ mod atomic {
 
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
-use crate::CompressionMethod;
 use crate::types::ffi::S_IFDIR;
+use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
