@@ -53,10 +53,11 @@ impl CentralDirectoryEnd {
 
     pub fn find_and_parse<T: Read + Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u64)> {
         const HEADER_SIZE: u64 = 22;
+        const MAX_HEADER_AND_COMMENT_SIZE: u64 = 66000;
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + u16::MAX as u64);
+        let search_upper_bound = file_length.saturating_sub(MAX_HEADER_AND_COMMENT_SIZE);
 
         if file_length < HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
