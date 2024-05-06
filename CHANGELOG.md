@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.0](https://github.com/zip-rs/zip2/compare/v1.1.4...v1.2.0) - 2024-05-06
+
+### <!-- 0 -->🚀 Features
+- Add method `decompressed_size()` so non-recursive ZIP bombs can be detected
+
+### <!-- 2 -->🚜 Refactor
+- Make `ZipWriter::finish()` consume the `ZipWriter`
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Use panic! rather than abort to ensure the fuzz harness can process the failure
+- Update fuzz_write to use replace_with
+- Remove a drop that can no longer be explicit
+- Add `#![allow(unexpected_cfgs)]` in nightly
+
 ## [1.1.4](https://github.com/zip-rs/zip2/compare/v1.1.3...v1.1.4) - 2024-05-04
 
 ### <!-- 1 -->🐛 Bug Fixes
