@@ -217,7 +217,7 @@ impl Zip64CentralDirectoryEnd {
 }
 
 /// Converts a path to the ZIP format (forward-slash-delimited and normalized).
-pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
+pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
     let mut maybe_original = None;
     if let Some(original) = path.as_ref().to_str() {
         if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
@@ -238,9 +238,6 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
     let mut recreate = maybe_original.is_none();
     let mut normalized_components = Vec::new();
 
-    // Empty element ensures the path has a leading slash, with no extra allocation after the join
-    normalized_components.push(Cow::Borrowed(""));
-
     for component in path.as_ref().components() {
         match component {
             Component::Normal(os_str) => match os_str.to_str() {
@@ -252,9 +249,7 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
             },
             Component::ParentDir => {
                 recreate = true;
-                if normalized_components.len() > 1 {
-                    normalized_components.pop();
-                }
+                normalized_components.pop();
             }
             _ => {
                 recreate = true;
@@ -262,17 +257,8 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
         }
     }
     if recreate {
-        normalized_components.join("/")
+        normalized_components.join("/").into()
     } else {
-        drop(normalized_components);
-        let original = maybe_original.unwrap();
-        if !original.starts_with('/') {
-            let mut slash_original = String::with_capacity(original.len() + 1);
-            slash_original.push('/');
-            slash_original.push_str(original);
-            slash_original
-        } else {
-            original.to_string()
-        }
+        maybe_original.unwrap().into()
     }
 }
