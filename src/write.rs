@@ -246,7 +246,11 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut options = FullFileOptions {
             compression_method: CompressionMethod::arbitrary(u)?,
-            compression_level: None,
+            compression_level: if bool::arbitrary(u)? {
+                Some(u.int_in_range(0..=24)?)
+            } else {
+                None
+            },
             last_modified_time: DateTime::arbitrary(u)?,
             permissions: Option::<u32>::arbitrary(u)?,
             large_file: bool::arbitrary(u)?,
@@ -256,27 +260,9 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
             zopfli_buffer_size: None,
             ..Default::default()
         };
-        match options.compression_method {
-            #[cfg(feature = "deflate-zopfli")]
-            CompressionMethod::Deflated => {
-                if bool::arbitrary(u)? {
-                    let level = u.int_in_range(0..=24)?;
-                    options.compression_level = Some(level);
-                    if level > Compression::best().level().try_into().unwrap() {
-                        options.zopfli_buffer_size = Some(1 << u.int_in_range(9..=30)?);
-                    }
-                }
-            }
-            Stored => {
-                if bool::arbitrary(u)? {
-                    options.compression_level = Some(1);
-                }
-            }
-            _ => {
-                if bool::arbitrary(u)? {
-                    options.compression_level = Some(u.int_in_range(0..=10)?);
-                }
-            }
+        #[cfg(feature = "deflate-zopfli")]
+        if options.compression_method == CompressionMethod::Deflated && bool::arbitrary(u)? {
+            options.zopfli_buffer_size = Some(1 << u.int_in_range(9..=30)?);
         }
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
             options
