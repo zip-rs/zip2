@@ -9,7 +9,6 @@ use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
 use indexmap::IndexMap;
-use std::convert::TryInto;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -221,6 +220,7 @@ impl arbitrary::Arbitrary<'_> for FileOptions<ExtendedFileOptions> {
         match options.compression_method {
             #[cfg(feature = "deflate-zopfli")]
             CompressionMethod::Deflated => {
+                use core::convert::TryInto;
                 if bool::arbitrary(u)? {
                     let level = u.int_in_range(0..=24)?;
                     options.compression_level = Some(level);
@@ -400,6 +400,8 @@ impl FileOptions<ExtendedFileOptions> {
 impl<T: FileOptionExtension> Default for FileOptions<T> {
     /// Construct a new FileOptions object
     fn default() -> Self {
+        #[cfg(feature = "time")]
+        use core::convert::TryInto;
         Self {
             compression_method: Default::default(),
             compression_level: None,
@@ -1602,6 +1604,7 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     value: T,
     range: std::ops::RangeInclusive<U>,
 ) -> Option<T> {
+    use core::convert::TryInto;
     if range.contains(&value.try_into().ok()?) {
         Some(value)
     } else {
