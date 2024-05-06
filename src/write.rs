@@ -1287,6 +1287,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         *options.permissions.as_mut().unwrap() |= 0o40000;
         options.compression_method = Stored;
+        options.encrypt_with = None;
 
         let name_as_string = name.into();
         // Append a slash to the filename if it does not end with it.

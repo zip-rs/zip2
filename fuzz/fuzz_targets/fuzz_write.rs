@@ -36,7 +36,7 @@ pub struct FuzzTestCase<'k> {
     flush_on_finish_file: bool,
 }
 
-fn do_operation<T>(
+fn do_operation<'k, T>(
     writer: &mut zip::ZipWriter<T>,
     operation: &FileOperation<'k>,
     abort: bool,
