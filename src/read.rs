@@ -5,14 +5,14 @@ use crate::aes::{AesReader, AesReaderValid};
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
+use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
+use indexmap::IndexMap;
+use std::borrow::Cow;
 use std::io::{self, prelude::*};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -47,11 +47,9 @@ pub(crate) mod zip_archive {
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
     pub(crate) struct Shared {
-        pub(crate) files: Box<[super::ZipFileData]>,
-        pub(crate) names_map: super::HashMap<Box<str>, usize>,
+        pub(crate) files: super::IndexMap<Box<str>, super::ZipFileData>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
-        pub(super) dir_end: u64,
     }
 
     /// ZIP archive reader
@@ -86,6 +84,7 @@ pub(crate) mod zip_archive {
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::InvalidPassword;
 use crate::spec::path_to_string;
+use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
@@ -209,15 +208,15 @@ pub(crate) fn find_content<'a>(
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
     // Parse local header
     reader.seek(io::SeekFrom::Start(data.header_start))?;
-    let signature = reader.read_u32::<LittleEndian>()?;
+    let signature = reader.read_u32_le()?;
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid local file header"));
     }
     let data_start = match data.data_start.get() {
         None => {
             reader.seek(io::SeekFrom::Current(22))?;
-            let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
-            let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
+            let file_name_length = reader.read_u16_le()? as u64;
+            let extra_field_length = reader.read_u16_le()? as u64;
             let magic_and_header = 4 + 22 + 2 + 2;
             let data_start =
                 data.header_start + magic_and_header + file_name_length + extra_field_length;
@@ -331,7 +330,109 @@ pub(crate) struct CentralDirectoryInfo {
     pub(crate) disk_with_central_directory: u32,
 }
 
+impl<R> ZipArchive<R> {
+    pub(crate) fn from_finalized_writer(
+        files: IndexMap<Box<str>, ZipFileData>,
+        comment: Vec<u8>,
+        reader: R,
+        central_start: u64,
+    ) -> ZipResult<Self> {
+        if files.is_empty() {
+            return Err(ZipError::InvalidArchive(
+                "attempt to finalize empty zip writer into readable",
+            ));
+        }
+        /* This is where the whole file starts. */
+        let (_, first_header) = files.first().unwrap();
+        let initial_offset = first_header.header_start;
+        let shared = Arc::new(zip_archive::Shared {
+            files,
+            offset: initial_offset,
+            dir_start: central_start,
+        });
+        Ok(Self {
+            reader,
+            shared,
+            comment: comment.into_boxed_slice().into(),
+        })
+    }
+
+    /// Total size of the files in the archive, if it can be known. Doesn't include directories or
+    /// metadata.
+    pub fn decompressed_size(&self) -> Option<u128> {
+        let mut total = 0u128;
+        for file in self.shared.files.values() {
+            if file.using_data_descriptor {
+                return None;
+            }
+            total = total.checked_add(file.uncompressed_size as u128)?;
+        }
+        Some(total)
+    }
+}
+
 impl<R: Read + Seek> ZipArchive<R> {
+    pub(crate) fn merge_contents<W: Write + io::Seek>(
+        &mut self,
+        mut w: W,
+    ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
+        let mut new_files = self.shared.files.clone();
+        if new_files.is_empty() {
+            return Ok(IndexMap::new());
+        }
+        /* The first file header will probably start at the beginning of the file, but zip doesn't
+         * enforce that, and executable zips like PEX files will have a shebang line so will
+         * definitely be greater than 0.
+         *
+         * assert_eq!(0, new_files[0].header_start); // Avoid this.
+         */
+
+        let new_initial_header_start = w.stream_position()?;
+        /* Push back file header starts for all entries in the covered files. */
+        new_files.values_mut().try_for_each(|f| {
+            /* This is probably the only really important thing to change. */
+            f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
+                ZipError::InvalidArchive("new header start from merge would have been too large"),
+            )?;
+            /* This is only ever used internally to cache metadata lookups (it's not part of the
+             * zip spec), and 0 is the sentinel value. */
+            f.central_header_start = 0;
+            /* This is an atomic variable so it can be updated from another thread in the
+             * implementation (which is good!). */
+            if let Some(old_data_start) = f.data_start.take() {
+                let new_data_start = old_data_start.checked_add(new_initial_header_start).ok_or(
+                    ZipError::InvalidArchive("new data start from merge would have been too large"),
+                )?;
+                f.data_start.get_or_init(|| new_data_start);
+            }
+            Ok::<_, ZipError>(())
+        })?;
+
+        /* Rewind to the beginning of the file.
+         *
+         * NB: we *could* decide to start copying from new_files[0].header_start instead, which
+         * would avoid copying over e.g. any pex shebangs or other file contents that start before
+         * the first zip file entry. However, zip files actually shouldn't care about garbage data
+         * in *between* real entries, since the central directory header records the correct start
+         * location of each, and keeping track of that math is more complicated logic that will only
+         * rarely be used, since most zips that get merged together are likely to be produced
+         * specifically for that purpose (and therefore are unlikely to have a shebang or other
+         * preface). Finally, this preserves any data that might actually be useful.
+         */
+        self.reader.rewind()?;
+        /* Find the end of the file data. */
+        let length_to_read = self.shared.dir_start;
+        /* Produce a Read that reads bytes up until the start of the central directory header.
+         * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
+         * handle, which it really shouldn't need to anyway. */
+        let mut limited_raw = (&mut self.reader as &mut dyn Read).take(length_to_read);
+        /* Copy over file data from source archive directly. */
+        io::copy(&mut limited_raw, &mut w)?;
+
+        /* Return the files we've just written to the data stream. */
+        Ok(new_files)
+    }
+
     fn get_directory_info_zip32(
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
@@ -482,29 +583,25 @@ impl<R: Read + Seek> ZipArchive<R> {
                 result.and_then(|dir_info| {
                     // If the parsed number of files is greater than the offset then
                     // something fishy is going on and we shouldn't trust number_of_files.
-                    let file_capacity = if dir_info.number_of_files > cde_start_pos as usize {
-                        0
-                    } else {
-                        dir_info.number_of_files
-                    };
-                    let mut files = Vec::with_capacity(file_capacity);
-                    let mut names_map = HashMap::with_capacity(file_capacity);
+                    let file_capacity =
+                        if dir_info.number_of_files > dir_info.directory_start as usize {
+                            0
+                        } else {
+                            dir_info.number_of_files
+                        };
+                    let mut files = IndexMap::with_capacity(file_capacity);
                     reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
-                        names_map.insert(file.file_name.clone(), files.len());
-                        files.push(file);
+                        files.insert(file.file_name.clone(), file);
                     }
-                    let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
                         unsupported_zip_error("Support for multi-disk files is not implemented")
                     } else {
                         Ok(Shared {
-                            files: files.into(),
-                            names_map,
+                            files,
                             offset: dir_info.archive_offset,
                             dir_start: dir_info.directory_start,
-                            dir_end,
                         })
                     }
                 })
@@ -524,7 +621,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let shared = ok_results
             .into_iter()
-            .max_by_key(|shared| shared.dir_end)
+            .max_by_key(|shared| shared.dir_start)
             .unwrap();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
         Ok(shared)
@@ -606,7 +703,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.shared.names_map.keys().map(Box::borrow)
+        self.shared.files.keys().map(|s| s.as_ref())
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -634,7 +731,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the index of a file entry by name, if it's present.
     #[inline(always)]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
-        self.shared.names_map.get(name).copied()
+        self.shared.files.get_index_of(name)
     }
 
     /// Get the index of a file entry by path, if it's present.
@@ -648,8 +745,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn name_for_index(&self, index: usize) -> Option<&str> {
         self.shared
             .files
-            .get(index)
-            .map(|file_data| &*file_data.file_name)
+            .get_index(index)
+            .map(|(name, _)| name.as_ref())
     }
 
     fn by_name_with_optional_password<'a>(
@@ -657,7 +754,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'a>> {
-        let Some(index) = self.index_for_name(name) else {
+        let Some(index) = self.shared.files.get_index_of(name) else {
             return Err(ZipError::FileNotFound);
         };
         self.by_index_with_optional_password(index, password)
@@ -692,17 +789,16 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get a contained file by index without decompressing it
     pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         let reader = &mut self.reader;
-        self.shared
+        let (_, data) = self
+            .shared
             .files
-            .get(file_number)
-            .ok_or(ZipError::FileNotFound)
-            .and_then(move |data| {
-                Ok(ZipFile {
-                    crypto_reader: None,
-                    reader: ZipFileReader::Raw(find_content(data, reader)?),
-                    data: Cow::Borrowed(data),
-                })
-            })
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        Ok(ZipFile {
+            crypto_reader: None,
+            reader: ZipFileReader::Raw(find_content(data, reader)?),
+            data: Cow::Borrowed(data),
+        })
     }
 
     fn by_index_with_optional_password(
@@ -710,10 +806,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         file_number: usize,
         mut password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'_>> {
-        let data = self
+        let (_, data) = self
             .shared
             .files
-            .get(file_number)
+            .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
 
         match (password, data.encrypted) {
@@ -761,7 +857,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
-    let signature = reader.read_u32::<LittleEndian>()?;
+    let signature = reader.read_u32_le()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
         Err(ZipError::InvalidArchive("Invalid Central Directory header"))
     } else {
@@ -775,25 +871,25 @@ fn central_header_to_zip_file_inner<R: Read>(
     archive_offset: u64,
     central_header_start: u64,
 ) -> ZipResult<ZipFileData> {
-    let version_made_by = reader.read_u16::<LittleEndian>()?;
-    let _version_to_extract = reader.read_u16::<LittleEndian>()?;
-    let flags = reader.read_u16::<LittleEndian>()?;
+    let version_made_by = reader.read_u16_le()?;
+    let _version_to_extract = reader.read_u16_le()?;
+    let flags = reader.read_u16_le()?;
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
-    let compression_method = reader.read_u16::<LittleEndian>()?;
-    let last_mod_time = reader.read_u16::<LittleEndian>()?;
-    let last_mod_date = reader.read_u16::<LittleEndian>()?;
-    let crc32 = reader.read_u32::<LittleEndian>()?;
-    let compressed_size = reader.read_u32::<LittleEndian>()?;
-    let uncompressed_size = reader.read_u32::<LittleEndian>()?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
-    let file_comment_length = reader.read_u16::<LittleEndian>()? as usize;
-    let _disk_number = reader.read_u16::<LittleEndian>()?;
-    let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
-    let external_file_attributes = reader.read_u32::<LittleEndian>()?;
-    let offset = reader.read_u32::<LittleEndian>()? as u64;
+    let compression_method = reader.read_u16_le()?;
+    let last_mod_time = reader.read_u16_le()?;
+    let last_mod_date = reader.read_u16_le()?;
+    let crc32 = reader.read_u32_le()?;
+    let compressed_size = reader.read_u32_le()?;
+    let uncompressed_size = reader.read_u32_le()?;
+    let file_name_length = reader.read_u16_le()? as usize;
+    let extra_field_length = reader.read_u16_le()? as usize;
+    let file_comment_length = reader.read_u16_le()? as usize;
+    let _disk_number = reader.read_u16_le()?;
+    let _internal_file_attributes = reader.read_u16_le()?;
+    let external_file_attributes = reader.read_u32_le()?;
+    let offset = reader.read_u32_le()? as u64;
     let mut file_name_raw = vec![0; file_name_length];
     reader.read_exact(&mut file_name_raw)?;
     let mut extra_field = vec![0; extra_field_length];
@@ -812,7 +908,7 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     // Construct the result
     let mut result = ZipFileData {
-        system: System::from_u8((version_made_by >> 8) as u8),
+        system: System::from((version_made_by >> 8) as u8),
         version_made_by: version_made_by as u8,
         encrypted,
         using_data_descriptor,
@@ -836,6 +932,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
+        extra_fields: Vec::new(),
     };
 
     match parse_extra_field(&mut result) {
@@ -866,24 +963,24 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
     let mut reader = io::Cursor::new(extra_field.as_ref());
 
     while (reader.position() as usize) < extra_field.len() {
-        let kind = reader.read_u16::<LittleEndian>()?;
-        let len = reader.read_u16::<LittleEndian>()?;
+        let kind = reader.read_u16_le()?;
+        let len = reader.read_u16_le()?;
         let mut len_left = len as i64;
         match kind {
             // Zip64 extended information extra field
             0x0001 => {
                 if file.uncompressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
-                    file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
+                    file.uncompressed_size = reader.read_u64_le()?;
                     len_left -= 8;
                 }
                 if file.compressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
-                    file.compressed_size = reader.read_u64::<LittleEndian>()?;
+                    file.compressed_size = reader.read_u64_le()?;
                     len_left -= 8;
                 }
                 if file.header_start == spec::ZIP64_BYTES_THR {
-                    file.header_start = reader.read_u64::<LittleEndian>()?;
+                    file.header_start = reader.read_u64_le()?;
                     len_left -= 8;
                 }
             }
@@ -894,10 +991,12 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                         "AES extra data field has an unsupported length",
                     ));
                 }
-                let vendor_version = reader.read_u16::<LittleEndian>()?;
-                let vendor_id = reader.read_u16::<LittleEndian>()?;
-                let aes_mode = reader.read_u8()?;
-                let compression_method = reader.read_u16::<LittleEndian>()?;
+                let vendor_version = reader.read_u16_le()?;
+                let vendor_id = reader.read_u16_le()?;
+                let mut out = [0u8];
+                reader.read_exact(&mut out)?;
+                let aes_mode = out[0];
+                let compression_method = reader.read_u16_le()?;
 
                 if vendor_id != 0x4541 {
                     return Err(ZipError::InvalidArchive("Invalid AES vendor"));
@@ -917,6 +1016,17 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                     #[allow(deprecated)]
                     CompressionMethod::from_u16(compression_method)
                 };
+            }
+            0x5455 => {
+                // extended timestamp
+                // https://libzip.org/specifications/extrafld.txt
+
+                file.extra_fields.push(ExtraField::ExtendedTimestamp(
+                    ExtendedTimestamp::try_from_reader(&mut reader, len)?,
+                ));
+
+                // the reader for ExtendedTimestamp consumes `len` bytes
+                len_left = 0;
             }
             _ => {
                 // Other fields are ignored
@@ -1087,6 +1197,11 @@ impl<'a> ZipFile<'a> {
     pub fn central_header_start(&self) -> u64 {
         self.data.central_header_start
     }
+
+    /// iterate through all extra fields
+    pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
+        self.data.extra_fields.iter()
+    }
 }
 
 impl<'a> Read for ZipFile<'a> {
@@ -1114,6 +1229,7 @@ impl<'a> Drop for ZipFile<'a> {
                 }
             };
 
+            #[allow(clippy::unused_io_amount)]
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
@@ -1146,7 +1262,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
-    let signature = reader.read_u32::<LittleEndian>()?;
+    let signature = reader.read_u32_le()?;
 
     match signature {
         spec::LOCAL_FILE_HEADER_SIGNATURE => (),
@@ -1154,20 +1270,20 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
     }
 
-    let version_made_by = reader.read_u16::<LittleEndian>()?;
-    let flags = reader.read_u16::<LittleEndian>()?;
+    let version_made_by = reader.read_u16_le()?;
+    let flags = reader.read_u16_le()?;
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
     #[allow(deprecated)]
-    let compression_method = CompressionMethod::from_u16(reader.read_u16::<LittleEndian>()?);
-    let last_mod_time = reader.read_u16::<LittleEndian>()?;
-    let last_mod_date = reader.read_u16::<LittleEndian>()?;
-    let crc32 = reader.read_u32::<LittleEndian>()?;
-    let compressed_size = reader.read_u32::<LittleEndian>()?;
-    let uncompressed_size = reader.read_u32::<LittleEndian>()?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
+    let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
+    let last_mod_time = reader.read_u16_le()?;
+    let last_mod_date = reader.read_u16_le()?;
+    let crc32 = reader.read_u32_le()?;
+    let compressed_size = reader.read_u32_le()?;
+    let uncompressed_size = reader.read_u32_le()?;
+    let file_name_length = reader.read_u16_le()? as usize;
+    let extra_field_length = reader.read_u16_le()? as usize;
 
     let mut file_name_raw = vec![0; file_name_length];
     reader.read_exact(&mut file_name_raw)?;
@@ -1180,7 +1296,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     };
 
     let mut result = ZipFileData {
-        system: System::from_u8((version_made_by >> 8) as u8),
+        system: System::from((version_made_by >> 8) as u8),
         version_made_by: version_made_by as u8,
         encrypted,
         using_data_descriptor,
@@ -1206,6 +1322,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         external_attributes: 0,
         large_file: false,
         aes_mode: None,
+        extra_fields: Vec::new(),
     };
 
     match parse_extra_field(&mut result) {
