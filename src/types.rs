@@ -48,10 +48,10 @@ mod atomic {
 
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
+use crate::types::ffi::S_IFDIR;
+use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
-use crate::CompressionMethod;
-use crate::types::ffi::S_IFDIR;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
 #[repr(u8)]
@@ -371,7 +371,6 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
-
     pub fn file_name_sanitized(&self) -> PathBuf {
         let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],
@@ -441,14 +440,8 @@ impl ZipFileData {
         }
     }
 
-    pub const fn zip64_extension(&self) -> bool {
-        self.uncompressed_size > 0xFFFFFFFF
-            || self.compressed_size > 0xFFFFFFFF
-            || self.header_start > 0xFFFFFFFF
-    }
-
-    pub const fn version_needed(&self) -> u16 {
-        // higher versions matched first
+    /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
+    pub fn version_needed(&self) -> u16 {
         let compression_version: u16 = match self.compression_method {
             CompressionMethod::Stored => 10,
             #[cfg(feature = "_deflate-any")]
@@ -459,7 +452,8 @@ impl ZipFileData {
             CompressionMethod::Deflate64 => 21,
             #[cfg(feature = "lzma")]
             CompressionMethod::Lzma => 63,
-            _ => DEFAULT_VERSION as u16
+            // APPNOTE doesn't specify a version for Zstandard
+            _ => DEFAULT_VERSION as u16,
         };
         let crypto_version: u16 = if self.aes_mode.is_some() {
             51
@@ -470,13 +464,18 @@ impl ZipFileData {
         };
         let misc_feature_version: u16 = if self.large_file {
             45
-        } else if self.unix_mode().is_some_and(|mode| mode & S_IFDIR == S_IFDIR) {
+        } else if self
+            .unix_mode()
+            .is_some_and(|mode| mode & S_IFDIR == S_IFDIR)
+        {
             // file is directory
             20
         } else {
             10
         };
-        compression_version.max(crypto_version).max(misc_feature_version)
+        compression_version
+            .max(crypto_version)
+            .max(misc_feature_version)
     }
     #[inline(always)]
     pub(crate) fn extra_field_len(&self) -> usize {
