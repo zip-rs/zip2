@@ -49,6 +49,7 @@ mod atomic {
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
 use crate::CompressionMethod;
+use crate::types::ffi::S_IFDIR;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
@@ -443,20 +444,42 @@ impl ZipFileData {
         }
     }
 
-    pub const fn zip64_extension(&self) -> bool {
-        self.uncompressed_size > 0xFFFFFFFF
-            || self.compressed_size > 0xFFFFFFFF
-            || self.header_start > 0xFFFFFFFF
-    }
-
-    pub const fn version_needed(&self) -> u16 {
-        // higher versions matched first
-        match (self.zip64_extension(), self.compression_method) {
+    /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
+    pub fn version_needed(&self) -> u16 {
+        let compression_version: u16 = match self.compression_method {
+            CompressionMethod::Stored => 10,
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => 20,
             #[cfg(feature = "bzip2")]
-            (_, crate::compression::CompressionMethod::Bzip2) => 46,
-            (true, _) => 45,
-            _ => 20,
-        }
+            CompressionMethod::Bzip2 => 46,
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => 21,
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => 63,
+            // APPNOTE doesn't specify a version for Zstandard
+            _ => DEFAULT_VERSION as u16,
+        };
+        let crypto_version: u16 = if self.aes_mode.is_some() {
+            51
+        } else if self.encrypted {
+            20
+        } else {
+            10
+        };
+        let misc_feature_version: u16 = if self.large_file {
+            45
+        } else if self
+            .unix_mode()
+            .is_some_and(|mode| mode & S_IFDIR == S_IFDIR)
+        {
+            // file is directory
+            20
+        } else {
+            10
+        };
+        compression_version
+            .max(crypto_version)
+            .max(misc_feature_version)
     }
     #[inline(always)]
     pub(crate) fn extra_field_len(&self) -> usize {
