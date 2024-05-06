@@ -5,11 +5,10 @@ use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
-use byteorder::{LittleEndian, WriteBytesExt};
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -111,8 +110,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: Vec<ZipFileData>,
-        pub(super) files_by_name: HashMap<Box<str>, usize>,
+        pub(super) files: IndexMap<Box<str>, ZipFileData>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -126,6 +124,7 @@ use crate::result::ZipError::InvalidArchive;
 #[cfg(feature = "lzma")]
 use crate::result::ZipError::UnsupportedArchive;
 use crate::spec::path_to_string;
+use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
 use crate::CompressionMethod::Stored;
@@ -378,8 +377,8 @@ impl FileOptions<ExtendedFileOptions> {
                 }
             };
             vec.reserve_exact(data.len() + 4);
-            vec.write_u16::<LittleEndian>(header_id)?;
-            vec.write_u16::<LittleEndian>(data.len() as u16)?;
+            vec.write_u16_le(header_id)?;
+            vec.write_u16_le(data.len() as u16)?;
             vec.write_all(data)?;
             Ok(())
         }
@@ -435,7 +434,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[0..count]);
                     if self.stats.bytes_written > spec::ZIP64_BYTES_THR
-                        && !self.files.last_mut().unwrap().large_file
+                        && !self.files.last_mut().unwrap().1.large_file
                     {
                         self.abort_file().unwrap();
                         return Err(io::Error::new(
@@ -479,8 +478,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: metadata.files.into(),
-            files_by_name: metadata.names_map,
+            files: metadata.files,
             stats: Default::default(),
             writing_to_file: false,
             comment: footer.zip_file_comment,
@@ -597,6 +595,39 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ) -> ZipResult<()> {
         self.deep_copy_file(&path_to_string(src_path), &path_to_string(dest_path))
     }
+
+    /// Write the zip file into the backing stream, then produce a readable archive of that data.
+    ///
+    /// This method avoids parsing the central directory records at the end of the stream for
+    /// a slight performance improvement over running [`ZipArchive::new()`] on the output of
+    /// [`Self::finish()`].
+    ///
+    ///```
+    /// # fn main() -> Result<(), zip::result::ZipError> {
+    /// use std::io::{Cursor, prelude::*};
+    /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(buf);
+    /// let options = SimpleFileOptions::default();
+    /// zip.start_file("a.txt", options)?;
+    /// zip.write_all(b"hello\n")?;
+    ///
+    /// let mut zip = zip.finish_into_readable()?;
+    /// let mut s: String = String::new();
+    /// zip.by_name("a.txt")?.read_to_string(&mut s)?;
+    /// assert_eq!(s, "hello\n");
+    /// # Ok(())
+    /// # }
+    ///```
+    pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
+        let central_start = self.finalize()?;
+        let inner = mem::replace(&mut self.inner, Closed).unwrap();
+        let comment = mem::take(&mut self.comment);
+        let files = mem::take(&mut self.files);
+        let archive = ZipArchive::from_finalized_writer(files, comment, inner, central_start)?;
+        Ok(archive)
+    }
 }
 
 impl<W: Write + Seek> ZipWriter<W> {
@@ -608,8 +639,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn new(inner: W) -> ZipWriter<W> {
         ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(inner)),
-            files: Vec::new(),
-            files_by_name: HashMap::new(),
+            files: IndexMap::new(),
             stats: Default::default(),
             writing_to_file: false,
             writing_raw: false,
@@ -696,38 +726,39 @@ impl<W: Write + Seek> ZipWriter<W> {
                 external_attributes: permissions << 16,
                 large_file: options.large_file,
                 aes_mode: None,
+                extra_fields: Vec::new(),
             };
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
             let writer = self.inner.get_plain();
-            writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
+            writer.write_u32_le(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
             // version needed to extract
-            writer.write_u16::<LittleEndian>(file.version_needed())?;
+            writer.write_u16_le(file.version_needed())?;
             // general purpose bit flag
             let flag = if !file.file_name.is_ascii() {
                 1u16 << 11
             } else {
                 0
             } | if file.encrypted { 1u16 << 0 } else { 0 };
-            writer.write_u16::<LittleEndian>(flag)?;
+            writer.write_u16_le(flag)?;
             // Compression method
             #[allow(deprecated)]
-            writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
+            writer.write_u16_le(file.compression_method.to_u16())?;
             // last mod file time and last mod file date
-            writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
-            writer.write_u16::<LittleEndian>(file.last_modified_time.datepart())?;
+            writer.write_u16_le(file.last_modified_time.timepart())?;
+            writer.write_u16_le(file.last_modified_time.datepart())?;
             // crc-32
-            writer.write_u32::<LittleEndian>(file.crc32)?;
+            writer.write_u32_le(file.crc32)?;
             // compressed size and uncompressed size
             if file.large_file {
-                writer.write_u32::<LittleEndian>(spec::ZIP64_BYTES_THR as u32)?;
-                writer.write_u32::<LittleEndian>(spec::ZIP64_BYTES_THR as u32)?;
+                writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
+                writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
             } else {
-                writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
-                writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
+                writer.write_u32_le(file.compressed_size as u32)?;
+                writer.write_u32_le(file.uncompressed_size as u32)?;
             }
             // file name length
-            writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
+            writer.write_u16_le(file.file_name.as_bytes().len() as u16)?;
             // extra field length
             let mut extra_field_length = file.extra_field_len();
             if file.large_file {
@@ -738,7 +769,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 return Err(InvalidArchive("Extra data field is too large"));
             }
             let extra_field_length = extra_field_length as u16;
-            writer.write_u16::<LittleEndian>(extra_field_length)?;
+            writer.write_u16_le(extra_field_length)?;
             // file name
             writer.write_all(file.file_name.as_bytes())?;
             // zip64 extra field
@@ -767,7 +798,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                         let pad_body = vec![0; pad_length - 4];
                         writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
                         writer
-                            .write_u16::<LittleEndian>(pad_body.len() as u16)
+                            .write_u16_le(pad_body.len() as u16)
                             .map_err(ZipError::from)?;
                         writer.write_all(&pad_body).map_err(ZipError::from)?;
                     } else {
@@ -780,7 +811,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
                     // Update extra field length in local file header.
                     writer.seek(SeekFrom::Start(file.header_start + 28))?;
-                    writer.write_u16::<LittleEndian>(new_extra_field_length)?;
+                    writer.write_u16_le(new_extra_field_length)?;
                     writer.seek(SeekFrom::Start(header_end))?;
                     debug_assert_eq!(header_end % align, 0);
                 }
@@ -808,15 +839,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
-        let name = &file.file_name;
-        if self.files_by_name.contains_key(name) {
+        if self.files.contains_key(&file.file_name) {
             return Err(InvalidArchive("Duplicate filename"));
         }
-        let name = name.to_owned();
-        self.files.push(file);
-        let index = self.files.len() - 1;
-        self.files_by_name.insert(name, index);
-        Ok(index)
+        let name = file.file_name.to_owned();
+        self.files.insert(name.clone(), file);
+        Ok(self.files.get_index_of(&name).unwrap())
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {
@@ -837,7 +865,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !self.writing_raw {
             let file = match self.files.last_mut() {
                 None => return Ok(()),
-                Some(f) => f,
+                Some((_, f)) => f,
             };
             file.crc32 = self.stats.hasher.clone().finalize();
             file.uncompressed_size = self.stats.bytes_written;
@@ -877,8 +905,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Removes the file currently being written from the archive if there is one, or else removes
     /// the file most recently written.
     pub fn abort_file(&mut self) -> ZipResult<()> {
-        let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
-        self.files_by_name.remove(&last_file.file_name);
+        let (_, last_file) = self.files.pop().ok_or(ZipError::FileNotFound)?;
         let make_plain_writer = self.inner.prepare_next_writer(
             Stored,
             None,
@@ -891,7 +918,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // overwrite a valid file and corrupt the archive
         let rewind_safe: bool = match last_file.data_start.get() {
             None => self.files.is_empty(),
-            Some(last_file_start) => self.files.iter().all(|file| {
+            Some(last_file_start) => self.files.values().all(|file| {
                 file.data_start
                     .get()
                     .is_some_and(|start| start < last_file_start)
@@ -931,6 +958,68 @@ impl<W: Write + Seek> ZipWriter<W> {
             return Err(e);
         }
         self.writing_raw = false;
+        Ok(())
+    }
+
+    /* TODO: link to/use Self::finish_into_readable() from https://github.com/zip-rs/zip/pull/400 in
+     * this docstring. */
+    /// Copy over the entire contents of another archive verbatim.
+    ///
+    /// This method extracts file metadata from the `source` archive, then simply performs a single
+    /// big [`io::copy()`](io::copy) to transfer all the actual file contents without any
+    /// decompression or decryption. This is more performant than the equivalent operation of
+    /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
+    ///
+    ///```
+    /// # fn main() -> Result<(), zip::result::ZipError> {
+    /// use std::io::{Cursor, prelude::*};
+    /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(buf);
+    /// zip.start_file("a.txt", SimpleFileOptions::default())?;
+    /// zip.write_all(b"hello\n")?;
+    /// let src = ZipArchive::new(zip.finish()?)?;
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(buf);
+    /// zip.start_file("b.txt", SimpleFileOptions::default())?;
+    /// zip.write_all(b"hey\n")?;
+    /// let src2 = ZipArchive::new(zip.finish()?)?;
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(buf);
+    /// zip.merge_archive(src)?;
+    /// zip.merge_archive(src2)?;
+    /// let mut result = ZipArchive::new(zip.finish()?)?;
+    ///
+    /// let mut s: String = String::new();
+    /// result.by_name("a.txt")?.read_to_string(&mut s)?;
+    /// assert_eq!(s, "hello\n");
+    /// s.clear();
+    /// result.by_name("b.txt")?.read_to_string(&mut s)?;
+    /// assert_eq!(s, "hey\n");
+    /// # Ok(())
+    /// # }
+    ///```
+    pub fn merge_archive<R>(&mut self, mut source: ZipArchive<R>) -> ZipResult<()>
+    where
+        R: Read + io::Seek,
+    {
+        self.finish_file()?;
+
+        /* Ensure we accept the file contents on faith (and avoid overwriting the data).
+         * See raw_copy_file_rename(). */
+        self.writing_to_file = true;
+        self.writing_raw = true;
+
+        let writer = self.inner.get_plain();
+        /* Get the file entries from the source archive. */
+        let new_files = source.merge_contents(writer)?;
+
+        /* These file entries are now ours! */
+        self.files.extend(new_files);
+
         Ok(())
     }
 
@@ -1100,7 +1189,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This will return the writer, but one should normally not append any data to the end of the file.
     /// Note that the zipfile will also be finished on drop.
     pub fn finish(&mut self) -> ZipResult<W> {
-        self.finalize()?;
+        let _central_start = self.finalize()?;
         let inner = mem::replace(&mut self.inner, Closed);
         Ok(inner.unwrap())
     }
@@ -1160,10 +1249,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.add_symlink(path_to_string(path), path_to_string(target), options)
     }
 
-    fn finalize(&mut self) -> ZipResult<()> {
+    fn finalize(&mut self) -> ZipResult<u64> {
         self.finish_file()?;
 
-        {
+        let central_start = {
             let central_start = self.write_central_and_footer()?;
             let writer = self.inner.get_plain();
             let footer_end = writer.stream_position()?;
@@ -1175,16 +1264,17 @@ impl<W: Write + Seek> ZipWriter<W> {
                 writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
                 self.write_central_and_footer()?;
             }
-        }
+            central_start
+        };
 
-        Ok(())
+        Ok(central_start)
     }
 
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
         let writer = self.inner.get_plain();
 
         let central_start = writer.stream_position()?;
-        for file in self.files.iter() {
+        for file in self.files.values() {
             write_central_directory_header(writer, file)?;
         }
         let central_size = writer.stream_position()? - central_start;
@@ -1230,7 +1320,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn index_by_name(&self, name: &str) -> ZipResult<usize> {
-        Ok(*self.files_by_name.get(name).ok_or(ZipError::FileNotFound)?)
+        self.files.get_index_of(name).ok_or(ZipError::FileNotFound)
     }
 
     /// Adds another entry to the central directory referring to the same content as an existing
@@ -1418,7 +1508,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::BufferedZopfliDeflater(w) => w.into_inner()?.finish()?,
+            GenericZipWriter::BufferedZopfliDeflater(w) => w
+                .into_inner()
+                .map_err(|e| ZipError::Io(e.into_error()))?
+                .finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
@@ -1518,7 +1611,7 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
 fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     const CRC32_OFFSET: u64 = 14;
     writer.seek(SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
-    writer.write_u32::<LittleEndian>(file.crc32)?;
+    writer.write_u32_le(file.crc32)?;
     if file.large_file {
         update_local_zip64_extra_field(writer, file)?;
     } else {
@@ -1529,9 +1622,9 @@ fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData)
                 "Large file option has not been set",
             )));
         }
-        writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
+        writer.write_u32_le(file.compressed_size as u32)?;
         // uncompressed size is already checked on write to catch it as soon as possible
-        writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
+        writer.write_u32_le(file.uncompressed_size as u32)?;
     }
     Ok(())
 }
@@ -1543,49 +1636,49 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
 
     // central file header signature
-    writer.write_u32::<LittleEndian>(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
+    writer.write_u32_le(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
     // version made by
     let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
-    writer.write_u16::<LittleEndian>(version_made_by)?;
+    writer.write_u16_le(version_made_by)?;
     // version needed to extract
-    writer.write_u16::<LittleEndian>(file.version_needed())?;
+    writer.write_u16_le(file.version_needed())?;
     // general purpose bit flag
     let flag = if !file.file_name.is_ascii() {
         1u16 << 11
     } else {
         0
     } | if file.encrypted { 1u16 << 0 } else { 0 };
-    writer.write_u16::<LittleEndian>(flag)?;
+    writer.write_u16_le(flag)?;
     // compression method
     #[allow(deprecated)]
-    writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
+    writer.write_u16_le(file.compression_method.to_u16())?;
     // last mod file time + date
-    writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
-    writer.write_u16::<LittleEndian>(file.last_modified_time.datepart())?;
+    writer.write_u16_le(file.last_modified_time.timepart())?;
+    writer.write_u16_le(file.last_modified_time.datepart())?;
     // crc-32
-    writer.write_u32::<LittleEndian>(file.crc32)?;
+    writer.write_u32_le(file.crc32)?;
     // compressed size
-    writer.write_u32::<LittleEndian>(file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
+    writer.write_u32_le(file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
     // uncompressed size
-    writer.write_u32::<LittleEndian>(file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
+    writer.write_u32_le(file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
     // file name length
-    writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
+    writer.write_u16_le(file.file_name.as_bytes().len() as u16)?;
     // extra field length
-    writer.write_u16::<LittleEndian>(
+    writer.write_u16_le(
         zip64_extra_field_length
             + file.extra_field_len() as u16
             + file.central_extra_field_len() as u16,
     )?;
     // file comment length
-    writer.write_u16::<LittleEndian>(0)?;
+    writer.write_u16_le(0)?;
     // disk number start
-    writer.write_u16::<LittleEndian>(0)?;
+    writer.write_u16_le(0)?;
     // internal file attributes
-    writer.write_u16::<LittleEndian>(0)?;
+    writer.write_u16_le(0)?;
     // external file attributes
-    writer.write_u32::<LittleEndian>(file.external_attributes)?;
+    writer.write_u32_le(file.external_attributes)?;
     // relative offset of local header
-    writer.write_u32::<LittleEndian>(file.header_start.min(spec::ZIP64_BYTES_THR) as u32)?;
+    writer.write_u32_le(file.header_start.min(spec::ZIP64_BYTES_THR) as u32)?;
     // file name
     writer.write_all(file.file_name.as_bytes())?;
     // zip64 extra field
@@ -1639,10 +1732,10 @@ fn validate_extra_data(header_id: u16, data: &[u8]) -> ZipResult<()> {
 fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // This entry in the Local header MUST include BOTH original
     // and compressed file size fields.
-    writer.write_u16::<LittleEndian>(0x0001)?;
-    writer.write_u16::<LittleEndian>(16)?;
-    writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
-    writer.write_u64::<LittleEndian>(file.compressed_size)?;
+    writer.write_u16_le(0x0001)?;
+    writer.write_u16_le(16)?;
+    writer.write_u64_le(file.uncompressed_size)?;
+    writer.write_u64_le(file.compressed_size)?;
     // Excluded fields:
     // u32: disk start number
     Ok(())
@@ -1654,8 +1747,8 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
 ) -> ZipResult<()> {
     let zip64_extra_field = file.header_start + 30 + file.file_name.as_bytes().len() as u64;
     writer.seek(SeekFrom::Start(zip64_extra_field + 4))?;
-    writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
-    writer.write_u64::<LittleEndian>(file.compressed_size)?;
+    writer.write_u64_le(file.uncompressed_size)?;
+    writer.write_u64_le(file.compressed_size)?;
     // Excluded fields:
     // u32: disk start number
     Ok(())
@@ -1680,18 +1773,18 @@ fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData)
         size += 8;
     }
     if size > 0 {
-        writer.write_u16::<LittleEndian>(0x0001)?;
-        writer.write_u16::<LittleEndian>(size)?;
+        writer.write_u16_le(0x0001)?;
+        writer.write_u16_le(size)?;
         size += 4;
 
         if uncompressed_size {
-            writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
+            writer.write_u64_le(file.uncompressed_size)?;
         }
         if compressed_size {
-            writer.write_u64::<LittleEndian>(file.compressed_size)?;
+            writer.write_u64_le(file.compressed_size)?;
         }
         if header_start {
-            writer.write_u64::<LittleEndian>(file.header_start)?;
+            writer.write_u64_le(file.header_start)?;
         }
         // Excluded fields:
         // u32: disk start number
