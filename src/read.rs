@@ -12,8 +12,7 @@ use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
-use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
+use std::borrow::Cow;
 use std::io::{self, prelude::*, SeekFrom};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -221,20 +220,19 @@ struct SeekableTake<'a, R> {
     current_offset: u64,
 }
 
-
-impl <'a, R: Seek> SeekableTake<'a, R> {
+impl<'a, R: Seek> SeekableTake<'a, R> {
     pub fn new(inner: &'a mut R, length: u64) -> io::Result<Self> {
-        let inner_starting_offset = inner.seek(SeekFrom::Current(0))?;
+        let inner_starting_offset = inner.stream_position()?;
         Ok(Self {
             inner,
             inner_starting_offset,
             length,
-            current_offset: 0
+            current_offset: 0,
         })
     }
 }
 
-impl <'a, R: Seek> Seek for SeekableTake<'a, R> {
+impl<'a, R: Seek> Seek for SeekableTake<'a, R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let offset = match pos {
             SeekFrom::Start(offset) => Some(offset),
@@ -242,12 +240,15 @@ impl <'a, R: Seek> Seek for SeekableTake<'a, R> {
             SeekFrom::Current(offset) => self.current_offset.checked_add_signed(offset),
         };
         match offset {
-            None => {
-                Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid seek to a negative or overflowing position"))
-            }
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid seek to a negative or overflowing position",
+            )),
             Some(offset) => {
                 let clamped_offset = std::cmp::min(self.length, offset);
-                let new_inner_offset = self.inner.seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
+                let new_inner_offset = self
+                    .inner
+                    .seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
                 self.current_offset = new_inner_offset - self.inner_starting_offset;
                 Ok(new_inner_offset)
             }
@@ -255,9 +256,12 @@ impl <'a, R: Seek> Seek for SeekableTake<'a, R> {
     }
 }
 
-impl <'a, R: Read> Read for SeekableTake<'a, R> {
+impl<'a, R: Read> Read for SeekableTake<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let written = self.inner.take(self.length - self.current_offset).read(buf)?;
+        let written = self
+            .inner
+            .take(self.length - self.current_offset)
+            .read(buf)?;
         self.current_offset += written as u64;
         Ok(written)
     }
@@ -297,17 +301,17 @@ fn find_content_seek<'a, R: Read + Seek>(
 ) -> ZipResult<SeekableTake<'a, R>> {
     // Parse local header
     reader.seek(io::SeekFrom::Start(data.header_start))?;
-    let signature = reader.read_u32::<LittleEndian>()?;
+    let signature = reader.read_u32_le()?;
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid local file header"));
     }
 
     reader.seek(io::SeekFrom::Current(22))?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
+    let file_name_length = reader.read_u16_le()? as u64;
+    let extra_field_length = reader.read_u16_le()? as u64;
     let magic_and_header = 4 + 22 + 2 + 2;
     let data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
-    data.data_start.store(data_start);
+    data.data_start.get_or_init(|| data_start);
 
     reader.seek(io::SeekFrom::Start(data_start))?;
 
@@ -822,13 +826,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Search for a file entry by name and return a seekable object.
     pub fn by_name_seek(&mut self, name: &str) -> ZipResult<ZipFileSeek<R>> {
-        let index = match self.shared.names_map.get(name) {
-            Some(index) => *index,
-            None => {
-                return Err(ZipError::FileNotFound);
-            }
-        };
-        self.by_index_seek(index)
+        self.by_index_seek(self.index_for_name(name).ok_or(ZipError::FileNotFound)?)
     }
 
     /// Search for a file entry by index and return a seekable object.
@@ -836,15 +834,17 @@ impl<R: Read + Seek> ZipArchive<R> {
         let reader = &mut self.reader;
         self.shared
             .files
-            .get(index)
+            .get_index(index)
             .ok_or(ZipError::FileNotFound)
-            .and_then(move |data| {
+            .and_then(move |(_, data)| {
                 let seek_reader = match data.compression_method {
                     CompressionMethod::Stored => {
                         ZipFileSeekReader::Raw(find_content_seek(data, reader)?)
                     }
                     _ => {
-                        return Err(ZipError::UnsupportedArchive("Seekable compressed files are not yet supported"))
+                        return Err(ZipError::UnsupportedArchive(
+                            "Seekable compressed files are not yet supported",
+                        ))
                     }
                 };
                 Ok(ZipFileSeek {
@@ -1272,7 +1272,10 @@ pub trait HasZipMetadata {
 
     /// Get the extra data of the zip header for this file
     fn extra_data(&self) -> Option<&[u8]> {
-        self.get_metadata().extra_field.as_ref().map(|v| v.deref().deref())
+        self.get_metadata()
+            .extra_field
+            .as_ref()
+            .map(|v| v.deref().deref())
     }
 
     /// Get the starting offset of the data of the compressed file
@@ -1308,16 +1311,16 @@ impl<'a> ZipFile<'a> {
         }
         &mut self.reader
     }
-}
-
-impl <'a> HasZipMetadata for ZipFile<'a> {
-    fn get_metadata(&self) -> &ZipFileData {
-        self.data.as_ref()
-    }
 
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
         self.data.extra_fields.iter()
+    }
+}
+
+impl<'a> HasZipMetadata for ZipFile<'a> {
+    fn get_metadata(&self) -> &ZipFileData {
+        self.data.as_ref()
     }
 }
 
@@ -1327,7 +1330,7 @@ impl<'a> Read for ZipFile<'a> {
     }
 }
 
-impl <'a, R: Read> Read for ZipFileSeek<'a, R> {
+impl<'a, R: Read> Read for ZipFileSeek<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.reader {
             ZipFileSeekReader::Raw(r) => r.read(buf),
@@ -1335,7 +1338,7 @@ impl <'a, R: Read> Read for ZipFileSeek<'a, R> {
     }
 }
 
-impl <'a, R: Seek> Seek for ZipFileSeek<'a, R> {
+impl<'a, R: Seek> Seek for ZipFileSeek<'a, R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match &mut self.reader {
             ZipFileSeekReader::Raw(r) => r.seek(pos),
@@ -1343,7 +1346,7 @@ impl <'a, R: Seek> Seek for ZipFileSeek<'a, R> {
     }
 }
 
-impl <'a, R> HasZipMetadata for ZipFileSeek<'a, R> {
+impl<'a, R> HasZipMetadata for ZipFileSeek<'a, R> {
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
     }
@@ -1534,8 +1537,8 @@ mod test {
 
     #[test]
     fn zip_contents() {
-        use super::ZipArchive;
         use super::HasZipMetadata;
+        use super::ZipArchive;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -1560,8 +1563,8 @@ mod test {
 
     #[test]
     fn zip_clone() {
-        use super::ZipArchive;
         use super::HasZipMetadata;
+        use super::ZipArchive;
         use std::io::Read;
 
         let mut v = Vec::new();
@@ -1602,8 +1605,8 @@ mod test {
 
     #[test]
     fn file_and_dir_predicates() {
-        use super::ZipArchive;
         use super::HasZipMetadata;
+        use super::ZipArchive;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/files_and_dirs.zip"));

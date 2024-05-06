@@ -1,9 +1,9 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::{find_content, central_header_to_zip_file, ZipArchive, ZipFile};
+use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
-use crate::spec;
+use crate::{HasZipMetadata, spec};
 use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
@@ -1810,7 +1810,7 @@ mod test {
     use crate::types::DateTime;
     use crate::write::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
-    use crate::ZipArchive;
+    use crate::{HasZipMetadata, ZipArchive};
     use std::io;
     use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;
