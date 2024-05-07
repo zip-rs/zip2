@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1](https://github.com/zip-rs/zip2/compare/v1.2.0...v1.2.1) - 2024-05-06
+
+### <!-- 1 -->🐛 Bug Fixes
+- Prevent panic when trying to read a file with an unsupported compression method
+- Prevent panic after reading an invalid LZMA file
+- Make `Stored` the default compression method if `Deflated` isn't available, so that zip files are readable by as much software as possible
+- version_needed was wrong when e.g. cfg(bzip2) but current file wasn't bzip2 ([#100](https://github.com/zip-rs/zip2/pull/100))
+- file paths shouldn't start with slashes ([#102](https://github.com/zip-rs/zip2/pull/102))
+
+### <!-- 2 -->🚜 Refactor
+- Overhaul `impl Arbitrary for FileOptions`
+- Remove unused `atomic` module
+
 ## [1.2.0](https://github.com/zip-rs/zip2/compare/v1.1.4...v1.2.0) - 2024-05-06
 
 ### <!-- 0 -->🚀 Features
