@@ -1,5 +1,4 @@
 //! Types that specify what is contained in a ZIP.
-use num_enum::{FromPrimitive, IntoPrimitive};
 use path::{Component, Path, PathBuf};
 use std::path;
 use std::sync::{Arc, OnceLock};
@@ -21,13 +20,32 @@ use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum System {
     Dos = 0,
     Unix = 3,
-    #[num_enum(default)]
     Unknown,
+}
+
+impl From<u8> for System {
+    fn from(system: u8) -> Self {
+        match system {
+            0 => Self::Dos,
+            3 => Self::Unix,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl From<System> for u8 {
+    fn from(system: System) -> Self {
+        match system {
+            System::Dos => 0,
+            System::Unix => 3,
+            System::Unknown => 4,
+        }
+    }
 }
 
 /// Representation of a moment in time.
