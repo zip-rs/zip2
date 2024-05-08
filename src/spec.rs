@@ -22,7 +22,7 @@ pub struct CentralDirectoryEnd {
     pub number_of_files: u16,
     pub central_directory_size: u32,
     pub central_directory_offset: u32,
-    pub zip_file_comment: Vec<u8>,
+    pub zip_file_comment: Box<[u8]>,
 }
 
 impl CentralDirectoryEnd {
@@ -38,7 +38,7 @@ impl CentralDirectoryEnd {
         let central_directory_size = reader.read_u32_le()?;
         let central_directory_offset = reader.read_u32_le()?;
         let zip_file_comment_length = reader.read_u16_le()? as usize;
-        let mut zip_file_comment = vec![0; zip_file_comment_length];
+        let mut zip_file_comment = vec![0; zip_file_comment_length].into_boxed_slice();
         reader.read_exact(&mut zip_file_comment)?;
 
         Ok(CentralDirectoryEnd {

@@ -125,7 +125,7 @@ pub(crate) mod zip_writer {
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
-        pub(super) comment: Vec<u8>,
+        pub(super) comment: Box<[u8]>,
         pub(super) flush_on_finish_file: bool,
     }
 }
@@ -683,7 +683,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             stats: Default::default(),
             writing_to_file: false,
             writing_raw: false,
-            comment: Vec::new(),
+            comment: Box::new([]),
             flush_on_finish_file: false,
         }
     }
@@ -696,16 +696,16 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Set ZIP archive comment.
     pub fn set_comment<S>(&mut self, comment: S)
     where
-        S: Into<String>,
+        S: Into<Box<str>>,
     {
-        self.set_raw_comment(comment.into().into())
+        self.set_raw_comment(comment.into().into_boxed_bytes())
     }
 
     /// Set ZIP archive comment.
     ///
     /// This sets the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8
-    pub fn set_raw_comment(&mut self, comment: Vec<u8>) {
+    pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
         self.comment = comment;
     }
 
@@ -718,7 +718,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// This returns the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8
-    pub const fn get_raw_comment(&self) -> &Vec<u8> {
+    pub const fn get_raw_comment(&self) -> &[u8] {
         &self.comment
     }
 
@@ -2458,10 +2458,11 @@ mod test {
     #[test]
     fn test_crash_short_read() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let comment: Vec<u8> = vec![
+        let comment = vec![
             1, 80, 75, 5, 6, 237, 237, 237, 237, 237, 237, 237, 237, 44, 255, 191, 255, 255, 255,
             255, 255, 255, 255, 255, 16,
-        ];
+        ]
+        .into_boxed_slice();
         writer.set_raw_comment(comment);
         let options = SimpleFileOptions::default()
             .compression_method(Stored)

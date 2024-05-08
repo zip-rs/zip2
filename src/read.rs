@@ -352,7 +352,7 @@ pub(crate) struct CentralDirectoryInfo {
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
-        comment: Vec<u8>,
+        comment: Box<[u8]>,
         reader: R,
         central_start: u64,
     ) -> ZipResult<Self> {
@@ -368,7 +368,7 @@ impl<R> ZipArchive<R> {
         Ok(Self {
             reader,
             shared,
-            comment: comment.into_boxed_slice().into(),
+            comment: comment.into(),
         })
     }
 
