@@ -3,7 +3,6 @@
 
 use crate::result::{ZipError, ZipResult};
 use memchr::memmem::FinderRev;
-use core::mem::size_of_val;
 use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;

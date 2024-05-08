@@ -184,7 +184,7 @@ mod sealed {
 }
 
 #[derive(Copy, Clone, Debug)]
-enum EncryptWith<'k> {
+pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
         mode: AesMode,
@@ -771,8 +771,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             let header_start = self.inner.get_plain().stream_position()?;
 
-            let file =
-                ZipFileData::initialize_local_block(name, &options, raw_values, header_start);
+            let file = ZipFileData::initialize_local_block(
+                name,
+                &options,
+                raw_values,
+                header_start,
+                None,
+                aes_extra_data_start,
+            );
 
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];

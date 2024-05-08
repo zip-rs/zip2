@@ -482,6 +482,8 @@ impl ZipFileData {
         options: &FileOptions<T>,
         raw_values: ZipRawValues,
         header_start: u64,
+        extra_data_start: Option<u64>,
+        aes_extra_data_start: u64,
     ) -> Self
     where
         S: Into<Box<str>>,
@@ -510,6 +512,8 @@ impl ZipFileData {
             large_file: options.large_file,
             aes_mode: None,
             extra_fields: Vec::new(),
+            extra_data_start,
+            aes_extra_data_start,
         }
     }
 
@@ -590,6 +594,8 @@ impl ZipFileData {
             large_file: false,
             aes_mode: None,
             extra_fields: Vec::new(),
+            extra_data_start: None,
+            aes_extra_data_start: 0,
         })
     }
 
