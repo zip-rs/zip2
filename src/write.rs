@@ -1969,12 +1969,12 @@ mod test {
     use crate::result::ZipResult;
     use crate::types::DateTime;
     use crate::write::SimpleFileOptions;
+    use crate::AesMode::Aes128;
     use crate::CompressionMethod::{Deflated, Stored};
     use crate::ZipArchive;
     use std::io;
-    use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+    use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;
-    use crate::AesMode::Aes128;
 
     #[test]
     fn write_empty_zip() {
@@ -2472,23 +2472,25 @@ mod test {
         let written = writer.finish().unwrap();
         let _ = ZipWriter::new_append(written).unwrap();
     }
-    
+
     #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
     #[test]
     fn test_fuzz_failure_2024_05_08() -> ZipResult<()> {
         let mut first_writer = ZipWriter::new(Cursor::new(Vec::new()));
         let mut second_writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default().compression_method(Stored)
-            .with_alignment(46036); 
+        let options = SimpleFileOptions::default()
+            .compression_method(Stored)
+            .with_alignment(46036);
         second_writer.add_symlink("\0", "", options)?;
-        let mut second_archive = second_writer.finish_into_readable()?.into_inner();
-        second_archive.seek(SeekFrom::Start(0))?;
+        let second_archive = second_writer.finish_into_readable()?.into_inner();
         let mut second_writer = ZipWriter::new_append(second_archive)?;
-        let options = SimpleFileOptions::default().compression_method(Deflated)
-            .large_file(true).with_alignment(46036).with_aes_encryption(Aes128, "\0\0");
+        let options = SimpleFileOptions::default()
+            .compression_method(Deflated)
+            .large_file(true)
+            .with_alignment(46036)
+            .with_aes_encryption(Aes128, "\0\0");
         second_writer.add_symlink("", "", options)?;
-        let mut second_archive = second_writer.finish_into_readable()?.into_inner();
-        second_archive.seek(SeekFrom::Start(0))?;
+        let second_archive = second_writer.finish_into_readable()?.into_inner();
         let mut second_writer = ZipWriter::new_append(second_archive)?;
         let options = SimpleFileOptions::default().compression_method(Stored);
         second_writer.start_file(" ", options)?;
