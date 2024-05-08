@@ -1969,9 +1969,8 @@ mod test {
     use crate::result::ZipResult;
     use crate::types::DateTime;
     use crate::write::SimpleFileOptions;
-    use crate::AesMode::Aes128;
     use crate::CompressionMethod::{Deflated, Stored};
-    use crate::ZipArchive;
+    use crate::{AesMode, ZipArchive};
     use std::io;
     use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;
@@ -2488,7 +2487,7 @@ mod test {
             .compression_method(Deflated)
             .large_file(true)
             .with_alignment(46036)
-            .with_aes_encryption(Aes128, "\0\0");
+            .with_aes_encryption(AesMode::Aes128, "\0\0");
         second_writer.add_symlink("", "", options)?;
         let second_archive = second_writer.finish_into_readable()?.into_inner();
         let mut second_writer = ZipWriter::new_append(second_archive)?;
