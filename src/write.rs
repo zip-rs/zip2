@@ -1340,6 +1340,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
+        options.encrypt_with = None;
 
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
