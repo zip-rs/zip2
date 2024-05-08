@@ -26,7 +26,7 @@ pub enum BasicFileOperation<'k> {
     }
 }
 
-#[derive(Arbitrary, Clone, Debug)]
+#[derive(Arbitrary, Clone, Debug, Eq, PartialEq)]
 pub enum ReopenOption {
     DoNotReopen,
     ViaFinish,
@@ -127,6 +127,12 @@ where
 fuzz_target!(|test_case: FuzzTestCase| {
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     writer.set_raw_comment(test_case.comment);
+    let mut final_reopen = false;
+    if let Some((last_op, _)) = test_case.operations.last() {
+        if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
+            final_reopen = true;
+        }
+    }
     for (operation, abort) in test_case.operations {
         let _ = do_operation(
             &mut writer,
@@ -135,5 +141,7 @@ fuzz_target!(|test_case: FuzzTestCase| {
             test_case.flush_on_finish_file,
         );
     }
-    let _ = zip::ZipArchive::new(writer.finish().unwrap());
+    if final_reopen {
+        let _ = writer.finish_into_readable().unwrap();
+    }
 });
