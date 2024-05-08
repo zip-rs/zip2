@@ -1,5 +1,6 @@
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::{LittleEndianReadExt, LittleEndianWriteExt};
+use core::mem::size_of_val;
 use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
@@ -65,8 +66,10 @@ impl CentralDirectoryEnd {
 
         let mut pos = file_length - HEADER_SIZE;
         while pos >= search_upper_bound {
+            let mut have_signature = false;
             reader.seek(io::SeekFrom::Start(pos))?;
             if reader.read_u32_le()? == CENTRAL_DIRECTORY_END_SIGNATURE {
+                have_signature = true;
                 reader.seek(io::SeekFrom::Current(
                     BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
                 ))?;
@@ -75,7 +78,11 @@ impl CentralDirectoryEnd {
                     return Ok((end_header, cde_start_pos));
                 }
             }
-            pos = match pos.checked_sub(1) {
+            pos = match pos.checked_sub(if have_signature {
+                size_of_val(&CENTRAL_DIRECTORY_END_SIGNATURE) as u64
+            } else {
+                1
+            }) {
                 Some(p) => p,
                 None => break,
             };
@@ -155,9 +162,10 @@ impl Zip64CentralDirectoryEnd {
         let mut pos = search_upper_bound;
 
         while pos >= nominal_offset {
+            let mut have_signature = false;
             reader.seek(io::SeekFrom::Start(pos))?;
-
             if reader.read_u32_le()? == ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
+                have_signature = true;
                 let archive_offset = pos - nominal_offset;
 
                 let _record_size = reader.read_u64_le()?;
@@ -186,10 +194,13 @@ impl Zip64CentralDirectoryEnd {
                     archive_offset,
                 ));
             }
-            if pos > 0 {
-                pos -= 1;
+            pos = match pos.checked_sub(if have_signature {
+                size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE) as u64
             } else {
-                break;
+                1
+            }) {
+                None => break,
+                Some(p) => p,
             }
         }
         if results.is_empty() {

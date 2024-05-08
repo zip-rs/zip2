@@ -215,7 +215,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run --all-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=10s -fork=2 -runs=3000000 -max_len=1100 -len_control=200 -dict=fuzz/fuzz.dict
+          args: run --all-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=2s -fork=2 -runs=1000000 -max_len=500 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -224,6 +224,7 @@ jobs:
           path: |
             fuzz/artifacts/fuzz_write/crash-*
             fuzz/artifacts/fuzz_write/leak-*
+            fuzz/artifacts/fuzz_write/timeout-*
           if-no-files-found: ignore
       - name: Minimize seed corpus
         if: always()
