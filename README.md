@@ -31,7 +31,7 @@ Features
 
 The features available are:
 
-* `aes-crypto`: Enables decryption of files which were encrypted with AES. Supports AE-1 and AE-2 methods.
+* `aes-crypto`: Enables encryption and decryption of files with AES. Supports both AE-1 and AE-2 encryption versions.
 * `deflate`: Enables decompressing the deflate compression algorithm, which is the default for zip files.
 * `deflate-zlib`: Enables deflating files with the `zlib` library (used when compression quality is 0..=9).
 * `deflate-zlib-ng`: Enables deflating files with the `zlib-ng` library (used when compression quality is 0..=9).
