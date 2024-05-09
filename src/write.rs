@@ -1847,7 +1847,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let is_ascii = file.file_name_raw.is_ascii();
     let flag = if is_utf8 && !is_ascii { 1u16 << 11 } else { 0 }
         | if file.encrypted { 1u16 << 0 } else { 0 };
-    writer.write_u16::<LittleEndian>(flag)?;
+    writer.write_u16_le(flag)?;
     // compression method
     #[allow(deprecated)]
     writer.write_u16_le(file.compression_method.to_u16())?;
