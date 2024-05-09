@@ -1759,7 +1759,11 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     if let Some(field) = file.extra_field {
         extra_field_length += field.len();
     }
-    writer.write_u16_le(extra_field_length)?;
+    match extra_field_length.try_into::<u16>() {
+        Ok(length_u16) => writer.write_u16_le(length_u16)?,
+        Err(_) => return ZipError::InvalidArchive("Extra field is too long"),
+    }
+    writer.write_u16_le(extra_field_length.try_into().map_err(|_| ZipError))?;
     // file name
     writer.write_all(&file.file_name_raw)?;
     // zip64 extra field
