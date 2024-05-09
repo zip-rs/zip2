@@ -1763,6 +1763,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     if file.large_file {
         write_local_zip64_extra_field(writer, file)?;
     }
+}
 
 fn update_aes_extra_data<W: Write + io::Seek>(
     writer: &mut W,
