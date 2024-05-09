@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.2](https://github.com/zip-rs/zip2/compare/v1.2.1...v1.2.2) - 2024-05-09
+
+### <!-- 1 -->🐛 Bug Fixes
+- Failed to clear "writing_raw" before finishing a symlink, leading to dropped extra fields
+
+### <!-- 4 -->⚡ Performance
+- Use boxed slice for archive comment, since it can't be concatenated
+- Optimize for the fact that false signatures can't overlap with real ones
+
 ## [1.2.1](https://github.com/zip-rs/zip2/compare/v1.2.0...v1.2.1) - 2024-05-06
 
 ### <!-- 1 -->🐛 Bug Fixes
