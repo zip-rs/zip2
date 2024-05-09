@@ -796,7 +796,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
-                file_name: Box::new([]), // Never used for saving
+                file_name: Box::new(""), // Never used for saving
                 file_name_raw: name.into().bytes().collect(),
                 extra_field,
                 central_extra_field: options.extended_options.central_extra_data().cloned(),
@@ -1755,7 +1755,8 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     // file name length
     writer.write_u16_le(file.file_name_raw.len() as u16)?;
     // extra field length
-    let extra_field_length = if file.large_file { 20 } else { 0 } + file.extra_field.len() as u16;
+    let extra_field_length = if file.large_file { 20 } else { 0 } 
+        + file.extra_field.map(|field| field.len()).unwrap_or(0) as u16;
     writer.write_u16_le(extra_field_length)?;
     // file name
     writer.write_all(&file.file_name_raw)?;
@@ -1763,6 +1764,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     if file.large_file {
         write_local_zip64_extra_field(writer, file)?;
     }
+    Ok(())
 }
 
 fn update_aes_extra_data<W: Write + io::Seek>(
