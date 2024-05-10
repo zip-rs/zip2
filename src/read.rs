@@ -13,6 +13,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
+use std::fs::{create_dir_all, Permissions};
 use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -661,7 +662,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
-
+        #[cfg(unix)]
+        let mut files_by_unix_mode = Vec::new();
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
@@ -671,24 +673,45 @@ impl<R: Read + Seek> ZipArchive<R> {
             let outpath = directory.as_ref().join(filepath);
 
             if file.is_dir() {
-                fs::create_dir_all(&outpath)?;
+                Self::make_writable_dir_all(&outpath)?;
             } else {
                 if let Some(p) = outpath.parent() {
-                    if !p.exists() {
-                        fs::create_dir_all(p)?;
-                    }
+                    Self::make_writable_dir_all(p)?;
                 }
                 let mut outfile = fs::File::create(&outpath)?;
                 io::copy(&mut file, &mut outfile)?;
             }
-            // Get and Set permissions
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
+                // Check for real permissions, which we'll set in a second pass
                 if let Some(mode) = file.unix_mode() {
-                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                    files_by_unix_mode.push((outpath.clone(), mode));
                 }
             }
+        }
+        #[cfg(unix)]
+        {
+            use std::cmp::Reverse;
+            use std::os::unix::fs::PermissionsExt;
+
+            if files_by_unix_mode.len() > 1 {
+                // Ensure we update children's permissions before making a parent unwritable
+                files_by_unix_mode.sort_by_key(|(path, _)| Reverse(path.clone()));
+            }
+            for (path, mode) in files_by_unix_mode.into_iter() {
+                fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
+        create_dir_all(outpath.as_ref())?;
+        #[cfg(unix)]
+        {
+            // Dirs must be writable until all normal files are extracted
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(outpath.as_ref(), Permissions::from_mode(0o755))?;
         }
         Ok(())
     }
