@@ -2,52 +2,61 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use std::cell::RefCell;
+use replace_with::replace_with_or_abort;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
+use zip::result::ZipError;
 
 #[derive(Arbitrary, Clone, Debug)]
-pub enum BasicFileOperation {
+pub enum BasicFileOperation<'k> {
     WriteNormalFile {
-        contents: Vec<Vec<u8>>,
-        options: zip::write::FullFileOptions,
+        contents: Box<[Box<[u8]>]>,
+        options: zip::write::FullFileOptions<'k>,
     },
-    WriteDirectory(zip::write::FullFileOptions),
+    WriteDirectory(zip::write::FullFileOptions<'k>),
     WriteSymlinkWithTarget {
         target: PathBuf,
-        options: zip::write::FullFileOptions,
+        options: zip::write::FullFileOptions<'k>,
     },
-    ShallowCopy(Box<FileOperation>),
-    DeepCopy(Box<FileOperation>),
+    ShallowCopy(Box<FileOperation<'k>>),
+    DeepCopy(Box<FileOperation<'k>>),
+    MergeWithOtherFile {
+        operations: Box<[(FileOperation<'k>, bool)]>
+    }
+}
+
+#[derive(Arbitrary, Clone, Debug, Eq, PartialEq)]
+pub enum ReopenOption {
+    DoNotReopen,
+    ViaFinish,
+    ViaFinishIntoReadable
 }
 
 #[derive(Arbitrary, Clone, Debug)]
-pub struct FileOperation {
-    basic: BasicFileOperation,
+pub struct FileOperation<'k> {
+    basic: BasicFileOperation<'k>,
     path: PathBuf,
-    reopen: bool,
+    reopen: ReopenOption,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
 #[derive(Arbitrary, Clone, Debug)]
-pub struct FuzzTestCase {
-    comment: Vec<u8>,
-    operations: Vec<(FileOperation, bool)>,
+pub struct FuzzTestCase<'k> {
+    comment: Box<[u8]>,
+    operations: Box<[(FileOperation<'k>, bool)]>,
     flush_on_finish_file: bool,
 }
 
-fn do_operation<T>(
-    writer: &mut RefCell<zip::ZipWriter<T>>,
-    operation: &FileOperation,
+fn do_operation<'k, T>(
+    writer: &mut zip::ZipWriter<T>,
+    operation: &FileOperation<'k>,
     abort: bool,
     flush_on_finish_file: bool,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     T: Read + Write + Seek,
 {
-    writer
-        .borrow_mut()
-        .set_flush_on_finish_file(flush_on_finish_file);
+    writer.set_flush_on_finish_file(flush_on_finish_file);
     let path = &operation.path;
     match &operation.basic {
         BasicFileOperation::WriteNormalFile {
@@ -55,56 +64,82 @@ where
             options,
             ..
         } => {
-            let uncompressed_size = contents.iter().map(Vec::len).sum::<usize>();
+            let uncompressed_size = contents.iter().map(|chunk| chunk.len()).sum::<usize>();
             let mut options = (*options).to_owned();
             if uncompressed_size >= u32::MAX as usize {
                 options = options.large_file(true);
             }
-            writer.borrow_mut().start_file_from_path(path, options)?;
-            for chunk in contents {
-                writer.borrow_mut().write_all(chunk.as_slice())?;
+            writer.start_file_from_path(path, options)?;
+            for chunk in contents.iter() {
+                writer.write_all(&chunk)?;
             }
         }
         BasicFileOperation::WriteDirectory(options) => {
-            writer.borrow_mut().add_directory_from_path(path, options.to_owned())?;
+            writer.add_directory_from_path(path, options.to_owned())?;
         }
         BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
-            writer
-                .borrow_mut()
-                .add_symlink_from_path(&path, target, options.to_owned())?;
+            writer.add_symlink_from_path(&path, target, options.to_owned())?;
         }
         BasicFileOperation::ShallowCopy(base) => {
             do_operation(writer, &base, false, flush_on_finish_file)?;
-            writer.borrow_mut().shallow_copy_file_from_path(&base.path, &path)?;
+            writer.shallow_copy_file_from_path(&base.path, &path)?;
         }
         BasicFileOperation::DeepCopy(base) => {
             do_operation(writer, &base, false, flush_on_finish_file)?;
-            writer.borrow_mut().deep_copy_file_from_path(&base.path, &path)?;
+            writer.deep_copy_file_from_path(&base.path, &path)?;
+        }
+        BasicFileOperation::MergeWithOtherFile { operations } => {
+            let mut other_writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            operations.iter().for_each(|(operation, abort)| {
+                let _ = do_operation(
+                    &mut other_writer,
+                    &operation,
+                    *abort,
+                    false,
+                );
+            });
+            writer.merge_archive(other_writer.finish_into_readable()?)?;
         }
     }
     if abort {
-        writer.borrow_mut().abort_file().unwrap();
+        match writer.abort_file() {
+            Ok(()) => {},
+            Err(ZipError::FileNotFound) => {},
+            Err(e) => return Err(Box::new(e))
+        }
     }
-    if operation.reopen {
-        let old_comment = writer.borrow().get_raw_comment().to_owned();
-        let new_writer =
-            zip::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
-        assert_eq!(&old_comment, new_writer.get_raw_comment());
-        *writer = new_writer.into();
+    let old_comment = writer.get_raw_comment().to_owned();
+    match operation.reopen {
+        ReopenOption::DoNotReopen => {},
+        ReopenOption::ViaFinish => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+            zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap()
+        }),
+        ReopenOption::ViaFinishIntoReadable => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+            zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
+        }),
     }
+    assert_eq!(&old_comment, writer.get_raw_comment());
     Ok(())
 }
 
 fuzz_target!(|test_case: FuzzTestCase| {
-    let mut writer = RefCell::new(zip::ZipWriter::new(Cursor::new(Vec::new())));
-    writer.borrow_mut().set_raw_comment(test_case.comment);
-    for (operation, abort) in test_case.operations {
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer.set_raw_comment(test_case.comment);
+    let mut final_reopen = false;
+    if let Some((last_op, _)) = test_case.operations.last() {
+        if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
+            final_reopen = true;
+        }
+    }
+    for (operation, abort) in test_case.operations.into_iter() {
         let _ = do_operation(
             &mut writer,
             &operation,
-            abort,
+            *abort,
             test_case.flush_on_finish_file,
         );
     }
-    let _ = zip::ZipArchive::new(writer.borrow_mut().finish().unwrap());
+    if final_reopen {
+        let _ = writer.finish_into_readable().unwrap();
+    }
 });

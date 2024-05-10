@@ -148,17 +148,7 @@ impl Default for CompressionMethod {
         #[cfg(feature = "_deflate-any")]
         return CompressionMethod::Deflated;
 
-        #[cfg(all(not(feature = "_deflate-any"), feature = "bzip2"))]
-        return CompressionMethod::Bzip2;
-
-        #[cfg(all(
-            not(feature = "_deflate-any"),
-            not(feature = "bzip2"),
-            feature = "zstd"
-        ))]
-        return CompressionMethod::Zstd;
-
-        #[cfg(not(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd")))]
+        #[cfg(not(feature = "_deflate-any"))]
         return CompressionMethod::Stored;
     }
 }

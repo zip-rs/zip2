@@ -59,7 +59,7 @@ fn merge_archive_stored(bench: &mut Bencher) {
     bench.iter(|| {
         let buf = Cursor::new(Vec::new());
         let zip = ZipWriter::new(buf);
-        let mut zip = perform_merge(src.clone(), zip).unwrap();
+        let zip = perform_merge(src.clone(), zip).unwrap();
         let buf = zip.finish().unwrap().into_inner();
         assert_eq!(buf.len(), len);
     });
@@ -75,7 +75,7 @@ fn merge_archive_compressed(bench: &mut Bencher) {
     bench.iter(|| {
         let buf = Cursor::new(Vec::new());
         let zip = ZipWriter::new(buf);
-        let mut zip = perform_merge(src.clone(), zip).unwrap();
+        let zip = perform_merge(src.clone(), zip).unwrap();
         let buf = zip.finish().unwrap().into_inner();
         assert_eq!(buf.len(), len);
     });
@@ -90,7 +90,7 @@ fn merge_archive_raw_copy_file_stored(bench: &mut Bencher) {
     bench.iter(|| {
         let buf = Cursor::new(Vec::new());
         let zip = ZipWriter::new(buf);
-        let mut zip = perform_raw_copy_file(src.clone(), zip).unwrap();
+        let zip = perform_raw_copy_file(src.clone(), zip).unwrap();
         let buf = zip.finish().unwrap().into_inner();
         assert_eq!(buf.len(), len);
     });
@@ -106,7 +106,7 @@ fn merge_archive_raw_copy_file_compressed(bench: &mut Bencher) {
     bench.iter(|| {
         let buf = Cursor::new(Vec::new());
         let zip = ZipWriter::new(buf);
-        let mut zip = perform_raw_copy_file(src.clone(), zip).unwrap();
+        let zip = perform_raw_copy_file(src.clone(), zip).unwrap();
         let buf = zip.finish().unwrap().into_inner();
         assert_eq!(buf.len(), len);
     });

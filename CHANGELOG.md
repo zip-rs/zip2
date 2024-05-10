@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.2.2](https://github.com/zip-rs/zip2/compare/v1.2.1...v1.2.2) - 2024-05-09
+
+### <!-- 1 -->🐛 Bug Fixes
+- Failed to clear "writing_raw" before finishing a symlink, leading to dropped extra fields
+
+### <!-- 4 -->⚡ Performance
+- Use boxed slice for archive comment, since it can't be concatenated
+- Optimize for the fact that false signatures can't overlap with real ones
+
+## [1.2.1](https://github.com/zip-rs/zip2/compare/v1.2.0...v1.2.1) - 2024-05-06
+
+### <!-- 1 -->🐛 Bug Fixes
+- Prevent panic when trying to read a file with an unsupported compression method
+- Prevent panic after reading an invalid LZMA file
+- Make `Stored` the default compression method if `Deflated` isn't available, so that zip files are readable by as much software as possible
+- version_needed was wrong when e.g. cfg(bzip2) but current file wasn't bzip2 ([#100](https://github.com/zip-rs/zip2/pull/100))
+- file paths shouldn't start with slashes ([#102](https://github.com/zip-rs/zip2/pull/102))
+
+### <!-- 2 -->🚜 Refactor
+- Overhaul `impl Arbitrary for FileOptions`
+- Remove unused `atomic` module
+
+## [1.2.0](https://github.com/zip-rs/zip2/compare/v1.1.4...v1.2.0) - 2024-05-06
+
+### <!-- 0 -->🚀 Features
+- Add method `decompressed_size()` so non-recursive ZIP bombs can be detected
+
+### <!-- 2 -->🚜 Refactor
+- Make `ZipWriter::finish()` consume the `ZipWriter`
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Use panic! rather than abort to ensure the fuzz harness can process the failure
+- Update fuzz_write to use replace_with
+- Remove a drop that can no longer be explicit
+- Add `#![allow(unexpected_cfgs)]` in nightly
+
 ## [1.1.4](https://github.com/zip-rs/zip2/compare/v1.1.3...v1.1.4) - 2024-05-04
 
 ### <!-- 1 -->🐛 Bug Fixes

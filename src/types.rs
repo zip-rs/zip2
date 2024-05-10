@@ -1,5 +1,4 @@
 //! Types that specify what is contained in a ZIP.
-use num_enum::{FromPrimitive, IntoPrimitive};
 use path::{Component, Path, PathBuf};
 use std::path;
 use std::sync::{Arc, OnceLock};
@@ -14,50 +13,39 @@ pub(crate) mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
-#[cfg(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-))]
-mod atomic {
-    use crossbeam_utils::sync::ShardedLock;
-    pub use std::sync::atomic::Ordering;
-
-    #[derive(Debug, Default)]
-    pub struct AtomicU64 {
-        value: ShardedLock<u64>,
-    }
-
-    impl AtomicU64 {
-        pub fn new(v: u64) -> Self {
-            Self {
-                value: ShardedLock::new(v),
-            }
-        }
-        pub fn get_mut(&mut self) -> &mut u64 {
-            self.value.get_mut().unwrap()
-        }
-        pub fn load(&self, _: Ordering) -> u64 {
-            *self.value.read().unwrap()
-        }
-        pub fn store(&self, value: u64, _: Ordering) {
-            *self.value.write().unwrap() = value;
-        }
-    }
-}
-
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
+use crate::types::ffi::S_IFDIR;
+use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum System {
     Dos = 0,
     Unix = 3,
-    #[num_enum(default)]
     Unknown,
+}
+
+impl From<u8> for System {
+    fn from(system: u8) -> Self {
+        match system {
+            0 => Self::Dos,
+            3 => Self::Unix,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl From<System> for u8 {
+    fn from(system: System) -> Self {
+        match system {
+            System::Dos => 0,
+            System::Unix => 3,
+            System::Unknown => 4,
+        }
+    }
 }
 
 /// Representation of a moment in time.
@@ -351,6 +339,8 @@ pub struct ZipFileData {
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
+    /// Specifies where the extra data of the file starts
+    pub extra_data_start: Option<u64>,
     /// Specifies where the central header of the file starts
     ///
     /// Note that when this is not known, it is set to 0
@@ -362,7 +352,9 @@ pub struct ZipFileData {
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
     /// AES mode if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
+    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    /// Specifies where in the extra data the AES metadata starts
+    pub aes_extra_data_start: u64,
 
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
     pub extra_fields: Vec<ExtraField>,
@@ -438,20 +430,42 @@ impl ZipFileData {
         }
     }
 
-    pub const fn zip64_extension(&self) -> bool {
-        self.uncompressed_size > 0xFFFFFFFF
-            || self.compressed_size > 0xFFFFFFFF
-            || self.header_start > 0xFFFFFFFF
-    }
-
-    pub const fn version_needed(&self) -> u16 {
-        // higher versions matched first
-        match (self.zip64_extension(), self.compression_method) {
+    /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
+    pub fn version_needed(&self) -> u16 {
+        let compression_version: u16 = match self.compression_method {
+            CompressionMethod::Stored => 10,
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => 20,
             #[cfg(feature = "bzip2")]
-            (_, crate::compression::CompressionMethod::Bzip2) => 46,
-            (true, _) => 45,
-            _ => 20,
-        }
+            CompressionMethod::Bzip2 => 46,
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => 21,
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => 63,
+            // APPNOTE doesn't specify a version for Zstandard
+            _ => DEFAULT_VERSION as u16,
+        };
+        let crypto_version: u16 = if self.aes_mode.is_some() {
+            51
+        } else if self.encrypted {
+            20
+        } else {
+            10
+        };
+        let misc_feature_version: u16 = if self.large_file {
+            45
+        } else if self
+            .unix_mode()
+            .is_some_and(|mode| mode & S_IFDIR == S_IFDIR)
+        {
+            // file is directory
+            20
+        } else {
+            10
+        };
+        compression_version
+            .max(crypto_version)
+            .max(misc_feature_version)
     }
     #[inline(always)]
     pub(crate) fn extra_field_len(&self) -> usize {
@@ -474,25 +488,33 @@ impl ZipFileData {
 /// According to the [specification](https://www.winzip.com/win/en/aes_info.html#winzip11) AE-2
 /// does not make use of the CRC check.
 #[derive(Copy, Clone, Debug)]
+#[repr(u16)]
 pub enum AesVendorVersion {
-    Ae1,
-    Ae2,
+    Ae1 = 0x0001,
+    Ae2 = 0x0002,
 }
 
 /// AES variant used.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[repr(u8)]
 pub enum AesMode {
-    Aes128,
-    Aes192,
-    Aes256,
+    /// 128-bit AES encryption.
+    Aes128 = 0x01,
+    /// 192-bit AES encryption.
+    Aes192 = 0x02,
+    /// 256-bit AES encryption.
+    Aes256 = 0x03,
 }
 
 #[cfg(feature = "aes-crypto")]
 impl AesMode {
+    /// Length of the salt for the given AES mode.
     pub const fn salt_length(&self) -> usize {
         self.key_length() / 2
     }
 
+    /// Length of the key for the given AES mode.
     pub const fn key_length(&self) -> usize {
         match self {
             Self::Aes128 => 16,
@@ -538,11 +560,13 @@ mod test {
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
+            extra_data_start: None,
             data_start: OnceLock::new(),
             central_header_start: 0,
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
+            aes_extra_data_start: 0,
             extra_fields: Vec::new(),
         };
         assert_eq!(data.file_name_sanitized(), PathBuf::from("path/etc/passwd"));
