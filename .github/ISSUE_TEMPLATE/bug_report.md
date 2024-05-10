@@ -7,7 +7,8 @@ assignees: ''
 
 ---
 
-<!-- Please don't include copyrighted ZIP files, unless we have the owners' permission to publish them at https://github.com/zip-rs/zip2/tree/master/tests/data under the MIT License. -->
+<!-- ⚠️©️ Please don't include copyrighted ZIP files, unless we have the owners' permission to publish them at https://github.com/zip-rs/zip2/tree/master/tests/data under the MIT License.
+ZIP files in your bug report will be used in tests to ensure that bugs aren't reintroduced once fixed. These tests will break if a copyright complaint forces GitHub to remove a file. -->
 
 **Describe the bug**
 A clear and concise description of what the bug is.
