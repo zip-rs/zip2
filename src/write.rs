@@ -2145,6 +2145,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
+            extended_options: (),
+            alignment: 1,
         };
 
         // GB18030
@@ -2179,7 +2181,7 @@ mod test {
         path.push(".");
         path.push("system32");
         let path_str = super::path_to_string(&path);
-        assert_eq!(path_str, "windows/system32");
+        assert_eq!(&path_str, "windows/system32");
     }
 
     #[test]
