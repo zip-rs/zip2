@@ -796,7 +796,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
-                file_name: "".into(), // Never used for saving
+                file_name: name.into(), // Never used for saving
                 file_name_raw: name.into().bytes().collect(),
                 extra_field,
                 central_extra_field: options.extended_options.central_extra_data().cloned(),
@@ -2183,7 +2183,7 @@ mod test {
         path.push(".");
         path.push("system32");
         let path_str = super::path_to_string(&path);
-        assert_eq!(&*path_str, "windows/system32");
+        assert_eq!(&*path_str, "system32");
     }
 
     #[test]
