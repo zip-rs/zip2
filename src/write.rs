@@ -815,15 +815,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
             let writer = self.inner.get_plain();
+            // local file header signature
             writer.write_u32_le(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
             // version needed to extract
             writer.write_u16_le(file.version_needed())?;
             // general purpose bit flag
-            let flag = if !file.file_name.is_ascii() {
-                1u16 << 11
-            } else {
-                0
-            } | if file.encrypted { 1u16 << 0 } else { 0 };
+            let is_utf8 = std::str::from_utf8(&file.file_name_raw).is_ok();
+            let is_ascii = file.file_name_raw.is_ascii();
+            let flag = if is_utf8 && !is_ascii { 1u16 << 11 } else { 0 }
+                | if file.encrypted { 1u16 << 0 } else { 0 };
             writer.write_u16_le(flag)?;
             // Compression method
             #[allow(deprecated)]
@@ -842,88 +842,21 @@ impl<W: Write + Seek> ZipWriter<W> {
                 writer.write_u32_le(file.uncompressed_size as u32)?;
             }
             // file name length
-            writer.write_u16_le(file.file_name.as_bytes().len() as u16)?;
+            writer.write_u16_le(file.file_name_raw.len() as u16)?;
             // extra field length
-            let mut extra_field_length = file.extra_field_len();
-            if file.large_file {
-                extra_field_length += 20;
+            let mut extra_field_length = if file.large_file { 20 } else { 0 };
+            if let Some(field) = &file.extra_field {
+                extra_field_length += field.len();
             }
-            if extra_field_length + file.central_extra_field_len() > u16::MAX as usize {
-                let _ = self.abort_file();
-                return Err(InvalidArchive("Extra data field is too large"));
+            match extra_field_length.try_into() {
+                Ok(length_u16) => writer.write_u16_le(length_u16)?,
+                Err(_) => return Err(ZipError::InvalidArchive("Extra field is too long")),
             }
-            let extra_field_length = extra_field_length as u16;
-            writer.write_u16_le(extra_field_length)?;
             // file name
-            writer.write_all(file.file_name.as_bytes())?;
+            writer.write_all(&file.file_name_raw)?;
             // zip64 extra field
             if file.large_file {
                 write_local_zip64_extra_field(writer, file)?;
-            }
-            if let Some(extra_field) = &file.extra_field {
-                file.extra_data_start = Some(writer.stream_position()?);
-                writer.write_all(extra_field)?;
-            }
-            let mut header_end = writer.stream_position()?;
-            if options.alignment > 1 {
-                let align = options.alignment as u64;
-                let unaligned_header_bytes = header_end % align;
-                if unaligned_header_bytes != 0 {
-                    let pad_length = (align - unaligned_header_bytes) as usize;
-                    let Some(new_extra_field_length) =
-                        (pad_length as u16).checked_add(extra_field_length)
-                    else {
-                        let _ = self.abort_file();
-                        return Err(InvalidArchive(
-                            "Extra data field would be larger than allowed after aligning",
-                        ));
-                    };
-                    if pad_length >= 4 {
-                        // Add an extra field to the extra_data
-                        let pad_body = vec![0; pad_length - 4];
-                        writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
-                        writer
-                            .write_u16_le(pad_body.len() as u16)
-                            .map_err(ZipError::from)?;
-                        writer.write_all(&pad_body).map_err(ZipError::from)?;
-                    } else {
-                        // extra_data padding is too small for an extra field header, so pad with
-                        // zeroes
-                        let pad = vec![0; pad_length];
-                        writer.write_all(&pad).map_err(ZipError::from)?;
-                    }
-                    header_end = writer.stream_position()?;
-
-                    // Update extra field length in local file header.
-                    writer.seek(SeekFrom::Start(file.header_start + 28))?;
-                    writer.write_u16_le(new_extra_field_length)?;
-                    writer.seek(SeekFrom::Start(header_end))?;
-                    debug_assert_eq!(header_end % align, 0);
-                }
-            }
-            match options.encrypt_with {
-                #[cfg(feature = "aes-crypto")]
-                Some(EncryptWith::Aes { mode, password }) => {
-                    let aeswriter = AesWriter::new(
-                        mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(),
-                        mode,
-                        password.as_bytes(),
-                    )?;
-                    self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
-                }
-                Some(EncryptWith::ZipCrypto(keys, ..)) => {
-                    let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
-                        writer: mem::replace(&mut self.inner, Closed).unwrap(),
-                        buffer: vec![],
-                        keys,
-                    };
-                    let crypto_header = [0u8; 12];
-
-                    zipwriter.write_all(&crypto_header)?;
-                    header_end = zipwriter.writer.stream_position()?;
-                    self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
-                }
-                None => {}
             }
             self.stats.start = header_end;
             debug_assert!(file.data_start.get().is_none());
@@ -1723,53 +1656,6 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     } else {
         None
     }
-}
-
-fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    // local file header signature
-    writer.write_u32_le(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
-    // version needed to extract
-    writer.write_u16_le(file.version_needed())?;
-    // general purpose bit flag
-    let is_utf8 = std::str::from_utf8(&file.file_name_raw).is_ok();
-    let is_ascii = file.file_name_raw.is_ascii();
-    let flag = if is_utf8 && !is_ascii { 1u16 << 11 } else { 0 }
-        | if file.encrypted { 1u16 << 0 } else { 0 };
-    writer.write_u16_le(flag)?;
-    // Compression method
-    #[allow(deprecated)]
-    writer.write_u16_le(file.compression_method.to_u16())?;
-    // last mod file time and last mod file date
-    writer.write_u16_le(file.last_modified_time.timepart())?;
-    writer.write_u16_le(file.last_modified_time.datepart())?;
-    // crc-32
-    writer.write_u32_le(file.crc32)?;
-    // compressed size and uncompressed size
-    if file.large_file {
-        writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-        writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-    } else {
-        writer.write_u32_le(file.compressed_size as u32)?;
-        writer.write_u32_le(file.uncompressed_size as u32)?;
-    }
-    // file name length
-    writer.write_u16_le(file.file_name_raw.len() as u16)?;
-    // extra field length
-    let mut extra_field_length = if file.large_file { 20 } else { 0 };
-    if let Some(field) = &file.extra_field {
-        extra_field_length += field.len();
-    }
-    match extra_field_length.try_into() {
-        Ok(length_u16) => writer.write_u16_le(length_u16)?,
-        Err(_) => return Err(ZipError::InvalidArchive("Extra field is too long")),
-    }
-    // file name
-    writer.write_all(&file.file_name_raw)?;
-    // zip64 extra field
-    if file.large_file {
-        write_local_zip64_extra_field(writer, file)?;
-    }
-    Ok(())
 }
 
 fn update_aes_extra_data<W: Write + io::Seek>(
