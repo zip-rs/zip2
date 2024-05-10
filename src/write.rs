@@ -1456,6 +1456,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let src_index = self.index_by_name(src_name)?;
         let mut dest_data = self.files[src_index].to_owned();
         dest_data.file_name = dest_name.into();
+        dest_data.file_name_raw = dest_name.into();
         self.insert_file_data(dest_data)?;
         Ok(())
     }
@@ -2179,7 +2180,7 @@ mod test {
         v[54] = 10;
         v[108] = 10;
         v[158] = 10;
-        
+
         assert_eq!(result.get_ref(), &v);
     }
 
