@@ -2,7 +2,7 @@
 We welcome your pull request, but because this crate is downloaded about 1.7 million times per month (see https://crates.io/crates/zip),
 and because ZIP file processing has caused security issues in the past (see 
 https://www.cvedetails.com/vulnerability-search.php?f=1&vendor=&product=zip&cweid=&cvssscoremin=&cvssscoremax=&publishdatestart=&publishdateend=&updatedatestart=&updatedateend=&cisaaddstart=&cisaaddend=&cisaduestart=&cisadueend=&page=1
-for the gory details), we have some requirements that help ensure the crate remains trustworthy and panic-free, and we've seen
+for the gory details), we have some requirements that help ensure the crate earns and keeps developers' trust, and we've seen
 a lot of PRs that don't meet those requirements.
 
 We don't filter out "ZIP bombs" because extreme compression ratios and shallow file copies have legitimate uses; but
