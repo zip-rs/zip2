@@ -844,14 +844,16 @@ impl<W: Write + Seek> ZipWriter<W> {
             // file name length
             writer.write_u16_le(file.file_name_raw.len() as u16)?;
             // extra field length
-            let mut extra_field_length = if file.large_file { 20 } else { 0 };
-            if let Some(field) = &file.extra_field {
-                extra_field_length += field.len();
+            let mut extra_field_length = file.extra_field_len();
+            if file.large_file {
+                extra_field_length += 20;
             }
-            match extra_field_length.try_into() {
-                Ok(length_u16) => writer.write_u16_le(length_u16)?,
-                Err(_) => return Err(ZipError::InvalidArchive("Extra field is too long")),
+            if extra_field_length + file.central_extra_field_len() > u16::MAX as usize {
+                let _ = self.abort_file();
+                return Err(InvalidArchive("Extra data field is too large"));
             }
+            let extra_field_length = extra_field_length as u16;
+            writer.write_u16_le(extra_field_length)?;
             // file name
             writer.write_all(&file.file_name_raw)?;
             // zip64 extra field
