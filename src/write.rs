@@ -724,14 +724,15 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S, T: FileOptionExtension>(
+    fn start_entry<S, SToOwned, T: FileOptionExtension>(
         &mut self,
         name: S,
         options: FileOptions<T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()>
     where
-        S: Into<Box<str>> + ToOwned,
+        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
+        SOwned: Into<Box<str>>
     {
         self.finish_file()?;
 
