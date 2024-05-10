@@ -13,7 +13,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::fs::{create_dir_all, Permissions};
+use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -711,7 +711,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         {
             // Dirs must be writable until all normal files are extracted
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(outpath.as_ref(), Permissions::from_mode(0o755))?;
+            std::fs::set_permissions(outpath.as_ref(), std::fs::Permissions::from_mode(0o755))?;
         }
         Ok(())
     }
