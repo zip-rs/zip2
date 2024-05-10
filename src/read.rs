@@ -660,8 +660,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// Extraction is not atomic. If an error is encountered, some of the files
     /// may be left on disk. However, on Unix systems, no newly-created directories will be
-    /// readable, writable or usable as process working directories by any user except you unless
-    /// and until their contents are fully extracted.
+    /// readable, writable or usable as process working directories by any non-root user except you
+    /// unless and until their contents are fully extracted.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
         #[cfg(unix)]
