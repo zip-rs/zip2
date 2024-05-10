@@ -2173,6 +2173,11 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/non_utf8.zip"));
+
+        // FIXME: Update the actual file once https://github.com/zip-rs/zip2/pull/106 is merged
+        v[4] = 20;
+        v[54] = 20;
+        
         assert_eq!(result.get_ref(), &v);
     }
 
