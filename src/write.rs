@@ -1756,7 +1756,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     writer.write_u16_le(file.file_name_raw.len() as u16)?;
     // extra field length
     let mut extra_field_length = if file.large_file { 20 } else { 0 };
-    if let Some(field) = file.extra_field {
+    if let Some(field) = &file.extra_field {
         extra_field_length += field.len();
     }
     match extra_field_length.try_into() {
