@@ -13,6 +13,7 @@ use crate::types::{ffi, AesVendorVersion, DateTime, System, ZipFileData, DEFAULT
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
 use indexmap::IndexMap;
+use std::borrow::ToOwned;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -730,7 +731,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()>
     where
-        S: Into<Box<str>>,
+        S: Into<Box<str>> + ToOwned,
     {
         self.finish_file()?;
 
