@@ -732,7 +732,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ) -> ZipResult<()>
     where
         S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
-        SOwned: Into<Box<str>>
+        SToOwned: Into<Box<str>>
     {
         self.finish_file()?;
 
