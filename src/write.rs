@@ -1055,13 +1055,14 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
-    pub fn start_file<S, T: FileOptionExtension>(
+    pub fn start_file<S, T: FileOptionExtension, SToOwned>(
         &mut self,
         name: S,
         mut options: FileOptions<T>,
     ) -> ZipResult<()>
     where
-        S: Into<Box<str>>,
+        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
+        SToOwned: Into<Box<str>>,
     {
         Self::normalize_options(&mut options);
         let make_new_self = self.inner.prepare_next_writer(
@@ -1190,9 +1191,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///     Ok(())
     /// }
     /// ```
-    pub fn raw_copy_file_rename<S>(&mut self, mut file: ZipFile, name: S) -> ZipResult<()>
+    pub fn raw_copy_file_rename<S, SToOwned>(&mut self, mut file: ZipFile, name: S) -> ZipResult<()>
     where
-        S: Into<Box<str>>,
+        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
+        SToOwned: Into<Box<str>>,
     {
         let mut options = SimpleFileOptions::default()
             .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
@@ -1325,14 +1327,15 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// implementations may materialize a symlink as a regular file, possibly with the
     /// content incorrectly set to the symlink target. For maximum portability, consider
     /// storing a regular file instead.
-    pub fn add_symlink<N, T, E: FileOptionExtension>(
+    pub fn add_symlink<N, NToOwned, T, E: FileOptionExtension>(
         &mut self,
         name: N,
         target: T,
         mut options: FileOptions<E>,
     ) -> ZipResult<()>
     where
-        N: Into<Box<str>>,
+        N: Into<Box<str>> + ToOwned<Owned = NToOwned>,
+        NToOwned: Into<Box<str>>,
         T: Into<Box<str>>,
     {
         if options.permissions.is_none() {
