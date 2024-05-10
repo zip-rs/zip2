@@ -2168,18 +2168,12 @@ mod test {
         let filename = unsafe { String::from_utf8_unchecked(vec![147, 250, 149, 182]) };
         writer.start_file(filename, options).unwrap();
         writer.write_all(b"encoding SHIFT_JIS").unwrap();
-
         let result = writer.finish().unwrap();
+
         assert_eq!(result.get_ref().len(), 224);
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/non_utf8.zip"));
-
-        // FIXME: Update the actual file once https://github.com/zip-rs/zip2/pull/106 is merged
-        v[4] = 10;
-        v[54] = 10;
-        v[108] = 10;
-        v[158] = 10;
 
         assert_eq!(result.get_ref(), &v);
     }
