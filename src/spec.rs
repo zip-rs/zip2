@@ -5,6 +5,10 @@ use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
 use std::path::{Component, Path, MAIN_SEPARATOR};
+#[cfg(feature = "tokio")]
+use std::sync::Arc;
+#[cfg(feature = "tokio")]
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -271,5 +275,249 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
         normalized_components.join("/").into()
     } else {
         maybe_original.unwrap().into()
+    }
+}
+
+#[cfg(feature = "tokio")]
+pub struct AsyncCentralDirectoryEnd {
+    pub disk_number: u16,
+    pub disk_with_central_directory: u16,
+    pub number_of_files_on_this_disk: u16,
+    pub number_of_files: u16,
+    pub central_directory_size: u32,
+    pub central_directory_offset: u32,
+    pub zip_file_comment: Arc<[u8]>,
+}
+
+#[cfg(feature = "tokio")]
+impl AsyncCentralDirectoryEnd
+where
+    Self: Send,
+{
+    pub async fn parse<T>(reader: &mut T) -> ZipResult<Self>
+    where
+        T: AsyncRead + Unpin,
+    {
+        let magic = reader.read_u32_le().await?;
+        if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
+        }
+        let disk_number = reader.read_u16_le().await?;
+        let disk_with_central_directory = reader.read_u16_le().await?;
+        let number_of_files_on_this_disk = reader.read_u16_le().await?;
+        let number_of_files = reader.read_u16_le().await?;
+        let central_directory_size = reader.read_u32_le().await?;
+        let central_directory_offset = reader.read_u32_le().await?;
+        let zip_file_comment_length = reader.read_u16_le().await? as usize;
+        let mut zip_file_comment = Vec::with_capacity(zip_file_comment_length);
+        reader.read_exact(&mut zip_file_comment).await?;
+        let zip_file_comment: Arc<[u8]> = Arc::from(zip_file_comment);
+        Ok(Self {
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment,
+        })
+    }
+
+    pub async fn find_and_parse<T>(reader: &mut T) -> ZipResult<(Self, u64)>
+    where
+        T: AsyncRead + AsyncSeek + Unpin + Send,
+    {
+        const HEADER_SIZE: u64 = 22;
+        const MAX_HEADER_AND_COMMENT_SIZE: u64 = 66000;
+        const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
+        let file_lenght = reader.seek(tokio::io::SeekFrom::End(0)).await?;
+        let search_upper_bound = file_lenght.saturating_add(MAX_HEADER_AND_COMMENT_SIZE);
+        if file_lenght < HEADER_SIZE {
+            return Err(ZipError::InvalidArchive("Invalid zip header"));
+        }
+
+        let mut pos = file_lenght - HEADER_SIZE;
+        while pos >= search_upper_bound {
+            reader.seek(tokio::io::SeekFrom::Start(pos)).await?;
+            if reader.read_u32_le().await? == CENTRAL_DIRECTORY_END_SIGNATURE {
+                reader
+                    .seek(tokio::io::SeekFrom::Current(
+                        BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
+                    ))
+                    .await?;
+                let cde_start_pos = reader.seek(tokio::io::SeekFrom::Start(pos)).await?;
+                if let Ok(end_header) = Self::parse(reader).await {
+                    return Ok((end_header, cde_start_pos));
+                }
+            }
+            pos = match pos.checked_sub(1) {
+                Some(p) => p,
+                None => break,
+            };
+        }
+        Err(ZipError::InvalidArchive(
+            "Could not find central directory end",
+        ))
+    }
+
+    pub async fn write<T: AsyncWrite + Unpin + Send>(&self, writer: &mut T) -> ZipResult<()> {
+        writer.write_u32_le(CENTRAL_DIRECTORY_END_SIGNATURE).await?;
+        writer.write_u16_le(self.disk_number).await?;
+        writer
+            .write_u16_le(self.disk_with_central_directory)
+            .await?;
+        writer
+            .write_u16_le(self.number_of_files_on_this_disk)
+            .await?;
+        writer.write_u16_le(self.number_of_files).await?;
+        writer.write_u32_le(self.central_directory_size).await?;
+        writer.write_u32_le(self.central_directory_offset).await?;
+        writer
+            .write_u16_le(self.zip_file_comment.len() as u16)
+            .await?;
+        writer.write_all(&self.zip_file_comment).await?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "tokio")]
+pub struct AsyncZip64CentralDirectoryEndLocator {
+    pub disk_with_central_directory: u32,
+    pub end_of_central_directory_offset: u64,
+    pub number_of_disks: u32,
+}
+
+#[cfg(feature = "tokio")]
+impl AsyncZip64CentralDirectoryEndLocator {
+    async fn parse<T>(reader: &mut T) -> ZipResult<Self>
+    where
+        T: AsyncRead + Unpin,
+    {
+        let magic = reader.read_u32_le().await?;
+        if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
+            return Err(ZipError::InvalidArchive(
+                "Invalid zip64 locator digital signature header",
+            ));
+        }
+        let disk_with_central_directory = reader.read_u32_le().await?;
+        let end_of_central_directory_offset = reader.read_u64_le().await?;
+        let number_of_disks = reader.read_u32_le().await?;
+
+        Ok(Self {
+            disk_with_central_directory,
+            end_of_central_directory_offset,
+            number_of_disks,
+        })
+    }
+
+    async fn write<T>(&self, writer: &mut T) -> ZipResult<()>
+    where
+        T: AsyncWrite + Unpin,
+    {
+        writer
+            .write_u32_le(ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE)
+            .await?;
+        writer
+            .write_u32_le(self.disk_with_central_directory)
+            .await?;
+        writer
+            .write_u64_le(self.end_of_central_directory_offset)
+            .await?;
+        writer.write_u32_le(self.number_of_disks).await?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "tokio")]
+pub struct AsyncZip64CentralDirectoryEnd {
+    pub version_made_by: u16,
+    pub version_needed_to_extract: u16,
+    pub disk_number: u32,
+    pub disk_with_central_directory: u32,
+    pub number_of_files_on_this_disk: u64,
+    pub number_of_files: u64,
+    pub central_directory_size: u64,
+    pub central_directory_offset: u64,
+}
+
+#[cfg(feature = "tokio")]
+impl AsyncZip64CentralDirectoryEnd {
+    pub async fn find_and_parse<T>(
+        reader: &mut T,
+        nominal_offset: u64,
+        search_upper_bound: u64,
+    ) -> ZipResult<Arc<[(Self, u64)]>>
+    where
+        T: AsyncRead + AsyncSeek + Unpin,
+    {
+        let mut results = Vec::new();
+        let mut pos = search_upper_bound;
+
+        while pos >= nominal_offset {
+            reader.seek(tokio::io::SeekFrom::Start(pos)).await?;
+
+            if reader.read_u32_le().await? == ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
+                let archive_offset = pos - nominal_offset;
+
+                let _record_size = reader.read_u64_le().await?;
+                let version_made_by = reader.read_u16_le().await?;
+                let version_needed_to_extract = reader.read_u16_le().await?;
+                let disk_number = reader.read_u32_le().await?;
+                let disk_with_central_directory = reader.read_u32_le().await?;
+                let number_of_files_on_this_disk = reader.read_u64_le().await?;
+                let number_of_files = reader.read_u64_le().await?;
+                let central_directory_size = reader.read_u64_le().await?;
+                let central_directory_offset = reader.read_u64_le().await?;
+
+                results.push((
+                    Self {
+                        version_made_by,
+                        version_needed_to_extract,
+                        disk_number,
+                        disk_with_central_directory,
+                        number_of_files_on_this_disk,
+                        number_of_files,
+                        central_directory_size,
+                        central_directory_offset,
+                    },
+                    archive_offset,
+                ));
+            }
+            if pos > 0 {
+                pos -= 1
+            } else {
+                break;
+            }
+        }
+        if results.is_empty() {
+            Err(ZipError::InvalidArchive(
+                "Could not find ZIP64 central directory end",
+            ))
+        } else {
+            Ok(Arc::from(results))
+        }
+    }
+
+    pub async fn write<T>(&self, writer: &mut T) -> ZipResult<()>
+    where
+        T: AsyncWrite + Unpin,
+    {
+        writer
+            .write_u32_le(ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE)
+            .await?;
+        writer.write_u64_le(44).await?; // record size *_record_dize
+        writer.write_u16_le(self.version_made_by).await?;
+        writer.write_u16_le(self.version_needed_to_extract).await?;
+        writer.write_u32_le(self.disk_number).await?;
+        writer
+            .write_u32_le(self.disk_with_central_directory)
+            .await?;
+        writer
+            .write_u64_le(self.number_of_files_on_this_disk)
+            .await?;
+        writer.write_u64_le(self.number_of_files).await?;
+        writer.write_u64_le(self.central_directory_size).await?;
+        writer.write_u64_le(self.central_directory_offset).await?;
+        Ok(())
     }
 }
