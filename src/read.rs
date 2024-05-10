@@ -659,7 +659,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
     /// Extraction is not atomic. If an error is encountered, some of the files
-    /// may be left on disk. However, on Unix systems, no newly-created directories with part but
+    /// may be left on disk. However, on Unix targets, no newly-created directories with part but
     /// not all of their contents extracted will be readable, writable or usable as process working
     /// directories by any non-root user except you.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
