@@ -21,7 +21,7 @@ use std::fs;
 use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 
 #[cfg(any(
     feature = "deflate",
@@ -1148,14 +1148,17 @@ impl io::Write for IntermediateFile {
     }
 }
 
-static NUM_CPUS: Lazy<usize> = Lazy::new(|| match std::thread::available_parallelism() {
-    Ok(x) => x.into(),
-    /* Default to 2 if any error occurs. */
-    Err(_) => 2,
-});
+static NUM_CPUS: OnceLock<usize> = OnceLock::new();
 
 fn build_thread_pool(n: Option<usize>, prefix: &str) -> rayon::ThreadPool {
     let prefix = prefix.to_string();
+    let num_cpus = NUM_CPUS.get_or_init(|| 
+        match std::thread::available_parallelism() {
+            Ok(x) => x.into(),
+            /* Default to 2 if any error occurs. */
+            Err(_) => 2,
+        }
+    );
     rayon::ThreadPoolBuilder::new()
         .num_threads(n.unwrap_or(*NUM_CPUS))
         .thread_name(move |i| format!("{}: {}", &prefix, i))
