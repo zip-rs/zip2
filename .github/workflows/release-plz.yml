@@ -29,6 +29,8 @@ jobs:
           if [[ -n "release_pr" ]]; then
             gh pr close $release_pr
           fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_PAT }}
       - name: Run release-plz
         uses: MarcoIeni/release-plz-action@v0.5
         env:
