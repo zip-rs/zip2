@@ -3,6 +3,7 @@ use std::io;
 use zip::result::ZipResult;
 use zip::ZipArchive;
 
+#[cfg(all(unix, feature = "_deflate-any"))]
 #[test]
 fn repro_old423() -> ZipResult<()> {
     let mut v = Vec::new();
