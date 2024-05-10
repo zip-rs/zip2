@@ -711,7 +711,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         {
             // Dirs must be writable until all normal files are extracted
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(outpath.as_ref(), std::fs::Permissions::from_mode(0o755))?;
+            std::fs::set_permissions(outpath.as_ref(), std::fs::Permissions::from_mode(0o700))?;
         }
         Ok(())
     }
