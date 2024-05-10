@@ -2148,7 +2148,7 @@ mod test {
             extended_options: (),
             alignment: 1,
             #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None
+            zopfli_buffer_size: None,
         };
 
         // GB18030
