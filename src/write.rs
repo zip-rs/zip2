@@ -2175,8 +2175,10 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/non_utf8.zip"));
 
         // FIXME: Update the actual file once https://github.com/zip-rs/zip2/pull/106 is merged
-        v[4] = 20;
-        v[54] = 20;
+        v[4] = 10;
+        v[54] = 10;
+        v[108] = 10;
+        v[158] = 10;
         
         assert_eq!(result.get_ref(), &v);
     }
