@@ -26,10 +26,10 @@
 //!
 //!
 #![warn(missing_docs)]
-
+#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::ZipArchive;
-pub use crate::types::DateTime;
+pub use crate::types::{AesMode, DateTime};
 pub use crate::write::ZipWriter;
 
 #[cfg(feature = "aes-crypto")]
@@ -39,12 +39,14 @@ mod aes_ctr;
 mod compression;
 mod cp437;
 mod crc32;
+pub mod extra_fields;
 pub mod read;
 pub mod result;
 mod spec;
 mod types;
 pub mod write;
 mod zipcrypto;
+pub use extra_fields::ExtraField;
 
 #[doc = "Unstable APIs\n\
 \

@@ -49,7 +49,6 @@ fn encrypting_file() {
         .unwrap();
     archive.write_all(b"test").unwrap();
     archive.finish().unwrap();
-    drop(archive);
     let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut buf = Vec::new();
