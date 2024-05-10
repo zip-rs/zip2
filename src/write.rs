@@ -796,7 +796,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
-                file_name: name.into(), // Never used for saving, but used as map key in insert_file_data()
+                file_name: name.to_owned().into(), // Never used for saving, but used as map key in insert_file_data()
                 file_name_raw: name.into().bytes().collect(),
                 extra_field,
                 central_extra_field: options.extended_options.central_extra_data().cloned(),
