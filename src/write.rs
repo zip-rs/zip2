@@ -2181,7 +2181,7 @@ mod test {
         path.push(".");
         path.push("system32");
         let path_str = super::path_to_string(&path);
-        assert_eq!(&path_str, "windows/system32");
+        assert_eq!(&*path_str, "windows/system32");
     }
 
     #[test]
