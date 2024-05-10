@@ -5,9 +5,9 @@ use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
 use std::path::{Component, Path, MAIN_SEPARATOR};
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 use std::sync::Arc;
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
@@ -278,7 +278,7 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
     }
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 pub struct AsyncCentralDirectoryEnd {
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
@@ -289,7 +289,7 @@ pub struct AsyncCentralDirectoryEnd {
     pub zip_file_comment: Arc<[u8]>,
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 impl AsyncCentralDirectoryEnd
 where
     Self: Send,
@@ -380,14 +380,14 @@ where
     }
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 pub struct AsyncZip64CentralDirectoryEndLocator {
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 impl AsyncZip64CentralDirectoryEndLocator {
     async fn parse<T>(reader: &mut T) -> ZipResult<Self>
     where
@@ -428,7 +428,7 @@ impl AsyncZip64CentralDirectoryEndLocator {
     }
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 pub struct AsyncZip64CentralDirectoryEnd {
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
@@ -440,7 +440,7 @@ pub struct AsyncZip64CentralDirectoryEnd {
     pub central_directory_offset: u64,
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio-experimental")]
 impl AsyncZip64CentralDirectoryEnd {
     pub async fn find_and_parse<T>(
         reader: &mut T,
