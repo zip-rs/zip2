@@ -5,7 +5,7 @@ https://www.cvedetails.com/vulnerability-search.php?f=1&vendor=&product=zip&cwei
 for the gory details), we have some requirements that help ensure we continuously earn developers' and their clients'
 trust. I (@Pr0methean) am an Amazonian, and although I maintain this crate in a personal capacity (except when fellow Amazonians 
 express new requirements), I still strive to uphold Amazon's Leadership Principles, especially "Earn Trust" (see
-https://www.amazon.jobs/content/en/our-workplace/leadership-principles.) But I've received a lot of PRs that didn't initially meet
+https://www.amazon.jobs/content/en/our-workplace/leadership-principles). But I've received a lot of PRs that didn't initially meet
 the requirements I derived from that LP.
 
 This crate doesn't filter out "ZIP bombs" because extreme compression ratios and shallow file copies have legitimate uses; but
