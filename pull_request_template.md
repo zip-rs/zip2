@@ -2,8 +2,9 @@
 We welcome your pull request, but because this crate is downloaded about 1.7 million times per month (see https://crates.io/crates/zip),
 and because ZIP file processing has caused security issues in the past (see 
 https://www.cvedetails.com/vulnerability-search.php?f=1&vendor=&product=zip&cweid=&cvssscoremin=&cvssscoremax=&publishdatestart=&publishdateend=&updatedatestart=&updatedateend=&cisaaddstart=&cisaaddend=&cisaduestart=&cisadueend=&page=1
-for the gory details), we have some requirements that help ensure the crate earns and keeps developers' trust, and we've seen
-a lot of PRs that don't meet those requirements.
+for the gory details), we have some requirements that help ensure we continuously earn developers' and their clients'
+trust (see also the "Earn Trust" principle at https://www.amazon.jobs/content/en/our-workplace/leadership-principles),
+and we've received a lot of PRs that didn't initially meet those requirements.
 
 We don't filter out "ZIP bombs" because extreme compression ratios and shallow file copies have legitimate uses; but
 we expect the tools we provide for checking that extraction is safe, such as the `ZipArchive::decompressed_size` method in
