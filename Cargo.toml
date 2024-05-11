@@ -9,7 +9,7 @@ authors = [
 ]
 license = "MIT"
 repository = "https://github.com/zip-rs/zip2.git"
-keywords = ["zip", "archive"]
+keywords = ["zip", "archive", "compression"]
 rust-version = "1.70.0"
 description = """
 Library to support the reading and writing of zip files.
