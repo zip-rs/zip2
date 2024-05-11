@@ -94,6 +94,7 @@ pub enum ZipCryptoValidator {
     InfoZipMsdosTime(u16),
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> ZipCryptoReader<R> {
     /// Note: The password is `&[u8]` and not `&str` because the
     /// [zip specification](https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT)
@@ -147,12 +148,15 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
+
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
     pub(crate) buffer: Vec<u8>,
     pub(crate) keys: ZipCryptoKeys,
 }
+
+#[cfg(feature = "std")]
 impl<W: std::io::Write> ZipCryptoWriter<W> {
     #[allow(unused)]
     pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
@@ -180,6 +184,7 @@ pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // Note: There might be potential for optimization. Inspiration can be found at:
@@ -193,6 +198,7 @@ impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: std::io::Read> ZipCryptoReaderValid<R> {
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> R {
