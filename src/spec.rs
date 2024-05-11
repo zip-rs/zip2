@@ -25,6 +25,7 @@ pub struct CentralDirectoryEnd {
     pub zip_file_comment: Box<[u8]>,
 }
 
+#[cfg(feature = "std")]
 impl CentralDirectoryEnd {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd> {
         let magic = reader.read_u32_le()?;
@@ -112,6 +113,7 @@ pub struct Zip64CentralDirectoryEndLocator {
     pub number_of_disks: u32,
 }
 
+#[cfg(feature = "std")]
 impl Zip64CentralDirectoryEndLocator {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let magic = reader.read_u32_le()?;
@@ -152,6 +154,8 @@ pub struct Zip64CentralDirectoryEnd {
     //pub extensible_data_sector: Vec<u8>, <-- We don't do anything with this at the moment.
 }
 
+
+#[cfg(feature = "std")]
 impl Zip64CentralDirectoryEnd {
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
