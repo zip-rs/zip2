@@ -36,6 +36,7 @@ impl<R> Crc32Reader<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: Read> Read for Crc32Reader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let invalid_check = !buf.is_empty() && !self.check_matches() && !self.ae2_encrypted;
