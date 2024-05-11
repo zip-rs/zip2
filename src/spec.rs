@@ -330,13 +330,13 @@ where
         const HEADER_SIZE: u64 = 22;
         const MAX_HEADER_AND_COMMENT_SIZE: u64 = 66000;
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
-        let file_lenght = reader.seek(tokio::io::SeekFrom::End(0)).await?;
-        let search_upper_bound = file_lenght.saturating_add(MAX_HEADER_AND_COMMENT_SIZE);
-        if file_lenght < HEADER_SIZE {
+        let file_length = reader.seek(tokio::io::SeekFrom::End(0)).await?;
+        let search_upper_bound = file_length.saturating_add(MAX_HEADER_AND_COMMENT_SIZE);
+        if file_length < HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
         }
 
-        let mut pos = file_lenght - HEADER_SIZE;
+        let mut pos = file_length - HEADER_SIZE;
         while pos >= search_upper_bound {
             reader.seek(tokio::io::SeekFrom::Start(pos)).await?;
             if reader.read_u32_le().await? == CENTRAL_DIRECTORY_END_SIGNATURE {
