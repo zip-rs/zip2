@@ -99,6 +99,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<C> AesCipher for AesCtrZipKeyStream<C>
 where
     C: AesKind,
@@ -134,6 +135,7 @@ where
 
 /// This trait allows using generic AES ciphers with different key sizes.
 pub trait AesCipher {
+    #[cfg(feature = "std")]
     fn crypt_in_place(&mut self, target: &mut [u8]);
 }
 

@@ -66,6 +66,7 @@ pub struct AesReader<R> {
     data_length: u64,
 }
 
+#[cfg(feature = "std")]
 impl<R: Read> AesReader<R> {
     pub const fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> AesReader<R> {
         let data_length = compressed_size
@@ -139,6 +140,7 @@ pub struct AesReaderValid<R: Read> {
     finalized: bool,
 }
 
+#[cfg(feature = "std")]
 impl<R: Read> Read for AesReaderValid<R> {
     /// This implementation does not fulfill all requirements set in the trait documentation.
     ///
@@ -195,6 +197,7 @@ impl<R: Read> Read for AesReaderValid<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: Read> AesReaderValid<R> {
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> R {
@@ -210,6 +213,7 @@ pub struct AesWriter<W> {
     encrypted_file_header: Option<Vec<u8>>,
 }
 
+#[cfg(feature = "std")]
 impl<W: Write> AesWriter<W> {
     pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> io::Result<Self> {
         let salt_length = aes_mode.salt_length();
@@ -269,6 +273,7 @@ impl<W: Write> AesWriter<W> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<W: Write> Write for AesWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.write_encrypted_file_header()?;
