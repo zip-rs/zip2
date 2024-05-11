@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.3](https://github.com/zip-rs/zip2/compare/v1.2.2...v1.2.3) - 2024-05-10
+
+### <!-- 1 -->🐛 Bug Fixes
+- Remove a window when an extracted directory might be unexpectedly listable and/or `cd`able by non-owners
+- Extract directory contents on Unix even if the directory doesn't have write permission (https://github.com/zip-rs/zip-old/issues/423)
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- More conditionally-unused imports
+
 ## [1.2.2](https://github.com/zip-rs/zip2/compare/v1.2.1...v1.2.2) - 2024-05-09
 
 ### <!-- 1 -->🐛 Bug Fixes
