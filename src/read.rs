@@ -89,6 +89,7 @@ use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
+#[cfg(feature = "std")]
 pub(crate) enum CryptoReader<'a> {
     Plaintext(io::Take<&'a mut dyn Read>),
     ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut dyn Read>>),
@@ -99,6 +100,7 @@ pub(crate) enum CryptoReader<'a> {
     },
 }
 
+#[cfg(feature = "std")]
 impl<'a> Read for CryptoReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -110,6 +112,7 @@ impl<'a> Read for CryptoReader<'a> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<'a> CryptoReader<'a> {
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> io::Take<&'a mut dyn Read> {
@@ -136,6 +139,7 @@ impl<'a> CryptoReader<'a> {
     }
 }
 
+#[cfg(feature = "std")]
 pub(crate) enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn Read>),
@@ -152,6 +156,7 @@ pub(crate) enum ZipFileReader<'a> {
     Lzma(Crc32Reader<Box<LzmaDecoder<CryptoReader<'a>>>>),
 }
 
+#[cfg(feature = "std")]
 impl<'a> Read for ZipFileReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -172,6 +177,7 @@ impl<'a> Read for ZipFileReader<'a> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<'a> ZipFileReader<'a> {
     /// Consumes this decoder, returning the underlying reader.
     pub fn drain(self) {
@@ -204,7 +210,9 @@ impl<'a> ZipFileReader<'a> {
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
     pub(crate) data: Cow<'a, ZipFileData>,
+    #[cfg(feature = "std")]
     pub(crate) crypto_reader: Option<CryptoReader<'a>>,
+    #[cfg(feature = "std")]
     pub(crate) reader: ZipFileReader<'a>,
 }
 
@@ -237,6 +245,7 @@ pub(crate) fn find_content<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "std")]
 pub(crate) fn make_crypto_reader<'a>(
     compression_method: CompressionMethod,
     crc32: u32,
@@ -280,6 +289,7 @@ pub(crate) fn make_crypto_reader<'a>(
     Ok(reader)
 }
 
+#[cfg(feature = "std")]
 pub(crate) fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
@@ -387,6 +397,7 @@ impl<R> ZipArchive<R> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + io::Seek>(
         &mut self,
@@ -890,6 +901,7 @@ const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
 }
 
 /// Parse a central directory entry to collect the information for the file.
+#[cfg(feature = "std")]
 pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     reader: &mut R,
     archive_offset: u64,
@@ -906,6 +918,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 }
 
 /// Parse a central directory entry to collect the information for the file.
+#[cfg(feature = "std")]
 fn central_header_to_zip_file_inner<R: Read>(
     reader: &mut R,
     archive_offset: u64,
@@ -998,6 +1011,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     Ok(result)
 }
 
+#[cfg(feature = "std")]
 fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
     let Some(extra_field) = &file.extra_field else {
         return Ok(());
@@ -1088,6 +1102,7 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 }
 
 /// Methods for retrieving information on zip files
+#[cfg(feature = "std")]
 impl<'a> ZipFile<'a> {
     fn get_reader(&mut self) -> ZipResult<&mut ZipFileReader<'a>> {
         if let ZipFileReader::NoReader = self.reader {
@@ -1250,6 +1265,7 @@ impl<'a> ZipFile<'a> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<'a> Read for ZipFile<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.get_reader()?.read(buf)
@@ -1295,6 +1311,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
+#[cfg(feature = "std")]
 pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
     let signature = reader.read_u32_le()?;
 
