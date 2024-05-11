@@ -11,6 +11,7 @@ pub struct ExtendedTimestamp {
     cr_time: Option<u32>,
 }
 
+#[cfg(feature = "std")]
 impl ExtendedTimestamp {
     /// creates an extended timestamp struct by reading the required bytes from the reader.
     ///
