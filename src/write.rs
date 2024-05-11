@@ -52,6 +52,8 @@ enum MaybeEncrypted<W> {
     Aes(crate::aes::AesWriter<W>),
     ZipCrypto(crate::zipcrypto::ZipCryptoWriter<W>),
 }
+
+#[cfg(feature = "std")]
 impl<W: Write> Write for MaybeEncrypted<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
@@ -70,6 +72,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
         }
     }
 }
+#[cfg(feature = "std")]
 enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
@@ -90,6 +93,7 @@ enum GenericZipWriter<W: Write + Seek> {
 }
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
+#[cfg(feature = "std")]
 pub(crate) mod zip_writer {
     use super::*;
     /// ZIP archive generator
@@ -458,6 +462,7 @@ impl<'k, T: FileOptionExtension> Default for FileOptions<'k, T> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<W: Write + Seek> Write for ZipWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if !self.writing_to_file {
@@ -511,6 +516,7 @@ impl ZipWriterStats {
     }
 }
 
+#[cfg(feature = "std")]
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
     pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
@@ -546,6 +552,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Adds another copy of a file already in this archive. This will produce a larger but more
     /// widely-compatible archive compared to [Self::shallow_copy_file]. Does not copy alignment.
@@ -671,6 +678,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<W: Write + Seek> ZipWriter<W> {
     /// Initializes the archive.
     ///
@@ -1475,6 +1483,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
@@ -1487,6 +1496,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
 
 type SwitchWriterFunction<W> = Box<dyn FnOnce(MaybeEncrypted<W>) -> GenericZipWriter<W>>;
 
+#[cfg(feature = "std")]
 impl<W: Write + Seek> GenericZipWriter<W> {
     fn prepare_next_writer(
         &self,
@@ -1731,6 +1741,7 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
+#[cfg(feature = "std")]
 fn update_aes_extra_data<W: Write + io::Seek>(
     writer: &mut W,
     file: &mut ZipFileData,
@@ -1775,6 +1786,7 @@ fn update_aes_extra_data<W: Write + io::Seek>(
     Ok(())
 }
 
+#[cfg(feature = "std")]
 fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     const CRC32_OFFSET: u64 = 14;
     writer.seek(SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
@@ -1796,6 +1808,7 @@ fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData)
     Ok(())
 }
 
+#[cfg(feature = "std")]
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // buffer zip64 extra field to determine its variable length
     let mut zip64_extra_field = [0; 28];
@@ -1895,6 +1908,7 @@ fn validate_extra_data(header_id: u16, data: &[u8]) -> ZipResult<()> {
     Ok(())
 }
 
+#[cfg(feature = "std")]
 fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // This entry in the Local header MUST include BOTH original
     // and compressed file size fields.
@@ -1907,6 +1921,7 @@ fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -
     Ok(())
 }
 
+#[cfg(feature = "std")]
 fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
@@ -1920,6 +1935,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     Ok(())
 }
 
+#[cfg(feature = "std")]
 fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<u16> {
     // The order of the fields in the zip64 extended
     // information record is fixed, but the fields MUST
