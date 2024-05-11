@@ -60,6 +60,7 @@ clap = { version = "=4.4.18", features = ["derive"] }
 tempdir = "0.3.7"
 
 [features]
+std = []
 aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1", "rand", "zeroize"]
 chrono = ["chrono/default"]
 _deflate-any = []
@@ -81,6 +82,7 @@ default = [
     "deflate-zlib-ng",
     "deflate-zopfli",
     "lzma",
+    "std",
     "time",
     "zstd",
 ]
