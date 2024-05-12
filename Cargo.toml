@@ -68,11 +68,11 @@ deflate = ["flate2/rust_backend", "_deflate-any"]
 
 # DEPRECATED: previously enabled `flate2/miniz_oxide` which is equivalent to `flate2/rust_backend`
 deflate-miniz = ["deflate", "_deflate-any"]
-
 deflate-zlib = ["flate2/zlib", "_deflate-any"]
 deflate-zlib-ng = ["flate2/zlib-ng", "_deflate-any"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
 lzma = ["lzma-rs/stream"]
+sync = []
 unreserved = []
 default = [
     "aes-crypto",
