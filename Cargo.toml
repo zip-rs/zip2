@@ -72,6 +72,7 @@ deflate-zlib = ["flate2/zlib", "_deflate-any"]
 deflate-zlib-ng = ["flate2/zlib-ng", "_deflate-any"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
 lzma = ["lzma-rs/stream"]
+legacy-zip = []
 unreserved = []
 default = [
     "aes-crypto",
