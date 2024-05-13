@@ -1,3 +1,6 @@
+#[cfg(feature = "tokio")]
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::{LittleEndianReadExt, LittleEndianWriteExt};
 use core::mem::size_of_val;
@@ -112,6 +115,7 @@ pub struct Zip64CentralDirectoryEndLocator {
     pub number_of_disks: u32,
 }
 
+#[cfg(feature = "sync")]
 impl Zip64CentralDirectoryEndLocator {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let magic = reader.read_u32_le()?;
@@ -140,6 +144,30 @@ impl Zip64CentralDirectoryEndLocator {
     }
 }
 
+#[cfg(feature = "tokio")]
+impl Zip64CentralDirectoryEndLocator {
+    pub async fn parse<T>(reader: &mut T) -> ZipResult<Self>
+    where
+        T: AsyncRead + Unpin,
+    {
+        let magic = reader.read_u32_le().await?;
+        if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
+            return Err(ZipError::InvalidArchive(
+                "Invalid zip64 locator digital signature header",
+            ));
+        }
+        let disk_with_central_directory = reader.read_u32_le().await?;
+        let end_of_central_directory_offset = reader.read_u64_le().await?;
+        let number_of_disks = reader.read_u32_le().await?;
+
+        Ok(Self {
+            disk_with_central_directory,
+            end_of_central_directory_offset,
+            number_of_disks,
+        })
+    }
+}
+
 pub struct Zip64CentralDirectoryEnd {
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
@@ -152,6 +180,7 @@ pub struct Zip64CentralDirectoryEnd {
     //pub extensible_data_sector: Vec<u8>, <-- We don't do anything with this at the moment.
 }
 
+#[cfg(feature = "sync")]
 impl Zip64CentralDirectoryEnd {
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
@@ -224,6 +253,69 @@ impl Zip64CentralDirectoryEnd {
         writer.write_u64_le(self.central_directory_size)?;
         writer.write_u64_le(self.central_directory_offset)?;
         Ok(())
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl Zip64CentralDirectoryEnd {
+    pub async fn find_and_parse<T>(
+        reader: &mut T,
+        nominal_offset: u64,
+        search_upper_bound: u64,
+    ) -> ZipResult<Vec<(Self, u64)>>
+    where
+        T: AsyncRead + AsyncSeek + Unpin,
+    {
+        let mut results = Vec::new();
+        let mut pos = search_upper_bound;
+
+        while pos >= nominal_offset {
+            let mut have_signature = false;
+            reader.seek(tokio::io::SeekFrom::Start(pos)).await?;
+            if reader.read_u32_le().await? == ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
+                have_signature = true;
+                let archive_offset = pos - nominal_offset;
+
+                let _record_size = reader.read_u64_le().await?;
+                let version_made_by = reader.read_u16_le().await?;
+                let version_needed_to_extract = reader.read_u16_le().await?;
+                let disk_number = reader.read_u32_le().await?;
+                let disk_with_central_directory = reader.read_u32_le().await?;
+                let number_of_files_on_this_disk = reader.read_u64_le().await?;
+                let number_of_files = reader.read_u64_le().await?;
+                let central_directory_size = reader.read_u64_le().await?;
+                let central_directory_offset = reader.read_u64_le().await?;
+
+                results.push((
+                    Self {
+                        version_made_by,
+                        version_needed_to_extract,
+                        disk_number,
+                        disk_with_central_directory,
+                        number_of_files_on_this_disk,
+                        number_of_files,
+                        central_directory_size,
+                        central_directory_offset,
+                    },
+                    archive_offset,
+                ));
+            }
+            pos = match pos.checked_sub(if have_signature {
+                size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE) as u64
+            } else {
+                1
+            }) {
+                None => break,
+                Some(p) => p,
+            }
+        }
+        if results.is_empty() {
+            Err(ZipError::InvalidArchive(
+                "Could not find ZIP64 central directory end",
+            ))
+        } else {
+            Ok(results)
+        }
     }
 }
 
