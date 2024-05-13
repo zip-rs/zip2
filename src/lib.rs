@@ -47,7 +47,6 @@ mod types;
 pub mod write;
 mod zipcrypto;
 pub use extra_fields::ExtraField;
-#[cfg(feature = "legacy-zip")]
 mod legacy;
 
 #[doc = "Unstable APIs\n\
