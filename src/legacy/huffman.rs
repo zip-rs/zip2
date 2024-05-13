@@ -107,7 +107,7 @@ impl HuffmanDecoder {
         let codeword = reverse16(codeword, len); // Make it LSB-first.
         let pad_len = HUFFMAN_LOOKUP_TABLE_BITS as usize - len;
 
-        // Pad the pad_len upper bits with all bit combinations. 
+        // Pad the pad_len upper bits with all bit combinations.
         for padding in 0..(1 << pad_len) {
             let index = (codeword | (padding << len)) as usize;
             assert!(sym <= u16::MAX as usize);
@@ -158,25 +158,25 @@ mod tests {
     #[test]
     fn test_huffman_decode_basic() {
         let lens = [
-            3, // sym 0:  000 
-            3, // sym 1:  001 
-            3, // sym 2:  010 
-            3, // sym 3:  011 
-            3, // sym 4:  100 
-            3, // sym 5:  101 
-            4, // sym 6:  1100 
-            4, // sym 7:  1101 
-            0, // sym 8:  
-            0, // sym 9:  
-            0, // sym 10: 
-            0, // sym 11: 
-            0, // sym 12: 
-            0, // sym 13: 
-            0, // sym 14: 
-            0, // sym 15: 
-            6, // sym 16: 111110 
-            5, // sym 17: 11110 
-            4, // sym 18: 1110 
+            3, // sym 0:  000
+            3, // sym 1:  001
+            3, // sym 2:  010
+            3, // sym 3:  011
+            3, // sym 4:  100
+            3, // sym 5:  101
+            4, // sym 6:  1100
+            4, // sym 7:  1101
+            0, // sym 8:
+            0, // sym 9:
+            0, // sym 10:
+            0, // sym 11:
+            0, // sym 12:
+            0, // sym 13:
+            0, // sym 14:
+            0, // sym 15:
+            6, // sym 16: 111110
+            5, // sym 17: 11110
+            4, // sym 18: 1110
         ];
 
         let mut d = HuffmanDecoder::default();

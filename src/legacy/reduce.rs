@@ -128,7 +128,7 @@ fn hwexpand(
     comp_factor: u8,
     src_used: &mut usize,
     dst: &mut VecDeque<u8>,
-) -> core::result::Result<(), ReduceError>  {
+) -> core::result::Result<(), ReduceError> {
     let mut fsets = [FollowerSet::default(); 256];
     assert!(comp_factor >= 1 && comp_factor <= 4);
 
@@ -137,10 +137,10 @@ fn hwexpand(
         return Err(ReduceError::InvalidFollowerSet);
     }
 
-    // Number of bits in V used for backref length. 
+    // Number of bits in V used for backref length.
     let v_len_bits = 8 - comp_factor;
 
-    let mut curr_byte = 0; // The first "previous byte" is implicitly zero. 
+    let mut curr_byte = 0; // The first "previous byte" is implicitly zero.
 
     while dst.len() < uncomp_len {
         // Read a literal byte or DLE marker.
@@ -361,7 +361,8 @@ mod tests {
             4,
             &mut src_used,
             &mut dst,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(dst.len(), 2048);
     }
 
@@ -477,7 +478,8 @@ mod tests {
             4,
             &mut src_used,
             &mut dst,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(dst.len(), 2048 + 1024);
         for i in 0..(1 << 10) {
             assert_eq!(dst[(1 << 11) + i], 0);

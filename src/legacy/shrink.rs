@@ -201,7 +201,7 @@ fn output_code(
     // Output a string of unknown length. This happens when the prefix
     // was invalid (due to partial clearing) when the code was inserted into
     // the table. The prefix can then become valid when it's added to the
-    // table at a later point. 
+    // table at a later point.
     assert!(codetab[code as usize].len == UNKNOWN_LEN);
     let prefix_code = codetab[code as usize].prefix_code;
     assert!(prefix_code as usize > CONTROL_CODE);
@@ -217,7 +217,7 @@ fn output_code(
         codetab[prefix_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
         dst.push_back(*first_byte);
     } else if codetab[prefix_code as usize].prefix_code == INVALID_CODE {
-        // The prefix code is still invalid. 
+        // The prefix code is still invalid.
         return Err(ShrinkError::InvalidPrefixCode);
     }
 
@@ -272,13 +272,15 @@ fn hwunshrink(
     dst.push_back(curr_code as u8);
 
     let mut prev_code = curr_code;
-    while dst.len() < uncompressed_size && read_code(
-        &mut is,
-        &mut code_size,
-        &mut codetab,
-        &mut queue,
-        &mut curr_code,
-    ) {
+    while dst.len() < uncompressed_size
+        && read_code(
+            &mut is,
+            &mut code_size,
+            &mut codetab,
+            &mut queue,
+            &mut curr_code,
+        )
+    {
         println!("{}", dst.len());
         if curr_code == INVALID_CODE {
             return Err(ShrinkError::InvalidCode);
@@ -297,7 +299,7 @@ fn hwunshrink(
             codetab[curr_code as usize].len = codetab[prev_code as usize].len + 1;
             codetab[curr_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
             // assert!(dst_pos < dst_cap);
-          //  dst.push_back(first_byte);
+            //  dst.push_back(first_byte);
         }
 
         // Output the string represented by the current code.
@@ -404,11 +406,13 @@ impl<R: Read> Read for ShrinkDecoder<R> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
     use crate::legacy::shrink::hwunshrink;
+    use std::collections::VecDeque;
 
     const LZW_FIG5: &[u8; 17] = b"ababcbababaaaaaaa";
-    const LZW_FIG5_SHRUNK: [u8; 12] = [ 0x61, 0xc4, 0x04, 0x1c, 0x23, 0xb0, 0x60, 0x98, 0x83, 0x08, 0xc3, 0x00 ];
+    const LZW_FIG5_SHRUNK: [u8; 12] = [
+        0x61, 0xc4, 0x04, 0x1c, 0x23, 0xb0, 0x60, 0x98, 0x83, 0x08, 0xc3, 0x00,
+    ];
 
     #[test]
     fn test_unshrink_lzw_fig5() {
@@ -419,8 +423,9 @@ mod tests {
             LZW_FIG5_SHRUNK.len(),
             LZW_FIG5.len(),
             &mut src_used,
-            &mut dst
-        ).unwrap();
+            &mut dst,
+        )
+        .unwrap();
         assert_eq!(dst, LZW_FIG5);
     }
 }

@@ -17,7 +17,7 @@ enum ImplodeError {
 
     #[error("Too many codeword lengths")]
     TooManyCodewordLengths,
-    
+
     #[error("Too few codeword lengths")]
     TooFewCodewordLengths,
 
@@ -30,7 +30,11 @@ enum ImplodeError {
 
 /// Initialize the Huffman decoder d with num_lens codeword lengths read from is.
 /// Returns false if the input is invalid.
-fn read_huffman_code(is: &mut BitStream, num_lens: usize, d: &mut HuffmanDecoder) -> core::result::Result<(), ImplodeError>  {
+fn read_huffman_code(
+    is: &mut BitStream,
+    num_lens: usize,
+    d: &mut HuffmanDecoder,
+) -> core::result::Result<(), ImplodeError> {
     let mut lens = [0; 256];
     let mut len_count = [0; 17];
     // assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
@@ -40,7 +44,6 @@ fn read_huffman_code(is: &mut BitStream, num_lens: usize, d: &mut HuffmanDecoder
     let num_bytes = (byte + 1) as usize;
     if !is.advance(8) {
         return Err(ImplodeError::EndOfStream);
-
     }
 
     let mut codeword_idx = 0;
@@ -91,7 +94,6 @@ fn read_huffman_code(is: &mut BitStream, num_lens: usize, d: &mut HuffmanDecoder
     assert!(ok, "The checks above mean the tree should be valid.");
     Ok(())
 }
-
 
 fn hwexplode(
     src: &[u8],
@@ -311,7 +313,8 @@ mod tests {
             false,
             &mut src_used,
             &mut dst,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(dst.len(), 256);
     }
 }
