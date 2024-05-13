@@ -82,15 +82,15 @@ impl Default for Codetab {
 
 impl Codetab {
     pub fn new() -> [Self; MAX_CODE + 1] {
-        let mut codetab = [Codetab::default(); MAX_CODE + 1];
-        // Codes for literal bytes. Set a phony prefix_code so they're valid.
-        for i in 0..=u8::MAX as usize {
-            codetab[i].prefix_code = i as u16;
-            codetab[i].ext_byte = i as u8;
-            codetab[i].len = 1;
-        }
-
-        codetab
+        let mut codetab = 0..=u8::MAX
+            .map(|i| Codetab {
+                prefix_code: i as u16,
+                ext_byte: i,
+                len: 1,
+            })
+            .collect::Vec<_>();
+        codetab.resize(MAX_CODE + 1, Codetab::default());
+        codetab.try_into().unwrap()
     }
 }
 fn unshrink_partial_clear(codetab: &mut [Codetab], queue: &mut CodeQueue) {
