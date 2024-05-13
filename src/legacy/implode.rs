@@ -15,7 +15,7 @@ fn read_huffman_code(
     num_lens: usize,
     d: &mut HuffmanDecoder,
 ) -> std::io::Result<()> {
-    let mut lens = [0; 256];
+    let mut lens = [0; 1 << 8];
     let mut len_count = [0; 17];
     // debug_assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
 

@@ -91,7 +91,7 @@ fn max_dist(comp_factor: u8) -> usize {
     debug_assert!(comp_factor >= 1 && comp_factor <= 4);
     let v_dist_bits = comp_factor as usize;
     // Bits in V * 256 + W byte + implicit 1. */
-    ((1 << v_dist_bits) - 1) * 256 + u8::MAX as usize + 1
+    1 << (v_dist_bits + 8)
 }
 
 const DLE_BYTE: u8 = 144;
@@ -104,7 +104,7 @@ fn hwexpand(
     src_used: &mut usize,
     dst: &mut VecDeque<u8>,
 ) -> io::Result<()> {
-    let mut fsets = [FollowerSet::default(); 256];
+    let mut fsets = [FollowerSet::default(); 1 << 8];
     debug_assert!(comp_factor >= 1 && comp_factor <= 4);
 
     let mut is = BitStream::new(src, src_len);
@@ -222,7 +222,7 @@ impl<R: Read> Read for ReduceDecoder<R> {
 mod tests {
     use std::collections::VecDeque;
 
-    use crate::legacy::reduce::follower_idx_bw;
+    use crate::legacy::reduce::{follower_idx_bw, max_dist};
 
     use super::hwexpand;
 
@@ -474,6 +474,15 @@ mod tests {
     fn test_follower_idx_bw() {
         for i in 0..=32 {
             assert_eq!(orig_follower_idx_bw(i), follower_idx_bw(i));
+        }
+    }
+
+    #[test]
+    fn test_max_dist() {
+        for i in 1..=4 {
+            let v_dist_bits = i as usize;
+            let c = ((1 << v_dist_bits) - 1) * 256 + 255 + 1;
+            assert_eq!(max_dist(i), c);
         }
     }
 }
