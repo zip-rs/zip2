@@ -775,7 +775,6 @@ impl ZipFileData {
             extra_field_length: zip64_extra_field_length
                 + extra_field_len
                 + central_extra_field_len,
-            /* FIXME: this appears to be set to 0 in write_central_directory_header() on master? */
             file_comment_length: self.file_comment.as_bytes().len().try_into().unwrap(),
             disk_number: 0,
             internal_file_attributes: 0,

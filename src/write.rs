@@ -1777,7 +1777,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         writer.write_all(central_extra_field)?;
     }
     // file comment
-    // <none>
+    writer.write_all(file.file_comment.as_bytes())?;
 
     Ok(())
 }
