@@ -78,9 +78,7 @@ fn read_huffman_code(
         ));
     }
 
-    let ok = d.init(&lens, num_lens);
-    debug_assert!(ok, "The checks above mean the tree should be valid.");
-    Ok(())
+    d.init(&lens, num_lens)
 }
 
 fn hwexplode(
