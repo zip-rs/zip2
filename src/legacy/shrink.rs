@@ -248,12 +248,7 @@ fn hwunshrink(
     let mut code_size = MIN_CODE_SIZE;
 
     // Handle the first code separately since there is no previous code.
-    let Ok(Some(curr_code)) = read_code(
-        &mut is,
-        &mut code_size,
-        &mut codetab,
-        &mut queue,
-    ) else {
+    let Ok(Some(curr_code)) = read_code(&mut is, &mut code_size, &mut codetab, &mut queue) else {
         *src_used = is.bytes_read();
         return Ok(());
     };
@@ -271,14 +266,11 @@ fn hwunshrink(
 
     let mut prev_code = curr_code;
     while dst.len() < uncompressed_size {
-        let Ok(curr_code) = read_code(
-            &mut is,
-            &mut code_size,
-            &mut codetab,
-            &mut queue,
-        ) else { break; };
-        
-        let Some(curr_code) = curr_code else { 
+        let Ok(curr_code) = read_code(&mut is, &mut code_size, &mut codetab, &mut queue) else {
+            break;
+        };
+
+        let Some(curr_code) = curr_code else {
             return Err(Error::new(io::ErrorKind::InvalidData, "Invalid code"));
         };
 

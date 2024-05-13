@@ -46,7 +46,7 @@ impl<'a> BitStream<'a> {
             // Read the available bytes and zero-pad.
             let mut bits = 0;
             for i in 0..self.src.len() - next {
-                bits |= (self.src[next + i] as u64).wrapping_shl(i as u32 * 8);
+                bits |= (self.src[next + i] as u64) << (i as u32 * 8);
             }
             bits
         };

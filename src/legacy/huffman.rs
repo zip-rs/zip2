@@ -1,3 +1,5 @@
+use std::io::{self, Error};
+
 use crate::legacy::bitstream::reverse_lsb;
 
 use super::bitstream::lsb;
@@ -120,7 +122,7 @@ impl HuffmanDecoder {
     /// Returns the decoded symbol number or -1 if no symbol could be decoded.
     /// *num_used_bits will be set to the number of bits used to decode the symbol,
     /// or zero if no symbol could be decoded.
-    pub fn huffman_decode(&mut self, bits: u16, num_used_bits: &mut u8) -> i32 {
+    pub fn huffman_decode(&mut self, bits: u16, num_used_bits: &mut u8) -> std::io::Result<u16> {
         // First try the lookup table.
         let lookup_bits = lsb(bits as u64, HUFFMAN_LOOKUP_TABLE_BITS) as usize;
         debug_assert!(lookup_bits < self.table.len());
@@ -129,7 +131,7 @@ impl HuffmanDecoder {
             debug_assert!(self.table[lookup_bits].len <= HUFFMAN_LOOKUP_TABLE_BITS);
             //  debug_assert!(self.table[lookup_bits].sym < self.num_syms);
             *num_used_bits = self.table[lookup_bits].len;
-            return self.table[lookup_bits].sym as i32;
+            return Ok(self.table[lookup_bits].sym);
         }
 
         // Then do canonical decoding with the bits in MSB-first order.
@@ -142,11 +144,14 @@ impl HuffmanDecoder {
                 //assert(sym_idx < self.num_syms);
 
                 *num_used_bits = l as u8;
-                return self.syms[sym_idx] as i32;
+                return Ok(self.syms[sym_idx]);
             }
         }
         *num_used_bits = 0;
-        -1
+        Err(Error::new(
+            io::ErrorKind::InvalidData,
+            "huffman decode failed",
+        ))
     }
 }
 
@@ -183,23 +188,23 @@ mod tests {
 
         let mut used = 0;
         // 000 (msb-first) -> 000 (lsb-first)
-        assert_eq!(d.huffman_decode(0x0, &mut used), 0);
+        assert_eq!(d.huffman_decode(0x0, &mut used).unwrap(), 0);
         assert_eq!(used, 3);
 
         /* 011 (msb-first) -> 110 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0x6, &mut used), 3);
+        assert_eq!(d.huffman_decode(0x6, &mut used).unwrap(), 3);
         assert_eq!(used, 3);
 
         /* 11110 (msb-first) -> 01111 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0x0f, &mut used), 17);
+        assert_eq!(d.huffman_decode(0x0f, &mut used).unwrap(), 17);
         assert_eq!(used, 5);
 
         /* 111110 (msb-first) -> 011111 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0x1f, &mut used), 16);
+        assert_eq!(d.huffman_decode(0x1f, &mut used).unwrap(), 16);
         assert_eq!(used, 6);
 
         /* 1111111 (msb-first) -> 1111111 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0x7f, &mut used), -1);
+        assert!(d.huffman_decode(0x7f, &mut used).is_err());
 
         /* Make sure used is set even when decoding fails. */
         assert_eq!(used, 0);

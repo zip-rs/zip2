@@ -124,14 +124,13 @@ fn hwexplode(
             let sym;
             let mut used = 0;
             if lit_tree {
-                sym = lit_decoder.huffman_decode(!bits as u16, &mut used);
-                debug_assert!(sym >= 0, "huffman decode failed");
+                sym = lit_decoder.huffman_decode(!bits as u16, &mut used)?;
                 is.advance(1 + used)?;
             } else {
-                sym = lsb(bits, 8) as i32;
+                sym = lsb(bits, 8) as u16;
                 is.advance(1 + 8)?;
             }
-            debug_assert!(sym >= 0 && sym <= u8::MAX as i32);
+            debug_assert!(sym <= u8::MAX as u16);
             dst.push_back(sym as u8);
             continue;
         }
@@ -154,16 +153,14 @@ fn hwexplode(
 
         // Read the Huffman-encoded high dist bits.
         let mut used = 0;
-        let sym = dist_decoder.huffman_decode(!bits as u16, &mut used);
-        debug_assert!(sym >= 0, "huffman decode failed");
+        let sym = dist_decoder.huffman_decode(!bits as u16, &mut used)?;
         used_tot += used;
         bits >>= used;
         dist |= (sym as usize) << if large_wnd { 7 } else { 6 };
         dist += 1;
 
         // Read the Huffman-encoded len.
-        let sym = len_decoder.huffman_decode(!bits as u16, &mut used);
-        debug_assert!(sym >= 0, "huffman decode failed");
+        let sym = len_decoder.huffman_decode(!bits as u16, &mut used)?;
         used_tot += used;
         bits >>= used;
         let mut len = (sym + min_len) as usize;
