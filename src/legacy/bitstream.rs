@@ -8,7 +8,7 @@ pub fn lsb(x: u64, n: u8) -> u64 {
 
 /// Reverse the n least significant bits of x.
 /// The (16 - n) most significant bits of the result will be zero.
-pub fn reverse16(x: u16, n: usize) -> u16 {
+pub fn reverse_lsb(x: u16, n: usize) -> u16 {
     debug_assert!(n > 0);
     debug_assert!(n <= 16);
     return x.reverse_bits() >> (16 - n);
@@ -94,18 +94,18 @@ pub const ISTREAM_MIN_BITS: usize = 64 - 7;
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::bitstream::{lsb, reverse16};
+    use crate::legacy::bitstream::{lsb, reverse_lsb};
 
     #[test]
     fn test_reverse16() {
-        assert_eq!(reverse16(0x0000, 1), 0x0);
-        assert_eq!(reverse16(0xffff, 1), 0x1);
-        assert_eq!(reverse16(0x0000, 16), 0x0);
-        assert_eq!(reverse16(0xffff, 16), 0xffff);
+        assert_eq!(reverse_lsb(0x0000, 1), 0x0);
+        assert_eq!(reverse_lsb(0xffff, 1), 0x1);
+        assert_eq!(reverse_lsb(0x0000, 16), 0x0);
+        assert_eq!(reverse_lsb(0xffff, 16), 0xffff);
         // 0001 0010 0011 0100 -> 0010 1100 0100 1000
-        assert_eq!(reverse16(0x1234, 16), 0x2c48);
+        assert_eq!(reverse_lsb(0x1234, 16), 0x2c48);
         // 111 1111 0100 0001 -> 100 0001 0111 1111
-        assert_eq!(reverse16(0x7f41, 15), 0x417f);
+        assert_eq!(reverse_lsb(0x7f41, 15), 0x417f);
     }
     /*
     #[test]

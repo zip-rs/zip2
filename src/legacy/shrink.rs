@@ -7,7 +7,6 @@ const MIN_CODE_SIZE: u8 = 9;
 const MAX_CODE_SIZE: u8 = 13;
 
 const MAX_CODE: usize = (1 << MAX_CODE_SIZE) - 1;
-const INVALID_CODE: u16 = u16::MAX;
 const CONTROL_CODE: usize = 256;
 const INC_CODE_SIZE: u64 = 1;
 const PARTIAL_CLEAR: u64 = 2;
@@ -32,38 +31,38 @@ enum ShrinkError {
 }*/
 struct CodeQueue {
     next_idx: usize,
-    codes: [u16; MAX_CODE as usize - CONTROL_CODE + 1],
+    codes: [Option<u16>; MAX_CODE as usize - CONTROL_CODE + 1],
 }
 
 impl CodeQueue {
     fn new() -> Self {
-        let mut codes = [0; MAX_CODE as usize - CONTROL_CODE + 1];
+        let mut codes = [None; MAX_CODE as usize - CONTROL_CODE + 1];
         for (i, code) in (CONTROL_CODE as u16 + 1..=MAX_CODE as u16).enumerate() {
-            codes[i] = code;
+            codes[i] = Some(code);
         }
         Self { next_idx: 0, codes }
     }
 
     // Return the next code in the queue, or INVALID_CODE if the queue is empty.
-    fn next(&self) -> u16 {
+    fn next(&self) -> Option<u16> {
         //   assert(q->next_idx < sizeof(q->codes) / sizeof(q->codes[0]));
         self.codes[self.next_idx]
     }
 
     /// Return and remove the next code from the queue, or return INVALID_CODE if
     /// the queue is empty.
-    fn remove_next(&mut self) -> u16 {
-        let code = self.next();
-        if code != INVALID_CODE {
+    fn remove_next(&mut self) -> Option<u16> {
+        let res = self.next();
+        if res.is_some() {
             self.next_idx += 1;
         }
-        code
+        res
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug, Copy)]
 struct Codetab {
-    prefix_code: u16, // INVALID_CODE means the entry is invalid.
+    prefix_code: Option<u16>,
     ext_byte: u8,
     len: u16,
     last_dst_pos: usize,
@@ -72,7 +71,7 @@ struct Codetab {
 impl Default for Codetab {
     fn default() -> Self {
         Self {
-            prefix_code: INVALID_CODE,
+            prefix_code: None,
             ext_byte: 0,
             len: 0,
             last_dst_pos: 0,
@@ -81,25 +80,27 @@ impl Default for Codetab {
 }
 
 impl Codetab {
-    pub fn new() -> [Self; MAX_CODE + 1] {
-        let mut codetab = 0..=u8::MAX
+    pub fn create_new() -> [Self; MAX_CODE + 1] {
+        let mut codetab = (0..=u8::MAX)
             .map(|i| Codetab {
-                prefix_code: i as u16,
+                prefix_code: Some(i as u16),
                 ext_byte: i,
                 len: 1,
+                last_dst_pos: 0,
             })
-            .collect::Vec<_>();
+            .collect::<Vec<_>>();
         codetab.resize(MAX_CODE + 1, Codetab::default());
         codetab.try_into().unwrap()
     }
 }
+
 fn unshrink_partial_clear(codetab: &mut [Codetab], queue: &mut CodeQueue) {
     let mut is_prefix = [false; MAX_CODE + 1];
 
     // Scan for codes that have been used as a prefix.
     for i in CONTROL_CODE + 1..=MAX_CODE {
-        if codetab[i].prefix_code != INVALID_CODE {
-            is_prefix[codetab[i].prefix_code as usize] = true;
+        if let Some(prefix_code) = codetab[i].prefix_code {
+            is_prefix[prefix_code as usize] = true;
         }
     }
 
@@ -107,12 +108,12 @@ fn unshrink_partial_clear(codetab: &mut [Codetab], queue: &mut CodeQueue) {
     let mut code_queue_size = 0;
     for i in CONTROL_CODE + 1..MAX_CODE {
         if !is_prefix[i] {
-            codetab[i].prefix_code = INVALID_CODE;
-            queue.codes[code_queue_size] = i as u16;
+            codetab[i].prefix_code = None;
+            queue.codes[code_queue_size] = Some(i as u16);
             code_queue_size += 1;
         }
     }
-    queue.codes[code_queue_size] = INVALID_CODE; // End-of-queue marker.
+    queue.codes[code_queue_size] = None; // End-of-queue marker.
     queue.next_idx = 0;
 }
 
@@ -124,36 +125,30 @@ fn read_code(
     code_size: &mut u8,
     codetab: &mut [Codetab],
     queue: &mut CodeQueue,
-    next_code: &mut u16,
-) -> io::Result<()> {
+) -> io::Result<Option<u16>> {
     // assert(sizeof(code) * CHAR_BIT >= *code_size);
     let code = lsb(is.bits(), *code_size) as u16;
     is.advance(*code_size)?;
 
     // Handle regular codes (the common case).
     if code != CONTROL_CODE as u16 {
-        *next_code = code;
-        return Ok(());
+        return Ok(Some(code));
     }
 
     // Handle control codes.
     let control_code = lsb(is.bits(), *code_size);
     if is.advance(*code_size).is_err() {
-        *next_code = INVALID_CODE;
-        return Ok(());
+        return Ok(None);
     }
     if control_code == INC_CODE_SIZE && *code_size < MAX_CODE_SIZE {
         (*code_size) += 1;
-        read_code(is, code_size, codetab, queue, next_code)?;
-        return Ok(());
+        return read_code(is, code_size, codetab, queue);
     }
     if control_code == PARTIAL_CLEAR {
         unshrink_partial_clear(codetab, queue);
-        read_code(is, code_size, codetab, queue, next_code)?;
-        return Ok(());
+        return read_code(is, code_size, codetab, queue);
     }
-    *next_code = INVALID_CODE;
-    return Ok(());
+    return Ok(None);
 }
 
 /// Output the string represented by a code into dst at dst_pos. Returns
@@ -177,8 +172,8 @@ fn output_code(
         return Ok(());
     }
 
-    if codetab[code as usize].prefix_code == INVALID_CODE
-        || codetab[code as usize].prefix_code == code
+    if codetab[code as usize].prefix_code.is_none()
+        || codetab[code as usize].prefix_code == Some(code)
     {
         // Reject invalid codes. Self-referential codes may exist in
         // the table but cannot be used.
@@ -201,20 +196,20 @@ fn output_code(
     // the table. The prefix can then become valid when it's added to the
     // table at a later point.
     debug_assert!(codetab[code as usize].len == UNKNOWN_LEN);
-    let prefix_code = codetab[code as usize].prefix_code;
+    let prefix_code = codetab[code as usize].prefix_code.unwrap();
     debug_assert!(prefix_code as usize > CONTROL_CODE);
 
-    if prefix_code == queue.next() {
+    if Some(prefix_code) == queue.next() {
         /* The prefix code hasn't been added yet, but we were just
         about to: the KwKwK case. Add the previous string extended
         with its first byte. */
-        debug_assert!(codetab[prev_code as usize].prefix_code != INVALID_CODE);
-        codetab[prefix_code as usize].prefix_code = prev_code;
+        debug_assert!(codetab[prev_code as usize].prefix_code.is_some());
+        codetab[prefix_code as usize].prefix_code = Some(prev_code);
         codetab[prefix_code as usize].ext_byte = *first_byte;
         codetab[prefix_code as usize].len = codetab[prev_code as usize].len + 1;
         codetab[prefix_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
         dst.push_back(*first_byte);
-    } else if codetab[prefix_code as usize].prefix_code == INVALID_CODE {
+    } else if codetab[prefix_code as usize].prefix_code.is_none() {
         // The prefix code is still invalid.
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -247,25 +242,22 @@ fn hwunshrink(
     src_used: &mut usize,
     dst: &mut VecDeque<u8>,
 ) -> io::Result<()> {
-    let mut codetab = Codetab::new();
+    let mut codetab = Codetab::create_new();
     let mut queue = CodeQueue::new();
     let mut is = BitStream::new(src, src_len);
     let mut code_size = MIN_CODE_SIZE;
 
     // Handle the first code separately since there is no previous code.
-    let mut curr_code = 0;
-    if read_code(
+    let Ok(Some(curr_code)) = read_code(
         &mut is,
         &mut code_size,
         &mut codetab,
         &mut queue,
-        &mut curr_code,
-    )
-    .is_err()
-    {
+    ) else {
         *src_used = is.bytes_read();
         return Ok(());
-    }
+    };
+
     debug_assert!(curr_code != CONTROL_CODE as u16);
     if curr_code > u8::MAX as u16 {
         return Err(io::Error::new(
@@ -278,24 +270,22 @@ fn hwunshrink(
     dst.push_back(curr_code as u8);
 
     let mut prev_code = curr_code;
-    while dst.len() < uncompressed_size
-        && read_code(
+    while dst.len() < uncompressed_size {
+        let Ok(curr_code) = read_code(
             &mut is,
             &mut code_size,
             &mut codetab,
             &mut queue,
-            &mut curr_code,
-        )
-        .is_ok()
-    {
-        println!("{}", dst.len());
-        if curr_code == INVALID_CODE {
+        ) else { break; };
+        
+        let Some(curr_code) = curr_code else { 
             return Err(Error::new(io::ErrorKind::InvalidData, "Invalid code"));
-        }
+        };
+
         let dst_pos = dst.len();
         // Handle KwKwK: next code used before being added.
-        if curr_code == queue.next() {
-            if codetab[prev_code as usize].prefix_code == INVALID_CODE {
+        if Some(curr_code) == queue.next() {
+            if codetab[prev_code as usize].prefix_code.is_none() {
                 return Err(Error::new(
                     io::ErrorKind::InvalidData,
                     "Previous code no longer valid",
@@ -303,7 +293,7 @@ fn hwunshrink(
             }
             // Extend the previous code with its first byte.
             debug_assert!(curr_code != prev_code);
-            codetab[curr_code as usize].prefix_code = prev_code;
+            codetab[curr_code as usize].prefix_code = Some(prev_code);
             codetab[curr_code as usize].ext_byte = first_byte;
             codetab[curr_code as usize].len = codetab[prev_code as usize].len + 1;
             codetab[curr_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
@@ -324,26 +314,18 @@ fn hwunshrink(
             return Err(s);
         }
 
-        // Verify that the output matches walking the prefixes.
-        let mut c = curr_code;
-        for i in 0..len {
-            debug_assert!(codetab[c as usize].len as usize == len - i);
-            //  debug_assert!(codetab[c as usize].ext_byte == dst[dst_pos + len - i - 1]);
-            c = codetab[c as usize].prefix_code;
-        }
-
         // Add a new code to the string table if there's room.
         // The string is the previous code's string extended with
         // the first byte of the current code's string.
         let new_code = queue.remove_next();
-        if new_code != INVALID_CODE {
+        if let Some(new_code) = new_code {
             //debug_assert!(codetab[prev_code as usize].last_dst_pos < dst_pos);
-            codetab[new_code as usize].prefix_code = prev_code;
+            codetab[new_code as usize].prefix_code = Some(prev_code);
             codetab[new_code as usize].ext_byte = first_byte;
             codetab[new_code as usize].len = codetab[prev_code as usize].len + 1;
             codetab[new_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
 
-            if codetab[prev_code as usize].prefix_code == INVALID_CODE {
+            if codetab[prev_code as usize].prefix_code.is_none() {
                 // prev_code was invalidated in a partial
                 // clearing. Until that code is re-used, the
                 // string represented by new_code is

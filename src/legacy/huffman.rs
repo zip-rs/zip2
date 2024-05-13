@@ -1,4 +1,4 @@
-use crate::legacy::bitstream::reverse16;
+use crate::legacy::bitstream::reverse_lsb;
 
 use super::bitstream::lsb;
 
@@ -103,7 +103,7 @@ impl HuffmanDecoder {
     pub fn table_insert(&mut self, sym: usize, len: usize, codeword: u16) {
         debug_assert!(len <= HUFFMAN_LOOKUP_TABLE_BITS as usize);
 
-        let codeword = reverse16(codeword, len); // Make it LSB-first.
+        let codeword = reverse_lsb(codeword, len); // Make it LSB-first.
         let pad_len = HUFFMAN_LOOKUP_TABLE_BITS as usize - len;
 
         // Pad the pad_len upper bits with all bit combinations.
@@ -133,7 +133,7 @@ impl HuffmanDecoder {
         }
 
         // Then do canonical decoding with the bits in MSB-first order.
-        let mut bits = reverse16(bits, MAX_HUFFMAN_BITS);
+        let mut bits = reverse_lsb(bits, MAX_HUFFMAN_BITS);
         for l in HUFFMAN_LOOKUP_TABLE_BITS as usize + 1..=MAX_HUFFMAN_BITS {
             if (bits as u32) < self.sentinel_bits[l] {
                 bits >>= MAX_HUFFMAN_BITS - l;
