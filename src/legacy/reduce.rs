@@ -50,26 +50,19 @@ fn read_follower_sets(is: &mut BitStream, fsets: &mut [FollowerSet]) -> io::Resu
 /// Read the next byte from is, decoded based on prev_byte and the follower sets.
 /// The byte is returned in *out_byte. The function returns true on success,
 /// and false on bad data or end of input.
-fn read_next_byte(
-    is: &mut BitStream,
-    prev_byte: u8,
-    fsets: &mut [FollowerSet],
-    out_byte: &mut u8,
-) -> io::Result<()> {
+fn read_next_byte(is: &mut BitStream, prev_byte: u8, fsets: &mut [FollowerSet]) -> io::Result<u8> {
     let bits = is.bits();
 
     if fsets[prev_byte as usize].size == 0 {
         // No followers; read a literal byte.
-        *out_byte = bits as u8;
         is.advance(8)?;
-        return Ok(());
+        return Ok(bits as u8);
     }
 
     if lsb(bits, 1) == 1 {
         // Don't use the follower set; read a literal byte.
-        *out_byte = (bits >> 1) as u8;
         is.advance(1 + 8)?;
-        return Ok(());
+        return Ok((bits >> 1) as u8);
     }
 
     // The bits represent the index of a follower byte.
@@ -81,9 +74,8 @@ fn read_next_byte(
             "Invalid follower index",
         ));
     }
-    *out_byte = fsets[prev_byte as usize].followers[follower_idx];
     is.advance(1 + idx_bw)?;
-    Ok(())
+    Ok(fsets[prev_byte as usize].followers[follower_idx])
 }
 
 fn max_len(comp_factor: u8) -> usize {
@@ -125,7 +117,7 @@ fn hwexpand(
 
     while dst.len() < uncomp_len {
         // Read a literal byte or DLE marker.
-        read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
+        curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
         if curr_byte != DLE_BYTE {
             // Output a literal byte.
             dst.push_back(curr_byte);
@@ -133,7 +125,7 @@ fn hwexpand(
         }
 
         // Read the V byte which determines the length.
-        read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
+        curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
         if curr_byte == 0 {
             // Output a literal DLE byte.
             dst.push_back(DLE_BYTE);
@@ -143,13 +135,13 @@ fn hwexpand(
         let mut len = lsb(v as u64, v_len_bits) as usize;
         if len == (1 << v_len_bits) - 1 {
             // Read an extra length byte.
-            read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
+            curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
             len += curr_byte as usize;
         }
         len += 3;
 
         // Read the W byte, which together with V gives the distance.
-        read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
+        curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
         let dist = ((v as usize) >> v_len_bits) * 256 + curr_byte as usize + 1;
 
         debug_assert!(len <= max_len(comp_factor));
