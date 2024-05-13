@@ -479,8 +479,8 @@ mod tests {
             &mut dst,
         ).unwrap();
         assert_eq!(dst.len(), 2048 + 1024);
-        for i in 0..1024 {
-            assert_eq!(dst[2048 + i], 0);
+        for i in 0..(1 << 10) {
+            assert_eq!(dst[(1 << 11) + i], 0);
         }
     }
 }
