@@ -14,12 +14,6 @@ pub fn reverse_lsb(x: u16, n: usize) -> u16 {
     return x.reverse_bits() >> (16 - n);
 }
 
-/*
-pub fn round_up(x: usize, m: usize) -> usize {
-    debug_assert!((m & (m - 1)) == 0, "m must be a power of two");
-    (x + m - 1) & (-(m as i64)) as usize // Hacker's Delight (2nd), 3-1.
-}
-*/
 /// Input bitstream.
 pub struct BitStream<'a> {
     src: &'a [u8],     /* Source bytes. */
@@ -107,16 +101,6 @@ mod tests {
         // 111 1111 0100 0001 -> 100 0001 0111 1111
         assert_eq!(reverse_lsb(0x7f41, 15), 0x417f);
     }
-    /*
-    #[test]
-    fn test_bits_round_up() {
-        assert_eq!(round_up(0, 4), 0);
-        assert_eq!(round_up(1, 4), 4);
-        assert_eq!(round_up(2, 4), 4);
-        assert_eq!(round_up(3, 4), 4);
-        assert_eq!(round_up(4, 4), 4);
-        assert_eq!(round_up(5, 4), 8);
-    }*/
 
     #[test]
     fn test_bits_test_bits_lsbround_up() {
