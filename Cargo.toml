@@ -84,6 +84,7 @@ default = [
     "lzma",
     "time",
     "zstd",
+    "legacy-zip",
 ]
 
 [[bench]]

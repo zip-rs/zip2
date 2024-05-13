@@ -1,20 +1,22 @@
+use std::io;
+
 /// Get the n least significant bits of x.
 pub fn lsb(x: u64, n: u8) -> u64 {
-    assert!(n <= 63);
-    x & (1u64 << (n as u32) - 1)
+    debug_assert!(n <= 63);
+    x & ((1u64 << (n as u32)) - 1)
 }
 
 /// Reverse the n least significant bits of x.
 /// The (16 - n) most significant bits of the result will be zero.
 pub fn reverse16(x: u16, n: usize) -> u16 {
-    assert!(n > 0);
-    assert!(n <= 16);
+    debug_assert!(n > 0);
+    debug_assert!(n <= 16);
     return x.reverse_bits() >> (16 - n);
 }
 
 /*
 pub fn round_up(x: usize, m: usize) -> usize {
-    assert!((m & (m - 1)) == 0, "m must be a power of two");
+    debug_assert!((m & (m - 1)) == 0, "m must be a power of two");
     (x + m - 1) & (-(m as i64)) as usize // Hacker's Delight (2nd), 3-1.
 }
 */
@@ -41,7 +43,7 @@ impl<'a> BitStream<'a> {
     /// fewer if the end of stream is reached. The upper bits are zero-padded.
     pub fn bits(&mut self) -> u64 {
         let next = self.bitpos / 8;
-        assert!(next < self.src.len(), "Cannot read past end of stream.");
+        debug_assert!(next < self.src.len(), "Cannot read past end of stream.");
 
         let bits = if next + 8 <= self.src.len() {
             // Common case: read 8 bytes in one go.
@@ -60,23 +62,26 @@ impl<'a> BitStream<'a> {
 
     /// Advance n bits in the bitstream if possible. Returns false if that many bits
     /// are not available in the stream.
-    pub fn advance(&mut self, n: u8) -> bool {
-        assert!(self.bitpos <= self.bitpos_end);
+    pub fn advance(&mut self, n: u8) -> std::io::Result<()> {
+        debug_assert!(self.bitpos <= self.bitpos_end);
 
         if self.bitpos_end - self.bitpos < n as usize {
-            return false;
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "End of stream",
+            ));
         }
 
         self.bitpos += n as usize;
-        return true;
+        Ok(())
     }
 
     /// Align the input stream to the next 8-bit boundary and return a pointer to
     /// that byte, which may be the past-the-end-of-stream byte.
     pub fn _byte_align(&mut self) -> usize {
-        assert!(self.bitpos <= self.bitpos_end, "Not past end of stream.");
+        debug_assert!(self.bitpos <= self.bitpos_end, "Not past end of stream.");
         self.bitpos = 8 * (self.bitpos / 8);
-        assert!(self.bitpos <= self.bitpos_end, "Not past end of stream.");
+        debug_assert!(self.bitpos <= self.bitpos_end, "Not past end of stream.");
         return self.bitpos / 8;
     }
 
@@ -126,21 +131,21 @@ mod tests {
         let mut is = super::BitStream::new(&bits, 1);
 
         assert_eq!(lsb(is.bits(), 1), 1);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
         assert_eq!(lsb(is.bits(), 1), 1);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
         assert_eq!(lsb(is.bits(), 1), 1);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
         assert_eq!(lsb(is.bits(), 1), 0);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
         assert_eq!(lsb(is.bits(), 1), 0);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
         assert_eq!(lsb(is.bits(), 1), 0);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
         assert_eq!(lsb(is.bits(), 1), 1);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
         assert_eq!(lsb(is.bits(), 1), 0);
-        assert!(is.advance(1));
+        is.advance(1).unwrap();
     }
 
     #[test]
@@ -148,9 +153,9 @@ mod tests {
         let bits = [0x45, 048];
         let mut is = super::BitStream::new(&bits, 9);
         assert_eq!(lsb(is.bits(), 3), 0x05);
-        assert!(is.advance(3));
+        is.advance(3).unwrap();
 
         assert_eq!(lsb(is.bits(), 4), 0x08);
-        assert!(is.advance(4));
+        is.advance(4).unwrap();
     }
 }

@@ -1,40 +1,20 @@
 use std::collections::VecDeque;
 use std::io::{self, copy, Read, Result};
 
-use thiserror::Error;
-
 use crate::legacy::lz77::lz77_output_backref;
 
 use super::bitstream::{lsb, BitStream};
 
-#[derive(Error, Debug)]
-enum ReduceError {
-    #[error("Invalid follower set")]
-    InvalidFollowerSet,
-    #[error("Error reading next byte")]
-    ErrorReadingNextByte,
-}
-
 /// Number of bits used to represent indices in a follower set of size n.
 fn follower_idx_bw(n: u8) -> u8 {
-    assert!(n <= 32);
-
-    if n > 16 {
-        return 5;
+    debug_assert!(n <= 32);
+    if n == 0 {
+        return 0;
     }
-    if n > 8 {
-        return 4;
-    }
-    if n > 4 {
-        return 3;
-    }
-    if n > 2 {
-        return 2;
-    }
-    if n > 0 {
+    if n == 1 {
         return 1;
     }
-    return 0;
+    5 - ((n - 1) << 3).leading_zeros() as u8
 }
 
 #[derive(Default, Clone, Copy)]
@@ -45,27 +25,26 @@ struct FollowerSet {
 }
 
 /// Read the follower sets from is into fsets. Returns true on success.
-fn read_follower_sets(is: &mut BitStream, fsets: &mut [FollowerSet]) -> bool {
-    for i in (0..=255 as usize).rev() {
+fn read_follower_sets(is: &mut BitStream, fsets: &mut [FollowerSet]) -> io::Result<()> {
+    for i in (0..=u8::MAX as usize).rev() {
         let n = lsb(is.bits(), 6) as u8;
         if n > 32 {
-            return false;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid follower set",
+            ));
         }
-        if !is.advance(6) {
-            return false;
-        }
+        is.advance(6)?;
         fsets[i].size = n;
         fsets[i].idx_bw = follower_idx_bw(n);
 
         for j in 0..fsets[i].size as usize {
             fsets[i].followers[j] = is.bits() as u8;
-            if !is.advance(8) {
-                return false;
-            }
+            is.advance(8)?;
         }
     }
 
-    return true;
+    Ok(())
 }
 
 /// Read the next byte from is, decoded based on prev_byte and the follower sets.
@@ -76,47 +55,51 @@ fn read_next_byte(
     prev_byte: u8,
     fsets: &mut [FollowerSet],
     out_byte: &mut u8,
-) -> bool {
+) -> io::Result<()> {
     let bits = is.bits();
 
     if fsets[prev_byte as usize].size == 0 {
         // No followers; read a literal byte.
         *out_byte = bits as u8;
-        return is.advance(8);
+        is.advance(8)?;
+        return Ok(());
     }
 
     if lsb(bits, 1) == 1 {
         // Don't use the follower set; read a literal byte.
         *out_byte = (bits >> 1) as u8;
-        return is.advance(1 + 8);
+        is.advance(1 + 8)?;
+        return Ok(());
     }
 
     // The bits represent the index of a follower byte.
     let idx_bw = fsets[prev_byte as usize].idx_bw;
     let follower_idx = lsb(bits >> 1, idx_bw) as usize;
     if follower_idx >= fsets[prev_byte as usize].size as usize {
-        return false;
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid follower index",
+        ));
     }
     *out_byte = fsets[prev_byte as usize].followers[follower_idx];
-    return is.advance(1 + idx_bw);
+    is.advance(1 + idx_bw)?;
+    Ok(())
 }
 
 fn max_len(comp_factor: u8) -> usize {
     let v_len_bits = (8 - comp_factor) as usize;
 
-    assert!(comp_factor >= 1 && comp_factor <= 4);
+    debug_assert!(comp_factor >= 1 && comp_factor <= 4);
 
     // Bits in V + extra len byte + implicit 3.
-    ((1 << v_len_bits) - 1) + 255 + 3
+    ((1 << v_len_bits) - 1) + u8::MAX as usize + 3
 }
 
 fn max_dist(comp_factor: u8) -> usize {
+    debug_assert!(comp_factor >= 1 && comp_factor <= 4);
     let v_dist_bits = comp_factor as usize;
-
-    assert!(comp_factor >= 1 && comp_factor <= 4);
-
     // Bits in V * 256 + W byte + implicit 1. */
-    ((1 << v_dist_bits) - 1) * 256 + 255 + 1
+    ((1 << v_dist_bits) - 1) * 256 + u8::MAX as usize + 1
 }
 
 const DLE_BYTE: u8 = 144;
@@ -128,14 +111,12 @@ fn hwexpand(
     comp_factor: u8,
     src_used: &mut usize,
     dst: &mut VecDeque<u8>,
-) -> core::result::Result<(), ReduceError> {
+) -> io::Result<()> {
     let mut fsets = [FollowerSet::default(); 256];
-    assert!(comp_factor >= 1 && comp_factor <= 4);
+    debug_assert!(comp_factor >= 1 && comp_factor <= 4);
 
     let mut is = BitStream::new(src, src_len);
-    if !read_follower_sets(&mut is, &mut fsets) {
-        return Err(ReduceError::InvalidFollowerSet);
-    }
+    read_follower_sets(&mut is, &mut fsets)?;
 
     // Number of bits in V used for backref length.
     let v_len_bits = 8 - comp_factor;
@@ -144,9 +125,7 @@ fn hwexpand(
 
     while dst.len() < uncomp_len {
         // Read a literal byte or DLE marker.
-        if !read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte) {
-            return Err(ReduceError::ErrorReadingNextByte);
-        }
+        read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
         if curr_byte != DLE_BYTE {
             // Output a literal byte.
             dst.push_back(curr_byte);
@@ -154,9 +133,7 @@ fn hwexpand(
         }
 
         // Read the V byte which determines the length.
-        if !read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte) {
-            return Err(ReduceError::ErrorReadingNextByte);
-        }
+        read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
         if curr_byte == 0 {
             // Output a literal DLE byte.
             dst.push_back(DLE_BYTE);
@@ -166,21 +143,17 @@ fn hwexpand(
         let mut len = lsb(v as u64, v_len_bits) as usize;
         if len == (1 << v_len_bits) - 1 {
             // Read an extra length byte.
-            if !read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte) {
-                return Err(ReduceError::ErrorReadingNextByte);
-            }
+            read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
             len += curr_byte as usize;
         }
         len += 3;
 
         // Read the W byte, which together with V gives the distance.
-        if !read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte) {
-            return Err(ReduceError::ErrorReadingNextByte);
-        }
+        read_next_byte(&mut is, curr_byte, &mut fsets, &mut curr_byte)?;
         let dist = ((v as usize) >> v_len_bits) * 256 + curr_byte as usize + 1;
 
-        assert!(len <= max_len(comp_factor));
-        assert!(dist as usize <= max_dist(comp_factor));
+        debug_assert!(len <= max_len(comp_factor));
+        debug_assert!(dist as usize <= max_dist(comp_factor));
 
         // Output the back reference.
         if len <= uncomp_len - dst.len() && dist as usize <= dst.len() {
@@ -238,16 +211,14 @@ impl<R: Read> Read for ReduceDecoder<R> {
                 return Err(err.into());
             }
             let mut src_used = 0;
-            if let Err(err) = hwexpand(
+            hwexpand(
                 &compressed_bytes,
                 compressed_bytes.len(),
                 self.uncompressed_size as usize,
                 self.comp_factor,
                 &mut src_used,
                 &mut self.stream,
-            ) {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, err.to_string()));
-            }
+            )?;
         }
         let bytes_read = self.stream.len().min(buf.len());
         buf[..bytes_read].copy_from_slice(&self.stream.drain(..bytes_read).collect::<Vec<u8>>());
@@ -258,6 +229,8 @@ impl<R: Read> Read for ReduceDecoder<R> {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+
+    use crate::legacy::reduce::follower_idx_bw;
 
     use super::hwexpand;
 
@@ -483,6 +456,32 @@ mod tests {
         assert_eq!(dst.len(), 2048 + 1024);
         for i in 0..(1 << 10) {
             assert_eq!(dst[(1 << 11) + i], 0);
+        }
+    }
+
+    fn orig_follower_idx_bw(n: u8) -> u8 {
+        if n > 16 {
+            return 5;
+        }
+        if n > 8 {
+            return 4;
+        }
+        if n > 4 {
+            return 3;
+        }
+        if n > 2 {
+            return 2;
+        }
+        if n > 0 {
+            return 1;
+        }
+        return 0;
+    }
+
+    #[test]
+    fn test_follower_idx_bw() {
+        for i in 0..=32 {
+            assert_eq!(orig_follower_idx_bw(i), follower_idx_bw(i));
         }
     }
 }

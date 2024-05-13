@@ -57,12 +57,11 @@ impl HuffmanDecoder {
 
         // Count the number of codewords of each length.
         for i in 0..n {
-            assert!(lengths[i] as usize <= MAX_HUFFMAN_BITS);
+            debug_assert!(lengths[i] as usize <= MAX_HUFFMAN_BITS);
             count[lengths[i] as usize] += 1;
         }
         count[0] = 0; // Ignore zero-length codewords.
-
-        // Compute sentinel_bits and offset_first_sym_idx for each length.
+                      // Compute sentinel_bits and offset_first_sym_idx for each length.
         code[0] = 0;
         sym_idx[0] = 0;
         for l in 1..=MAX_HUFFMAN_BITS {
@@ -76,7 +75,7 @@ impl HuffmanDecoder {
 
             let s = ((code[l] as u32 + count[l] as u32) << (MAX_HUFFMAN_BITS - l)) as u32;
             self.sentinel_bits[l] = s;
-            assert!(self.sentinel_bits[l] >= code[l] as u32, "No overflow!");
+            debug_assert!(self.sentinel_bits[l] >= code[l] as u32, "No overflow!");
 
             sym_idx[l] = sym_idx[l - 1] + count[l - 1];
             self.offset_first_sym_idx[l] = sym_idx[l].wrapping_sub(code[l]);
@@ -102,7 +101,7 @@ impl HuffmanDecoder {
     }
 
     pub fn table_insert(&mut self, sym: usize, len: usize, codeword: u16) {
-        assert!(len <= HUFFMAN_LOOKUP_TABLE_BITS as usize);
+        debug_assert!(len <= HUFFMAN_LOOKUP_TABLE_BITS as usize);
 
         let codeword = reverse16(codeword, len); // Make it LSB-first.
         let pad_len = HUFFMAN_LOOKUP_TABLE_BITS as usize - len;
@@ -110,9 +109,9 @@ impl HuffmanDecoder {
         // Pad the pad_len upper bits with all bit combinations.
         for padding in 0..(1 << pad_len) {
             let index = (codeword | (padding << len)) as usize;
-            assert!(sym <= u16::MAX as usize);
+            debug_assert!(sym <= u16::MAX as usize);
             self.table[index].sym = sym as u16;
-            assert!(len <= u8::MAX as usize);
+            debug_assert!(len <= u8::MAX as usize);
             self.table[index].len = len as u8;
         }
     }
@@ -124,11 +123,11 @@ impl HuffmanDecoder {
     pub fn huffman_decode(&mut self, bits: u16, num_used_bits: &mut u8) -> i32 {
         // First try the lookup table.
         let lookup_bits = lsb(bits as u64, HUFFMAN_LOOKUP_TABLE_BITS) as usize;
-        assert!(lookup_bits < self.table.len());
+        debug_assert!(lookup_bits < self.table.len());
 
         if self.table[lookup_bits].len != 0 {
-            assert!(self.table[lookup_bits].len <= HUFFMAN_LOOKUP_TABLE_BITS);
-            //  assert!(self.table[lookup_bits].sym < self.num_syms);
+            debug_assert!(self.table[lookup_bits].len <= HUFFMAN_LOOKUP_TABLE_BITS);
+            //  debug_assert!(self.table[lookup_bits].sym < self.num_syms);
             *num_used_bits = self.table[lookup_bits].len;
             return self.table[lookup_bits].sym as i32;
         }

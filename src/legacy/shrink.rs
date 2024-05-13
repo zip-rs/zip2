@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{self, copy, Read};
-
-use thiserror::Error;
+use std::io::{self, copy, Error, Read};
 
 use super::bitstream::{lsb, BitStream};
 
@@ -17,7 +15,7 @@ const PARTIAL_CLEAR: u64 = 2;
 // const HASH_BITS: usize = MAX_CODE_SIZE + 1; /* For a load factor of 0.5. */
 // const HASHTAB_SIZE: usize = 1 << HASH_BITS;
 const UNKNOWN_LEN: u16 = u16::MAX;
-
+/*
 #[derive(Error, Debug)]
 enum ShrinkError {
     #[error("self-referential code")]
@@ -31,7 +29,7 @@ enum ShrinkError {
 
     #[error("prev code no longer valid")]
     PrevCodeNoLongerValid,
-}
+}*/
 struct CodeQueue {
     next_idx: usize,
     codes: [u16; MAX_CODE as usize - CONTROL_CODE + 1],
@@ -127,35 +125,35 @@ fn read_code(
     codetab: &mut [Codetab],
     queue: &mut CodeQueue,
     next_code: &mut u16,
-) -> bool {
+) -> io::Result<()> {
     // assert(sizeof(code) * CHAR_BIT >= *code_size);
     let code = lsb(is.bits(), *code_size) as u16;
-    if !is.advance(*code_size) {
-        return false;
-    }
+    is.advance(*code_size)?;
 
     // Handle regular codes (the common case).
     if code != CONTROL_CODE as u16 {
         *next_code = code;
-        return true;
+        return Ok(());
     }
 
     // Handle control codes.
     let control_code = lsb(is.bits(), *code_size);
-    if !is.advance(*code_size) {
+    if is.advance(*code_size).is_err() {
         *next_code = INVALID_CODE;
-        return true;
+        return Ok(());
     }
     if control_code == INC_CODE_SIZE && *code_size < MAX_CODE_SIZE {
         (*code_size) += 1;
-        return read_code(is, code_size, codetab, queue, next_code);
+        read_code(is, code_size, codetab, queue, next_code)?;
+        return Ok(());
     }
     if control_code == PARTIAL_CLEAR {
         unshrink_partial_clear(codetab, queue);
-        return read_code(is, code_size, codetab, queue, next_code);
+        read_code(is, code_size, codetab, queue, next_code)?;
+        return Ok(());
     }
     *next_code = INVALID_CODE;
-    return true;
+    return Ok(());
 }
 
 /// Output the string represented by a code into dst at dst_pos. Returns
@@ -169,8 +167,8 @@ fn output_code(
     queue: &mut CodeQueue,
     first_byte: &mut u8,
     len: &mut usize,
-) -> Result<(), ShrinkError> {
-    assert!(code <= MAX_CODE as u16 && code != CONTROL_CODE as u16);
+) -> io::Result<()> {
+    debug_assert!(code <= MAX_CODE as u16 && code != CONTROL_CODE as u16);
     if code <= u8::MAX as u16 {
         // Output literal byte.
         *first_byte = code as u8;
@@ -184,7 +182,7 @@ fn output_code(
     {
         // Reject invalid codes. Self-referential codes may exist in
         // the table but cannot be used.
-        return Err(ShrinkError::InvalidPrefixCode);
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid code"));
     }
 
     if codetab[code as usize].len != UNKNOWN_LEN {
@@ -202,15 +200,15 @@ fn output_code(
     // was invalid (due to partial clearing) when the code was inserted into
     // the table. The prefix can then become valid when it's added to the
     // table at a later point.
-    assert!(codetab[code as usize].len == UNKNOWN_LEN);
+    debug_assert!(codetab[code as usize].len == UNKNOWN_LEN);
     let prefix_code = codetab[code as usize].prefix_code;
-    assert!(prefix_code as usize > CONTROL_CODE);
+    debug_assert!(prefix_code as usize > CONTROL_CODE);
 
     if prefix_code == queue.next() {
         /* The prefix code hasn't been added yet, but we were just
         about to: the KwKwK case. Add the previous string extended
         with its first byte. */
-        assert!(codetab[prev_code as usize].prefix_code != INVALID_CODE);
+        debug_assert!(codetab[prev_code as usize].prefix_code != INVALID_CODE);
         codetab[prefix_code as usize].prefix_code = prev_code;
         codetab[prefix_code as usize].ext_byte = *first_byte;
         codetab[prefix_code as usize].len = codetab[prev_code as usize].len + 1;
@@ -218,7 +216,10 @@ fn output_code(
         dst.push_back(*first_byte);
     } else if codetab[prefix_code as usize].prefix_code == INVALID_CODE {
         // The prefix code is still invalid.
-        return Err(ShrinkError::InvalidPrefixCode);
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid prefix code",
+        ));
     }
 
     // Output the prefix string, then the extension byte.
@@ -232,7 +233,7 @@ fn output_code(
     *first_byte = dst[ct.last_dst_pos];
 
     // Update the code table now that the string has a length and pos.
-    assert!(prev_code != code);
+    debug_assert!(prev_code != code);
     codetab[code as usize].len = *len as u16;
     codetab[code as usize].last_dst_pos = last_dst_pos;
 
@@ -245,7 +246,7 @@ fn hwunshrink(
     uncompressed_size: usize,
     src_used: &mut usize,
     dst: &mut VecDeque<u8>,
-) -> Result<(), ShrinkError> {
+) -> io::Result<()> {
     let mut codetab = Codetab::new();
     let mut queue = CodeQueue::new();
     let mut is = BitStream::new(src, src_len);
@@ -253,19 +254,24 @@ fn hwunshrink(
 
     // Handle the first code separately since there is no previous code.
     let mut curr_code = 0;
-    if !read_code(
+    if read_code(
         &mut is,
         &mut code_size,
         &mut codetab,
         &mut queue,
         &mut curr_code,
-    ) {
+    )
+    .is_err()
+    {
         *src_used = is.bytes_read();
         return Ok(());
     }
-    assert!(curr_code != CONTROL_CODE as u16);
+    debug_assert!(curr_code != CONTROL_CODE as u16);
     if curr_code > u8::MAX as u16 {
-        return Err(ShrinkError::FirstCodeNeedsToBeLiteral); /* The first code must be a literal. */
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the first code must be a literal",
+        ));
     }
     let mut first_byte = curr_code as u8;
     codetab[curr_code as usize].last_dst_pos = dst.len();
@@ -280,25 +286,27 @@ fn hwunshrink(
             &mut queue,
             &mut curr_code,
         )
+        .is_ok()
     {
         println!("{}", dst.len());
         if curr_code == INVALID_CODE {
-            return Err(ShrinkError::InvalidCode);
+            return Err(Error::new(io::ErrorKind::InvalidData, "Invalid code"));
         }
         let dst_pos = dst.len();
         // Handle KwKwK: next code used before being added.
         if curr_code == queue.next() {
             if codetab[prev_code as usize].prefix_code == INVALID_CODE {
-                // The previous code is no longer valid.
-                return Err(ShrinkError::PrevCodeNoLongerValid);
+                return Err(Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Previous code no longer valid",
+                ));
             }
             // Extend the previous code with its first byte.
-            assert!(curr_code != prev_code);
+            debug_assert!(curr_code != prev_code);
             codetab[curr_code as usize].prefix_code = prev_code;
             codetab[curr_code as usize].ext_byte = first_byte;
             codetab[curr_code as usize].len = codetab[prev_code as usize].len + 1;
             codetab[curr_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
-            // assert!(dst_pos < dst_cap);
             //  dst.push_back(first_byte);
         }
 
@@ -319,8 +327,8 @@ fn hwunshrink(
         // Verify that the output matches walking the prefixes.
         let mut c = curr_code;
         for i in 0..len {
-            assert!(codetab[c as usize].len as usize == len - i);
-            //  assert!(codetab[c as usize].ext_byte == dst[dst_pos + len - i - 1]);
+            debug_assert!(codetab[c as usize].len as usize == len - i);
+            //  debug_assert!(codetab[c as usize].ext_byte == dst[dst_pos + len - i - 1]);
             c = codetab[c as usize].prefix_code;
         }
 
@@ -329,7 +337,7 @@ fn hwunshrink(
         // the first byte of the current code's string.
         let new_code = queue.remove_next();
         if new_code != INVALID_CODE {
-            //assert!(codetab[prev_code as usize].last_dst_pos < dst_pos);
+            //debug_assert!(codetab[prev_code as usize].last_dst_pos < dst_pos);
             codetab[new_code as usize].prefix_code = prev_code;
             codetab[new_code as usize].ext_byte = first_byte;
             codetab[new_code as usize].len = codetab[prev_code as usize].len + 1;
@@ -388,15 +396,13 @@ impl<R: Read> Read for ShrinkDecoder<R> {
                 return Err(err.into());
             }
             let mut src_used = compressed_bytes.len();
-            if let Err(err) = hwunshrink(
+            hwunshrink(
                 &compressed_bytes,
                 compressed_bytes.len(),
                 self.uncompressed_size as usize,
                 &mut src_used,
                 &mut self.stream,
-            ) {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, err.to_string()));
-            }
+            )?;
         }
         let bytes_read = self.stream.len().min(buf.len());
         buf[..bytes_read].copy_from_slice(&self.stream.drain(..bytes_read).collect::<Vec<u8>>());

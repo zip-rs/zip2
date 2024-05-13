@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{self, copy, Read, Result};
-
-use thiserror::Error;
+use std::io::{self, copy, Error, Read, Result};
 
 use crate::legacy::bitstream::{lsb, ISTREAM_MIN_BITS};
 use crate::legacy::lz77::lz77_output_backref;
@@ -10,88 +8,78 @@ use super::bitstream::BitStream;
 use super::huffman::HuffmanDecoder;
 //const COMPRESSED_BYTES_TO_BUFFER: usize = 4096;
 
-#[derive(Error, Debug)]
-enum ImplodeError {
-    #[error("End of stream")]
-    EndOfStream,
-
-    #[error("Too many codeword lengths")]
-    TooManyCodewordLengths,
-
-    #[error("Too few codeword lengths")]
-    TooFewCodewordLengths,
-
-    #[error("Higher count than available codewords")]
-    HigherCountThanAvailableCodewords,
-
-    #[error("Not all codewords used")]
-    NotAllCodewordsUsed,
-}
-
 /// Initialize the Huffman decoder d with num_lens codeword lengths read from is.
 /// Returns false if the input is invalid.
 fn read_huffman_code(
     is: &mut BitStream,
     num_lens: usize,
     d: &mut HuffmanDecoder,
-) -> core::result::Result<(), ImplodeError> {
+) -> std::io::Result<()> {
     let mut lens = [0; 256];
     let mut len_count = [0; 17];
-    // assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
+    // debug_assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
 
     // Number of bytes representing the Huffman code.
     let byte = lsb(is.bits(), 8);
     let num_bytes = (byte + 1) as usize;
-    if !is.advance(8) {
-        return Err(ImplodeError::EndOfStream);
-    }
+    is.advance(8)?;
 
     let mut codeword_idx = 0;
     for _byte_idx in 0..num_bytes {
         let byte = lsb(is.bits(), 8);
-        if !is.advance(8) {
-            return Err(ImplodeError::EndOfStream);
-        }
+        is.advance(8)?;
 
         let codeword_len = (byte & 0xf) + 1; /* Low four bits plus one. */
         let run_length = (byte >> 4) + 1; /* High four bits plus one. */
 
-        assert!(codeword_len >= 1 && codeword_len <= 16);
-        //assert!(codeword_len < sizeof(len_count) / sizeof(len_count[0]));
+        debug_assert!(codeword_len >= 1 && codeword_len <= 16);
+        //debug_assert!(codeword_len < sizeof(len_count) / sizeof(len_count[0]));
         len_count[codeword_len as usize] += run_length;
 
         if (codeword_idx + run_length) as usize > num_lens {
-            return Err(ImplodeError::TooManyCodewordLengths);
+            return Err(Error::new(
+                io::ErrorKind::InvalidData,
+                "Too many codeword lengths",
+            ));
         }
         for _ in 0..run_length {
-            assert!((codeword_idx as usize) < num_lens);
+            debug_assert!((codeword_idx as usize) < num_lens);
             lens[codeword_idx as usize] = codeword_len as u8;
             codeword_idx += 1;
         }
     }
 
-    assert!(codeword_idx as usize <= num_lens);
+    debug_assert!(codeword_idx as usize <= num_lens);
     if (codeword_idx as usize) < num_lens {
-        return Err(ImplodeError::TooFewCodewordLengths);
+        return Err(Error::new(
+            io::ErrorKind::InvalidData,
+            "Not enough codeword lengths",
+        ));
     }
 
     // Check that the Huffman tree is full.
     let mut avail_codewords = 1;
     for i in 1..=16 {
-        assert!(avail_codewords >= 0);
+        debug_assert!(avail_codewords >= 0);
         avail_codewords *= 2;
         avail_codewords -= len_count[i] as i32;
         if avail_codewords < 0 {
-            return Err(ImplodeError::HigherCountThanAvailableCodewords);
+            return Err(Error::new(
+                io::ErrorKind::InvalidData,
+                "Huffman tree is not full",
+            ));
         }
     }
     if avail_codewords != 0 {
         // Not all codewords were used.
-        return Err(ImplodeError::NotAllCodewordsUsed);
+        return Err(Error::new(
+            io::ErrorKind::InvalidData,
+            "Not all codewords were used",
+        ));
     }
 
     let ok = d.init(&lens, num_lens);
-    assert!(ok, "The checks above mean the tree should be valid.");
+    debug_assert!(ok, "The checks above mean the tree should be valid.");
     Ok(())
 }
 
@@ -104,7 +92,7 @@ fn hwexplode(
     pk101_bug_compat: bool,
     src_used: &mut usize,
     dst: &mut VecDeque<u8>,
-) -> core::result::Result<(), ImplodeError> {
+) -> std::io::Result<()> {
     let mut is = BitStream::new(src, src_len);
     let mut lit_decoder = HuffmanDecoder::default();
     let mut len_decoder = HuffmanDecoder::default();
@@ -137,22 +125,18 @@ fn hwexplode(
             let mut used = 0;
             if lit_tree {
                 sym = lit_decoder.huffman_decode(!bits as u16, &mut used);
-                assert!(sym >= 0, "huffman decode failed");
-                if !is.advance(1 + used) {
-                    return Err(ImplodeError::EndOfStream);
-                }
+                debug_assert!(sym >= 0, "huffman decode failed");
+                is.advance(1 + used)?;
             } else {
                 sym = lsb(bits, 8) as i32;
-                if !is.advance(1 + 8) {
-                    return Err(ImplodeError::EndOfStream);
-                }
+                is.advance(1 + 8)?;
             }
-            assert!(sym >= 0 && sym <= u8::MAX as i32);
+            debug_assert!(sym >= 0 && sym <= u8::MAX as i32);
             dst.push_back(sym as u8);
             continue;
         }
         // Backref.
-        assert!(lsb(bits, 1) == 0x0);
+        debug_assert!(lsb(bits, 1) == 0x0);
         let mut used_tot = 1;
         bits >>= 1;
 
@@ -171,7 +155,7 @@ fn hwexplode(
         // Read the Huffman-encoded high dist bits.
         let mut used = 0;
         let sym = dist_decoder.huffman_decode(!bits as u16, &mut used);
-        assert!(sym >= 0, "huffman decode failed");
+        debug_assert!(sym >= 0, "huffman decode failed");
         used_tot += used;
         bits >>= used;
         dist |= (sym as usize) << if large_wnd { 7 } else { 6 };
@@ -179,7 +163,7 @@ fn hwexplode(
 
         // Read the Huffman-encoded len.
         let sym = len_decoder.huffman_decode(!bits as u16, &mut used);
-        assert!(sym >= 0, "huffman decode failed");
+        debug_assert!(sym >= 0, "huffman decode failed");
         used_tot += used;
         bits >>= used;
         let mut len = (sym + min_len) as usize;
@@ -191,10 +175,8 @@ fn hwexplode(
             //  bits >>= 8;
         }
 
-        assert!((used_tot as usize) <= ISTREAM_MIN_BITS);
-        if !is.advance(used_tot) {
-            return Err(ImplodeError::EndOfStream);
-        }
+        debug_assert!((used_tot as usize) <= ISTREAM_MIN_BITS);
+        is.advance(used_tot)?;
         //  let len = len.min(uncomp_len - dst.len());
 
         if len <= uncomp_len - dst.len() && dist <= dst.len() {
@@ -255,7 +237,7 @@ impl<R: Read> Read for ImplodeDecoder<R> {
                 return Err(err.into());
             }
             let mut src_used = 0;
-            if let Err(err) = hwexplode(
+            hwexplode(
                 &compressed_bytes,
                 compressed_bytes.len(),
                 self.uncompressed_size as usize,
@@ -264,9 +246,7 @@ impl<R: Read> Read for ImplodeDecoder<R> {
                 false,
                 &mut src_used,
                 &mut self.stream,
-            ) {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, err.to_string()));
-            }
+            )?;
         }
         let bytes_read = self.stream.len().min(buf.len());
         buf[..bytes_read].copy_from_slice(&self.stream.drain(..bytes_read).collect::<Vec<u8>>());
