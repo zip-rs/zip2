@@ -1,7 +1,7 @@
 /// Get the n least significant bits of x.
 pub fn lsb(x: u64, n: u8) -> u64 {
     assert!(n <= 63);
-    x & ((1u64.wrapping_shl(n as u32)) - 1u64)
+    x & (1u64 << (n as u32) - 1)
 }
 
 /// Reverse the n least significant bits of x.
