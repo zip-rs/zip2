@@ -1,6 +1,5 @@
 //! Types for creating ZIP archives
 
-use crate::write::ffi::S_IFLNK;
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
@@ -10,6 +9,7 @@ use crate::spec;
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{ffi, AesVendorVersion, DateTime, System, ZipFileData, DEFAULT_VERSION};
+use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
