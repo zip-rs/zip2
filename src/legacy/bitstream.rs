@@ -11,7 +11,7 @@ pub fn lsb(x: u64, n: u8) -> u64 {
 pub fn reverse_lsb(x: u16, n: usize) -> u16 {
     debug_assert!(n > 0);
     debug_assert!(n <= 16);
-    return x.reverse_bits() >> (16 - n);
+    x.reverse_bits() >> (16 - n)
 }
 
 /// Input bitstream.

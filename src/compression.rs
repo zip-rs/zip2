@@ -57,11 +57,11 @@ pub enum CompressionMethod {
 impl CompressionMethod {
     pub const STORE: Self = CompressionMethod::Stored;
     pub const SHRINK: Self = CompressionMethod::Shrink;
-    pub const REDUCE_1: Self = CompressionMethod::Unsupported(2);
-    pub const REDUCE_2: Self = CompressionMethod::Unsupported(3);
-    pub const REDUCE_3: Self = CompressionMethod::Unsupported(4);
-    pub const REDUCE_4: Self = CompressionMethod::Unsupported(5);
-    pub const IMPLODE: Self = CompressionMethod::Unsupported(6);
+    pub const REDUCE_1: Self = CompressionMethod::Reduce(1);
+    pub const REDUCE_2: Self = CompressionMethod::Reduce(2);
+    pub const REDUCE_3: Self = CompressionMethod::Reduce(3);
+    pub const REDUCE_4: Self = CompressionMethod::Reduce(4);
+    pub const IMPLODE: Self = CompressionMethod::Implode;
     #[cfg(feature = "_deflate-any")]
     pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(feature = "_deflate-any"))]
