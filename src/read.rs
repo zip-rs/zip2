@@ -664,6 +664,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// may be left on disk. However, on Unix targets, no newly-created directories with part but
     /// not all of their contents extracted will be readable, writable or usable as process working
     /// directories by any non-root user except you.
+    ///
+    /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
+    /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
+    /// containing the target path in UTF-8.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
         #[cfg(unix)]
