@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{self, copy, Error, Read};
 
-use super::bitstream::{lsb, BitStream};
+use super::bitstream::BitStream;
 
 const MIN_CODE_SIZE: u8 = 9;
 const MAX_CODE_SIZE: u8 = 13;
@@ -127,8 +127,7 @@ fn read_code(
     queue: &mut CodeQueue,
 ) -> io::Result<Option<u16>> {
     // assert(sizeof(code) * CHAR_BIT >= *code_size);
-    let code = lsb(is.bits(), *code_size) as u16;
-    is.advance(*code_size)?;
+    let code = is.read_next_bits(*code_size)? as u16;
 
     // Handle regular codes (the common case).
     if code != CONTROL_CODE as u16 {
@@ -136,10 +135,11 @@ fn read_code(
     }
 
     // Handle control codes.
-    let control_code = lsb(is.bits(), *code_size);
-    if is.advance(*code_size).is_err() {
+    let control_code = if let Ok(c) = is.read_next_bits(*code_size) {
+        c
+    } else {
         return Ok(None);
-    }
+    };
     if control_code == INC_CODE_SIZE && *code_size < MAX_CODE_SIZE {
         (*code_size) += 1;
         return read_code(is, code_size, codetab, queue);

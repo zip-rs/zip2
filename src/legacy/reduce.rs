@@ -12,7 +12,7 @@ fn follower_idx_bw(n: u8) -> u8 {
         0 => 0,
         1 => 1,
         _ => {
-            5 - ((n - 1) << 3).leading_zeros() as u8
+            8 - (n - 1).leading_zeros() as u8
         }
     }
 }
@@ -27,20 +27,18 @@ struct FollowerSet {
 /// Read the follower sets from is into fsets. Returns true on success.
 fn read_follower_sets(is: &mut BitStream, fsets: &mut [FollowerSet]) -> io::Result<()> {
     for i in (0..=u8::MAX as usize).rev() {
-        let n = lsb(is.bits(), 6) as u8;
+        let n = is.read_next_bits(6)? as u8;
         if n > 32 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid follower set",
             ));
         }
-        is.advance(6)?;
         fsets[i].size = n;
         fsets[i].idx_bw = follower_idx_bw(n);
 
         for j in 0..fsets[i].size as usize {
-            fsets[i].followers[j] = is.bits() as u8;
-            is.advance(8)?;
+            fsets[i].followers[j] = is.read_next_bits(8)? as u8;
         }
     }
 

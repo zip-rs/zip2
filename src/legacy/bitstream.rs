@@ -82,6 +82,12 @@ impl<'a> BitStream<'a> {
     pub fn bytes_read(&self) -> usize {
         (self.bitpos + 7) / 8
     }
+    
+    pub fn read_next_bits(&mut self, code_size: u8) -> std::io::Result<u64> {
+        let b = self.bits();
+        self.advance(code_size)?;
+        Ok(lsb(b, code_size) )
+    }
 }
 
 pub const ISTREAM_MIN_BITS: usize = 64 - 7;
@@ -134,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_istream_case1() {
-        let bits = [0x45, 048];
+        let bits = [0x45, 0x30];
         let mut is = super::BitStream::new(&bits, 9);
         assert_eq!(lsb(is.bits(), 3), 0x05);
         is.advance(3).unwrap();

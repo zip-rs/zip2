@@ -20,14 +20,12 @@ fn read_huffman_code(
     // debug_assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
 
     // Number of bytes representing the Huffman code.
-    let byte = lsb(is.bits(), 8);
+    let byte = is.read_next_bits(8)?;
     let num_bytes = (byte + 1) as usize;
-    is.advance(8)?;
 
     let mut codeword_idx = 0;
     for _byte_idx in 0..num_bytes {
-        let byte = lsb(is.bits(), 8);
-        is.advance(8)?;
+        let byte = is.read_next_bits(8)?;
 
         let codeword_len = (byte & 0xf) + 1; /* Low four bits plus one. */
         let run_length = (byte >> 4) + 1; /* High four bits plus one. */

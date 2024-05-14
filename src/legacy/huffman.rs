@@ -195,15 +195,15 @@ mod tests {
         assert_eq!(used, 3);
 
         /* 011 (msb-first) -> 110 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0x6, &mut used).unwrap(), 3);
+        assert_eq!(d.huffman_decode(0b110, &mut used).unwrap(), 0b011);
         assert_eq!(used, 3);
 
         /* 11110 (msb-first) -> 01111 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0x0f, &mut used).unwrap(), 17);
+        assert_eq!(d.huffman_decode(0b1111, &mut used).unwrap(), 0b10001);
         assert_eq!(used, 5);
 
         /* 111110 (msb-first) -> 011111 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0x1f, &mut used).unwrap(), 16);
+        assert_eq!(d.huffman_decode(0b11111, &mut used).unwrap(), 0b10000);
         assert_eq!(used, 6);
 
         /* 1111111 (msb-first) -> 1111111 (lsb-first)*/
