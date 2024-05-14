@@ -121,20 +121,20 @@ jobs:
           command: fuzz
           args: run --all-features fuzz_read -- fuzz/corpus/fuzz_read -timeout=10s -fork=2 -runs=25000000 -max_len=1300 -len_control=0 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
       - name: Minimize seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
           args: cmin --all-features fuzz_read fuzz/corpus/fuzz_read -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_corpus
@@ -169,20 +169,20 @@ jobs:
           command: fuzz
           args: run --no-default-features fuzz_read fuzz/corpus/fuzz_read -- -timeout=10s -fork=2 -runs=40000000 -max_total_time=19800 -max_len=16384 -len_control=0 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
       - name: Minimize seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
           args: cmin --no-default-features fuzz_read fuzz/corpus/fuzz_read -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_no_features_corpus
@@ -217,7 +217,7 @@ jobs:
           command: fuzz
           args: run --all-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=2s -fork=2 -runs=1000000 -max_len=500 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_bad_inputs
@@ -227,13 +227,13 @@ jobs:
             fuzz/artifacts/fuzz_write/timeout-*
           if-no-files-found: ignore
       - name: Minimize seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
           args: cmin --all-features fuzz_write fuzz/corpus/fuzz_write -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_corpus
@@ -268,20 +268,20 @@ jobs:
           command: fuzz
           args: run --no-default-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=10s -fork=2 -runs=50000000 -max_len=10000 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
       - name: Minimize seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
           args: cmin --no-default-features fuzz_write fuzz/corpus/fuzz_write -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
-        if: always()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_no_features_corpus
