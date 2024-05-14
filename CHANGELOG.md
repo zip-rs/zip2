@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/zip-rs/zip2/compare/v1.2.3...v1.3.0) - 2024-05-14
+
+### <!-- 0 -->🚀 Features
+- Add `is_symlink` method
+
+### <!-- 1 -->🐛 Bug Fixes
+- Extract symlinks into symlinks on Unix and Windows, and fix a bug that affected making directories writable on MacOS
+
 ## [1.2.3](https://github.com/zip-rs/zip2/compare/v1.2.2...v1.2.3) - 2024-05-10
 
 ### <!-- 1 -->🐛 Bug Fixes
