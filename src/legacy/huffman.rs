@@ -48,7 +48,7 @@ impl Default for HuffmanDecoder {
 /// Returns false if the codeword lengths do not correspond to a valid prefix
 /// code.
 impl HuffmanDecoder {
-    pub fn init(&mut self, lengths: &[u8], n: usize) -> bool {
+    pub fn init(&mut self, lengths: &[u8], n: usize) -> std::io::Result<()> {
         let mut count = [0; MAX_HUFFMAN_BITS + 1];
         let mut code = [0; MAX_HUFFMAN_BITS + 1];
         let mut sym_idx = [0; MAX_HUFFMAN_BITS + 1];
@@ -72,7 +72,10 @@ impl HuffmanDecoder {
 
             if count[l] != 0 && code[l] as u32 + count[l] as u32 - 1 > (1u32 << l) - 1 {
                 // The last codeword is longer than l bits.
-                return false;
+                return Err(Error::new(
+                    io::ErrorKind::InvalidData,
+                    "The last codeword is longer than len bits",
+                ));
             }
 
             let s = ((code[l] as u32 + count[l] as u32) << (MAX_HUFFMAN_BITS - l)) as u32;
@@ -99,7 +102,7 @@ impl HuffmanDecoder {
             }
         }
 
-        true
+        Ok(())
     }
 
     pub fn table_insert(&mut self, sym: usize, len: usize, codeword: u16) {
@@ -184,7 +187,7 @@ mod tests {
         ];
 
         let mut d = HuffmanDecoder::default();
-        assert!(d.init(&lens, lens.len()));
+        d.init(&lens, lens.len()).unwrap();
 
         let mut used = 0;
         // 000 (msb-first) -> 000 (lsb-first)
