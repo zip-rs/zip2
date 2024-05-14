@@ -13,6 +13,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
@@ -85,9 +86,9 @@ pub(crate) mod zip_archive {
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
 use crate::spec::path_to_string;
+use crate::types::ffi::S_IFLNK;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
-use crate::types::ffi::S_IFLNK;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
@@ -681,8 +682,30 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if let Some(p) = outpath.parent() {
                     Self::make_writable_dir_all(p)?;
                 }
-                let mut outfile = fs::File::create(&outpath)?;
-                io::copy(&mut file, &mut outfile)?;
+                if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
+                    let mut target = Vec::with_capacity(file.size() as usize);
+                    file.read_exact(&mut target)?;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::ffi::OsStrExt;
+                        let target_path: PathBuf =
+                            directory.as_ref().join(OsStr::from_bytes(&target));
+                        std::os::unix::fs::symlink(target_path, outpath.as_path())?;
+                    }
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::ffi::OsStrExt;
+                        let target_path: PathBuf = directory.as_ref().join(OsStr::from_vec(target));
+                        if target_path.is_dir() {
+                            std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
+                        } else {
+                            std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
+                        }
+                    }
+                } else {
+                    let mut outfile = fs::File::create(&outpath)?;
+                    io::copy(&mut file, &mut outfile)?;
+                }
             }
             #[cfg(unix)]
             {
@@ -714,7 +737,12 @@ impl<R: Read + Seek> ZipArchive<R> {
         {
             // Dirs must be writable until all normal files are extracted
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(outpath.as_ref(), std::fs::Permissions::from_mode(0o700))?;
+            std::fs::set_permissions(
+                outpath.as_ref(),
+                std::fs::Permissions::from_mode(
+                    0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
+                ),
+            )?;
         }
         Ok(())
     }
@@ -1213,7 +1241,8 @@ impl<'a> ZipFile<'a> {
 
     /// Returns whether the file is actually a symbolic link
     pub fn is_symlink(&self) -> bool {
-        self.unix_mode().is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
+        self.unix_mode()
+            .is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
     }
 
     /// Returns whether the file is a normal file (i.e. not a directory or symlink)
@@ -1406,6 +1435,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 mod test {
     use crate::ZipArchive;
     use std::io::Cursor;
+    use tempdir::TempDir;
 
     #[test]
     fn invalid_offset() {
@@ -1602,10 +1632,14 @@ mod test {
     }
 
     #[test]
-    fn test_is_symlink() {
+    fn test_is_symlink() -> std::io::Result<()> {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
         let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
-        assert!(reader.by_index(0).unwrap().is_symlink())
+        assert!(reader.by_index(0).unwrap().is_symlink());
+        let tempdir = TempDir::new("test_is_symlink")?;
+        reader.extract(&tempdir).unwrap();
+        assert!(tempdir.path().join("bar").is_symlink());
+        Ok(())
     }
 }
