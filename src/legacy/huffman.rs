@@ -53,9 +53,7 @@ impl HuffmanDecoder {
         let mut code = [0; MAX_HUFFMAN_BITS + 1];
         let mut sym_idx = [0; MAX_HUFFMAN_BITS + 1];
         // Zero-initialize the lookup table.
-        for t in &mut self.table {
-            t.len = 0;
-        }
+        self.table.fill(TableEntry::default());
 
         // Count the number of codewords of each length.
         for i in 0..n {
