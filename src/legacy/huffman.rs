@@ -122,7 +122,7 @@ impl HuffmanDecoder {
     }
 
     /// Use the decoder d to decode a symbol from the LSB-first zero-padded bits.
-    /// Returns the decoded symbol number or -1 if no symbol could be decoded.
+    /// Returns the decoded symbol number or an error if no symbol could be decoded.
     /// *num_used_bits will be set to the number of bits used to decode the symbol,
     /// or zero if no symbol could be decoded.
     pub fn huffman_decode(&mut self, bits: u16, num_used_bits: &mut u8) -> std::io::Result<u16> {
