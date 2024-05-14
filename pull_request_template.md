@@ -19,7 +19,7 @@ These are our requirements for PRs, in addition to the usual functionality and r
   - 5 or more pull requests are already open at https://github.com/zip-rs/zip2/pulls. PRs are merged in the order they become
     eligible (reviewed, passing CI tests, and no conflicts with the base branch). I will attempt to fix merge
     conflicts, but this is best-effort.
-  - An open PR has the "major" label (find such PRs with https://github.com/zip-rs/zip2/pulls?q=is%3Apr+is%3Aopen+label%3Amajor),
+  - [An open PR has the "major" label](https://github.com/zip-rs/zip2/pulls?q=is%3Apr+is%3Aopen+label%3Amajor),
     which is specifically designed to alert authors of other PRs to likely conflicts.
 - Please make sure your PR's target repo is `zip-rs/zip2` and not `zip-rs/zip-old`. The latter
   repo is no longer maintained, and I will archive it after closing the pre-existing issues.
