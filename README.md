@@ -61,8 +61,8 @@ we will follow these guidelines:
   month window to upgrade your compiler.
 - Any change to the MSRV will be accompanied with a **minor** version bump.
 
-"ZIP bomb" countermeasures
---------------------------
+Secure usage
+------------
 
 Because there are legitimate use cases for ZIP archives that achieve extreme compression ratios, and for one compressed
 copy of a file to decompress into multiple copies, this crate doesn't try to classify any archives as maliciously 
@@ -70,6 +70,9 @@ crafted or not. Instead, the admin recommends using `ZipArchive::decompressed_si
 archive will exhaust your memory or storage, and a method such as 
 [std::sync::Condvar::wait_timeout](https://doc.rust-lang.org/std/sync/struct.Condvar.html#method.wait_timeout)
 if you're concerned about the CPU cost of extracting complex ZIP files.
+
+The `ZipArchive::extract` method checks that all file paths are descendants of the destination directory, or of other
+directories reachable from such descendants via symlinks. Targets of extracted symlinks are not checked this way.
 
 Examples
 --------
