@@ -21,7 +21,7 @@ These are our requirements for PRs, in addition to the usual functionality and r
     conflicts, but this is best-effort.
   - [An open PR has the "major" label](https://github.com/zip-rs/zip2/pulls?q=is%3Apr+is%3Aopen+label%3Amajor),
     which is specifically designed to alert authors of other PRs to likely conflicts. When major PRs are open, waiting
-    until they're merged will save you some work on resolving conflicts.
+    until they're merged before starting development on a new PR will save you some work on resolving conflicts.
 - Please make sure your PR's target repo is `zip-rs/zip2` and not `zip-rs/zip-old`. The latter
   repo is no longer maintained, and I will archive it after closing the pre-existing issues.
 - Your changes must build against the MSRV (see README.md) AND the latest stable Rust version AND the latest nightly Rust version.
