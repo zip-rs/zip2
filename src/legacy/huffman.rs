@@ -23,9 +23,9 @@ pub struct HuffmanDecoder {
     /// Lookup table for fast decoding of short codewords.
     pub table: [TableEntry; 1 << HUFFMAN_LOOKUP_TABLE_BITS],
     /// "Sentinel bits" value for each codeword length.
-    pub sentinel_bits: [u32; MAX_HUFFMAN_BITS],
+    pub sentinel_bits: [u32; MAX_HUFFMAN_BITS + 1],
     /// First symbol index minus first codeword mod 2**16 for each length.
-    pub offset_first_sym_idx: [u16; MAX_HUFFMAN_BITS],
+    pub offset_first_sym_idx: [u16; MAX_HUFFMAN_BITS + 1],
     /// Map from symbol index to symbol.
     pub syms: [u16; MAX_HUFFMAN_SYMBOLS],
     // num_syms:usize
@@ -48,65 +48,62 @@ impl Default for HuffmanDecoder {
 /// Returns false if the codeword lengths do not correspond to a valid prefix
 /// code.
 impl HuffmanDecoder {
-    pub fn init(&mut self, lengths: &[u8], n: usize) -> std::io::Result<()> {
-        let mut count = [0; MAX_HUFFMAN_BITS];
-        let mut code = [0; MAX_HUFFMAN_BITS];
-        let mut sym_idx: [u16; 16] = [0; MAX_HUFFMAN_BITS];
+    pub fn init(&mut self, lengths: &[u8], n: usize) -> bool {
+        let mut count = [0; MAX_HUFFMAN_BITS + 1];
+        let mut code = [0; MAX_HUFFMAN_BITS + 1];
+        let mut sym_idx = [0; MAX_HUFFMAN_BITS + 1];
         // Zero-initialize the lookup table.
         for t in &mut self.table {
             t.len = 0;
         }
 
         // Count the number of codewords of each length.
-        for sym in 0..n {
-            let len = lengths[sym] as usize;
-            // Ignore zero-length codewords.
-            if len == 0 {
-                continue;
-            }
-            debug_assert!(len < MAX_HUFFMAN_BITS);
-            count[len] += 1;
+        for i in 0..n {
+            debug_assert!(lengths[i] as usize <= MAX_HUFFMAN_BITS);
+            count[lengths[i] as usize] += 1;
         }
-
-        for len in 1..MAX_HUFFMAN_BITS {
+        count[0] = 0; // Ignore zero-length codewords.
+                      // Compute sentinel_bits and offset_first_sym_idx for each length.
+        code[0] = 0;
+        sym_idx[0] = 0;
+        for l in 1..=MAX_HUFFMAN_BITS {
             // First canonical codeword of this length.
-            code[len] = (code[len - 1] + count[len - 1]) << 1;
+            code[l] = ((code[l - 1] + count[l - 1]) << 1) as u16;
 
-            if count[len] != 0 && code[len] as u32 + count[len] as u32 - 1 > (1u32 << len) - 1 {
-                return Err(Error::new(
-                    io::ErrorKind::InvalidData,
-                    "The last codeword is longer than len bits",
-                ));
+            if count[l] != 0 && code[l] as u32 + count[l] as u32 - 1 > (1u32 << l) - 1 {
+                // The last codeword is longer than l bits.
+                return false;
             }
 
-            let s = ((code[len] as u32 + count[len] as u32) << (MAX_HUFFMAN_BITS - len)) as u32;
-            self.sentinel_bits[len] = s;
-            debug_assert!(self.sentinel_bits[len] >= code[len] as u32, "No overflow!");
-            sym_idx[len] = sym_idx[len - 1] + count[len - 1];
-            self.offset_first_sym_idx[len] = sym_idx[len].wrapping_sub(code[len]);
+            let s = ((code[l] as u32 + count[l] as u32) << (MAX_HUFFMAN_BITS - l)) as u32;
+            self.sentinel_bits[l] = s;
+            debug_assert!(self.sentinel_bits[l] >= code[l] as u32, "No overflow!");
+
+            sym_idx[l] = sym_idx[l - 1] + count[l - 1];
+            self.offset_first_sym_idx[l] = sym_idx[l].wrapping_sub(code[l]);
         }
 
         // Build mapping from index to symbol and populate the lookup table.
-        for sym in 0..n {
-            let len = lengths[sym] as usize;
-            if len == 0 {
+        for i in 0..n {
+            let l = lengths[i] as usize;
+            if l == 0 {
                 continue;
             }
 
-            self.syms[sym_idx[len] as usize] = sym as u16;
-            sym_idx[len] += 1;
+            self.syms[sym_idx[l] as usize] = i as u16;
+            sym_idx[l] += 1;
 
-            if len < HUFFMAN_LOOKUP_TABLE_BITS as usize {
-                self.table_insert(sym, len, code[len]);
-                code[len] += 1;
+            if l <= HUFFMAN_LOOKUP_TABLE_BITS as usize {
+                self.table_insert(i, l, code[l]);
+                code[l] += 1;
             }
         }
 
-        Ok(())
+        true
     }
 
     pub fn table_insert(&mut self, sym: usize, len: usize, codeword: u16) {
-        debug_assert!(len < HUFFMAN_LOOKUP_TABLE_BITS as usize);
+        debug_assert!(len <= HUFFMAN_LOOKUP_TABLE_BITS as usize);
 
         let codeword = reverse_lsb(codeword, len); // Make it LSB-first.
         let pad_len = HUFFMAN_LOOKUP_TABLE_BITS as usize - len;
@@ -131,7 +128,7 @@ impl HuffmanDecoder {
         debug_assert!(lookup_bits < self.table.len());
 
         if self.table[lookup_bits].len != 0 {
-            debug_assert!(self.table[lookup_bits].len < HUFFMAN_LOOKUP_TABLE_BITS);
+            debug_assert!(self.table[lookup_bits].len <= HUFFMAN_LOOKUP_TABLE_BITS);
             //  debug_assert!(self.table[lookup_bits].sym < self.num_syms);
             *num_used_bits = self.table[lookup_bits].len;
             return Ok(self.table[lookup_bits].sym);
@@ -139,15 +136,15 @@ impl HuffmanDecoder {
 
         // Then do canonical decoding with the bits in MSB-first order.
         let mut bits = reverse_lsb(bits, MAX_HUFFMAN_BITS);
-        for l in HUFFMAN_LOOKUP_TABLE_BITS as usize + 1..MAX_HUFFMAN_BITS {
-            if self.sentinel_bits[l] > bits as u32 {
+        for l in HUFFMAN_LOOKUP_TABLE_BITS as usize + 1..=MAX_HUFFMAN_BITS {
+            if (bits as u32) < self.sentinel_bits[l] {
                 bits >>= MAX_HUFFMAN_BITS - l;
 
-                let sym_idx = self.offset_first_sym_idx[l] + bits;
-                // debug_assert(sym_idx < self.num_syms);
+                let sym_idx = (self.offset_first_sym_idx[l] as usize + bits as usize) & 0xFFFF;
+                //assert(sym_idx < self.num_syms);
 
                 *num_used_bits = l as u8;
-                return Ok(self.syms[sym_idx as usize]);
+                return Ok(self.syms[sym_idx]);
             }
         }
         *num_used_bits = 0;
@@ -187,7 +184,7 @@ mod tests {
         ];
 
         let mut d = HuffmanDecoder::default();
-        d.init(&lens, lens.len()).unwrap();
+        assert!(d.init(&lens, lens.len()));
 
         let mut used = 0;
         // 000 (msb-first) -> 000 (lsb-first)
