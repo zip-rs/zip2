@@ -87,6 +87,7 @@ use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
 use crate::spec::path_to_string;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
+use crate::types::ffi::S_IFLNK;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
@@ -1210,9 +1211,14 @@ impl<'a> ZipFile<'a> {
             .map_or(false, |c| c == '/' || c == '\\')
     }
 
-    /// Returns whether the file is a regular file
+    /// Returns whether the file is actually a symbolic link
+    pub fn is_symlink(&self) -> bool {
+        self.unix_mode().is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
+    }
+
+    /// Returns whether the file is a normal file (i.e. not a directory or symlink)
     pub fn is_file(&self) -> bool {
-        !self.is_dir()
+        !self.is_dir() && !self.is_symlink()
     }
 
     /// Get unix mode for the file
@@ -1593,5 +1599,13 @@ mod test {
         let mut decompressed = [0u8; 16];
         let mut file = reader.by_index(0).unwrap();
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
+    }
+
+    #[test]
+    fn test_is_symlink() {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        assert!(reader.by_index(0).unwrap().is_symlink())
     }
 }

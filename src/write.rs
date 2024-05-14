@@ -1,5 +1,6 @@
 //! Types for creating ZIP archives
 
+use crate::write::ffi::S_IFLNK;
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
@@ -1341,7 +1342,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if options.permissions.is_none() {
             options.permissions = Some(0o777);
         }
-        *options.permissions.as_mut().unwrap() |= 0o120000;
+        *options.permissions.as_mut().unwrap() |= S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
