@@ -698,7 +698,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                     }
                     #[cfg(windows)]
                     {
-                        use std::os::windows::ffi::OsStrExt;
                         let target_path: PathBuf = directory.as_ref().join(OsStr::from_vec(target));
                         if target_path.is_dir() {
                             std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
