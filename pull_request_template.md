@@ -11,13 +11,16 @@ https://github.com/zip-rs/zip2/blob/master/src/read.rs, to remain reliably effec
 remain panic-free, so that this crate can be used on servers without creating a denial-of-service vulnerability.
 
 These are our requirements for PRs, in addition to the usual functionality and readability requirements:
+- Due to our release automation, every PR must be releasable on its own.
 - This codebase sometimes changes rapidly. Please rebase your branch before opening a pull request, and 
   grant @Pr0methean write access to the source branch (so I can fix later conflicts without being subject 
-  to the limitations of the web UI) if EITHER of the following apply:
+  to the limitations of the web UI) if ANY of the following apply:
   - It has been at least 24 hours since you forked the repo or previously rebased the branch; or
   - 5 or more pull requests are already open at https://github.com/zip-rs/zip2/pulls. PRs are merged in the order they become
     eligible (reviewed, passing CI tests, and no conflicts with the base branch). I will attempt to fix merge
     conflicts, but this is best-effort.
+  - An open PR has the "major" label (find such PRs with https://github.com/zip-rs/zip2/pulls?q=is%3Apr+is%3Aopen+label%3Amajor),
+    which is specifically designed to alert authors of other PRs to likely conflicts.
 - Please make sure your PR's target repo is `zip-rs/zip2` and not `zip-rs/zip-old`. The latter
   repo is no longer maintained, and I will archive it after closing the pre-existing issues.
 - Your changes must build against the MSRV (see README.md) AND the latest stable Rust version AND the latest nightly Rust version.
