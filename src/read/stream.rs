@@ -4,8 +4,8 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use super::{
-    central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
-    ZipFileData, ZipResult,
+    read_zipfile_from_stream, spec, ZipError, ZipFile,
+ZipFileData, ZipResult, sync::central_header_to_zip_file_inner
 };
 
 /// Stream decoder for zip.
