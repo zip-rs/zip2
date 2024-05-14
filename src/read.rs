@@ -3,6 +3,9 @@
 /// Module for code with synchronous logic
 pub mod sync;
 
+/// Module for code with asynchronous logic
+pub mod tokio;
+
 #[cfg(feature = "aes-crypto")]
 use crate::{aes::AesReaderValid, types::AesVendorVersion};
 use crate::{crc32::Crc32Reader, types::ZipFileData, zipcrypto::ZipCryptoReaderValid};
