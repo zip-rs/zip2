@@ -935,9 +935,7 @@ fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, Infallible> {
 
 #[cfg(windows)]
 fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, std::string::FromUtf8Error> {
-    Ok(OsString::from(String::from_utf8(utf8_bytes).map_err(
-        |_| ZipError::InvalidArchive("Invalid UTF-8 in symlink target"),
-    )))
+    Ok(OsString::from(String::from_utf8(utf8_bytes)?))
 }
 
 const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
