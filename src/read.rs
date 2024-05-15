@@ -710,7 +710,8 @@ impl<R: Read + Seek> ZipArchive<R> {
                                 self
                                     .shared
                                     .files
-                                    .get_index(file_number)
+                                    .get_index(target_in_archive)
+                                    .unwrap()
                                     .is_dir()
                             } else {
                                 false
