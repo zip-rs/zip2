@@ -703,6 +703,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                                 "Invalid UTF-8 as symlink target",
                             ));
                         };
+                        let target = target.into_boxed_str();
                         let target_is_dir_from_archive =
                             self.shared.files.contains_key(&target) && is_dir(&target);
                         let target_internal_path: PathBuf = target.into();

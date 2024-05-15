@@ -227,7 +227,7 @@ impl Zip64CentralDirectoryEnd {
     }
 }
 
-pub(crate) fn is_dir(filename: &str) -> bool {
+pub(crate) fn is_dir<T: AsRef<str>>(filename: T) -> bool {
     filename
         .chars()
         .next_back()
