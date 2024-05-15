@@ -701,21 +701,17 @@ impl<R: Read + Seek> ZipArchive<R> {
                     {
                         let target_internal_path: PathBuf = target.into();
                         let target_path = directory.as_ref().join(target_internal_path.clone());
-                        let target_is_dir =
-                            if let Ok(meta) = std::fs::metadata(&target_path) {
-                                meta.is_dir()
-                            } else if let Some(target_in_archive) =
-                                self.index_for_path(&target_internal_path)
-                            {
-                                self
-                                    .shared
-                                    .files
-                                    .get_index(target_in_archive)
-                                    .unwrap()
-                                    .is_dir()
-                            } else {
-                                false
-                            };
+                        let target_is_dir = if let Ok(meta) = std::fs::metadata(&target_path) {
+                            meta.is_dir()
+                        } else if let Some(target_in_archive) =
+                            self.index_for_path(&target_internal_path)
+                        {
+                            let (_, target_in_archive) =
+                                self.shared.files.get_index(target_in_archive).unwrap();
+                            target_in_archive.is_dir()
+                        } else {
+                            false
+                        };
                         if target_is_dir {
                             std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
                         } else {
