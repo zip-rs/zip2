@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.3.0](https://github.com/zip-rs/zip2/compare/v1.2.3...v1.3.0) - 2024-05-15
+
+### <!-- 0 -->🚀 Features
+- Add `is_symlink` method
+
+### <!-- 1 -->🐛 Bug Fixes
+- Extract symlinks into symlinks on Unix and Windows, and fix a bug that affected making directories writable on MacOS
+
+### <!-- 2 -->🚜 Refactor
+- is_dir only needs to look at the filename
+- Remove unnecessary #[cfg] attributes
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- contains_key needs a `Box<str>`, so generify `is_dir` to accept one
+- Add missing `ZipFileData::is_dir()` method
+- Fix another Windows-specific error
+- More bug fixes for Windows-specific symlink code
+- More bug fixes for Windows-specific symlink code
+- Bug fix: variable name change
+- Bug fix: need both internal and output path to determine whether to symlink_dir
+- Another bug fix
+- Fix another error-type conversion error
+- Fix error-type conversion on Windows
+- Fix conditionally-unused import
+- Fix continued issues, and factor out the Vec<u8>-to-OsString conversion (cc: [#125](https://github.com/zip-rs/zip2/pull/125))
+- Fix CI failure involving conversion to OsString for symlinks (see my comments on [#125](https://github.com/zip-rs/zip2/pull/125))
+- Move path join into platform-independent code
+
 ## [1.2.3](https://github.com/zip-rs/zip2/compare/v1.2.2...v1.2.3) - 2024-05-10
 
 ### <!-- 1 -->🐛 Bug Fixes
