@@ -693,20 +693,25 @@ impl<R: Read + Seek> ZipArchive<R> {
                     let Ok(target) = try_utf8_to_os_string(target) else {
                         return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
                     };
-                    let target_path: PathBuf = directory.as_ref().join(target.clone());
                     #[cfg(unix)]
                     {
+                        let target_path = directory.as_ref().join(target);
                         std::os::unix::fs::symlink(target_path, outpath.as_path())?;
                     }
                     #[cfg(windows)]
                     {
-                        let target_is_dir = if let Ok(meta) = std::fs::metadata(target_path) {
-                            meta.is_dir()
-                        } else if let Some(target_in_archive) = self.index_for_name(&target) {
-                            self.by_index_raw(target_in_archive)?.is_dir()
-                        } else {
-                            false
-                        };
+                        let target_internal_path: PathBuf = target.into();
+                        let target_path = directory.as_ref().join(target_internal_path.clone());
+                        let target_is_dir =
+                            if let Ok(meta) = std::fs::metadata(target_absolute_path) {
+                                meta.is_dir()
+                            } else if let Some(target_in_archive) =
+                                self.index_for_path(&target_internal_path)
+                            {
+                                self.by_index_raw(target_in_archive)?.is_dir()
+                            } else {
+                                false
+                            };
                         if target_is_dir {
                             std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
                         } else {
