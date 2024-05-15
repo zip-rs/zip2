@@ -689,14 +689,18 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_exact(&mut target)?;
-                    let target_path: PathBuf = directory.as_ref().join(OsString::try_from(target)?);
+                    let target = OsString::from(target.to_string());
+                    let target_path: PathBuf = directory.as_ref().join(target);
                     #[cfg(unix)]
                     {
                         std::os::unix::fs::symlink(target_path, outpath.as_path())?;
                     }
                     #[cfg(windows)]
                     {
-                        if target_path.is_dir() {
+                        // symlink_dir must be used if this points to another symlink that points to
+                        // a directory.
+                        if let Ok(meta) = std::fs::metadata(target_path)
+                            && meta.is_dir() {
                             std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
                         } else {
                             std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;

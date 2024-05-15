@@ -4,6 +4,7 @@ use tempdir::TempDir;
 #[test]
 fn repro_old423() -> zip::result::ZipResult<()> {
     use std::io;
+    use tempdir::TempDir;
     use zip::ZipArchive;
 
     let mut v = Vec::new();
