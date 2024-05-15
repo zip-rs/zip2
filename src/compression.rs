@@ -12,14 +12,16 @@ use cfg_if::cfg_if;
 ///
 /// When creating ZIP files, you may choose the method to use with
 /// [`crate::write::FileOptions::compression_method`]
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub enum CompressionMethod {
     /// Store the file as is
+    #[cfg_attr(not(feature = "_deflate-any"), default)]
     Stored,
     /// Compress the file using Deflate
     #[cfg(feature = "_deflate-any")]
+    #[default]
     Deflated,
     /// Compress the file using Deflate64.
     /// Decoding deflate64 is supported but encoding deflate64 is not supported.
@@ -159,18 +161,6 @@ impl CompressionMethod {
             CompressionMethod::Lzma => 14,
 
             CompressionMethod::Unsupported(v) => v,
-        }
-    }
-}
-
-impl Default for CompressionMethod {
-    fn default() -> Self {
-        cfg_if! {
-            if #[cfg(feature = "_deflate-any")] {
-                CompressionMethod::Deflated
-            } else {
-                CompressionMethod::Stored
-            }
         }
     }
 }
