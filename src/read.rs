@@ -703,7 +703,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                         let target_internal_path: PathBuf = target.into();
                         let target_path = directory.as_ref().join(target_internal_path.clone());
                         let target_is_dir =
-                            if let Ok(meta) = std::fs::metadata(target_absolute_path) {
+                            if let Ok(meta) = std::fs::metadata(target_path) {
                                 meta.is_dir()
                             } else if let Some(target_in_archive) =
                                 self.index_for_path(&target_internal_path)
