@@ -13,7 +13,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
@@ -689,18 +689,24 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_exact(&mut target)?;
-                    let target = OsString::from(target.to_string());
-                    let target_path: PathBuf = directory.as_ref().join(target);
+                    let target = try_utf8_to_os_string(target)?;
+                    let target_path: PathBuf = directory.as_ref().join(target.clone());
                     #[cfg(unix)]
                     {
                         std::os::unix::fs::symlink(target_path, outpath.as_path())?;
                     }
                     #[cfg(windows)]
                     {
-                        // symlink_dir must be used if this points to another symlink that points to
-                        // a directory.
-                        if let Ok(meta) = std::fs::metadata(target_path)
-                            && meta.is_dir() {
+                        let target_is_dir = if let Ok(meta) = std::fs::metadata(target_path) {
+                            meta.is_dir()
+                        } else if let Some(target_in_archive) =
+                            self.index_for_path(path_to_string(target))
+                        {
+                            self.by_index_raw(target_in_archive)?.is_dir()
+                        } else {
+                            false
+                        };
+                        if target_is_dir {
                             std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
                         } else {
                             std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
@@ -916,6 +922,17 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn into_inner(self) -> R {
         self.reader
     }
+}
+
+#[cfg(unix)]
+fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> std::io::Result<OsString> {
+    use std::os::unix::ffi::OsStringExt;
+    Ok(OsString::from_vec(utf8_bytes))
+}
+
+#[cfg(windows)]
+fn to_os_string(utf8_bytes: Vec<u8>) -> std::io::Result<OsString> {
+    Ok(OsString::from(String::from_utf8(target)?))
 }
 
 const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
