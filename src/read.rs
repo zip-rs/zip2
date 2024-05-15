@@ -13,7 +13,6 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::convert::Infallible;
 use std::ffi::OsString;
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
@@ -703,12 +702,16 @@ impl<R: Read + Seek> ZipArchive<R> {
                         let target_internal_path: PathBuf = target.into();
                         let target_path = directory.as_ref().join(target_internal_path.clone());
                         let target_is_dir =
-                            if let Ok(meta) = std::fs::metadata(target_path) {
+                            if let Ok(meta) = std::fs::metadata(&target_path) {
                                 meta.is_dir()
                             } else if let Some(target_in_archive) =
                                 self.index_for_path(&target_internal_path)
                             {
-                                self.by_index_raw(target_in_archive)?.is_dir()
+                                self
+                                    .shared
+                                    .files
+                                    .get_index(file_number)
+                                    .is_dir()
                             } else {
                                 false
                             };
@@ -931,7 +934,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 }
 
 #[cfg(unix)]
-fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, Infallible> {
+fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, std::convert::Infallible> {
     use std::os::unix::ffi::OsStringExt;
     Ok(OsString::from_vec(utf8_bytes))
 }
