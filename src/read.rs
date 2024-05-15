@@ -13,12 +13,17 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStringExt;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStringExt;
 
 #[cfg(any(
     feature = "deflate",
@@ -689,7 +694,22 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_exact(&mut target)?;
-                    let target_path: PathBuf = directory.as_ref().join(OsString::try_from(target)?);
+                    #[cfg(unix)]
+                    let target_str = OsString::from_vec(target);
+                    #[cfg(windows)]
+                    let target_str: OsString = {
+                        let chunks = target.chunks_exact(2);
+                        assert!(
+                            chunks.remainder().is_empty(),
+                            "windows utf-16 strings should be divisible by 2"
+                        );
+                        let target_wide: Vec<u16> = chunks
+                            .into_iter()
+                            .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
+                            .collect();
+                        OsString::from_wide(&target_wide)
+                    };
+                    let target_path: PathBuf = directory.as_ref().join(target_str);
                     #[cfg(unix)]
                     {
                         std::os::unix::fs::symlink(target_path, outpath.as_path())?;
