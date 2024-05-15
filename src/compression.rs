@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use cfg_if::cfg_if;
+
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
 ///
@@ -55,39 +57,57 @@ impl CompressionMethod {
     pub const REDUCE_3: Self = CompressionMethod::Unsupported(4);
     pub const REDUCE_4: Self = CompressionMethod::Unsupported(5);
     pub const IMPLODE: Self = CompressionMethod::Unsupported(6);
-    #[cfg(feature = "_deflate-any")]
-    pub const DEFLATE: Self = CompressionMethod::Deflated;
-    #[cfg(not(feature = "_deflate-any"))]
-    pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
-    #[cfg(feature = "deflate64")]
-    pub const DEFLATE64: Self = CompressionMethod::Deflate64;
-    #[cfg(not(feature = "deflate64"))]
-    pub const DEFLATE64: Self = CompressionMethod::Unsupported(9);
+    cfg_if! {
+        if #[cfg(feature = "_deflate-any")] {
+            pub const DEFLATE: Self = CompressionMethod::Deflated;
+        } else {
+            pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
+        }
+    }
+    cfg_if! {
+        if #[cfg(feature = "deflate64")] {
+            pub const DEFLATE64: Self = CompressionMethod::Deflate64;
+        } else {
+            pub const DEFLATE64: Self = CompressionMethod::Unsupported(9);
+        }
+    }
     pub const PKWARE_IMPLODE: Self = CompressionMethod::Unsupported(10);
-    #[cfg(feature = "bzip2")]
-    pub const BZIP2: Self = CompressionMethod::Bzip2;
-    #[cfg(not(feature = "bzip2"))]
-    pub const BZIP2: Self = CompressionMethod::Unsupported(12);
-    #[cfg(not(feature = "lzma"))]
-    pub const LZMA: Self = CompressionMethod::Unsupported(14);
-    #[cfg(feature = "lzma")]
-    pub const LZMA: Self = CompressionMethod::Lzma;
+    cfg_if! {
+        if #[cfg(feature = "bzip2")] {
+            pub const BZIP2: Self = CompressionMethod::Bzip2;
+        } else {
+            pub const BZIP2: Self = CompressionMethod::Unsupported(12);
+        }
+    }
+    cfg_if! {
+        if #[cfg(feature = "lzma")] {
+            pub const LZMA: Self = CompressionMethod::Lzma;
+        } else {
+            pub const LZMA: Self = CompressionMethod::Unsupported(14);
+        }
+    }
     pub const IBM_ZOS_CMPSC: Self = CompressionMethod::Unsupported(16);
     pub const IBM_TERSE: Self = CompressionMethod::Unsupported(18);
     pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
-    #[cfg(feature = "zstd")]
-    pub const ZSTD: Self = CompressionMethod::Zstd;
-    #[cfg(not(feature = "zstd"))]
-    pub const ZSTD: Self = CompressionMethod::Unsupported(93);
+    cfg_if! {
+        if #[cfg(feature = "zstd")] {
+            pub const ZSTD: Self = CompressionMethod::Zstd;
+        } else {
+            pub const ZSTD: Self = CompressionMethod::Unsupported(93);
+        }
+    }
     pub const MP3: Self = CompressionMethod::Unsupported(94);
     pub const XZ: Self = CompressionMethod::Unsupported(95);
     pub const JPEG: Self = CompressionMethod::Unsupported(96);
     pub const WAVPACK: Self = CompressionMethod::Unsupported(97);
     pub const PPMD: Self = CompressionMethod::Unsupported(98);
-    #[cfg(feature = "aes-crypto")]
-    pub const AES: Self = CompressionMethod::Aes;
-    #[cfg(not(feature = "aes-crypto"))]
-    pub const AES: Self = CompressionMethod::Unsupported(99);
+    cfg_if! {
+        if #[cfg(feature = "aes-crypto")] {
+            pub const AES: Self = CompressionMethod::Aes;
+        } else {
+            pub const AES: Self = CompressionMethod::Unsupported(99);
+        }
+    }
 }
 impl CompressionMethod {
     /// Converts an u16 to its corresponding CompressionMethod
@@ -145,11 +165,13 @@ impl CompressionMethod {
 
 impl Default for CompressionMethod {
     fn default() -> Self {
-        #[cfg(feature = "_deflate-any")]
-        return CompressionMethod::Deflated;
-
-        #[cfg(not(feature = "_deflate-any"))]
-        return CompressionMethod::Stored;
+        cfg_if! {
+            if #[cfg(feature = "_deflate-any")] {
+                CompressionMethod::Deflated
+            } else {
+                CompressionMethod::Stored
+            }
+        }
     }
 }
 

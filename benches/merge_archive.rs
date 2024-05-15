@@ -112,20 +112,22 @@ fn merge_archive_raw_copy_file_compressed(bench: &mut Bencher) {
     });
 }
 
-#[cfg(feature = "_deflate-any")]
-benchmark_group!(
-    benches,
-    merge_archive_stored,
-    merge_archive_compressed,
-    merge_archive_raw_copy_file_stored,
-    merge_archive_raw_copy_file_compressed,
-);
-
-#[cfg(not(feature = "_deflate-any"))]
-benchmark_group!(
-    benches,
-    merge_archive_stored,
-    merge_archive_raw_copy_file_stored,
-);
+cfg_if::cfg_if! {
+    if #[cfg(feature = "_deflate-any")] {
+        benchmark_group!(
+            benches,
+            merge_archive_stored,
+            merge_archive_compressed,
+            merge_archive_raw_copy_file_stored,
+            merge_archive_raw_copy_file_compressed,
+        );
+    } else {
+        benchmark_group!(
+            benches,
+            merge_archive_stored,
+            merge_archive_raw_copy_file_stored,
+        );
+    }
+}
 
 benchmark_main!(benches);

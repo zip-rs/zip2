@@ -1,6 +1,7 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 use anyhow::Context;
+use cfg_if::cfg_if;
 use clap::{Parser, ValueEnum};
 use std::io::prelude::*;
 use zip::{result::ZipError, write::SimpleFileOptions};
@@ -37,20 +38,30 @@ fn main() {
 
 const METHOD_STORED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
 
-#[cfg(feature = "_deflate-any")]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
-#[cfg(not(feature = "_deflate-any"))]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
+cfg_if! {
+    if #[cfg(feature = "_deflate-any")] {
+        const METHOD_DEFLATED: Option<zip::CompressionMethod> =
+            Some(zip::CompressionMethod::Deflated);
+    } else {
+        const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
+    }
+}
 
-#[cfg(feature = "bzip2")]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
-#[cfg(not(feature = "bzip2"))]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
+cfg_if! {
+    if #[cfg(feature = "bzip2")] {
+        const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
+    } else {
+        const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
+    }
+}
 
-#[cfg(feature = "zstd")]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
-#[cfg(not(feature = "zstd"))]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
+cfg_if! {
+    if #[cfg(feature = "zstd")] {
+        const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
+    } else {
+        const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
+    }
+}
 
 fn real_main() -> i32 {
     let args = Args::parse();
@@ -59,49 +70,54 @@ fn real_main() -> i32 {
     let method = match args.compression_method {
         CompressionMethod::Stored => zip::CompressionMethod::Stored,
         CompressionMethod::Deflated => {
-            #[cfg(not(feature = "deflate"))]
-            {
-                println!("The `deflate` feature is not enabled");
-                return 1;
+            cfg_if! {
+                if #[cfg(feature = "deflate")] {
+                    zip::CompressionMethod::Deflated
+                } else {
+                    println!("The `deflate` feature is not enabled");
+                    return 1;
+                }
             }
-            #[cfg(feature = "deflate")]
-            zip::CompressionMethod::Deflated
         }
         CompressionMethod::DeflatedMiniz => {
-            #[cfg(not(feature = "deflate-miniz"))]
-            {
-                println!("The `deflate-miniz` feature is not enabled");
-                return 1;
+            cfg_if! {
+                if #[cfg(feature = "deflate-miniz")] {
+                    zip::CompressionMethod::Deflated
+                } else {
+                    println!("The `deflate-miniz` feature is not enabled");
+                    return 1;
+                }
             }
-            #[cfg(feature = "deflate-miniz")]
-            zip::CompressionMethod::Deflated
         }
         CompressionMethod::DeflatedZlib => {
-            #[cfg(not(feature = "deflate-zlib"))]
-            {
-                println!("The `deflate-zlib` feature is not enabled");
-                return 1;
+            cfg_if! {
+                if #[cfg(feature = "deflate-zlib")] {
+                    zip::CompressionMethod::Deflated
+                } else {
+                    println!("The `deflate-zlib` feature is not enabled");
+                    return 1;
+                }
             }
-            #[cfg(feature = "deflate-zlib")]
-            zip::CompressionMethod::Deflated
         }
         CompressionMethod::Bzip2 => {
-            #[cfg(not(feature = "bzip2"))]
-            {
-                println!("The `bzip2` feature is not enabled");
-                return 1;
+            cfg_if! {
+                if #[cfg(feature = "bzip2")] {
+                    zip::CompressionMethod::Bzip2
+                } else {
+                    println!("The `bzip2` feature is not enabled");
+                    return 1;
+                }
             }
-            #[cfg(feature = "bzip2")]
-            zip::CompressionMethod::Bzip2
         }
         CompressionMethod::Zstd => {
-            #[cfg(not(feature = "zstd"))]
-            {
-                println!("The `zstd` feature is not enabled");
-                return 1;
+            cfg_if! {
+                if #[cfg(feature = "zstd")] {
+                    zip::CompressionMethod::Zstd
+                } else {
+                    println!("The `zstd` feature is not enabled");
+                    return 1;
+                }
             }
-            #[cfg(feature = "zstd")]
-            zip::CompressionMethod::Zstd
         }
     };
     match doit(src_dir, dst_file, method) {

@@ -11,6 +11,7 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
+use cfg_if::cfg_if;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsString;
@@ -19,11 +20,6 @@ use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-
-#[cfg(unix)]
-use std::os::unix::ffi::OsStringExt;
-#[cfg(windows)]
-use std::os::windows::ffi::OsStringExt;
 
 #[cfg(any(
     feature = "deflate",
@@ -691,35 +687,42 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if let Some(p) = outpath.parent() {
                     Self::make_writable_dir_all(p)?;
                 }
+                /* FIXME: what bug does this code fix?
+                 * https://github.com/zip-rs/zip2/commit/8715d936cbd3e0fdc2e778b70d8a02e2dfc16fc2
+                 * doesn't specify! */
                 if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_exact(&mut target)?;
-                    #[cfg(unix)]
-                    let target_str = OsString::from_vec(target);
-                    #[cfg(windows)]
-                    let target_str: OsString = {
-                        let chunks = target.chunks_exact(2);
-                        assert!(
-                            chunks.remainder().is_empty(),
-                            "windows utf-16 strings should be divisible by 2"
-                        );
-                        let target_wide: Vec<u16> = chunks
-                            .into_iter()
-                            .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
-                            .collect();
-                        OsString::from_wide(&target_wide)
-                    };
-                    let target_path: PathBuf = directory.as_ref().join(target_str);
-                    #[cfg(unix)]
-                    {
-                        std::os::unix::fs::symlink(target_path, outpath.as_path())?;
+                    cfg_if! {
+                        if #[cfg(unix)] {
+                            use std::os::unix::ffi::OsStringExt;
+                            let target_str = OsString::from_vec(target);
+                        } else if #[cfg(windows)] {
+                            use std::os::windows::ffi::OsStringExt;
+                            let target_str: OsString = {
+                                let chunks = target.chunks_exact(2);
+                                assert!(
+                                    chunks.remainder().is_empty(),
+                                    "windows utf-16 strings should be divisible by 2"
+                                );
+                                let target_wide: Vec<u16> = chunks
+                                    .into_iter()
+                                    .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
+                                    .collect();
+                                OsString::from_wide(&target_wide)
+                            };
+                        }
                     }
-                    #[cfg(windows)]
-                    {
-                        if target_path.is_dir() {
-                            std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
-                        } else {
-                            std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
+                    let target_path: PathBuf = directory.as_ref().join(target_str);
+                    cfg_if! {
+                        if #[cfg(unix)] {
+                            std::os::unix::fs::symlink(target_path, outpath.as_path())?;
+                        } else if #[cfg(windows)] {
+                            if target_path.is_dir() {
+                                std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
+                            } else {
+                                std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
+                            }
                         }
                     }
                 } else {

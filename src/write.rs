@@ -441,13 +441,17 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
 impl<'k, T: FileOptionExtension> Default for FileOptions<'k, T> {
     /// Construct a new FileOptions object
     fn default() -> Self {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "time")] {
+                let last_modified_time = OffsetDateTime::now_utc().try_into().unwrap_or_default();
+            } else {
+                let last_modified_time = DateTime::default();
+            }
+        }
         Self {
             compression_method: Default::default(),
             compression_level: None,
-            #[cfg(feature = "time")]
-            last_modified_time: OffsetDateTime::now_utc().try_into().unwrap_or_default(),
-            #[cfg(not(feature = "time"))]
-            last_modified_time: DateTime::default(),
+            last_modified_time,
             permissions: None,
             large_file: false,
             encrypt_with: None,
