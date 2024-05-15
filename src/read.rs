@@ -702,9 +702,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     {
                         let target_is_dir = if let Ok(meta) = std::fs::metadata(target_path) {
                             meta.is_dir()
-                        } else if let Some(target_in_archive) =
-                            self.index_for_path(path_to_string(target))
-                        {
+                        } else if let Some(target_in_archive) = self.index_for_name(&target) {
                             self.by_index_raw(target_in_archive)?.is_dir()
                         } else {
                             false
