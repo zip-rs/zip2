@@ -1,5 +1,3 @@
-use tempdir::TempDir;
-
 #[cfg(all(unix, feature = "_deflate-any"))]
 #[test]
 fn repro_old423() -> zip::result::ZipResult<()> {
