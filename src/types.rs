@@ -16,6 +16,7 @@ pub(crate) mod ffi {
 
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
+use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
 use crate::CompressionMethod;
 #[cfg(feature = "time")]
@@ -364,10 +365,7 @@ pub struct ZipFileData {
 impl ZipFileData {
     #[allow(dead_code)]
     pub fn is_dir(&self) -> bool {
-        self.file_name
-            .chars()
-            .next_back()
-            .map_or(false, |c| c == '/' || c == '\\')
+        is_dir(&self.file_name)
     }
 
     pub fn file_name_sanitized(&self) -> PathBuf {

@@ -85,7 +85,7 @@ pub(crate) mod zip_archive {
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
-use crate::spec::path_to_string;
+use crate::spec::{is_dir, path_to_string};
 use crate::types::ffi::S_IFLNK;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
@@ -689,26 +689,28 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_exact(&mut target)?;
-                    let Ok(target) = try_utf8_to_os_string(target) else {
-                        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
-                    };
                     #[cfg(unix)]
                     {
+                        use std::os::unix::ffi::OsStringExt;
+                        let target = OsString::from_vec(target);
                         let target_path = directory.as_ref().join(target);
                         std::os::unix::fs::symlink(target_path, outpath.as_path())?;
                     }
                     #[cfg(windows)]
                     {
+                        let Ok(target) = String::from_utf8(target) else {
+                            return Err(ZipError::InvalidArchive(
+                                "Invalid UTF-8 as symlink target",
+                            ));
+                        };
+                        let target_is_dir_from_archive =
+                            self.shared.files.contains_key(&target) && is_dir(&target);
                         let target_internal_path: PathBuf = target.into();
                         let target_path = directory.as_ref().join(target_internal_path.clone());
-                        let target_is_dir = if let Ok(meta) = std::fs::metadata(&target_path) {
+                        let target_is_dir = if target_is_dir_from_archive {
+                            true
+                        } else if let Ok(meta) = std::fs::metadata(&target_path) {
                             meta.is_dir()
-                        } else if let Some(target_in_archive) =
-                            self.index_for_path(&target_internal_path)
-                        {
-                            let (_, target_in_archive) =
-                                self.shared.files.get_index(target_in_archive).unwrap();
-                            target_in_archive.is_dir()
                         } else {
                             false
                         };
@@ -928,12 +930,6 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn into_inner(self) -> R {
         self.reader
     }
-}
-
-#[cfg(unix)]
-fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, std::convert::Infallible> {
-    use std::os::unix::ffi::OsStringExt;
-    Ok(OsString::from_vec(utf8_bytes))
 }
 
 #[cfg(windows)]
@@ -1260,10 +1256,7 @@ impl<'a> ZipFile<'a> {
     }
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-        self.name()
-            .chars()
-            .next_back()
-            .map_or(false, |c| c == '/' || c == '\\')
+        is_dir(self.name())
     }
 
     /// Returns whether the file is actually a symbolic link
