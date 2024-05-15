@@ -13,6 +13,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
+use std::convert::Infallible;
 use std::ffi::OsString;
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
@@ -689,7 +690,9 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_exact(&mut target)?;
-                    let target = try_utf8_to_os_string(target)?;
+                    let Ok(target) = try_utf8_to_os_string(target) else {
+                        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
+                    };
                     let target_path: PathBuf = directory.as_ref().join(target.clone());
                     #[cfg(unix)]
                     {
@@ -925,14 +928,16 @@ impl<R: Read + Seek> ZipArchive<R> {
 }
 
 #[cfg(unix)]
-fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> std::io::Result<OsString> {
+fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, Infallible> {
     use std::os::unix::ffi::OsStringExt;
     Ok(OsString::from_vec(utf8_bytes))
 }
 
 #[cfg(windows)]
-fn to_os_string(utf8_bytes: Vec<u8>) -> std::io::Result<OsString> {
-    Ok(OsString::from(String::from_utf8(target)?))
+fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, std::string::FromUtf8Error> {
+    Ok(OsString::from(String::from_utf8(utf8_bytes).map_err(
+        |_| ZipError::InvalidArchive("Invalid UTF-8 in symlink target"),
+    )))
 }
 
 const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
