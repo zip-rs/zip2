@@ -15,7 +15,7 @@ use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
 use std::ops::Deref;
@@ -751,17 +751,13 @@ impl<R: Read + Seek> ZipArchive<R> {
                 if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_exact(&mut target)?;
+                    let target_path: PathBuf = directory.as_ref().join(OsString::try_from(target)?);
                     #[cfg(unix)]
                     {
-                        use std::os::unix::ffi::OsStrExt;
-                        let target_path: PathBuf =
-                            directory.as_ref().join(OsStr::from_bytes(&target));
                         std::os::unix::fs::symlink(target_path, outpath.as_path())?;
                     }
                     #[cfg(windows)]
                     {
-                        use std::os::windows::ffi::OsStrExt;
-                        let target_path: PathBuf = directory.as_ref().join(OsStr::from_vec(target));
                         if target_path.is_dir() {
                             std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
                         } else {
