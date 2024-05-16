@@ -682,48 +682,55 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             if file.is_dir() {
                 Self::make_writable_dir_all(&outpath)?;
+                continue;
+            }
+            let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
+                let mut target = Vec::with_capacity(file.size() as usize);
+                file.read_exact(&mut target)?;
+                Some(target)
             } else {
-                if let Some(p) = outpath.parent() {
-                    Self::make_writable_dir_all(p)?;
+                None
+            };
+            drop(file);
+            if let Some(p) = outpath.parent() {
+                Self::make_writable_dir_all(p)?;
+            }
+            if let Some(target) = symlink_target {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::ffi::OsStringExt;
+                    let target = OsString::from_vec(target);
+                    let target_path = directory.as_ref().join(target);
+                    std::os::unix::fs::symlink(target_path, outpath.as_path())?;
                 }
-                if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
-                    let mut target = Vec::with_capacity(file.size() as usize);
-                    file.read_exact(&mut target)?;
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::ffi::OsStringExt;
-                        let target = OsString::from_vec(target);
-                        let target_path = directory.as_ref().join(target);
-                        std::os::unix::fs::symlink(target_path, outpath.as_path())?;
+                #[cfg(windows)]
+                {
+                    let Ok(target) = String::from_utf8(target) else {
+                        return Err(ZipError::InvalidArchive(
+                            "Invalid UTF-8 as symlink target",
+                        ));
+                    };
+                    let target = target.into_boxed_str();
+                    let target_is_dir_from_archive =
+                        self.shared.files.contains_key(&target) && is_dir(&target);
+                    let target_path = directory.as_ref().join(OsString::from(target.to_string()));
+                    let target_is_dir = if target_is_dir_from_archive {
+                        true
+                    } else if let Ok(meta) = std::fs::metadata(&target_path) {
+                        meta.is_dir()
+                    } else {
+                        false
+                    };
+                    if target_is_dir {
+                        std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
+                    } else {
+                        std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
                     }
-                    #[cfg(windows)]
-                    {
-                        let Ok(target) = String::from_utf8(target) else {
-                            return Err(ZipError::InvalidArchive(
-                                "Invalid UTF-8 as symlink target",
-                            ));
-                        };
-                        let target = target.into_boxed_str();
-                        let target_is_dir_from_archive =
-                            self.shared.files.contains_key(&target) && is_dir(&target);
-                        let target_path = directory.as_ref().join(target.to_string().into());
-                        let target_is_dir = if target_is_dir_from_archive {
-                            true
-                        } else if let Ok(meta) = std::fs::metadata(&target_path) {
-                            meta.is_dir()
-                        } else {
-                            false
-                        };
-                        if target_is_dir {
-                            std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
-                        } else {
-                            std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
-                        }
-                    }
-                } else {
-                    let mut outfile = fs::File::create(&outpath)?;
-                    io::copy(&mut file, &mut outfile)?;
                 }
+            } else {
+                let mut file = self.by_index(i)?;
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
             }
             #[cfg(unix)]
             {
@@ -930,11 +937,6 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn into_inner(self) -> R {
         self.reader
     }
-}
-
-#[cfg(windows)]
-fn try_utf8_to_os_string(utf8_bytes: Vec<u8>) -> Result<OsString, std::string::FromUtf8Error> {
-    Ok(OsString::from(String::from_utf8(utf8_bytes)?))
 }
 
 const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
