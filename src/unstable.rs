@@ -1,5 +1,7 @@
 #![allow(missing_docs)]
 
+use std::ascii::escape_default;
+use std::fmt::Display;
 use std::io;
 use std::io::{Read, Write};
 
@@ -67,3 +69,7 @@ pub trait LittleEndianReadExt: Read {
 }
 
 impl<R: Read> LittleEndianReadExt for R {}
+
+pub(crate) fn bytes_to_rust_literal(input: &[u8]) -> String {
+    "b\"" + input.iter().flat_map(escape_default).collect() + "\""
+}

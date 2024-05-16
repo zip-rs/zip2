@@ -4,7 +4,7 @@
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
 use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
-use crate::result::{ZipError, ZipResult};
+use crate::result::{invalid, invalid_archive, ZipError, ZipResult};
 use crate::spec;
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
@@ -133,7 +133,6 @@ pub(crate) mod zip_writer {
 }
 #[doc(inline)]
 pub use self::sealed::FileOptionExtension;
-use crate::result::ZipError::InvalidArchive;
 #[cfg(feature = "lzma")]
 use crate::result::ZipError::UnsupportedArchive;
 use crate::spec::path_to_string;
@@ -396,14 +395,14 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
     ) -> ZipResult<()> {
         validate_extra_data(header_id, data)?;
         let len = data.len() + 4;
-        if self.extended_options.extra_data.len()
+        let total_extra_len = self.extended_options.extra_data.len()
             + self.extended_options.central_extra_data.len()
-            + len
-            > u16::MAX as usize
+            + len;
+        if total_extra_len > u16::MAX as usize
         {
-            Err(InvalidArchive(
-                "Extra data field would be longer than allowed",
-            ))
+            invalid!(
+                "Extra data field would be {} bytes, but maximum is {} bytes",
+                total_extra_len, u16::MAX)
         } else {
             let field = if central_only {
                 &mut self.extended_options.central_extra_data
@@ -766,7 +765,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
             if extra_data.len() + AES_DUMMY_EXTRA_DATA.len() > u16::MAX as usize {
                 let _ = self.abort_file();
-                return Err(InvalidArchive("Extra data field is too large"));
+                return invalid_archive("Extra data field is too large");
             }
 
             aes_extra_data_start = extra_data.len() as u64;
@@ -851,9 +850,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.large_file {
                 extra_field_length += 20;
             }
-            if extra_field_length + file.central_extra_field_len() > u16::MAX as usize {
+            let total_extra_field_length = extra_field_length + file.central_extra_field_len();
+            if total_extra_field_length > u16::MAX as usize {
                 let _ = self.abort_file();
-                return Err(InvalidArchive("Extra data field is too large"));
+                invalid!("Extra data field would be {} bytes, but limit is {} bytes",
+                        total_extra_field_length, u16::MAX);
             }
             let extra_field_length = extra_field_length as u16;
             writer.write_u16_le(extra_field_length)?;
@@ -877,9 +878,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                         (pad_length as u16).checked_add(extra_field_length)
                     else {
                         let _ = self.abort_file();
-                        return Err(InvalidArchive(
-                            "Extra data field would be larger than allowed after aligning",
-                        ));
+                        return invalid_archive("Extra data field would be larger than allowed after aligning");
                     };
                     if pad_length >= 4 {
                         // Add an extra field to the extra_data
@@ -940,7 +939,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
         if self.files.contains_key(&file.file_name) {
-            return Err(InvalidArchive("Duplicate filename"));
+            invalid!("Duplicate filename {}", file.file_name);
         }
         let name = file.file_name.to_owned();
         self.files.insert(name.clone(), file);

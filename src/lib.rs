@@ -32,6 +32,8 @@ pub use crate::read::ZipArchive;
 pub use crate::types::{AesMode, DateTime};
 pub use crate::write::ZipWriter;
 
+extern crate alloc;
+
 #[cfg(feature = "aes-crypto")]
 mod aes;
 #[cfg(feature = "aes-crypto")]

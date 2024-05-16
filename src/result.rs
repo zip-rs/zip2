@@ -2,6 +2,7 @@
 #![allow(non_local_definitions)]
 //! Error types that can be emitted from this library
 
+use std::borrow::Cow;
 use displaydoc::Display;
 use thiserror::Error;
 
@@ -21,32 +22,38 @@ pub enum ZipError {
     Io(#[from] io::Error),
 
     /// invalid Zip archive: {0}
-    InvalidArchive(&'static str),
+    InvalidArchive(Cow<'static, str>),
 
     /// unsupported Zip archive: {0}
-    UnsupportedArchive(&'static str),
+    UnsupportedArchive(Cow<'static, str>),
 
     /// specified file not found in archive
-    FileNotFound,
+    FileNotFound(Box<str>),
 
     /// The password provided is incorrect
-    InvalidPassword,
+    InvalidPassword {
+        filename: Box<str>,
+        password: Option<Box<str>>
+    },
 }
 
-impl ZipError {
-    /// The text used as an error when a password is required and not supplied
-    ///
-    /// ```rust,no_run
-    /// # use zip::result::ZipError;
-    /// # let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&[])).unwrap();
-    /// match archive.by_index(1) {
-    ///     Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)) => eprintln!("a password is needed to unzip this file"),
-    ///     _ => (),
-    /// }
-    /// # ()
-    /// ```
-    pub const PASSWORD_REQUIRED: &'static str = "Password required to decrypt file";
+pub(crate) fn invalid_archive<T, M: Into<Cow<'static, str>>>(message: M) -> ZipResult<T> {
+    Err(ZipError::InvalidArchive(message.into()))
 }
+
+macro_rules! invalid {
+    ($fmt_string:literal) => {
+        {
+            return crate::result::invalid_archive($fmt_string).into();
+        }
+    };
+    ($fmt_string:literal, $($param:expr),+) => {
+        {
+            return crate::result::invalid_archive(alloc::format!($fmt_string, ($($param),+))).into();
+        }
+    };
+}
+pub(crate) use invalid;
 
 impl From<ZipError> for io::Error {
     fn from(err: ZipError) -> io::Error {
@@ -54,8 +61,8 @@ impl From<ZipError> for io::Error {
             ZipError::Io(err) => err.kind(),
             ZipError::InvalidArchive(_) => io::ErrorKind::InvalidData,
             ZipError::UnsupportedArchive(_) => io::ErrorKind::Unsupported,
-            ZipError::FileNotFound => io::ErrorKind::NotFound,
-            ZipError::InvalidPassword => io::ErrorKind::InvalidInput,
+            ZipError::FileNotFound(_) => io::ErrorKind::NotFound,
+            ZipError::InvalidPassword {..} => io::ErrorKind::InvalidInput,
         };
 
         io::Error::new(kind, err)

@@ -1,4 +1,4 @@
-use crate::result::{ZipError, ZipResult};
+use crate::result::{invalid, invalid_archive, ZipError, ZipResult};
 use crate::unstable::{LittleEndianReadExt, LittleEndianWriteExt};
 use core::mem::size_of_val;
 use std::borrow::Cow;
@@ -29,7 +29,7 @@ impl CentralDirectoryEnd {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd> {
         let magic = reader.read_u32_le()?;
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
+            return invalid_archive("Invalid digital signature header");
         }
         let disk_number = reader.read_u16_le()?;
         let disk_with_central_directory = reader.read_u16_le()?;
@@ -61,7 +61,7 @@ impl CentralDirectoryEnd {
         let search_upper_bound = file_length.saturating_sub(MAX_HEADER_AND_COMMENT_SIZE);
 
         if file_length < HEADER_SIZE {
-            return Err(ZipError::InvalidArchive("Invalid zip header"));
+            return invalid_archive("Invalid zip header");
         }
 
         let mut pos = file_length - HEADER_SIZE;
@@ -87,9 +87,9 @@ impl CentralDirectoryEnd {
                 None => break,
             };
         }
-        Err(ZipError::InvalidArchive(
+        invalid_archive(
             "Could not find central directory end",
-        ))
+        )
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
@@ -116,9 +116,9 @@ impl Zip64CentralDirectoryEndLocator {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let magic = reader.read_u32_le()?;
         if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
-            return Err(ZipError::InvalidArchive(
+            return invalid_archive(
                 "Invalid zip64 locator digital signature header",
-            ));
+            );
         }
         let disk_with_central_directory = reader.read_u32_le()?;
         let end_of_central_directory_offset = reader.read_u64_le()?;
@@ -204,9 +204,7 @@ impl Zip64CentralDirectoryEnd {
             }
         }
         if results.is_empty() {
-            Err(ZipError::InvalidArchive(
-                "Could not find ZIP64 central directory end",
-            ))
+            invalid!("Could not find ZIP64 central directory end")
         } else {
             Ok(results)
         }

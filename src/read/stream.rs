@@ -1,7 +1,8 @@
-use crate::unstable::LittleEndianReadExt;
+use crate::unstable::{bytes_to_rust_literal, LittleEndianReadExt};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use crate::result::invalid;
 
 use super::{
     central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
@@ -62,7 +63,8 @@ impl<R: Read> ZipStreamReader<R> {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 let filepath = file
                     .enclosed_name()
-                    .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+                    .ok_or(invalid!("Invalid file path {}",
+                                                   bytes_to_rust_literal(file.name_raw())))?;
 
                 let outpath = self.0.join(filepath);
 
@@ -87,8 +89,7 @@ impl<R: Read> ZipStreamReader<R> {
                 #[cfg(unix)]
                 {
                     let filepath = metadata
-                        .enclosed_name()
-                        .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+                        .try_enclosed_name()?;
 
                     let outpath = self.0.join(filepath);
 

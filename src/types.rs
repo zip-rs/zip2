@@ -15,12 +15,13 @@ pub(crate) mod ffi {
 }
 
 use crate::extra_fields::ExtraField;
-use crate::result::DateTimeRangeError;
+use crate::result::{DateTimeRangeError, invalid, ZipResult};
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
 use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+use crate::unstable::bytes_to_rust_literal;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -393,6 +394,10 @@ impl ZipFileData {
                 path.push(cur.as_os_str());
                 path
             })
+    }
+
+    pub(crate) fn try_enclosed_name(&self) -> ZipResult<PathBuf> {
+        self.enclosed_name().ok_or_else(|| invalid!(bytes_to_rust_literal(&self.file_name_raw)))
     }
 
     pub(crate) fn enclosed_name(&self) -> Option<PathBuf> {

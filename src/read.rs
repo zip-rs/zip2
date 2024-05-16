@@ -7,7 +7,7 @@ use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::Shared;
-use crate::result::{ZipError, ZipResult};
+use crate::result::{invalid, invalid_archive, ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
@@ -218,7 +218,7 @@ pub(crate) fn find_content<'a>(
     reader.seek(io::SeekFrom::Start(data.header_start))?;
     let signature = reader.read_u32_le()?;
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid local file header"));
+        invalid!("Invalid local file header")
     }
     let data_start = match data.data_start.get() {
         None => {
@@ -410,8 +410,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         new_files.values_mut().try_for_each(|f| {
             /* This is probably the only really important thing to change. */
             f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
-                ZipError::InvalidArchive("new header start from merge would have been too large"),
-            )?;
+                invalid!("new header start from merge would have been {} bytes, which is too large",
+                f.header_start as u128 + new_initial_header_start as u128))?;
             /* This is only ever used internally to cache metadata lookups (it's not part of the
              * zip spec), and 0 is the sentinel value. */
             f.central_header_start = 0;
@@ -419,7 +419,7 @@ impl<R: Read + Seek> ZipArchive<R> {
              * implementation (which is good!). */
             if let Some(old_data_start) = f.data_start.take() {
                 let new_data_start = old_data_start.checked_add(new_initial_header_start).ok_or(
-                    ZipError::InvalidArchive("new data start from merge would have been too large"),
+                    invalid!("new data start from merge would have been too large"),
                 )?;
                 f.data_start.get_or_init(|| new_data_start);
             }
@@ -462,9 +462,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let archive_offset = cde_start_pos
             .checked_sub(footer.central_directory_size as u64)
             .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
-            .ok_or(ZipError::InvalidArchive(
-                "Invalid central directory size or offset",
-            ))?;
+            .ok_or(invalid!("Invalid central directory size or offset"))?;
 
         let directory_start = footer.central_directory_offset as u64 + archive_offset;
         let number_of_files = footer.number_of_files_on_this_disk as usize;
@@ -475,6 +473,10 @@ impl<R: Read + Seek> ZipArchive<R> {
             disk_number: footer.disk_number as u32,
             disk_with_central_directory: footer.disk_with_central_directory as u32,
         })
+    }
+
+    fn spec_version_from(raw_version: u16) -> String {
+        (raw_version / 10).to_string() + "." + &*(raw_version % 10).to_string()
     }
 
     fn get_directory_info_zip64(
@@ -504,8 +506,8 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let search_upper_bound = cde_start_pos
             .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
-            .ok_or(ZipError::InvalidArchive(
-                "File cannot contain ZIP64 central directory end",
+            .ok_or(invalid!(
+                "File cannot contain ZIP64 central directory end"
             ))?;
         let search_results = spec::Zip64CentralDirectoryEnd::find_and_parse(
             reader,
@@ -517,23 +519,21 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let directory_start_result = footer64
                     .central_directory_offset
                     .checked_add(archive_offset)
-                    .ok_or(ZipError::InvalidArchive(
-                        "Invalid central directory size or offset",
-                    ));
+                    .ok_or(invalid!("Central directory would start at address {}",
+                                footer64.central_directory_offset as u128 + archive_offset as u128),
+                    )?;
                 directory_start_result.and_then(|directory_start| {
                     if directory_start > search_upper_bound {
-                        Err(ZipError::InvalidArchive(
-                            "Invalid central directory size or offset",
-                        ))
+                        invalid!("Invalid central directory size or offset {}", directory_start)
                     } else if footer64.number_of_files_on_this_disk > footer64.number_of_files {
-                        Err(ZipError::InvalidArchive(
-                            "ZIP64 footer indicates more files on this disk than in the whole archive",
-                        ))
+                        invalid!(
+                            "ZIP64 footer indicates {} files on this disk but only {} in the whole archive",
+                            footer64.number_of_files_on_this_disk, footer64.number_of_files
+                        )
                     } else if footer64.version_needed_to_extract > footer64.version_made_by {
-                        Err(ZipError::InvalidArchive(
-                            "ZIP64 footer indicates a new version is needed to extract this archive than the \
-    version that wrote it",
-                        ))
+                        invalid!("ZIP64 footer indicates archive was written by version {} but can only be opened by version {} or newer",
+                            footer64.version_made_by, footer64.version_needed_to_extract
+                        )
                     } else {
                         Ok(CentralDirectoryInfo {
                             archive_offset,
@@ -570,25 +570,29 @@ impl<R: Read + Seek> ZipArchive<R> {
                     if central_dir.number_of_files != zip32_central_dir.number_of_files
                         && zip32_central_dir.number_of_files != u16::MAX as usize
                     {
-                        *result = Err(ZipError::InvalidArchive(
-                            "ZIP32 and ZIP64 file counts don't match",
-                        ));
+                        *result = invalid_archive(
+                            format!("ZIP32 file count {} and ZIP64 file count {} don't match",
+                                    zip32_central_dir.number_of_files, central_dir.number_of_files)
+                        );
                         return;
                     }
                     if central_dir.disk_number != zip32_central_dir.disk_number
                         && zip32_central_dir.disk_number != u16::MAX as u32
                     {
-                        *result = Err(ZipError::InvalidArchive(
-                            "ZIP32 and ZIP64 disk numbers don't match",
-                        ));
+                        *result = invalid_archive(
+                            format!("ZIP32 disk number {} and ZIP64 disk number {} don't match",
+                                    zip32_central_dir.disk_number, central_dir.disk_number)
+                            );
                         return;
                     }
                     if central_dir.disk_with_central_directory
                         != zip32_central_dir.disk_with_central_directory
                         && zip32_central_dir.disk_with_central_directory != u16::MAX as u32
                     {
-                        *result = Err(ZipError::InvalidArchive(
-                            "ZIP32 and ZIP64 last-disk numbers don't match",
+                        *result = invalid_archive(
+                            format!("ZIP32 last-disk number {} doesn't match ZIP64 last-disk number {}",
+                                    zip32_central_dir.disk_with_central_directory,
+                                    central_dir.disk_with_central_directory
                         ));
                     }
                 }
@@ -675,8 +679,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
-                .enclosed_name()
-                .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+                .try_enclosed_name()?;
 
             let outpath = directory.as_ref().join(filepath);
 
@@ -951,7 +954,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     // Parse central header
     let signature = reader.read_u32_le()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-        Err(ZipError::InvalidArchive("Invalid Central Directory header"))
+        invalid!("Invalid Central Directory header")
     } else {
         central_header_to_zip_file_inner(reader, archive_offset, central_header_start)
     }
@@ -1036,16 +1039,16 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
-        return Err(ZipError::InvalidArchive(
-            "AES encryption without AES extra data field",
-        ));
+        invalid!(
+            "AES encryption without AES extra data field"
+        )
     }
 
     // Account for shifted zip offsets.
     result.header_start = result
         .header_start
         .checked_add(archive_offset)
-        .ok_or(ZipError::InvalidArchive("Archive header is too large"))?;
+        .ok_or(invalid!("Archive header is too large"))?;
 
     Ok(result)
 }
@@ -1094,12 +1097,12 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
 
                 if vendor_id != 0x4541 {
-                    return Err(ZipError::InvalidArchive("Invalid AES vendor"));
+                    invalid!("Invalid AES vendor");
                 }
                 let vendor_version = match vendor_version {
                     0x0001 => AesVendorVersion::Ae1,
                     0x0002 => AesVendorVersion::Ae2,
-                    _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
+                    _ => invalid!("Invalid AES vendor version"),
                 };
                 match aes_mode {
                     0x01 => {
@@ -1111,7 +1114,7 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                     0x03 => {
                         file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method))
                     }
-                    _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
+                    _ => invalid!("Invalid AES encryption strength"),
                 };
                 file.compression_method = compression_method;
             }
@@ -1229,6 +1232,11 @@ impl<'a> ZipFile<'a> {
     pub fn enclosed_name(&self) -> Option<PathBuf> {
         self.data.enclosed_name()
     }
+
+    pub fn try_enclosed_name(&self) -> ZipResult<PathBuf> {
+        self.data.try_enclosed_name()
+    }
+
 
     /// Get the comment of the file
     pub fn comment(&self) -> &str {
@@ -1356,7 +1364,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     match signature {
         spec::LOCAL_FILE_HEADER_SIGNATURE => (),
         spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
-        _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
+        _ => invalid!("Invalid local file header"),
     }
 
     let version_made_by = reader.read_u16_le()?;
