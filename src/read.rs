@@ -727,11 +727,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                         std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
                     }
                 }
-            } else {
-                let mut file = self.by_index(i)?;
-                let mut outfile = fs::File::create(&outpath)?;
-                io::copy(&mut file, &mut outfile)?;
+                continue;
             }
+            let mut file = self.by_index(i)?;
+            let mut outfile = fs::File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
             #[cfg(unix)]
             {
                 // Check for real permissions, which we'll set in a second pass
