@@ -706,9 +706,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 #[cfg(windows)]
                 {
                     let Ok(target) = String::from_utf8(target) else {
-                        return Err(ZipError::InvalidArchive(
-                            "Invalid UTF-8 as symlink target",
-                        ));
+                        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
                     };
                     let target = target.into_boxed_str();
                     let target_is_dir_from_archive =
