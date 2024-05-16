@@ -6,7 +6,9 @@ use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
+#[cfg(feature = "legacy-zip")]
 use crate::legacy::ShrinkDecoder;
+#[cfg(feature = "legacy-zip")]
 use crate::legacy::{ImplodeDecoder, ReduceDecoder};
 use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
@@ -144,8 +146,11 @@ pub(crate) enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn Read>),
     Stored(Crc32Reader<CryptoReader<'a>>),
+    #[cfg(feature = "legacy-zip")]
     Shrink(Crc32Reader<ShrinkDecoder<CryptoReader<'a>>>),
+    #[cfg(feature = "legacy-zip")]
     Reduce(Crc32Reader<ReduceDecoder<CryptoReader<'a>>>),
+    #[cfg(feature = "legacy-zip")]
     Implode(Crc32Reader<ImplodeDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "_deflate-any")]
     Deflated(Crc32Reader<DeflateDecoder<CryptoReader<'a>>>),
@@ -165,8 +170,11 @@ impl<'a> Read for ZipFileReader<'a> {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Raw(r) => r.read(buf),
             ZipFileReader::Stored(r) => r.read(buf),
+            #[cfg(feature = "legacy-zip")]
             ZipFileReader::Shrink(r) => r.read(buf),
+            #[cfg(feature = "legacy-zip")]
             ZipFileReader::Reduce(r) => r.read(buf),
+            #[cfg(feature = "legacy-zip")]
             ZipFileReader::Implode(r) => r.read(buf),
             #[cfg(feature = "_deflate-any")]
             ZipFileReader::Deflated(r) => r.read(buf),
@@ -189,6 +197,7 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Raw(r) => r,
             ZipFileReader::Stored(r) => r.into_inner().into_inner(),
+            #[cfg(feature = "legacy-zip")]
             ZipFileReader::Shrink(r) => {
                 // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
                 // it separately
@@ -197,6 +206,7 @@ impl<'a> ZipFileReader<'a> {
                 }
                 return;
             }
+            #[cfg(feature = "legacy-zip")]
             ZipFileReader::Reduce(r) => {
                 // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
                 // it separately
@@ -205,6 +215,7 @@ impl<'a> ZipFileReader<'a> {
                 }
                 return;
             }
+            #[cfg(feature = "legacy-zip")]
             ZipFileReader::Implode(r) => {
                 // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
                 // it separately
@@ -332,6 +343,7 @@ pub(crate) fn make_reader(
             crc32,
             ae2_encrypted,
         ))),
+        #[cfg(feature = "legacy-zip")]
         CompressionMethod::Shrink => {
             let reader = ShrinkDecoder::new(reader, uncompressed_size);
             Ok(ZipFileReader::Shrink(Crc32Reader::new(
@@ -340,6 +352,7 @@ pub(crate) fn make_reader(
                 ae2_encrypted,
             )))
         }
+        #[cfg(feature = "legacy-zip")]
         CompressionMethod::Reduce(comp_factor) => {
             let reader = ReduceDecoder::new(reader, uncompressed_size, comp_factor);
             Ok(ZipFileReader::Reduce(Crc32Reader::new(
@@ -348,6 +361,7 @@ pub(crate) fn make_reader(
                 ae2_encrypted,
             )))
         }
+        #[cfg(feature = "legacy-zip")]
         CompressionMethod::Implode => {
             let reader = ImplodeDecoder::new(reader, uncompressed_size, flags);
             Ok(ZipFileReader::Implode(Crc32Reader::new(
