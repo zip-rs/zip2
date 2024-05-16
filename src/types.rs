@@ -11,10 +11,12 @@ use {crate::read::ZipFile, crate::write::FileOptions};
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
+    pub const S_IFLNK: u32 = 0o0120000;
 }
 
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
+use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
 use crate::CompressionMethod;
 #[cfg(feature = "time")]
@@ -361,6 +363,11 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    #[allow(dead_code)]
+    pub fn is_dir(&self) -> bool {
+        is_dir(&self.file_name)
+    }
+
     pub fn file_name_sanitized(&self) -> PathBuf {
         let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],

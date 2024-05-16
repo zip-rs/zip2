@@ -319,6 +319,13 @@ impl Zip64CentralDirectoryEnd {
     }
 }
 
+pub(crate) fn is_dir(filename: &str) -> bool {
+    filename
+        .chars()
+        .next_back()
+        .map_or(false, |c| c == '/' || c == '\\')
+}
+
 /// Converts a path to the ZIP format (forward-slash-delimited and normalized).
 pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
     let mut maybe_original = None;

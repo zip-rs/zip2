@@ -9,6 +9,7 @@ use crate::spec;
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{ffi, AesVendorVersion, DateTime, System, ZipFileData, DEFAULT_VERSION};
+use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
@@ -1341,7 +1342,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if options.permissions.is_none() {
             options.permissions = Some(0o777);
         }
-        *options.permissions.as_mut().unwrap() |= 0o120000;
+        *options.permissions.as_mut().unwrap() |= S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
