@@ -63,6 +63,7 @@ tempdir = "0.3.7"
 aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1", "rand", "zeroize"]
 chrono = ["chrono/default"]
 _deflate-any = []
+_all-features = [] # Detect when --all-features is used
 deflate = ["flate2/rust_backend", "_deflate-any"]
 
 # DEPRECATED: previously enabled `flate2/miniz_oxide` which is equivalent to `flate2/rust_backend`
