@@ -1,7 +1,7 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 use std::io::{Read, Seek, SeekFrom};
-use zip::read::read_zipfile_from_stream;
+use zip::read::sync::read_zipfile_from_stream;
 
 const MAX_BYTES_TO_READ: u64 = 1 << 24;
 
