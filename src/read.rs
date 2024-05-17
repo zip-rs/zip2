@@ -4,12 +4,8 @@
 pub mod sync;
 
 #[cfg(feature = "aes-crypto")]
-use crate::aes::AesReaderValid;
-use crate::{
-    crc32::Crc32Reader,
-    types::{AesVendorVersion, ZipFileData},
-    zipcrypto::ZipCryptoReaderValid,
-};
+use crate::{aes::AesReaderValid, types::AesVendorVersion};
+use crate::{crc32::Crc32Reader, types::ZipFileData, zipcrypto::ZipCryptoReaderValid};
 use indexmap::IndexMap;
 use std::{
     borrow::Cow,

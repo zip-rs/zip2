@@ -1,5 +1,7 @@
+#[cfg(feature = "aes-crypto")]
+use crate::aes::AesReader;
+use crate::AesMode;
 use crate::{
-    aes::AesReader,
     cp437::FromCp437,
     crc32::Crc32Reader,
     extra_fields::ExtendedTimestamp,
@@ -8,10 +10,17 @@ use crate::{
     types::{AesVendorVersion, System, ZipFileData},
     unstable::LittleEndianReadExt,
     zipcrypto::{ZipCryptoReader, ZipCryptoValidator},
-    AesMode, CompressionMethod, DateTime, ExtraField, ZipArchive,
+    CompressionMethod, DateTime, ExtraField, ZipArchive,
 };
+#[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
+#[cfg(feature = "deflate64")]
 use deflate64::Deflate64Decoder;
+#[cfg(any(
+    feature = "deflate",
+    feature = "deflate-zlib",
+    feature = "deflate-zlib-ng"
+))]
 use flate2::read::DeflateDecoder;
 use indexmap::IndexMap;
 use std::{
@@ -22,10 +31,12 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
 };
+#[cfg(feature = "zstd")]
 use zstd::Decoder as ZstdDecoder;
 
+#[cfg(feature = "lzma")]
+use super::lzma::LzmaDecoder;
 use super::{
-    lzma::LzmaDecoder,
     zip_archive::{self, Shared},
     CentralDirectoryInfo, CryptoReader, ZipFile, ZipFileReader,
 };
