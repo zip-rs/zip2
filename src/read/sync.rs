@@ -7,7 +7,7 @@ use crate::{
     extra_fields::ExtendedTimestamp,
     result::{ZipError, ZipResult},
     spec::{self, path_to_string},
-    types::{AesVendorVersion, System, ZipFileData},
+    types::{AesVendorVersion, System, ZipFileData, ffi::S_IFLNK},
     unstable::LittleEndianReadExt,
     zipcrypto::{ZipCryptoReader, ZipCryptoValidator},
     CompressionMethod, DateTime, ExtraField, ZipArchive,
@@ -1122,7 +1122,11 @@ impl<'a> ZipFile<'a> {
             .next_back()
             .map_or(false, |c| c == '/' || c == '\\')
     }
-
+    /// Returns whether the file is actually a symbolic link
+    pub fn is_symlink(&self) -> bool {
+    self.unix_mode()
+        .is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
+    }
     /// Returns whether the file is a regular file
     pub fn is_file(&self) -> bool {
         !self.is_dir()

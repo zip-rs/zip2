@@ -7,10 +7,8 @@ pub mod sync;
 use crate::{aes::AesReaderValid, types::AesVendorVersion};
 use crate::{crc32::Crc32Reader, types::ZipFileData, zipcrypto::ZipCryptoReaderValid};
 use indexmap::IndexMap;
-use std::{
-    borrow::Cow,
-    io::{self, Read},
-};
+use std::borrow::Cow;
+use std::io::{self, prelude::*};
 
 #[cfg(any(
     feature = "deflate",
@@ -123,6 +121,7 @@ pub(crate) struct CentralDirectoryInfo {
 mod test {
     use crate::ZipArchive;
     use std::io::Cursor;
+    use tempdir::TempDir;
 
     #[test]
     fn invalid_offset() {
@@ -316,5 +315,17 @@ mod test {
         let mut decompressed = [0u8; 16];
         let mut file = reader.by_index(0).unwrap();
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
+    }
+
+    #[test]
+    fn test_is_symlink() -> std::io::Result<()> {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        assert!(reader.by_index(0).unwrap().is_symlink());
+        let tempdir = TempDir::new("test_is_symlink")?;
+        reader.extract(&tempdir).unwrap();
+        assert!(tempdir.path().join("bar").is_symlink());
+        Ok(())
     }
 }
