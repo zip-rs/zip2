@@ -1,5 +1,7 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesReader;
+#[cfg(target_os = "windows")]
+use crate::spec::is_dir;
 use crate::AesMode;
 use crate::{
     cp437::FromCp437,
@@ -12,8 +14,6 @@ use crate::{
     zipcrypto::{ZipCryptoReader, ZipCryptoValidator},
     CompressionMethod, DateTime, ExtraField, ZipArchive,
 };
-#[cfg(target_os = "windows")]
-use crate::spec::is_dir;
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
 #[cfg(feature = "deflate64")]
