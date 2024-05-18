@@ -219,25 +219,30 @@ pub(crate) fn find_content<'a>(
     data: &ZipFileData,
     reader: &'a mut (impl Read + Seek),
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
-    // Parse local header
-    reader.seek(io::SeekFrom::Start(data.header_start))?;
-    /* FIXME: read this in blocks too! ::literal is not for general use! */
-    let signature = spec::Magic::literal(reader.read_u32_le()?);
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid local file header"));
-    }
+    // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
     let data_start = match data.data_start.get() {
+        Some(data_start) => *data_start,
         None => {
-            reader.seek(io::SeekFrom::Current(22))?;
-            let file_name_length = reader.read_u16_le()? as u64;
-            let extra_field_length = reader.read_u16_le()? as u64;
-            let magic_and_header = 4 + 22 + 2 + 2;
-            let data_start =
-                data.header_start + magic_and_header + file_name_length + extra_field_length;
-            data.data_start.get_or_init(|| data_start);
+            // Go to start of data.
+            reader.seek(io::SeekFrom::Start(data.header_start))?;
+            // Parse static-sized fields and check the magic value.
+            let block = ZipLocalEntryBlock::parse(reader)?;
+            // Calculate the end of the local header from the fields we just parsed.
+            let variable_fields_len = (block.file_name_length + block.extra_field_length) as u64;
+            let data_start = data.header_start
+                + mem::size_of::<ZipLocalEntryBlock>() as u64
+                + variable_fields_len;
+            // Set the value so we don't have to read it again.
+            match data.data_start.set(data_start) {
+                Ok(()) => (),
+                // If the value was already set in the meantime, ensure it matches (this is probably
+                // unnecessary).
+                Err(_) => {
+                    assert_eq!(*data.data_start.get().unwrap(), data_start);
+                }
+            }
             data_start
         }
-        Some(start) => *start,
     };
 
     reader.seek(io::SeekFrom::Start(data_start))?;
@@ -1427,6 +1432,9 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
+    // We can't use the typical ::parse() method, as we follow separate code paths depending on the
+    // "magic" value (since the magic value will be from the central directory header if we've
+    // finished iterating over all the actual files).
     let mut block = [0u8; mem::size_of::<ZipLocalEntryBlock>()];
     reader.read_exact(&mut block)?;
     let block: Box<[u8]> = block.into();
