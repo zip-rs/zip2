@@ -34,6 +34,7 @@ fn read_metadata(bench: &mut Bencher) {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
         archive.len()
     });
+    bench.bytes = bytes.len() as u64;
 }
 
 const COMMENT_SIZE: usize = 50_000;
@@ -60,6 +61,7 @@ fn parse_comment(bench: &mut Bencher) {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
         archive.len()
     });
+    bench.bytes = bytes.len() as u64;
 }
 
 const COMMENT_SIZE_64: usize = 500_000;
@@ -88,6 +90,7 @@ fn parse_zip64_comment(bench: &mut Bencher) {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
         archive.len()
     });
+    bench.bytes = bytes.len() as u64;
 }
 
 benchmark_group!(benches, read_metadata, parse_comment, parse_zip64_comment);
