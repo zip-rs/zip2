@@ -278,6 +278,8 @@ impl Zip32CentralDirectoryEnd {
         let search_upper_bound = 0;
 
         const END_WINDOW_SIZE: usize = 512;
+        /* TODO: use static_assertions!() */
+        assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
         let sig_bytes = CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
         let finder = FinderRev::new(&sig_bytes);
@@ -314,13 +316,12 @@ impl Zip32CentralDirectoryEnd {
             if window_start == search_upper_bound {
                 break;
             }
-            debug_assert!(END_WINDOW_SIZE > mem::size_of_val(&CENTRAL_DIRECTORY_END_SIGNATURE));
             /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
              * overlap our nice neat window boundaries! */
             window_start = (window_start
                 /* NB: To catch matches across window boundaries, we need to make our blocks overlap
                  * by the width of the pattern to match. */
-                + mem::size_of_val(&CENTRAL_DIRECTORY_END_SIGNATURE) as u64)
+                + mem::size_of::<Magic>() as u64)
                 /* This should never happen, but make sure we don't go past the end of the file. */
                 .min(file_length);
             window_start = window_start
@@ -549,6 +550,8 @@ impl Zip64CentralDirectoryEnd {
         let mut results = Vec::new();
 
         const END_WINDOW_SIZE: usize = 2048;
+        /* TODO: use static_assertions!() */
+        assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
         let sig_bytes = ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
         let finder = FinderRev::new(&sig_bytes);
@@ -592,15 +595,12 @@ impl Zip64CentralDirectoryEnd {
             if window_start == nominal_offset {
                 break;
             }
-            debug_assert!(
-                END_WINDOW_SIZE > mem::size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE)
-            );
             /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
              * overlap our nice neat window boundaries! */
             window_start = (window_start
                 /* NB: To catch matches across window boundaries, we need to make our blocks overlap
                  * by the width of the pattern to match. */
-                + mem::size_of_val(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE) as u64)
+                + mem::size_of::<Magic>() as u64)
                 /* This may never happen, but make sure we don't go past the end of the specified
                  * range. */
                 .min(search_upper_bound);
