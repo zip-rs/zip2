@@ -722,7 +722,9 @@ impl ZipFileData {
             extra_field_length += 20;
         }
         if extra_field_length + self.central_extra_field_len() > u16::MAX as usize {
-            return Err(ZipError::InvalidArchive("Extra data field is too large"));
+            return Err(ZipError::InvalidArchive(
+                "Local + central extra data fields are too large",
+            ));
         }
         let extra_field_length: u16 = extra_field_length.try_into().unwrap();
 
