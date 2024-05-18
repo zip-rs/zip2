@@ -1085,10 +1085,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         version_made_by: version_made_by as u8,
         encrypted,
         using_data_descriptor,
-        compression_method: {
-            #[allow(deprecated)]
-            CompressionMethod::from_u16(compression_method)
-        },
+        compression_method: CompressionMethod::parse_from_u16(compression_method),
         compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,
@@ -1171,8 +1168,7 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 let mut out = [0u8];
                 reader.read_exact(&mut out)?;
                 let aes_mode = out[0];
-                #[allow(deprecated)]
-                let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
+                let compression_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
 
                 if vendor_id != 0x4541 {
                     return Err(ZipError::InvalidArchive("Invalid AES vendor"));

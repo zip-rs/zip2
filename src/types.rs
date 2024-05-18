@@ -629,8 +629,7 @@ impl ZipFileData {
         let is_utf8: bool = flags & (1 << 11) != 0;
         /* flags & (1 << 3) != 0 */
         let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
-        #[allow(deprecated)]
-        let compression_method = crate::CompressionMethod::from_u16(compression_method);
+        let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
 
@@ -733,8 +732,7 @@ impl ZipFileData {
             magic: spec::LOCAL_FILE_HEADER_SIGNATURE,
             version_made_by: self.version_needed(),
             flags: self.flags(),
-            #[allow(deprecated)]
-            compression_method: self.compression_method.to_u16(),
+            compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
@@ -756,8 +754,7 @@ impl ZipFileData {
             version_made_by: (self.system as u16) << 8 | (self.version_made_by as u16),
             version_to_extract: self.version_needed(),
             flags: self.flags(),
-            #[allow(deprecated)]
-            compression_method: self.compression_method.to_u16(),
+            compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,

@@ -1707,6 +1707,7 @@ fn update_aes_extra_data<W: Write + io::Seek>(
 
     let mut buf = Vec::new();
 
+    /* TODO: implement this using the Block trait! */
     // Extra field header ID.
     buf.write_u16_le(0x9901)?;
     // Data size.
@@ -1718,8 +1719,7 @@ fn update_aes_extra_data<W: Write + io::Seek>(
     // AES encryption strength.
     buf.write_all(&[aes_mode as u8])?;
     // Real compression method.
-    #[allow(deprecated)]
-    buf.write_u16_le(compression_method.to_u16())?;
+    buf.write_u16_le(compression_method.serialize_to_u16())?;
 
     writer.write_all(&buf)?;
 
