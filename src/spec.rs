@@ -219,8 +219,7 @@ impl Zip32CentralDirectoryEnd {
             zip_file_comment,
         } = self;
         let block = Zip32CDEBlock {
-            magic: CENTRAL_DIRECTORY_END_SIGNATURE,
-
+            magic: Zip32CDEBlock::MAGIC,
             disk_number,
             disk_with_central_directory,
             number_of_files_on_this_disk,
@@ -400,7 +399,7 @@ impl Zip64CentralDirectoryEndLocator {
             number_of_disks,
         } = self;
         Zip64CDELocatorBlock {
-            magic: ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE,
+            magic: Zip64CDELocatorBlock::MAGIC,
             disk_with_central_directory,
             end_of_central_directory_offset,
             number_of_disks,
@@ -583,7 +582,7 @@ impl Zip64CentralDirectoryEnd {
             central_directory_offset,
         } = self;
         Zip64CDEBlock {
-            magic: ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE,
+            magic: Zip64CDEBlock::MAGIC,
             /* currently unused */
             record_size: 44,
             version_made_by,
@@ -684,7 +683,7 @@ mod test {
     #[test]
     fn block_serde() {
         let block = TestBlock {
-            magic: Magic::literal(0x01111),
+            magic: TestBlock::MAGIC,
             file_name_length: 3,
         };
         let mut c = Cursor::new(Vec::new());

@@ -623,7 +623,6 @@ impl ZipFileData {
             ..
         } = block;
 
-
         let encrypted: bool = flags & 1 == 1;
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
@@ -731,7 +730,7 @@ impl ZipFileData {
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
         Ok(ZipLocalEntryBlock {
-            magic: spec::LOCAL_FILE_HEADER_SIGNATURE,
+            magic: ZipLocalEntryBlock::MAGIC,
             version_made_by: self.version_needed(),
             flags: self.flags(),
             compression_method: self.compression_method.serialize_to_u16(),
@@ -745,14 +744,14 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipEntryBlock {
+    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipCentralEntryBlock {
         let extra_field_len: u16 = self.extra_field_len().try_into().unwrap();
         let central_extra_field_len: u16 = self.central_extra_field_len().try_into().unwrap();
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
-        ZipEntryBlock {
-            magic: spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE,
+        ZipCentralEntryBlock {
+            magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: (self.system as u16) << 8 | (self.version_made_by as u16),
             version_to_extract: self.version_needed(),
             flags: self.flags(),
@@ -789,7 +788,7 @@ impl ZipFileData {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed)]
-pub(crate) struct ZipEntryBlock {
+pub(crate) struct ZipCentralEntryBlock {
     pub magic: spec::Magic,
     pub version_made_by: u16,
     pub version_to_extract: u16,
@@ -809,7 +808,7 @@ pub(crate) struct ZipEntryBlock {
     pub offset: u32,
 }
 
-impl Block for ZipEntryBlock {
+impl Block for ZipCentralEntryBlock {
     const MAGIC: spec::Magic = spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
     #[inline(always)]

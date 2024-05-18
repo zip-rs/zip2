@@ -3,8 +3,8 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use super::{
-    central_header_to_zip_file_inner, read_zipfile_from_stream, ZipEntryBlock, ZipError, ZipFile,
-    ZipFileData, ZipResult,
+    central_header_to_zip_file_inner, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError,
+    ZipFile, ZipFileData, ZipResult,
 };
 use crate::spec::Block;
 
@@ -27,7 +27,7 @@ impl<R: Read> ZipStreamReader<R> {
         let central_header_start = 0;
 
         // Parse central header
-        let block = ZipEntryBlock::parse(&mut self.0)?;
+        let block = ZipCentralEntryBlock::parse(&mut self.0)?;
         let file = central_header_to_zip_file_inner(
             &mut self.0,
             archive_offset,

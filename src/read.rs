@@ -10,7 +10,8 @@ use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, Block};
 use crate::types::{
-    AesMode, AesVendorVersion, DateTime, System, ZipEntryBlock, ZipFileData, ZipLocalEntryBlock,
+    AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
+    ZipLocalEntryBlock,
 };
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
@@ -1022,7 +1023,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
-    let block = ZipEntryBlock::parse(reader)?;
+    let block = ZipCentralEntryBlock::parse(reader)?;
     central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)
 }
 
@@ -1038,9 +1039,9 @@ fn central_header_to_zip_file_inner<R: Read>(
     reader: &mut R,
     archive_offset: u64,
     central_header_start: u64,
-    block: ZipEntryBlock,
+    block: ZipCentralEntryBlock,
 ) -> ZipResult<ZipFileData> {
-    let ZipEntryBlock {
+    let ZipCentralEntryBlock {
         // magic,
         version_made_by,
         // version_to_extract,
