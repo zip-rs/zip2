@@ -274,8 +274,9 @@ impl Zip32CentralDirectoryEnd {
         /* TODO: use static_assertions!() */
         assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
-        let sig_bytes = CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-        let finder = FinderRev::new(&sig_bytes);
+        const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+            CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        let finder = FinderRev::new(&SIG_BYTES);
 
         let mut window_start: u64 = file_length.saturating_sub(END_WINDOW_SIZE as u64);
         let mut window = [0u8; END_WINDOW_SIZE];
@@ -498,8 +499,9 @@ impl Zip64CentralDirectoryEnd {
         /* TODO: use static_assertions!() */
         assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
-        let sig_bytes = ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-        let finder = FinderRev::new(&sig_bytes);
+        const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+            ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        let finder = FinderRev::new(&SIG_BYTES);
 
         let mut window_start: u64 = search_upper_bound
             .saturating_sub(END_WINDOW_SIZE as u64)
