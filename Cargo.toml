@@ -25,6 +25,8 @@ features = [
     "chrono",
     "deflate",
     "deflate64",
+    "deflate",
+    "deflate-zlib",
     "deflate-zlib-ng",
     "lzma",
     "time",
