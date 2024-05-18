@@ -41,7 +41,7 @@ fn read_metadata(bench: &mut Bencher) {
 
 const COMMENT_SIZE: usize = 50_000;
 
-fn generate_random_zip32_archive_with_comment(comment_length: usize) -> ZipResult<Vec<u8>> {
+fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResult<Vec<u8>> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -56,19 +56,19 @@ fn generate_random_zip32_archive_with_comment(comment_length: usize) -> ZipResul
     Ok(writer.finish()?.into_inner())
 }
 
-fn parse_comment(bench: &mut Bencher) {
-    let bytes = generate_random_zip32_archive_with_comment(COMMENT_SIZE).unwrap();
+fn parse_archive_with_comment(bench: &mut Bencher) {
+    let bytes = generate_zip32_archive_with_random_comment(COMMENT_SIZE).unwrap();
 
     bench.iter(|| {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
-        archive.len()
+        archive.comment().len()
     });
     bench.bytes = bytes.len() as u64;
 }
 
 const COMMENT_SIZE_64: usize = 500_000;
 
-fn generate_random_zip64_archive_with_comment(comment_length: usize) -> ZipResult<Vec<u8>> {
+fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResult<Vec<u8>> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default()
@@ -85,12 +85,12 @@ fn generate_random_zip64_archive_with_comment(comment_length: usize) -> ZipResul
     Ok(writer.finish()?.into_inner())
 }
 
-fn parse_zip64_comment(bench: &mut Bencher) {
-    let bytes = generate_random_zip64_archive_with_comment(COMMENT_SIZE_64).unwrap();
+fn parse_zip64_archive_with_comment(bench: &mut Bencher) {
+    let bytes = generate_zip64_archive_with_random_comment(COMMENT_SIZE_64).unwrap();
 
     bench.iter(|| {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
-        archive.len()
+        archive.comment().len()
     });
     bench.bytes = bytes.len() as u64;
 }
@@ -121,8 +121,8 @@ fn parse_stream_archive(bench: &mut Bencher) {
 benchmark_group!(
     benches,
     read_metadata,
-    parse_comment,
-    parse_zip64_comment,
+    parse_archive_with_comment,
+    parse_zip64_archive_with_comment,
     /* FIXME: this currently errors */
     /* parse_stream_archive */
 );

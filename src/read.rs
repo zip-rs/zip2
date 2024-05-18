@@ -486,6 +486,19 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
+    const fn zip64_cde_len() -> usize {
+        mem::size_of::<spec::Zip64CentralDirectoryEnd>()
+            + mem::size_of::<spec::Zip64CentralDirectoryEndLocator>()
+    }
+
+    const fn order_lower_upper_bounds(a: u64, b: u64) -> (u64, u64) {
+        if a > b {
+            (b, a)
+        } else {
+            (a, b)
+        }
+    }
+
     fn get_directory_info_zip64(
         reader: &mut R,
         footer: &spec::Zip32CentralDirectoryEnd,
@@ -495,6 +508,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
         // comment length. Therefore:
+        /* TODO: compute this from constant sizes and offsets! */
         reader.seek(io::SeekFrom::End(
             -(20 + 22 + footer.zip_file_comment.len() as i64),
         ))?;
@@ -510,22 +524,16 @@ impl<R: Read + Seek> ZipArchive<R> {
         // ZIP comment data.
 
         let search_upper_bound = cde_start_pos
-            // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
-            .checked_sub(60)
+            .checked_sub(Self::zip64_cde_len() as u64)
             .ok_or(ZipError::InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
             ))?;
-        let (lower, upper) = if locator64.end_of_central_directory_offset > search_upper_bound {
-            (
-                search_upper_bound,
-                locator64.end_of_central_directory_offset,
-            )
-        } else {
-            (
-                locator64.end_of_central_directory_offset,
-                search_upper_bound,
-            )
-        };
+
+        let (lower, upper) = Self::order_lower_upper_bounds(
+            locator64.end_of_central_directory_offset,
+            search_upper_bound,
+        );
+
         let search_results = spec::Zip64CentralDirectoryEnd::find_and_parse(reader, lower, upper)?;
         let results: Vec<ZipResult<CentralDirectoryInfo>> =
             search_results.into_iter().map(|(footer64, archive_offset)| {
@@ -1012,6 +1020,13 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)
 }
 
+#[inline]
+fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> io::Result<Box<[u8]>> {
+    let mut data = vec![0; len];
+    reader.read_exact(&mut data)?;
+    Ok(data.into_boxed_slice())
+}
+
 /// Parse a central directory entry to collect the information for the file.
 fn central_header_to_zip_file_inner<R: Read>(
     reader: &mut R,
@@ -1044,20 +1059,17 @@ fn central_header_to_zip_file_inner<R: Read>(
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
 
-    let mut file_name_raw = vec![0; file_name_length as usize];
-    reader.read_exact(&mut file_name_raw)?;
-    let mut extra_field = vec![0; extra_field_length as usize];
-    reader.read_exact(&mut extra_field)?;
-    let mut file_comment_raw = vec![0; file_comment_length as usize];
-    reader.read_exact(&mut file_comment_raw)?;
+    let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
+    let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
+    let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
 
     let file_name: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_name_raw).into(),
-        false => file_name_raw.from_cp437().into(),
+        false => file_name_raw.clone().from_cp437(),
     };
     let file_comment: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_comment_raw).into(),
-        false => file_comment_raw.from_cp437().into(),
+        false => file_comment_raw.from_cp437(),
     };
 
     // Construct the result
@@ -1077,8 +1089,8 @@ fn central_header_to_zip_file_inner<R: Read>(
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
         file_name,
-        file_name_raw: file_name_raw.into(),
-        extra_field: Some(Arc::new(extra_field)),
+        file_name_raw,
+        extra_field: Some(Arc::new(extra_field.to_vec())),
         central_extra_field: None,
         file_comment,
         header_start: offset.into(),
