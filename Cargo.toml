@@ -18,6 +18,25 @@ edition = "2021"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**"]
 build = "src/build.rs"
 
+[package.metadata.docs.rs]
+features = [
+    "aes-crypto",
+    "bzip2",
+    "chrono",
+    "deflate",
+    "deflate64",
+    "deflate",
+    "deflate-zlib",
+    "deflate-zlib-ng",
+    "lzma",
+    "time",
+    "zstd",
+]
+# Can be enabled when <https://github.com/zopfli-rs/zopfli/issues/42> is fixed
+# all-features = true
+no-default-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [workspace.dependencies]
 time = { version = "0.3.36", default-features = false }
 
