@@ -226,10 +226,15 @@ pub(crate) fn find_content<'a>(
         None => {
             // Go to start of data.
             reader.seek(io::SeekFrom::Start(data.header_start))?;
+
             // Parse static-sized fields and check the magic value.
             let block = ZipLocalEntryBlock::parse(reader)?;
+
             // Calculate the end of the local header from the fields we just parsed.
-            let variable_fields_len = (block.file_name_length + block.extra_field_length) as u64;
+            let variable_fields_len =
+                // Each of these fields must be converted to u64 before adding, as the result may
+                // easily overflow a u16.
+                block.file_name_length as u64 + block.extra_field_length as u64;
             let data_start = data.header_start
                 + mem::size_of::<ZipLocalEntryBlock>() as u64
                 + variable_fields_len;
@@ -1432,6 +1437,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     // We can't use the typical ::parse() method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
+    /* TODO: smallvec? */
     let mut block = [0u8; mem::size_of::<ZipLocalEntryBlock>()];
     reader.read_exact(&mut block)?;
     let block: Box<[u8]> = block.into();
