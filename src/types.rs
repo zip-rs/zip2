@@ -700,11 +700,14 @@ impl ZipFileData {
     }
 
     fn flags(&self) -> u16 {
-        (if self.is_utf8() && !self.is_ascii() {
+        let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
             1u16 << 11
         } else {
             0
-        }) | if self.encrypted { 1u16 << 0 } else { 0 }
+        };
+        let encrypted_bit: u16 = if self.encrypted { 1u16 << 0 } else { 0 };
+
+        utf8_bit | encrypted_bit
     }
 
     fn clamp_size_field(&self, field: u64) -> u32 {
