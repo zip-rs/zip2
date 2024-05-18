@@ -3,7 +3,7 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
-use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{sync::find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 #[cfg(feature = "aes-crypto")]

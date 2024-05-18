@@ -1,12 +1,15 @@
-use crate::unstable::LittleEndianReadExt;
+use crate::{
+    read::ZipFile,
+    result::{ZipError, ZipResult},
+    spec,
+    types::ZipFileData,
+    unstable::LittleEndianReadExt,
+};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use super::{
-    central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
-    ZipFileData, ZipResult,
-};
+use super::sync::{central_header_to_zip_file_inner, read_zipfile_from_stream};
 
 /// Stream decoder for zip.
 #[derive(Debug)]
