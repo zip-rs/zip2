@@ -8,7 +8,9 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, Block};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
-use crate::types::{ffi, AesVendorVersion, DateTime, ZipFileData, ZipRawValues, DEFAULT_VERSION};
+use crate::types::{
+    ffi, AesVendorVersion, DateTime, ZipFileData, ZipLocalEntryBlock, ZipRawValues, DEFAULT_VERSION,
+};
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
@@ -1818,12 +1820,10 @@ fn validate_extra_data(header_id: u16, data: &[u8]) -> ZipResult<()> {
 fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // This entry in the Local header MUST include BOTH original
     // and compressed file size fields.
-    writer.write_u16_le(0x0001)?;
-    writer.write_u16_le(16)?;
-    writer.write_u64_le(file.uncompressed_size)?;
-    writer.write_u64_le(file.compressed_size)?;
-    // Excluded fields:
-    // u32: disk start number
+    assert!(file.large_file);
+    let block = file.zip64_extra_field_block().unwrap();
+    let block = block.serialize();
+    writer.write_all(&block)?;
     Ok(())
 }
 
@@ -1831,52 +1831,34 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    let zip64_extra_field = file.header_start + 30 + file.file_name_raw.len() as u64;
-    writer.seek(SeekFrom::Start(zip64_extra_field + 4))?;
-    writer.write_u64_le(file.uncompressed_size)?;
-    writer.write_u64_le(file.compressed_size)?;
-    // Excluded fields:
-    // u32: disk start number
+    assert!(file.large_file);
+
+    let zip64_extra_field = file.header_start
+        + mem::size_of::<ZipLocalEntryBlock>() as u64
+        + file.file_name_raw.len() as u64;
+
+    writer.seek(SeekFrom::Start(zip64_extra_field))?;
+
+    let block = file.zip64_extra_field_block().unwrap();
+    let block = block.serialize();
+    writer.write_all(&block)?;
     Ok(())
 }
 
-/* TODO: make this use the Block trait somehow! */
 fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<u16> {
     // The order of the fields in the zip64 extended
     // information record is fixed, but the fields MUST
     // only appear if the corresponding Local or Central
     // directory record field is set to 0xFFFF or 0xFFFFFFFF.
-    let mut size = 0;
-    let uncompressed_size = file.uncompressed_size > spec::ZIP64_BYTES_THR;
-    let compressed_size = file.compressed_size > spec::ZIP64_BYTES_THR;
-    let header_start = file.header_start > spec::ZIP64_BYTES_THR;
-    if uncompressed_size {
-        size += 8;
-    }
-    if compressed_size {
-        size += 8;
-    }
-    if header_start {
-        size += 8;
-    }
-    if size > 0 {
-        writer.write_u16_le(0x0001)?;
-        writer.write_u16_le(size)?;
-        size += 4;
-
-        if uncompressed_size {
-            writer.write_u64_le(file.uncompressed_size)?;
+    match file.zip64_extra_field_block() {
+        None => Ok(0),
+        Some(block) => {
+            let block = block.serialize();
+            writer.write_all(&block)?;
+            let len: u16 = block.len().try_into().unwrap();
+            Ok(len)
         }
-        if compressed_size {
-            writer.write_u64_le(file.compressed_size)?;
-        }
-        if header_start {
-            writer.write_u64_le(file.header_start)?;
-        }
-        // Excluded fields:
-        // u32: disk start number
     }
-    Ok(size)
 }
 
 #[cfg(not(feature = "unreserved"))]

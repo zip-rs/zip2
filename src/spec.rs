@@ -56,6 +56,43 @@ pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: Magic = Magic::literal(0x06054
 pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Magic = Magic::literal(0x06064b50);
 pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Magic = Magic::literal(0x07064b50);
 
+/// Similar to [`Magic`], but used for extra field tags as per section 4.5.3 of APPNOTE.TXT.
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct ExtraFieldMagic(u16);
+
+/* TODO: maybe try to use this for parsing extra fields as well as writing them? */
+#[allow(dead_code)]
+impl ExtraFieldMagic {
+    pub(crate) const fn literal(x: u16) -> Self {
+        Self(x)
+    }
+
+    #[inline(always)]
+    pub(crate) const fn from_le_bytes(bytes: [u8; 2]) -> Self {
+        Self(u16::from_le_bytes(bytes))
+    }
+
+    #[inline(always)]
+    pub(crate) const fn to_le_bytes(self) -> [u8; 2] {
+        self.0.to_le_bytes()
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    pub(crate) fn from_le(self) -> Self {
+        Self(u16::from_le(self.0))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    pub(crate) fn to_le(self) -> Self {
+        Self(u16::to_le(self.0))
+    }
+}
+
+pub const ZIP64_EXTRA_FIELD_TAG: ExtraFieldMagic = ExtraFieldMagic::literal(0x0001);
+
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 

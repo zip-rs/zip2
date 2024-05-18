@@ -3,6 +3,7 @@ use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
 use std::fmt;
+use std::mem;
 use std::path;
 use std::sync::{Arc, OnceLock};
 
@@ -706,27 +707,25 @@ impl ZipFileData {
         }) | if self.encrypted { 1u16 << 0 } else { 0 }
     }
 
-    pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
-        let (compressed_size, uncompressed_size) = if self.large_file {
-            (spec::ZIP64_BYTES_THR as u32, spec::ZIP64_BYTES_THR as u32)
-        } else {
-            (
-                self.compressed_size.try_into().unwrap(),
-                self.uncompressed_size.try_into().unwrap(),
-            )
-        };
-
-        let mut extra_field_length = self.extra_field_len();
+    fn clamp_size_field(&self, field: u64) -> u32 {
         if self.large_file {
-            /* TODO: magic number */
-            extra_field_length += 20;
+            spec::ZIP64_BYTES_THR as u32
+        } else {
+            field.min(spec::ZIP64_BYTES_THR).try_into().unwrap()
         }
-        if extra_field_length + self.central_extra_field_len() > u16::MAX as usize {
-            return Err(ZipError::InvalidArchive(
-                "Local + central extra data fields are too large",
-            ));
-        }
-        let extra_field_length: u16 = extra_field_length.try_into().unwrap();
+    }
+
+    pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
+        let compressed_size: u32 = self.clamp_size_field(self.compressed_size);
+        let uncompressed_size: u32 = self.clamp_size_field(self.uncompressed_size);
+
+        let extra_block_len: usize = self
+            .zip64_extra_field_block()
+            .map(|block| block.full_size())
+            .unwrap_or(0);
+        let extra_field_length: u16 = (self.extra_field_len() + extra_block_len)
+            .try_into()
+            .map_err(|_| ZipError::InvalidArchive("Extra data field is too large"))?;
 
         let last_modified_time = self
             .last_modified_time
@@ -785,6 +784,48 @@ impl ZipFileData {
                 .try_into()
                 .unwrap(),
         }
+    }
+
+    pub fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
+        let uncompressed_size: Option<u64> =
+            if self.uncompressed_size > spec::ZIP64_BYTES_THR || self.large_file {
+                Some(spec::ZIP64_BYTES_THR)
+            } else {
+                None
+            };
+        let compressed_size: Option<u64> =
+            if self.compressed_size > spec::ZIP64_BYTES_THR || self.large_file {
+                Some(spec::ZIP64_BYTES_THR)
+            } else {
+                None
+            };
+        let header_start: Option<u64> = if self.header_start > spec::ZIP64_BYTES_THR {
+            Some(spec::ZIP64_BYTES_THR)
+        } else {
+            None
+        };
+
+        let mut size: u16 = 0;
+        if uncompressed_size.is_some() {
+            size += mem::size_of::<u64>() as u16;
+        }
+        if compressed_size.is_some() {
+            size += mem::size_of::<u64>() as u16;
+        }
+        if header_start.is_some() {
+            size += mem::size_of::<u64>() as u16;
+        }
+        if size == 0 {
+            return None;
+        }
+
+        Some(Zip64ExtraFieldBlock {
+            magic: spec::ZIP64_EXTRA_FIELD_TAG,
+            size,
+            uncompressed_size,
+            compressed_size,
+            header_start,
+        })
     }
 }
 
@@ -880,6 +921,53 @@ impl Block for ZipLocalEntryBlock {
         (file_name_length, u16),
         (extra_field_length, u16),
     ];
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Zip64ExtraFieldBlock {
+    magic: spec::ExtraFieldMagic,
+    size: u16,
+    uncompressed_size: Option<u64>,
+    compressed_size: Option<u64>,
+    header_start: Option<u64>,
+    // Excluded fields:
+    // u32: disk start number
+}
+
+impl Zip64ExtraFieldBlock {
+    pub fn full_size(&self) -> usize {
+        assert!(self.size > 0);
+        self.size as usize + mem::size_of::<spec::ExtraFieldMagic>() + mem::size_of::<u16>()
+    }
+
+    pub fn serialize(self) -> Box<[u8]> {
+        let Self {
+            magic,
+            size,
+            uncompressed_size,
+            compressed_size,
+            header_start,
+        } = self;
+
+        let full_size = self.full_size();
+
+        let mut ret = Vec::with_capacity(full_size);
+        ret.extend(magic.to_le_bytes());
+        ret.extend(u16::to_le_bytes(size));
+
+        if let Some(uncompressed_size) = uncompressed_size {
+            ret.extend(u64::to_le_bytes(uncompressed_size));
+        }
+        if let Some(compressed_size) = compressed_size {
+            ret.extend(u64::to_le_bytes(compressed_size));
+        }
+        if let Some(header_start) = header_start {
+            ret.extend(u64::to_le_bytes(header_start));
+        }
+        debug_assert_eq!(ret.len(), full_size);
+
+        ret.into_boxed_slice()
+    }
 }
 
 /// The encryption specification used to encrypt a file with AES.
