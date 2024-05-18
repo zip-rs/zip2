@@ -623,26 +623,28 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = flags & 1 == 1;
-        /* FIXME: these were previously incorrect: add testing! */
-        /* flags & (1 << 1) != 0 */
-        let is_utf8: bool = flags & (1 << 11) != 0;
-        /* flags & (1 << 3) != 0 */
-        let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
-        let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
-        let file_name_length: usize = file_name_length.into();
-        let extra_field_length: usize = extra_field_length.into();
 
+        let encrypted: bool = flags & 1 == 1;
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
                 "Encrypted files are not supported",
             ));
         }
+
+        /* FIXME: these were previously incorrect: add testing! */
+        /* flags & (1 << 3) != 0 */
+        let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
             ));
         }
+
+        /* flags & (1 << 1) != 0 */
+        let is_utf8: bool = flags & (1 << 11) != 0;
+        let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
+        let file_name_length: usize = file_name_length.into();
+        let extra_field_length: usize = extra_field_length.into();
 
         let mut file_name_raw = vec![0u8; file_name_length];
         reader.read_exact(&mut file_name_raw)?;
