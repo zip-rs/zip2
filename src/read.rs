@@ -221,7 +221,8 @@ pub(crate) fn find_content<'a>(
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
     // Parse local header
     reader.seek(io::SeekFrom::Start(data.header_start))?;
-    let signature = reader.read_u32_le()?;
+    /* FIXME: read this in blocks too! ::literal is not for general use! */
+    let signature = spec::Magic::literal(reader.read_u32_le()?);
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid local file header"));
     }
@@ -1430,11 +1431,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     reader.read_exact(&mut block)?;
     let block: Box<[u8]> = block.into();
 
-    let signature = spec::Magic::from_le_bytes(
-        block[..mem::size_of_val(&spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)]
-            .try_into()
-            .unwrap(),
-    );
+    let signature = spec::Magic::from_first_le_bytes(&block);
 
     match signature {
         spec::LOCAL_FILE_HEADER_SIGNATURE => (),

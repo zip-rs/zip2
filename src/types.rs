@@ -871,7 +871,8 @@ impl Block for ZipEntryBlock {
     fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
         let block = Self::deserialize(&bytes).from_le();
 
-        if block.magic != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
+        let magic = block.magic;
+        if magic != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
         }
 
@@ -948,7 +949,8 @@ impl Block for ZipLocalEntryBlock {
     fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
         let block = Self::deserialize(&bytes).from_le();
 
-        if block.magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
+        let magic = block.magic;
+        if magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid local file header"));
         }
 

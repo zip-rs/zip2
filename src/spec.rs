@@ -8,13 +8,53 @@ use std::io::prelude::*;
 use std::mem;
 use std::path::{Component, Path, MAIN_SEPARATOR};
 
-pub type Magic = u32;
+/// "Magic" header values used in the zip spec to locate metadata records.
+///
+/// These values currently always take up a fixed four bytes, so we can parse and wrap them in this
+/// struct to enforce some small amount of type safety.
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Magic(u32);
 
-pub const LOCAL_FILE_HEADER_SIGNATURE: Magic = 0x04034b50;
-pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Magic = 0x02014b50;
-pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: Magic = 0x06054b50;
-pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Magic = 0x06064b50;
-pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Magic = 0x07064b50;
+impl Magic {
+    pub(crate) const fn literal(x: u32) -> Self {
+        Self(x)
+    }
+
+    #[inline(always)]
+    pub(crate) const fn from_le_bytes(bytes: [u8; 4]) -> Self {
+        Self(u32::from_le_bytes(bytes))
+    }
+
+    #[inline(always)]
+    pub(crate) fn from_first_le_bytes(data: &[u8]) -> Self {
+        let first_bytes: [u8; 4] = data[..mem::size_of::<Self>()].try_into().unwrap();
+        Self::from_le_bytes(first_bytes)
+    }
+
+    #[inline(always)]
+    pub(crate) const fn to_le_bytes(self) -> [u8; 4] {
+        self.0.to_le_bytes()
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    pub(crate) fn from_le(self) -> Self {
+        Self(u32::from_le(self.0))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
+    pub(crate) fn to_le(self) -> Self {
+        Self(u32::to_le(self.0))
+    }
+}
+
+pub const LOCAL_FILE_HEADER_SIGNATURE: Magic = Magic::literal(0x04034b50);
+pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Magic = Magic::literal(0x02014b50);
+pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: Magic = Magic::literal(0x06054b50);
+pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Magic = Magic::literal(0x06064b50);
+pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Magic = Magic::literal(0x07064b50);
 
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
@@ -98,7 +138,7 @@ pub struct Zip32CDEBlock {
 impl Zip32CDEBlock {
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    fn from_le(mut self) -> Self {
+    pub(crate) fn from_le(mut self) -> Self {
         from_le![
             self,
             [
@@ -116,7 +156,7 @@ impl Zip32CDEBlock {
     }
 
     #[inline(always)]
-    fn to_le(mut self) -> Self {
+    pub(crate) fn to_le(mut self) -> Self {
         to_le![
             self,
             [
@@ -138,7 +178,8 @@ impl Block for Zip32CDEBlock {
     fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
         let block = Self::deserialize(&bytes).from_le();
 
-        if block.magic != CENTRAL_DIRECTORY_END_SIGNATURE {
+        let magic = block.magic;
+        if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid digital signature header"));
         }
 
@@ -306,7 +347,7 @@ pub struct Zip64CDELocatorBlock {
 impl Zip64CDELocatorBlock {
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    fn from_le(mut self) -> Self {
+    pub(crate) fn from_le(mut self) -> Self {
         from_le![
             self,
             [
@@ -320,7 +361,7 @@ impl Zip64CDELocatorBlock {
     }
 
     #[inline(always)]
-    fn to_le(mut self) -> Self {
+    pub(crate) fn to_le(mut self) -> Self {
         to_le![
             self,
             [
@@ -338,7 +379,8 @@ impl Block for Zip64CDELocatorBlock {
     fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
         let block = Self::deserialize(&bytes).from_le();
 
-        if block.magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
+        let magic = block.magic;
+        if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
             return Err(ZipError::InvalidArchive(
                 "Invalid zip64 locator digital signature header",
             ));
@@ -412,7 +454,7 @@ pub struct Zip64CDEBlock {
 impl Zip64CDEBlock {
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    fn from_le(mut self) -> Self {
+    pub(crate) fn from_le(mut self) -> Self {
         from_le![
             self,
             [
@@ -432,7 +474,7 @@ impl Zip64CDEBlock {
     }
 
     #[inline(always)]
-    fn to_le(mut self) -> Self {
+    pub(crate) fn to_le(mut self) -> Self {
         to_le![
             self,
             [
@@ -456,7 +498,8 @@ impl Block for Zip64CDEBlock {
     fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
         let block = Self::deserialize(&bytes).from_le();
 
-        if block.magic != ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
+        let magic = block.magic;
+        if magic != ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid digital signature header"));
         }
 
@@ -688,11 +731,11 @@ mod test {
 
     impl TestBlock {
         #[allow(clippy::wrong_self_convention)]
-        fn from_le(mut self) -> Self {
+        pub(crate) fn from_le(mut self) -> Self {
             from_le![self, [(magic, Magic), (file_name_length, u16)]];
             self
         }
-        fn to_le(mut self) -> Self {
+        pub(crate) fn to_le(mut self) -> Self {
             to_le![self, [(magic, Magic), (file_name_length, u16)]];
             self
         }
@@ -711,7 +754,7 @@ mod test {
     #[test]
     fn block_serde() {
         let block = TestBlock {
-            magic: 0x01111,
+            magic: Magic::literal(0x01111),
             file_name_length: 3,
         };
         let mut c = Cursor::new(Vec::new());
