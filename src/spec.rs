@@ -14,89 +14,90 @@ use std::path::{Component, Path, MAIN_SEPARATOR};
 /// struct to enforce some small amount of type safety.
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Magic(u32);
+pub(crate) struct Magic(u32);
 
 impl Magic {
-    pub(crate) const fn literal(x: u32) -> Self {
+    pub const fn literal(x: u32) -> Self {
         Self(x)
     }
 
     #[inline(always)]
-    pub(crate) const fn from_le_bytes(bytes: [u8; 4]) -> Self {
+    pub const fn from_le_bytes(bytes: [u8; 4]) -> Self {
         Self(u32::from_le_bytes(bytes))
     }
 
     #[inline(always)]
-    pub(crate) fn from_first_le_bytes(data: &[u8]) -> Self {
+    pub fn from_first_le_bytes(data: &[u8]) -> Self {
         let first_bytes: [u8; 4] = data[..mem::size_of::<Self>()].try_into().unwrap();
         Self::from_le_bytes(first_bytes)
     }
 
     #[inline(always)]
-    pub(crate) const fn to_le_bytes(self) -> [u8; 4] {
+    pub const fn to_le_bytes(self) -> [u8; 4] {
         self.0.to_le_bytes()
     }
 
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    pub(crate) fn from_le(self) -> Self {
+    pub fn from_le(self) -> Self {
         Self(u32::from_le(self.0))
     }
 
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    pub(crate) fn to_le(self) -> Self {
+    pub fn to_le(self) -> Self {
         Self(u32::to_le(self.0))
     }
-}
 
-pub const LOCAL_FILE_HEADER_SIGNATURE: Magic = Magic::literal(0x04034b50);
-pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Magic = Magic::literal(0x02014b50);
-pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: Magic = Magic::literal(0x06054b50);
-pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Magic = Magic::literal(0x06064b50);
-pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Magic = Magic::literal(0x07064b50);
+    pub const LOCAL_FILE_HEADER_SIGNATURE: Self = Self::literal(0x04034b50);
+    pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Self = Self::literal(0x02014b50);
+    pub const CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x06054b50);
+    pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x06064b50);
+    pub const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Self = Self::literal(0x07064b50);
+}
 
 /// Similar to [`Magic`], but used for extra field tags as per section 4.5.3 of APPNOTE.TXT.
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct ExtraFieldMagic(u16);
+pub(crate) struct ExtraFieldMagic(u16);
 
 /* TODO: maybe try to use this for parsing extra fields as well as writing them? */
 #[allow(dead_code)]
 impl ExtraFieldMagic {
-    pub(crate) const fn literal(x: u16) -> Self {
+    pub const fn literal(x: u16) -> Self {
         Self(x)
     }
 
     #[inline(always)]
-    pub(crate) const fn from_le_bytes(bytes: [u8; 2]) -> Self {
+    pub const fn from_le_bytes(bytes: [u8; 2]) -> Self {
         Self(u16::from_le_bytes(bytes))
     }
 
     #[inline(always)]
-    pub(crate) const fn to_le_bytes(self) -> [u8; 2] {
+    pub const fn to_le_bytes(self) -> [u8; 2] {
         self.0.to_le_bytes()
     }
 
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    pub(crate) fn from_le(self) -> Self {
+    pub fn from_le(self) -> Self {
         Self(u16::from_le(self.0))
     }
 
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    pub(crate) fn to_le(self) -> Self {
+    pub fn to_le(self) -> Self {
         Self(u16::to_le(self.0))
     }
+
+    pub const ZIP64_EXTRA_FIELD_TAG: Self = Self::literal(0x0001);
 }
 
-pub const ZIP64_EXTRA_FIELD_TAG: ExtraFieldMagic = ExtraFieldMagic::literal(0x0001);
-
+/// This should be equal to `0xFFFFFFFF`.
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
-pub trait Block: Sized + Copy {
+pub(crate) trait Block: Sized + Copy {
     const MAGIC: Magic;
 
     fn magic(self) -> Magic;
@@ -200,7 +201,7 @@ macro_rules! to_and_from_le {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed)]
-pub struct Zip32CDEBlock {
+pub(crate) struct Zip32CDEBlock {
     magic: Magic,
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
@@ -212,7 +213,7 @@ pub struct Zip32CDEBlock {
 }
 
 impl Block for Zip32CDEBlock {
-    const MAGIC: Magic = CENTRAL_DIRECTORY_END_SIGNATURE;
+    const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
     #[inline(always)]
     fn magic(self) -> Magic {
@@ -234,7 +235,7 @@ impl Block for Zip32CDEBlock {
 }
 
 #[derive(Debug)]
-pub struct Zip32CentralDirectoryEnd {
+pub(crate) struct Zip32CentralDirectoryEnd {
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
     pub number_of_files_on_this_disk: u16,
@@ -311,7 +312,7 @@ impl Zip32CentralDirectoryEnd {
         assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
         const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
-            CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+            Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
         let finder = FinderRev::new(&SIG_BYTES);
 
         let mut window_start: u64 = file_length.saturating_sub(END_WINDOW_SIZE as u64);
@@ -380,7 +381,7 @@ impl Zip32CentralDirectoryEnd {
 
 #[derive(Copy, Clone)]
 #[repr(packed)]
-pub struct Zip64CDELocatorBlock {
+pub(crate) struct Zip64CDELocatorBlock {
     magic: Magic,
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
@@ -388,7 +389,7 @@ pub struct Zip64CDELocatorBlock {
 }
 
 impl Block for Zip64CDELocatorBlock {
-    const MAGIC: Magic = ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
+    const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
     #[inline(always)]
     fn magic(self) -> Magic {
@@ -406,7 +407,7 @@ impl Block for Zip64CDELocatorBlock {
     ];
 }
 
-pub struct Zip64CentralDirectoryEndLocator {
+pub(crate) struct Zip64CentralDirectoryEndLocator {
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
@@ -450,7 +451,7 @@ impl Zip64CentralDirectoryEndLocator {
 
 #[derive(Copy, Clone)]
 #[repr(packed)]
-pub struct Zip64CDEBlock {
+pub(crate) struct Zip64CDEBlock {
     magic: Magic,
     pub record_size: u64,
     pub version_made_by: u16,
@@ -464,7 +465,7 @@ pub struct Zip64CDEBlock {
 }
 
 impl Block for Zip64CDEBlock {
-    const MAGIC: Magic = ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
+    const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
 
     fn magic(self) -> Magic {
         self.magic
@@ -486,7 +487,7 @@ impl Block for Zip64CDEBlock {
     ];
 }
 
-pub struct Zip64CentralDirectoryEnd {
+pub(crate) struct Zip64CentralDirectoryEnd {
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
     pub disk_number: u32,
@@ -536,7 +537,7 @@ impl Zip64CentralDirectoryEnd {
         assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
         const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
-            ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+            Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
         let finder = FinderRev::new(&SIG_BYTES);
 
         let mut window_start: u64 = search_upper_bound

@@ -789,7 +789,7 @@ impl ZipFileData {
         }
     }
 
-    pub fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
+    pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
         let uncompressed_size: Option<u64> =
             if self.uncompressed_size > spec::ZIP64_BYTES_THR || self.large_file {
                 Some(spec::ZIP64_BYTES_THR)
@@ -823,7 +823,7 @@ impl ZipFileData {
         }
 
         Some(Zip64ExtraFieldBlock {
-            magic: spec::ZIP64_EXTRA_FIELD_TAG,
+            magic: spec::ExtraFieldMagic::ZIP64_EXTRA_FIELD_TAG,
             size,
             uncompressed_size,
             compressed_size,
@@ -855,7 +855,7 @@ pub(crate) struct ZipCentralEntryBlock {
 }
 
 impl Block for ZipCentralEntryBlock {
-    const MAGIC: spec::Magic = spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
+    const MAGIC: spec::Magic = spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
     #[inline(always)]
     fn magic(self) -> spec::Magic {
@@ -902,7 +902,7 @@ pub(crate) struct ZipLocalEntryBlock {
 }
 
 impl Block for ZipLocalEntryBlock {
-    const MAGIC: spec::Magic = spec::LOCAL_FILE_HEADER_SIGNATURE;
+    const MAGIC: spec::Magic = spec::Magic::LOCAL_FILE_HEADER_SIGNATURE;
 
     #[inline(always)]
     fn magic(self) -> spec::Magic {
