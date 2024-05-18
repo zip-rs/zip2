@@ -820,59 +820,25 @@ impl Block for ZipEntryBlock {
 
     const ERROR: ZipError = ZipError::InvalidArchive("Invalid Central Directory header");
 
-    #[inline(always)]
-    fn from_le(mut self) -> Self {
-        from_le![
-            self,
-            [
-                (magic, spec::Magic),
-                (version_made_by, u16),
-                (version_to_extract, u16),
-                (flags, u16),
-                (compression_method, u16),
-                (last_mod_time, u16),
-                (last_mod_date, u16),
-                (crc32, u32),
-                (compressed_size, u32),
-                (uncompressed_size, u32),
-                (file_name_length, u16),
-                (extra_field_length, u16),
-                (file_comment_length, u16),
-                (disk_number, u16),
-                (internal_file_attributes, u16),
-                (external_file_attributes, u32),
-                (offset, u32),
-            ]
-        ];
-        self
-    }
-
-    #[inline(always)]
-    fn to_le(mut self) -> Self {
-        to_le![
-            self,
-            [
-                (magic, spec::Magic),
-                (version_made_by, u16),
-                (version_to_extract, u16),
-                (flags, u16),
-                (compression_method, u16),
-                (last_mod_time, u16),
-                (last_mod_date, u16),
-                (crc32, u32),
-                (compressed_size, u32),
-                (uncompressed_size, u32),
-                (file_name_length, u16),
-                (extra_field_length, u16),
-                (file_comment_length, u16),
-                (disk_number, u16),
-                (internal_file_attributes, u16),
-                (external_file_attributes, u32),
-                (offset, u32),
-            ]
-        ];
-        self
-    }
+    to_and_from_le![
+        (magic, spec::Magic),
+        (version_made_by, u16),
+        (version_to_extract, u16),
+        (flags, u16),
+        (compression_method, u16),
+        (last_mod_time, u16),
+        (last_mod_date, u16),
+        (crc32, u32),
+        (compressed_size, u32),
+        (uncompressed_size, u32),
+        (file_name_length, u16),
+        (extra_field_length, u16),
+        (file_comment_length, u16),
+        (disk_number, u16),
+        (internal_file_attributes, u16),
+        (external_file_attributes, u32),
+        (offset, u32),
+    ];
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -901,47 +867,19 @@ impl Block for ZipLocalEntryBlock {
 
     const ERROR: ZipError = ZipError::InvalidArchive("Invalid local file header");
 
-    #[inline(always)]
-    fn from_le(mut self) -> Self {
-        from_le![
-            self,
-            [
-                (magic, spec::Magic),
-                (version_made_by, u16),
-                (flags, u16),
-                (compression_method, u16),
-                (last_mod_time, u16),
-                (last_mod_date, u16),
-                (crc32, u32),
-                (compressed_size, u32),
-                (uncompressed_size, u32),
-                (file_name_length, u16),
-                (extra_field_length, u16),
-            ]
-        ];
-        self
-    }
-
-    #[inline(always)]
-    fn to_le(mut self) -> Self {
-        to_le![
-            self,
-            [
-                (magic, spec::Magic),
-                (version_made_by, u16),
-                (flags, u16),
-                (compression_method, u16),
-                (last_mod_time, u16),
-                (last_mod_date, u16),
-                (crc32, u32),
-                (compressed_size, u32),
-                (uncompressed_size, u32),
-                (file_name_length, u16),
-                (extra_field_length, u16),
-            ]
-        ];
-        self
-    }
+    to_and_from_le![
+        (magic, spec::Magic),
+        (version_made_by, u16),
+        (flags, u16),
+        (compression_method, u16),
+        (last_mod_time, u16),
+        (last_mod_date, u16),
+        (crc32, u32),
+        (compressed_size, u32),
+        (uncompressed_size, u32),
+        (file_name_length, u16),
+        (extra_field_length, u16),
+    ];
 }
 
 /// The encryption specification used to encrypt a file with AES.

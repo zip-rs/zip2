@@ -143,6 +143,24 @@ macro_rules! to_le {
     };
 }
 
+/* TODO: derive macro to generate these fields? */
+/// Implement `from_le()` and `to_le()`, providing the field specification to both macros
+/// and methods.
+macro_rules! to_and_from_le {
+    ($($args:tt),+ $(,)?) => {
+        #[inline(always)]
+        fn from_le(mut self) -> Self {
+            from_le![self, [$($args),+]];
+            self
+        }
+        #[inline(always)]
+        fn to_le(mut self) -> Self {
+            to_le![self, [$($args),+]];
+            self
+        }
+    };
+}
+
 #[derive(Copy, Clone, Debug)]
 #[repr(packed)]
 pub struct Zip32CDEBlock {
@@ -166,41 +184,16 @@ impl Block for Zip32CDEBlock {
 
     const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
 
-    #[inline(always)]
-    fn from_le(mut self) -> Self {
-        from_le![
-            self,
-            [
-                (magic, Magic),
-                (disk_number, u16),
-                (disk_with_central_directory, u16),
-                (number_of_files_on_this_disk, u16),
-                (number_of_files, u16),
-                (central_directory_size, u32),
-                (central_directory_offset, u32),
-                (zip_file_comment_length, u16)
-            ]
-        ];
-        self
-    }
-
-    #[inline(always)]
-    fn to_le(mut self) -> Self {
-        to_le![
-            self,
-            [
-                (magic, Magic),
-                (disk_number, u16),
-                (disk_with_central_directory, u16),
-                (number_of_files_on_this_disk, u16),
-                (number_of_files, u16),
-                (central_directory_size, u32),
-                (central_directory_offset, u32),
-                (zip_file_comment_length, u16)
-            ]
-        ];
-        self
-    }
+    to_and_from_le![
+        (magic, Magic),
+        (disk_number, u16),
+        (disk_with_central_directory, u16),
+        (number_of_files_on_this_disk, u16),
+        (number_of_files, u16),
+        (central_directory_size, u32),
+        (central_directory_offset, u32),
+        (zip_file_comment_length, u16)
+    ];
 }
 
 #[derive(Debug)]
@@ -368,33 +361,12 @@ impl Block for Zip64CDELocatorBlock {
     const ERROR: ZipError =
         ZipError::InvalidArchive("Invalid zip64 locator digital signature header");
 
-    #[inline(always)]
-    fn from_le(mut self) -> Self {
-        from_le![
-            self,
-            [
-                (magic, Magic),
-                (disk_with_central_directory, u32),
-                (end_of_central_directory_offset, u64),
-                (number_of_disks, u32),
-            ]
-        ];
-        self
-    }
-
-    #[inline(always)]
-    fn to_le(mut self) -> Self {
-        to_le![
-            self,
-            [
-                (magic, Magic),
-                (disk_with_central_directory, u32),
-                (end_of_central_directory_offset, u64),
-                (number_of_disks, u32),
-            ]
-        ];
-        self
-    }
+    to_and_from_le![
+        (magic, Magic),
+        (disk_with_central_directory, u32),
+        (end_of_central_directory_offset, u64),
+        (number_of_disks, u32),
+    ];
 }
 
 pub struct Zip64CentralDirectoryEndLocator {
@@ -463,45 +435,18 @@ impl Block for Zip64CDEBlock {
 
     const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
 
-    #[inline(always)]
-    fn from_le(mut self) -> Self {
-        from_le![
-            self,
-            [
-                (magic, Magic),
-                (record_size, u64),
-                (version_made_by, u16),
-                (version_needed_to_extract, u16),
-                (disk_number, u32),
-                (disk_with_central_directory, u32),
-                (number_of_files_on_this_disk, u64),
-                (number_of_files, u64),
-                (central_directory_size, u64),
-                (central_directory_offset, u64),
-            ]
-        ];
-        self
-    }
-
-    #[inline(always)]
-    fn to_le(mut self) -> Self {
-        to_le![
-            self,
-            [
-                (magic, Magic),
-                (record_size, u64),
-                (version_made_by, u16),
-                (version_needed_to_extract, u16),
-                (disk_number, u32),
-                (disk_with_central_directory, u32),
-                (number_of_files_on_this_disk, u64),
-                (number_of_files, u64),
-                (central_directory_size, u64),
-                (central_directory_offset, u64),
-            ]
-        ];
-        self
-    }
+    to_and_from_le![
+        (magic, Magic),
+        (record_size, u64),
+        (version_made_by, u16),
+        (version_needed_to_extract, u16),
+        (disk_number, u32),
+        (disk_with_central_directory, u32),
+        (number_of_files_on_this_disk, u64),
+        (number_of_files, u64),
+        (central_directory_size, u64),
+        (central_directory_offset, u64),
+    ];
 }
 
 pub struct Zip64CentralDirectoryEnd {
@@ -730,14 +675,7 @@ mod test {
 
         const ERROR: ZipError = ZipError::InvalidArchive("unreachable");
 
-        fn from_le(mut self) -> Self {
-            from_le![self, [(magic, Magic), (file_name_length, u16)]];
-            self
-        }
-        fn to_le(mut self) -> Self {
-            to_le![self, [(magic, Magic), (file_name_length, u16)]];
-            self
-        }
+        to_and_from_le![(magic, Magic), (file_name_length, u16)];
     }
 
     /// Demonstrate that a block object can be safely written to memory and deserialized back out.
