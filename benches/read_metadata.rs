@@ -1,9 +1,11 @@
 use bencher::{benchmark_group, benchmark_main};
 
-use std::io::{Cursor, Write};
+use std::fs;
+use std::io::{prelude::*, Cursor};
 
 use bencher::Bencher;
 use getrandom::getrandom;
+use tempdir::TempDir;
 use zip::write::SimpleFileOptions;
 use zip::{result::ZipResult, CompressionMethod, ZipArchive, ZipWriter};
 
@@ -46,7 +48,7 @@ fn generate_random_zip32_archive_with_comment(comment_length: usize) -> ZipResul
 
     let mut bytes = vec![0u8; comment_length];
     getrandom(&mut bytes).unwrap();
-    writer.set_raw_comment(bytes);
+    writer.set_raw_comment(bytes.into());
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
@@ -75,7 +77,7 @@ fn generate_random_zip64_archive_with_comment(comment_length: usize) -> ZipResul
 
     let mut bytes = vec![0u8; comment_length];
     getrandom(&mut bytes).unwrap();
-    writer.set_raw_comment(bytes);
+    writer.set_raw_comment(bytes.into());
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
@@ -93,5 +95,35 @@ fn parse_zip64_comment(bench: &mut Bencher) {
     bench.bytes = bytes.len() as u64;
 }
 
-benchmark_group!(benches, read_metadata, parse_comment, parse_zip64_comment);
+#[allow(dead_code)]
+fn parse_stream_archive(bench: &mut Bencher) {
+    const STREAM_ZIP_ENTRIES: usize = 5;
+    const STREAM_FILE_SIZE: usize = 5;
+
+    let bytes = generate_random_archive(STREAM_ZIP_ENTRIES, STREAM_FILE_SIZE).unwrap();
+    dbg!(&bytes);
+
+    /* Write to a temporary file path to incur some filesystem overhead from repeated reads */
+    let dir = TempDir::new("stream-bench").unwrap();
+    let out = dir.path().join("bench-out.zip");
+    fs::write(&out, &bytes).unwrap();
+    let mut f = fs::File::open(out).unwrap();
+
+    bench.iter(|| loop {
+        while zip::read::read_zipfile_from_stream(&mut f)
+            .unwrap()
+            .is_some()
+        {}
+    });
+    bench.bytes = bytes.len() as u64;
+}
+
+benchmark_group!(
+    benches,
+    read_metadata,
+    parse_comment,
+    parse_zip64_comment,
+    /* FIXME: this currently errors */
+    /* parse_stream_archive */
+);
 benchmark_main!(benches);
