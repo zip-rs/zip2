@@ -810,8 +810,16 @@ pub(crate) struct ZipEntryBlock {
     pub offset: u32,
 }
 
-impl ZipEntryBlock {
-    #[allow(clippy::wrong_self_convention)]
+impl Block for ZipEntryBlock {
+    const MAGIC: spec::Magic = spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
+
+    #[inline(always)]
+    fn magic(self) -> spec::Magic {
+        self.magic
+    }
+
+    const ERROR: ZipError = ZipError::InvalidArchive("Invalid Central Directory header");
+
     #[inline(always)]
     fn from_le(mut self) -> Self {
         from_le![
@@ -864,23 +872,6 @@ impl ZipEntryBlock {
             ]
         ];
         self
-    }
-}
-
-impl Block for ZipEntryBlock {
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
-
-        let magic = block.magic;
-        if magic != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
-        }
-
-        Ok(block)
-    }
-
-    fn encode(self) -> Box<[u8]> {
-        self.to_le().serialize()
     }
 }
 
@@ -900,8 +891,16 @@ pub(crate) struct ZipLocalEntryBlock {
     pub extra_field_length: u16,
 }
 
-impl ZipLocalEntryBlock {
-    #[allow(clippy::wrong_self_convention)]
+impl Block for ZipLocalEntryBlock {
+    const MAGIC: spec::Magic = spec::LOCAL_FILE_HEADER_SIGNATURE;
+
+    #[inline(always)]
+    fn magic(self) -> spec::Magic {
+        self.magic
+    }
+
+    const ERROR: ZipError = ZipError::InvalidArchive("Invalid local file header");
+
     #[inline(always)]
     fn from_le(mut self) -> Self {
         from_le![
@@ -942,23 +941,6 @@ impl ZipLocalEntryBlock {
             ]
         ];
         self
-    }
-}
-
-impl Block for ZipLocalEntryBlock {
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
-
-        let magic = block.magic;
-        if magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid local file header"));
-        }
-
-        Ok(block)
-    }
-
-    fn encode(self) -> Box<[u8]> {
-        self.to_le().serialize()
     }
 }
 

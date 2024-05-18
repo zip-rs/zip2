@@ -60,8 +60,20 @@ pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
 pub trait Block: Sized + Copy {
+    const MAGIC: Magic;
+
+    fn magic(self) -> Magic;
+
+    const ERROR: ZipError;
+
     /* TODO: use smallvec? */
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self>;
+    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+        let block = Self::deserialize(&bytes).from_le();
+        if block.magic() != Self::MAGIC {
+            return Err(Self::ERROR);
+        }
+        Ok(block)
+    }
 
     fn deserialize(block: &[u8]) -> Self {
         assert_eq!(block.len(), mem::size_of::<Self>());
@@ -69,18 +81,27 @@ pub trait Block: Sized + Copy {
         unsafe { block_ptr.read() }
     }
 
+    #[allow(clippy::wrong_self_convention)]
+    fn from_le(self) -> Self;
+
     fn parse<T: Read>(reader: &mut T) -> ZipResult<Self> {
         let mut block = vec![0u8; mem::size_of::<Self>()];
         reader.read_exact(&mut block)?;
         Self::interpret(block.into_boxed_slice())
     }
 
-    fn encode(self) -> Box<[u8]>;
+    fn encode(self) -> Box<[u8]> {
+        self.to_le().serialize()
+    }
 
+    fn to_le(self) -> Self;
+
+    /* TODO: use Box<[u8; mem::size_of::<Self>()]> when generic_const_exprs are stabilized! */
     fn serialize(self) -> Box<[u8]> {
+        /* TODO: use Box::new_zeroed() when stabilized! */
+        /* TODO: also consider using smallvec! */
         let mut out_block = vec![0u8; mem::size_of::<Self>()];
-        let out_view: &mut [u8] = out_block.as_mut();
-        let out_ptr: *mut Self = out_view.as_mut_ptr().cast();
+        let out_ptr: *mut Self = out_block.as_mut_ptr().cast();
         unsafe {
             out_ptr.write(self);
         }
@@ -135,10 +156,18 @@ pub struct Zip32CDEBlock {
     pub zip_file_comment_length: u16,
 }
 
-impl Zip32CDEBlock {
-    #[allow(clippy::wrong_self_convention)]
+impl Block for Zip32CDEBlock {
+    const MAGIC: Magic = CENTRAL_DIRECTORY_END_SIGNATURE;
+
     #[inline(always)]
-    pub(crate) fn from_le(mut self) -> Self {
+    fn magic(self) -> Magic {
+        self.magic
+    }
+
+    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+
+    #[inline(always)]
+    fn from_le(mut self) -> Self {
         from_le![
             self,
             [
@@ -156,7 +185,7 @@ impl Zip32CDEBlock {
     }
 
     #[inline(always)]
-    pub(crate) fn to_le(mut self) -> Self {
+    fn to_le(mut self) -> Self {
         to_le![
             self,
             [
@@ -171,23 +200,6 @@ impl Zip32CDEBlock {
             ]
         ];
         self
-    }
-}
-
-impl Block for Zip32CDEBlock {
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
-
-        let magic = block.magic;
-        if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
-        }
-
-        Ok(block)
-    }
-
-    fn encode(self) -> Box<[u8]> {
-        self.to_le().serialize()
     }
 }
 
@@ -344,10 +356,19 @@ pub struct Zip64CDELocatorBlock {
     pub number_of_disks: u32,
 }
 
-impl Zip64CDELocatorBlock {
-    #[allow(clippy::wrong_self_convention)]
+impl Block for Zip64CDELocatorBlock {
+    const MAGIC: Magic = ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
+
     #[inline(always)]
-    pub(crate) fn from_le(mut self) -> Self {
+    fn magic(self) -> Magic {
+        self.magic
+    }
+
+    const ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid zip64 locator digital signature header");
+
+    #[inline(always)]
+    fn from_le(mut self) -> Self {
         from_le![
             self,
             [
@@ -361,7 +382,7 @@ impl Zip64CDELocatorBlock {
     }
 
     #[inline(always)]
-    pub(crate) fn to_le(mut self) -> Self {
+    fn to_le(mut self) -> Self {
         to_le![
             self,
             [
@@ -372,25 +393,6 @@ impl Zip64CDELocatorBlock {
             ]
         ];
         self
-    }
-}
-
-impl Block for Zip64CDELocatorBlock {
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
-
-        let magic = block.magic;
-        if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
-            return Err(ZipError::InvalidArchive(
-                "Invalid zip64 locator digital signature header",
-            ));
-        }
-
-        Ok(block)
-    }
-
-    fn encode(self) -> Box<[u8]> {
-        self.to_le().serialize()
     }
 }
 
@@ -451,10 +453,17 @@ pub struct Zip64CDEBlock {
     pub central_directory_offset: u64,
 }
 
-impl Zip64CDEBlock {
-    #[allow(clippy::wrong_self_convention)]
+impl Block for Zip64CDEBlock {
+    const MAGIC: Magic = ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
+
+    fn magic(self) -> Magic {
+        self.magic
+    }
+
+    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+
     #[inline(always)]
-    pub(crate) fn from_le(mut self) -> Self {
+    fn from_le(mut self) -> Self {
         from_le![
             self,
             [
@@ -474,7 +483,7 @@ impl Zip64CDEBlock {
     }
 
     #[inline(always)]
-    pub(crate) fn to_le(mut self) -> Self {
+    fn to_le(mut self) -> Self {
         to_le![
             self,
             [
@@ -491,23 +500,6 @@ impl Zip64CDEBlock {
             ]
         ];
         self
-    }
-}
-
-impl Block for Zip64CDEBlock {
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
-
-        let magic = block.magic;
-        if magic != ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
-        }
-
-        Ok(block)
-    }
-
-    fn encode(self) -> Box<[u8]> {
-        self.to_le().serialize()
     }
 }
 
@@ -729,24 +721,22 @@ mod test {
         pub file_name_length: u16,
     }
 
-    impl TestBlock {
-        #[allow(clippy::wrong_self_convention)]
-        pub(crate) fn from_le(mut self) -> Self {
+    impl Block for TestBlock {
+        const MAGIC: Magic = Magic::literal(0x01111);
+
+        fn magic(self) -> Magic {
+            self.magic
+        }
+
+        const ERROR: ZipError = ZipError::InvalidArchive("unreachable");
+
+        fn from_le(mut self) -> Self {
             from_le![self, [(magic, Magic), (file_name_length, u16)]];
             self
         }
-        pub(crate) fn to_le(mut self) -> Self {
+        fn to_le(mut self) -> Self {
             to_le![self, [(magic, Magic), (file_name_length, u16)]];
             self
-        }
-    }
-
-    impl Block for TestBlock {
-        fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-            Ok(Self::deserialize(&bytes).from_le())
-        }
-        fn encode(self) -> Box<[u8]> {
-            self.to_le().serialize()
         }
     }
 
