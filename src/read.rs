@@ -1361,9 +1361,14 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 
     let version_made_by = reader.read_u16_le()?;
     let flags = reader.read_u16_le()?;
-    let encrypted = flags & 1 == 1;
+    if flags & 1 == 1 {
+        return unsupported_zip_error("Encrypted files are not supported");
+    }
+    if flags & (1 << 3) == 1 << 3 {
+        // using_data_descriptor flag is set
+        return unsupported_zip_error("The file length is not available in the local header");
+    }
     let is_utf8 = flags & (1 << 11) != 0;
-    let using_data_descriptor = flags & (1 << 3) != 0;
     #[allow(deprecated)]
     let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
     let last_mod_time = reader.read_u16_le()?;
@@ -1387,8 +1392,8 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     let mut result = ZipFileData {
         system: System::from((version_made_by >> 8) as u8),
         version_made_by: version_made_by as u8,
-        encrypted,
-        using_data_descriptor,
+        encrypted: flags & 1 == 1,
+        using_data_descriptor: false,
         compression_method,
         compression_level: None,
         last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
@@ -1419,13 +1424,6 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
-    }
-
-    if encrypted {
-        return unsupported_zip_error("Encrypted files are not supported");
-    }
-    if using_data_descriptor {
-        return unsupported_zip_error("The file length is not available in the local header");
     }
 
     let limit_reader = (reader as &'a mut dyn Read).take(result.compressed_size);
