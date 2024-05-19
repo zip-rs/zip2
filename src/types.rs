@@ -108,14 +108,14 @@ impl TryFrom<NaiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "chrono")]
-impl TryInto<NaiveDateTime> for DateTime {
+impl TryFrom<DateTime> for NaiveDateTime {
     type Error = DateTimeRangeError;
 
-    fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
-        let date = NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+    fn try_from(value: DateTime) -> Result<Self, Self::Error> {
+        let date = NaiveDate::from_ymd_opt(value.year.into(), value.month.into(), value.day.into())
             .ok_or(DateTimeRangeError)?;
         let time =
-            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+            NaiveTime::from_hms_opt(value.hour.into(), value.minute.into(), value.second.into())
                 .ok_or(DateTimeRangeError)?;
         Ok(NaiveDateTime::new(date, time))
     }
