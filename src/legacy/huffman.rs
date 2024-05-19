@@ -21,24 +21,24 @@ const HUFFMAN_LOOKUP_TABLE_BITS: u8 = 8;
 
 pub struct HuffmanDecoder {
     /// Lookup table for fast decoding of short codewords.
-    pub table: [TableEntry; 1 << HUFFMAN_LOOKUP_TABLE_BITS],
+    pub table: Vec<TableEntry>,
     /// "Sentinel bits" value for each codeword length.
-    pub sentinel_bits: [u32; MAX_HUFFMAN_BITS + 1],
+    pub sentinel_bits: Vec<u32>,
     /// First symbol index minus first codeword mod 2**16 for each length.
-    pub offset_first_sym_idx: [u16; MAX_HUFFMAN_BITS + 1],
+    pub offset_first_sym_idx: Vec<u16>,
     /// Map from symbol index to symbol.
-    pub syms: [u16; MAX_HUFFMAN_SYMBOLS],
+    pub syms: Vec<u16>,
     // num_syms:usize
 }
 
 impl Default for HuffmanDecoder {
     fn default() -> Self {
-        let syms = [0; MAX_HUFFMAN_SYMBOLS];
-        let table = [TableEntry::default(); 1 << HUFFMAN_LOOKUP_TABLE_BITS];
+        let syms = vec![0; MAX_HUFFMAN_SYMBOLS];
+        let table = vec![TableEntry::default(); 1 << HUFFMAN_LOOKUP_TABLE_BITS];
         Self {
             table,
-            sentinel_bits: Default::default(),
-            offset_first_sym_idx: Default::default(),
+            sentinel_bits: vec![0; MAX_HUFFMAN_BITS + 1],
+            offset_first_sym_idx: vec![0; MAX_HUFFMAN_BITS + 1],
             syms,
         }
     }
@@ -72,7 +72,7 @@ impl HuffmanDecoder {
                 // The last codeword is longer than l bits.
                 return Err(Error::new(
                     io::ErrorKind::InvalidData,
-                    "The last codeword is longer than len bits",
+                    "the last codeword is longer than len bits",
                 ));
             }
 

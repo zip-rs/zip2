@@ -33,7 +33,7 @@ fn read_follower_sets<T: std::io::Read, E: Endianness>(
         if n > 32 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid follower set",
+                "invalid follower set",
             ));
         }
         fsets[i].size = n;
@@ -71,7 +71,7 @@ fn read_next_byte<T: std::io::Read, E: Endianness>(
     if follower_idx >= fsets[prev_byte as usize].size as usize {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "Invalid follower index",
+            "invalid follower index",
         ));
     }
     Ok(fsets[prev_byte as usize].followers[follower_idx])
@@ -79,9 +79,7 @@ fn read_next_byte<T: std::io::Read, E: Endianness>(
 
 fn max_len(comp_factor: u8) -> usize {
     let v_len_bits = (8 - comp_factor) as usize;
-
     debug_assert!(comp_factor >= 1 && comp_factor <= 4);
-
     // Bits in V + extra len byte + implicit 3.
     ((1 << v_len_bits) - 1) + u8::MAX as usize + 3
 }
@@ -93,7 +91,7 @@ fn max_dist(comp_factor: u8) -> usize {
     1 << (v_dist_bits + 8)
 }
 
-const DLE_BYTE: u8 = 144;
+const DLE_BYTE: u8 = 0x90;
 
 fn hwexpand(
     src: &[u8],
@@ -159,7 +157,6 @@ fn hwexpand(
             }
         }
     }
-
     Ok(())
 }
 
@@ -212,12 +209,9 @@ impl<R: Read> Read for ReduceDecoder<R> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
-
-    use crate::legacy::reduce::{follower_idx_bw, max_dist};
-
     use super::hwexpand;
-
+    use crate::legacy::reduce::{follower_idx_bw, max_dist};
+    use std::collections::VecDeque;
     const HAMLET_2048: &[u8; 1285] = include_bytes!("../../tests/reduce_hamlet_2048.bin");
 
     #[test]

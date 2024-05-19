@@ -14,21 +14,7 @@ const PARTIAL_CLEAR: u16 = 2;
 // const HASH_BITS: usize = MAX_CODE_SIZE + 1; /* For a load factor of 0.5. */
 // const HASHTAB_SIZE: usize = 1 << HASH_BITS;
 const UNKNOWN_LEN: u16 = u16::MAX;
-/*
-#[derive(Error, Debug)]
-enum ShrinkError {
-    #[error("self-referential code")]
-    InvalidPrefixCode,
 
-    #[error("first code needs to be literal")]
-    FirstCodeNeedsToBeLiteral,
-
-    #[error("invalid code")]
-    InvalidCode,
-
-    #[error("prev code no longer valid")]
-    PrevCodeNoLongerValid,
-}*/
 struct CodeQueue {
     next_idx: usize,
     codes: [Option<u16>; MAX_CODE as usize - CONTROL_CODE + 1],
@@ -177,7 +163,7 @@ fn output_code(
     {
         // Reject invalid codes. Self-referential codes may exist in
         // the table but cannot be used.
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid code"));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid code"));
     }
 
     if codetab[code as usize].len != UNKNOWN_LEN {
@@ -213,7 +199,7 @@ fn output_code(
         // The prefix code is still invalid.
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "Invalid prefix code",
+            "invalid prefix code",
         ));
     }
 
@@ -265,7 +251,7 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
         };
 
         let Some(curr_code) = curr_code else {
-            return Err(Error::new(io::ErrorKind::InvalidData, "Invalid code"));
+            return Err(Error::new(io::ErrorKind::InvalidData, "invalid code"));
         };
 
         let dst_pos = dst.len();
@@ -274,7 +260,7 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
             if codetab[prev_code as usize].prefix_code.is_none() {
                 return Err(Error::new(
                     io::ErrorKind::InvalidData,
-                    "Previous code no longer valid",
+                    "previous code no longer valid",
                 ));
             }
             // Extend the previous code with its first byte.

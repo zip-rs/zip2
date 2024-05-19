@@ -1,11 +1,8 @@
+use super::huffman::HuffmanDecoder;
+use super::lz77::lz77_output_backref;
+use bitstream_io::{BitRead, BitReader, Endianness, LittleEndian};
 use std::collections::VecDeque;
 use std::io::{self, copy, Cursor, Error, Read, Result};
-
-use bitstream_io::{BitRead, BitReader, Endianness, LittleEndian};
-
-use crate::legacy::lz77::lz77_output_backref;
-
-use super::huffman::HuffmanDecoder;
 
 /// Initialize the Huffman decoder d with num_lens codeword lengths read from is.
 /// Returns false if the input is invalid.
@@ -36,7 +33,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
         if (codeword_idx + run_length) as usize > num_lens {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
-                "Too many codeword lengths",
+                "too many codeword lengths",
             ));
         }
         for _ in 0..run_length {
@@ -50,7 +47,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
     if (codeword_idx as usize) < num_lens {
         return Err(Error::new(
             io::ErrorKind::InvalidData,
-            "Not enough codeword lengths",
+            "not enough codeword lengths",
         ));
     }
 
@@ -63,7 +60,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
         if avail_codewords < 0 {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
-                "Huffman tree is not full",
+                "huffman tree is not full",
             ));
         }
     }
@@ -71,7 +68,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
         // Not all codewords were used.
         return Err(Error::new(
             io::ErrorKind::InvalidData,
-            "Not all codewords were used",
+            "not all codewords were used",
         ));
     }
 
