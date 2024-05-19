@@ -1,17 +1,16 @@
 use std::collections::VecDeque;
-use std::io::{self, copy, Error, Read, Result};
+use std::io::{self, copy, Cursor, Error, Read, Result};
 
-use crate::legacy::bitstream::{lsb, ISTREAM_MIN_BITS};
+use bitstream_io::{BitRead, BitReader, Endianness, LittleEndian};
+
 use crate::legacy::lz77::lz77_output_backref;
 
-use super::bitstream::BitStream;
 use super::huffman::HuffmanDecoder;
-//const COMPRESSED_BYTES_TO_BUFFER: usize = 4096;
 
 /// Initialize the Huffman decoder d with num_lens codeword lengths read from is.
 /// Returns false if the input is invalid.
-fn read_huffman_code(
-    is: &mut BitStream,
+fn read_huffman_code<T: std::io::Read, E: Endianness>(
+    is: &mut BitReader<T, E>,
     num_lens: usize,
     d: &mut HuffmanDecoder,
 ) -> std::io::Result<()> {
@@ -20,12 +19,12 @@ fn read_huffman_code(
     // debug_assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
 
     // Number of bytes representing the Huffman code.
-    let byte = is.read_next_bits(8)?;
+    let byte = is.read::<u8>(8)?;
     let num_bytes = (byte + 1) as usize;
 
     let mut codeword_idx = 0;
     for _byte_idx in 0..num_bytes {
-        let byte = is.read_next_bits(8)?;
+        let byte = is.read::<u16>(8)?;
 
         let codeword_len = (byte & 0xf) + 1; /* Low four bits plus one. */
         let run_length = (byte >> 4) + 1; /* High four bits plus one. */
@@ -81,15 +80,14 @@ fn read_huffman_code(
 
 fn hwexplode(
     src: &[u8],
-    src_len: usize,
     uncomp_len: usize,
     large_wnd: bool,
     lit_tree: bool,
     pk101_bug_compat: bool,
-    src_used: &mut usize,
     dst: &mut VecDeque<u8>,
 ) -> std::io::Result<()> {
-    let mut is = BitStream::new(src, src_len);
+    let bit_length = src.len() as u64 * 8;
+    let mut is = BitReader::endian(Cursor::new(&src), LittleEndian);
     let mut lit_decoder = HuffmanDecoder::default();
     let mut len_decoder = HuffmanDecoder::default();
     let mut dist_decoder = HuffmanDecoder::default();
@@ -111,83 +109,56 @@ fn hwexplode(
             2
         }
     };
-
     while dst.len() < uncomp_len {
-        let mut bits = is.bits();
-        if lsb(bits, 1) == 0x1 {
+        let is_literal = is.read_bit()?;
+        if is_literal {
             // Literal.
-            bits >>= 1;
             let sym;
-            let mut used = 0;
             if lit_tree {
-                sym = lit_decoder.huffman_decode(!bits as u16, &mut used)?;
-                is.advance(1 + used)?;
+                sym = lit_decoder.huffman_decode(bit_length, &mut is)?;
             } else {
-                sym = lsb(bits, 8) as u16;
-                is.advance(1 + 8)?;
+                sym = is.read::<u8>(8)? as u16;
             }
             debug_assert!(sym <= u8::MAX as u16);
             dst.push_back(sym as u8);
             continue;
         }
-        // Backref.
-        debug_assert!(lsb(bits, 1) == 0x0);
-        let mut used_tot = 1;
-        bits >>= 1;
 
         // Read the low dist bits.
         let mut dist;
         if large_wnd {
-            dist = lsb(bits, 7) as usize;
-            bits >>= 7;
-            used_tot += 7;
+            dist = is.read::<u16>(7)?;
         } else {
-            dist = lsb(bits, 6) as usize;
-            bits >>= 6;
-            used_tot += 6;
+            dist = is.read::<u16>(6)?;
         }
-
         // Read the Huffman-encoded high dist bits.
-        let mut used = 0;
-        let sym = dist_decoder.huffman_decode(!bits as u16, &mut used)?;
-        used_tot += used;
-        bits >>= used;
-        dist |= (sym as usize) << if large_wnd { 7 } else { 6 };
+        let sym = dist_decoder.huffman_decode(bit_length, &mut is)?;
+        dist |= (sym as u16) << if large_wnd { 7 } else { 6 };
         dist += 1;
 
         // Read the Huffman-encoded len.
-        let sym = len_decoder.huffman_decode(!bits as u16, &mut used)?;
-        used_tot += used;
-        bits >>= used;
+        let sym = len_decoder.huffman_decode(bit_length, &mut is)?;
         let mut len = (sym + min_len) as usize;
 
         if sym == 63 {
             // Read an extra len byte.
-            len += lsb(bits, 8) as usize;
-            used_tot += 8;
-            //  bits >>= 8;
+            len += is.read::<u16>(8)? as usize;
         }
-
-        debug_assert!((used_tot as usize) <= ISTREAM_MIN_BITS);
-        is.advance(used_tot)?;
-        //  let len = len.min(uncomp_len - dst.len());
-
-        if len <= uncomp_len - dst.len() && dist <= dst.len() {
+        let len = len.min(uncomp_len - dst.len());
+        if len <= uncomp_len - dst.len() && dist as usize <= dst.len() {
             // Enough room and no implicit zeros; chunked copy.
-            lz77_output_backref(dst, dist, len);
+            lz77_output_backref(dst, dist as usize, len);
         } else {
             // Copy, handling overlap and implicit zeros.
             for _i in 0..len {
-                if dist > dst.len() {
+                if dist as usize > dst.len() {
                     dst.push_back(0);
                     continue;
                 }
-                dst.push_back(dst[dst.len() - dist]);
+                dst.push_back(dst[dst.len() - dist as usize]);
             }
         }
     }
-
-    *src_used = is.bytes_read();
     Ok(())
 }
 
@@ -229,15 +200,12 @@ impl<R: Read> Read for ImplodeDecoder<R> {
             if let Err(err) = self.compressed_reader.read_to_end(&mut compressed_bytes) {
                 return Err(err.into());
             }
-            let mut src_used = 0;
             hwexplode(
                 &compressed_bytes,
-                compressed_bytes.len(),
                 self.uncompressed_size as usize,
                 self.large_wnd,
                 self.lit_tree,
                 false,
-                &mut src_used,
                 &mut self.stream,
             )?;
         }
@@ -249,27 +217,14 @@ impl<R: Read> Read for ImplodeDecoder<R> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
-
     use super::hwexplode;
-
+    use std::collections::VecDeque;
     const HAMLET_256: &[u8; 249] = include_bytes!("../../tests/implode_hamlet_256.bin");
 
     #[test]
     fn test_explode_hamlet_256() {
-        let mut src_used = HAMLET_256.len();
         let mut dst = VecDeque::new();
-        hwexplode(
-            HAMLET_256,
-            HAMLET_256.len(),
-            256,
-            false,
-            false,
-            false,
-            &mut src_used,
-            &mut dst,
-        )
-        .unwrap();
+        hwexplode(HAMLET_256, 256, false, false, false, &mut dst).unwrap();
         assert_eq!(dst.len(), 256);
     }
 }

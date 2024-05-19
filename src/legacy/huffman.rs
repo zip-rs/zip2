@@ -1,8 +1,8 @@
-use std::io::{self, Error};
+use std::io::{self, Error, Seek};
 
-use crate::legacy::bitstream::reverse_lsb;
+use bitstream_io::{BitRead, BitReader, Endianness};
 
-use super::bitstream::lsb;
+use crate::legacy::reverse_lsb;
 
 #[derive(Default, Clone, Copy)]
 pub struct TableEntry {
@@ -123,32 +123,41 @@ impl HuffmanDecoder {
     /// Returns the decoded symbol number or an error if no symbol could be decoded.
     /// *num_used_bits will be set to the number of bits used to decode the symbol,
     /// or zero if no symbol could be decoded.
-    pub fn huffman_decode(&mut self, bits: u16, num_used_bits: &mut u8) -> std::io::Result<u16> {
+    pub fn huffman_decode<T: std::io::Read + Seek, E: Endianness>(
+        &mut self,
+        length: u64,
+        is: &mut BitReader<T, E>,
+    ) -> std::io::Result<u16> {
         // First try the lookup table.
-        let lookup_bits = lsb(bits as u64, HUFFMAN_LOOKUP_TABLE_BITS) as usize;
+        let read_bits1 = (HUFFMAN_LOOKUP_TABLE_BITS as u64).min(length - is.position_in_bits()?);
+        let lookup_bits = !is.read::<u8>(read_bits1 as u32)? as usize;
         debug_assert!(lookup_bits < self.table.len());
-
         if self.table[lookup_bits].len != 0 {
             debug_assert!(self.table[lookup_bits].len <= HUFFMAN_LOOKUP_TABLE_BITS);
-            //  debug_assert!(self.table[lookup_bits].sym < self.num_syms);
-            *num_used_bits = self.table[lookup_bits].len;
+            is.seek_bits(io::SeekFrom::Current(
+                -(read_bits1 as i64) + self.table[lookup_bits].len as i64,
+            ))?;
             return Ok(self.table[lookup_bits].sym);
         }
 
         // Then do canonical decoding with the bits in MSB-first order.
-        let mut bits = reverse_lsb(bits, MAX_HUFFMAN_BITS);
+        let read_bits2 = (HUFFMAN_LOOKUP_TABLE_BITS as u64).min(length - is.position_in_bits()?);
+        let mut bits = reverse_lsb(
+            (lookup_bits | ((!is.read::<u8>(read_bits2 as u32)? as usize) << read_bits1)) as u16,
+            MAX_HUFFMAN_BITS,
+        );
+
         for l in HUFFMAN_LOOKUP_TABLE_BITS as usize + 1..=MAX_HUFFMAN_BITS {
             if (bits as u32) < self.sentinel_bits[l] {
                 bits >>= MAX_HUFFMAN_BITS - l;
-
                 let sym_idx = (self.offset_first_sym_idx[l] as usize + bits as usize) & 0xFFFF;
                 //assert(sym_idx < self.num_syms);
-
-                *num_used_bits = l as u8;
+                is.seek_bits(io::SeekFrom::Current(
+                    -(read_bits1 as i64 + read_bits2 as i64) + l as i64,
+                ))?;
                 return Ok(self.syms[sym_idx]);
             }
         }
-        *num_used_bits = 0;
         Err(Error::new(
             io::ErrorKind::InvalidData,
             "huffman decode failed",
@@ -158,8 +167,11 @@ impl HuffmanDecoder {
 
 #[cfg(test)]
 mod tests {
-    use super::HuffmanDecoder;
+    use std::io::Cursor;
 
+    use bitstream_io::{BitReader, LittleEndian};
+
+    use super::HuffmanDecoder;
     #[test]
     fn test_huffman_decode_basic() {
         let lens = [
@@ -187,27 +199,52 @@ mod tests {
         let mut d = HuffmanDecoder::default();
         d.init(&lens, lens.len()).unwrap();
 
-        let mut used = 0;
         // 000 (msb-first) -> 000 (lsb-first)
-        assert_eq!(d.huffman_decode(0x0, &mut used).unwrap(), 0);
-        assert_eq!(used, 3);
+        assert_eq!(
+            d.huffman_decode(
+                8,
+                &mut BitReader::endian(&mut Cursor::new(vec![!0x0]), LittleEndian)
+            )
+            .unwrap(),
+            0
+        );
 
         /* 011 (msb-first) -> 110 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0b110, &mut used).unwrap(), 0b011);
-        assert_eq!(used, 3);
+        assert_eq!(
+            d.huffman_decode(
+                8,
+                &mut BitReader::endian(&mut Cursor::new(vec![!0b110]), LittleEndian)
+            )
+            .unwrap(),
+            0b011
+        );
 
         /* 11110 (msb-first) -> 01111 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0b1111, &mut used).unwrap(), 0b10001);
-        assert_eq!(used, 5);
+        assert_eq!(
+            d.huffman_decode(
+                8,
+                &mut BitReader::endian(&mut Cursor::new(vec![!0b1111]), LittleEndian)
+            )
+            .unwrap(),
+            0b10001
+        );
 
         /* 111110 (msb-first) -> 011111 (lsb-first)*/
-        assert_eq!(d.huffman_decode(0b11111, &mut used).unwrap(), 0b10000);
-        assert_eq!(used, 6);
+        assert_eq!(
+            d.huffman_decode(
+                8,
+                &mut BitReader::endian(&mut Cursor::new(vec![!0b11111]), LittleEndian)
+            )
+            .unwrap(),
+            0b10000
+        );
 
         /* 1111111 (msb-first) -> 1111111 (lsb-first)*/
-        assert!(d.huffman_decode(0x7f, &mut used).is_err());
-
-        /* Make sure used is set even when decoding fails. */
-        assert_eq!(used, 0);
+        assert!(d
+            .huffman_decode(
+                8,
+                &mut BitReader::endian(&mut Cursor::new(vec![!0x7f]), LittleEndian)
+            )
+            .is_err());
     }
 }

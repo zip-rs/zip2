@@ -1,15 +1,15 @@
 use std::collections::VecDeque;
 use std::io::{self, copy, Error, Read};
 
-use super::bitstream::BitStream;
+use bitstream_io::{BitRead, BitReader, Endianness, LittleEndian};
 
 const MIN_CODE_SIZE: u8 = 9;
 const MAX_CODE_SIZE: u8 = 13;
 
 const MAX_CODE: usize = (1 << MAX_CODE_SIZE) - 1;
 const CONTROL_CODE: usize = 256;
-const INC_CODE_SIZE: u64 = 1;
-const PARTIAL_CLEAR: u64 = 2;
+const INC_CODE_SIZE: u16 = 1;
+const PARTIAL_CLEAR: u16 = 2;
 
 // const HASH_BITS: usize = MAX_CODE_SIZE + 1; /* For a load factor of 0.5. */
 // const HASHTAB_SIZE: usize = 1 << HASH_BITS;
@@ -120,14 +120,14 @@ fn unshrink_partial_clear(codetab: &mut [Codetab], queue: &mut CodeQueue) {
 /// Read the next code from the input stream and return it in next_code. Returns
 /// false if the end of the stream is reached. If the stream contains invalid
 /// data, next_code is set to INVALID_CODE but the return value is still true.
-fn read_code(
-    is: &mut BitStream,
+fn read_code<T: std::io::Read, E: Endianness>(
+    is: &mut BitReader<T, E>,
     code_size: &mut u8,
     codetab: &mut [Codetab],
     queue: &mut CodeQueue,
 ) -> io::Result<Option<u16>> {
     // assert(sizeof(code) * CHAR_BIT >= *code_size);
-    let code = is.read_next_bits(*code_size)? as u16;
+    let code = is.read::<u16>(*code_size as u32)?;
 
     // Handle regular codes (the common case).
     if code != CONTROL_CODE as u16 {
@@ -135,7 +135,7 @@ fn read_code(
     }
 
     // Handle control codes.
-    let control_code = if let Ok(c) = is.read_next_bits(*code_size) {
+    let control_code = if let Ok(c) = is.read::<u16>(*code_size as u32) {
         c
     } else {
         return Ok(None);
@@ -235,21 +235,15 @@ fn output_code(
     Ok(())
 }
 
-fn hwunshrink(
-    src: &[u8],
-    src_len: usize,
-    uncompressed_size: usize,
-    src_used: &mut usize,
-    dst: &mut VecDeque<u8>,
-) -> io::Result<()> {
+fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> io::Result<()> {
     let mut codetab = Codetab::create_new();
     let mut queue = CodeQueue::new();
-    let mut is = BitStream::new(src, src_len);
+    let mut is = BitReader::endian(src, LittleEndian);
+
     let mut code_size = MIN_CODE_SIZE;
 
     // Handle the first code separately since there is no previous code.
     let Ok(Some(curr_code)) = read_code(&mut is, &mut code_size, &mut codetab, &mut queue) else {
-        *src_used = is.bytes_read();
         return Ok(());
     };
 
@@ -333,7 +327,6 @@ fn hwunshrink(
         prev_code = curr_code;
     }
 
-    *src_used = is.bytes_read();
     Ok(())
 }
 
@@ -369,12 +362,9 @@ impl<R: Read> Read for ShrinkDecoder<R> {
             if let Err(err) = self.compressed_reader.read_to_end(&mut compressed_bytes) {
                 return Err(err.into());
             }
-            let mut src_used = compressed_bytes.len();
             hwunshrink(
                 &compressed_bytes,
-                compressed_bytes.len(),
                 self.uncompressed_size as usize,
-                &mut src_used,
                 &mut self.stream,
             )?;
         }
@@ -397,15 +387,7 @@ mod tests {
     #[test]
     fn test_unshrink_lzw_fig5() {
         let mut dst = VecDeque::new();
-        let mut src_used = 0;
-        hwunshrink(
-            &LZW_FIG5_SHRUNK,
-            LZW_FIG5_SHRUNK.len(),
-            LZW_FIG5.len(),
-            &mut src_used,
-            &mut dst,
-        )
-        .unwrap();
+        hwunshrink(&LZW_FIG5_SHRUNK, LZW_FIG5.len(), &mut dst).unwrap();
         assert_eq!(dst, LZW_FIG5);
     }
 }

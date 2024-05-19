@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 use std::io::{self, copy, Read, Result};
 
-use crate::legacy::lz77::lz77_output_backref;
+use bitstream_io::{BitRead, BitReader, Endianness, LittleEndian};
 
-use super::bitstream::{lsb, BitStream};
+use crate::legacy::lsb;
+use crate::legacy::lz77::lz77_output_backref;
 
 /// Number of bits used to represent indices in a follower set of size n.
 fn follower_idx_bw(n: u8) -> u8 {
@@ -11,9 +12,7 @@ fn follower_idx_bw(n: u8) -> u8 {
     match n {
         0 => 0,
         1 => 1,
-        _ => {
-            8 - (n - 1).leading_zeros() as u8
-        }
+        _ => 8 - (n - 1).leading_zeros() as u8,
     }
 }
 
@@ -25,9 +24,12 @@ struct FollowerSet {
 }
 
 /// Read the follower sets from is into fsets. Returns true on success.
-fn read_follower_sets(is: &mut BitStream, fsets: &mut [FollowerSet]) -> io::Result<()> {
+fn read_follower_sets<T: std::io::Read, E: Endianness>(
+    is: &mut BitReader<T, E>,
+    fsets: &mut [FollowerSet],
+) -> io::Result<()> {
     for i in (0..=u8::MAX as usize).rev() {
-        let n = is.read_next_bits(6)? as u8;
+        let n = is.read::<u8>(6)?;
         if n > 32 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -38,7 +40,7 @@ fn read_follower_sets(is: &mut BitStream, fsets: &mut [FollowerSet]) -> io::Resu
         fsets[i].idx_bw = follower_idx_bw(n);
 
         for j in 0..fsets[i].size as usize {
-            fsets[i].followers[j] = is.read_next_bits(8)? as u8;
+            fsets[i].followers[j] = is.read::<u8>(8)?;
         }
     }
 
@@ -48,31 +50,30 @@ fn read_follower_sets(is: &mut BitStream, fsets: &mut [FollowerSet]) -> io::Resu
 /// Read the next byte from is, decoded based on prev_byte and the follower sets.
 /// The byte is returned in *out_byte. The function returns true on success,
 /// and false on bad data or end of input.
-fn read_next_byte(is: &mut BitStream, prev_byte: u8, fsets: &mut [FollowerSet]) -> io::Result<u8> {
-    let bits = is.bits();
-
+fn read_next_byte<T: std::io::Read, E: Endianness>(
+    is: &mut BitReader<T, E>,
+    prev_byte: u8,
+    fsets: &mut [FollowerSet],
+) -> io::Result<u8> {
     if fsets[prev_byte as usize].size == 0 {
         // No followers; read a literal byte.
-        is.advance(8)?;
-        return Ok(bits as u8);
+        return Ok(is.read::<u8>(8)?);
     }
 
-    if lsb(bits, 1) == 1 {
+    if is.read::<u8>(1)? == 1 {
         // Don't use the follower set; read a literal byte.
-        is.advance(1 + 8)?;
-        return Ok((bits >> 1) as u8);
+        return Ok(is.read::<u8>(8)?);
     }
 
     // The bits represent the index of a follower byte.
     let idx_bw = fsets[prev_byte as usize].idx_bw;
-    let follower_idx = lsb(bits >> 1, idx_bw) as usize;
+    let follower_idx = is.read::<u16>(idx_bw as u32)? as usize;
     if follower_idx >= fsets[prev_byte as usize].size as usize {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Invalid follower index",
         ));
     }
-    is.advance(1 + idx_bw)?;
     Ok(fsets[prev_byte as usize].followers[follower_idx])
 }
 
@@ -96,16 +97,14 @@ const DLE_BYTE: u8 = 144;
 
 fn hwexpand(
     src: &[u8],
-    src_len: usize,
     uncomp_len: usize,
     comp_factor: u8,
-    src_used: &mut usize,
     dst: &mut VecDeque<u8>,
 ) -> io::Result<()> {
     let mut fsets = [FollowerSet::default(); 1 << 8];
     debug_assert!(comp_factor >= 1 && comp_factor <= 4);
 
-    let mut is = BitStream::new(src, src_len);
+    let mut is = BitReader::endian(src, LittleEndian);
     read_follower_sets(&mut is, &mut fsets)?;
 
     // Number of bits in V used for backref length.
@@ -161,8 +160,6 @@ fn hwexpand(
         }
     }
 
-    *src_used = is.bytes_read();
-
     Ok(())
 }
 
@@ -200,13 +197,10 @@ impl<R: Read> Read for ReduceDecoder<R> {
             if let Err(err) = self.compressed_reader.read_to_end(&mut compressed_bytes) {
                 return Err(err.into());
             }
-            let mut src_used = 0;
             hwexpand(
                 &compressed_bytes,
-                compressed_bytes.len(),
                 self.uncompressed_size as usize,
                 self.comp_factor,
-                &mut src_used,
                 &mut self.stream,
             )?;
         }
@@ -229,16 +223,7 @@ mod tests {
     #[test]
     fn test_expand_hamlet2048() {
         let mut dst = VecDeque::new();
-        let mut src_used = 0;
-        hwexpand(
-            HAMLET_2048,
-            HAMLET_2048.len(),
-            2048,
-            4,
-            &mut src_used,
-            &mut dst,
-        )
-        .unwrap();
+        hwexpand(HAMLET_2048, 2048, 4, &mut dst).unwrap();
         assert_eq!(dst.len(), 2048);
     }
 
@@ -257,18 +242,8 @@ mod tests {
 
     #[test]
     fn test_expand_zeros() {
-
         let mut dst = VecDeque::new();
-        let mut src_used = 0;
-        hwexpand(
-            ZEROS_REDUCED,
-            ZEROS_REDUCED.len(),
-            2048 + 1024,
-            4,
-            &mut src_used,
-            &mut dst,
-        )
-        .unwrap();
+        hwexpand(ZEROS_REDUCED, 2048 + 1024, 4, &mut dst).unwrap();
         assert_eq!(dst.len(), 2048 + 1024);
         for i in 0..(1 << 10) {
             assert_eq!(dst[(1 << 11) + i], 0);
