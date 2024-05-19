@@ -26,7 +26,7 @@ jobs:
         - rustalias: stable
           rust: stable
         - rustalias: msrv
-          rust: '1.70'
+          rust: '1.73'
         - rustalias: nightly
           rust: nightly
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
