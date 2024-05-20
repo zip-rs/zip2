@@ -185,9 +185,11 @@ fn output_code(
     // was invalid (due to partial clearing) when the code was inserted into
     // the table. The prefix can then become valid when it's added to the
     // table at a later point.
-    debug_assert!(codetab[code as usize].len == UNKNOWN_LEN);
-    let prefix_code = codetab[code as usize].prefix_code.unwrap();
-    debug_assert!(prefix_code as usize > CONTROL_CODE);
+    if cfg!(debug_assertions) {
+        let tab_entry = codetab[code as usize];
+        assert!(tab_entry.len == UNKNOWN_LEN);
+        assert!(tab_entry.prefix_code.unwrap() as usize > CONTROL_CODE);
+    }
 
     if Some(prefix_code) == queue.next() {
         /* The prefix code hasn't been added yet, but we were just
