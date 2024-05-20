@@ -1516,7 +1516,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "_deflate-any")]
                 CompressionMethod::Deflated => {
-                    let default = if cfg!(all(feature = "deflate-zopfli", not(feature = "_deflate-non-zopfli"))) {
+                    let default = if cfg!(all(feature = "deflate-zopfli", not(feature = "_deflate-flate2"))) {
                         24
                     } else {
                         Compression::default().level() as i64
@@ -1694,9 +1694,9 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
 #[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    let min = if cfg!(feature = "_deflate-non-zopfli")
+    let min = if cfg!(feature = "_deflate-flate2")
     {
-        Compression::none().level() as i64
+        Compression::fast().level() as i64
     } else {
         Compression::best().level() as i64 + 1
     };
