@@ -1,0 +1,13 @@
+This file is taken from
+https://github.com/Gibberlings3/iwd_unfinished_business/releases/tag/v11
+and is the 11th Linux version of a game mod called "Unfinished Business
+for Icewind Dale". It came with the following copyright notice:
+
+"The modding community for the Infinity Engine has been going strong since 1998,
+and is the culmination of thousands of unpaid modding hours by fellow fans of the game.
+Modders produce their best work and players get the best, well-supported mods when we all work together.
+
+"There are two big ways to upset this harmony. One is to claim someone else's work as your own.
+The second is to host and redistribute a mod without permission from the author(s).
+
+"Be kind to your fellow players and modders. Don't do either."
