@@ -302,17 +302,21 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
         let new_code = queue.remove_next();
         if let Some(new_code) = new_code {
             //debug_assert!(codetab[prev_code as usize].last_dst_pos < dst_pos);
-            codetab[new_code as usize].prefix_code = Some(prev_code);
-            codetab[new_code as usize].ext_byte = first_byte;
-            codetab[new_code as usize].len = codetab[prev_code as usize].len + 1;
-            codetab[new_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
-
-            if codetab[prev_code as usize].prefix_code.is_none() {
-                // prev_code was invalidated in a partial
-                // clearing. Until that code is re-used, the
-                // string represented by new_code is
-                // indeterminate.
-                codetab[new_code as usize].len = UNKNOWN_LEN;
+            let prev_code_entry = codetab[prev_code as usize];
+            *codetab[new_code as usize] = Codetab {
+                prefix_code: Some(prev_code),
+                ext_byte: first_byte,
+                last_dst_pos: prev_code_entry.last_dst_pos,
+                len: if prev_code_entry.prefix_code.is_none() {
+                    // prev_code was invalidated in a partial
+                    // clearing. Until that code is re-used, the
+                    // string represented by new_code is
+                    // indeterminate.
+                    UNKNOWN_LEN
+                } else {
+                    prev_code_entry.len + 1;
+                },
+            };
             }
             // If prev_code was invalidated in a partial clearing,
             // it's possible that new_code==prev_code, in which
