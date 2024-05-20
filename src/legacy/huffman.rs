@@ -85,10 +85,10 @@ impl HuffmanDecoder {
         }
 
         // Build mapping from index to symbol and populate the lookup table.
-        lengths.iter().enumerate().take(n).for_each(|(i, n) {
+        lengths.iter().enumerate().take(n).for_each(|(i, n)| {
             let l = lengths[i] as usize;
             if l == 0 {
-                continue;
+                return;
             }
 
             self.syms[sym_idx[l] as usize] = i as u16;
@@ -98,7 +98,7 @@ impl HuffmanDecoder {
                 self.table_insert(i, l, code[l]);
                 code[l] += 1;
             }
-        }
+        });
 
         Ok(())
     }
