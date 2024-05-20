@@ -32,7 +32,7 @@ impl CodeQueue {
     // Return the next code in the queue, or INVALID_CODE if the queue is empty.
     fn next(&self) -> Option<u16> {
         //   assert(q->next_idx < sizeof(q->codes) / sizeof(q->codes[0]));
-        self.codes[self.next_idx]
+        self.codes.get(self.next_idx).flatten()
     }
 
     /// Return and remove the next code from the queue, or return INVALID_CODE if
