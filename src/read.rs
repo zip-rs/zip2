@@ -198,7 +198,25 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::Raw(r) => r,
             ZipFileReader::Stored(r) => r.into_inner().into_inner(),
             #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Shrink(r) | ZipFileReader::Reduce(r) | ZipFileReader::Implode(r) => {
+            ZipFileReader::Shrink(r) => {
+                // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
+                // it separately
+                if let Ok(mut remaining) = r.into_inner().finish() {
+                    let _ = copy(&mut remaining, &mut sink());
+                }
+                return;
+            }
+            #[cfg(feature = "legacy-zip")]
+            ZipFileReader::Reduce(r) => {
+                // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
+                // it separately
+                if let Ok(mut remaining) = r.into_inner().finish() {
+                    let _ = copy(&mut remaining, &mut sink());
+                }
+                return;
+            }
+            #[cfg(feature = "legacy-zip")]
+            ZipFileReader::Implode(r) => {
                 // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
                 // it separately
                 if let Ok(mut remaining) = r.into_inner().finish() {
