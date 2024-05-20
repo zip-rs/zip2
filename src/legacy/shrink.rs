@@ -185,6 +185,7 @@ fn output_code(
     // was invalid (due to partial clearing) when the code was inserted into
     // the table. The prefix can then become valid when it's added to the
     // table at a later point.
+    let prefix_code = codetab[code as usize].prefix_code.unwrap();
     if cfg!(debug_assertions) {
         let tab_entry = codetab[code as usize];
         assert!(tab_entry.len == UNKNOWN_LEN);
@@ -195,8 +196,7 @@ fn output_code(
         /* The prefix code hasn't been added yet, but we were just
         about to: the KwKwK case. Add the previous string extended
         with its first byte. */
-        debug_assert!(codetab[prev_code as usize].prefix_code.is_some());
-        *(codetab[prefix_code as usize]) = Codetab {
+        codetab[prefix_code as usize] = Codetab {
             prefix_code: Some(prev_code),
             ext_byte: *first_byte,
             len: codetab[prev_code as usize].len + 1,
@@ -273,7 +273,7 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
             }
             // Extend the previous code with its first byte.
             debug_assert!(curr_code != prev_code);
-            *codetab[curr_code] = Codetab {
+            codetab[curr_code as usize] = Codetab {
                 prefix_code: Some(prev_code),
                 ext_byte: first_byte,
                 len: codetab[prev_code as usize].len + 1,
@@ -303,7 +303,7 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
         if let Some(new_code) = new_code {
             //debug_assert!(codetab[prev_code as usize].last_dst_pos < dst_pos);
             let prev_code_entry = codetab[prev_code as usize];
-            *codetab[new_code as usize] = Codetab {
+            codetab[new_code as usize] = Codetab {
                 prefix_code: Some(prev_code),
                 ext_byte: first_byte,
                 last_dst_pos: prev_code_entry.last_dst_pos,
@@ -314,13 +314,9 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
                     // indeterminate.
                     UNKNOWN_LEN
                 } else {
-                    prev_code_entry.len + 1;
+                    prev_code_entry.len + 1
                 },
             };
-            }
-            // If prev_code was invalidated in a partial clearing,
-            // it's possible that new_code==prev_code, in which
-            // case it will never be used or cleared.
         }
 
         codetab[curr_code as usize].last_dst_pos = dst_pos;
