@@ -284,17 +284,14 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
 
         // Output the string represented by the current code.
         let mut len = 0;
-        if let Err(s) = output_code(
+        output_code(
             curr_code,
             dst,
             prev_code,
             &mut codetab,
             &mut queue,
             &mut first_byte,
-            &mut len,
-        ) {
-            return Err(s);
-        }
+            &mut len)?;
 
         // Add a new code to the string table if there's room.
         // The string is the previous code's string extended with
