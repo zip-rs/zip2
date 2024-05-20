@@ -200,7 +200,7 @@ fn output_code(
             prefix_code: Some(prev_code),
             ext_byte: *first_byte,
             len: codetab[prev_code as usize].len + 1,
-            last_dst_pos: codetab[prev_code as usize].last_dst_pos
+            last_dst_pos: codetab[prev_code as usize].last_dst_pos,
         };
         dst.push_back(*first_byte);
     } else if codetab[prefix_code as usize].prefix_code.is_none() {

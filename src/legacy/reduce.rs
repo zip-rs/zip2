@@ -1,10 +1,8 @@
 use std::collections::VecDeque;
 use std::io::{self, copy, Read, Result};
 
-use bitstream_io::{BitRead, BitReader, Endianness, LittleEndian};
-
-use crate::legacy::lsb;
 use crate::legacy::lz77::lz77_output_backref;
+use bitstream_io::{BitRead, BitReader, Endianness, LittleEndian};
 
 /// Number of bits used to represent indices in a follower set of size n.
 fn follower_idx_bw(n: u8) -> u8 {
@@ -93,6 +91,14 @@ fn max_dist(comp_factor: u8) -> usize {
 
 const DLE_BYTE: u8 = 0x90;
 
+/// Get the n least significant bits of x.
+fn lsb(x: u8, n: u8) -> u8 {
+    if n >= 8 {
+        return x;
+    }
+    x & ((1 << n) - 1)
+}
+
 fn hwexpand(
     src: &[u8],
     uncomp_len: usize,
@@ -127,7 +133,7 @@ fn hwexpand(
             continue;
         }
         let v = curr_byte;
-        let mut len = lsb(v as u64, v_len_bits) as usize;
+        let mut len = lsb(v, v_len_bits) as usize;
         if len == (1 << v_len_bits) - 1 {
             // Read an extra length byte.
             curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
@@ -210,9 +216,17 @@ impl<R: Read> Read for ReduceDecoder<R> {
 #[cfg(test)]
 mod tests {
     use super::hwexpand;
-    use crate::legacy::reduce::{follower_idx_bw, max_dist};
+    use crate::legacy::reduce::{follower_idx_bw, lsb, max_dist};
     use std::collections::VecDeque;
     const HAMLET_2048: &[u8; 1285] = include_bytes!("../../tests/reduce_hamlet_2048.bin");
+
+    #[test]
+    fn test_lsb() {
+        assert_eq!(lsb(0xFF, 8), 0xFF);
+        for i in 0..7 {
+            assert_eq!(lsb(0xFF, i), (1 << i) - 1);
+        }
+    }
 
     #[test]
     fn test_expand_hamlet2048() {
