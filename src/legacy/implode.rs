@@ -106,6 +106,7 @@ fn hwexplode(
             2
         }
     };
+    let dist_low_bits = if large_wnd { 7 } else { 6 };
     while dst.len() < uncomp_len {
         let is_literal = is.read_bit()?;
         if is_literal {
@@ -122,15 +123,10 @@ fn hwexplode(
         }
 
         // Read the low dist bits.
-        let mut dist;
-        if large_wnd {
-            dist = is.read::<u16>(7)?;
-        } else {
-            dist = is.read::<u16>(6)?;
-        }
+        let mut dist = is.read::<u16>(dist_low_bits)?;
         // Read the Huffman-encoded high dist bits.
         let sym = dist_decoder.huffman_decode(bit_length, &mut is)?;
-        dist |= (sym as u16) << if large_wnd { 7 } else { 6 };
+        dist |= (sym as u16) << dist_low_bits;
         dist += 1;
 
         // Read the Huffman-encoded len.
