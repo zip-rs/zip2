@@ -9,8 +9,7 @@ use std::io::{self, copy, Cursor, Error, Read, Result};
 fn read_huffman_code<T: std::io::Read, E: Endianness>(
     is: &mut BitReader<T, E>,
     num_lens: usize,
-    d: &mut HuffmanDecoder,
-) -> std::io::Result<()> {
+) -> std::io::Result<HuffmanDecoder> {
     let mut lens = [0; 1 << 8];
     let mut len_count = [0; 17];
     // debug_assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
@@ -72,7 +71,9 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
         ));
     }
 
-    d.init(&lens, num_lens)
+    let mut d = HuffmanDecoder::default();
+    d.init(&lens, num_lens)?;
+    Ok(d)
 }
 
 fn hwexplode(
@@ -85,14 +86,13 @@ fn hwexplode(
 ) -> std::io::Result<()> {
     let bit_length = src.len() as u64 * 8;
     let mut is = BitReader::endian(Cursor::new(&src), LittleEndian);
-    let mut lit_decoder = HuffmanDecoder::default();
-    let mut len_decoder = HuffmanDecoder::default();
-    let mut dist_decoder = HuffmanDecoder::default();
-    if lit_tree {
-        read_huffman_code(&mut is, 256, &mut lit_decoder)?;
-    }
-    read_huffman_code(&mut is, 64, &mut len_decoder)?;
-    read_huffman_code(&mut is, 64, &mut dist_decoder)?;
+    let mut lit_decoder_opt = if lit_tree {
+        Some(read_huffman_code(&mut is, 256)?)
+    } else {
+        None
+    };
+    let mut len_decoder = read_huffman_code(&mut is, 64)?;
+    let mut dist_decoder = read_huffman_code(&mut is, 64)?;
     let min_len = if pk101_bug_compat {
         if large_wnd {
             3
@@ -112,7 +112,7 @@ fn hwexplode(
         if is_literal {
             // Literal.
             let sym;
-            if lit_tree {
+            if let Some(lit_decoder) = &mut lit_decoder_opt {
                 sym = lit_decoder.huffman_decode(bit_length, &mut is)?;
             } else {
                 sym = is.read::<u8>(8)? as u16;

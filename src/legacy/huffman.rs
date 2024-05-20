@@ -100,10 +100,10 @@ impl HuffmanDecoder {
                 if l == 0 {
                     return;
                 }
-    
+
                 self.syms[sym_idx[l] as usize] = i as u16;
                 sym_idx[l] += 1;
-    
+
                 if l <= HUFFMAN_LOOKUP_TABLE_BITS as usize {
                     self.table_insert(i, l, code[l]);
                     code[l] += 1;

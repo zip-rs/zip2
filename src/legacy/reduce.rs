@@ -56,7 +56,9 @@ fn read_next_byte<T: std::io::Read, E: Endianness>(
     fsets: &mut FollowerSetArray,
 ) -> io::Result<u8> {
     if fsets[prev_byte as usize].size == 0 // No followers
-            || is.read::<u8>(1)? == 1 {// Indicates next symbol is a literal byte
+            || is.read::<u8>(1)? == 1 // Indicates next symbol is a literal byte
+    {
+        
         return Ok(is.read::<u8>(8)?);
     }
 
