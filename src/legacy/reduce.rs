@@ -137,7 +137,7 @@ fn hwexpand(
 
         // Read the W byte, which together with V gives the distance.
         curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
-        let dist = ((v as usize) >> v_len_bits) << 8 + curr_byte as usize + 1;
+        let dist = (((v as usize) >> v_len_bits) << 8) + curr_byte as usize + 1;
 
         debug_assert!(len <= max_len(comp_factor));
         debug_assert!(dist as usize <= max_dist(comp_factor));
