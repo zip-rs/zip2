@@ -284,7 +284,7 @@ mod tests {
     fn test_max_dist() {
         for i in 1..=4 {
             let v_dist_bits = i as usize;
-            let c = ((1 << v_dist_bits) - 1) * 256 + 255 + 1;
+            let c = 1 << (v_dist_bits + 8);
             assert_eq!(max_dist(i), c);
         }
     }
