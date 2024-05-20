@@ -271,10 +271,12 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
             }
             // Extend the previous code with its first byte.
             debug_assert!(curr_code != prev_code);
-            codetab[curr_code as usize].prefix_code = Some(prev_code);
-            codetab[curr_code as usize].ext_byte = first_byte;
-            codetab[curr_code as usize].len = codetab[prev_code as usize].len + 1;
-            codetab[curr_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
+            *codetab[curr_code] = Codetab {
+                prefix_code: Some(prev_code),
+                ext_byte: first_byte,
+                len: codetab[prev_code as usize].len + 1,
+                last_dst_pos: codetab[prev_code as usize].last_dst_pos,
+            };
             //  dst.push_back(first_byte);
         }
 
