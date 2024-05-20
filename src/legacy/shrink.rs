@@ -194,10 +194,12 @@ fn output_code(
         about to: the KwKwK case. Add the previous string extended
         with its first byte. */
         debug_assert!(codetab[prev_code as usize].prefix_code.is_some());
-        codetab[prefix_code as usize].prefix_code = Some(prev_code);
-        codetab[prefix_code as usize].ext_byte = *first_byte;
-        codetab[prefix_code as usize].len = codetab[prev_code as usize].len + 1;
-        codetab[prefix_code as usize].last_dst_pos = codetab[prev_code as usize].last_dst_pos;
+        *(codetab[prefix_code as usize]) = Codetab {
+            prefix_code: Some(prev_code),
+            ext_byte: *first_byte,
+            len: codetab[prev_code as usize].len + 1,
+            last_dst_pos: codetab[prev_code as usize].last_dst_pos
+        };
         dst.push_back(*first_byte);
     } else if codetab[prefix_code as usize].prefix_code.is_none() {
         // The prefix code is still invalid.
