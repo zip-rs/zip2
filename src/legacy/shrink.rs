@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_unshrink_lzw_fig5() {
-        let mut dst = VecDeque::new();
+        let mut dst = VecDeque::with_capacity(LZW_FIG5.len());
         hwunshrink(&LZW_FIG5_SHRUNK, LZW_FIG5.len(), &mut dst).unwrap();
         assert_eq!(dst, LZW_FIG5);
     }
