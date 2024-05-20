@@ -85,8 +85,8 @@ impl HuffmanDecoder {
         }
 
         // Build mapping from index to symbol and populate the lookup table.
-        lengths.iter().enumerate().take(n).for_each(|(i, n)| {
-            let l = *n as usize;
+        lengths.iter().enumerate().take(n).for_each(|(i, code_len)| {
+            let l = *code_len as usize;
             if l == 0 {
                 return;
             }
