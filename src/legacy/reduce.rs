@@ -22,10 +22,12 @@ struct FollowerSet {
 }
 
 /// Read the follower sets from is into fsets. Returns true on success.
+type FollowerSetArray = [FollowerSet; u8::MAX as usize + 1];
+
 fn read_follower_sets<T: std::io::Read, E: Endianness>(
     is: &mut BitReader<T, E>,
-    fsets: &mut [FollowerSet],
-) -> io::Result<()> {
+) -> io::Result<FollowerSetArray> {
+    let mut fsets = [FollowerSet::default(); u8::MAX as usize + 1];
     for i in (0..=u8::MAX as usize).rev() {
         let n = is.read::<u8>(6)?;
         if n > 32 {
@@ -42,7 +44,7 @@ fn read_follower_sets<T: std::io::Read, E: Endianness>(
         }
     }
 
-    Ok(())
+    Ok(fsets)
 }
 
 /// Read the next byte from is, decoded based on prev_byte and the follower sets.
@@ -51,15 +53,10 @@ fn read_follower_sets<T: std::io::Read, E: Endianness>(
 fn read_next_byte<T: std::io::Read, E: Endianness>(
     is: &mut BitReader<T, E>,
     prev_byte: u8,
-    fsets: &mut [FollowerSet],
+    fsets: &mut FollowerSetArray,
 ) -> io::Result<u8> {
-    if fsets[prev_byte as usize].size == 0 {
-        // No followers; read a literal byte.
-        return Ok(is.read::<u8>(8)?);
-    }
-
-    if is.read::<u8>(1)? == 1 {
-        // Don't use the follower set; read a literal byte.
+    if fsets[prev_byte as usize].size == 0 // No followers
+            || is.read::<u8>(1)? == 1 {// Indicates next symbol is a literal byte
         return Ok(is.read::<u8>(8)?);
     }
 
@@ -105,11 +102,10 @@ fn hwexpand(
     comp_factor: u8,
     dst: &mut VecDeque<u8>,
 ) -> io::Result<()> {
-    let mut fsets = [FollowerSet::default(); 1 << 8];
     debug_assert!(comp_factor >= 1 && comp_factor <= 4);
 
     let mut is = BitReader::endian(src, LittleEndian);
-    read_follower_sets(&mut is, &mut fsets)?;
+    let mut fsets = read_follower_sets(&mut is)?;
 
     // Number of bits in V used for backref length.
     let v_len_bits = 8 - comp_factor;
