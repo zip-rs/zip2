@@ -17,12 +17,12 @@ const UNKNOWN_LEN: u16 = u16::MAX;
 
 struct CodeQueue {
     next_idx: usize,
-    codes: [Option<u16>; MAX_CODE as usize - CONTROL_CODE + 1],
+    codes: Vec<Option<u16>>,
 }
 
 impl CodeQueue {
     fn new() -> Self {
-        let mut codes = [None; MAX_CODE as usize - CONTROL_CODE + 1];
+        let mut codes = vec![None; MAX_CODE as usize - CONTROL_CODE + 1];
         for (i, code) in (CONTROL_CODE as u16 + 1..=MAX_CODE as u16).enumerate() {
             codes[i] = Some(code);
         }
