@@ -115,22 +115,21 @@ fn read_code<T: std::io::Read, E: Endianness>(
     code_size: &mut u8,
     codetab: &mut [Codetab],
     queue: &mut CodeQueue,
-) -> io::Result<Option<u16>> {
+) -> io::Result<u16> {
     // assert(sizeof(code) * CHAR_BIT >= *code_size);
     let code = is.read::<u16>(*code_size as u32)?;
 
     // Handle regular codes (the common case).
     if code != CONTROL_CODE as u16 {
-        return Ok(Some(code));
+        return Ok(code);
     }
 
     // Handle control codes.
-    let control_code = if let Ok(c) = is.read::<u16>(*code_size as u32) {
-        c
-    } else {
-        return Ok(None);
-    };
-    if control_code == INC_CODE_SIZE && *code_size < MAX_CODE_SIZE {
+    let control_code = is.read::<u16>(*code_size as u32)?;
+    if control_code == INC_CODE_SIZE {
+        if *code_size >= MAX_CODE_SIZE {
+            return Err(io::Error::new(ErrorKind::InvalidData, "tried to increase code size when already at maximum));
+        }
         (*code_size) += 1;
         return read_code(is, code_size, codetab, queue);
     }
@@ -138,7 +137,7 @@ fn read_code<T: std::io::Read, E: Endianness>(
         unshrink_partial_clear(codetab, queue);
         return read_code(is, code_size, codetab, queue);
     }
-    return Ok(None);
+    Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid control code {}", control_code)))
 }
 
 /// Output the string represented by a code into dst at dst_pos. Returns
