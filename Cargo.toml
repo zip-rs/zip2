@@ -69,13 +69,12 @@ aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1", "rand", "zero
 chrono = ["chrono/default"]
 _deflate-any = []
 _all-features = [] # Detect when --all-features is used
-deflate = ["flate2/rust_backend", "_deflate-any"]
-
+deflate = ["flate2/rust_backend", "deflate-zopfli", "deflate-flate2"]
+deflate-flate2 = ["flate2/any_impl", "_deflate-any"]
 # DEPRECATED: previously enabled `flate2/miniz_oxide` which is equivalent to `flate2/rust_backend`
-deflate-miniz = ["deflate", "_deflate-any"]
-
-deflate-zlib = ["flate2/zlib", "_deflate-any"]
-deflate-zlib-ng = ["flate2/zlib-ng", "_deflate-any"]
+deflate-miniz = ["deflate", "deflate-flate2"]
+deflate-zlib = ["flate2/zlib", "deflate-flate2"]
+deflate-zlib-ng = ["flate2/zlib-ng", "deflate-flate2"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
 lzma = ["lzma-rs/stream"]
 legacy-zip = ["bitstream-io"]
@@ -83,10 +82,8 @@ unreserved = []
 default = [
     "aes-crypto",
     "bzip2",
-    "deflate",
     "deflate64",
-    "deflate-zlib-ng",
-    "deflate-zopfli",
+    "deflate",
     "lzma",
     "time",
     "zstd",
