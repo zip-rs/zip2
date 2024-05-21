@@ -31,4 +31,4 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - uses: actions/attest-build-provenance@v1
         with:
-          subject-path: ${{ GITHUB_WORKSPACE }}/target/release/libzip.rlib
+          subject-path: ${{ github.workspace }}/target/release/libzip.rlib
