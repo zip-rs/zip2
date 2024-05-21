@@ -1,0 +1,3 @@
+tests/implode_hamlet_256.bin binary
+tests/reduce_hamlet_2048.bin binary
+tests/reduce_zero_reduced.bin binary

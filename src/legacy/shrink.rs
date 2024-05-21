@@ -125,20 +125,30 @@ fn read_code<T: std::io::Read, E: Endianness>(
     }
 
     // Handle control codes.
-    let control_code = if let Ok(c) = is.read::<u16>(*code_size as u32) {
-        c
-    } else {
-        return Ok(None);
-    };
-    if control_code == INC_CODE_SIZE && *code_size < MAX_CODE_SIZE {
-        (*code_size) += 1;
+    if let Ok(control_code) = is.read::<u16>(*code_size as u32) {
+        match control_code {
+            INC_CODE_SIZE => {
+                if *code_size >= MAX_CODE_SIZE {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "tried to increase code size when already at maximum",
+                    ));
+                }
+                *code_size += 1;
+            }
+            PARTIAL_CLEAR => {
+                unshrink_partial_clear(codetab, queue);
+            }
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid control code {}", control_code),
+                ));
+            }
+        }
         return read_code(is, code_size, codetab, queue);
     }
-    if control_code == PARTIAL_CLEAR {
-        unshrink_partial_clear(codetab, queue);
-        return read_code(is, code_size, codetab, queue);
-    }
-    return Ok(None);
+    Ok(None)
 }
 
 /// Output the string represented by a code into dst at dst_pos. Returns
@@ -291,7 +301,8 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
             &mut codetab,
             &mut queue,
             &mut first_byte,
-            &mut len)?;
+            &mut len,
+        )?;
 
         // Add a new code to the string table if there's room.
         // The string is the previous code's string extended with
