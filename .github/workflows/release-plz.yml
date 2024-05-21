@@ -30,6 +30,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_PAT }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - uses: actions/attest-build-provenance@v1
-        if: ${{ steps.release-plz.outputs.releases_created }}
         with:
           subject-path: ${{ github.workspace }}/target/release/libzip.rlib
+        continue-on-error: true
