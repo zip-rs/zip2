@@ -211,7 +211,7 @@ impl DateTime {
     /// Returns `Err` when this object is out of bounds
     #[deprecated(note = "use `DateTime::try_from()`")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
-        dt.try_into().map_err(|_err| DateTimeRangeError)
+        dt.try_into()
     }
 
     /// Gets the time portion of this datetime in the msdos representation
@@ -226,11 +226,9 @@ impl DateTime {
 
     #[cfg(feature = "time")]
     /// Converts the DateTime to a OffsetDateTime structure
+    #[deprecated(note = "use `OffsetDateTime::try_from()`")]
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
-        let date =
-            Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
-        let time = Time::from_hms(self.hour, self.minute, self.second)?;
-        Ok(PrimitiveDateTime::new(date, time).assume_utc())
+        (*self).try_into()
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -301,6 +299,17 @@ impl TryFrom<OffsetDateTime> for DateTime {
         } else {
             Err(DateTimeRangeError)
         }
+    }
+}
+
+#[cfg(feature = "time")]
+impl TryFrom<DateTime> for OffsetDateTime {
+    type Error = ComponentRange;
+
+    fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
+        let date = Date::from_calendar_date(dt.year as i32, Month::try_from(dt.month)?, dt.day)?;
+        let time = Time::from_hms(dt.hour, dt.minute, dt.second)?;
+        Ok(PrimitiveDateTime::new(date, time).assume_utc())
     }
 }
 
@@ -621,9 +630,24 @@ mod test {
 
     #[cfg(feature = "time")]
     #[test]
-    fn datetime_try_from_bounds() {
-        use std::convert::TryFrom;
+    fn datetime_try_from_offset_datetime() {
+        use time::macros::datetime;
 
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30
+        let dt = DateTime::try_from(datetime!(2018-11-17 10:38:30 UTC)).unwrap();
+        assert_eq!(dt.year(), 2018);
+        assert_eq!(dt.month(), 11);
+        assert_eq!(dt.day(), 17);
+        assert_eq!(dt.hour(), 10);
+        assert_eq!(dt.minute(), 38);
+        assert_eq!(dt.second(), 30);
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn datetime_try_from_bounds() {
         use super::DateTime;
         use time::macros::datetime;
 
@@ -640,7 +664,32 @@ mod test {
         assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00 UTC)).is_err());
     }
 
+    #[cfg(feature = "time")]
     #[test]
+    fn offset_datetime_try_from_datetime() {
+        use time::macros::datetime;
+
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30 UTC
+        let dt = OffsetDateTime::try_from(DateTime::from_msdos(0x4D71, 0x54CF)).unwrap();
+        assert_eq!(dt, datetime!(2018-11-17 10:38:30 UTC));
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn offset_datetime_try_from_bounds() {
+        use super::DateTime;
+
+        // 1980-00-00 00:00:00
+        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0x0000, 0x0000)).is_err());
+
+        // 2107-15-31 31:63:62
+        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0xFFFF, 0xFFFF)).is_err());
+    }
+
+    #[test]
+    #[allow(deprecated)]
     fn time_conversion() {
         use super::DateTime;
         let dt = DateTime::from_msdos(0x4D71, 0x54CF);
@@ -659,6 +708,7 @@ mod test {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn time_out_of_bounds() {
         use super::DateTime;
         let dt = DateTime::from_msdos(0xFFFF, 0xFFFF);
@@ -688,7 +738,6 @@ mod test {
     #[test]
     fn time_at_january() {
         use super::DateTime;
-        use std::convert::TryFrom;
 
         // 2020-01-01 00:00:00
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();
