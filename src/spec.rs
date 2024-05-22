@@ -123,9 +123,9 @@ pub(crate) trait Block: Sized + Copy {
     fn from_le(self) -> Self;
 
     fn parse<T: Read>(reader: &mut T) -> ZipResult<Self> {
-        let mut block = vec![0u8; mem::size_of::<Self>()];
+        let mut block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
         reader.read_exact(&mut block)?;
-        Self::interpret(block.into_boxed_slice())
+        Self::interpret(block)
     }
 
     fn encode(self) -> Box<[u8]> {
@@ -138,12 +138,12 @@ pub(crate) trait Block: Sized + Copy {
     fn serialize(self) -> Box<[u8]> {
         /* TODO: use Box::new_zeroed() when stabilized! */
         /* TODO: also consider using smallvec! */
-        let mut out_block = vec![0u8; mem::size_of::<Self>()];
+        let mut out_block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
         let out_ptr: *mut Self = out_block.as_mut_ptr().cast();
         unsafe {
             out_ptr.write(self);
         }
-        out_block.into_boxed_slice()
+        out_block
     }
 
     fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
