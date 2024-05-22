@@ -1142,6 +1142,7 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
     };
     let mut reader = io::Cursor::new(extra_field.as_ref());
 
+    /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
     while (reader.position() as usize) < extra_field.len() {
         let kind = reader.read_u16_le()?;
         let len = reader.read_u16_le()?;

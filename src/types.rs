@@ -849,7 +849,7 @@ impl ZipFileData {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed)]
 pub(crate) struct ZipCentralEntryBlock {
-    pub magic: spec::Magic,
+    magic: spec::Magic,
     pub version_made_by: u16,
     pub version_to_extract: u16,
     pub flags: u16,
