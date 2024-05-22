@@ -57,7 +57,7 @@ arbitrary = { version = "1.3.2", features = ["derive"] }
 
 [dev-dependencies]
 bencher = "0.1.5"
-getrandom = { version = "0.2.14", features = ["js"] }
+getrandom = { version = "0.2.14", features = ["js", "std"] }
 walkdir = "2.5.0"
 time = { workspace = true, features = ["formatting", "macros"] }
 anyhow = "1"
