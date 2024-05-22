@@ -110,7 +110,7 @@ impl CompressionMethod {
         }
     }
 
-    /// Converts an u16 to its corresponding CompressionMethod
+    /// Converts a u16 to its corresponding CompressionMethod
     #[deprecated(
         since = "0.5.7",
         note = "use a constant to construct a compression method"

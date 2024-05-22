@@ -1,7 +1,7 @@
 use bencher::{benchmark_group, benchmark_main};
 
 use std::fs;
-use std::io::{prelude::*, Cursor};
+use std::io::{self, prelude::*, Cursor};
 
 use bencher::Bencher;
 use getrandom::getrandom;
@@ -22,7 +22,7 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> ZipResult<Ve
     for i in 0..count_files {
         let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
         writer.start_file(name, options)?;
-        getrandom(&mut bytes).unwrap();
+        getrandom(&mut bytes).map_err(io::Error::from)?;
         writer.write_all(&bytes)?;
     }
 

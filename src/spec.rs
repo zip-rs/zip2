@@ -282,7 +282,7 @@ impl Zip32CentralDirectoryEnd {
             ..
         } = Zip32CDEBlock::parse(reader)?;
 
-        let mut zip_file_comment = vec![0u8; zip_file_comment_length as usize];
+        let mut zip_file_comment = vec![0u8; zip_file_comment_length as usize].into_boxed_slice();
         reader.read_exact(&mut zip_file_comment)?;
 
         Ok(Zip32CentralDirectoryEnd {
@@ -292,7 +292,7 @@ impl Zip32CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            zip_file_comment: zip_file_comment.into_boxed_slice(),
+            zip_file_comment,
         })
     }
 

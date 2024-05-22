@@ -1034,9 +1034,9 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 
 #[inline]
 fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> io::Result<Box<[u8]>> {
-    let mut data = vec![0; len];
+    let mut data = vec![0; len].into_boxed_slice();
     reader.read_exact(&mut data)?;
-    Ok(data.into_boxed_slice())
+    Ok(data)
 }
 
 /// Parse a central directory entry to collect the information for the file.
