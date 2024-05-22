@@ -67,7 +67,7 @@ impl From<System> for u8 {
 ///
 /// Modern zip files store more precise timestamps, which are ignored by [`crate::read::ZipArchive`],
 /// so keep in mind that these timestamps are unreliable. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904).
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     year: u16,
     month: u8,
@@ -604,6 +604,49 @@ mod test {
         let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
         assert_eq!(dt.timepart(), 0b10111_111011_11110);
         assert_eq!(dt.datepart(), 0b1111111_1100_11111);
+    }
+
+    #[test]
+    fn datetime_equality() {
+        use super::DateTime;
+
+        let dt = DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap();
+        assert_eq!(
+            dt,
+            DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()
+        );
+        assert_ne!(dt, DateTime::default());
+    }
+
+    #[test]
+    fn datetime_order() {
+        use std::cmp::Ordering;
+
+        use super::DateTime;
+
+        let dt = DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap();
+        assert_eq!(
+            dt.cmp(&DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()),
+            Ordering::Equal
+        );
+        // year
+        assert!(dt < DateTime::from_date_and_time(2019, 11, 17, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2017, 11, 17, 10, 38, 30).unwrap());
+        // month
+        assert!(dt < DateTime::from_date_and_time(2018, 12, 17, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 10, 17, 10, 38, 30).unwrap());
+        // day
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 18, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 16, 10, 38, 30).unwrap());
+        // hour
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 11, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 9, 38, 30).unwrap());
+        // minute
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 39, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 37, 30).unwrap());
+        // second
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 38, 31).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 38, 29).unwrap());
     }
 
     #[test]
