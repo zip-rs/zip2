@@ -159,11 +159,11 @@ pub struct CentralDirectoryEnd {
     pub central_directory_size: u32,
     pub central_directory_offset: u32,
     /* TODO: box instead? */
-    pub zip_file_comment: Vec<u8>,
+    pub zip_file_comment: Box<[u8]>,
 }
 
 impl CentralDirectoryEnd {
-    fn block_and_comment(self) -> ZipResult<(CDEBlock, Vec<u8>)> {
+    fn block_and_comment(self) -> ZipResult<(CDEBlock, Box<[u8]>)> {
         let Self {
             disk_number,
             disk_with_central_directory,
@@ -200,7 +200,7 @@ impl CentralDirectoryEnd {
             ..
         } = CDEBlock::parse(reader)?;
 
-        let mut zip_file_comment = vec![0u8; zip_file_comment_length as usize];
+        let mut zip_file_comment = vec![0u8; zip_file_comment_length as usize].into_boxed_slice();
         reader.read_exact(&mut zip_file_comment)?;
 
         Ok(CentralDirectoryEnd {
@@ -595,6 +595,13 @@ impl Zip64CentralDirectoryEnd {
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         self.block().write(writer)
     }
+}
+
+pub(crate) fn is_dir(filename: &str) -> bool {
+    filename
+        .chars()
+        .next_back()
+        .map_or(false, |c| c == '/' || c == '\\')
 }
 
 /// Converts a path to the ZIP format (forward-slash-delimited and normalized).

@@ -9,10 +9,12 @@ use crate::spec::{self, Block};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{ffi, AesVendorVersion, DateTime, ZipFileData, ZipRawValues, DEFAULT_VERSION};
+use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
 use indexmap::IndexMap;
+use std::borrow::ToOwned;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -125,7 +127,7 @@ pub(crate) mod zip_writer {
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
-        pub(super) comment: Vec<u8>,
+        pub(super) comment: Box<[u8]>,
         pub(super) flush_on_finish_file: bool,
     }
 }
@@ -678,7 +680,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             stats: Default::default(),
             writing_to_file: false,
             writing_raw: false,
-            comment: Vec::new(),
+            comment: Box::new([]),
             flush_on_finish_file: false,
         }
     }
@@ -691,16 +693,16 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Set ZIP archive comment.
     pub fn set_comment<S>(&mut self, comment: S)
     where
-        S: Into<String>,
+        S: Into<Box<str>>,
     {
-        self.set_raw_comment(comment.into().into())
+        self.set_raw_comment(comment.into().into_boxed_bytes())
     }
 
     /// Set ZIP archive comment.
     ///
     /// This sets the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8
-    pub fn set_raw_comment(&mut self, comment: Vec<u8>) {
+    pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
         self.comment = comment;
     }
 
@@ -713,19 +715,20 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// This returns the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8
-    pub const fn get_raw_comment(&self) -> &Vec<u8> {
+    pub const fn get_raw_comment(&self) -> &[u8] {
         &self.comment
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S, T: FileOptionExtension>(
+    fn start_entry<S, SToOwned, T: FileOptionExtension>(
         &mut self,
         name: S,
         options: FileOptions<T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()>
     where
-        S: Into<Box<str>>,
+        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
+        SToOwned: Into<Box<str>>,
     {
         self.finish_file()?;
 
@@ -800,7 +803,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
 
             // file name
-            writer.write_all(file.file_name.as_bytes())?;
+            writer.write_all(&file.file_name_raw)?;
             // zip64 extra field
             if file.large_file {
                 write_local_zip64_extra_field(writer, file)?;
@@ -998,13 +1001,14 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
-    pub fn start_file<S, T: FileOptionExtension>(
+    pub fn start_file<S, T: FileOptionExtension, SToOwned>(
         &mut self,
         name: S,
         mut options: FileOptions<T>,
     ) -> ZipResult<()>
     where
-        S: Into<Box<str>>,
+        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
+        SToOwned: Into<Box<str>>,
     {
         Self::normalize_options(&mut options);
         let make_new_self = self.inner.prepare_next_writer(
@@ -1133,9 +1137,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///     Ok(())
     /// }
     /// ```
-    pub fn raw_copy_file_rename<S>(&mut self, mut file: ZipFile, name: S) -> ZipResult<()>
+    pub fn raw_copy_file_rename<S, SToOwned>(&mut self, mut file: ZipFile, name: S) -> ZipResult<()>
     where
-        S: Into<Box<str>>,
+        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
+        SToOwned: Into<Box<str>>,
     {
         let mut options = SimpleFileOptions::default()
             .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
@@ -1268,20 +1273,21 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// implementations may materialize a symlink as a regular file, possibly with the
     /// content incorrectly set to the symlink target. For maximum portability, consider
     /// storing a regular file instead.
-    pub fn add_symlink<N, T, E: FileOptionExtension>(
+    pub fn add_symlink<N, NToOwned, T, E: FileOptionExtension>(
         &mut self,
         name: N,
         target: T,
         mut options: FileOptions<E>,
     ) -> ZipResult<()>
     where
-        N: Into<Box<str>>,
+        N: Into<Box<str>> + ToOwned<Owned = NToOwned>,
+        NToOwned: Into<Box<str>>,
         T: Into<Box<str>>,
     {
         if options.permissions.is_none() {
             options.permissions = Some(0o777);
         }
-        *options.permissions.as_mut().unwrap() |= 0o120000;
+        *options.permissions.as_mut().unwrap() |= S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
@@ -1395,7 +1401,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
         let src_index = self.index_by_name(src_name)?;
         let mut dest_data = self.files[src_index].to_owned();
-        dest_data.file_name = dest_name.into();
+        dest_data.file_name = dest_name.to_string().into();
+        dest_data.file_name_raw = dest_name.to_string().into_bytes().into();
         self.insert_file_data(dest_data)?;
         Ok(())
     }
@@ -1454,7 +1461,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "_deflate-any")]
                 CompressionMethod::Deflated => {
-                    let default = if cfg!(feature = "deflate-zopfli") {
+                    let default = if cfg!(all(
+                        feature = "deflate-zopfli",
+                        not(feature = "deflate-flate2")
+                    )) {
                         24
                     } else {
                         Compression::default().level() as i64
@@ -1632,11 +1642,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
 #[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    let min = if cfg!(feature = "deflate")
-        || cfg!(feature = "deflate-zlib")
-        || cfg!(feature = "deflate-zlib-ng")
-    {
-        Compression::none().level() as i64
+    let min = if cfg!(feature = "deflate-flate2") {
+        Compression::fast().level() as i64
     } else {
         Compression::best().level() as i64 + 1
     };
@@ -1745,7 +1752,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     block.write(writer)?;
 
     // file name
-    writer.write_all(file.file_name.as_bytes())?;
+    writer.write_all(&file.file_name_raw)?;
     // zip64 extra field
     writer.write_all(&zip64_extra_field[..zip64_extra_field_length as usize])?;
     // extra field
@@ -1810,7 +1817,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    let zip64_extra_field = file.header_start + 30 + file.file_name.as_bytes().len() as u64;
+    let zip64_extra_field = file.header_start + 30 + file.file_name_raw.len() as u64;
     writer.seek(SeekFrom::Start(zip64_extra_field + 4))?;
     writer.write_u64_le(file.uncompressed_size)?;
     writer.write_u64_le(file.compressed_size)?;
@@ -2040,6 +2047,58 @@ mod test {
     const RT_TEST_FILENAME: &str = "subfolder/sub-subfolder/can't_stop.txt";
     const SECOND_FILENAME: &str = "different_name.xyz";
     const THIRD_FILENAME: &str = "third_name.xyz";
+
+    #[test]
+    fn write_non_utf8() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let options = FileOptions {
+            compression_method: CompressionMethod::Stored,
+            compression_level: None,
+            last_modified_time: DateTime::default(),
+            permissions: Some(33188),
+            large_file: false,
+            encrypt_with: None,
+            extended_options: (),
+            alignment: 1,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: None,
+        };
+
+        // GB18030
+        // "中文" = [214, 208, 206, 196]
+        let filename = unsafe { String::from_utf8_unchecked(vec![214, 208, 206, 196]) };
+        writer.start_file(filename, options).unwrap();
+        writer.write_all(b"encoding GB18030").unwrap();
+
+        // SHIFT_JIS
+        // "日文" = [147, 250, 149, 182]
+        let filename = unsafe { String::from_utf8_unchecked(vec![147, 250, 149, 182]) };
+        writer.start_file(filename, options).unwrap();
+        writer.write_all(b"encoding SHIFT_JIS").unwrap();
+        let result = writer.finish().unwrap();
+
+        assert_eq!(result.get_ref().len(), 224);
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/non_utf8.zip"));
+
+        assert_eq!(result.get_ref(), &v);
+    }
+
+    #[test]
+    fn path_to_string() {
+        let mut path = std::path::PathBuf::new();
+        #[cfg(windows)]
+        path.push(r"C:\");
+        #[cfg(unix)]
+        path.push("/");
+        path.push("windows");
+        path.push("..");
+        path.push(".");
+        path.push("system32");
+        let path_str = super::path_to_string(&path);
+        assert_eq!(&*path_str, "system32");
+    }
 
     #[test]
     fn test_shallow_copy() {
@@ -2362,10 +2421,11 @@ mod test {
     #[test]
     fn test_crash_short_read() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let comment: Vec<u8> = vec![
+        let comment = vec![
             1, 80, 75, 5, 6, 237, 237, 237, 237, 237, 237, 237, 237, 44, 255, 191, 255, 255, 255,
             255, 255, 255, 255, 255, 16,
-        ];
+        ]
+        .into_boxed_slice();
         writer.set_raw_comment(comment);
         let options = SimpleFileOptions::default()
             .compression_method(Stored)

@@ -32,12 +32,12 @@ Features
 The features available are:
 
 * `aes-crypto`: Enables decryption of files which were encrypted with AES. Supports AE-1 and AE-2 methods.
-* `deflate`: Enables decompressing the deflate compression algorithm, which is the default for zip files.
-* `deflate-zlib`: Enables deflating files with the `zlib` library (used when compression quality is 0..=9).
-* `deflate-zlib-ng`: Enables deflating files with the `zlib-ng` library (used when compression quality is 0..=9).
-  This is the fastest `deflate` implementation available.
+* `deflate`: Enables compressing and decompressing an unspecified implementation (that may change in future versions) of
+ the deflate compression algorithm, which is the default for zip files. Supports compression quality 1..=264.
+* `deflate-flate2`: Combine this with any `flate2` feature flag that enables a back-end, to support deflate compression 
+  at quality 1..=9.
 * `deflate-zopfli`: Enables deflating files with the `zopfli` library (used when compression quality is 10..=264). This
-  is the most effective `deflate` implementation available.
+  is the most effective `deflate` implementation available, but also among the slowest.
 * `deflate64`: Enables the deflate64 compression algorithm. Only decompression is supported.
 * `lzma`: Enables the LZMA compression algorithm. Only decompression is supported.
 * `bzip2`: Enables the BZip2 compression algorithm.
@@ -54,7 +54,7 @@ The following feature flags are deprecated:
 MSRV
 ----
 
-Our current Minimum Supported Rust Version is **1.70**. When adding features,
+Our current Minimum Supported Rust Version is **1.73**. When adding features,
 we will follow these guidelines:
 
 - We will always support the latest four minor Rust versions. This gives you a 6

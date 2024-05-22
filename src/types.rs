@@ -3,7 +3,6 @@
 //! Types that specify what is contained in a ZIP.
 use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
-use num_enum::{FromPrimitive, IntoPrimitive};
 use path::{Component, Path, PathBuf};
 use std::path;
 use std::sync::{Arc, OnceLock};
@@ -19,10 +18,12 @@ use crate::spec::{self, Block};
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
+    pub const S_IFLNK: u32 = 0o0120000;
 }
 
 use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
+use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
 use crate::CompressionMethod;
 #[cfg(feature = "time")]
@@ -34,13 +35,32 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum System {
     Dos = 0,
     Unix = 3,
-    #[num_enum(default)]
     Unknown,
+}
+
+impl From<u8> for System {
+    fn from(system: u8) -> Self {
+        match system {
+            0 => Self::Dos,
+            3 => Self::Unix,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl From<System> for u8 {
+    fn from(system: System) -> Self {
+        match system {
+            System::Dos => 0,
+            System::Unix => 3,
+            System::Unknown => 4,
+        }
+    }
 }
 
 /// Representation of a moment in time.
@@ -101,14 +121,14 @@ impl TryFrom<NaiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "chrono")]
-impl TryInto<NaiveDateTime> for DateTime {
+impl TryFrom<DateTime> for NaiveDateTime {
     type Error = DateTimeRangeError;
 
-    fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
-        let date = NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+    fn try_from(value: DateTime) -> Result<Self, Self::Error> {
+        let date = NaiveDate::from_ymd_opt(value.year.into(), value.month.into(), value.day.into())
             .ok_or(DateTimeRangeError)?;
         let time =
-            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+            NaiveTime::from_hms_opt(value.hour.into(), value.minute.into(), value.second.into())
                 .ok_or(DateTimeRangeError)?;
         Ok(NaiveDateTime::new(date, time))
     }
@@ -204,7 +224,7 @@ impl DateTime {
     /// Returns `Err` when this object is out of bounds
     #[deprecated(note = "use `DateTime::try_from()`")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
-        dt.try_into().map_err(|_err| DateTimeRangeError)
+        dt.try_into()
     }
 
     /// Gets the time portion of this datetime in the msdos representation
@@ -219,11 +239,9 @@ impl DateTime {
 
     #[cfg(feature = "time")]
     /// Converts the DateTime to a OffsetDateTime structure
+    #[deprecated(note = "use `OffsetDateTime::try_from()`")]
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
-        let date =
-            Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
-        let time = Time::from_hms(self.hour, self.minute, self.second)?;
-        Ok(PrimitiveDateTime::new(date, time).assume_utc())
+        (*self).try_into()
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -297,6 +315,17 @@ impl TryFrom<OffsetDateTime> for DateTime {
     }
 }
 
+#[cfg(feature = "time")]
+impl TryFrom<DateTime> for OffsetDateTime {
+    type Error = ComponentRange;
+
+    fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
+        let date = Date::from_calendar_date(dt.year as i32, Month::try_from(dt.month)?, dt.day)?;
+        let time = Time::from_hms(dt.hour, dt.minute, dt.second)?;
+        Ok(PrimitiveDateTime::new(date, time).assume_utc())
+    }
+}
+
 pub const DEFAULT_VERSION: u8 = 46;
 
 /// Structure representing a ZIP file.
@@ -356,6 +385,11 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    #[allow(dead_code)]
+    pub fn is_dir(&self) -> bool {
+        is_dir(&self.file_name)
+    }
+
     pub fn file_name_sanitized(&self) -> PathBuf {
         let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],
@@ -981,9 +1015,24 @@ mod test {
 
     #[cfg(feature = "time")]
     #[test]
-    fn datetime_try_from_bounds() {
-        use std::convert::TryFrom;
+    fn datetime_try_from_offset_datetime() {
+        use time::macros::datetime;
 
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30
+        let dt = DateTime::try_from(datetime!(2018-11-17 10:38:30 UTC)).unwrap();
+        assert_eq!(dt.year(), 2018);
+        assert_eq!(dt.month(), 11);
+        assert_eq!(dt.day(), 17);
+        assert_eq!(dt.hour(), 10);
+        assert_eq!(dt.minute(), 38);
+        assert_eq!(dt.second(), 30);
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn datetime_try_from_bounds() {
         use super::DateTime;
         use time::macros::datetime;
 
@@ -1000,7 +1049,32 @@ mod test {
         assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00 UTC)).is_err());
     }
 
+    #[cfg(feature = "time")]
     #[test]
+    fn offset_datetime_try_from_datetime() {
+        use time::macros::datetime;
+
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30 UTC
+        let dt = OffsetDateTime::try_from(DateTime::from_msdos(0x4D71, 0x54CF)).unwrap();
+        assert_eq!(dt, datetime!(2018-11-17 10:38:30 UTC));
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn offset_datetime_try_from_bounds() {
+        use super::DateTime;
+
+        // 1980-00-00 00:00:00
+        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0x0000, 0x0000)).is_err());
+
+        // 2107-15-31 31:63:62
+        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0xFFFF, 0xFFFF)).is_err());
+    }
+
+    #[test]
+    #[allow(deprecated)]
     fn time_conversion() {
         use super::DateTime;
         let dt = DateTime::from_msdos(0x4D71, 0x54CF);
@@ -1019,6 +1093,7 @@ mod test {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn time_out_of_bounds() {
         use super::DateTime;
         let dt = DateTime::from_msdos(0xFFFF, 0xFFFF);
@@ -1048,7 +1123,6 @@ mod test {
     #[test]
     fn time_at_january() {
         use super::DateTime;
-        use std::convert::TryFrom;
 
         // 2020-01-01 00:00:00
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();

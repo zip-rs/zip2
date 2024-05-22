@@ -21,12 +21,11 @@ pub enum BasicFileOperation<'k> {
     ShallowCopy(Box<FileOperation<'k>>),
     DeepCopy(Box<FileOperation<'k>>),
     MergeWithOtherFile {
-        first: Box<FileOperation<'k>>,
-        rest: Box<[FileOperation<'k>]>
+        operations: Box<[(FileOperation<'k>, bool)]>
     }
 }
 
-#[derive(Arbitrary, Clone, Debug)]
+#[derive(Arbitrary, Clone, Debug, Eq, PartialEq)]
 pub enum ReopenOption {
     DoNotReopen,
     ViaFinish,
@@ -43,8 +42,8 @@ pub struct FileOperation<'k> {
 
 #[derive(Arbitrary, Clone, Debug)]
 pub struct FuzzTestCase<'k> {
-    comment: Vec<u8>,
-    operations: Vec<(FileOperation<'k>, bool)>,
+    comment: Box<[u8]>,
+    operations: Box<[(FileOperation<'k>, bool)]>,
     flush_on_finish_file: bool,
 }
 
@@ -89,14 +88,13 @@ where
             do_operation(writer, &base, false, flush_on_finish_file)?;
             writer.deep_copy_file_from_path(&base.path, &path)?;
         }
-        BasicFileOperation::MergeWithOtherFile { first, rest } => {
+        BasicFileOperation::MergeWithOtherFile { operations } => {
             let mut other_writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-            let _ = do_operation(&mut other_writer, &first, false, flush_on_finish_file);
-            rest.iter().for_each(|operation| {
+            operations.iter().for_each(|(operation, abort)| {
                 let _ = do_operation(
                     &mut other_writer,
                     &operation,
-                    false,
+                    *abort,
                     false,
                 );
             });
@@ -127,13 +125,21 @@ where
 fuzz_target!(|test_case: FuzzTestCase| {
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     writer.set_raw_comment(test_case.comment);
-    for (operation, abort) in test_case.operations {
+    let mut final_reopen = false;
+    if let Some((last_op, _)) = test_case.operations.last() {
+        if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
+            final_reopen = true;
+        }
+    }
+    for (operation, abort) in test_case.operations.into_iter() {
         let _ = do_operation(
             &mut writer,
             &operation,
-            abort,
+            *abort,
             test_case.flush_on_finish_file,
         );
     }
-    let _ = zip::ZipArchive::new(writer.finish().unwrap());
+    if final_reopen {
+        let _ = writer.finish_into_readable().unwrap();
+    }
 });

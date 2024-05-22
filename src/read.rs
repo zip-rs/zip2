@@ -15,6 +15,8 @@ use crate::types::{
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
+use std::ffi::OsString;
+use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
 use std::mem;
 use std::ops::Deref;
@@ -86,7 +88,8 @@ pub(crate) mod zip_archive {
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
-use crate::spec::path_to_string;
+use crate::spec::{is_dir, path_to_string};
+use crate::types::ffi::S_IFLNK;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
 
@@ -356,7 +359,7 @@ pub(crate) struct CentralDirectoryInfo {
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
-        comment: Vec<u8>,
+        comment: Box<[u8]>,
         reader: R,
         central_start: u64,
     ) -> ZipResult<Self> {
@@ -372,7 +375,7 @@ impl<R> ZipArchive<R> {
         Ok(Self {
             reader,
             shared,
-            comment: comment.into_boxed_slice().into(),
+            comment: comment.into(),
         })
     }
 
@@ -668,11 +671,18 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Extract a Zip archive into a directory, overwriting files if they
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
-    /// Extraction is not atomic; If an error is encountered, some of the files
-    /// may be left on disk.
+    /// Extraction is not atomic. If an error is encountered, some of the files
+    /// may be left on disk. However, on Unix targets, no newly-created directories with part but
+    /// not all of their contents extracted will be readable, writable or usable as process working
+    /// directories by any non-root user except you.
+    ///
+    /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
+    /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
+    /// containing the target path in UTF-8.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
-
+        #[cfg(unix)]
+        let mut files_by_unix_mode = Vec::new();
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
@@ -682,24 +692,91 @@ impl<R: Read + Seek> ZipArchive<R> {
             let outpath = directory.as_ref().join(filepath);
 
             if file.is_dir() {
-                fs::create_dir_all(&outpath)?;
+                Self::make_writable_dir_all(&outpath)?;
+                continue;
+            }
+            let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
+                let mut target = Vec::with_capacity(file.size() as usize);
+                file.read_exact(&mut target)?;
+                Some(target)
             } else {
-                if let Some(p) = outpath.parent() {
-                    if !p.exists() {
-                        fs::create_dir_all(p)?;
+                None
+            };
+            drop(file);
+            if let Some(p) = outpath.parent() {
+                Self::make_writable_dir_all(p)?;
+            }
+            if let Some(target) = symlink_target {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::ffi::OsStringExt;
+                    let target = OsString::from_vec(target);
+                    let target_path = directory.as_ref().join(target);
+                    std::os::unix::fs::symlink(target_path, outpath.as_path())?;
+                }
+                #[cfg(windows)]
+                {
+                    let Ok(target) = String::from_utf8(target) else {
+                        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
+                    };
+                    let target = target.into_boxed_str();
+                    let target_is_dir_from_archive =
+                        self.shared.files.contains_key(&target) && is_dir(&target);
+                    let target_path = directory.as_ref().join(OsString::from(target.to_string()));
+                    let target_is_dir = if target_is_dir_from_archive {
+                        true
+                    } else if let Ok(meta) = std::fs::metadata(&target_path) {
+                        meta.is_dir()
+                    } else {
+                        false
+                    };
+                    if target_is_dir {
+                        std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
+                    } else {
+                        std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
                     }
                 }
-                let mut outfile = fs::File::create(&outpath)?;
-                io::copy(&mut file, &mut outfile)?;
+                continue;
             }
-            // Get and Set permissions
+            let mut file = self.by_index(i)?;
+            let mut outfile = fs::File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
+                // Check for real permissions, which we'll set in a second pass
                 if let Some(mode) = file.unix_mode() {
-                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                    files_by_unix_mode.push((outpath.clone(), mode));
                 }
             }
+        }
+        #[cfg(unix)]
+        {
+            use std::cmp::Reverse;
+            use std::os::unix::fs::PermissionsExt;
+
+            if files_by_unix_mode.len() > 1 {
+                // Ensure we update children's permissions before making a parent unwritable
+                files_by_unix_mode.sort_by_key(|(path, _)| Reverse(path.clone()));
+            }
+            for (path, mode) in files_by_unix_mode.into_iter() {
+                fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
+        create_dir_all(outpath.as_ref())?;
+        #[cfg(unix)]
+        {
+            // Dirs must be writable until all normal files are extracted
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                outpath.as_ref(),
+                std::fs::Permissions::from_mode(
+                    0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
+                ),
+            )?;
         }
         Ok(())
     }
@@ -1193,15 +1270,18 @@ impl<'a> ZipFile<'a> {
     }
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-        self.name()
-            .chars()
-            .next_back()
-            .map_or(false, |c| c == '/' || c == '\\')
+        is_dir(self.name())
     }
 
-    /// Returns whether the file is a regular file
+    /// Returns whether the file is actually a symbolic link
+    pub fn is_symlink(&self) -> bool {
+        self.unix_mode()
+            .is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
+    }
+
+    /// Returns whether the file is a normal file (i.e. not a directory or symlink)
     pub fn is_file(&self) -> bool {
-        !self.is_dir()
+        !self.is_dir() && !self.is_symlink()
     }
 
     /// Get unix mode for the file
@@ -1337,6 +1417,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 mod test {
     use crate::ZipArchive;
     use std::io::Cursor;
+    use tempdir::TempDir;
 
     #[test]
     fn invalid_offset() {
@@ -1530,5 +1611,17 @@ mod test {
         let mut decompressed = [0u8; 16];
         let mut file = reader.by_index(0).unwrap();
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
+    }
+
+    #[test]
+    fn test_is_symlink() -> std::io::Result<()> {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        assert!(reader.by_index(0).unwrap().is_symlink());
+        let tempdir = TempDir::new("test_is_symlink")?;
+        reader.extract(&tempdir).unwrap();
+        assert!(tempdir.path().join("bar").is_symlink());
+        Ok(())
     }
 }
