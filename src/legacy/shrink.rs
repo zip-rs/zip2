@@ -52,10 +52,10 @@ impl CodeQueue {
 
 #[derive(Clone, Debug, Copy)]
 struct Codetab {
-    prefix_code: Option<u16>,
-    ext_byte: u8,
-    len: u16,
     last_dst_pos: usize,
+    prefix_code: Option<u16>,
+    len: u16,
+    ext_byte: u8,
 }
 
 impl Default for Codetab {
