@@ -27,10 +27,15 @@ use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
+/// The components of [`ZipFileData`] which are updated as data is written to a new file entry.
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct ZipRawValues {
-    pub(crate) crc32: u32,
-    pub(crate) compressed_size: u64,
-    pub(crate) uncompressed_size: u64,
+    /// CRC32 checksum
+    pub crc32: u32,
+    /// Size of the file in the ZIP
+    pub compressed_size: u64,
+    /// Size of the file when extracted
+    pub uncompressed_size: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -391,12 +396,8 @@ pub struct ZipFileData {
     pub compression_level: Option<i64>,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: Option<DateTime>,
-    /// CRC32 checksum
-    pub crc32: u32,
-    /// Size of the file in the ZIP
-    pub compressed_size: u64,
-    /// Size of the file when extracted
-    pub uncompressed_size: u64,
+    /// Checksum and data extents
+    pub(crate) raw_values: ZipRawValues,
     /// Name of the file
     pub file_name: Box<str>,
     /// Raw file name. To be used when file_name was incorrectly decoded.
@@ -431,6 +432,21 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    #[inline(always)]
+    pub fn crc32(&self) -> u32 {
+        self.raw_values.crc32
+    }
+
+    #[inline(always)]
+    pub fn compressed_size(&self) -> u64 {
+        self.raw_values.compressed_size
+    }
+
+    #[inline(always)]
+    pub fn uncompressed_size(&self) -> u64 {
+        self.raw_values.uncompressed_size
+    }
+
     #[allow(dead_code)]
     pub fn is_dir(&self) -> bool {
         is_dir(&self.file_name)
@@ -583,9 +599,7 @@ impl ZipFileData {
             compression_method,
             compression_level: options.compression_level,
             last_modified_time: Some(options.last_modified_time),
-            crc32: raw_values.crc32,
-            compressed_size: raw_values.compressed_size,
-            uncompressed_size: raw_values.uncompressed_size,
+            raw_values,
             file_name, // Never used for saving, but used as map key in insert_file_data()
             file_name_raw,
             extra_field,
@@ -664,9 +678,11 @@ impl ZipFileData {
             compression_method,
             compression_level: None,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
-            crc32,
-            compressed_size: compressed_size.into(),
-            uncompressed_size: uncompressed_size.into(),
+            raw_values: ZipRawValues {
+                crc32,
+                compressed_size: compressed_size.into(),
+                uncompressed_size: uncompressed_size.into(),
+            },
             file_name,
             file_name_raw: file_name_raw.into(),
             extra_field: Some(Arc::new(extra_field)),
@@ -717,8 +733,8 @@ impl ZipFileData {
     }
 
     pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
-        let compressed_size: u32 = self.clamp_size_field(self.compressed_size);
-        let uncompressed_size: u32 = self.clamp_size_field(self.uncompressed_size);
+        let compressed_size: u32 = self.clamp_size_field(self.compressed_size());
+        let uncompressed_size: u32 = self.clamp_size_field(self.uncompressed_size());
 
         let extra_block_len: usize = self
             .zip64_extra_field_block()
@@ -738,7 +754,7 @@ impl ZipFileData {
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
-            crc32: self.crc32,
+            crc32: self.crc32(),
             compressed_size,
             uncompressed_size,
             file_name_length: self.file_name_raw.len().try_into().unwrap(),
@@ -760,14 +776,14 @@ impl ZipFileData {
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
-            crc32: self.crc32,
+            crc32: self.crc32(),
             compressed_size: self
-                .compressed_size
+                .compressed_size()
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
                 .unwrap(),
             uncompressed_size: self
-                .uncompressed_size
+                .uncompressed_size()
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
                 .unwrap(),
@@ -789,13 +805,13 @@ impl ZipFileData {
 
     pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
         let uncompressed_size: Option<u64> =
-            if self.uncompressed_size > spec::ZIP64_BYTES_THR || self.large_file {
+            if self.uncompressed_size() > spec::ZIP64_BYTES_THR || self.large_file {
                 Some(spec::ZIP64_BYTES_THR)
             } else {
                 None
             };
         let compressed_size: Option<u64> =
-            if self.compressed_size > spec::ZIP64_BYTES_THR || self.large_file {
+            if self.compressed_size() > spec::ZIP64_BYTES_THR || self.large_file {
                 Some(spec::ZIP64_BYTES_THR)
             } else {
                 None
@@ -1039,9 +1055,11 @@ mod test {
             compression_method: crate::compression::CompressionMethod::Stored,
             compression_level: None,
             last_modified_time: None,
-            crc32: 0,
-            compressed_size: 0,
-            uncompressed_size: 0,
+            raw_values: ZipRawValues {
+                crc32: 0,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            },
             file_name: file_name.clone().into_boxed_str(),
             file_name_raw: file_name.into_bytes().into_boxed_slice(),
             extra_field: None,
