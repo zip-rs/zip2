@@ -1,5 +1,6 @@
 //! Types that specify what is contained in a ZIP.
 use path::{Component, Path, PathBuf};
+use std::fmt;
 use std::path;
 use std::sync::{Arc, OnceLock};
 
@@ -132,6 +133,17 @@ impl Default for DateTime {
             minute: 0,
             second: 0,
         }
+    }
+}
+
+impl fmt::Display for DateTime {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            self.year, self.month, self.day, self.hour, self.minute, self.second
+        )
     }
 }
 
@@ -647,6 +659,27 @@ mod test {
         // second
         assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 38, 31).unwrap());
         assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 38, 29).unwrap());
+    }
+
+    #[test]
+    fn datetime_display() {
+        use super::DateTime;
+
+        assert_eq!(format!("{}", DateTime::default()), "1980-01-01 00:00:00");
+        assert_eq!(
+            format!(
+                "{}",
+                DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()
+            ),
+            "2018-11-17 10:38:30"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 59).unwrap()
+            ),
+            "2107-12-31 23:59:59"
+        );
     }
 
     #[test]
