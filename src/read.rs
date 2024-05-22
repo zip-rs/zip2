@@ -645,6 +645,32 @@ impl<R: Read + Seek> ZipArchive<R> {
         Ok(shared)
     }
 
+    /// Returns key and salt
+    pub fn get_aes_key_and_salt(
+        &mut self,
+        file_number: usize,
+    ) -> ZipResult<Option<(AesMode, Vec<u8>, Vec<u8>)>> {
+        let (_, data) = self
+            .shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+
+        if !data.encrypted {
+            return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
+        }
+        let limit_reader = find_content(data, &mut self.reader)?;
+        match data.aes_mode {
+            None => Ok(None),
+            Some((aes_mode, _, _)) => {
+                let (key, salt) = AesReader::new(limit_reader, aes_mode, data.compressed_size)
+                    .get_key_and_salt()
+                    .expect("AES reader failed");
+                Ok(Some((aes_mode, key, salt)))
+            }
+        }
+    }
+
     /// Read a ZIP archive, collecting the files it contains
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers

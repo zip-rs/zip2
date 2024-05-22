@@ -124,6 +124,23 @@ impl<R: Read> AesReader<R> {
             finalized: false,
         })
     }
+
+    /// Read the AES header bytes and returns the key and salt.
+    ///
+    /// # Returns
+    ///
+    /// the key and the salt
+    pub fn get_key_and_salt(mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
+        let salt_length = self.aes_mode.salt_length();
+
+        let mut salt = vec![0; salt_length];
+        self.reader.read_exact(&mut salt)?;
+
+        // next are 2 bytes used for password verification
+        let mut pwd_verification_value = vec![0; PWD_VERIFY_LENGTH];
+        self.reader.read_exact(&mut pwd_verification_value)?;
+        Ok((pwd_verification_value, salt))
+    }
 }
 
 /// A reader for aes encrypted files, which has already passed the first password check.
