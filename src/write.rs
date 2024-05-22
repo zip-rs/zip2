@@ -1820,8 +1820,11 @@ fn validate_extra_data(header_id: u16, data: &[u8]) -> ZipResult<()> {
 fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // This entry in the Local header MUST include BOTH original
     // and compressed file size fields.
-    assert!(file.large_file);
-    let block = file.zip64_extra_field_block().unwrap();
+    let Some(block) = file.zip64_extra_field_block() else {
+        return Err(ZipError::InvalidArchive(
+            "Attempted to write a ZIP64 extra field for a file that's within zip32 limits",
+        ));
+    };
     let block = block.serialize();
     writer.write_all(&block)?;
     Ok(())
@@ -1831,7 +1834,11 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    assert!(file.large_file);
+    if !file.large_file {
+        return Err(ZipError::InvalidArchive(
+            "Attempted to update a nonexistent ZIP64 extra field",
+        ));
+    }
 
     let zip64_extra_field = file.header_start
         + mem::size_of::<ZipLocalEntryBlock>() as u64

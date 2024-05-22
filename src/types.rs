@@ -7,8 +7,6 @@ use std::mem;
 use std::path;
 use std::sync::{Arc, OnceLock};
 
-#[cfg(doc)]
-use crate::read::ZipFile;
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
@@ -70,7 +68,7 @@ impl From<System> for u8 {
 /// For example, it has a resolution of 2 seconds!
 ///
 /// A [`DateTime`] can be stored directly in a zipfile with [`FileOptions::last_modified_time`],
-/// or read from one with [`ZipFile::last_modified`]
+/// or read from one with [`ZipFile::last_modified`](crate::read::ZipFile::last_modified).
 ///
 /// # Warning
 ///
