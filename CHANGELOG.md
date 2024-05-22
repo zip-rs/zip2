@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.3.1](https://github.com/zip-rs/zip2/compare/v1.3.0...v1.3.1) - 2024-05-21
+
+### <!-- 2 -->🚜 Refactor
+- Make `deflate` enable both default implementations
+- Merge the hidden deflate-flate2 flag into the public one
+- Rename _deflate-non-zopfli to _deflate-flate2
+- Reject encrypted and using_data_descriptor files slightly faster in read_zipfile_from_stream
+- Convert `impl TryInto<NaiveDateTime> for DateTime` to `impl TryFrom<DateTime> for NaiveDateTime` ([#136](https://github.com/zip-rs/zip2/pull/136))
+
+### <!-- 4 -->⚡ Performance
+- Change default compression implementation to `flate2/zlib-ng`
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- chore([#132](https://github.com/zip-rs/zip2/pull/132)): Attribution for some copied test data
+- chore([#133](https://github.com/zip-rs/zip2/pull/133)): chmod -x src/result.rs
+
 ## [1.3.0](https://github.com/zip-rs/zip2/compare/v1.2.3...v1.3.0) - 2024-05-17
 
 ### <!-- 0 -->🚀 Features
