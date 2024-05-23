@@ -221,7 +221,7 @@ impl DateTime {
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
-    #[deprecated(note = "use `DateTime::try_from()`")]
+    #[deprecated(since = "0.6.4", note = "use `DateTime::try_from()` instead")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
         dt.try_into()
     }
@@ -238,7 +238,7 @@ impl DateTime {
 
     #[cfg(feature = "time")]
     /// Converts the DateTime to a OffsetDateTime structure
-    #[deprecated(note = "use `OffsetDateTime::try_from()`")]
+    #[deprecated(since = "1.3.1", note = "use `OffsetDateTime::try_from()` instead")]
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
         (*self).try_into()
     }
