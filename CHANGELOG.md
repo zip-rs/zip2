@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.0](https://github.com/zip-rs/zip2/compare/v1.3.1...v1.4.0) - 2024-05-23
+
+### <!-- 0 -->🚀 Features
+- Add `fmt::Display` for `DateTime`
+- Implement more traits for `DateTime`
+
 ## [1.3.1](https://github.com/zip-rs/zip2/compare/v1.3.0...v1.3.1) - 2024-05-21
 
 ### <!-- 2 -->🚜 Refactor
