@@ -242,7 +242,7 @@ pub(crate) fn find_content<'a>(
 pub(crate) fn make_crypto_reader<'a>(
     compression_method: CompressionMethod,
     crc32: u32,
-    last_modified_time: DateTime,
+    mut last_modified_time: Option<DateTime>,
     using_data_descriptor: bool,
     reader: io::Take<&'a mut dyn Read>,
     password: Option<&[u8]>,
@@ -269,7 +269,10 @@ pub(crate) fn make_crypto_reader<'a>(
             vendor_version,
         },
         (Some(password), None) => {
-            let validator = if using_data_descriptor {
+            if !using_data_descriptor {
+                last_modified_time = None;
+            }
+            let validator = if let Some(last_modified_time) = last_modified_time {
                 ZipCryptoValidator::InfoZipMsdosTime(last_modified_time.timepart())
             } else {
                 ZipCryptoValidator::PkzipCrc32(crc32)
@@ -1009,8 +1012,7 @@ fn central_header_to_zip_file_inner<R: Read>(
             CompressionMethod::from_u16(compression_method)
         },
         compression_level: None,
-        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time)
-            .unwrap_or_else(|_| DateTime::default()),
+        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -1252,7 +1254,7 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get the time the file was last modified
-    pub fn last_modified(&self) -> DateTime {
+    pub fn last_modified(&self) -> Option<DateTime> {
         self.data.last_modified_time
     }
     /// Returns whether the file is actually a directory
@@ -1397,8 +1399,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         using_data_descriptor: false,
         compression_method,
         compression_level: None,
-        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time)
-            .unwrap_or_else(|_| DateTime::default()),
+        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -1525,7 +1526,7 @@ mod test {
         let mut file1 = reader1.by_index(0).unwrap();
         let mut file2 = reader2.by_index(0).unwrap();
 
-        let t = file1.last_modified();
+        let t = file1.last_modified().unwrap();
         assert_eq!(
             (
                 t.year(),
