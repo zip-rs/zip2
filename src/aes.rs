@@ -317,7 +317,7 @@ impl<W: Write> Write for AesWriter<W> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "aes-crypto"))]
 mod tests {
     use std::io::{self, Read, Write};
 
