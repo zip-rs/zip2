@@ -125,12 +125,12 @@ impl<R: Read> AesReader<R> {
         })
     }
 
-    /// Read the AES header bytes and returns the key and salt.
+    /// Read the AES header bytes and returns the verification value and salt.
     ///
     /// # Returns
     ///
-    /// the key and the salt
-    pub fn get_key_and_salt(mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
+    /// the verification value and the salt
+    pub fn get_verification_value_and_salt(mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
         let salt_length = self.aes_mode.salt_length();
 
         let mut salt = vec![0; salt_length];

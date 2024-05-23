@@ -645,8 +645,16 @@ impl<R: Read + Seek> ZipArchive<R> {
         Ok(shared)
     }
 
-    /// Returns key and salt
-    pub fn get_aes_key_and_salt(
+    /// Returns the verification value and salt for the AES encryption of the file
+    ///
+    /// It fails if the file is not encrypted or if the file number is invalid.
+    ///
+    /// # Returns
+    ///
+    /// - Some with the verification value and the salt
+    /// - None if the file is not encrypted with AES
+    #[cfg(feature = "aes-crypto")]
+    pub fn get_aes_verification_key_and_salt(
         &mut self,
         file_number: usize,
     ) -> ZipResult<Option<(AesMode, Vec<u8>, Vec<u8>)>> {
@@ -657,15 +665,14 @@ impl<R: Read + Seek> ZipArchive<R> {
             .ok_or(ZipError::FileNotFound)?;
 
         if !data.encrypted {
-            return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
+            return Err(ZipError::UnsupportedArchive(ZipError::ARCHIVE_NOT_ENCRYPTED));
         }
         let limit_reader = find_content(data, &mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
             Some((aes_mode, _, _)) => {
                 let (key, salt) = AesReader::new(limit_reader, aes_mode, data.compressed_size)
-                    .get_key_and_salt()
-                    .expect("AES reader failed");
+                    .get_verification_value_and_salt()?;
                 Ok(Some((aes_mode, key, salt)))
             }
         }
