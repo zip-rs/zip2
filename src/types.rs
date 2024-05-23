@@ -77,6 +77,22 @@ pub struct DateTime {
     second: u8,
 }
 
+impl DateTime {
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(feature = "time")]
+    pub fn default_for_write() -> Self {
+        OffsetDateTime::now_utc()
+            .try_into()
+            .unwrap_or_else(|_| DateTime::default())
+    }
+
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(not(feature = "time"))]
+    pub fn default_for_write() -> Self {
+        DateTime::default()
+    }
+}
+
 #[cfg(fuzzing)]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {

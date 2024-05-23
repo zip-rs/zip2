@@ -34,9 +34,6 @@ use flate2::{write::DeflateEncoder, Compression};
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 
-#[cfg(feature = "time")]
-use time::OffsetDateTime;
-
 #[cfg(feature = "deflate-zopfli")]
 use zopfli::Options;
 
@@ -444,10 +441,7 @@ impl<'k, T: FileOptionExtension> Default for FileOptions<'k, T> {
         Self {
             compression_method: Default::default(),
             compression_level: None,
-            #[cfg(feature = "time")]
-            last_modified_time: OffsetDateTime::now_utc().try_into().unwrap_or_default(),
-            #[cfg(not(feature = "time"))]
-            last_modified_time: DateTime::default(),
+            last_modified_time: DateTime::default_for_write(),
             permissions: None,
             large_file: false,
             encrypt_with: None,

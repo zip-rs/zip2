@@ -1009,7 +1009,8 @@ fn central_header_to_zip_file_inner<R: Read>(
             CompressionMethod::from_u16(compression_method)
         },
         compression_level: None,
-        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time)?,
+        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time)
+            .unwrap_or_else(|_| DateTime::default()),
         crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -1396,7 +1397,8 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         using_data_descriptor: false,
         compression_method,
         compression_level: None,
-        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time)?,
+        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time)
+            .unwrap_or_else(|_| DateTime::default()),
         crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
