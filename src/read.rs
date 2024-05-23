@@ -82,6 +82,7 @@ pub(crate) mod zip_archive {
     }
 }
 
+#[cfg(feature = "aes-crypto")]
 use crate::aes::PWD_VERIFY_LENGTH;
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
