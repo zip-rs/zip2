@@ -63,11 +63,10 @@ impl From<System> for u8 {
 /// # Warning
 ///
 /// Because there is no timezone associated with the [`DateTime`], they should ideally only
-/// be used for user-facing descriptions. This also means [`DateTime::to_time`] returns an
-/// [`OffsetDateTime`] (which is the equivalent of chrono's `NaiveDateTime`).
+/// be used for user-facing descriptions.
 ///
-/// Modern zip files store more precise timestamps, which are ignored by [`crate::read::ZipArchive`],
-/// so keep in mind that these timestamps are unreliable. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904).
+/// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
+/// for details.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     year: u16,
@@ -149,7 +148,10 @@ impl fmt::Display for DateTime {
 
 impl DateTime {
     /// Converts an msdos (u16, u16) pair to a DateTime object
-    pub const fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
+    ///
+    /// # Safety
+    /// The caller must ensure the date and time are valid.
+    pub const unsafe fn from_msdos_unchecked(datepart: u16, timepart: u16) -> DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
@@ -165,6 +167,25 @@ impl DateTime {
             minute: minutes as u8,
             second: seconds as u8,
         }
+    }
+
+    /// Converts an msdos (u16, u16) pair to a DateTime object if it represents a valid date and
+    /// time.
+    pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
+        let seconds = (timepart & 0b0000000000011111) << 1;
+        let minutes = (timepart & 0b0000011111100000) >> 5;
+        let hours = (timepart & 0b1111100000000000) >> 11;
+        let days = datepart & 0b0000000000011111;
+        let months = (datepart & 0b0000000111100000) >> 5;
+        let years = (datepart & 0b1111111000000000) >> 9;
+        Self::from_date_and_time(
+            years.checked_add(1980).ok_or(DateTimeRangeError)?,
+            months.try_into()?,
+            days.try_into()?,
+            hours.try_into()?,
+            minutes.try_into()?,
+            seconds.try_into()?,
+        )
     }
 
     /// Constructs a DateTime from a specific date and time
@@ -748,7 +769,8 @@ mod test {
         use super::DateTime;
 
         // 2018-11-17 10:38:30 UTC
-        let dt = OffsetDateTime::try_from(DateTime::from_msdos(0x4D71, 0x54CF)).unwrap();
+        let dt =
+            OffsetDateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
         assert_eq!(dt, datetime!(2018-11-17 10:38:30 UTC));
     }
 
@@ -758,17 +780,23 @@ mod test {
         use super::DateTime;
 
         // 1980-00-00 00:00:00
-        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0x0000, 0x0000)).is_err());
+        assert!(OffsetDateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0x0000, 0x0000)
+        })
+        .is_err());
 
         // 2107-15-31 31:63:62
-        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0xFFFF, 0xFFFF)).is_err());
+        assert!(OffsetDateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
+        })
+        .is_err());
     }
 
     #[test]
     #[allow(deprecated)]
     fn time_conversion() {
         use super::DateTime;
-        let dt = DateTime::from_msdos(0x4D71, 0x54CF);
+        let dt = DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap();
         assert_eq!(dt.year(), 2018);
         assert_eq!(dt.month(), 11);
         assert_eq!(dt.day(), 17);
@@ -787,7 +815,7 @@ mod test {
     #[allow(deprecated)]
     fn time_out_of_bounds() {
         use super::DateTime;
-        let dt = DateTime::from_msdos(0xFFFF, 0xFFFF);
+        let dt = unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) };
         assert_eq!(dt.year(), 2107);
         assert_eq!(dt.month(), 15);
         assert_eq!(dt.day(), 31);
@@ -798,7 +826,7 @@ mod test {
         #[cfg(feature = "time")]
         assert!(dt.to_time().is_err());
 
-        let dt = DateTime::from_msdos(0x0000, 0x0000);
+        let dt = unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) };
         assert_eq!(dt.year(), 1980);
         assert_eq!(dt.month(), 0);
         assert_eq!(dt.day(), 0);
