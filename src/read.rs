@@ -82,6 +82,7 @@ pub(crate) mod zip_archive {
     }
 }
 
+use crate::aes::PWD_VERIFY_LENGTH;
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
@@ -647,33 +648,35 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Returns the verification value and salt for the AES encryption of the file
     ///
-    /// It fails if the file is not encrypted or if the file number is invalid.
+    /// It fails if the file number is invalid.
     ///
     /// # Returns
     ///
-    /// - Some with the verification value and the salt
     /// - None if the file is not encrypted with AES
     #[cfg(feature = "aes-crypto")]
     pub fn get_aes_verification_key_and_salt(
         &mut self,
         file_number: usize,
-    ) -> ZipResult<Option<(AesMode, Vec<u8>, Vec<u8>)>> {
+    ) -> ZipResult<Option<AesInfo>> {
         let (_, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
 
-        if !data.encrypted {
-            return Err(ZipError::UnsupportedArchive(ZipError::ARCHIVE_NOT_ENCRYPTED));
-        }
         let limit_reader = find_content(data, &mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
             Some((aes_mode, _, _)) => {
-                let (key, salt) = AesReader::new(limit_reader, aes_mode, data.compressed_size)
-                    .get_verification_value_and_salt()?;
-                Ok(Some((aes_mode, key, salt)))
+                let (verification_value, salt) =
+                    AesReader::new(limit_reader, aes_mode, data.compressed_size)
+                        .get_verification_value_and_salt()?;
+                let aes_info = AesInfo {
+                    aes_mode,
+                    verification_value,
+                    salt,
+                };
+                Ok(Some(aes_info))
             }
         }
     }
@@ -968,6 +971,17 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn into_inner(self) -> R {
         self.reader
     }
+}
+
+/// Holds the AES information of a file in the zip archive
+#[derive(Debug)]
+pub struct AesInfo {
+    /// The AES encryption mode
+    pub aes_mode: AesMode,
+    /// The verification key
+    pub verification_value: [u8; PWD_VERIFY_LENGTH],
+    /// The salt
+    pub salt: Vec<u8>,
 }
 
 const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {

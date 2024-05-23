@@ -46,10 +46,6 @@ impl ZipError {
     /// # ()
     /// ```
     pub const PASSWORD_REQUIRED: &'static str = "Password required to decrypt file";
-
-
-    /// The text used as an error when the archive is not encrypted
-    pub const ARCHIVE_NOT_ENCRYPTED: &'static str = "the archive is not encrypted";
 }
 
 impl From<ZipError> for io::Error {
