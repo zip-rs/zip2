@@ -976,6 +976,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
 /// Holds the AES information of a file in the zip archive
 #[derive(Debug)]
+#[cfg(feature = "aes-crypto")]
 pub struct AesInfo {
     /// The AES encryption mode
     pub aes_mode: AesMode,
