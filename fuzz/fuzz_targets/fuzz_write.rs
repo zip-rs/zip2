@@ -131,6 +131,8 @@ fuzz_target!(|test_case: FuzzTestCase| {
             final_reopen = true;
         }
     }
+    #[allow(unknown_lints)]
+    #[allow(boxed_slice_into_iter)]
     for (operation, abort) in test_case.operations.into_iter() {
         let _ = do_operation(
             &mut writer,
