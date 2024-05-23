@@ -1,5 +1,6 @@
 //! Types that specify what is contained in a ZIP.
 use path::{Component, Path, PathBuf};
+use std::fmt;
 use std::path;
 use std::sync::{Arc, OnceLock};
 
@@ -62,12 +63,11 @@ impl From<System> for u8 {
 /// # Warning
 ///
 /// Because there is no timezone associated with the [`DateTime`], they should ideally only
-/// be used for user-facing descriptions. This also means [`DateTime::to_time`] returns an
-/// [`OffsetDateTime`] (which is the equivalent of chrono's `NaiveDateTime`).
+/// be used for user-facing descriptions.
 ///
-/// Modern zip files store more precise timestamps, which are ignored by [`crate::read::ZipArchive`],
-/// so keep in mind that these timestamps are unreliable. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904).
-#[derive(Debug, Clone, Copy)]
+/// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
+/// for details.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     year: u16,
     month: u8,
@@ -75,6 +75,22 @@ pub struct DateTime {
     hour: u8,
     minute: u8,
     second: u8,
+}
+
+impl DateTime {
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(feature = "time")]
+    pub fn default_for_write() -> Self {
+        OffsetDateTime::now_utc()
+            .try_into()
+            .unwrap_or_else(|_| DateTime::default())
+    }
+
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(not(feature = "time"))]
+    pub fn default_for_write() -> Self {
+        DateTime::default()
+    }
 }
 
 #[cfg(fuzzing)]
@@ -135,9 +151,23 @@ impl Default for DateTime {
     }
 }
 
+impl fmt::Display for DateTime {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            self.year, self.month, self.day, self.hour, self.minute, self.second
+        )
+    }
+}
+
 impl DateTime {
     /// Converts an msdos (u16, u16) pair to a DateTime object
-    pub const fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
+    ///
+    /// # Safety
+    /// The caller must ensure the date and time are valid.
+    pub const unsafe fn from_msdos_unchecked(datepart: u16, timepart: u16) -> DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
@@ -153,6 +183,25 @@ impl DateTime {
             minute: minutes as u8,
             second: seconds as u8,
         }
+    }
+
+    /// Converts an msdos (u16, u16) pair to a DateTime object if it represents a valid date and
+    /// time.
+    pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
+        let seconds = (timepart & 0b0000000000011111) << 1;
+        let minutes = (timepart & 0b0000011111100000) >> 5;
+        let hours = (timepart & 0b1111100000000000) >> 11;
+        let days = datepart & 0b0000000000011111;
+        let months = (datepart & 0b0000000111100000) >> 5;
+        let years = (datepart & 0b1111111000000000) >> 9;
+        Self::from_date_and_time(
+            years.checked_add(1980).ok_or(DateTimeRangeError)?,
+            months.try_into()?,
+            days.try_into()?,
+            hours.try_into()?,
+            minutes.try_into()?,
+            seconds.try_into()?,
+        )
     }
 
     /// Constructs a DateTime from a specific date and time
@@ -209,7 +258,7 @@ impl DateTime {
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
-    #[deprecated(note = "use `DateTime::try_from()`")]
+    #[deprecated(since = "0.6.4", note = "use `DateTime::try_from()` instead")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
         dt.try_into()
     }
@@ -226,7 +275,7 @@ impl DateTime {
 
     #[cfg(feature = "time")]
     /// Converts the DateTime to a OffsetDateTime structure
-    #[deprecated(note = "use `OffsetDateTime::try_from()`")]
+    #[deprecated(since = "1.3.1", note = "use `OffsetDateTime::try_from()` instead")]
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
         (*self).try_into()
     }
@@ -331,7 +380,7 @@ pub struct ZipFileData {
     /// Compression level to store the file
     pub compression_level: Option<i64>,
     /// Last modified time. This will only have a 2 second precision.
-    pub last_modified_time: DateTime,
+    pub last_modified_time: Option<DateTime>,
     /// CRC32 checksum
     pub crc32: u32,
     /// Size of the file in the ZIP
@@ -568,7 +617,7 @@ mod test {
             using_data_descriptor: false,
             compression_method: crate::compression::CompressionMethod::Stored,
             compression_level: None,
-            last_modified_time: DateTime::default(),
+            last_modified_time: None,
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
@@ -607,6 +656,70 @@ mod test {
         let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
         assert_eq!(dt.timepart(), 0b10111_111011_11110);
         assert_eq!(dt.datepart(), 0b1111111_1100_11111);
+    }
+
+    #[test]
+    fn datetime_equality() {
+        use super::DateTime;
+
+        let dt = DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap();
+        assert_eq!(
+            dt,
+            DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()
+        );
+        assert_ne!(dt, DateTime::default());
+    }
+
+    #[test]
+    fn datetime_order() {
+        use std::cmp::Ordering;
+
+        use super::DateTime;
+
+        let dt = DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap();
+        assert_eq!(
+            dt.cmp(&DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()),
+            Ordering::Equal
+        );
+        // year
+        assert!(dt < DateTime::from_date_and_time(2019, 11, 17, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2017, 11, 17, 10, 38, 30).unwrap());
+        // month
+        assert!(dt < DateTime::from_date_and_time(2018, 12, 17, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 10, 17, 10, 38, 30).unwrap());
+        // day
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 18, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 16, 10, 38, 30).unwrap());
+        // hour
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 11, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 9, 38, 30).unwrap());
+        // minute
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 39, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 37, 30).unwrap());
+        // second
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 38, 31).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 38, 29).unwrap());
+    }
+
+    #[test]
+    fn datetime_display() {
+        use super::DateTime;
+
+        assert_eq!(format!("{}", DateTime::default()), "1980-01-01 00:00:00");
+        assert_eq!(
+            format!(
+                "{}",
+                DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()
+            ),
+            "2018-11-17 10:38:30"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 59).unwrap()
+            ),
+            "2107-12-31 23:59:59"
+        );
     }
 
     #[test]
@@ -675,7 +788,8 @@ mod test {
         use super::DateTime;
 
         // 2018-11-17 10:38:30 UTC
-        let dt = OffsetDateTime::try_from(DateTime::from_msdos(0x4D71, 0x54CF)).unwrap();
+        let dt =
+            OffsetDateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
         assert_eq!(dt, datetime!(2018-11-17 10:38:30 UTC));
     }
 
@@ -685,17 +799,23 @@ mod test {
         use super::DateTime;
 
         // 1980-00-00 00:00:00
-        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0x0000, 0x0000)).is_err());
+        assert!(OffsetDateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0x0000, 0x0000)
+        })
+        .is_err());
 
         // 2107-15-31 31:63:62
-        assert!(OffsetDateTime::try_from(DateTime::from_msdos(0xFFFF, 0xFFFF)).is_err());
+        assert!(OffsetDateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
+        })
+        .is_err());
     }
 
     #[test]
     #[allow(deprecated)]
     fn time_conversion() {
         use super::DateTime;
-        let dt = DateTime::from_msdos(0x4D71, 0x54CF);
+        let dt = DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap();
         assert_eq!(dt.year(), 2018);
         assert_eq!(dt.month(), 11);
         assert_eq!(dt.day(), 17);
@@ -714,7 +834,7 @@ mod test {
     #[allow(deprecated)]
     fn time_out_of_bounds() {
         use super::DateTime;
-        let dt = DateTime::from_msdos(0xFFFF, 0xFFFF);
+        let dt = unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) };
         assert_eq!(dt.year(), 2107);
         assert_eq!(dt.month(), 15);
         assert_eq!(dt.day(), 31);
@@ -725,7 +845,7 @@ mod test {
         #[cfg(feature = "time")]
         assert!(dt.to_time().is_err());
 
-        let dt = DateTime::from_msdos(0x0000, 0x0000);
+        let dt = unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) };
         assert_eq!(dt.year(), 1980);
         assert_eq!(dt.month(), 0);
         assert_eq!(dt.day(), 0);

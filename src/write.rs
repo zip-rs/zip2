@@ -34,9 +34,6 @@ use flate2::{write::DeflateEncoder, Compression};
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 
-#[cfg(feature = "time")]
-use time::OffsetDateTime;
-
 #[cfg(feature = "deflate-zopfli")]
 use zopfli::Options;
 
@@ -444,10 +441,7 @@ impl<'k, T: FileOptionExtension> Default for FileOptions<'k, T> {
         Self {
             compression_method: Default::default(),
             compression_level: None,
-            #[cfg(feature = "time")]
-            last_modified_time: OffsetDateTime::now_utc().try_into().unwrap_or_default(),
-            #[cfg(not(feature = "time"))]
-            last_modified_time: DateTime::default(),
+            last_modified_time: DateTime::default_for_write(),
             permissions: None,
             large_file: false,
             encrypt_with: None,
@@ -579,7 +573,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             let mut options = FileOptions::<ExtendedFileOptions> {
                 compression_method: src_data.compression_method,
                 compression_level: src_data.compression_level,
-                last_modified_time: src_data.last_modified_time,
+                last_modified_time: src_data.last_modified_time.unwrap_or_else(DateTime::default_for_write),
                 permissions: src_data.unix_mode(),
                 large_file: src_data.large_file,
                 encrypt_with: None,
@@ -600,7 +594,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             let mut options = FileOptions::<()> {
                 compression_method: src_data.compression_method,
                 compression_level: src_data.compression_level,
-                last_modified_time: src_data.last_modified_time,
+                last_modified_time: src_data.last_modified_time.unwrap_or_else(DateTime::default_for_write),
                 permissions: src_data.unix_mode(),
                 large_file: src_data.large_file,
                 encrypt_with: None,
@@ -788,6 +782,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 ),
                 _ => (options.compression_method, None),
             };
+            let last_modified_time = options.last_modified_time;
             let file = ZipFileData {
                 system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
@@ -796,7 +791,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 flags: 0,
                 compression_method,
                 compression_level: options.compression_level,
-                last_modified_time: options.last_modified_time,
+                last_modified_time: Some(options.last_modified_time),
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
@@ -833,8 +828,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[allow(deprecated)]
             writer.write_u16_le(file.compression_method.to_u16())?;
             // last mod file time and last mod file date
-            writer.write_u16_le(file.last_modified_time.timepart())?;
-            writer.write_u16_le(file.last_modified_time.datepart())?;
+            writer.write_u16_le(last_modified_time.timepart())?;
+            writer.write_u16_le(last_modified_time.datepart())?;
             // crc-32
             writer.write_u32_le(file.crc32)?;
             // compressed size and uncompressed size
@@ -1200,7 +1195,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     {
         let mut options = SimpleFileOptions::default()
             .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
-            .last_modified_time(file.last_modified())
+            .last_modified_time(file.last_modified().unwrap_or_else(DateTime::default_for_write))
             .compression_method(file.compression());
         if let Some(perms) = file.unix_mode() {
             options = options.unix_permissions(perms);
@@ -1832,9 +1827,10 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // compression method
     #[allow(deprecated)]
     writer.write_u16_le(file.compression_method.to_u16())?;
+    let last_modified_time = file.last_modified_time.unwrap_or_else(DateTime::default_for_write);
     // last mod file time + date
-    writer.write_u16_le(file.last_modified_time.timepart())?;
-    writer.write_u16_le(file.last_modified_time.datepart())?;
+    writer.write_u16_le(last_modified_time.timepart())?;
+    writer.write_u16_le(last_modified_time.datepart())?;
     // crc-32
     writer.write_u32_le(file.crc32)?;
     // compressed size

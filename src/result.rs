@@ -62,6 +62,12 @@ impl From<ZipError> for io::Error {
     }
 }
 
+impl From<DateTimeRangeError> for ZipError {
+    fn from(_: DateTimeRangeError) -> Self {
+        ZipError::InvalidArchive("Invalid date or time")
+    }
+}
+
 /// Error type for time parsing
 #[derive(Debug)]
 pub struct DateTimeRangeError;
