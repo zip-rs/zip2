@@ -534,7 +534,7 @@ impl Zip64CentralDirectoryEnd {
 
         const END_WINDOW_SIZE: usize = 2048;
         /* TODO: use static_assertions!() */
-        assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
+        debug_assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
         const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
             Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
