@@ -264,7 +264,10 @@ impl Zip32CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            zip_file_comment_length: zip_file_comment.len().try_into().map_err(|_| ZipError::InvalidArchive("File comment must be less than 64 KiB"))?,
+            zip_file_comment_length: zip_file_comment
+                .len()
+                .try_into()
+                .map_err(|_| ZipError::InvalidArchive("File comment must be less than 64 KiB"))?,
         };
         Ok((block, zip_file_comment))
     }
