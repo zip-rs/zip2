@@ -305,7 +305,9 @@ impl Zip32CentralDirectoryEnd {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
         }
 
-        let search_upper_bound = 0;
+        // Arbitrary max length we go back to find the zip32 CDE header.
+        const MAX_HEADER_AND_COMMENT_SIZE: u64 = 66000;
+        let search_lower_bound = file_length.saturating_sub(MAX_HEADER_AND_COMMENT_SIZE);
 
         const END_WINDOW_SIZE: usize = 512;
         /* TODO: use static_assertions!() */
@@ -317,7 +319,7 @@ impl Zip32CentralDirectoryEnd {
 
         let mut window_start: u64 = file_length.saturating_sub(END_WINDOW_SIZE as u64);
         let mut window = [0u8; END_WINDOW_SIZE];
-        while window_start >= search_upper_bound {
+        while window_start >= search_lower_bound {
             /* Go to the start of the window in the file. */
             reader.seek(io::SeekFrom::Start(window_start))?;
 
@@ -344,7 +346,7 @@ impl Zip32CentralDirectoryEnd {
             /* We always want to make sure we go allllll the way back to the start of the file if
              * we can't find it elsewhere. However, our `while` condition doesn't check that. So we
              * avoid infinite looping by checking at the end of the loop. */
-            if window_start == search_upper_bound {
+            if window_start == search_lower_bound {
                 break;
             }
             /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
@@ -361,9 +363,9 @@ impl Zip32CentralDirectoryEnd {
                      * once (unless limited by file_length). */
                     END_WINDOW_SIZE as u64,
                 )
-                /* This will never go below the value of `search_upper_bound`, so we have a special
-                 * `if window_start == search_upper_bound` check above. */
-                .max(search_upper_bound);
+                /* This will never go below the value of `search_lower_bound`, so we have a special
+                 * `if window_start == search_lower_bound` check above. */
+                .max(search_lower_bound);
         }
 
         Err(ZipError::InvalidArchive(
@@ -527,7 +529,7 @@ impl Zip64CentralDirectoryEnd {
 
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
-        nominal_offset: u64,
+        search_lower_bound: u64,
         search_upper_bound: u64,
     ) -> ZipResult<Vec<(Zip64CentralDirectoryEnd, u64)>> {
         let mut results = Vec::new();
@@ -542,9 +544,9 @@ impl Zip64CentralDirectoryEnd {
 
         let mut window_start: u64 = search_upper_bound
             .saturating_sub(END_WINDOW_SIZE as u64)
-            .max(nominal_offset);
+            .max(search_lower_bound);
         let mut window = [0u8; END_WINDOW_SIZE];
-        while window_start >= nominal_offset {
+        while window_start >= search_lower_bound {
             reader.seek(io::SeekFrom::Start(window_start))?;
 
             /* Identify how many bytes to read (this may be less than the window size for files
@@ -566,8 +568,8 @@ impl Zip64CentralDirectoryEnd {
                 let cde_start_pos = window_start + offset as u64;
                 reader.seek(io::SeekFrom::Start(cde_start_pos))?;
 
-                debug_assert!(cde_start_pos >= nominal_offset);
-                let archive_offset = cde_start_pos - nominal_offset;
+                debug_assert!(cde_start_pos >= search_lower_bound);
+                let archive_offset = cde_start_pos - search_lower_bound;
                 let cde = Self::parse(reader)?;
 
                 results.push((cde, archive_offset));
@@ -576,7 +578,7 @@ impl Zip64CentralDirectoryEnd {
             /* We always want to make sure we go allllll the way back to the start of the file if
              * we can't find it elsewhere. However, our `while` condition doesn't check that. So we
              * avoid infinite looping by checking at the end of the loop. */
-            if window_start == nominal_offset {
+            if window_start == search_lower_bound {
                 break;
             }
             /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
@@ -594,9 +596,9 @@ impl Zip64CentralDirectoryEnd {
                      * once (unless limited by search_upper_bound). */
                     END_WINDOW_SIZE as u64,
                 )
-                /* This will never go below the value of `nominal_offset`, so we have a special
-                 * `if window_start == nominal_offset` check above. */
-                .max(nominal_offset);
+                /* This will never go below the value of `search_lower_bound`, so we have a special
+                 * `if window_start == search_lower_bound` check above. */
+                .max(search_lower_bound);
         }
 
         if results.is_empty() {
