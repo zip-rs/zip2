@@ -784,7 +784,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 _ => (options.compression_method, None),
             };
 
-            let file = ZipFileData::initialize_local_block(
+            let mut file = ZipFileData::initialize_local_block(
                 name,
                 &options,
                 raw_values,
@@ -795,8 +795,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_mode,
                 extra_field,
             );
-
-            let index = self.insert_file_data(file)?;
+            let version_needed = file.version_needed();
+            file.version_needed = version_needed;
+            file.version_made_by = file.version_made_by.max(version_needed as u8);
+                        let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
             let writer = self.inner.get_plain();
 
@@ -813,7 +815,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let _ = self.abort_file();
                     return Err(e);
                 }
-            }
 
             // file name
             writer.write_all(&file.file_name_raw)?;
@@ -1358,9 +1359,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
         let writer = self.inner.get_plain();
 
+        let mut version_needed = 10;
         let central_start = writer.stream_position()?;
         for file in self.files.values() {
             write_central_directory_header(writer, file)?;
+            version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
 
@@ -1368,8 +1371,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             || central_size.max(central_start) > spec::ZIP64_BYTES_THR
         {
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
-                version_made_by: DEFAULT_VERSION as u16,
-                version_needed_to_extract: DEFAULT_VERSION as u16,
+                version_made_by: version_needed.max(DEFAULT_VERSION as u16),
+                version_needed_to_extract: version_needed,
                 disk_number: 0,
                 disk_with_central_directory: 0,
                 number_of_files_on_this_disk: self.files.len() as u64,
@@ -1763,10 +1766,8 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let mut zip64_extra_field = [0; 28];
     let zip64_extra_field_length =
         write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
-
     let block = file.block(zip64_extra_field_length);
     block.write(writer)?;
-
     // file name
     writer.write_all(&file.file_name_raw)?;
     // zip64 extra field
