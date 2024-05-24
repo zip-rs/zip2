@@ -305,9 +305,7 @@ impl Zip32CentralDirectoryEnd {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
         }
 
-        // Arbitrary max length we go back to find the zip32 CDE header.
-        const MAX_HEADER_AND_COMMENT_SIZE: u64 = 66000;
-        let search_lower_bound = file_length.saturating_sub(MAX_HEADER_AND_COMMENT_SIZE);
+        let search_lower_bound = 0;
 
         const END_WINDOW_SIZE: usize = 512;
         /* TODO: use static_assertions!() */
