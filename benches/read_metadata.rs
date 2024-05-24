@@ -95,21 +95,19 @@ fn parse_zip64_archive_with_comment(bench: &mut Bencher) {
     bench.bytes = bytes.len() as u64;
 }
 
-#[allow(dead_code)]
 fn parse_stream_archive(bench: &mut Bencher) {
     const STREAM_ZIP_ENTRIES: usize = 5;
     const STREAM_FILE_SIZE: usize = 5;
 
     let bytes = generate_random_archive(STREAM_ZIP_ENTRIES, STREAM_FILE_SIZE).unwrap();
-    dbg!(&bytes);
 
     /* Write to a temporary file path to incur some filesystem overhead from repeated reads */
     let dir = TempDir::new("stream-bench").unwrap();
     let out = dir.path().join("bench-out.zip");
     fs::write(&out, &bytes).unwrap();
-    let mut f = fs::File::open(out).unwrap();
 
-    bench.iter(|| loop {
+    bench.iter(|| {
+        let mut f = fs::File::open(&out).unwrap();
         while zip::read::read_zipfile_from_stream(&mut f)
             .unwrap()
             .is_some()
@@ -123,7 +121,6 @@ benchmark_group!(
     read_metadata,
     parse_archive_with_comment,
     parse_zip64_archive_with_comment,
-    /* FIXME: this currently errors */
-    /* parse_stream_archive */
+    parse_stream_archive,
 );
 benchmark_main!(benches);
