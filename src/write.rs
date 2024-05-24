@@ -815,7 +815,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let _ = self.abort_file();
                     return Err(e);
                 }
-
+            }
             // file name
             writer.write_all(&file.file_name_raw)?;
             // zip64 extra field
