@@ -811,7 +811,7 @@ impl ZipFileData {
                 None
             };
         let compressed_size: Option<u64> =
-            if self.compressed_size > spec::ZIP64_BYTES_THR || self.large_file {
+            if self.compressed_size >= spec::ZIP64_BYTES_THR || self.large_file {
                 Some(spec::ZIP64_BYTES_THR)
             } else {
                 None
