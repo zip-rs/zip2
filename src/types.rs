@@ -800,7 +800,7 @@ impl ZipFileData {
             } else {
                 None
             };
-        let header_start: Option<u64> = if self.header_start > spec::ZIP64_BYTES_THR {
+        let header_start: Option<u64> = if self.header_start >= spec::ZIP64_BYTES_THR {
             Some(spec::ZIP64_BYTES_THR)
         } else {
             None
