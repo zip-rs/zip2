@@ -796,9 +796,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 extra_field,
             );
             let version_needed = file.version_needed();
-            file.version_needed = version_needed;
             file.version_made_by = file.version_made_by.max(version_needed as u8);
-                        let index = self.insert_file_data(file)?;
+            let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
             let writer = self.inner.get_plain();
 
