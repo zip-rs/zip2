@@ -702,7 +702,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Set ZIP archive comment.
     ///
     /// This sets the raw bytes of the comment. The comment
-    /// is typically expected to be encoded in UTF-8
+    /// is typically expected to be encoded in UTF-8.
     pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
         self.comment = comment;
     }
@@ -715,7 +715,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Get ZIP archive comment.
     ///
     /// This returns the raw bytes of the comment. The comment
-    /// is typically expected to be encoded in UTF-8
+    /// is typically expected to be encoded in UTF-8.
     pub const fn get_raw_comment(&self) -> &[u8] {
         &self.comment
     }
