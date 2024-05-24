@@ -548,12 +548,12 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let src_index = self.index_by_name(src_name)?;
         let src_data = &self.files[src_index];
         let data_start = *src_data.data_start.get().unwrap_or(&0);
-        let compressed_size = src_data.compressed_size();
+        let compressed_size = src_data.compressed_size;
         debug_assert!(compressed_size <= write_position - data_start);
-        let uncompressed_size = src_data.uncompressed_size();
+        let uncompressed_size = src_data.uncompressed_size;
 
         let raw_values = ZipRawValues {
-            crc32: src_data.crc32(),
+            crc32: src_data.crc32,
             compressed_size,
             uncompressed_size,
         };
@@ -925,13 +925,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                 None => return Ok(()),
                 Some((_, f)) => f,
             };
-            file.raw_values.uncompressed_size = self.stats.bytes_written;
+            file.uncompressed_size = self.stats.bytes_written;
 
             let file_end = writer.stream_position()?;
             debug_assert!(file_end >= self.stats.start);
-            file.raw_values.compressed_size = file_end - self.stats.start;
+            file.compressed_size = file_end - self.stats.start;
 
-            file.raw_values.crc32 = self.stats.hasher.clone().finalize();
+            file.crc32 = self.stats.hasher.clone().finalize();
             if let Some(aes_mode) = &mut file.aes_mode {
                 // We prefer using AE-1 which provides an extra CRC check, but for small files we
                 // switch to AE-2 to prevent being able to use the CRC value to to reconstruct the
@@ -939,7 +939,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 //
                 // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
                 aes_mode.1 = if self.stats.bytes_written < 20 {
-                    file.raw_values.crc32 = 0;
+                    file.crc32 = 0;
                     AesVendorVersion::Ae2
                 } else {
                     AesVendorVersion::Ae1
@@ -1740,20 +1740,20 @@ fn update_aes_extra_data<W: Write + io::Seek>(
 fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     const CRC32_OFFSET: u64 = 14;
     writer.seek(SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
-    writer.write_u32_le(file.crc32())?;
+    writer.write_u32_le(file.crc32)?;
     if file.large_file {
         update_local_zip64_extra_field(writer, file)?;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
-        if file.compressed_size() > spec::ZIP64_BYTES_THR {
+        if file.compressed_size > spec::ZIP64_BYTES_THR {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 "Large file option has not been set",
             )));
         }
-        writer.write_u32_le(file.compressed_size() as u32)?;
+        writer.write_u32_le(file.compressed_size as u32)?;
         // uncompressed size is already checked on write to catch it as soon as possible
-        writer.write_u32_le(file.uncompressed_size() as u32)?;
+        writer.write_u32_le(file.uncompressed_size as u32)?;
     }
     Ok(())
 }

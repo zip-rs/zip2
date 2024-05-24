@@ -11,7 +11,7 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, Block};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
-    ZipLocalEntryBlock, ZipRawValues,
+    ZipLocalEntryBlock,
 };
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
@@ -252,7 +252,7 @@ pub(crate) fn find_content<'a>(
     };
 
     reader.seek(io::SeekFrom::Start(data_start))?;
-    Ok((reader as &mut dyn Read).take(data.compressed_size()))
+    Ok((reader as &mut dyn Read).take(data.compressed_size))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -404,7 +404,7 @@ impl<R> ZipArchive<R> {
             if file.using_data_descriptor {
                 return None;
             }
-            total = total.checked_add(file.uncompressed_size() as u128)?;
+            total = total.checked_add(file.uncompressed_size as u128)?;
         }
         Some(total)
     }
@@ -700,7 +700,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             None => Ok(None),
             Some((aes_mode, _, _)) => {
                 let (verification_value, salt) =
-                    AesReader::new(limit_reader, aes_mode, data.compressed_size())
+                    AesReader::new(limit_reader, aes_mode, data.compressed_size)
                         .get_verification_value_and_salt()?;
                 let aes_info = AesInfo {
                     aes_mode,
@@ -980,14 +980,14 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let crypto_reader = make_crypto_reader(
             data.compression_method,
-            data.crc32(),
+            data.crc32,
             data.last_modified_time,
             data.using_data_descriptor,
             limit_reader,
             password,
             data.aes_mode,
             #[cfg(feature = "aes-crypto")]
-            data.compressed_size(),
+            data.compressed_size,
         )?;
         Ok(ZipFile {
             crypto_reader: Some(crypto_reader),
@@ -1094,11 +1094,9 @@ fn central_header_to_zip_file_inner<R: Read>(
         compression_method: CompressionMethod::parse_from_u16(compression_method),
         compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
-        raw_values: ZipRawValues {
-            crc32,
-            compressed_size: compressed_size.into(),
-            uncompressed_size: uncompressed_size.into(),
-        },
+        crc32,
+        compressed_size: compressed_size.into(),
+        uncompressed_size: uncompressed_size.into(),
         file_name,
         file_name_raw,
         extra_field: Some(Arc::new(extra_field.to_vec())),
@@ -1150,14 +1148,14 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         match kind {
             // Zip64 extended information extra field
             0x0001 => {
-                if file.uncompressed_size() == spec::ZIP64_BYTES_THR {
+                if file.uncompressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
-                    file.raw_values.uncompressed_size = reader.read_u64_le()?;
+                    file.uncompressed_size = reader.read_u64_le()?;
                     len_left -= 8;
                 }
-                if file.compressed_size() == spec::ZIP64_BYTES_THR {
+                if file.compressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
-                    file.raw_values.compressed_size = reader.read_u64_le()?;
+                    file.compressed_size = reader.read_u64_le()?;
                     len_left -= 8;
                 }
                 if file.header_start == spec::ZIP64_BYTES_THR {
@@ -1231,7 +1229,7 @@ impl<'a> ZipFile<'a> {
         if let ZipFileReader::NoReader = self.reader {
             let data = &self.data;
             let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
-            self.reader = make_reader(data.compression_method, data.crc32(), crypto_reader)?;
+            self.reader = make_reader(data.compression_method, data.crc32, crypto_reader)?;
         }
         Ok(&mut self.reader)
     }
@@ -1328,12 +1326,12 @@ impl<'a> ZipFile<'a> {
 
     /// Get the size of the file, in bytes, in the archive
     pub fn compressed_size(&self) -> u64 {
-        self.data.compressed_size()
+        self.data.compressed_size
     }
 
     /// Get the size of the file, in bytes, when uncompressed
     pub fn size(&self) -> u64 {
-        self.data.uncompressed_size()
+        self.data.uncompressed_size
     }
 
     /// Get the time the file was last modified
@@ -1363,7 +1361,7 @@ impl<'a> ZipFile<'a> {
 
     /// Get the CRC32 hash of the original file
     pub fn crc32(&self) -> u32 {
-        self.data.crc32()
+        self.data.crc32
     }
 
     /// Get the extra data of the zip header for this file
@@ -1462,9 +1460,9 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         Err(e) => return Err(e),
     }
 
-    let limit_reader = (reader as &'a mut dyn Read).take(result.compressed_size());
+    let limit_reader = (reader as &'a mut dyn Read).take(result.compressed_size);
 
-    let result_crc32 = result.crc32();
+    let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
     let crypto_reader = make_crypto_reader(
         result_compression_method,
@@ -1475,7 +1473,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         None,
         None,
         #[cfg(feature = "aes-crypto")]
-        result.compressed_size(),
+        result.compressed_size,
     )?;
 
     Ok(Some(ZipFile {
