@@ -147,6 +147,22 @@ impl TryFrom<DateTime> for NaiveDateTime {
     }
 }
 
+impl TryFrom<(u16, u16)> for DateTime {
+    type Error = DateTimeRangeError;
+
+    #[inline]
+    fn try_from(values: (u16, u16)) -> Result<Self, Self::Error> {
+        Self::try_from_msdos(values.0, values.1)
+    }
+}
+
+impl From<DateTime> for (u16, u16) {
+    #[inline]
+    fn from(dt: DateTime) -> Self {
+        (dt.datepart(), dt.timepart())
+    }
+}
+
 impl Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
@@ -1243,11 +1259,21 @@ mod test {
         assert_eq!(dt.minute(), 38);
         assert_eq!(dt.second(), 30);
 
+        let dt = DateTime::try_from((0x4D71, 0x54CF)).unwrap();
+        assert_eq!(dt.year(), 2018);
+        assert_eq!(dt.month(), 11);
+        assert_eq!(dt.day(), 17);
+        assert_eq!(dt.hour(), 10);
+        assert_eq!(dt.minute(), 38);
+        assert_eq!(dt.second(), 30);
+
         #[cfg(feature = "time")]
         assert_eq!(
             dt.to_time().unwrap().format(&Rfc3339).unwrap(),
             "2018-11-17T10:38:30Z"
         );
+
+        assert_eq!(<(u16, u16)>::from(dt), (0x4D71, 0x54CF));
     }
 
     #[test]
