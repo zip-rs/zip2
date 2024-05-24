@@ -787,7 +787,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 _ => (options.compression_method, None),
             };
             let last_modified_time = options.last_modified_time;
-            let file = ZipFileData {
+            let mut file = ZipFileData {
                 system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
                 encrypted: options.encrypt_with.is_some(),
@@ -814,13 +814,15 @@ impl<W: Write + Seek> ZipWriter<W> {
 
                 extra_fields: Vec::new(),
             };
+            let version_needed = file.version_needed();
+            file.version_made_by = file.version_made_by.max(version_needed as u8);
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
             let writer = self.inner.get_plain();
             // local file header signature
             writer.write_u32_le(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
             // version needed to extract
-            writer.write_u16_le(file.version_needed())?;
+            writer.write_u16_le(version_needed)?;
             // general purpose bit flag
             let is_utf8 = std::str::from_utf8(&file.file_name_raw).is_ok();
             let is_ascii = file.file_name_raw.is_ascii();
@@ -1399,9 +1401,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
         let writer = self.inner.get_plain();
 
+        let mut version_needed = 10;
         let central_start = writer.stream_position()?;
         for file in self.files.values() {
             write_central_directory_header(writer, file)?;
+            version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
 
@@ -1409,8 +1413,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             || central_size.max(central_start) > spec::ZIP64_BYTES_THR
         {
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
-                version_made_by: DEFAULT_VERSION as u16,
-                version_needed_to_extract: DEFAULT_VERSION as u16,
+                version_made_by: version_needed.max(DEFAULT_VERSION as u16),
+                version_needed_to_extract: version_needed,
                 disk_number: 0,
                 disk_with_central_directory: 0,
                 number_of_files_on_this_disk: self.files.len() as u64,
@@ -1807,11 +1811,12 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
 
     // central file header signature
     writer.write_u32_le(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
+    let version_needed = file.version_needed();
     // version made by
-    let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
+    let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16).max(version_needed);
     writer.write_u16_le(version_made_by)?;
     // version needed to extract
-    writer.write_u16_le(file.version_needed())?;
+    writer.write_u16_le(version_needed)?;
     // general puprose bit flag
     let is_utf8 = std::str::from_utf8(&file.file_name_raw).is_ok();
     let is_ascii = file.file_name_raw.is_ascii();
