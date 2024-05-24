@@ -789,7 +789,7 @@ impl ZipFileData {
 
     pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
         let uncompressed_size: Option<u64> =
-            if self.uncompressed_size > spec::ZIP64_BYTES_THR || self.large_file {
+            if self.uncompressed_size >= spec::ZIP64_BYTES_THR || self.large_file {
                 Some(spec::ZIP64_BYTES_THR)
             } else {
                 None
