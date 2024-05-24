@@ -61,7 +61,7 @@ fn parse_archive_with_comment(bench: &mut Bencher) {
 
     bench.bench_n(1, |_| {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
-        archive.comment().len();
+        let _ = archive.comment().len();
     });
     bench.bytes = bytes.len() as u64;
 }
