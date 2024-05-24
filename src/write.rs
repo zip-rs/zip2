@@ -1813,7 +1813,8 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     writer.write_u32_le(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
     let version_needed = file.version_needed();
     // version made by
-    let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16).max(version_needed);
+    let version_made_by =
+        (file.system as u16) << 8 | (file.version_made_by as u16).max(version_needed);
     writer.write_u16_le(version_made_by)?;
     // version needed to extract
     writer.write_u16_le(version_needed)?;
