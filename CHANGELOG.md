@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0](https://github.com/zip-rs/zip2/compare/v1.3.1...v2.0.0) - 2024-05-24
+
+### <!-- 0 -->🚀 Features
+- Add `fmt::Display` for `DateTime`
+- Implement more traits for `DateTime`
+
+### <!-- 2 -->🚜 Refactor
+- Change type of `last_modified_time` to `Option<DateTime>`
+- [**breaking**] Rename `from_msdos` to `from_msdos_unchecked`, make it unsafe, and add `try_from_msdos` ([#145](https://github.com/zip-rs/zip2/pull/145))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Continue to accept archives with invalid DateTime, and use `now_utc()` as default only when writing, not reading
+
 ## [1.3.1](https://github.com/zip-rs/zip2/compare/v1.3.0...v1.3.1) - 2024-05-21
 
 ### <!-- 2 -->🚜 Refactor
