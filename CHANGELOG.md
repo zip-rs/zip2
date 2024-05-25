@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0](https://github.com/zip-rs/zip2/compare/v2.0.0...v2.1.0) - 2024-05-25
+
+### <!-- 0 -->🚀 Features
+- Support mutual conversion between `DateTime` and MS-DOS pair
+
+### <!-- 1 -->🐛 Bug Fixes
+- version-needed-to-extract was incorrect in central header, and version-made-by could be lower than that ([#100](https://github.com/zip-rs/zip2/pull/100))
+
 ## [2.0.0](https://github.com/zip-rs/zip2/compare/v1.3.1...v2.0.0) - 2024-05-24
 
 ### <!-- 0 -->🚀 Features
