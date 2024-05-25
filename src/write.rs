@@ -8,7 +8,7 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, Block};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
-use crate::types::{ffi, AesVendorVersion, DateTime, ZipFileData, ZipLocalEntryBlock, ZipRawValues, DEFAULT_VERSION, MIN_VERSION};
+use crate::types::{ffi, AesVendorVersion, DateTime, ZipFileData, ZipLocalEntryBlock, ZipRawValues, MIN_VERSION};
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
