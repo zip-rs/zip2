@@ -617,7 +617,9 @@ impl ZipFileData {
             extra_data_start,
             aes_extra_data_start,
         };
-        local_block.version_made_by = local_block.version_made_by.max(local_block.version_needed() as u8);
+        local_block.version_made_by = local_block
+            .version_made_by
+            .max(local_block.version_needed() as u8);
         local_block
     }
 
@@ -772,7 +774,8 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         ZipCentralEntryBlock {
             magic: ZipCentralEntryBlock::MAGIC,
-            version_made_by: (self.system as u16) << 8 | (self.version_made_by as u16).max(self.version_needed()),
+            version_made_by: (self.system as u16) << 8
+                | (self.version_made_by as u16).max(self.version_needed()),
             version_to_extract: self.version_needed(),
             flags: self.flags(),
             compression_method: self.compression_method.serialize_to_u16(),
