@@ -770,7 +770,7 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         ZipCentralEntryBlock {
             magic: ZipCentralEntryBlock::MAGIC,
-            version_made_by: (self.system as u16) << 8 | (self.version_made_by as u16),
+            version_made_by: (self.system as u16) << 8 | (self.version_made_by as u16).max(self.version_needed()),
             version_to_extract: self.version_needed(),
             flags: self.flags(),
             compression_method: self.compression_method.serialize_to_u16(),
