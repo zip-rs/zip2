@@ -388,7 +388,7 @@ impl TryFrom<DateTime> for OffsetDateTime {
     }
 }
 
-pub const DEFAULT_VERSION: u8 = 46;
+pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone)]
@@ -617,9 +617,7 @@ impl ZipFileData {
             extra_data_start,
             aes_extra_data_start,
         };
-        local_block.version_made_by = local_block
-            .version_made_by
-            .max(local_block.version_needed() as u8);
+        local_block.version_made_by = local_block.version_needed() as u8;
         local_block
     }
 

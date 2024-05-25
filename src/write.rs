@@ -1357,7 +1357,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
         let writer = self.inner.get_plain();
 
-        let mut version_needed = 10;
+        let mut version_needed = 10; // Lowest value; even an empty ZIP file needs 1.0
         let central_start = writer.stream_position()?;
         for file in self.files.values() {
             write_central_directory_header(writer, file)?;
@@ -1369,7 +1369,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             || central_size.max(central_start) > spec::ZIP64_BYTES_THR
         {
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
-                version_made_by: version_needed.max(DEFAULT_VERSION as u16),
+                version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
                 disk_number: 0,
                 disk_with_central_directory: 0,
