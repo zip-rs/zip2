@@ -388,6 +388,7 @@ impl TryFrom<DateTime> for OffsetDateTime {
     }
 }
 
+pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
@@ -524,7 +525,7 @@ impl ZipFileData {
     /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
     pub fn version_needed(&self) -> u16 {
         let compression_version: u16 = match self.compression_method {
-            CompressionMethod::Stored => 10,
+            CompressionMethod::Stored => MIN_VERSION.into(),
             #[cfg(feature = "_deflate-any")]
             CompressionMethod::Deflated => 20,
             #[cfg(feature = "bzip2")]

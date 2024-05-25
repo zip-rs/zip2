@@ -8,9 +8,7 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, Block};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
-use crate::types::{
-    ffi, AesVendorVersion, DateTime, ZipFileData, ZipLocalEntryBlock, ZipRawValues, DEFAULT_VERSION,
-};
+use crate::types::{ffi, AesVendorVersion, DateTime, ZipFileData, ZipLocalEntryBlock, ZipRawValues, DEFAULT_VERSION, MIN_VERSION};
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
@@ -1357,7 +1355,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
         let writer = self.inner.get_plain();
 
-        let mut version_needed = 10; // Lowest value; even an empty ZIP file needs 1.0
+        let mut version_needed = MIN_VERSION as u16;
         let central_start = writer.stream_position()?;
         for file in self.files.values() {
             write_central_directory_header(writer, file)?;
