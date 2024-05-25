@@ -591,7 +591,7 @@ impl ZipFileData {
         let permissions = options.permissions.unwrap_or(0o100644);
         let file_name: Box<str> = name.into();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
-        ZipFileData {
+        let mut local_block = ZipFileData {
             system: System::Unix,
             version_made_by: DEFAULT_VERSION,
             encrypted: options.encrypt_with.is_some(),
@@ -616,7 +616,9 @@ impl ZipFileData {
             extra_fields: Vec::new(),
             extra_data_start,
             aes_extra_data_start,
-        }
+        };
+        local_block.version_made_by = local_block.version_made_by.max(local_block.version_needed() as u8);
+        local_block
     }
 
     pub(crate) fn from_local_block<R: std::io::Read>(
