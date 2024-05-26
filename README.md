@@ -45,7 +45,7 @@ The features available are:
 * `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.
 * `zstd`: Enables the Zstandard compression algorithm.
 
-By default `aes-crypto`, `deflate`, `deflate-zlib-ng`, `deflate-zopfli`, `bzip2`, `time` and `zstd` are enabled.
+By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `time` and `zstd` are enabled.
 
 The following feature flags are deprecated:
 
