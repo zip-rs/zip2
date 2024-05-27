@@ -120,6 +120,7 @@ pub(crate) mod zip_writer {
     /// # }
     /// # doit().unwrap();
     /// ```
+    #[derive(Debug)]
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: IndexMap<Box<str>, ZipFileData>,
@@ -142,7 +143,7 @@ use crate::zipcrypto::ZipCryptoKeys;
 use crate::CompressionMethod::Stored;
 pub use zip_writer::ZipWriter;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct ZipWriterStats {
     hasher: Hasher,
     start: u64,
