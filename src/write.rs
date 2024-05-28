@@ -61,7 +61,7 @@ impl<W> Debug for MaybeEncrypted<W> {
             MaybeEncrypted::Unencrypted(_) => "Unencrypted",
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(_) => "AES",
-            MaybeEncrypted::ZipCrypto(_) => "ZipCrypto"
+            MaybeEncrypted::ZipCrypto(_) => "ZipCrypto",
         })
     }
 }
@@ -100,13 +100,15 @@ enum GenericZipWriter<W: Write + Seek> {
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
 }
 
-impl <W: Write + Seek> Debug for GenericZipWriter<W> {
+impl<W: Write + Seek> Debug for GenericZipWriter<W> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Closed => f.write_str("Closed"),
             Storer(w) => f.write_fmt(format_args!("Storer({:?})", w)),
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(w) => f.write_fmt(format_args!("Deflater({:?})", w.get_ref())),
+            GenericZipWriter::Deflater(w) => {
+                f.write_fmt(format_args!("Deflater({:?})", w.get_ref()))
+            }
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
             #[cfg(feature = "deflate-zopfli")]
