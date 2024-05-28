@@ -15,7 +15,7 @@ use std::io::{self, Error, ErrorKind, Read, Write};
 use zeroize::{Zeroize, Zeroizing};
 
 /// The length of the password verifcation value in bytes
-const PWD_VERIFY_LENGTH: usize = 2;
+pub const PWD_VERIFY_LENGTH: usize = 2;
 /// The length of the authentication code in bytes
 const AUTH_CODE_LENGTH: usize = 10;
 /// The number of iterations used with PBKDF2
@@ -123,6 +123,25 @@ impl<R: Read> AesReader<R> {
             hmac,
             finalized: false,
         })
+    }
+
+    /// Read the AES header bytes and returns the verification value and salt.
+    ///
+    /// # Returns
+    ///
+    /// the verification value and the salt
+    pub fn get_verification_value_and_salt(
+        mut self,
+    ) -> io::Result<([u8; PWD_VERIFY_LENGTH], Vec<u8>)> {
+        let salt_length = self.aes_mode.salt_length();
+
+        let mut salt = vec![0; salt_length];
+        self.reader.read_exact(&mut salt)?;
+
+        // next are 2 bytes used for password verification
+        let mut pwd_verification_value = [0; PWD_VERIFY_LENGTH];
+        self.reader.read_exact(&mut pwd_verification_value)?;
+        Ok((pwd_verification_value, salt))
     }
 }
 

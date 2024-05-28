@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.1.0](https://github.com/zip-rs/zip2/compare/v2.0.0...v2.1.0) - 2024-05-25
+
+### <!-- 0 -->🚀 Features
+- Support mutual conversion between `DateTime` and MS-DOS pair
+
+### <!-- 1 -->🐛 Bug Fixes
+- version-needed-to-extract was incorrect in central header, and version-made-by could be lower than that ([#100](https://github.com/zip-rs/zip2/pull/100))
+- version-needed-to-extract was incorrect in central header, and version-made-by could be lower than that ([#100](https://github.com/zip-rs/zip2/pull/100))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Another tweak to ensure `version_needed` is applied
+- Tweaks to make `version_needed` and `version_made_by` work with recently-merged changes
+
+## [2.0.0](https://github.com/zip-rs/zip2/compare/v1.3.1...v2.0.0) - 2024-05-24
+
+### <!-- 0 -->🚀 Features
+- Add `fmt::Display` for `DateTime`
+- Implement more traits for `DateTime`
+
+### <!-- 2 -->🚜 Refactor
+- Change type of `last_modified_time` to `Option<DateTime>`
+- [**breaking**] Rename `from_msdos` to `from_msdos_unchecked`, make it unsafe, and add `try_from_msdos` ([#145](https://github.com/zip-rs/zip2/pull/145))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Continue to accept archives with invalid DateTime, and use `now_utc()` as default only when writing, not reading
+
 ## [1.3.1](https://github.com/zip-rs/zip2/compare/v1.3.0...v1.3.1) - 2024-05-21
 
 ### <!-- 2 -->🚜 Refactor
