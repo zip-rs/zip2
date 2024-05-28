@@ -59,6 +59,7 @@ impl<W> Debug for MaybeEncrypted<W> {
         // Don't print W, since it may be a huge Vec<u8>
         f.write_str(match self {
             MaybeEncrypted::Unencrypted(_) => "Unencrypted",
+            #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(_) => "AES",
             MaybeEncrypted::ZipCrypto(_) => "ZipCrypto"
         })
@@ -87,11 +88,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
 enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
-    #[cfg(any(
-        feature = "deflate",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng"
-    ))]
+    #[cfg(feature = "deflate-flate2")]
     Deflater(DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
     ZopfliDeflater(zopfli::DeflateEncoder<MaybeEncrypted<W>>),
@@ -108,11 +105,16 @@ impl <W: Write + Seek> Debug for GenericZipWriter<W> {
         match self {
             Closed => f.write_str("Closed"),
             Storer(w) => f.write_fmt(format_args!("Storer({:?})", w)),
-            GenericZipWriter::Deflater(_) => f.write_str("Deflater"),
+            #[cfg(feature = "deflate-flate2")]
+            GenericZipWriter::Deflater(w) => f.write_fmt(format_args!("Deflater({:?})", w.get_ref())),
+            #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
+            #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::BufferedZopfliDeflater(_) => f.write_str("BufferedZopfliDeflater"),
-            GenericZipWriter::Bzip2(_) => f.write_str("Bzip2"),
-            GenericZipWriter::Zstd(_) => f.write_str("Zstd"),
+            #[cfg(feature = "bzip2")]
+            GenericZipWriter::Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
+            #[cfg(feature = "zstd")]
+            GenericZipWriter::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
         }
     }
 }
