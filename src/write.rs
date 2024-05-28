@@ -18,6 +18,7 @@ use crc32fast::Hasher;
 use indexmap::IndexMap;
 use std::borrow::ToOwned;
 use std::default::Default;
+use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
@@ -52,6 +53,18 @@ enum MaybeEncrypted<W> {
     Aes(crate::aes::AesWriter<W>),
     ZipCrypto(crate::zipcrypto::ZipCryptoWriter<W>),
 }
+
+impl<W> Debug for MaybeEncrypted<W> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // Don't print W, since it may be a huge Vec<u8>
+        f.write_str(match self {
+            MaybeEncrypted::Unencrypted(_) => "Unencrypted",
+            MaybeEncrypted::Aes(_) => "AES",
+            MaybeEncrypted::ZipCrypto(_) => "ZipCrypto"
+        })
+    }
+}
+
 impl<W: Write> Write for MaybeEncrypted<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
@@ -70,6 +83,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
         }
     }
 }
+
 enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
@@ -87,6 +101,20 @@ enum GenericZipWriter<W: Write + Seek> {
     Bzip2(BzEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
+}
+
+impl <W: Write + Seek> Debug for GenericZipWriter<W> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Closed => f.write_str("Closed"),
+            Storer(w) => f.write_fmt(format_args!("Storer({:?})", w)),
+            GenericZipWriter::Deflater(_) => f.write_str("Deflater"),
+            GenericZipWriter::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
+            GenericZipWriter::BufferedZopfliDeflater(_) => f.write_str("BufferedZopfliDeflater"),
+            GenericZipWriter::Bzip2(_) => f.write_str("Bzip2"),
+            GenericZipWriter::Zstd(_) => f.write_str("Zstd"),
+        }
+    }
 }
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
