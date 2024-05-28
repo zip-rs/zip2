@@ -6,7 +6,6 @@ use libfuzzer_sys::fuzz_target;
 use replace_with::replace_with_or_abort;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
-use zip::result::ZipError;
 
 #[derive(Arbitrary, Clone)]
 pub enum BasicFileOperation<'k> {
@@ -160,25 +159,25 @@ where
             for chunk in contents.iter() {
                 writer.write_all(&chunk)?;
             }
-            files_added += 1;
+            *files_added += 1;
         }
         BasicFileOperation::WriteDirectory(options) => {
             writer.add_directory_from_path(path, options.to_owned())?;
-            files_added += 1;
+            *files_added += 1;
         }
         BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
             writer.add_symlink_from_path(&path, target, options.to_owned())?;
-            files_added += 1;
+            *files_added += 1;
         }
         BasicFileOperation::ShallowCopy(base) => {
-            do_operation(writer, &base, false, flush_on_finish_file)?;
+            do_operation(writer, &base, false, flush_on_finish_file, files_added)?;
             writer.shallow_copy_file_from_path(&base.path, &path)?;
-            files_added += 1;
+            *files_added += 1;
         }
         BasicFileOperation::DeepCopy(base) => {
-            do_operation(writer, &base, false, flush_on_finish_file)?;
+            do_operation(writer, &base, false, flush_on_finish_file, files_added)?;
             writer.deep_copy_file_from_path(&base.path, &path)?;
-            files_added += 1;
+            *files_added += 1;
         }
         BasicFileOperation::MergeWithOtherFile { operations } => {
             let mut other_writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -193,12 +192,12 @@ where
                 );
             });
             writer.merge_archive(other_writer.finish_into_readable()?)?;
-            files_added += inner_files_added;
+            *files_added += inner_files_added;
         }
     }
-    if abort && files_added != 0 {
+    if abort && *files_added != 0 {
         writer.abort_file()?;
-        files_added -= 1;
+        *files_added -= 1;
     }
     let old_comment = writer.get_raw_comment().to_owned();
     match operation.reopen {
