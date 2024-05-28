@@ -215,7 +215,7 @@ where
 }
 
 fuzz_target!(|test_case: FuzzTestCase| {
-    let mut file_added = false;
+    let mut files_added = 0;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     writer.set_raw_comment(test_case.comment);
     let mut final_reopen = false;
@@ -232,7 +232,7 @@ fuzz_target!(|test_case: FuzzTestCase| {
             &operation,
             *abort,
             test_case.flush_on_finish_file,
-            &mut file_added
+            &mut files_added
         );
     }
     if final_reopen {
