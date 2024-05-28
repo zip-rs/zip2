@@ -1,5 +1,90 @@
 # Changelog
 
+## [2.1.0](https://github.com/zip-rs/zip2/compare/v2.0.0...v2.1.0) - 2024-05-25
+
+### <!-- 0 -->🚀 Features
+- Support mutual conversion between `DateTime` and MS-DOS pair
+
+### <!-- 1 -->🐛 Bug Fixes
+- version-needed-to-extract was incorrect in central header, and version-made-by could be lower than that ([#100](https://github.com/zip-rs/zip2/pull/100))
+- version-needed-to-extract was incorrect in central header, and version-made-by could be lower than that ([#100](https://github.com/zip-rs/zip2/pull/100))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Another tweak to ensure `version_needed` is applied
+- Tweaks to make `version_needed` and `version_made_by` work with recently-merged changes
+
+## [2.0.0](https://github.com/zip-rs/zip2/compare/v1.3.1...v2.0.0) - 2024-05-24
+
+### <!-- 0 -->🚀 Features
+- Add `fmt::Display` for `DateTime`
+- Implement more traits for `DateTime`
+
+### <!-- 2 -->🚜 Refactor
+- Change type of `last_modified_time` to `Option<DateTime>`
+- [**breaking**] Rename `from_msdos` to `from_msdos_unchecked`, make it unsafe, and add `try_from_msdos` ([#145](https://github.com/zip-rs/zip2/pull/145))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Continue to accept archives with invalid DateTime, and use `now_utc()` as default only when writing, not reading
+
+## [1.3.1](https://github.com/zip-rs/zip2/compare/v1.3.0...v1.3.1) - 2024-05-21
+
+### <!-- 2 -->🚜 Refactor
+- Make `deflate` enable both default implementations
+- Merge the hidden deflate-flate2 flag into the public one
+- Rename _deflate-non-zopfli to _deflate-flate2
+- Reject encrypted and using_data_descriptor files slightly faster in read_zipfile_from_stream
+- Convert `impl TryInto<NaiveDateTime> for DateTime` to `impl TryFrom<DateTime> for NaiveDateTime` ([#136](https://github.com/zip-rs/zip2/pull/136))
+
+### <!-- 4 -->⚡ Performance
+- Change default compression implementation to `flate2/zlib-ng`
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- chore([#132](https://github.com/zip-rs/zip2/pull/132)): Attribution for some copied test data
+- chore([#133](https://github.com/zip-rs/zip2/pull/133)): chmod -x src/result.rs
+
+## [1.3.0](https://github.com/zip-rs/zip2/compare/v1.2.3...v1.3.0) - 2024-05-17
+
+### <!-- 0 -->🚀 Features
+- Add `is_symlink` method
+
+### <!-- 1 -->🐛 Bug Fixes
+- Extract symlinks into symlinks on Unix and Windows, and fix a bug that affected making directories writable on MacOS
+
+### <!-- 2 -->🚜 Refactor
+- Eliminate deprecation warning when `--all-features` implicitly enables the deprecated feature
+- Check if archive contains a symlink's target, without borrowing both at the same time
+- Eliminate a clone that's no longer necessary
+- is_dir only needs to look at the filename
+- Remove unnecessary #[cfg] attributes
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Fix borrow-of-moved-value
+- Box<str> doesn't directly convert to PathBuf, so convert back to String first
+- partial revert - only &str has chars(), but Box<str> should auto-deref
+- contains_key needs a `Box<str>`, so generify `is_dir` to accept one
+- Add missing `ZipFileData::is_dir()` method
+- Fix another Windows-specific error
+- More bug fixes for Windows-specific symlink code
+- More bug fixes for Windows-specific symlink code
+- Bug fix: variable name change
+- Bug fix: need both internal and output path to determine whether to symlink_dir
+- Another bug fix
+- Fix another error-type conversion error
+- Fix error-type conversion on Windows
+- Fix conditionally-unused import
+- Fix continued issues, and factor out the Vec<u8>-to-OsString conversion (cc: [#125](https://github.com/zip-rs/zip2/pull/125))
+- Fix CI failure involving conversion to OsString for symlinks (see my comments on [#125](https://github.com/zip-rs/zip2/pull/125))
+- Move path join into platform-independent code
+
+## [1.2.3](https://github.com/zip-rs/zip2/compare/v1.2.2...v1.2.3) - 2024-05-10
+
+### <!-- 1 -->🐛 Bug Fixes
+- Remove a window when an extracted directory might be unexpectedly listable and/or `cd`able by non-owners
+- Extract directory contents on Unix even if the directory doesn't have write permission (https://github.com/zip-rs/zip-old/issues/423)
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- More conditionally-unused imports
+
 ## [1.2.2](https://github.com/zip-rs/zip2/compare/v1.2.1...v1.2.2) - 2024-05-09
 
 ### <!-- 1 -->🐛 Bug Fixes

@@ -8,12 +8,18 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
-use crate::spec;
-use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
+use crate::spec::{self, Block};
+use crate::types::{
+    AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
+    ZipLocalEntryBlock,
+};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
+use std::ffi::OsString;
+use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink};
+use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -80,10 +86,13 @@ pub(crate) mod zip_archive {
     }
 }
 
+#[cfg(feature = "aes-crypto")]
+use crate::aes::PWD_VERIFY_LENGTH;
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
-use crate::spec::path_to_string;
+use crate::spec::{is_dir, path_to_string};
+use crate::types::ffi::S_IFLNK;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
 
@@ -211,24 +220,35 @@ pub(crate) fn find_content<'a>(
     data: &ZipFileData,
     reader: &'a mut (impl Read + Seek),
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
-    // Parse local header
-    reader.seek(io::SeekFrom::Start(data.header_start))?;
-    let signature = reader.read_u32_le()?;
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid local file header"));
-    }
+    // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
     let data_start = match data.data_start.get() {
+        Some(data_start) => *data_start,
         None => {
-            reader.seek(io::SeekFrom::Current(22))?;
-            let file_name_length = reader.read_u16_le()? as u64;
-            let extra_field_length = reader.read_u16_le()? as u64;
-            let magic_and_header = 4 + 22 + 2 + 2;
-            let data_start =
-                data.header_start + magic_and_header + file_name_length + extra_field_length;
-            data.data_start.get_or_init(|| data_start);
+            // Go to start of data.
+            reader.seek(io::SeekFrom::Start(data.header_start))?;
+
+            // Parse static-sized fields and check the magic value.
+            let block = ZipLocalEntryBlock::parse(reader)?;
+
+            // Calculate the end of the local header from the fields we just parsed.
+            let variable_fields_len =
+                // Each of these fields must be converted to u64 before adding, as the result may
+                // easily overflow a u16.
+                block.file_name_length as u64 + block.extra_field_length as u64;
+            let data_start = data.header_start
+                + mem::size_of::<ZipLocalEntryBlock>() as u64
+                + variable_fields_len;
+            // Set the value so we don't have to read it again.
+            match data.data_start.set(data_start) {
+                Ok(()) => (),
+                // If the value was already set in the meantime, ensure it matches (this is probably
+                // unnecessary).
+                Err(_) => {
+                    assert_eq!(*data.data_start.get().unwrap(), data_start);
+                }
+            }
             data_start
         }
-        Some(start) => *start,
     };
 
     reader.seek(io::SeekFrom::Start(data_start))?;
@@ -239,7 +259,7 @@ pub(crate) fn find_content<'a>(
 pub(crate) fn make_crypto_reader<'a>(
     compression_method: CompressionMethod,
     crc32: u32,
-    last_modified_time: DateTime,
+    mut last_modified_time: Option<DateTime>,
     using_data_descriptor: bool,
     reader: io::Take<&'a mut dyn Read>,
     password: Option<&[u8]>,
@@ -266,7 +286,10 @@ pub(crate) fn make_crypto_reader<'a>(
             vendor_version,
         },
         (Some(password), None) => {
-            let validator = if using_data_descriptor {
+            if !using_data_descriptor {
+                last_modified_time = None;
+            }
+            let validator = if let Some(last_modified_time) = last_modified_time {
                 ZipCryptoValidator::InfoZipMsdosTime(last_modified_time.timepart())
             } else {
                 ZipCryptoValidator::PkzipCrc32(crc32)
@@ -341,6 +364,7 @@ pub(crate) fn make_reader(
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct CentralDirectoryInfo {
     pub(crate) archive_offset: u64,
     pub(crate) directory_start: u64,
@@ -449,7 +473,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     fn get_directory_info_zip32(
-        footer: &spec::CentralDirectoryEnd,
+        footer: &spec::Zip32CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<CentralDirectoryInfo> {
         // Some zip files have data prepended to them, resulting in the
@@ -474,15 +498,29 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
+    const fn zip64_cde_len() -> usize {
+        mem::size_of::<spec::Zip64CentralDirectoryEnd>()
+            + mem::size_of::<spec::Zip64CentralDirectoryEndLocator>()
+    }
+
+    const fn order_lower_upper_bounds(a: u64, b: u64) -> (u64, u64) {
+        if a > b {
+            (b, a)
+        } else {
+            (a, b)
+        }
+    }
+
     fn get_directory_info_zip64(
         reader: &mut R,
-        footer: &spec::CentralDirectoryEnd,
+        footer: &spec::Zip32CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<Vec<ZipResult<CentralDirectoryInfo>>> {
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
         // comment length. Therefore:
+        /* TODO: compute this from constant sizes and offsets! */
         reader.seek(io::SeekFrom::End(
             -(20 + 22 + footer.zip_file_comment.len() as i64),
         ))?;
@@ -493,56 +531,53 @@ impl<R: Read + Seek> ZipArchive<R> {
         // don't know how to precisely relate that location to our current
         // actual offset in the file, since there may be junk at its
         // beginning. Therefore we need to perform another search, as in
-        // read::CentralDirectoryEnd::find_and_parse, except now we search
+        // read::Zip32CentralDirectoryEnd::find_and_parse, except now we search
         // forward. There may be multiple results because of Zip64 central-directory signatures in
         // ZIP comment data.
 
-        let mut results = Vec::new();
-
         let search_upper_bound = cde_start_pos
-            .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
+            .checked_sub(Self::zip64_cde_len() as u64)
             .ok_or(ZipError::InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
             ))?;
-        let search_results = spec::Zip64CentralDirectoryEnd::find_and_parse(
-            reader,
+
+        let (lower, upper) = Self::order_lower_upper_bounds(
             locator64.end_of_central_directory_offset,
             search_upper_bound,
-        )?;
-        search_results.into_iter().for_each(|(footer64, archive_offset)| {
-            results.push({
-                let directory_start_result = footer64
+        );
+
+        let search_results = spec::Zip64CentralDirectoryEnd::find_and_parse(reader, lower, upper)?;
+        let results: Vec<ZipResult<CentralDirectoryInfo>> =
+            search_results.into_iter().map(|(footer64, archive_offset)| {
+                let directory_start = footer64
                     .central_directory_offset
                     .checked_add(archive_offset)
                     .ok_or(ZipError::InvalidArchive(
                         "Invalid central directory size or offset",
-                    ));
-                directory_start_result.and_then(|directory_start| {
-                    if directory_start > search_upper_bound {
-                        Err(ZipError::InvalidArchive(
-                            "Invalid central directory size or offset",
-                        ))
-                    } else if footer64.number_of_files_on_this_disk > footer64.number_of_files {
-                        Err(ZipError::InvalidArchive(
-                            "ZIP64 footer indicates more files on this disk than in the whole archive",
-                        ))
-                    } else if footer64.version_needed_to_extract > footer64.version_made_by {
-                        Err(ZipError::InvalidArchive(
-                            "ZIP64 footer indicates a new version is needed to extract this archive than the \
-    version that wrote it",
-                        ))
-                    } else {
-                        Ok(CentralDirectoryInfo {
-                            archive_offset,
-                            directory_start,
-                            number_of_files: footer64.number_of_files as usize,
-                            disk_number: footer64.disk_number,
-                            disk_with_central_directory: footer64.disk_with_central_directory,
-                        })
-                    }
-                })
-            });
-        });
+                    ))?;
+                if directory_start > search_upper_bound {
+                    Err(ZipError::InvalidArchive(
+                        "Invalid central directory size or offset",
+                    ))
+                } else if footer64.number_of_files_on_this_disk > footer64.number_of_files {
+                    Err(ZipError::InvalidArchive(
+                        "ZIP64 footer indicates more files on this disk than in the whole archive",
+                    ))
+                } else if footer64.version_needed_to_extract > footer64.version_made_by {
+                    Err(ZipError::InvalidArchive(
+                        "ZIP64 footer indicates a new version is needed to extract this archive than the \
+                         version that wrote it",
+                    ))
+                } else {
+                    Ok(CentralDirectoryInfo {
+                        archive_offset,
+                        directory_start,
+                        number_of_files: footer64.number_of_files as usize,
+                        disk_number: footer64.disk_number,
+                        disk_with_central_directory: footer64.disk_with_central_directory,
+                    })
+                }
+            }).collect();
         Ok(results)
     }
 
@@ -550,7 +585,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// separate function to ease the control flow design.
     pub(crate) fn get_metadata(
         reader: &mut R,
-        footer: &spec::CentralDirectoryEnd,
+        footer: &spec::Zip32CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<Shared> {
         // Check if file has a zip64 footer
@@ -642,11 +677,46 @@ impl<R: Read + Seek> ZipArchive<R> {
         Ok(shared)
     }
 
+    /// Returns the verification value and salt for the AES encryption of the file
+    ///
+    /// It fails if the file number is invalid.
+    ///
+    /// # Returns
+    ///
+    /// - None if the file is not encrypted with AES
+    #[cfg(feature = "aes-crypto")]
+    pub fn get_aes_verification_key_and_salt(
+        &mut self,
+        file_number: usize,
+    ) -> ZipResult<Option<AesInfo>> {
+        let (_, data) = self
+            .shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+
+        let limit_reader = find_content(data, &mut self.reader)?;
+        match data.aes_mode {
+            None => Ok(None),
+            Some((aes_mode, _, _)) => {
+                let (verification_value, salt) =
+                    AesReader::new(limit_reader, aes_mode, data.compressed_size)
+                        .get_verification_value_and_salt()?;
+                let aes_info = AesInfo {
+                    aes_mode,
+                    verification_value,
+                    salt,
+                };
+                Ok(Some(aes_info))
+            }
+        }
+    }
+
     /// Read a ZIP archive, collecting the files it contains
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
+        let (footer, cde_start_pos) = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut reader)?;
         let shared = Self::get_metadata(&mut reader, &footer, cde_start_pos)?;
         Ok(ZipArchive {
             reader,
@@ -657,11 +727,18 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Extract a Zip archive into a directory, overwriting files if they
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
-    /// Extraction is not atomic; If an error is encountered, some of the files
-    /// may be left on disk.
+    /// Extraction is not atomic. If an error is encountered, some of the files
+    /// may be left on disk. However, on Unix targets, no newly-created directories with part but
+    /// not all of their contents extracted will be readable, writable or usable as process working
+    /// directories by any non-root user except you.
+    ///
+    /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
+    /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
+    /// containing the target path in UTF-8.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
-
+        #[cfg(unix)]
+        let mut files_by_unix_mode = Vec::new();
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
@@ -671,29 +748,95 @@ impl<R: Read + Seek> ZipArchive<R> {
             let outpath = directory.as_ref().join(filepath);
 
             if file.is_dir() {
-                fs::create_dir_all(&outpath)?;
+                Self::make_writable_dir_all(&outpath)?;
+                continue;
+            }
+            let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
+                let mut target = Vec::with_capacity(file.size() as usize);
+                file.read_exact(&mut target)?;
+                Some(target)
             } else {
-                if let Some(p) = outpath.parent() {
-                    if !p.exists() {
-                        fs::create_dir_all(p)?;
+                None
+            };
+            drop(file);
+            if let Some(p) = outpath.parent() {
+                Self::make_writable_dir_all(p)?;
+            }
+            if let Some(target) = symlink_target {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::ffi::OsStringExt;
+                    let target = OsString::from_vec(target);
+                    let target_path = directory.as_ref().join(target);
+                    std::os::unix::fs::symlink(target_path, outpath.as_path())?;
+                }
+                #[cfg(windows)]
+                {
+                    let Ok(target) = String::from_utf8(target) else {
+                        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
+                    };
+                    let target = target.into_boxed_str();
+                    let target_is_dir_from_archive =
+                        self.shared.files.contains_key(&target) && is_dir(&target);
+                    let target_path = directory.as_ref().join(OsString::from(target.to_string()));
+                    let target_is_dir = if target_is_dir_from_archive {
+                        true
+                    } else if let Ok(meta) = std::fs::metadata(&target_path) {
+                        meta.is_dir()
+                    } else {
+                        false
+                    };
+                    if target_is_dir {
+                        std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
+                    } else {
+                        std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
                     }
                 }
-                let mut outfile = fs::File::create(&outpath)?;
-                io::copy(&mut file, &mut outfile)?;
-
-                // Set original timestamp.
-                if let Some(t) = datetime_to_systemtime(&file.last_modified()) {
-                    outfile.set_modified(t)?;
-                }
+                continue;
             }
-            // Get and Set permissions
+            let mut file = self.by_index(i)?;
+            let mut outfile = fs::File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
+                // Check for real permissions, which we'll set in a second pass
                 if let Some(mode) = file.unix_mode() {
-                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                    files_by_unix_mode.push((outpath.clone(), mode));
                 }
             }
+            // Set original timestamp.
+            if let Some(t) = datetime_to_systemtime(&file.last_modified()) {
+                outfile.set_modified(t)?;
+            }
+        }
+        #[cfg(unix)]
+        {
+            use std::cmp::Reverse;
+            use std::os::unix::fs::PermissionsExt;
+
+            if files_by_unix_mode.len() > 1 {
+                // Ensure we update children's permissions before making a parent unwritable
+                files_by_unix_mode.sort_by_key(|(path, _)| Reverse(path.clone()));
+            }
+            for (path, mode) in files_by_unix_mode.into_iter() {
+                fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
+        create_dir_all(outpath.as_ref())?;
+        #[cfg(unix)]
+        {
+            // Dirs must be writable until all normal files are extracted
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                outpath.as_ref(),
+                std::fs::Permissions::from_mode(
+                    0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
+                ),
+            )?;
         }
         Ok(())
     }
@@ -865,6 +1008,18 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 }
 
+/// Holds the AES information of a file in the zip archive
+#[derive(Debug)]
+#[cfg(feature = "aes-crypto")]
+pub struct AesInfo {
+    /// The AES encryption mode
+    pub aes_mode: AesMode,
+    /// The verification key
+    pub verification_value: [u8; PWD_VERIFY_LENGTH],
+    /// The salt
+    pub salt: Vec<u8>,
+}
+
 const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
@@ -877,12 +1032,15 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
-    let signature = reader.read_u32_le()?;
-    if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-        Err(ZipError::InvalidArchive("Invalid Central Directory header"))
-    } else {
-        central_header_to_zip_file_inner(reader, archive_offset, central_header_start)
-    }
+    let block = ZipCentralEntryBlock::parse(reader)?;
+    central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)
+}
+
+#[inline]
+fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> io::Result<Box<[u8]>> {
+    let mut data = vec![0; len].into_boxed_slice();
+    reader.read_exact(&mut data)?;
+    Ok(data)
 }
 
 /// Parse a central directory entry to collect the information for the file.
@@ -890,63 +1048,65 @@ fn central_header_to_zip_file_inner<R: Read>(
     reader: &mut R,
     archive_offset: u64,
     central_header_start: u64,
+    block: ZipCentralEntryBlock,
 ) -> ZipResult<ZipFileData> {
-    let version_made_by = reader.read_u16_le()?;
-    let _version_to_extract = reader.read_u16_le()?;
-    let flags = reader.read_u16_le()?;
+    let ZipCentralEntryBlock {
+        // magic,
+        version_made_by,
+        // version_to_extract,
+        flags,
+        compression_method,
+        last_mod_time,
+        last_mod_date,
+        crc32,
+        compressed_size,
+        uncompressed_size,
+        file_name_length,
+        extra_field_length,
+        file_comment_length,
+        // disk_number,
+        // internal_file_attributes,
+        external_file_attributes,
+        offset,
+        ..
+    } = block;
+
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
-    let compression_method = reader.read_u16_le()?;
-    let last_mod_time = reader.read_u16_le()?;
-    let last_mod_date = reader.read_u16_le()?;
-    let crc32 = reader.read_u32_le()?;
-    let compressed_size = reader.read_u32_le()?;
-    let uncompressed_size = reader.read_u32_le()?;
-    let file_name_length = reader.read_u16_le()? as usize;
-    let extra_field_length = reader.read_u16_le()? as usize;
-    let file_comment_length = reader.read_u16_le()? as usize;
-    let _disk_number = reader.read_u16_le()?;
-    let _internal_file_attributes = reader.read_u16_le()?;
-    let external_file_attributes = reader.read_u32_le()?;
-    let offset = reader.read_u32_le()? as u64;
-    let mut file_name_raw = vec![0; file_name_length];
-    reader.read_exact(&mut file_name_raw)?;
-    let mut extra_field = vec![0; extra_field_length];
-    reader.read_exact(&mut extra_field)?;
-    let mut file_comment_raw = vec![0; file_comment_length];
-    reader.read_exact(&mut file_comment_raw)?;
+
+    let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
+    let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
+    let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
 
     let file_name: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_name_raw).into(),
-        false => file_name_raw.from_cp437().into(),
+        false => file_name_raw.clone().from_cp437(),
     };
     let file_comment: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_comment_raw).into(),
-        false => file_comment_raw.from_cp437().into(),
+        false => file_comment_raw.from_cp437(),
     };
 
     // Construct the result
     let mut result = ZipFileData {
         system: System::from((version_made_by >> 8) as u8),
+        /* NB: this strips the top 8 bits! */
         version_made_by: version_made_by as u8,
         encrypted,
         using_data_descriptor,
-        compression_method: {
-            #[allow(deprecated)]
-            CompressionMethod::from_u16(compression_method)
-        },
+        compression_method: CompressionMethod::parse_from_u16(compression_method),
         compression_level: None,
-        last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
+        last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,
-        compressed_size: compressed_size as u64,
-        uncompressed_size: uncompressed_size as u64,
+        compressed_size: compressed_size.into(),
+        uncompressed_size: uncompressed_size.into(),
         file_name,
-        file_name_raw: file_name_raw.into(),
-        extra_field: Some(Arc::new(extra_field)),
+        file_name_raw,
+        extra_field: Some(Arc::new(extra_field.to_vec())),
         central_extra_field: None,
         file_comment,
-        header_start: offset,
+        header_start: offset.into(),
         extra_data_start: None,
         central_header_start,
         data_start: OnceLock::new(),
@@ -984,6 +1144,7 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
     };
     let mut reader = io::Cursor::new(extra_field.as_ref());
 
+    /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
     while (reader.position() as usize) < extra_field.len() {
         let kind = reader.read_u16_le()?;
         let len = reader.read_u16_le()?;
@@ -1018,8 +1179,7 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 let mut out = [0u8];
                 reader.read_exact(&mut out)?;
                 let aes_mode = out[0];
-                #[allow(deprecated)]
-                let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
+                let compression_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
 
                 if vendor_id != 0x4541 {
                     return Err(ZipError::InvalidArchive("Invalid AES vendor"));
@@ -1179,20 +1339,23 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get the time the file was last modified
-    pub fn last_modified(&self) -> DateTime {
+    pub fn last_modified(&self) -> Option<DateTime> {
         self.data.last_modified_time
     }
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-        self.name()
-            .chars()
-            .next_back()
-            .map_or(false, |c| c == '/' || c == '\\')
+        is_dir(self.name())
     }
 
-    /// Returns whether the file is a regular file
+    /// Returns whether the file is actually a symbolic link
+    pub fn is_symlink(&self) -> bool {
+        self.unix_mode()
+            .is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
+    }
+
+    /// Returns whether the file is a normal file (i.e. not a directory or symlink)
     pub fn is_file(&self) -> bool {
-        !self.is_dir()
+        !self.is_dir() && !self.is_symlink()
     }
 
     /// Get unix mode for the file
@@ -1276,81 +1439,29 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
-    let signature = reader.read_u32_le()?;
+    // We can't use the typical ::parse() method, as we follow separate code paths depending on the
+    // "magic" value (since the magic value will be from the central directory header if we've
+    // finished iterating over all the actual files).
+    /* TODO: smallvec? */
+    let mut block = [0u8; mem::size_of::<ZipLocalEntryBlock>()];
+    reader.read_exact(&mut block)?;
+    let block: Box<[u8]> = block.into();
+
+    let signature = spec::Magic::from_first_le_bytes(&block);
 
     match signature {
-        spec::LOCAL_FILE_HEADER_SIGNATURE => (),
-        spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
+        spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
         _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
     }
 
-    let version_made_by = reader.read_u16_le()?;
-    let flags = reader.read_u16_le()?;
-    let encrypted = flags & 1 == 1;
-    let is_utf8 = flags & (1 << 11) != 0;
-    let using_data_descriptor = flags & (1 << 3) != 0;
-    #[allow(deprecated)]
-    let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
-    let last_mod_time = reader.read_u16_le()?;
-    let last_mod_date = reader.read_u16_le()?;
-    let crc32 = reader.read_u32_le()?;
-    let compressed_size = reader.read_u32_le()?;
-    let uncompressed_size = reader.read_u32_le()?;
-    let file_name_length = reader.read_u16_le()? as usize;
-    let extra_field_length = reader.read_u16_le()? as usize;
+    let block = ZipLocalEntryBlock::interpret(block)?;
 
-    let mut file_name_raw = vec![0; file_name_length];
-    reader.read_exact(&mut file_name_raw)?;
-    let mut extra_field = vec![0; extra_field_length];
-    reader.read_exact(&mut extra_field)?;
-
-    let file_name: Box<str> = match is_utf8 {
-        true => String::from_utf8_lossy(&file_name_raw).into(),
-        false => file_name_raw.clone().from_cp437().into(),
-    };
-
-    let mut result = ZipFileData {
-        system: System::from((version_made_by >> 8) as u8),
-        version_made_by: version_made_by as u8,
-        encrypted,
-        using_data_descriptor,
-        compression_method,
-        compression_level: None,
-        last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
-        crc32,
-        compressed_size: compressed_size as u64,
-        uncompressed_size: uncompressed_size as u64,
-        file_name,
-        file_name_raw: file_name_raw.into(),
-        extra_field: Some(Arc::new(extra_field)),
-        central_extra_field: None,
-        file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
-        // header_start and data start are not available, but also don't matter, since seeking is
-        // not available.
-        header_start: 0,
-        extra_data_start: None,
-        data_start: OnceLock::new(),
-        central_header_start: 0,
-        // The external_attributes field is only available in the central directory.
-        // We set this to zero, which should be valid as the docs state 'If input came
-        // from standard input, this field is set to zero.'
-        external_attributes: 0,
-        large_file: false,
-        aes_mode: None,
-        aes_extra_data_start: 0,
-        extra_fields: Vec::new(),
-    };
+    let mut result = ZipFileData::from_local_block(block, reader)?;
 
     match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
-    }
-
-    if encrypted {
-        return unsupported_zip_error("Encrypted files are not supported");
-    }
-    if using_data_descriptor {
-        return unsupported_zip_error("The file length is not available in the local header");
     }
 
     let limit_reader = (reader as &'a mut dyn Read).take(result.compressed_size);
@@ -1407,6 +1518,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 mod test {
     use crate::ZipArchive;
     use std::io::Cursor;
+    use tempdir::TempDir;
 
     #[test]
     fn invalid_offset() {
@@ -1476,7 +1588,7 @@ mod test {
         let mut file1 = reader1.by_index(0).unwrap();
         let mut file2 = reader2.by_index(0).unwrap();
 
-        let t = file1.last_modified();
+        let t = file1.last_modified().unwrap();
         assert_eq!(
             (
                 t.year(),
@@ -1600,5 +1712,17 @@ mod test {
         let mut decompressed = [0u8; 16];
         let mut file = reader.by_index(0).unwrap();
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
+    }
+
+    #[test]
+    fn test_is_symlink() -> std::io::Result<()> {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        assert!(reader.by_index(0).unwrap().is_symlink());
+        let tempdir = TempDir::new("test_is_symlink")?;
+        reader.extract(&tempdir).unwrap();
+        assert!(tempdir.path().join("bar").is_symlink());
+        Ok(())
     }
 }
