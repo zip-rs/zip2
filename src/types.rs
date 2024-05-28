@@ -112,7 +112,7 @@ impl arbitrary::Arbitrary<'_> for DateTime {
             day: u.int_in_range(1..=31)?,
             hour: u.int_in_range(0..=23)?,
             minute: u.int_in_range(0..=59)?,
-            second: u.int_in_range(0..=60)?,
+            second: u.int_in_range(0..=58)?,
         })
     }
 }
@@ -238,7 +238,7 @@ impl DateTime {
     /// * day: [1, 31]
     /// * hour: [0, 23]
     /// * minute: [0, 59]
-    /// * second: [0, 60]
+    /// * second: [0, 58]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -252,7 +252,7 @@ impl DateTime {
             && (1..=31).contains(&day)
             && hour <= 23
             && minute <= 59
-            && second <= 60
+            && second <= 58
         {
             Ok(DateTime {
                 year,
@@ -1093,8 +1093,8 @@ mod test {
     #[allow(clippy::unusual_byte_groupings)]
     fn datetime_max() {
         use super::DateTime;
-        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
-        assert_eq!(dt.timepart(), 0b10111_111011_11110);
+        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 58).unwrap();
+        assert_eq!(dt.timepart(), 0b10111_111011_11101);
         assert_eq!(dt.datepart(), 0b1111111_1100_11111);
     }
 
@@ -1156,9 +1156,9 @@ mod test {
         assert_eq!(
             format!(
                 "{}",
-                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 59).unwrap()
+                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 58).unwrap()
             ),
-            "2107-12-31 23:59:59"
+            "2107-12-31 23:59:58"
         );
     }
 
@@ -1166,10 +1166,10 @@ mod test {
     fn datetime_bounds() {
         use super::DateTime;
 
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 23, 59, 60).is_ok());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 23, 59, 58).is_ok());
         assert!(DateTime::from_date_and_time(2000, 1, 1, 24, 0, 0).is_err());
         assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 60, 0).is_err());
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 0, 61).is_err());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 0, 59).is_err());
 
         assert!(DateTime::from_date_and_time(2107, 12, 31, 0, 0, 0).is_ok());
         assert!(DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).is_ok());
