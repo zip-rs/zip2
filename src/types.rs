@@ -1181,10 +1181,10 @@ mod test {
     fn datetime_bounds() {
         use super::DateTime;
 
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 23, 59, 58).is_ok());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 23, 59, 60).is_ok());
         assert!(DateTime::from_date_and_time(2000, 1, 1, 24, 0, 0).is_err());
         assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 60, 0).is_err());
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 0, 59).is_err());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 0, 61).is_err());
 
         assert!(DateTime::from_date_and_time(2107, 12, 31, 0, 0, 0).is_ok());
         assert!(DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).is_ok());
