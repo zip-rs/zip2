@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.1](https://github.com/zip-rs/zip2/compare/v2.1.0...v2.1.1) - 2024-05-28
+
+### <!-- 1 -->🐛 Bug Fixes
+- Derive `Debug` for `ZipWriter`
+- lower default version to 4.5 and use the version-needed-to-extract where feasible.
+
+### <!-- 2 -->🚜 Refactor
+- use a MIN_VERSION constant
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Bug fixes for debug implementation
+- Bug fixes for debug implementation
+- Update unit tests
+- Remove unused import
+
 ## [2.1.0](https://github.com/zip-rs/zip2/compare/v2.0.0...v2.1.0) - 2024-05-25
 
 ### <!-- 0 -->🚀 Features
