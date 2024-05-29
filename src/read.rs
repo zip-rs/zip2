@@ -1,7 +1,12 @@
 //! Types for reading ZIP archives
 
 /// Module for code with synchronous logic
+#[cfg(feature = "sync")]
 pub mod sync;
+
+/// Module for code with asynchronous logic
+#[cfg(feature = "tokio")]
+pub mod tokio;
 
 #[cfg(feature = "aes-crypto")]
 use crate::{aes::AesReaderValid, types::AesVendorVersion};
@@ -121,7 +126,6 @@ pub(crate) struct CentralDirectoryInfo {
 mod test {
     use crate::ZipArchive;
     use std::io::Cursor;
-    use tempdir::TempDir;
 
     #[test]
     fn invalid_offset() {
@@ -315,17 +319,5 @@ mod test {
         let mut decompressed = [0u8; 16];
         let mut file = reader.by_index(0).unwrap();
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
-    }
-
-    #[test]
-    fn test_is_symlink() -> std::io::Result<()> {
-        let mut v = Vec::new();
-        v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
-        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
-        assert!(reader.by_index(0).unwrap().is_symlink());
-        let tempdir = TempDir::new("test_is_symlink")?;
-        reader.extract(&tempdir).unwrap();
-        assert!(tempdir.path().join("bar").is_symlink());
-        Ok(())
     }
 }

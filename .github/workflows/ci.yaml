@@ -21,7 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
-        feature_flag: ["--all-features", "--no-default-features", ""]
+        feature_flag: ["--no-default-features --features sync_all", "--no-default-features --features tokio_all", "--no-default-features --features sync", "--no-default-features --features tokio", ""]
         include:
         - rustalias: stable
           rust: stable

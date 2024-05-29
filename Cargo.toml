@@ -18,6 +18,25 @@ edition = "2021"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**"]
 build = "src/build.rs"
 
+[package.metadata.docs.rs]
+features = [
+    "aes-crypto",
+    "bzip2",
+    "chrono",
+    "deflate",
+    "deflate64",
+    "deflate",
+    "deflate-zlib",
+    "deflate-zlib-ng",
+    "lzma",
+    "time",
+    "zstd",
+]
+# Can be enabled when <https://github.com/zopfli-rs/zopfli/issues/42> is fixed
+# all-features = true
+no-default-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [workspace.dependencies]
 time = { version = "0.3.36", default-features = false }
 
@@ -43,6 +62,8 @@ zstd = { version = "0.13.1", optional = true, default-features = false }
 zopfli = { version = "0.8.0", optional = true }
 deflate64 = { version = "0.1.8", optional = true }
 lzma-rs = { version = "0.3.0", default-features = false, optional = true }
+true = { version = "0.1.0", optional = true }
+tokio = { version = "1.37.0", optional = true }
 
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
 crossbeam-utils = "0.8.19"
@@ -68,11 +89,14 @@ deflate = ["flate2/rust_backend", "_deflate-any"]
 
 # DEPRECATED: previously enabled `flate2/miniz_oxide` which is equivalent to `flate2/rust_backend`
 deflate-miniz = ["deflate", "_deflate-any"]
-
 deflate-zlib = ["flate2/zlib", "_deflate-any"]
 deflate-zlib-ng = ["flate2/zlib-ng", "_deflate-any"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
 lzma = ["lzma-rs/stream"]
+sync = []
+sync_all = ["aes-crypto", "chrono", "deflate", "deflate-miniz", "deflate-zlib", "deflate-zlib-ng", "deflate-zopfli", "lzma", "sync","time"]
+tokio_all = ["aes-crypto", "chrono", "deflate", "deflate-miniz", "deflate-zlib", "deflate-zlib-ng", "deflate-zopfli", "lzma","time", "tokio"]
+tokio = ["tokio/io-util"]
 unreserved = []
 default = [
     "aes-crypto",
@@ -82,6 +106,7 @@ default = [
     "deflate-zlib-ng",
     "deflate-zopfli",
     "lzma",
+    "sync",
     "time",
     "zstd",
 ]
