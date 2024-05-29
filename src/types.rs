@@ -256,8 +256,9 @@ impl DateTime {
             && (1..=31).contains(&day)
             && hour <= 23
             && minute <= 59
-            && second <= 58
+            && second <= 60
         {
+            let second = second.min(58); // exFAT can't store leap seconds
             let max_day = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
                 4 | 6 | 9 | 11 => 30,
