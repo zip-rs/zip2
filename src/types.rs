@@ -112,7 +112,7 @@ impl arbitrary::Arbitrary<'_> for DateTime {
             day: u.int_in_range(1..=31)?,
             hour: u.int_in_range(0..=23)?,
             minute: u.int_in_range(0..=59)?,
-            second: u.int_in_range(0..=60)?,
+            second: u.int_in_range(0..=58)?,
         })
     }
 }
@@ -235,10 +235,10 @@ impl DateTime {
     /// The bounds are:
     /// * year: [1980, 2107]
     /// * month: [1, 12]
-    /// * day: [1, 31]
+    /// * day: [1, 28..=31]
     /// * hour: [0, 23]
     /// * minute: [0, 59]
-    /// * second: [0, 60]
+    /// * second: [0, 58]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -247,6 +247,10 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
+        fn is_leap_year(year: u16) -> bool {
+            (year % 4 == 0) && ((year % 25 != 0) || (year % 16 == 0))
+        }
+
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -254,6 +258,17 @@ impl DateTime {
             && minute <= 59
             && second <= 60
         {
+            let second = second.min(58); // exFAT can't store leap seconds
+            let max_day = match month {
+                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+                4 | 6 | 9 | 11 => 30,
+                2 if is_leap_year(year) => 29,
+                2 => 28,
+                _ => unreachable!(),
+            };
+            if day > max_day {
+                return Err(DateTimeRangeError);
+            }
             Ok(DateTime {
                 year,
                 month,
@@ -1093,8 +1108,8 @@ mod test {
     #[allow(clippy::unusual_byte_groupings)]
     fn datetime_max() {
         use super::DateTime;
-        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
-        assert_eq!(dt.timepart(), 0b10111_111011_11110);
+        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 58).unwrap();
+        assert_eq!(dt.timepart(), 0b10111_111011_11101);
         assert_eq!(dt.datepart(), 0b1111111_1100_11111);
     }
 
@@ -1156,9 +1171,9 @@ mod test {
         assert_eq!(
             format!(
                 "{}",
-                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 59).unwrap()
+                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 58).unwrap()
             ),
-            "2107-12-31 23:59:59"
+            "2107-12-31 23:59:58"
         );
     }
 
@@ -1179,6 +1194,31 @@ mod test {
         assert!(DateTime::from_date_and_time(2108, 12, 31, 0, 0, 0).is_err());
         assert!(DateTime::from_date_and_time(2107, 13, 31, 0, 0, 0).is_err());
         assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
+
+        assert!(DateTime::from_date_and_time(2018, 1, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 2, 28, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 2, 29, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 3, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 4, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 4, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 5, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 6, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 6, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 7, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 8, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 9, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 9, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 10, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 11, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 11, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 12, 31, 0, 0, 0).is_ok());
+
+        // leap year: divisible by 4
+        assert!(DateTime::from_date_and_time(2024, 2, 29, 0, 0, 0).is_ok());
+        // leap year: divisible by 100 and by 400
+        assert!(DateTime::from_date_and_time(2000, 2, 29, 0, 0, 0).is_ok());
+        // common year: divisible by 100 but not by 400
+        assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
     #[cfg(feature = "time")]
