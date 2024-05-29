@@ -9,6 +9,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "sync")]
 use super::sync::{central_header_to_zip_file_inner, read_zipfile_from_stream};
 
 /// Stream decoder for zip.

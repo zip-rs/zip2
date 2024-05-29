@@ -1,9 +1,11 @@
 //! Types for reading ZIP archives
 
 /// Module for code with synchronous logic
+#[cfg(feature = "sync")]
 pub mod sync;
 
 /// Module for code with asynchronous logic
+#[cfg(feature = "tokio")]
 pub mod tokio;
 
 #[cfg(feature = "aes-crypto")]
