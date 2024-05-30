@@ -3,7 +3,7 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
-use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{find_content, Config, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, Block};
 #[cfg(feature = "aes-crypto")]
@@ -538,10 +538,19 @@ impl ZipWriterStats {
 
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
-    pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
+    ///
+    /// This uses a default configuration to initially read the archive.
+    pub fn new_append(readwriter: A) -> ZipResult<ZipWriter<A>> {
+        Self::new_append_with_config(Default::default(), readwriter)
+    }
+
+    /// Initializes the archive from an existing ZIP archive, making it ready for append.
+    ///
+    /// This uses the given read configuration to initially read the archive.
+    pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         let (footer, cde_start_pos) =
             spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
-        let metadata = ZipArchive::get_metadata(&mut readwriter, &footer, cde_start_pos)?;
+        let metadata = ZipArchive::get_metadata(config, &mut readwriter, &footer, cde_start_pos)?;
 
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
