@@ -1,14 +1,14 @@
-use core::mem::size_of;
-use std::io::Read;
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
+use core::mem::size_of;
+use std::io::Read;
 
 /// Info-ZIP Unicode Path Extra Field (0x7075) or Unicode Comment Extra Field (0x6375), as
 /// specified in APPNOTE 4.6.8 and 4.6.9
 #[derive(Clone, Debug)]
 pub struct UnicodeExtraField {
     crc32: u32,
-    content: Box<[u8]>
+    content: Box<[u8]>,
 }
 
 impl<'a> UnicodeExtraField {
@@ -18,7 +18,9 @@ impl<'a> UnicodeExtraField {
         crc32.update(ascii_field);
         let actual_crc32 = crc32.finalize();
         if self.crc32 != actual_crc32 {
-            return Err(ZipError::InvalidArchive("CRC32 checksum failed on Unicode extra field"));
+            return Err(ZipError::InvalidArchive(
+                "CRC32 checksum failed on Unicode extra field",
+            ));
         }
         Ok(self.content)
     }
@@ -30,11 +32,9 @@ impl UnicodeExtraField {
         reader.read_exact(&mut [0u8])?;
 
         let crc32 = reader.read_u32_le()?;
-        let mut content = vec![0u8; len as usize - size_of::<u8>() - size_of::<u32>()].into_boxed_slice();
+        let mut content =
+            vec![0u8; len as usize - size_of::<u8>() - size_of::<u32>()].into_boxed_slice();
         reader.read_exact(&mut content)?;
-        Ok(Self {
-            crc32,
-            content
-        })
+        Ok(Self { crc32, content })
     }
 }

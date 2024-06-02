@@ -95,6 +95,7 @@ pub(crate) mod zip_archive {
 
 #[cfg(feature = "aes-crypto")]
 use crate::aes::PWD_VERIFY_LENGTH;
+use crate::extra_fields::UnicodeExtraField;
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
@@ -102,7 +103,6 @@ use crate::spec::{is_dir, path_to_string};
 use crate::types::ffi::S_IFLNK;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
-use crate::extra_fields::UnicodeExtraField;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
@@ -1286,15 +1286,22 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
                 if !file.is_utf8 {
                     file.file_comment = String::from_utf8(
-                        UnicodeExtraField::try_from_reader(&mut reader, len)?.unwrap_valid(file.file_comment.as_bytes())?.into_vec())?.into();
+                        UnicodeExtraField::try_from_reader(&mut reader, len)?
+                            .unwrap_valid(file.file_comment.as_bytes())?
+                            .into_vec(),
+                    )?
+                    .into();
                 }
             }
             0x7075 => {
                 // Info-ZIP Unicode Path Extra Field
                 // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
                 if !file.is_utf8 {
-                    file.file_name_raw = UnicodeExtraField::try_from_reader(&mut reader, len)?.unwrap_valid(&file.file_name_raw)?;
-                    file.file_name = String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
+                    file.file_name_raw = UnicodeExtraField::try_from_reader(&mut reader, len)?
+                        .unwrap_valid(&file.file_name_raw)?;
+                    file.file_name =
+                        String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
+                    file.is_utf8 = true;
                 }
             }
             _ => {
