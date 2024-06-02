@@ -881,9 +881,12 @@ impl<W: Write + Seek> ZipWriter<W> {
                         ));
                     };
                     if pad_length >= 4 {
-                        // Add an extra field to the extra_data
+                        // Add an extra field to the extra_data, per APPNOTE 4.6.11
                         let pad_body = vec![0; pad_length - 4];
-                        writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
+                        if pad_body.len() >= 2 {
+                            pad_body[0..2].write_u16_le(options.alignment)?;
+                        }
+                        writer.write_u16_le(0xa11e)?;
                         writer
                             .write_u16_le(pad_body.len() as u16)
                             .map_err(ZipError::from)?;
