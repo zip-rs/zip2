@@ -11,7 +11,7 @@ pub struct UnicodeExtraField {
     content: Box<[u8]>,
 }
 
-impl<'a> UnicodeExtraField {
+impl UnicodeExtraField {
     /// Verifies the checksum and returns the content.
     pub fn unwrap_valid(self, ascii_field: &[u8]) -> ZipResult<Box<[u8]>> {
         let mut crc32 = crc32fast::Hasher::new();
