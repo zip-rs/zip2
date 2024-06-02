@@ -415,6 +415,8 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// True if the file is encrypted.
     pub encrypted: bool,
+    /// True if file_name and file_comment are UTF8
+    pub is_utf8: bool,
     /// True if the file uses a data-descriptor section
     pub using_data_descriptor: bool,
     /// Compression method used to store the file
@@ -612,6 +614,7 @@ impl ZipFileData {
             version_made_by: DEFAULT_VERSION,
             encrypted: options.encrypt_with.is_some(),
             using_data_descriptor: false,
+            is_utf8: !file_name.is_ascii(),
             compression_method,
             compression_level: options.compression_level,
             last_modified_time: Some(options.last_modified_time),
@@ -695,6 +698,7 @@ impl ZipFileData {
             version_made_by: version_made_by as u8,
             encrypted,
             using_data_descriptor,
+            is_utf8,
             compression_method,
             compression_level: None,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
@@ -1071,6 +1075,7 @@ mod test {
             version_made_by: 0,
             encrypted: false,
             using_data_descriptor: false,
+            is_utf8: true,
             compression_method: crate::compression::CompressionMethod::Stored,
             compression_level: None,
             last_modified_time: None,

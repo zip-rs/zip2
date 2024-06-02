@@ -102,6 +102,7 @@ use crate::spec::{is_dir, path_to_string};
 use crate::types::ffi::S_IFLNK;
 use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
+use crate::extra_fields::UnicodeExtraField;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
@@ -1160,6 +1161,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         version_made_by: version_made_by as u8,
         encrypted,
         using_data_descriptor,
+        is_utf8,
         compression_method: CompressionMethod::parse_from_u16(compression_method),
         compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
@@ -1278,6 +1280,22 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 
                 // the reader for ExtendedTimestamp consumes `len` bytes
                 len_left = 0;
+            }
+            0x6375 => {
+                // Info-ZIP Unicode Comment Extra Field
+                // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
+                if !file.is_utf8 {
+                    file.file_comment = String::from_utf8(
+                        UnicodeExtraField::try_from_reader(&mut reader, len)?.unwrap_valid(file.file_comment.as_bytes())?.into_vec())?.into();
+                }
+            }
+            0x7075 => {
+                // Info-ZIP Unicode Path Extra Field
+                // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
+                if !file.is_utf8 {
+                    file.file_name_raw = UnicodeExtraField::try_from_reader(&mut reader, len)?.unwrap_valid(&file.file_name_raw)?;
+                    file.file_name = String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
+                }
             }
             _ => {
                 // Other fields are ignored
