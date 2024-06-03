@@ -24,11 +24,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng"
-))]
+#[cfg(feature = "deflate-flate2")]
 use flate2::read::DeflateDecoder;
 
 #[cfg(feature = "deflate64")]

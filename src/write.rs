@@ -27,11 +27,7 @@ use std::mem;
 use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng"
-))]
+#[cfg(feature = "deflate-flate2")]
 use flate2::{write::DeflateEncoder, Compression};
 
 #[cfg(feature = "bzip2")]
@@ -881,9 +877,12 @@ impl<W: Write + Seek> ZipWriter<W> {
                         ));
                     };
                     if pad_length >= 4 {
-                        // Add an extra field to the extra_data
-                        let pad_body = vec![0; pad_length - 4];
-                        writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
+                        // Add an extra field to the extra_data, per APPNOTE 4.6.11
+                        let mut pad_body = vec![0; pad_length - 4];
+                        if pad_body.len() >= 2 {
+                            [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
+                        }
+                        writer.write_u16_le(0xa11e)?;
                         writer
                             .write_u16_le(pad_body.len() as u16)
                             .map_err(ZipError::from)?;
@@ -1566,11 +1565,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         }
                     }
 
-                    #[cfg(any(
-                        feature = "deflate",
-                        feature = "deflate-zlib",
-                        feature = "deflate-zlib-ng",
-                    ))]
+                    #[cfg(feature = "deflate-flate2")]
                     {
                         Ok(Box::new(move |bare| {
                             GenericZipWriter::Deflater(DeflateEncoder::new(
@@ -1630,11 +1625,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     fn switch_to(&mut self, make_new_self: SwitchWriterFunction<W>) -> ZipResult<()> {
         let bare = match mem::replace(self, Closed) {
             Storer(w) => w,
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
@@ -1662,11 +1653,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match self {
             Storer(ref mut w) => Some(w as &mut dyn Write),
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
