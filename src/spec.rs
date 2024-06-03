@@ -105,7 +105,7 @@ pub(crate) trait FixedSizeBlock: Sized + Copy {
     const WRONG_MAGIC_ERROR: ZipError;
 
     /* TODO: use smallvec? */
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
+    fn interpret(bytes: &[u8]) -> ZipResult<Self> {
         if bytes.len() != mem::size_of::<Self>() {
             return Err(ZipError::InvalidArchive("Block is wrong size"));
         }
@@ -123,7 +123,7 @@ pub(crate) trait FixedSizeBlock: Sized + Copy {
     fn parse<T: Read>(reader: &mut T) -> ZipResult<Self> {
         let mut block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
         reader.read_exact(&mut block)?;
-        Self::interpret(block)
+        Self::interpret(&block)
     }
 
     fn encode(self) -> Box<[u8]> {

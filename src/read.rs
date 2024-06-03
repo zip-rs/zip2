@@ -1541,7 +1541,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
     }
 
-    let block = ZipLocalEntryBlock::interpret(block)?;
+    let block = ZipLocalEntryBlock::interpret(&block)?;
 
     let mut result = ZipFileData::from_local_block(block, reader)?;
 
