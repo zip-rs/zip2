@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.1.3](https://github.com/zip-rs/zip2/compare/v2.1.2...v2.1.3) - 2024-06-03
+
+### <!-- 1 -->🐛 Bug Fixes
+- Use deflate-flate2 flag to guard import
+- Switch padding field ID to one documented in APPNOTE
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Refactor alignment field write logic
+- Fix a build error
+- Fix a build error
+
 ## [2.1.1](https://github.com/zip-rs/zip2/compare/v2.1.0...v2.1.1) - 2024-05-28
 
 ### <!-- 1 -->🐛 Bug Fixes
