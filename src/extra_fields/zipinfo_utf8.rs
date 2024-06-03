@@ -32,8 +32,10 @@ impl UnicodeExtraField {
         reader.read_exact(&mut [0u8])?;
 
         let crc32 = reader.read_u32_le()?;
-        let mut content =
-            vec![0u8; len as usize - size_of::<u8>() - size_of::<u32>()].into_boxed_slice();
+        let content_len = (len as usize)
+            .checked_sub(size_of::<u8>() + size_of::<u32>())
+            .ok_or(ZipError::InvalidArchive("Unicode extra field is too small"))?;
+        let mut content = vec![0u8; content_len].into_boxed_slice();
         reader.read_exact(&mut content)?;
         Ok(Self { crc32, content })
     }
