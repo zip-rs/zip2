@@ -1788,4 +1788,12 @@ mod test {
         assert!(tempdir.path().join("bar").is_symlink());
         Ok(())
     }
+
+    #[test]
+    fn test_utf8_extra_field() {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/chinese.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        reader.by_name("七个房间.txt").unwrap();
+    }
 }
