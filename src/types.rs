@@ -899,7 +899,8 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid Central Directory header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid Central Directory header");
 
     to_and_from_le![
         (magic, spec::Magic),
@@ -946,7 +947,7 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid local file header");
+    const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive("Invalid local file header");
 
     to_and_from_le![
         (magic, spec::Magic),

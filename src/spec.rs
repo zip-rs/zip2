@@ -102,23 +102,19 @@ pub(crate) trait FixedSizeBlock: Sized + Copy {
 
     fn magic(self) -> Magic;
 
-    const ERROR: ZipError;
+    const WRONG_MAGIC_ERROR: ZipError;
 
     /* TODO: use smallvec? */
     fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
-        if block.magic() != Self::MAGIC {
-            return Err(Self::ERROR);
-        }
-        Ok(block)
-    }
-
-    fn deserialize(block: &[u8]) -> ZipResult<Self> {
-        if block.len() != mem::size_of::<Self>() {
+        if bytes.len() != mem::size_of::<Self>() {
             return Err(ZipError::InvalidArchive("Block is wrong size"));
         }
-        let block_ptr: *const Self = block.as_ptr().cast();
-        unsafe { block_ptr.read() }
+        let block_ptr: *const Self = bytes.as_ptr().cast();
+        let block = unsafe { block_ptr.read() }.from_le();
+        if block.magic() != Self::MAGIC {
+            return Err(Self::WRONG_MAGIC_ERROR);
+        }
+        Ok(block)
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -222,7 +218,8 @@ impl FixedSizeBlock for Zip32CDEBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid digital signature header");
 
     to_and_from_le![
         (magic, Magic),
@@ -401,7 +398,7 @@ impl FixedSizeBlock for Zip64CDELocatorBlock {
         self.magic
     }
 
-    const ERROR: ZipError =
+    const WRONG_MAGIC_ERROR: ZipError =
         ZipError::InvalidArchive("Invalid zip64 locator digital signature header");
 
     to_and_from_le![
@@ -476,7 +473,8 @@ impl FixedSizeBlock for Zip64CDEBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid digital signature header");
 
     to_and_from_le![
         (magic, Magic),
@@ -717,7 +715,7 @@ mod test {
             self.magic
         }
 
-        const ERROR: ZipError = ZipError::InvalidArchive("unreachable");
+        const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive("unreachable");
 
         to_and_from_le![(magic, Magic), (file_name_length, u16)];
     }
