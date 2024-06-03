@@ -1786,6 +1786,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "_deflate-any")]
     fn test_utf8_extra_field() {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/chinese.zip"));
