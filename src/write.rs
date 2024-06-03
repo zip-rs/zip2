@@ -21,7 +21,7 @@ use std::default::Default;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::prelude::*;
-use std::io::{BufReader, SeekFrom};
+use std::io::{BufReader, Cursor, SeekFrom};
 use std::marker::PhantomData;
 use std::mem;
 use std::str::{from_utf8, Utf8Error};
@@ -882,9 +882,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                     };
                     if pad_length >= 4 {
                         // Add an extra field to the extra_data, per APPNOTE 4.6.11
-                        let pad_body = vec![0; pad_length - 4];
+                        let mut pad_body = vec![0; pad_length - 4];
                         if pad_body.len() >= 2 {
-                            pad_body[0..2].write_u16_le(options.alignment)?;
+                            Cursor::new(&mut pad_body).write_u16_le(options.alignment)?;
                         }
                         writer.write_u16_le(0xa11e)?;
                         writer

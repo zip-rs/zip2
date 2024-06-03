@@ -43,7 +43,7 @@ pub trait LittleEndianWriteExt: Write {
     }
 }
 
-impl<W: Write> LittleEndianWriteExt for W {}
+impl<W: Write + ?Sized> LittleEndianWriteExt for W {}
 
 /// Helper methods for reading unsigned integers in little-endian form.
 pub trait LittleEndianReadExt: Read {
