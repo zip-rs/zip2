@@ -27,11 +27,7 @@ use std::mem;
 use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng"
-))]
+#[cfg(feature = "deflate-flate2")]
 use flate2::{write::DeflateEncoder, Compression};
 
 #[cfg(feature = "bzip2")]
@@ -1569,11 +1565,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         }
                     }
 
-                    #[cfg(any(
-                        feature = "deflate",
-                        feature = "deflate-zlib",
-                        feature = "deflate-zlib-ng",
-                    ))]
+                    #[cfg(feature = "deflate-flate2")]
                     {
                         Ok(Box::new(move |bare| {
                             GenericZipWriter::Deflater(DeflateEncoder::new(
@@ -1633,11 +1625,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     fn switch_to(&mut self, make_new_self: SwitchWriterFunction<W>) -> ZipResult<()> {
         let bare = match mem::replace(self, Closed) {
             Storer(w) => w,
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
@@ -1665,11 +1653,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match self {
             Storer(ref mut w) => Some(w as &mut dyn Write),
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),

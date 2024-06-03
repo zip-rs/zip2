@@ -42,12 +42,12 @@ fn real_main() -> i32 {
     let method = match args.compression_method {
         CompressionMethod::Stored => zip::CompressionMethod::Stored,
         CompressionMethod::Deflated => {
-            #[cfg(not(feature = "deflate"))]
+            #[cfg(not(feature = "deflate-flate2"))]
             {
-                println!("The `deflate` feature is not enabled");
+                println!("The `deflate-flate2` feature is not enabled");
                 return 1;
             }
-            #[cfg(feature = "deflate")]
+            #[cfg(feature = "deflate-flate2")]
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::DeflatedZlib => {
