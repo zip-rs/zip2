@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.3](https://github.com/zip-rs/zip2/compare/v2.1.2...v2.1.3) - 2024-06-03
+
+### <!-- 1 -->🐛 Bug Fixes
+- Decode Zip-Info UTF8 name and comment fields ([#159](https://github.com/zip-rs/zip2/pull/159))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Fix a new Clippy warning
+- Fix a bug and inline `deserialize` for safety
+- Add check for wrong-length blocks, and incorporate fixed-size requirement into the trait name
+- Fix a fuzz failure by using checked_sub
+- Add feature gate for new unit test
+
 ## [2.1.1](https://github.com/zip-rs/zip2/compare/v2.1.0...v2.1.1) - 2024-05-28
 
 ### <!-- 1 -->🐛 Bug Fixes
