@@ -880,7 +880,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                         // Add an extra field to the extra_data, per APPNOTE 4.6.11
                         let mut pad_body = vec![0; pad_length - 4];
                         if pad_body.len() >= 2 {
-                            pad_body[0..2].copy_from_slice(&options.alignment.to_le_bytes());
+                            [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                         }
                         writer.write_u16_le(0xa11e)?;
                         writer
