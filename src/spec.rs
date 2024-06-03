@@ -97,26 +97,24 @@ impl ExtraFieldMagic {
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
-pub(crate) trait Block: Sized + Copy {
+pub(crate) trait FixedSizeBlock: Sized + Copy {
     const MAGIC: Magic;
 
     fn magic(self) -> Magic;
 
-    const ERROR: ZipError;
+    const WRONG_MAGIC_ERROR: ZipError;
 
     /* TODO: use smallvec? */
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
+    fn interpret(bytes: &[u8]) -> ZipResult<Self> {
+        if bytes.len() != mem::size_of::<Self>() {
+            return Err(ZipError::InvalidArchive("Block is wrong size"));
+        }
+        let block_ptr: *const Self = bytes.as_ptr().cast();
+        let block = unsafe { block_ptr.read() }.from_le();
         if block.magic() != Self::MAGIC {
-            return Err(Self::ERROR);
+            return Err(Self::WRONG_MAGIC_ERROR);
         }
         Ok(block)
-    }
-
-    fn deserialize(block: &[u8]) -> Self {
-        assert_eq!(block.len(), mem::size_of::<Self>());
-        let block_ptr: *const Self = block.as_ptr().cast();
-        unsafe { block_ptr.read() }
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -125,7 +123,7 @@ pub(crate) trait Block: Sized + Copy {
     fn parse<T: Read>(reader: &mut T) -> ZipResult<Self> {
         let mut block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
         reader.read_exact(&mut block)?;
-        Self::interpret(block)
+        Self::interpret(&block)
     }
 
     fn encode(self) -> Box<[u8]> {
@@ -212,7 +210,7 @@ pub(crate) struct Zip32CDEBlock {
     pub zip_file_comment_length: u16,
 }
 
-impl Block for Zip32CDEBlock {
+impl FixedSizeBlock for Zip32CDEBlock {
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
     #[inline(always)]
@@ -220,7 +218,8 @@ impl Block for Zip32CDEBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid digital signature header");
 
     to_and_from_le![
         (magic, Magic),
@@ -391,7 +390,7 @@ pub(crate) struct Zip64CDELocatorBlock {
     pub number_of_disks: u32,
 }
 
-impl Block for Zip64CDELocatorBlock {
+impl FixedSizeBlock for Zip64CDELocatorBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
     #[inline(always)]
@@ -399,7 +398,7 @@ impl Block for Zip64CDELocatorBlock {
         self.magic
     }
 
-    const ERROR: ZipError =
+    const WRONG_MAGIC_ERROR: ZipError =
         ZipError::InvalidArchive("Invalid zip64 locator digital signature header");
 
     to_and_from_le![
@@ -467,14 +466,15 @@ pub(crate) struct Zip64CDEBlock {
     pub central_directory_offset: u64,
 }
 
-impl Block for Zip64CDEBlock {
+impl FixedSizeBlock for Zip64CDEBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
 
     fn magic(self) -> Magic {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid digital signature header");
 
     to_and_from_le![
         (magic, Magic),
@@ -708,14 +708,14 @@ mod test {
         pub file_name_length: u16,
     }
 
-    impl Block for TestBlock {
+    impl FixedSizeBlock for TestBlock {
         const MAGIC: Magic = Magic::literal(0x01111);
 
         fn magic(self) -> Magic {
             self.magic
         }
 
-        const ERROR: ZipError = ZipError::InvalidArchive("unreachable");
+        const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive("unreachable");
 
         to_and_from_le![(magic, Magic), (file_name_length, u16)];
     }

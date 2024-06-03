@@ -8,7 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, Block};
+use crate::spec::{self, FixedSizeBlock};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -91,6 +91,7 @@ pub(crate) mod zip_archive {
 
 #[cfg(feature = "aes-crypto")]
 use crate::aes::PWD_VERIFY_LENGTH;
+use crate::extra_fields::UnicodeExtraField;
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
@@ -1156,6 +1157,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         version_made_by: version_made_by as u8,
         encrypted,
         using_data_descriptor,
+        is_utf8,
         compression_method: CompressionMethod::parse_from_u16(compression_method),
         compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
@@ -1274,6 +1276,29 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 
                 // the reader for ExtendedTimestamp consumes `len` bytes
                 len_left = 0;
+            }
+            0x6375 => {
+                // Info-ZIP Unicode Comment Extra Field
+                // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
+                if !file.is_utf8 {
+                    file.file_comment = String::from_utf8(
+                        UnicodeExtraField::try_from_reader(&mut reader, len)?
+                            .unwrap_valid(file.file_comment.as_bytes())?
+                            .into_vec(),
+                    )?
+                    .into();
+                }
+            }
+            0x7075 => {
+                // Info-ZIP Unicode Path Extra Field
+                // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
+                if !file.is_utf8 {
+                    file.file_name_raw = UnicodeExtraField::try_from_reader(&mut reader, len)?
+                        .unwrap_valid(&file.file_name_raw)?;
+                    file.file_name =
+                        String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
+                    file.is_utf8 = true;
+                }
             }
             _ => {
                 // Other fields are ignored
@@ -1516,7 +1541,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
     }
 
-    let block = ZipLocalEntryBlock::interpret(block)?;
+    let block = ZipLocalEntryBlock::interpret(&block)?;
 
     let mut result = ZipFileData::from_local_block(block, reader)?;
 
@@ -1758,5 +1783,14 @@ mod test {
         reader.extract(&tempdir).unwrap();
         assert!(tempdir.path().join("bar").is_symlink());
         Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "_deflate-any")]
+    fn test_utf8_extra_field() {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/chinese.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        reader.by_name("七个房间.txt").unwrap();
     }
 }
