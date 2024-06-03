@@ -6,7 +6,7 @@ use super::{
     central_header_to_zip_file_inner, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError,
     ZipFile, ZipFileData, ZipResult,
 };
-use crate::spec::Block;
+use crate::spec::FixedSizeBlock;
 
 /// Stream decoder for zip.
 #[derive(Debug)]

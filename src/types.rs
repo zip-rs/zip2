@@ -11,7 +11,7 @@ use std::sync::{Arc, OnceLock};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, Block};
+use crate::spec::{self, FixedSizeBlock};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -891,7 +891,7 @@ pub(crate) struct ZipCentralEntryBlock {
     pub offset: u32,
 }
 
-impl Block for ZipCentralEntryBlock {
+impl FixedSizeBlock for ZipCentralEntryBlock {
     const MAGIC: spec::Magic = spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
     #[inline(always)]
@@ -938,7 +938,7 @@ pub(crate) struct ZipLocalEntryBlock {
     pub extra_field_length: u16,
 }
 
-impl Block for ZipLocalEntryBlock {
+impl FixedSizeBlock for ZipLocalEntryBlock {
     const MAGIC: spec::Magic = spec::Magic::LOCAL_FILE_HEADER_SIGNATURE;
 
     #[inline(always)]

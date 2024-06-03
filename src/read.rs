@@ -8,7 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, Block};
+use crate::spec::{self, FixedSizeBlock};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,

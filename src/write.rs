@@ -5,7 +5,7 @@ use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
 use crate::read::{find_content, Config, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, Block};
+use crate::spec::{self, FixedSizeBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
