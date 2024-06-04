@@ -127,6 +127,9 @@ jobs:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
+      - name: Create dir for minimized seed corpus
+        if: always()
+        run: mkdir fuzz/corpus/new_seed
       - name: Minimize seed corpus
         if: always()
         uses: actions-rs/cargo@v1
@@ -175,6 +178,9 @@ jobs:
           name: fuzz_read_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
+      - name: Create dir for minimized seed corpus
+        if: always()
+        run: mkdir fuzz/corpus/new_seed
       - name: Minimize seed corpus
         if: always()
         uses: actions-rs/cargo@v1
@@ -226,6 +232,9 @@ jobs:
             fuzz/artifacts/fuzz_write/leak-*
             fuzz/artifacts/fuzz_write/timeout-*
           if-no-files-found: ignore
+      - name: Create dir for minimized seed corpus
+        if: always()
+        run: mkdir fuzz/corpus/new_seed
       - name: Minimize seed corpus
         if: always()
         uses: actions-rs/cargo@v1
@@ -274,6 +283,9 @@ jobs:
           name: fuzz_write_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
+      - name: Create dir for minimized seed corpus
+        if: always()
+        run: mkdir fuzz/corpus/new_seed
       - name: Minimize seed corpus
         if: always()
         uses: actions-rs/cargo@v1
