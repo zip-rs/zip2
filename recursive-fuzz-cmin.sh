@@ -12,6 +12,7 @@ while true; do
     # Last iteration made no difference, so we're done
     rm -r "fuzz/corpus/fuzz_$1"
     mv "fuzz/corpus/fuzz_$1_iter_${j}" "fuzz/corpus/fuzz_$1"
+    exit 0
   fi
   i=$j
 done
