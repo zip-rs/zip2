@@ -288,7 +288,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
         #[cfg(feature = "deflate-zopfli")]
         if options.compression_method == CompressionMethod::Deflated && bool::arbitrary(u)? {
             options.zopfli_buffer_size =
-                Some(1 << u.int_in_range(8..=29)? * if bool::arbitrary(u)? { 2 } else { 3 });
+                Some(if bool::arbitrary(u)? { 2 } else { 3 } << u.int_in_range(8..=29)?);
         }
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
             options
