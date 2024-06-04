@@ -1913,8 +1913,8 @@ mod test {
     use crate::result::ZipResult;
     use crate::types::DateTime;
     use crate::write::SimpleFileOptions;
-    use crate::CompressionMethod::{Stored};
-    use crate::{ZipArchive};
+    use crate::CompressionMethod::Stored;
+    use crate::ZipArchive;
     use std::io;
     use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;
