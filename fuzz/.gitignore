@@ -1,5 +1,5 @@
 target
 artifacts
-corpus
+corpus/*
 !corpus/fuzz_read/
 !corpus/fuzz_write/
