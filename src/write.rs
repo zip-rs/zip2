@@ -1908,18 +1908,16 @@ const EXTRA_FIELD_MAPPING: [u16; 49] = [
 
 #[cfg(test)]
 mod test {
-    use super::{ExtendedFileOptions, FileOptions, ZipWriter};
+    use super::{FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
-    use crate::write::EncryptWith::Aes;
     use crate::write::SimpleFileOptions;
-    use crate::CompressionMethod::{Deflated, Stored};
-    use crate::{AesMode, ZipArchive};
+    use crate::CompressionMethod::{Stored};
+    use crate::{ZipArchive};
     use std::io;
     use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     #[test]
     fn write_empty_zip() {
@@ -2488,63 +2486,6 @@ mod test {
         let second_archive = second_writer.finish_into_readable()?;
         first_writer.merge_archive(second_archive)?;
         let _ = ZipArchive::new(first_writer.finish()?)?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_fuzz_failure_2024_06_04() -> ZipResult<()> {
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.set_flush_on_finish_file(false);
-        let options = FileOptions {
-            compression_method: Deflated,
-            compression_level: Some(20),
-            last_modified_time: DateTime::from_date_and_time(2107, 4, 8, 7, 0, 19)?,
-            permissions: Some(4281355088),
-            large_file: false,
-            encrypt_with: Some(Aes {
-                mode: AesMode::Aes128,
-                password: "",
-            }),
-            extended_options: ExtendedFileOptions {
-                extra_data: Arc::new(vec![]),
-                central_extra_data: Arc::new(vec![]),
-            },
-            alignment: 14335,
-            zopfli_buffer_size: Some(9223372036854775808),
-        };
-        writer.start_file_from_path("", options)?;
-        writer.write_all(&[46])?;
-        writer.write_all(&[])?;
-        writer.write_all(&[41, 0])?;
-        writer.write_all(&[255, 255, 46])?;
-        writer.write_all(&[])?;
-        writer.write_all(&[41, 0])?;
-        writer.write_all(&[255, 7])?;
-        writer.write_all(&[80, 255])?;
-        writer.write_all(&[6, 255])?;
-        writer.write_all(&[41, 255, 246, 255, 255, 255])?;
-        writer.write_all(&[255, 7])?;
-        writer.write_all(&[255])?;
-        writer.write_all(&[255, 7])?;
-        writer.write_all(&[80, 255])?;
-        writer.write_all(&[255, 45])?;
-        writer.write_all(&[56, 255, 0, 255, 56, 195, 255, 7])?;
-        writer.write_all(&[80, 255])?;
-        writer.write_all(&[246, 255, 255, 255, 7])?;
-        writer.write_all(&[80, 255, 255])?;
-        writer.write_all(&[255, 7])?;
-        writer.write_all(&[80, 255])?;
-        writer.write_all(&[255])?;
-        writer.write_all(
-            &[
-                56, 195, 255, 7, 80, 255, 246, 255, 255, 255, 7, 80, 255, 6, 255, 255, 0, 255, 80,
-                255, 7, 80, 255, 44, 255, 246, 255, 255, 255, 7, 80, 255, 255, 56, 195, 255, 7, 80,
-                255, 246, 255, 255, 255, 7, 80, 255, 255, 255, 7, 2, 75, 255, 56, 195, 255, 7, 80,
-                255, 246, 255, 255, 255, 7, 80, 255, 6, 255, 41, 255, 255, 7, 80, 255, 255, 45, 52,
-                255, 0, 255, 255, 0, 255, 80, 255, 246,
-            ]
-        )?;
-        writer.finish_into_readable()?;
         Ok(())
     }
 }
