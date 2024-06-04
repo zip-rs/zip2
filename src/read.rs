@@ -1793,4 +1793,20 @@ mod test {
         let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
         reader.by_name("七个房间.txt").unwrap();
     }
+
+    #[test]
+    fn test_utf8() {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/linux-7z.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        reader.by_name("你好.txt").unwrap();
+    }
+
+    #[test]
+    fn test_utf8_2() {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/windows-7zip.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        reader.by_name("你好.txt").unwrap();
+    }
 }
