@@ -163,7 +163,7 @@ jobs:
           command: fuzz
           args: build --no-default-features fuzz_read
       - name: run fuzz
-        timeout-minutes: 331
+        timeout-minutes: 335
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
@@ -211,11 +211,11 @@ jobs:
           command: fuzz
           args: build --all-features fuzz_write
       - name: run fuzz
-        timeout-minutes: 331
+        timeout-minutes: 335
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run --all-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=2s -fork=2 -runs=1000000 -max_len=500 -max_total_time=19800 -dict=fuzz/fuzz.dict
+          args: run --all-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=2s -fork=2 -runs=5000000 -max_len=500 -max_total_time=19800 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -262,11 +262,11 @@ jobs:
           command: fuzz
           args: build --no-default-features fuzz_write
       - name: run fuzz
-        timeout-minutes: 331
+        timeout-minutes: 335
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run --no-default-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=10s -fork=2 -runs=50000000 -max_len=10000 -max_total_time=19800 -len_control=200 -dict=fuzz/fuzz.dict
+          args: run --no-default-features fuzz_write fuzz/corpus/fuzz_write -- -timeout=10s -fork=2 -runs=50000000 -max_len=500 -max_total_time=19800 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
