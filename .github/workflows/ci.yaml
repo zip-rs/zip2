@@ -127,15 +127,9 @@ jobs:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
-      - name: Create dir for minimized seed corpus
-        if: always()
-        run: mkdir fuzz/corpus/new_seed
       - name: Minimize seed corpus
         if: always()
-        uses: actions-rs/cargo@v1
-        with:
-          command: fuzz
-          args: cmin --all-features fuzz_read fuzz/corpus/fuzz_read -- -rss_limit_mb=8192 -max_len=70000 -dict=fuzz/fuzz.dict fuzz/corpus/new_seed
+        run: recursive-fuzz-cmin.sh read 70000
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -178,21 +172,6 @@ jobs:
           name: fuzz_read_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
-      - name: Create dir for minimized seed corpus
-        if: always()
-        run: mkdir fuzz/corpus/new_seed
-      - name: Minimize seed corpus
-        if: always()
-        uses: actions-rs/cargo@v1
-        with:
-          command: fuzz
-          args: cmin --no-default-features fuzz_read fuzz/corpus/fuzz_read -- -rss_limit_mb=8192 -max_len=70000 -dict=fuzz/fuzz.dict fuzz/corpus/new_seed
-      - name: Upload updated seed corpus
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzz_read_no_features_corpus
-          path: fuzz/corpus/new_seed/*
 
   fuzz_write:
     runs-on: ubuntu-latest
@@ -232,21 +211,15 @@ jobs:
             fuzz/artifacts/fuzz_write/leak-*
             fuzz/artifacts/fuzz_write/timeout-*
           if-no-files-found: ignore
-      - name: Create dir for minimized seed corpus
-        if: always()
-        run: mkdir fuzz/corpus/new_seed
       - name: Minimize seed corpus
         if: always()
-        uses: actions-rs/cargo@v1
-        with:
-          command: fuzz
-          args: cmin --all-features fuzz_write fuzz/corpus/fuzz_write -- -rss_limit_mb=8192 -dict=fuzz/fuzz.dict fuzz/corpus/new_seed
+        run: recursive-fuzz-cmin.sh write 500
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_corpus
-          path: fuzz/corpus/new_seed/*
+          path: fuzz/corpus/fuzz_write/*
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
@@ -283,18 +256,3 @@ jobs:
           name: fuzz_write_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
-      - name: Create dir for minimized seed corpus
-        if: always()
-        run: mkdir fuzz/corpus/new_seed
-      - name: Minimize seed corpus
-        if: always()
-        uses: actions-rs/cargo@v1
-        with:
-          command: fuzz
-          args: cmin --no-default-features fuzz_write fuzz/corpus/fuzz_write -- -rss_limit_mb=8192 -dict=fuzz/fuzz.dict fuzz/corpus/new_seed
-      - name: Upload updated seed corpus
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzz_write_no_features_corpus
-          path: fuzz/corpus/new_seed/*
