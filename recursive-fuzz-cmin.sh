@@ -7,8 +7,7 @@ while true; do
   mkdir "fuzz/corpus/fuzz_$1_iter_${j}"
   cargo fuzz cmin --all-features "fuzz_$1" "fuzz/corpus/fuzz_$1_iter_${i}" -- \
     -dict=fuzz/fuzz.dict -max_len="$2" "fuzz/corpus/fuzz_$1_iter_${j}"
-  diff "fuzz/corpus/fuzz_$1_iter_${i}.bak" "fuzz/corpus/fuzz_$1_iter_${j}"
-  if $?; then
+  if diff "fuzz/corpus/fuzz_$1_iter_${i}.bak" "fuzz/corpus/fuzz_$1_iter_${j}"; then
     # Last iteration made no difference, so we're done
     rm -r "fuzz/corpus/fuzz_$1"
     mv "fuzz/corpus/fuzz_$1_iter_${j}" "fuzz/corpus/fuzz_$1"
