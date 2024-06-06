@@ -129,13 +129,14 @@ jobs:
           if-no-files-found: ignore
       - name: Minimize seed corpus
         if: always()
-        run: recursive-fuzz-cmin.sh read 70000
+        run: ./recursive-fuzz-cmin.sh read 70000
+        shell: bash
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_corpus
-          path: fuzz/corpus/new_seed/*
+          path: fuzz/corpus/fuzz_read/*
 
   fuzz_read_with_no_features:
     runs-on: ubuntu-latest
@@ -213,7 +214,8 @@ jobs:
           if-no-files-found: ignore
       - name: Minimize seed corpus
         if: always()
-        run: recursive-fuzz-cmin.sh write 500
+        run: ./recursive-fuzz-cmin.sh write 500
+        shell: bash
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
