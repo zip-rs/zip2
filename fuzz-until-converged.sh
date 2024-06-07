@@ -10,6 +10,7 @@ while [[ $iters_without_improvement -lt $MAX_ITERS_WITHOUT_IMPROVEMENT ]]; do
   ./recursive-fuzz-cmin.sh "$1" "$2"
   if diff "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_old"; then
     iters_without_improvement=$(( iters_without_improvement + 1 ))
+    echo "$iters_without_improvement iterations without improvement"
   else
     iters_without_improvement=0
   fi
