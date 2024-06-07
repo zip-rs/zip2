@@ -61,7 +61,7 @@ getrandom = { version = "0.2.15", features = ["js", "std"] }
 walkdir = "2.5.0"
 time = { workspace = true, features = ["formatting", "macros"] }
 anyhow = "1"
-clap = { version = "=4.4.18", features = ["derive"] }
+clap = { version = "=4.5.6", features = ["derive"] }
 tempdir = "0.3.7"
 
 [features]
