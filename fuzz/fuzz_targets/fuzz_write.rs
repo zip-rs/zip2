@@ -70,11 +70,12 @@ impl <'k> Debug for FileOperation<'k> {
             },
             BasicFileOperation::MergeWithOtherFile {operations} => {
                 f.write_str("let sub_writer = {\n\
-                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));\n")?;
+                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));\n\
+                    writer.set_flush_on_finish_file(false);\n")?;
                 operations.iter().map(|op| {
                     f.write_fmt(format_args!("{:?}", op.0))?;
                     if op.1 {
-                        f.write_str("writer.abort_file()?;")
+                        f.write_str("writer.abort_file()?;\n")
                     } else {
                         Ok(())
                     }
@@ -195,10 +196,10 @@ where
     match operation.reopen {
         ReopenOption::DoNotReopen => {},
         ReopenOption::ViaFinish => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-            zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap()
+            zip::ZipWriter::new_append(old_writer.finish()?)?
         }),
         ReopenOption::ViaFinishIntoReadable => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-            zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
+            zip::ZipWriter::new_append(old_writer.finish_into_readable()?.into_inner())?
         }),
     }
     assert_eq!(&old_comment, writer.get_raw_comment());
