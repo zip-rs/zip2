@@ -260,10 +260,17 @@ pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct ExtendedFileOptions {
     extra_data: Arc<Vec<u8>>,
     central_extra_data: Arc<Vec<u8>>,
+}
+
+impl Debug for ExtendedFileOptions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("ExtendedFileptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
+        self.extra_data, self.central_extra_data))
+    }
 }
 
 #[cfg(fuzzing)]

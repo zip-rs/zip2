@@ -63,18 +63,10 @@ impl <'k> Debug for FileOperation<'k> {
                              options, self.path, target.to_owned()))
             },
             BasicFileOperation::ShallowCopy(base) => {
-                f.write_fmt(format_args!("let path = {:?};\n\
-                {{\n\
-                {:?}
-                }}\n\
-                writer.shallow_copy_file_from_path(path, {:?})?;\n", base.path, base, self.path))
+                f.write_fmt(format_args!("{:?}writer.shallow_copy_file_from_path(path, {:?})?;\n", base, self.path))
             },
             BasicFileOperation::DeepCopy(base) => {
-                f.write_fmt(format_args!("let path = {:?};\n\
-                {{\n\
-                {:?}
-                }}\n\
-                writer.deep_copy_file_from_path(path, {:?})?;\n", base.path, base, self.path))
+                f.write_fmt(format_args!("{:?}writer.deep_copy_file_from_path(path, {:?})?;\n", base, self.path))
             },
             BasicFileOperation::MergeWithOtherFile {operations} => {
                 f.write_str("let sub_writer = {\n\
