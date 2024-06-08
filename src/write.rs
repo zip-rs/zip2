@@ -268,7 +268,7 @@ pub struct ExtendedFileOptions {
 
 impl Debug for ExtendedFileOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_fmt(format_args!("ExtendedFileptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
+        f.write_fmt(format_args!("ExtendedFileOptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
         self.extra_data, self.central_extra_data))
     }
 }
@@ -1386,7 +1386,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         let central_start = {
-            let central_start = self.write_central_and_footer()?;
+            let mut central_start = self.write_central_and_footer()?;
             let writer = self.inner.get_plain();
             let footer_end = writer.stream_position()?;
             let file_end = writer.seek(SeekFrom::End(0))?;
@@ -1395,7 +1395,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // the actual end.
                 let central_and_footer_size = footer_end - central_start;
                 writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
-                self.write_central_and_footer()?;
+                central_start = self.write_central_and_footer()?;
             }
             central_start
         };
