@@ -196,10 +196,10 @@ where
     match operation.reopen {
         ReopenOption::DoNotReopen => {},
         ReopenOption::ViaFinish => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-            zip::ZipWriter::new_append(old_writer.finish()?)?
+            zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap()
         }),
         ReopenOption::ViaFinishIntoReadable => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-            zip::ZipWriter::new_append(old_writer.finish_into_readable()?.into_inner())?
+            zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
         }),
     }
     assert_eq!(&old_comment, writer.get_raw_comment());
