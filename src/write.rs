@@ -2495,4 +2495,44 @@ mod test {
         let _ = ZipArchive::new(first_writer.finish()?)?;
         Ok(())
     }
+
+    #[cfg(feature = "bzip2")]
+    #[test]
+    fn test_fuzz_failure_2024_06_08() -> ZipResult<()> {
+        use crate::write::ExtendedFileOptions;
+        use CompressionMethod::Bzip2;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        const SYMLINK_PATH: &'static str = "PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\u{18}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0l\0\0\0\0\0\0PK\u{6}\u{7}P\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0";
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FileOptions {
+                compression_method: Bzip2,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(1980, 5, 20, 21, 0, 57)?,
+                permissions: None,
+                large_file: false,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 2048,
+                zopfli_buffer_size: None,
+            };
+            writer.add_symlink_from_path(SYMLINK_PATH, "||\0\0\0\0", options)?;
+            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+            writer.deep_copy_file_from_path(SYMLINK_PATH, "")?;
+            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+            writer.abort_file()?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        writer.deep_copy_file_from_path(SYMLINK_PATH, "foo")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
 }

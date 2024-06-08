@@ -442,7 +442,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             )?;
             /* This is only ever used internally to cache metadata lookups (it's not part of the
              * zip spec), and 0 is the sentinel value. */
-            f.central_header_start = 0;
+            // f.central_header_start = 0;
             /* This is an atomic variable so it can be updated from another thread in the
              * implementation (which is good!). */
             if let Some(old_data_start) = f.data_start.take() {
@@ -727,7 +727,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let shared = ok_results
             .into_iter()
-            .max_by_key(|shared| shared.dir_start)
+            .max_by_key(|shared| shared.dir_start - shared.offset)
             .unwrap();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
         Ok(shared)
