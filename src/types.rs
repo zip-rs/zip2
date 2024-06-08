@@ -3,6 +3,7 @@ use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
 use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::mem;
 use std::path;
 use std::sync::{Arc, OnceLock};
@@ -77,7 +78,7 @@ impl From<System> for u8 {
 ///
 /// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
 /// for details.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     year: u16,
     month: u8,
@@ -85,6 +86,16 @@ pub struct DateTime {
     hour: u8,
     minute: u8,
     second: u8,
+}
+
+impl Debug for DateTime {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if *self == Self::default() {
+            return f.write_str("DateTime::default()");
+        }
+        f.write_fmt(format_args!("DateTime::from_date_and_time({}, {}, {}, {}, {}, {})?",
+        self.year, self.month, self.day, self.hour, self.minute, self.second))
+    }
 }
 
 impl DateTime {

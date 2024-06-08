@@ -45,10 +45,11 @@ impl <'k> Debug for FileOperation<'k> {
         match &self.basic {
             BasicFileOperation::WriteNormalFile {contents, options} => {
                 f.write_fmt(format_args!("let options = {:?};\n\
-                writer.start_file_from_path({:?}, options)?;\n\
-                writer.write_all(&({:?}[..] as [u8]))?;\n\
-                drop(options);\n",
-                options, self.path, contents))
+                writer.start_file_from_path({:?}, options)?;\n", options, self.path))?;
+                for content_slice in contents {
+                    f.write_fmt("writer.write_all(&({ : ? }[..] as [u8]))?;\n", content_slice)?;
+                }
+                f.write_str("drop(options);\n")
             },
             BasicFileOperation::WriteDirectory(options) => {
                 f.write_fmt(format_args!("let options = {:?};\n\
@@ -73,8 +74,7 @@ impl <'k> Debug for FileOperation<'k> {
                 {{\n\
                 {:?}
                 }}\n\
-                writer.shallow_copy_file_from_path(path, {:?})?;\n\
-                drop(path);\n", base.path, base, self.path))
+                writer.deep_copy_file_from_path(path, {:?})?;\n", base.path, base, self.path))
             },
             BasicFileOperation::MergeWithOtherFile {operations} => {
                 f.write_str("let sub_writer = {\n\
@@ -89,7 +89,7 @@ impl <'k> Debug for FileOperation<'k> {
                 }).collect::<Result<(), _>>()?;
                 f.write_str("writer\n\
                 };\n\
-                writer = sub_writer;\n")
+                writer.merge_archive(sub_writer.finish_into_readable()?)?;\n")
             },
         }?;
         match &self.reopen {
