@@ -727,7 +727,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let shared = ok_results
             .into_iter()
-            .max_by_key(|shared| shared.dir_start - shared.offset)
+            .max_by_key(|shared| (shared.dir_start - shared.offset, shared.dir_start))
             .unwrap();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
         Ok(shared)
