@@ -592,10 +592,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         self.finish_file()?;
         let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
-        let src_data = &self.files[src_index];
+        let src_data = &mut self.files[src_index];
         let data_start = *src_data.data_start.get().unwrap_or(&0);
-        let compressed_size = src_data.compressed_size;
-        debug_assert!(compressed_size <= write_position - data_start);
+        let mut compressed_size = src_data.compressed_size;
+        if compressed_size > write_position - data_start {
+            compressed_size = write_position - data_start;
+            src_data.compressed_size = compressed_size;
+        }
         let uncompressed_size = src_data.uncompressed_size;
 
         let raw_values = ZipRawValues {
