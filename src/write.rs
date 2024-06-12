@@ -148,7 +148,6 @@ pub(crate) mod zip_writer {
     /// # }
     /// # doit().unwrap();
     /// ```
-    #[derive(Debug)]
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: IndexMap<Box<str>, ZipFileData>,
@@ -157,6 +156,15 @@ pub(crate) mod zip_writer {
         pub(super) writing_raw: bool,
         pub(super) comment: Box<[u8]>,
         pub(super) flush_on_finish_file: bool,
+    }
+
+    impl<W: Write + Seek> Debug for ZipWriter<W> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            f.write_fmt(format_args!(
+                "ZipWriter {{files: {:?}, stats: {:?}, writing_to_file: {}, writing_raw: {}, comment: {:?}, flush_on_finish_file: {}}}",
+                self.files, self.stats, self.writing_to_file, self.writing_raw,
+                String::from_utf8(self.comment.to_vec()), self.flush_on_finish_file))
+        }
     }
 }
 #[doc(inline)]
