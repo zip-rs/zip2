@@ -650,82 +650,32 @@ impl<R: Read + Seek> ZipArchive<R> {
         // Check if file has a zip64 footer
         let mut results = Self::get_directory_info_zip64(&config, reader, footer, cde_start_pos)
             .unwrap_or_else(|e| vec![Err(e)]);
-        let zip32_result = Self::get_directory_info_zip32(&config, reader, footer, cde_start_pos);
         let mut invalid_errors = Vec::new();
         let mut unsupported_errors = Vec::new();
         let mut ok_results = Vec::new();
-        results.iter_mut().for_each(|result| {
-            if let Ok(central_dir) = result {
-                if let Ok(zip32_central_dir) = &zip32_result {
-                    // Both zip32 and zip64 footers exist, so check if the zip64 footer is valid; if not, try zip32
-                    if central_dir.number_of_files != zip32_central_dir.number_of_files
-                        && zip32_central_dir.number_of_files != u16::MAX as usize
-                    {
-                        *result = Err(ZipError::InvalidArchive(
-                            "ZIP32 and ZIP64 file counts don't match",
-                        ));
-                        return;
-                    }
-                    if central_dir.disk_number != zip32_central_dir.disk_number
-                        && zip32_central_dir.disk_number != u16::MAX as u32
-                    {
-                        *result = Err(ZipError::InvalidArchive(
-                            "ZIP32 and ZIP64 disk numbers don't match",
-                        ));
-                        return;
-                    }
-                    if central_dir.disk_with_central_directory
-                        != zip32_central_dir.disk_with_central_directory
-                        && zip32_central_dir.disk_with_central_directory != u16::MAX as u32
-                    {
-                        *result = Err(ZipError::InvalidArchive(
-                            "ZIP32 and ZIP64 last-disk numbers don't match",
-                        ));
-                    }
-                }
-            }
-        });
-        results.push(zip32_result);
         results
             .into_iter()
             .map(|result| {
-                result.and_then(|dir_info| {
-                    // If the parsed number of files is greater than the offset then
-                    // something fishy is going on and we shouldn't trust number_of_files.
-                    let file_capacity =
-                        if dir_info.number_of_files > dir_info.directory_start as usize {
-                            0
-                        } else {
-                            dir_info.number_of_files
-                        };
-                    let mut files = IndexMap::with_capacity(file_capacity);
-                    reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
-                    for _ in 0..dir_info.number_of_files {
-                        let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
-                        let central_end = reader.stream_position()?;
-                        find_data_start(&file, reader)?;
-                        reader.seek(SeekFrom::Start(central_end))?;
-                        files.insert(file.file_name.clone(), file);
-                    }
-                    if dir_info.disk_number != dir_info.disk_with_central_directory {
-                        unsupported_zip_error("Support for multi-disk files is not implemented")
-                    } else {
-                        Ok(Shared {
-                            files,
-                            offset: dir_info.archive_offset,
-                            dir_start: dir_info.directory_start,
-                            config,
-                        })
-                    }
-                })
+                result.and_then(|dir_info| Self::read_central_header(dir_info, config, reader))
             })
-            .for_each(|result| match result {
-                Err(ZipError::UnsupportedArchive(e)) => {
-                    unsupported_errors.push(ZipError::UnsupportedArchive(e))
-                }
-                Err(e) => invalid_errors.push(e),
-                Ok(o) => ok_results.push(o),
+            .for_each(|result| {
+                Self::sort_result(
+                    result,
+                    &mut invalid_errors,
+                    &mut unsupported_errors,
+                    &mut ok_results,
+                )
             });
+        if ok_results.is_empty() {
+            let zip32_result =
+                Self::get_directory_info_zip32(&config, reader, footer, cde_start_pos);
+            Self::sort_result(
+                zip32_result.and_then(|result| Self::read_central_header(result, config, reader)),
+                &mut invalid_errors,
+                &mut unsupported_errors,
+                &mut ok_results,
+            );
+        }
         if ok_results.is_empty() {
             return Err(unsupported_errors
                 .into_iter()
@@ -738,6 +688,54 @@ impl<R: Read + Seek> ZipArchive<R> {
             .unwrap();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
         Ok(shared)
+    }
+
+    fn read_central_header(
+        dir_info: CentralDirectoryInfo,
+        config: Config,
+        reader: &mut R,
+    ) -> Result<Shared, ZipError> {
+        // If the parsed number of files is greater than the offset then
+        // something fishy is going on and we shouldn't trust number_of_files.
+        let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
+            0
+        } else {
+            dir_info.number_of_files
+        };
+        let mut files = IndexMap::with_capacity(file_capacity);
+        reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
+        for _ in 0..dir_info.number_of_files {
+            let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
+            let central_end = reader.stream_position()?;
+            find_data_start(&file, reader)?;
+            reader.seek(SeekFrom::Start(central_end))?;
+            files.insert(file.file_name.clone(), file);
+        }
+        if dir_info.disk_number != dir_info.disk_with_central_directory {
+            unsupported_zip_error("Support for multi-disk files is not implemented")
+        } else {
+            Ok(Shared {
+                files,
+                offset: dir_info.archive_offset,
+                dir_start: dir_info.directory_start,
+                config,
+            })
+        }
+    }
+
+    fn sort_result(
+        result: Result<Shared, ZipError>,
+        mut invalid_errors: &mut Vec<ZipError>,
+        mut unsupported_errors: &mut Vec<ZipError>,
+        mut ok_results: &mut Vec<Shared>,
+    ) {
+        match result {
+            Err(ZipError::UnsupportedArchive(e)) => {
+                unsupported_errors.push(ZipError::UnsupportedArchive(e))
+            }
+            Err(e) => invalid_errors.push(e),
+            Ok(o) => ok_results.push(o),
+        }
     }
 
     /// Returns the verification value and salt for the AES encryption of the file
