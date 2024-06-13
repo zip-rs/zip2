@@ -478,6 +478,11 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    /// Get the starting offset of the data of the compressed file
+    pub fn data_start(&self) -> u64 {
+        *self.data_start.get().unwrap()
+    }
+
     #[allow(dead_code)]
     pub fn is_dir(&self) -> bool {
         is_dir(&self.file_name)

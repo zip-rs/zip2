@@ -1,7 +1,9 @@
 #![allow(missing_docs)]
 
+use std::borrow::Cow;
 use std::io;
 use std::io::{Read, Write};
+use std::path::{Component, Path, MAIN_SEPARATOR};
 
 /// Provides high level API for reading from a stream.
 pub mod stream {
@@ -67,3 +69,53 @@ pub trait LittleEndianReadExt: Read {
 }
 
 impl<R: Read> LittleEndianReadExt for R {}
+
+/// Converts a path to the ZIP format (forward-slash-delimited and normalized).
+pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
+    let mut maybe_original = None;
+    if let Some(original) = path.as_ref().to_str() {
+        if original.is_empty() {
+            return String::new().into_boxed_str();
+        }
+        if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
+            && !original.ends_with('.')
+            && !original.starts_with(['.', MAIN_SEPARATOR])
+            && !original.starts_with(['.', '.', MAIN_SEPARATOR])
+            && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
+            && !original.contains([MAIN_SEPARATOR, '.', MAIN_SEPARATOR])
+            && !original.contains([MAIN_SEPARATOR, '.', '.', MAIN_SEPARATOR])
+        {
+            if original.starts_with(MAIN_SEPARATOR) {
+                maybe_original = Some(&original[1..]);
+            } else {
+                maybe_original = Some(original);
+            }
+        }
+    }
+    let mut recreate = maybe_original.is_none();
+    let mut normalized_components = Vec::new();
+
+    for component in path.as_ref().components() {
+        match component {
+            Component::Normal(os_str) => match os_str.to_str() {
+                Some(valid_str) => normalized_components.push(Cow::Borrowed(valid_str)),
+                None => {
+                    recreate = true;
+                    normalized_components.push(os_str.to_string_lossy());
+                }
+            },
+            Component::ParentDir => {
+                recreate = true;
+                normalized_components.pop();
+            }
+            _ => {
+                recreate = true;
+            }
+        }
+    }
+    if recreate {
+        normalized_components.join("/").into()
+    } else {
+        maybe_original.unwrap().into()
+    }
+}

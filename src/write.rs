@@ -5,7 +5,7 @@ use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
 use crate::read::{find_content, Config, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock};
+use crate::spec::{self, FixedSizeBlock, Magic};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
@@ -38,6 +38,7 @@ use zopfli::Options;
 
 #[cfg(feature = "deflate-zopfli")]
 use std::io::BufWriter;
+use std::mem::size_of;
 use std::path::Path;
 
 #[cfg(feature = "zstd")]
@@ -172,7 +173,7 @@ pub use self::sealed::FileOptionExtension;
 use crate::result::ZipError::InvalidArchive;
 #[cfg(feature = "lzma")]
 use crate::result::ZipError::UnsupportedArchive;
-use crate::spec::path_to_string;
+use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
@@ -598,12 +599,15 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// widely-compatible archive compared to [Self::shallow_copy_file]. Does not copy alignment.
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
+        if src_name == dest_name {
+            return Err(InvalidArchive("Trying to copy a file to itself"));
+        }
         let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
         let src_data = &mut self.files[src_index];
-        let data_start = *src_data.data_start.get().unwrap_or(&0);
+        let data_start = src_data.data_start();
         let mut compressed_size = src_data.compressed_size;
-        if compressed_size > write_position - data_start {
+        if compressed_size > (write_position - data_start) {
             compressed_size = write_position - data_start;
             src_data.compressed_size = compressed_size;
         }
@@ -1402,8 +1406,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             let footer_end = writer.stream_position()?;
             let file_end = writer.seek(SeekFrom::End(0))?;
             if footer_end < file_end {
-                // Data from an aborted file is past the end of the footer, so rewrite the footer at
-                // the actual end.
+                // Data from an aborted file is past the end of the footer.
+
+                // Overwrite the magic so the footer is no longer valid.
+                writer.seek(SeekFrom::Start(central_start))?;
+                writer.write_u32_le(0)?;
+                writer.seek(SeekFrom::Start(footer_end - size_of::<Magic>() as u64))?;
+                writer.write_u32_le(0)?;
+
+                // Rewrite the footer at the actual end.
                 let central_and_footer_size = footer_end - central_start;
                 writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
                 central_start = self.write_central_and_footer()?;
@@ -1476,6 +1487,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// some other software (e.g. Minecraft) will refuse to extract a file copied this way.
     pub fn shallow_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
+        if src_name == dest_name {
+            return Err(InvalidArchive("Trying to copy a file to itself"));
+        }
         let src_index = self.index_by_name(src_name)?;
         let mut dest_data = self.files[src_index].to_owned();
         dest_data.file_name = dest_name.to_string().into();
@@ -1926,7 +1940,7 @@ const EXTRA_FIELD_MAPPING: [u16; 49] = [
 
 #[cfg(test)]
 mod test {
-    use super::{FileOptions, ZipWriter};
+    use super::{ExtendedFileOptions, FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;

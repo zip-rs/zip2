@@ -18,7 +18,7 @@ use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsString;
 use std::fs::create_dir_all;
-use std::io::{self, copy, prelude::*, sink};
+use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -95,9 +95,9 @@ use crate::extra_fields::UnicodeExtraField;
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
-use crate::spec::{is_dir, path_to_string};
+use crate::spec::is_dir;
 use crate::types::ffi::S_IFLNK;
-use crate::unstable::LittleEndianReadExt;
+use crate::unstable::{path_to_string, LittleEndianReadExt};
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
@@ -227,36 +227,40 @@ pub(crate) fn find_content<'a>(
     // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
     let data_start = match data.data_start.get() {
         Some(data_start) => *data_start,
-        None => {
-            // Go to start of data.
-            reader.seek(io::SeekFrom::Start(data.header_start))?;
-
-            // Parse static-sized fields and check the magic value.
-            let block = ZipLocalEntryBlock::parse(reader)?;
-
-            // Calculate the end of the local header from the fields we just parsed.
-            let variable_fields_len =
-                // Each of these fields must be converted to u64 before adding, as the result may
-                // easily overflow a u16.
-                block.file_name_length as u64 + block.extra_field_length as u64;
-            let data_start = data.header_start
-                + mem::size_of::<ZipLocalEntryBlock>() as u64
-                + variable_fields_len;
-            // Set the value so we don't have to read it again.
-            match data.data_start.set(data_start) {
-                Ok(()) => (),
-                // If the value was already set in the meantime, ensure it matches (this is probably
-                // unnecessary).
-                Err(_) => {
-                    assert_eq!(*data.data_start.get().unwrap(), data_start);
-                }
-            }
-            data_start
-        }
+        None => find_data_start(data, reader)?,
     };
 
     reader.seek(io::SeekFrom::Start(data_start))?;
     Ok((reader as &mut dyn Read).take(data.compressed_size))
+}
+
+fn find_data_start(
+    data: &ZipFileData,
+    reader: &mut (impl Read + Seek + Sized),
+) -> Result<u64, ZipError> {
+    // Go to start of data.
+    reader.seek(io::SeekFrom::Start(data.header_start))?;
+
+    // Parse static-sized fields and check the magic value.
+    let block = ZipLocalEntryBlock::parse(reader)?;
+
+    // Calculate the end of the local header from the fields we just parsed.
+    let variable_fields_len =
+        // Each of these fields must be converted to u64 before adding, as the result may
+        // easily overflow a u16.
+        block.file_name_length as u64 + block.extra_field_length as u64;
+    let data_start =
+        data.header_start + mem::size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+    // Set the value so we don't have to read it again.
+    match data.data_start.set(data_start) {
+        Ok(()) => (),
+        // If the value was already set in the meantime, ensure it matches (this is probably
+        // unnecessary).
+        Err(_) => {
+            assert_eq!(*data.data_start.get().unwrap(), data_start);
+        }
+    }
+    Ok(data_start)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -698,6 +702,9 @@ impl<R: Read + Seek> ZipArchive<R> {
                     reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
+                        let central_end = reader.stream_position()?;
+                        find_data_start(&file, reader)?;
+                        reader.seek(SeekFrom::Start(central_end))?;
                         files.insert(file.file_name.clone(), file);
                     }
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
@@ -1461,7 +1468,7 @@ impl<'a> ZipFile<'a> {
 
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> u64 {
-        *self.data.data_start.get().unwrap_or(&0)
+        *self.data.data_start.get().unwrap()
     }
 
     /// Get the starting offset of the zip header for this file
@@ -1538,7 +1545,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     match signature {
         spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
         spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
-        _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
+        _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
 
     let block = ZipLocalEntryBlock::interpret(&block)?;

@@ -2,10 +2,12 @@
 
 use arbitrary::Arbitrary;
 use core::fmt::{Debug, Formatter};
+use std::borrow::Cow;
 use libfuzzer_sys::fuzz_target;
 use replace_with::replace_with_or_abort;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
+use zip::unstable::path_to_string;
 
 #[derive(Arbitrary, Clone)]
 pub enum BasicFileOperation<'k> {
@@ -125,6 +127,20 @@ impl <'k> Debug for FuzzTestCase<'k> {
     }
 }
 
+fn deduplicate_paths(copy: &mut Cow<PathBuf>, original: &PathBuf) {
+    if path_to_string(&**copy) == path_to_string(original) {
+        let new_path = match original.file_name() {
+            Some(name) => {
+                let mut new_name = name.to_owned();
+                new_name.push("_copy");
+                copy.with_file_name(new_name)
+            },
+            None => copy.with_file_name("copy")
+        };
+        *copy = Cow::Owned(new_path);
+    }
+}
+
 fn do_operation<'k, T>(
     writer: &mut zip::ZipWriter<T>,
     operation: &FileOperation<'k>,
@@ -136,7 +152,7 @@ where
     T: Read + Write + Seek,
 {
     writer.set_flush_on_finish_file(flush_on_finish_file);
-    let path = &operation.path;
+    let mut path = Cow::Borrowed(&operation.path);
     match &operation.basic {
         BasicFileOperation::WriteNormalFile {
             contents,
@@ -148,28 +164,30 @@ where
             if uncompressed_size >= u32::MAX as usize {
                 options = options.large_file(true);
             }
-            writer.start_file_from_path(path, options)?;
+            writer.start_file_from_path(&*path, options)?;
             for chunk in contents.iter() {
                 writer.write_all(&chunk)?;
             }
             *files_added += 1;
         }
         BasicFileOperation::WriteDirectory(options) => {
-            writer.add_directory_from_path(path, options.to_owned())?;
+            writer.add_directory_from_path(&*path, options.to_owned())?;
             *files_added += 1;
         }
         BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
-            writer.add_symlink_from_path(&path, target, options.to_owned())?;
+            writer.add_symlink_from_path(&*path, target, options.to_owned())?;
             *files_added += 1;
         }
         BasicFileOperation::ShallowCopy(base) => {
+            deduplicate_paths(&mut path, &base.path);
             do_operation(writer, &base, false, flush_on_finish_file, files_added)?;
-            writer.shallow_copy_file_from_path(&base.path, &path)?;
+            writer.shallow_copy_file_from_path(&base.path, &*path)?;
             *files_added += 1;
         }
         BasicFileOperation::DeepCopy(base) => {
+            deduplicate_paths(&mut path, &base.path);
             do_operation(writer, &base, false, flush_on_finish_file, files_added)?;
-            writer.deep_copy_file_from_path(&base.path, &path)?;
+            writer.deep_copy_file_from_path(&base.path, &*path)?;
             *files_added += 1;
         }
         BasicFileOperation::MergeWithOtherFile { operations } => {
