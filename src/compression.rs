@@ -90,13 +90,7 @@ impl CompressionMethod {
     pub const AES: Self = CompressionMethod::Unsupported(99);
 }
 impl CompressionMethod {
-    /// Converts an u16 to its corresponding CompressionMethod
-    #[deprecated(
-        since = "0.5.7",
-        note = "use a constant to construct a compression method"
-    )]
-    pub const fn from_u16(val: u16) -> CompressionMethod {
-        #[allow(deprecated)]
+    pub(crate) const fn parse_from_u16(val: u16) -> Self {
         match val {
             0 => CompressionMethod::Stored,
             #[cfg(feature = "_deflate-any")]
@@ -111,18 +105,21 @@ impl CompressionMethod {
             93 => CompressionMethod::Zstd,
             #[cfg(feature = "aes-crypto")]
             99 => CompressionMethod::Aes,
-
+            #[allow(deprecated)]
             v => CompressionMethod::Unsupported(v),
         }
     }
 
-    /// Converts a CompressionMethod to a u16
+    /// Converts a u16 to its corresponding CompressionMethod
     #[deprecated(
         since = "0.5.7",
-        note = "to match on other compression methods, use a constant"
+        note = "use a constant to construct a compression method"
     )]
-    pub const fn to_u16(self) -> u16 {
-        #[allow(deprecated)]
+    pub const fn from_u16(val: u16) -> CompressionMethod {
+        Self::parse_from_u16(val)
+    }
+
+    pub(crate) const fn serialize_to_u16(self) -> u16 {
         match self {
             CompressionMethod::Stored => 0,
             #[cfg(feature = "_deflate-any")]
@@ -137,9 +134,18 @@ impl CompressionMethod {
             CompressionMethod::Zstd => 93,
             #[cfg(feature = "lzma")]
             CompressionMethod::Lzma => 14,
-
+            #[allow(deprecated)]
             CompressionMethod::Unsupported(v) => v,
         }
+    }
+
+    /// Converts a CompressionMethod to a u16
+    #[deprecated(
+        since = "0.5.7",
+        note = "to match on other compression methods, use a constant"
+    )]
+    pub const fn to_u16(self) -> u16 {
+        self.serialize_to_u16()
     }
 }
 
@@ -148,17 +154,7 @@ impl Default for CompressionMethod {
         #[cfg(feature = "_deflate-any")]
         return CompressionMethod::Deflated;
 
-        #[cfg(all(not(feature = "_deflate-any"), feature = "bzip2"))]
-        return CompressionMethod::Bzip2;
-
-        #[cfg(all(
-            not(feature = "_deflate-any"),
-            not(feature = "bzip2"),
-            feature = "zstd"
-        ))]
-        return CompressionMethod::Zstd;
-
-        #[cfg(not(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd")))]
+        #[cfg(not(feature = "_deflate-any"))]
         return CompressionMethod::Stored;
     }
 }
@@ -190,10 +186,8 @@ mod test {
     #[test]
     fn from_eq_to() {
         for v in 0..(u16::MAX as u32 + 1) {
-            #[allow(deprecated)]
-            let from = CompressionMethod::from_u16(v as u16);
-            #[allow(deprecated)]
-            let to = from.to_u16() as u32;
+            let from = CompressionMethod::parse_from_u16(v as u16);
+            let to = from.serialize_to_u16() as u32;
             assert_eq!(v, to);
         }
     }
@@ -201,12 +195,9 @@ mod test {
     #[test]
     fn to_eq_from() {
         fn check_match(method: CompressionMethod) {
-            #[allow(deprecated)]
-            let to = method.to_u16();
-            #[allow(deprecated)]
-            let from = CompressionMethod::from_u16(to);
-            #[allow(deprecated)]
-            let back = from.to_u16();
+            let to = method.serialize_to_u16();
+            let from = CompressionMethod::parse_from_u16(to);
+            let back = from.serialize_to_u16();
             assert_eq!(to, back);
         }
 

@@ -70,18 +70,18 @@ impl ExtendedTimestamp {
         })
     }
 
-    /// returns the last modification timestamp
-    pub fn mod_time(&self) -> Option<&u32> {
-        self.mod_time.as_ref()
+    /// returns the last modification timestamp, if defined, as UNIX epoch seconds
+    pub fn mod_time(&self) -> Option<u32> {
+        self.mod_time
     }
 
-    /// returns the last access timestamp
-    pub fn ac_time(&self) -> Option<&u32> {
-        self.ac_time.as_ref()
+    /// returns the last access timestamp, if defined, as UNIX epoch seconds
+    pub fn ac_time(&self) -> Option<u32> {
+        self.ac_time
     }
 
-    /// returns the creation timestamp
-    pub fn cr_time(&self) -> Option<&u32> {
-        self.cr_time.as_ref()
+    /// returns the creation timestamp, if defined, as UNIX epoch seconds
+    pub fn cr_time(&self) -> Option<u32> {
+        self.cr_time
     }
 }

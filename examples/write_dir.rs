@@ -25,8 +25,8 @@ struct Args {
 enum CompressionMethod {
     Stored,
     Deflated,
-    DeflatedMiniz,
     DeflatedZlib,
+    DeflatedZlibNg,
     Bzip2,
     Zstd,
 }
@@ -35,23 +35,6 @@ fn main() {
     std::process::exit(real_main());
 }
 
-const METHOD_STORED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
-
-#[cfg(feature = "_deflate-any")]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
-#[cfg(not(feature = "_deflate-any"))]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
-
-#[cfg(feature = "bzip2")]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
-#[cfg(not(feature = "bzip2"))]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
-
-#[cfg(feature = "zstd")]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
-#[cfg(not(feature = "zstd"))]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
-
 fn real_main() -> i32 {
     let args = Args::parse();
     let src_dir = &args.source;
@@ -59,21 +42,12 @@ fn real_main() -> i32 {
     let method = match args.compression_method {
         CompressionMethod::Stored => zip::CompressionMethod::Stored,
         CompressionMethod::Deflated => {
-            #[cfg(not(feature = "deflate"))]
+            #[cfg(not(feature = "deflate-flate2"))]
             {
-                println!("The `deflate` feature is not enabled");
+                println!("The `deflate-flate2` feature is not enabled");
                 return 1;
             }
-            #[cfg(feature = "deflate")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::DeflatedMiniz => {
-            #[cfg(not(feature = "deflate-miniz"))]
-            {
-                println!("The `deflate-miniz` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-miniz")]
+            #[cfg(feature = "deflate-flate2")]
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::DeflatedZlib => {
@@ -83,6 +57,15 @@ fn real_main() -> i32 {
                 return 1;
             }
             #[cfg(feature = "deflate-zlib")]
+            zip::CompressionMethod::Deflated
+        }
+        CompressionMethod::DeflatedZlibNg => {
+            #[cfg(not(feature = "deflate-zlib-ng"))]
+            {
+                println!("The `deflate-zlib-ng` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "deflate-zlib-ng")]
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::Bzip2 => {

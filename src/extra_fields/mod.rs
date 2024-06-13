@@ -17,8 +17,10 @@ impl ExtraFieldVersion for LocalHeaderVersion {}
 impl ExtraFieldVersion for CentralHeaderVersion {}
 
 mod extended_timestamp;
+mod zipinfo_utf8;
 
 pub use extended_timestamp::*;
+pub use zipinfo_utf8::*;
 
 /// contains one extra field
 #[derive(Debug, Clone)]
