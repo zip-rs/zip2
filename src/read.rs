@@ -648,7 +648,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         cde_start_pos: u64,
     ) -> ZipResult<Shared> {
         // Check if file has a zip64 footer
-        let mut results = Self::get_directory_info_zip64(&config, reader, footer, cde_start_pos)
+        let results = Self::get_directory_info_zip64(&config, reader, footer, cde_start_pos)
             .unwrap_or_else(|e| vec![Err(e)]);
         let mut invalid_errors = Vec::new();
         let mut unsupported_errors = Vec::new();
@@ -725,9 +725,9 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     fn sort_result(
         result: Result<Shared, ZipError>,
-        mut invalid_errors: &mut Vec<ZipError>,
-        mut unsupported_errors: &mut Vec<ZipError>,
-        mut ok_results: &mut Vec<Shared>,
+        invalid_errors: &mut Vec<ZipError>,
+        unsupported_errors: &mut Vec<ZipError>,
+        ok_results: &mut Vec<Shared>,
     ) {
         match result {
             Err(ZipError::UnsupportedArchive(e)) => {
