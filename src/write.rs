@@ -2515,7 +2515,7 @@ mod test {
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        const SYMLINK_PATH: &'static str = "PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\u{18}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0l\0\0\0\0\0\0PK\u{6}\u{7}P\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0";
+        const SYMLINK_PATH: &str = "PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\u{18}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0l\0\0\0\0\0\0PK\u{6}\u{7}P\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0";
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
