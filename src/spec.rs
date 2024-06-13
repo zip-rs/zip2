@@ -653,7 +653,7 @@ pub(crate) fn is_dir(filename: &str) -> bool {
 pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
     let mut maybe_original = None;
     if let Some(original) = path.as_ref().to_str() {
-        if original.len() == 0 {
+        if original.is_empty() {
             return String::new().into_boxed_str();
         }
         if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
