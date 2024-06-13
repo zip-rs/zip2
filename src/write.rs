@@ -1940,7 +1940,7 @@ const EXTRA_FIELD_MAPPING: [u16; 49] = [
 
 #[cfg(test)]
 mod test {
-    use super::{ExtendedFileOptions, FileOptions, ZipWriter};
+    use super::{FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
