@@ -1280,6 +1280,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
             };
             file.compression_method = compression_method;
+            len_left -= 7;
         }
         0x5455 => {
             // extended timestamp
