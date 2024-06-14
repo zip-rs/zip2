@@ -1038,8 +1038,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let file_end = writer.stream_position()?;
             debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
-
-            file.crc32 = self.stats.hasher.clone().finalize();
+            let mut crc = true;
             if let Some(aes_mode) = &mut file.aes_mode {
                 // We prefer using AE-1 which provides an extra CRC check, but for small files we
                 // switch to AE-2 to prevent being able to use the CRC value to to reconstruct the
@@ -1047,13 +1046,17 @@ impl<W: Write + Seek> ZipWriter<W> {
                 //
                 // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
                 aes_mode.1 = if self.stats.bytes_written < 20 {
-                    file.crc32 = 0;
+                    crc = false;
                     AesVendorVersion::Ae2
                 } else {
                     AesVendorVersion::Ae1
-                }
+                };
             }
-
+            file.crc32 = if (crc) {
+                self.stats.hasher.clone().finalize()
+            } else {
+                0
+            };
             update_aes_extra_data(writer, file)?;
             update_local_file_header(writer, file)?;
             writer.seek(SeekFrom::Start(file_end))?;
@@ -2719,6 +2722,19 @@ mod test {
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
         writer.deep_copy_file_from_path("", "copy")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14a() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2083, 5, 30, 21, 45, 35)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 2565, ..Default::default() };
+        writer.add_symlink_from_path("", "", options)?;
+        writer.abort_file()?;
+        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::default(), permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default() };
+        writer.start_file_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
