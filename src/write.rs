@@ -954,7 +954,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                     )?;
                 }
             }
-            if extra_data.len() > 0 {
+            let extra_data_len = extra_data.len();
+            if extra_data_len > 0 {
                 writer.write_all(&extra_data)?;
                 extra_data_end = writer.stream_position()?;
                 debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
@@ -964,6 +965,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             if let Some(data) = central_extra_data {
                 ExtendedFileOptions::validate_extra_data(&data)?;
+                let central_extra_data_len = extra_data_len + data.len();
+                if central_extra_data_len > u16::MAX as usize {
+                    self.abort_file()?;
+                    return Err(InvalidArchive("Central extra data would exceed 64 KiB"));
+                }
                 file.central_extra_field = Some(data.clone());
             }
             debug_assert!(file.data_start.get().is_none());
