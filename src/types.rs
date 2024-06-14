@@ -620,7 +620,7 @@ impl ZipFileData {
         aes_extra_data_start: u64,
         compression_method: crate::compression::CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-        extra_field: Option<Arc<Vec<u8>>>,
+        extra_field: Box<[u8]>,
     ) -> Self
     where
         S: Into<Box<str>>,
@@ -642,7 +642,7 @@ impl ZipFileData {
             uncompressed_size: raw_values.uncompressed_size,
             file_name, // Never used for saving, but used as map key in insert_file_data()
             file_name_raw,
-            extra_field,
+            extra_field: Some(extra_field.to_vec().into()),
             central_extra_field: options.extended_options.central_extra_data().cloned(),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,

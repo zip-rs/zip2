@@ -1299,6 +1299,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             file.is_utf8 = true;
         }
         _ => {
+            reader.read_exact(&mut vec![0u8; len as usize])?;
             // Other fields are ignored
         }
     }

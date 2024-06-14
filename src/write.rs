@@ -853,40 +853,28 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
         });
 
-        #[allow(unused_mut)]
-        let mut extra_field = options.extended_options.extra_data().cloned();
+        let mut extensions = ExtendedFileOptions {
+            extra_data: options
+                .extended_options
+                .extra_data()
+                .unwrap_or(&Arc::new(vec![]))
+                .clone(),
+            central_extra_data: options
+                .extended_options
+                .central_extra_data()
+                .unwrap_or(&Arc::new(vec![]))
+                .clone(),
+        };
 
         // Write AES encryption extra data.
         #[allow(unused_mut)]
         let mut aes_extra_data_start = 0;
         #[cfg(feature = "aes-crypto")]
         if let Some(EncryptWith::Aes { mode, .. }) = options.encrypt_with {
-            let aes_dummy_extra_data: [u8; 11] = [
-                0x01, 0x99, 0x07, 0x00, 0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00,
-            ];
-
-            let extra_data = extra_field.get_or_insert_with(Default::default);
-            let extra_data = match Arc::get_mut(extra_data) {
-                Some(exclusive) => exclusive,
-                None => {
-                    let new = Arc::new(extra_data.to_vec());
-                    Arc::get_mut(extra_field.insert(new)).unwrap()
-                }
-            };
-            if let Some(central_only) = options.extended_options.central_extra_data() {
-                extra_data.extend(central_only.iter());
-            }
-
-            if extra_data.len() + aes_dummy_extra_data.len() > u16::MAX as usize {
-                let _ = self.abort_file();
-                return Err(InvalidArchive("Extra data field is too large"));
-            }
-
-            aes_extra_data_start = extra_data.len() as u64;
-
-            // We write zero bytes for now since we need to update the data when finishing the
-            // file.
-            extra_data.write_all(&aes_dummy_extra_data)?;
+            let aes_dummy_extra_data = vec![
+                0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00,
+            ].into_boxed_slice();
+            extensions.add_extra_data(0x9901, aes_dummy_extra_data, false)?;
         }
         {
             let header_start = self.inner.get_plain().stream_position()?;
@@ -899,7 +887,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 ),
                 _ => (options.compression_method, None),
             };
-
             let mut file = ZipFileData::initialize_local_block(
                 name,
                 &options,
@@ -909,7 +896,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_extra_data_start,
                 compression_method,
                 aes_mode,
-                extra_field,
+                extensions.extra_data.to_vec().into_boxed_slice(),
             );
             parse_extra_field(&mut file)?;
             file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
@@ -938,18 +925,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 write_local_zip64_extra_field(writer, file)?;
             }
             let header_end = writer.stream_position()?;
-            let mut extensions = ExtendedFileOptions {
-                extra_data: options
-                    .extended_options
-                    .extra_data()
-                    .unwrap_or(&Arc::new(vec![]))
-                    .clone(),
-                central_extra_data: options
-                    .extended_options
-                    .central_extra_data()
-                    .unwrap_or(&Arc::new(vec![]))
-                    .clone(),
-            };
+
+
+            file.extra_data_start = Some(writer.stream_position()?);
             let mut extra_data_end = header_end + extensions.extra_data.len() as u64;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
@@ -966,7 +944,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                     extensions.add_extra_data(0xa11e, pad_body.into_boxed_slice(), false)?;
                 }
             }
-            file.extra_data_start = Some(writer.stream_position()?);
             writer.write_all(&extensions.extra_data)?;
             extra_data_end = writer.stream_position()?;
             debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
@@ -2661,6 +2638,24 @@ mod test {
         writer.set_flush_on_finish_file(false);
         let options = FileOptions { compression_method: Deflate64, compression_level: None, last_modified_time: DateTime::from_date_and_time(2039, 4, 17, 6, 18, 19)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 4, zopfli_buffer_size: None };
         writer.add_directory_from_path("", options)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_13b() -> ZipResult<()> {
+        use crate::write::ExtendedFileOptions;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 4, 14, 6, 11, 54)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 185, zopfli_buffer_size: None };
+            writer.add_symlink_from_path("", "", options)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer.deep_copy_file_from_path("", "")?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
