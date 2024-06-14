@@ -2621,7 +2621,7 @@ mod test {
                 .into(),
             },
             alignment: 4103,
-            zopfli_buffer_size: None,
+            ..Default::default()
         };
         writer.start_file_from_path("", options)?;
         let finished = writer.finish_into_readable()?;
@@ -2639,7 +2639,7 @@ mod test {
                 central_extra_data: vec![].into(),
             },
             alignment: 0,
-            ..default()
+            ..Default::default()
         };
         writer.start_file_from_path("", options)?;
         writer.shallow_copy_file_from_path("", "")?;
