@@ -20,6 +20,7 @@ use std::ffi::OsString;
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
+use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -94,7 +95,7 @@ use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
-use crate::result::ZipError::{InvalidPassword, UnsupportedArchive};
+use crate::result::ZipError::{InvalidArchive, InvalidPassword, UnsupportedArchive};
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFLNK;
 use crate::unstable::{path_to_string, LittleEndianReadExt};
@@ -1233,17 +1234,25 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     match kind {
         // Zip64 extended information extra field
         0x0001 => {
-            if file.uncompressed_size == spec::ZIP64_BYTES_THR {
+            let mut consumed_len = 0;
+            if len >= 24 || file.uncompressed_size == spec::ZIP64_BYTES_THR {
                 file.large_file = true;
                 file.uncompressed_size = reader.read_u64_le()?;
+                consumed_len += size_of::<u64>();
             }
-            if file.compressed_size == spec::ZIP64_BYTES_THR {
+            if len >= 24 || file.compressed_size == spec::ZIP64_BYTES_THR {
                 file.large_file = true;
                 file.compressed_size = reader.read_u64_le()?;
+                consumed_len += size_of::<u64>();
             }
-            if file.header_start == spec::ZIP64_BYTES_THR {
+            if len >= 24 || file.header_start == spec::ZIP64_BYTES_THR {
                 file.header_start = reader.read_u64_le()?;
+                consumed_len += size_of::<u64>();
             }
+            let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
+                return Err(InvalidArchive("ZIP64 extra-data field is the wrong length"));
+            };
+            reader.read_exact(&mut vec![0u8; leftover_len])?;
         }
         0x9901 => {
             // AES

@@ -325,11 +325,12 @@ impl ExtendedFileOptions {
             )));
         }
         let mut data = Cursor::new(data);
-        while data.position() < len {
+        let mut pos = data.position();
+        while pos < len {
             if len - data.position() < 4 {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
-                    "Extra-data field doesn't have room for tag and length",
+                    "Extra-data field doesn't have room for ID and length",
                 )));
             }
             #[cfg(not(feature = "unreserved"))]
@@ -350,7 +351,8 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data, 0)?;
+            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos)?;
+            pos = data.position();
         }
         Ok(())
     }
