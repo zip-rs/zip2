@@ -2655,7 +2655,7 @@ mod test {
             writer
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
-        writer.deep_copy_file_from_path("", "")?;
+        writer.deep_copy_file_from_path("", "_copy")?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
