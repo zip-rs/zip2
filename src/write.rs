@@ -324,28 +324,31 @@ impl ExtendedFileOptions {
                 "Extra-data field can't exceed u16::MAX bytes",
             )));
         }
-        if data.len() < 2 {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Extra-data field needs 2 tag bytes",
-            )));
-        }
-        parse_single_extra_field(&mut ZipFileData::default(), &mut Cursor::new(data.to_vec()))?;
-        #[cfg(not(feature = "unreserved"))]
-        {
-            let header_id = u16::from_le_bytes([data[0], data[1]]);
-            if header_id <= 31
-                || EXTRA_FIELD_MAPPING
-                    .iter()
-                    .any(|&mapped| mapped == header_id)
-            {
+        while !data.is_empty() {
+            if data.len() < 2 {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
-                    format!(
-                        "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
-                    ),
+                    "Extra-data field needs 2 tag bytes",
                 )));
             }
+            #[cfg(not(feature = "unreserved"))]
+            {
+                let header_id = u16::from_le_bytes([data[0], data[1]]);
+                if header_id <= 31
+                    || EXTRA_FIELD_MAPPING
+                    .iter()
+                    .any(|&mapped| mapped == header_id)
+                {
+                    return Err(ZipError::Io(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
+                        ),
+                    )));
+                }
+            }
+            let len_left = parse_single_extra_field(&mut ZipFileData::default(), &mut Cursor::new(data.to_vec()))?;
+            data = data[(data.len() - len_left as usize)..].to_owned()
         }
         Ok(())
     }
@@ -951,7 +954,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let unaligned_header_bytes = extra_data_end % align;
                 if unaligned_header_bytes != 0 {
                     let mut pad_length = (align - unaligned_header_bytes) as usize;
-                    if pad_length < 4 {
+                    while pad_length < 6 {
                         pad_length += align as usize;
                     }
                     // Add an extra field to the extra_data, per APPNOTE 4.6.11
@@ -1936,12 +1939,11 @@ fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData)
 }
 
 #[cfg(not(feature = "unreserved"))]
-const EXTRA_FIELD_MAPPING: [u16; 49] = [
+const EXTRA_FIELD_MAPPING: [u16; 48] = [
     0x0001, 0x0007, 0x0008, 0x0009, 0x000a, 0x000c, 0x000d, 0x000e, 0x000f, 0x0014, 0x0015, 0x0016,
     0x0017, 0x0018, 0x0019, 0x0020, 0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690, 0x07c8, 0x2605,
     0x2705, 0x2805, 0x334d, 0x4341, 0x4453, 0x4704, 0x470f, 0x4b46, 0x4c41, 0x4d49, 0x4f4c, 0x5356,
-    0x5455, 0x554e, 0x5855, 0x6375, 0x6542, 0x7075, 0x756e, 0x7855, 0xa11e, 0xa220, 0xfd4a, 0x9901,
-    0x9902,
+    0x5455, 0x554e, 0x5855, 0x6375, 0x6542, 0x7075, 0x756e, 0x7855, 0xa220, 0xfd4a, 0x9901, 0x9902,
 ];
 
 #[cfg(test)]
@@ -2643,6 +2645,20 @@ mod test {
         };
         writer.start_file_from_path("", options)?;
         writer.shallow_copy_file_from_path("", "")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[cfg(feature = "deflate64")]
+    #[test]
+    fn test_fuzz_crash_2024_06_13a() -> ZipResult<()> {
+        use CompressionMethod::Deflate64;
+        use crate::write::ExtendedFileOptions;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions { compression_method: Deflate64, compression_level: None, last_modified_time: DateTime::from_date_and_time(2039, 4, 17, 6, 18, 19)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 4, zopfli_buffer_size: None };
+        writer.add_directory_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
