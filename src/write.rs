@@ -3,7 +3,10 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
-use crate::read::{find_content, Config, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{
+    find_content, parse_extra_field, parse_single_extra_field, Config, ZipArchive, ZipFile,
+    ZipFileReader,
+};
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Magic};
 #[cfg(feature = "aes-crypto")]
@@ -21,6 +24,7 @@ use std::default::Default;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::io::{BufReader, SeekFrom};
 use std::marker::PhantomData;
 use std::mem;
@@ -427,6 +431,42 @@ impl<'k, T: FileOptionExtension> FileOptions<'k, T> {
     }
 }
 impl<'k> FileOptions<'k, ExtendedFileOptions> {
+    fn validate_extra_data(&self, data: &[u8]) -> ZipResult<()> {
+        if data.len() > u16::MAX as usize {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Extra-data field can't exceed u16::MAX bytes",
+            )));
+        }
+        if data.len() < 2 {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Extra-data field needs 2 tag bytes",
+            )));
+        }
+        parse_single_extra_field(
+            &mut ZipFileData::default(),
+            &mut Cursor::new(data.to_owned()),
+        )?;
+        #[cfg(not(feature = "unreserved"))]
+        {
+            let header_id = u16::from_le_bytes([data[0], data[1]]);
+            if header_id <= 31
+                || EXTRA_FIELD_MAPPING
+                    .iter()
+                    .any(|&mapped| mapped == header_id)
+            {
+                return Err(ZipError::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
+                    ),
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Adds an extra data field.
     pub fn add_extra_data(
         &mut self,
@@ -434,7 +474,7 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
         data: &[u8],
         central_only: bool,
     ) -> ZipResult<()> {
-        validate_extra_data(header_id, data)?;
+        self.validate_extra_data(data)?;
         let len = data.len() + 4;
         if self.extended_options.extra_data.len()
             + self.extended_options.central_extra_data.len()
@@ -856,6 +896,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_mode,
                 extra_field,
             );
+            parse_extra_field(&mut file)?;
             file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
@@ -1845,39 +1886,6 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn validate_extra_data(header_id: u16, data: &[u8]) -> ZipResult<()> {
-    if data.len() > u16::MAX as usize {
-        return Err(ZipError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            "Extra-data field can't exceed u16::MAX bytes",
-        )));
-    }
-    if header_id == 0x0001 {
-        return Err(ZipError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            "No custom ZIP64 extra data allowed",
-        )));
-    }
-
-    #[cfg(not(feature = "unreserved"))]
-    {
-        if header_id <= 31
-            || EXTRA_FIELD_MAPPING
-                .iter()
-                .any(|&mapped| mapped == header_id)
-        {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
-                ),
-            )));
-        }
-    }
-
-    Ok(())
-}
-
 fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // This entry in the Local header MUST include BOTH original
     // and compressed file size fields.
@@ -2558,6 +2566,39 @@ mod test {
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         writer.deep_copy_file_from_path(SYMLINK_PATH, "foo")?;
         let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "aes-crypto")]
+    fn test_invalid_extra_data() -> ZipResult<()> {
+        use crate::write::EncryptWith::Aes;
+        use crate::write::ExtendedFileOptions;
+        use crate::AesMode::Aes256;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(1980, 1, 4, 6, 54, 0)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: Some(Aes {
+                mode: Aes256,
+                password: "",
+            }),
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![
+                    0, 177, 15, 0, 207, 117, 177, 117, 112, 2, 0, 255, 255, 131, 255, 255, 255, 80,
+                    185,
+                ]
+                .into(),
+            },
+            alignment: 32787,
+            zopfli_buffer_size: None,
+        };
+        assert!(writer.start_file_from_path("", options).is_err());
         Ok(())
     }
 }

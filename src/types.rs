@@ -34,11 +34,12 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum System {
     Dos = 0,
     Unix = 3,
+    #[default]
     Unknown,
 }
 
@@ -420,7 +421,7 @@ pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,

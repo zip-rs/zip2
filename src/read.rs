@@ -1206,109 +1206,17 @@ fn central_header_to_zip_file_inner<R: Read>(
     Ok(result)
 }
 
-fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
-    let Some(extra_field) = &file.extra_field else {
+pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+    let Some(ref extra_field) = file.extra_field else {
         return Ok(());
     };
-    let mut reader = io::Cursor::new(extra_field.as_ref());
+    let len = extra_field.len();
+    let extra_field = extra_field.to_vec();
+    let mut reader = io::Cursor::new(extra_field);
 
     /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
-    while (reader.position() as usize) < extra_field.len() {
-        let kind = reader.read_u16_le()?;
-        let len = reader.read_u16_le()?;
-        let mut len_left = len as i64;
-        match kind {
-            // Zip64 extended information extra field
-            0x0001 => {
-                if file.uncompressed_size == spec::ZIP64_BYTES_THR {
-                    file.large_file = true;
-                    file.uncompressed_size = reader.read_u64_le()?;
-                    len_left -= 8;
-                }
-                if file.compressed_size == spec::ZIP64_BYTES_THR {
-                    file.large_file = true;
-                    file.compressed_size = reader.read_u64_le()?;
-                    len_left -= 8;
-                }
-                if file.header_start == spec::ZIP64_BYTES_THR {
-                    file.header_start = reader.read_u64_le()?;
-                    len_left -= 8;
-                }
-            }
-            0x9901 => {
-                // AES
-                if len != 7 {
-                    return Err(ZipError::UnsupportedArchive(
-                        "AES extra data field has an unsupported length",
-                    ));
-                }
-                let vendor_version = reader.read_u16_le()?;
-                let vendor_id = reader.read_u16_le()?;
-                let mut out = [0u8];
-                reader.read_exact(&mut out)?;
-                let aes_mode = out[0];
-                let compression_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
-
-                if vendor_id != 0x4541 {
-                    return Err(ZipError::InvalidArchive("Invalid AES vendor"));
-                }
-                let vendor_version = match vendor_version {
-                    0x0001 => AesVendorVersion::Ae1,
-                    0x0002 => AesVendorVersion::Ae2,
-                    _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
-                };
-                match aes_mode {
-                    0x01 => {
-                        file.aes_mode = Some((AesMode::Aes128, vendor_version, compression_method))
-                    }
-                    0x02 => {
-                        file.aes_mode = Some((AesMode::Aes192, vendor_version, compression_method))
-                    }
-                    0x03 => {
-                        file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method))
-                    }
-                    _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
-                };
-                file.compression_method = compression_method;
-            }
-            0x5455 => {
-                // extended timestamp
-                // https://libzip.org/specifications/extrafld.txt
-
-                file.extra_fields.push(ExtraField::ExtendedTimestamp(
-                    ExtendedTimestamp::try_from_reader(&mut reader, len)?,
-                ));
-
-                // the reader for ExtendedTimestamp consumes `len` bytes
-                len_left = 0;
-            }
-            0x6375 => {
-                // Info-ZIP Unicode Comment Extra Field
-                // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
-                if !file.is_utf8 {
-                    file.file_comment = String::from_utf8(
-                        UnicodeExtraField::try_from_reader(&mut reader, len)?
-                            .unwrap_valid(file.file_comment.as_bytes())?
-                            .into_vec(),
-                    )?
-                    .into();
-                }
-            }
-            0x7075 => {
-                // Info-ZIP Unicode Path Extra Field
-                // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-                if !file.is_utf8 {
-                    file.file_name_raw = UnicodeExtraField::try_from_reader(&mut reader, len)?
-                        .unwrap_valid(&file.file_name_raw)?;
-                    file.file_name =
-                        String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
-                    file.is_utf8 = true;
-                }
-            }
-            _ => {
-                // Other fields are ignored
-            }
-        }
+    while (reader.position() as usize) < len {
+        let len_left = parse_single_extra_field(file, &mut reader)?;
 
         // We could also check for < 0 to check for errors
         if len_left > 0 {
@@ -1316,6 +1224,102 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         }
     }
     Ok(())
+}
+
+pub(crate) fn parse_single_extra_field<R: Read>(
+    file: &mut ZipFileData,
+    reader: &mut R,
+) -> ZipResult<i64> {
+    let kind = reader.read_u16_le()?;
+    let len = reader.read_u16_le()?;
+    let mut len_left = len as i64;
+    match kind {
+        // Zip64 extended information extra field
+        0x0001 => {
+            if file.uncompressed_size == spec::ZIP64_BYTES_THR {
+                file.large_file = true;
+                file.uncompressed_size = reader.read_u64_le()?;
+                len_left -= 8;
+            }
+            if file.compressed_size == spec::ZIP64_BYTES_THR {
+                file.large_file = true;
+                file.compressed_size = reader.read_u64_le()?;
+                len_left -= 8;
+            }
+            if file.header_start == spec::ZIP64_BYTES_THR {
+                file.header_start = reader.read_u64_le()?;
+                len_left -= 8;
+            }
+        }
+        0x9901 => {
+            // AES
+            if len != 7 {
+                return Err(ZipError::UnsupportedArchive(
+                    "AES extra data field has an unsupported length",
+                ));
+            }
+            let vendor_version = reader.read_u16_le()?;
+            let vendor_id = reader.read_u16_le()?;
+            let mut out = [0u8];
+            reader.read_exact(&mut out)?;
+            let aes_mode = out[0];
+            let compression_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
+
+            if vendor_id != 0x4541 {
+                return Err(ZipError::InvalidArchive("Invalid AES vendor"));
+            }
+            let vendor_version = match vendor_version {
+                0x0001 => AesVendorVersion::Ae1,
+                0x0002 => AesVendorVersion::Ae2,
+                _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
+            };
+            match aes_mode {
+                0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version, compression_method)),
+                0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version, compression_method)),
+                0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method)),
+                _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
+            };
+            file.compression_method = compression_method;
+        }
+        0x5455 => {
+            // extended timestamp
+            // https://libzip.org/specifications/extrafld.txt
+
+            file.extra_fields.push(ExtraField::ExtendedTimestamp(
+                ExtendedTimestamp::try_from_reader(reader, len)?,
+            ));
+
+            // the reader for ExtendedTimestamp consumes `len` bytes
+            len_left = 0;
+        }
+        0x6375 => {
+            // Info-ZIP Unicode Comment Extra Field
+            // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
+            if !file.is_utf8 {
+                file.file_comment = String::from_utf8(
+                    UnicodeExtraField::try_from_reader(reader, len)?
+                        .unwrap_valid(file.file_comment.as_bytes())?
+                        .into_vec(),
+                )?
+                .into();
+            }
+        }
+        0x7075 => {
+            // Info-ZIP Unicode Path Extra Field
+            // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
+            if !file.is_utf8 {
+                file.file_name_raw = UnicodeExtraField::try_from_reader(reader, len)?
+                    .unwrap_valid(&file.file_name_raw)?;
+                file.file_name =
+                    String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
+                file.is_utf8 = true;
+            }
+        }
+        _ => {
+            // Other fields are ignored
+        }
+    }
+    Ok(len_left)
 }
 
 /// Methods for retrieving information on zip files
