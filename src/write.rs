@@ -474,7 +474,6 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
         data: &[u8],
         central_only: bool,
     ) -> ZipResult<()> {
-        self.validate_extra_data(data)?;
         let len = data.len() + 4;
         if self.extended_options.extra_data.len()
             + self.extended_options.central_extra_data.len()
@@ -502,6 +501,8 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
             vec.write_u16_le(header_id)?;
             vec.write_u16_le(data.len() as u16)?;
             vec.write_all(data)?;
+            let vec_copy = vec.to_owned();
+            self.validate_extra_data(&vec_copy)?;
             Ok(())
         }
     }
@@ -860,6 +861,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                     Arc::get_mut(extra_field.insert(new)).unwrap()
                 }
             };
+            if let Some(central_only) = options.extended_options.central_extra_data() {
+                extra_data.extend(central_only.iter());
+            }
 
             if extra_data.len() + aes_dummy_extra_data.len() > u16::MAX as usize {
                 let _ = self.abort_file();
@@ -872,7 +876,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             // file.
             extra_data.write_all(&aes_dummy_extra_data)?;
         }
-
         {
             let header_start = self.inner.get_plain().stream_position()?;
 
@@ -931,7 +934,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let align = options.alignment as u64;
                 let unaligned_header_bytes = header_end % align;
                 if unaligned_header_bytes != 0 {
-                    let pad_length = (align - unaligned_header_bytes) as usize;
+                    let mut pad_length = (align - unaligned_header_bytes) as usize;
+                    if pad_length < 4 {
+                        pad_length += align as usize;
+                    }
                     let Some(new_extra_field_length) =
                         (pad_length as u16).checked_add(block.extra_field_length)
                     else {
@@ -940,23 +946,15 @@ impl<W: Write + Seek> ZipWriter<W> {
                             "Extra data field would be larger than allowed after aligning",
                         ));
                     };
-                    if pad_length >= 4 {
-                        // Add an extra field to the extra_data, per APPNOTE 4.6.11
-                        let mut pad_body = vec![0; pad_length - 4];
-                        if pad_body.len() >= 2 {
-                            [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                        }
-                        writer.write_u16_le(0xa11e)?;
-                        writer
-                            .write_u16_le(pad_body.len() as u16)
-                            .map_err(ZipError::from)?;
-                        writer.write_all(&pad_body).map_err(ZipError::from)?;
-                    } else {
-                        // extra_data padding is too small for an extra field header, so pad with
-                        // zeroes
-                        let pad = vec![0; pad_length];
-                        writer.write_all(&pad).map_err(ZipError::from)?;
-                    }
+                    // Add an extra field to the extra_data, per APPNOTE 4.6.11
+                    let mut pad_body = vec![0; pad_length - 4];
+                    debug_assert!(pad_body.len() >= 2);
+                    [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
+                    writer.write_u16_le(0xa11e)?;
+                    writer
+                        .write_u16_le(pad_body.len() as u16)
+                        .map_err(ZipError::from)?;
+                    writer.write_all(&pad_body).map_err(ZipError::from)?;
                     header_end = writer.stream_position()?;
 
                     // Update extra field length in local file header.
@@ -2599,6 +2597,52 @@ mod test {
             zopfli_buffer_size: None,
         };
         assert!(writer.start_file_from_path("", options).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_13() -> ZipResult<()> {
+        use crate::write::ExtendedFileOptions;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2021, 8, 8, 1, 0, 29)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![
+                    1, 41, 4, 0, 1, 255, 245, 117, 117, 112, 5, 0, 80, 255, 149, 255, 247,
+                ]
+                .into(),
+            },
+            alignment: 4103,
+            zopfli_buffer_size: None,
+        };
+        writer.start_file_from_path("", options)?;
+        let finished = writer.finish_into_readable()?;
+        let inner = finished.into_inner();
+        writer = ZipWriter::new_append(inner)?;
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::default(),
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 0,
+            zopfli_buffer_size: None,
+        };
+        writer.start_file_from_path("", options)?;
+        writer.shallow_copy_file_from_path("", "")?;
+        let _ = writer.finish_into_readable()?;
         Ok(())
     }
 }
