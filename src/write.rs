@@ -280,6 +280,7 @@ pub struct ExtendedFileOptions {
 }
 
 impl ExtendedFileOptions {
+    /// Adds an extra data field, unless we detect that it's invalid.
     pub fn add_extra_data(
         &mut self,
         header_id: u16,
@@ -986,7 +987,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let crypto_header = [0u8; 12];
 
                     zipwriter.write_all(&crypto_header)?;
-                    extra_data_end = zipwriter.writer.stream_position()?;
                     self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
                 }
                 None => {}
