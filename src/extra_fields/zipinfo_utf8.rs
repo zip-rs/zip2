@@ -15,7 +15,7 @@ impl UnicodeExtraField {
     /// Verifies the checksum and returns the content.
     pub fn unwrap_valid(self) -> ZipResult<Box<[u8]>> {
         let mut crc32 = crc32fast::Hasher::new();
-        crc32.update(&*self.content);
+        crc32.update(&self.content);
         let actual_crc32 = crc32.finalize();
         if self.crc32 != actual_crc32 {
             return Err(ZipError::InvalidArchive(
