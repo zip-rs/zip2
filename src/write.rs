@@ -943,7 +943,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                     extensions.add_extra_data(0xa11e, pad_body.into_boxed_slice(), false)?;
                 }
             }
-            extensions.validate_extra_data()?;
             if extensions.central_extra_data.len() > 0 {
                 file.central_extra_field = Some(extensions.central_extra_data);
             }
