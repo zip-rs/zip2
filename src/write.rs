@@ -959,8 +959,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                     )?;
                 }
             }
-            extensions.validate_extra_data()?;
+            ExtendedFileOptions::validate_extra_data(&extensions.extra_data)?;
             if extensions.central_extra_data.len() > 0 {
+                ExtendedFileOptions::validate_extra_data(&extensions.central_extra_data)?;
                 file.central_extra_field = Some(extensions.central_extra_data);
             }
             writer.write_all(&extensions.extra_data)?;
