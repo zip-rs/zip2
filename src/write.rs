@@ -280,13 +280,14 @@ pub struct ExtendedFileOptions {
 }
 
 impl ExtendedFileOptions {
-    pub fn add_extra_data(&mut self, header_id: u16, data: Box<[u8]>, central_only: bool) -> ZipResult<()> {
+    pub fn add_extra_data(
+        &mut self,
+        header_id: u16,
+        data: Box<[u8]>,
+        central_only: bool,
+    ) -> ZipResult<()> {
         let len = data.len() + 4;
-        if self.extra_data.len()
-            + self.central_extra_data.len()
-            + len
-            > u16::MAX as usize
-        {
+        if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
             Err(InvalidArchive(
                 "Extra data field would be longer than allowed",
             ))
@@ -328,17 +329,14 @@ impl ExtendedFileOptions {
                 "Extra-data field needs 2 tag bytes",
             )));
         }
-        parse_single_extra_field(
-            &mut ZipFileData::default(),
-            &mut Cursor::new(data.to_vec()),
-        )?;
+        parse_single_extra_field(&mut ZipFileData::default(), &mut Cursor::new(data.to_vec()))?;
         #[cfg(not(feature = "unreserved"))]
         {
             let header_id = u16::from_le_bytes([data[0], data[1]]);
             if header_id <= 31
                 || EXTRA_FIELD_MAPPING
-                .iter()
-                .any(|&mapped| mapped == header_id)
+                    .iter()
+                    .any(|&mapped| mapped == header_id)
             {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
@@ -938,13 +936,15 @@ impl<W: Write + Seek> ZipWriter<W> {
                 extra_data: options
                     .extended_options
                     .extra_data()
-                    .unwrap_or(&Arc::new(vec![])).clone(),
+                    .unwrap_or(&Arc::new(vec![]))
+                    .clone(),
                 central_extra_data: options
                     .extended_options
                     .central_extra_data()
-                    .unwrap_or(&Arc::new(vec![])).clone(),
+                    .unwrap_or(&Arc::new(vec![]))
+                    .clone(),
             };
-            if let Some(EncryptWith::ZipCrypto {..}) = options.encrypt_with {
+            if let Some(EncryptWith::ZipCrypto { .. }) = options.encrypt_with {
                 extensions.add_extra_data(0, Box::new([0u8; 10]), false)?;
             }
             let mut extra_data_end = header_end + extensions.extra_data.len() as u64;
