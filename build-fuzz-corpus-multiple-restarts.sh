@@ -1,8 +1,9 @@
 #!/bin/bash
+set -euxo pipefail
 ncpus=$(nproc || getconf NPROCESSORS_ONLN)
 ncpus=$(( ncpus / ( 1 + $(cat /sys/devices/system/cpu/smt/active))))
 RESTARTS=25
-mv "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_pre_fresh_blood"
+mv "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
 for i in $(seq 1 $RESTARTS); do
   echo "RESTART ${i}"
   mkdir "fuzz/corpus/fuzz_$1"
