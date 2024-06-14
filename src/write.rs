@@ -4,8 +4,7 @@
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
 use crate::read::{
-    find_content, parse_extra_field, parse_single_extra_field, Config, ZipArchive, ZipFile,
-    ZipFileReader,
+    find_content, parse_single_extra_field, Config, ZipArchive, ZipFile, ZipFileReader,
 };
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Magic};
@@ -351,7 +350,7 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data)?;
+            parse_single_extra_field(&mut ZipFileData::default(), &mut data, 0)?;
         }
         Ok(())
     }
@@ -874,6 +873,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if let Some(EncryptWith::Aes { mode, .. }) = options.encrypt_with {
             let aes_dummy_extra_data =
                 vec![0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00].into_boxed_slice();
+            aes_extra_data_start = extensions.extra_data.len() as u64;
             extensions.add_extra_data(0x9901, aes_dummy_extra_data, false)?;
         }
         {
@@ -898,7 +898,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_mode,
                 &extensions.extra_data,
             );
-            parse_extra_field(&mut file)?;
             file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
@@ -942,6 +941,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                     extensions.add_extra_data(0xa11e, pad_body.into_boxed_slice(), false)?;
                 }
+            }
+            extensions.validate_extra_data()?;
+            if extensions.central_extra_data.len() > 0 {
+                file.central_extra_field = Some(extensions.central_extra_data);
             }
             writer.write_all(&extensions.extra_data)?;
             extra_data_end = writer.stream_position()?;

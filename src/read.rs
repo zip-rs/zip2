@@ -1215,8 +1215,10 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
     let mut reader = io::Cursor::new(extra_field);
 
     /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
-    while (reader.position() as usize) < len {
-        parse_single_extra_field(file, &mut reader)?;
+    let mut position = reader.position();
+    while (position as usize) < len {
+        parse_single_extra_field(file, &mut reader, position)?;
+        position = reader.position();
     }
     Ok(())
 }
@@ -1224,6 +1226,7 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 pub(crate) fn parse_single_extra_field<R: Read>(
     file: &mut ZipFileData,
     reader: &mut R,
+    bytes_already_read: u64,
 ) -> ZipResult<()> {
     let kind = reader.read_u16_le()?;
     let len = reader.read_u16_le()?;
@@ -1271,6 +1274,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
             };
             file.compression_method = compression_method;
+            file.aes_extra_data_start = bytes_already_read;
         }
         0x5455 => {
             // extended timestamp
