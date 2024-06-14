@@ -962,6 +962,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.stats.start = extra_data_end;
                 ExtendedFileOptions::validate_extra_data(&extra_data)?;
                 file.extra_field = Some(extra_data.into());
+            } else {
+                self.stats.start = extra_data_end;
             }
             if let Some(data) = central_extra_data {
                 ExtendedFileOptions::validate_extra_data(&data)?;
@@ -1052,7 +1054,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     AesVendorVersion::Ae1
                 };
             }
-            file.crc32 = if (crc) {
+            file.crc32 = if crc {
                 self.stats.hasher.clone().finalize()
             } else {
                 0
@@ -2730,10 +2732,36 @@ mod test {
     fn test_fuzz_crash_2024_06_14a() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2083, 5, 30, 21, 45, 35)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 2565, ..Default::default() };
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2083, 5, 30, 21, 45, 35)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 2565,
+            ..Default::default()
+        };
         writer.add_symlink_from_path("", "", options)?;
         writer.abort_file()?;
-        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::default(), permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default() };
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::default(),
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 0,
+            ..Default::default()
+        };
         writer.start_file_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
