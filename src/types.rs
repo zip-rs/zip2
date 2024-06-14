@@ -620,7 +620,7 @@ impl ZipFileData {
         aes_extra_data_start: u64,
         compression_method: crate::compression::CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-        extra_field: Box<[u8]>,
+        extra_field: &[u8],
     ) -> Self
     where
         S: Into<Box<str>>,

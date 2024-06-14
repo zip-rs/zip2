@@ -339,8 +339,8 @@ impl ExtendedFileOptions {
                 let header_id = data.read_u16_le()?;
                 if header_id <= 31
                     || EXTRA_FIELD_MAPPING
-                    .iter()
-                    .any(|&mapped| mapped == header_id)
+                        .iter()
+                        .any(|&mapped| mapped == header_id)
                 {
                     return Err(ZipError::Io(io::Error::new(
                         io::ErrorKind::Other,
@@ -871,9 +871,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut aes_extra_data_start = 0;
         #[cfg(feature = "aes-crypto")]
         if let Some(EncryptWith::Aes { mode, .. }) = options.encrypt_with {
-            let aes_dummy_extra_data = vec![
-                0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00,
-            ].into_boxed_slice();
+            let aes_dummy_extra_data =
+                vec![0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00].into_boxed_slice();
             extensions.add_extra_data(0x9901, aes_dummy_extra_data, false)?;
         }
         {
@@ -896,7 +895,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_extra_data_start,
                 compression_method,
                 aes_mode,
-                extensions.extra_data.to_vec().into_boxed_slice(),
+                &extensions.extra_data,
             );
             parse_extra_field(&mut file)?;
             file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
@@ -925,7 +924,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 write_local_zip64_extra_field(writer, file)?;
             }
             let header_end = writer.stream_position()?;
-
 
             file.extra_data_start = Some(writer.stream_position()?);
             let mut extra_data_end = header_end + extensions.extra_data.len() as u64;
@@ -2633,12 +2631,25 @@ mod test {
     #[cfg(feature = "deflate64")]
     #[test]
     fn test_fuzz_crash_2024_06_13a() -> ZipResult<()> {
-        use CompressionMethod::Deflate64;
         use crate::write::ExtendedFileOptions;
+        use CompressionMethod::Deflate64;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let options = FileOptions { compression_method: Deflate64, compression_level: None, last_modified_time: DateTime::from_date_and_time(2039, 4, 17, 6, 18, 19)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 4, ..Default::default() };
+        let options = FileOptions {
+            compression_method: Deflate64,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2039, 4, 17, 6, 18, 19)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 4,
+            ..Default::default()
+        };
         writer.add_directory_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
@@ -2652,7 +2663,20 @@ mod test {
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
-            let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 4, 14, 6, 11, 54)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 185, ..Default::default() };
+            let options = FileOptions {
+                compression_method: Stored,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(1980, 4, 14, 6, 11, 54)?,
+                permissions: None,
+                large_file: false,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 185,
+                ..Default::default()
+            };
             writer.add_symlink_from_path("", "", options)?;
             writer
         };
