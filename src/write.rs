@@ -293,7 +293,8 @@ impl ExtendedFileOptions {
             ))
         } else {
             self.add_extra_data_unchecked(header_id, data, central_only)?;
-            self.validate_extra_data()?;
+            Self::validate_extra_data(&self.extra_data)?;
+            Self::validate_extra_data(&self.central_extra_data)?;
             Ok(())
         }
     }
@@ -324,10 +325,11 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(&self) -> ZipResult<()> {
-        let mut data = self.extra_data.to_vec();
-        data.extend(self.central_extra_data.iter());
+    fn validate_extra_data(data: &[u8]) -> ZipResult<()> {
         let len = data.len() as u64;
+        if len == 0 {
+            return Ok(());
+        }
         if len > u16::MAX as u64 {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
