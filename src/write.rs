@@ -2590,7 +2590,7 @@ mod test {
                 .into(),
             },
             alignment: 32787,
-            zopfli_buffer_size: None,
+            ..Default::default()
         };
         assert!(writer.start_file_from_path("", options).is_err());
         Ok(())
