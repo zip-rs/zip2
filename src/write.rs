@@ -306,7 +306,7 @@ impl ExtendedFileOptions {
                     Arc::get_mut(field).unwrap()
                 }
             };
-            vec.reserve_exact(data.len() + 4);
+            vec.reserve_exact(len);
             vec.write_u16_le(header_id)?;
             vec.write_u16_le(data.len() as u16)?;
             vec.write_all(&data)?;
@@ -327,10 +327,10 @@ impl ExtendedFileOptions {
         }
         let mut data = Cursor::new(data);
         while data.position() < len {
-            if len - data.position() < 2 {
+            if len - data.position() < 4 {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
-                    "Extra-data field needs 2 tag bytes",
+                    "Extra-data field doesn't have room for tag and length",
                 )));
             }
             #[cfg(not(feature = "unreserved"))]
@@ -349,6 +349,7 @@ impl ExtendedFileOptions {
                         ),
                     )));
                 }
+                data.seek(SeekFrom::Current(-2))?;
             }
             parse_single_extra_field(&mut ZipFileData::default(), &mut data)?;
         }
