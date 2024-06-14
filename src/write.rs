@@ -1933,7 +1933,7 @@ const EXTRA_FIELD_MAPPING: [u16; 43] = [
 #[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0
 #[allow(clippy::needless_update)] // So we can use the same FileOptions decls with and without zopfli_buffer_size
 mod test {
-    use super::{FileOptions, ZipWriter};
+    use super::{ExtendedFileOptions, FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
@@ -2555,11 +2555,23 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "aes-crypto")]
+    fn test_short_extra_data() {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![99, 0, 15, 0, 207].into(),
+            },
+            ..Default::default()
+        };
+        assert!(writer.start_file_from_path("", options).is_err());
+    }
+
+    #[test]
+    #[cfg(not(feature = "unreserved"))]
     fn test_invalid_extra_data() -> ZipResult<()> {
-        use crate::write::EncryptWith::Aes;
         use crate::write::ExtendedFileOptions;
-        use crate::AesMode::Aes256;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -2568,10 +2580,7 @@ mod test {
             last_modified_time: DateTime::from_date_and_time(1980, 1, 4, 6, 54, 0)?,
             permissions: None,
             large_file: false,
-            encrypt_with: Some(Aes {
-                mode: Aes256,
-                password: "",
-            }),
+            encrypt_with: None,
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![
