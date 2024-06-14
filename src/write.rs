@@ -957,11 +957,12 @@ impl<W: Write + Seek> ZipWriter<W> {
                     debug_assert!(pad_body.len() >= 2);
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                     extensions.add_extra_data(0xa11e, pad_body.into_boxed_slice(), false)?;
-                    debug_assert_eq!(header_end % align, 0);
                 }
             }
             file.extra_data_start = Some(writer.stream_position()?);
             writer.write_all(&extensions.extra_data)?;
+            header_end = writer.stream_position()?;
+            debug_assert_eq!(header_end % (options.alignment as u64), 0);
             match options.encrypt_with {
                 #[cfg(feature = "aes-crypto")]
                 Some(EncryptWith::Aes { mode, password }) => {
