@@ -2639,7 +2639,7 @@ mod test {
                 central_extra_data: vec![].into(),
             },
             alignment: 0,
-            zopfli_buffer_size: None,
+            ..default()
         };
         writer.start_file_from_path("", options)?;
         writer.shallow_copy_file_from_path("", "")?;
