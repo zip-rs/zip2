@@ -337,10 +337,9 @@ impl ExtendedFileOptions {
             {
                 use crate::unstable::LittleEndianReadExt;
                 let header_id = data.read_u16_le()?;
-                if header_id <= 31
-                    || EXTRA_FIELD_MAPPING
-                        .iter()
-                        .any(|&mapped| mapped == header_id)
+                if EXTRA_FIELD_MAPPING
+                    .iter()
+                    .any(|&mapped| mapped == header_id)
                 {
                     return Err(ZipError::Io(io::Error::new(
                         io::ErrorKind::Other,
@@ -1933,7 +1932,7 @@ const EXTRA_FIELD_MAPPING: [u16; 43] = [
 #[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0
 #[allow(clippy::needless_update)] // So we can use the same FileOptions decls with and without zopfli_buffer_size
 mod test {
-    use super::{ExtendedFileOptions, FileOptions, ZipWriter};
+    use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
@@ -2675,6 +2674,25 @@ mod test {
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
         writer.deep_copy_file_from_path("", "_copy")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FullFileOptions { compression_method: Stored, large_file: true, alignment: 93, ..Default::default() };
+            writer.start_file_from_path("\0", options)?;
+            writer = ZipWriter::new_append(writer.finish()?)?;
+            writer.deep_copy_file_from_path("\0", "")?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer.deep_copy_file_from_path("", "copy")?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
