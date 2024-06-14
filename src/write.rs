@@ -847,9 +847,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[allow(unused_mut)]
         let mut aes_extra_data_start = 0;
         #[cfg(feature = "aes-crypto")]
-        if let Some(EncryptWith::Aes { .. }) = options.encrypt_with {
-            const AES_DUMMY_EXTRA_DATA: [u8; 11] = [
-                0x01, 0x99, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        if let Some(EncryptWith::Aes { mode, .. }) = options.encrypt_with {
+            let aes_dummy_extra_data: [u8; 11] = [
+                0x01, 0x99, 0x07, 0x00, 0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00,
             ];
 
             let extra_data = extra_field.get_or_insert_with(Default::default);
@@ -861,7 +861,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
             };
 
-            if extra_data.len() + AES_DUMMY_EXTRA_DATA.len() > u16::MAX as usize {
+            if extra_data.len() + aes_dummy_extra_data.len() > u16::MAX as usize {
                 let _ = self.abort_file();
                 return Err(InvalidArchive("Extra data field is too large"));
             }
@@ -870,7 +870,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
             // We write zero bytes for now since we need to update the data when finishing the
             // file.
-            extra_data.write_all(&AES_DUMMY_EXTRA_DATA)?;
+            extra_data.write_all(&aes_dummy_extra_data)?;
         }
 
         {
