@@ -279,6 +279,79 @@ pub struct ExtendedFileOptions {
     central_extra_data: Arc<Vec<u8>>,
 }
 
+impl ExtendedFileOptions {
+    pub fn add_extra_data(&mut self, header_id: u16, data: Box<[u8]>, central_only: bool) -> ZipResult<()> {
+        let len = data.len() + 4;
+        if self.extra_data.len()
+            + self.central_extra_data.len()
+            + len
+            > u16::MAX as usize
+        {
+            Err(InvalidArchive(
+                "Extra data field would be longer than allowed",
+            ))
+        } else {
+            let field = if central_only {
+                &mut self.central_extra_data
+            } else {
+                &mut self.extra_data
+            };
+            let vec = Arc::get_mut(field);
+            let vec = match vec {
+                Some(exclusive) => exclusive,
+                None => {
+                    *field = Arc::new(field.to_vec());
+                    Arc::get_mut(field).unwrap()
+                }
+            };
+            vec.reserve_exact(data.len() + 4);
+            vec.write_u16_le(header_id)?;
+            vec.write_u16_le(data.len() as u16)?;
+            vec.write_all(&data)?;
+            self.validate_extra_data()?;
+            Ok(())
+        }
+    }
+
+    fn validate_extra_data(&self) -> ZipResult<()> {
+        let mut data = self.extra_data.to_vec();
+        data.extend(self.central_extra_data.iter());
+        if data.len() > u16::MAX as usize {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Extra-data field can't exceed u16::MAX bytes",
+            )));
+        }
+        if data.len() < 2 {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Extra-data field needs 2 tag bytes",
+            )));
+        }
+        parse_single_extra_field(
+            &mut ZipFileData::default(),
+            &mut Cursor::new(data.to_vec()),
+        )?;
+        #[cfg(not(feature = "unreserved"))]
+        {
+            let header_id = u16::from_le_bytes([data[0], data[1]]);
+            if header_id <= 31
+                || EXTRA_FIELD_MAPPING
+                .iter()
+                .any(|&mapped| mapped == header_id)
+            {
+                return Err(ZipError::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
+                    ),
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Debug for ExtendedFileOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.write_fmt(format_args!("ExtendedFileOptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
@@ -431,80 +504,15 @@ impl<'k, T: FileOptionExtension> FileOptions<'k, T> {
     }
 }
 impl<'k> FileOptions<'k, ExtendedFileOptions> {
-    fn validate_extra_data(&self, data: &[u8]) -> ZipResult<()> {
-        if data.len() > u16::MAX as usize {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Extra-data field can't exceed u16::MAX bytes",
-            )));
-        }
-        if data.len() < 2 {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Extra-data field needs 2 tag bytes",
-            )));
-        }
-        parse_single_extra_field(
-            &mut ZipFileData::default(),
-            &mut Cursor::new(data.to_owned()),
-        )?;
-        #[cfg(not(feature = "unreserved"))]
-        {
-            let header_id = u16::from_le_bytes([data[0], data[1]]);
-            if header_id <= 31
-                || EXTRA_FIELD_MAPPING
-                    .iter()
-                    .any(|&mapped| mapped == header_id)
-            {
-                return Err(ZipError::Io(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
-                    ),
-                )));
-            }
-        }
-        Ok(())
-    }
-
     /// Adds an extra data field.
     pub fn add_extra_data(
         &mut self,
         header_id: u16,
-        data: &[u8],
+        data: Box<[u8]>,
         central_only: bool,
     ) -> ZipResult<()> {
-        let len = data.len() + 4;
-        if self.extended_options.extra_data.len()
-            + self.extended_options.central_extra_data.len()
-            + len
-            > u16::MAX as usize
-        {
-            Err(InvalidArchive(
-                "Extra data field would be longer than allowed",
-            ))
-        } else {
-            let field = if central_only {
-                &mut self.extended_options.central_extra_data
-            } else {
-                &mut self.extended_options.extra_data
-            };
-            let vec = Arc::get_mut(field);
-            let vec = match vec {
-                Some(exclusive) => exclusive,
-                None => {
-                    *field = Arc::new(field.to_vec());
-                    Arc::get_mut(field).unwrap()
-                }
-            };
-            vec.reserve_exact(data.len() + 4);
-            vec.write_u16_le(header_id)?;
-            vec.write_u16_le(data.len() as u16)?;
-            vec.write_all(data)?;
-            let vec_copy = vec.to_owned();
-            self.validate_extra_data(&vec_copy)?;
-            Ok(())
-        }
+        self.extended_options
+            .add_extra_data(header_id, data, central_only)
     }
 
     /// Removes the extra data fields.
@@ -925,11 +933,17 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.large_file {
                 write_local_zip64_extra_field(writer, file)?;
             }
-            if let Some(extra_field) = &file.extra_field {
-                file.extra_data_start = Some(writer.stream_position()?);
-                writer.write_all(extra_field)?;
-            }
             let mut header_end = writer.stream_position()?;
+            let mut extensions = ExtendedFileOptions {
+                extra_data: options
+                    .extended_options
+                    .extra_data()
+                    .unwrap_or(&Arc::new(vec![])).clone(),
+                central_extra_data: options
+                    .extended_options
+                    .central_extra_data()
+                    .unwrap_or(&Arc::new(vec![])).clone(),
+            };
             if options.alignment > 1 {
                 let align = options.alignment as u64;
                 let unaligned_header_bytes = header_end % align;
@@ -938,32 +952,16 @@ impl<W: Write + Seek> ZipWriter<W> {
                     if pad_length < 4 {
                         pad_length += align as usize;
                     }
-                    let Some(new_extra_field_length) =
-                        (pad_length as u16).checked_add(block.extra_field_length)
-                    else {
-                        let _ = self.abort_file();
-                        return Err(InvalidArchive(
-                            "Extra data field would be larger than allowed after aligning",
-                        ));
-                    };
                     // Add an extra field to the extra_data, per APPNOTE 4.6.11
                     let mut pad_body = vec![0; pad_length - 4];
                     debug_assert!(pad_body.len() >= 2);
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    writer.write_u16_le(0xa11e)?;
-                    writer
-                        .write_u16_le(pad_body.len() as u16)
-                        .map_err(ZipError::from)?;
-                    writer.write_all(&pad_body).map_err(ZipError::from)?;
-                    header_end = writer.stream_position()?;
-
-                    // Update extra field length in local file header.
-                    writer.seek(SeekFrom::Start(file.header_start + 28))?;
-                    writer.write_u16_le(new_extra_field_length)?;
-                    writer.seek(SeekFrom::Start(header_end))?;
+                    extensions.add_extra_data(0xa11e, pad_body.into_boxed_slice(), false)?;
                     debug_assert_eq!(header_end % align, 0);
                 }
             }
+            file.extra_data_start = Some(writer.stream_position()?);
+            writer.write_all(&extensions.extra_data)?;
             match options.encrypt_with {
                 #[cfg(feature = "aes-crypto")]
                 Some(EncryptWith::Aes { mode, password }) => {
@@ -2601,6 +2599,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(feature = "unreserved"))]
     fn test_fuzz_crash_2024_06_13() -> ZipResult<()> {
         use crate::write::ExtendedFileOptions;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
