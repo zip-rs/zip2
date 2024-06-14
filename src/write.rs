@@ -292,32 +292,30 @@ impl ExtendedFileOptions {
                 "Extra data field would be longer than allowed",
             ))
         } else {
-            self.add_extra_data_unchecked(header_id, data, central_only)?;
-            Self::validate_extra_data(&self.extra_data)?;
-            Self::validate_extra_data(&self.central_extra_data)?;
+            let field = if central_only {
+                &mut self.central_extra_data
+            } else {
+                &mut self.extra_data
+            };
+            let vec = Arc::get_mut(field);
+            let vec = match vec {
+                Some(exclusive) => exclusive,
+                None => {
+                    *field = Arc::new(field.to_vec());
+                    Arc::get_mut(field).unwrap()
+                }
+            };
+            Self::add_extra_data_unchecked(vec, header_id, data)?;
+            Self::validate_extra_data(vec)?;
             Ok(())
         }
     }
 
-    fn add_extra_data_unchecked(
-        &mut self,
+    pub(crate) fn add_extra_data_unchecked(
+        vec: &mut Vec<u8>,
         header_id: u16,
         data: Box<[u8]>,
-        central_only: bool,
     ) -> Result<(), ZipError> {
-        let field = if central_only {
-            &mut self.central_extra_data
-        } else {
-            &mut self.extra_data
-        };
-        let vec = Arc::get_mut(field);
-        let vec = match vec {
-            Some(exclusive) => exclusive,
-            None => {
-                *field = Arc::new(field.to_vec());
-                Arc::get_mut(field).unwrap()
-            }
-        };
         vec.reserve_exact(data.len() + 4);
         vec.write_u16_le(header_id)?;
         vec.write_u16_le(data.len() as u16)?;
@@ -866,18 +864,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
         });
 
-        let mut extensions = ExtendedFileOptions {
-            extra_data: options
-                .extended_options
-                .extra_data()
-                .unwrap_or(&Arc::new(vec![]))
-                .clone(),
-            central_extra_data: options
-                .extended_options
-                .central_extra_data()
-                .unwrap_or(&Arc::new(vec![]))
-                .clone(),
+        let mut extra_data = match options.extended_options.extra_data() {
+            Some(data) => data.to_vec(),
+            None => vec![],
         };
+        let central_extra_data = options.extended_options.central_extra_data();
 
         // Write AES encryption extra data.
         #[allow(unused_mut)]
@@ -886,8 +877,12 @@ impl<W: Write + Seek> ZipWriter<W> {
         if let Some(EncryptWith::Aes { mode, .. }) = options.encrypt_with {
             let aes_dummy_extra_data =
                 vec![0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00].into_boxed_slice();
-            aes_extra_data_start = extensions.extra_data.len() as u64;
-            extensions.add_extra_data_unchecked(0x9901, aes_dummy_extra_data, false)?;
+            aes_extra_data_start = extra_data.len() as u64;
+            ExtendedFileOptions::add_extra_data_unchecked(
+                &mut extra_data,
+                0x9901,
+                aes_dummy_extra_data,
+            )?;
         }
         {
             let header_start = self.inner.get_plain().stream_position()?;
@@ -909,7 +904,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_extra_data_start,
                 compression_method,
                 aes_mode,
-                &extensions.extra_data,
+                &extra_data,
             );
             file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
             let index = self.insert_file_data(file)?;
@@ -939,7 +934,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let header_end = writer.stream_position()?;
 
             file.extra_data_start = Some(writer.stream_position()?);
-            let mut extra_data_end = header_end + extensions.extra_data.len() as u64;
+            let mut extra_data_end = header_end + extra_data.len() as u64;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
                 let unaligned_header_bytes = extra_data_end % align;
@@ -952,22 +947,25 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let mut pad_body = vec![0; pad_length - 4];
                     debug_assert!(pad_body.len() >= 2);
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    extensions.add_extra_data_unchecked(
+                    ExtendedFileOptions::add_extra_data_unchecked(
+                        &mut extra_data,
                         0xa11e,
                         pad_body.into_boxed_slice(),
-                        false,
                     )?;
                 }
             }
-            ExtendedFileOptions::validate_extra_data(&extensions.extra_data)?;
-            if extensions.central_extra_data.len() > 0 {
-                ExtendedFileOptions::validate_extra_data(&extensions.central_extra_data)?;
-                file.central_extra_field = Some(extensions.central_extra_data);
+            if extra_data.len() > 0 {
+                writer.write_all(&extra_data)?;
+                extra_data_end = writer.stream_position()?;
+                debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
+                self.stats.start = extra_data_end;
+                ExtendedFileOptions::validate_extra_data(&extra_data)?;
+                file.extra_field = Some(extra_data.into());
             }
-            writer.write_all(&extensions.extra_data)?;
-            extra_data_end = writer.stream_position()?;
-            debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
-            self.stats.start = extra_data_end;
+            if let Some(data) = central_extra_data {
+                ExtendedFileOptions::validate_extra_data(&data)?;
+                file.central_extra_field = Some(data.clone());
+            }
             debug_assert!(file.data_start.get().is_none());
             file.data_start.get_or_init(|| extra_data_end);
             match options.encrypt_with {
