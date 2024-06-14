@@ -1216,12 +1216,7 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 
     /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
     while (reader.position() as usize) < len {
-        let len_left = parse_single_extra_field(file, &mut reader)?;
-
-        // We could also check for < 0 to check for errors
-        if len_left > 0 {
-            reader.seek(io::SeekFrom::Current(len_left))?;
-        }
+        parse_single_extra_field(file, &mut reader)?;
     }
     Ok(())
 }
@@ -1229,26 +1224,22 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 pub(crate) fn parse_single_extra_field<R: Read>(
     file: &mut ZipFileData,
     reader: &mut R,
-) -> ZipResult<i64> {
+) -> ZipResult<()> {
     let kind = reader.read_u16_le()?;
     let len = reader.read_u16_le()?;
-    let mut len_left = len as i64;
     match kind {
         // Zip64 extended information extra field
         0x0001 => {
             if file.uncompressed_size == spec::ZIP64_BYTES_THR {
                 file.large_file = true;
                 file.uncompressed_size = reader.read_u64_le()?;
-                len_left -= 8;
             }
             if file.compressed_size == spec::ZIP64_BYTES_THR {
                 file.large_file = true;
                 file.compressed_size = reader.read_u64_le()?;
-                len_left -= 8;
             }
             if file.header_start == spec::ZIP64_BYTES_THR {
                 file.header_start = reader.read_u64_le()?;
-                len_left -= 8;
             }
         }
         0x9901 => {
@@ -1280,7 +1271,6 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
             };
             file.compression_method = compression_method;
-            len_left -= 7;
         }
         0x5455 => {
             // extended timestamp
@@ -1289,9 +1279,6 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             file.extra_fields.push(ExtraField::ExtendedTimestamp(
                 ExtendedTimestamp::try_from_reader(reader, len)?,
             ));
-
-            // the reader for ExtendedTimestamp consumes `len` bytes
-            len_left = 0;
         }
         0x6375 => {
             // Info-ZIP Unicode Comment Extra Field
@@ -1315,7 +1302,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             // Other fields are ignored
         }
     }
-    Ok(len_left)
+    Ok(())
 }
 
 /// Methods for retrieving information on zip files

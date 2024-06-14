@@ -318,14 +318,16 @@ impl ExtendedFileOptions {
     fn validate_extra_data(&self) -> ZipResult<()> {
         let mut data = self.extra_data.to_vec();
         data.extend(self.central_extra_data.iter());
-        if data.len() > u16::MAX as usize {
+        let len = data.len() as u64;
+        if len > u16::MAX as u64 {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 "Extra-data field can't exceed u16::MAX bytes",
             )));
         }
-        while !data.is_empty() {
-            if data.len() < 2 {
+        let mut data = Cursor::new(data);
+        while data.position() < len {
+            if len - data.position() < 2 {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     "Extra-data field needs 2 tag bytes",
@@ -333,7 +335,8 @@ impl ExtendedFileOptions {
             }
             #[cfg(not(feature = "unreserved"))]
             {
-                let header_id = u16::from_le_bytes([data[0], data[1]]);
+                use crate::unstable::LittleEndianReadExt;
+                let header_id = data.read_u16_le()?;
                 if header_id <= 31
                     || EXTRA_FIELD_MAPPING
                     .iter()
@@ -347,8 +350,7 @@ impl ExtendedFileOptions {
                     )));
                 }
             }
-            let len_left = parse_single_extra_field(&mut ZipFileData::default(), &mut Cursor::new(data.to_vec()))?;
-            data = data[(data.len() - len_left as usize)..].to_owned()
+            parse_single_extra_field(&mut ZipFileData::default(), &mut data)?;
         }
         Ok(())
     }
