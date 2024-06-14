@@ -944,9 +944,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                     .central_extra_data()
                     .unwrap_or(&Arc::new(vec![])).clone(),
             };
+            let mut extra_data_end = header_end + extensions.extra_data.len() as u64;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
-                let unaligned_header_bytes = header_end % align;
+                let unaligned_header_bytes = extra_data_end % align;
                 if unaligned_header_bytes != 0 {
                     let mut pad_length = (align - unaligned_header_bytes) as usize;
                     if pad_length < 4 {
@@ -961,8 +962,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             file.extra_data_start = Some(writer.stream_position()?);
             writer.write_all(&extensions.extra_data)?;
-            header_end = writer.stream_position()?;
-            debug_assert_eq!(header_end % (options.alignment as u64), 0);
+            extra_data_end = writer.stream_position()?;
+            debug_assert_eq!(extra_data_end % (options.alignment as u64), 0);
             match options.encrypt_with {
                 #[cfg(feature = "aes-crypto")]
                 Some(EncryptWith::Aes { mode, password }) => {
@@ -987,9 +988,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
                 None => {}
             }
-            self.stats.start = header_end;
+            self.stats.start = extra_data_end;
             debug_assert!(file.data_start.get().is_none());
-            file.data_start.get_or_init(|| header_end);
+            file.data_start.get_or_init(|| extra_data_end);
             self.writing_to_file = true;
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
