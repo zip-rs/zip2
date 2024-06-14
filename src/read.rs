@@ -6,7 +6,7 @@ use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
-use crate::read::zip_archive::Shared;
+use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock};
 use crate::types::{
@@ -49,6 +49,7 @@ pub(crate) mod lzma;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
+    use indexmap::IndexMap;
     use std::sync::Arc;
 
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
@@ -60,6 +61,31 @@ pub(crate) mod zip_archive {
         // This isn't yet used anywhere, but it is here for use cases in the future.
         #[allow(dead_code)]
         pub(super) config: super::Config,
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct SharedBuilder {
+        pub(crate) files: Vec<super::ZipFileData>,
+        pub(super) offset: u64,
+        pub(super) dir_start: u64,
+        // This isn't yet used anywhere, but it is here for use cases in the future.
+        #[allow(dead_code)]
+        pub(super) config: super::Config,
+    }
+
+    impl SharedBuilder {
+        pub fn build(self) -> Shared {
+            let mut index_map = IndexMap::with_capacity(self.files.len());
+            self.files.into_iter().for_each(|file| {
+                index_map.insert(file.file_name.clone(), file);
+            });
+            Shared {
+                files: index_map,
+                offset: self.offset,
+                dir_start: self.dir_start,
+                config: self.config,
+            }
+        }
     }
 
     /// ZIP archive reader
@@ -686,7 +712,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         let shared = ok_results
             .into_iter()
             .max_by_key(|shared| (shared.dir_start - shared.offset, shared.dir_start))
-            .unwrap();
+            .unwrap()
+            .build();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
         Ok(shared)
     }
@@ -695,7 +722,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         dir_info: CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
-    ) -> Result<Shared, ZipError> {
+    ) -> Result<SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
         let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
@@ -703,19 +730,19 @@ impl<R: Read + Seek> ZipArchive<R> {
         } else {
             dir_info.number_of_files
         };
-        let mut files = IndexMap::with_capacity(file_capacity);
+        let mut files = Vec::with_capacity(file_capacity);
         reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
             let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
             let central_end = reader.stream_position()?;
             find_data_start(&file, reader)?;
             reader.seek(SeekFrom::Start(central_end))?;
-            files.insert(file.file_name.clone(), file);
+            files.push(file);
         }
         if dir_info.disk_number != dir_info.disk_with_central_directory {
             unsupported_zip_error("Support for multi-disk files is not implemented")
         } else {
-            Ok(Shared {
+            Ok(SharedBuilder {
                 files,
                 offset: dir_info.archive_offset,
                 dir_start: dir_info.directory_start,
@@ -725,10 +752,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     fn sort_result(
-        result: Result<Shared, ZipError>,
+        result: Result<SharedBuilder, ZipError>,
         invalid_errors: &mut Vec<ZipError>,
         unsupported_errors: &mut Vec<ZipError>,
-        ok_results: &mut Vec<Shared>,
+        ok_results: &mut Vec<SharedBuilder>,
     ) {
         match result {
             Err(ZipError::UnsupportedArchive(e)) => {
