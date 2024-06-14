@@ -944,9 +944,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                     .unwrap_or(&Arc::new(vec![]))
                     .clone(),
             };
-            if let Some(EncryptWith::ZipCrypto { .. }) = options.encrypt_with {
-                extensions.add_extra_data(0, Box::new([0u8; 10]), false)?;
-            }
             let mut extra_data_end = header_end + extensions.extra_data.len() as u64;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
@@ -981,12 +978,15 @@ impl<W: Write + Seek> ZipWriter<W> {
                     self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
                 }
                 Some(EncryptWith::ZipCrypto(keys, ..)) => {
-                    let zipwriter = crate::zipcrypto::ZipCryptoWriter {
+                    let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
                         writer: mem::replace(&mut self.inner, Closed).unwrap(),
                         buffer: vec![],
                         keys,
                     };
+                    let crypto_header = [0u8; 12];
 
+                    zipwriter.write_all(&crypto_header)?;
+                    extra_data_end = zipwriter.writer.stream_position()?;
                     self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
                 }
                 None => {}
