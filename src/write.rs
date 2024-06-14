@@ -292,26 +292,36 @@ impl ExtendedFileOptions {
                 "Extra data field would be longer than allowed",
             ))
         } else {
-            let field = if central_only {
-                &mut self.central_extra_data
-            } else {
-                &mut self.extra_data
-            };
-            let vec = Arc::get_mut(field);
-            let vec = match vec {
-                Some(exclusive) => exclusive,
-                None => {
-                    *field = Arc::new(field.to_vec());
-                    Arc::get_mut(field).unwrap()
-                }
-            };
-            vec.reserve_exact(len);
-            vec.write_u16_le(header_id)?;
-            vec.write_u16_le(data.len() as u16)?;
-            vec.write_all(&data)?;
+            self.add_extra_data_unchecked(header_id, data, central_only)?;
             self.validate_extra_data()?;
             Ok(())
         }
+    }
+
+    fn add_extra_data_unchecked(
+        &mut self,
+        header_id: u16,
+        data: Box<[u8]>,
+        central_only: bool,
+    ) -> Result<(), ZipError> {
+        let field = if central_only {
+            &mut self.central_extra_data
+        } else {
+            &mut self.extra_data
+        };
+        let vec = Arc::get_mut(field);
+        let vec = match vec {
+            Some(exclusive) => exclusive,
+            None => {
+                *field = Arc::new(field.to_vec());
+                Arc::get_mut(field).unwrap()
+            }
+        };
+        vec.reserve_exact(data.len() + 4);
+        vec.write_u16_le(header_id)?;
+        vec.write_u16_le(data.len() as u16)?;
+        vec.write_all(&data)?;
+        Ok(())
     }
 
     fn validate_extra_data(&self) -> ZipResult<()> {
@@ -875,7 +885,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let aes_dummy_extra_data =
                 vec![0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00].into_boxed_slice();
             aes_extra_data_start = extensions.extra_data.len() as u64;
-            extensions.add_extra_data(0x9901, aes_dummy_extra_data, false)?;
+            extensions.add_extra_data_unchecked(0x9901, aes_dummy_extra_data, false)?;
         }
         {
             let header_start = self.inner.get_plain().stream_position()?;
@@ -940,9 +950,14 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let mut pad_body = vec![0; pad_length - 4];
                     debug_assert!(pad_body.len() >= 2);
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    extensions.add_extra_data(0xa11e, pad_body.into_boxed_slice(), false)?;
+                    extensions.add_extra_data_unchecked(
+                        0xa11e,
+                        pad_body.into_boxed_slice(),
+                        false,
+                    )?;
                 }
             }
+            extensions.validate_extra_data()?;
             if extensions.central_extra_data.len() > 0 {
                 file.central_extra_field = Some(extensions.central_extra_data);
             }
@@ -2684,7 +2699,12 @@ mod test {
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
-            let options = FullFileOptions { compression_method: Stored, large_file: true, alignment: 93, ..Default::default() };
+            let options = FullFileOptions {
+                compression_method: Stored,
+                large_file: true,
+                alignment: 93,
+                ..Default::default()
+            };
             writer.start_file_from_path("\0", options)?;
             writer = ZipWriter::new_append(writer.finish()?)?;
             writer.deep_copy_file_from_path("\0", "")?;
