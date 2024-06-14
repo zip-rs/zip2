@@ -387,7 +387,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
             options
                 .add_extra_data(
                     u16::arbitrary(u)?,
-                    &Vec::<u8>::arbitrary(u)?,
+                    Box::<[u8]>::arbitrary(u)?,
                     bool::arbitrary(u)?,
                 )
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
