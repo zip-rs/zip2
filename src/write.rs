@@ -933,7 +933,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.large_file {
                 write_local_zip64_extra_field(writer, file)?;
             }
-            let mut header_end = writer.stream_position()?;
+            let header_end = writer.stream_position()?;
             let mut extensions = ExtendedFileOptions {
                 extra_data: options
                     .extended_options
@@ -944,28 +944,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                     .central_extra_data()
                     .unwrap_or(&Arc::new(vec![])).clone(),
             };
-            match options.encrypt_with {
-                #[cfg(feature = "aes-crypto")]
-                Some(EncryptWith::Aes { mode, password }) => {
-                    let aeswriter = AesWriter::new(
-                        mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(),
-                        mode,
-                        password.as_bytes(),
-                    )?;
-                    self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
-                }
-                Some(EncryptWith::ZipCrypto(keys, ..)) => {
-                    let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
-                        writer: mem::replace(&mut self.inner, Closed).unwrap(),
-                        buffer: vec![],
-                        keys,
-                    };
-                    let crypto_header = [0u8; 12];
-
-                    extensions.extra_data.write_all(&crypto_header)?;
-                    self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
-                }
-                None => {}
+            if let Some(EncryptWith::ZipCrypto {..}) = options.encrypt_with {
+                extensions.add_extra_data(0, Box::new([0u8; 10]), false)?;
             }
             let mut extra_data_end = header_end + extensions.extra_data.len() as u64;
             if options.alignment > 1 {
@@ -990,6 +970,27 @@ impl<W: Write + Seek> ZipWriter<W> {
             self.stats.start = extra_data_end;
             debug_assert!(file.data_start.get().is_none());
             file.data_start.get_or_init(|| extra_data_end);
+            match options.encrypt_with {
+                #[cfg(feature = "aes-crypto")]
+                Some(EncryptWith::Aes { mode, password }) => {
+                    let aeswriter = AesWriter::new(
+                        mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(),
+                        mode,
+                        password.as_bytes(),
+                    )?;
+                    self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
+                }
+                Some(EncryptWith::ZipCrypto(keys, ..)) => {
+                    let zipwriter = crate::zipcrypto::ZipCryptoWriter {
+                        writer: mem::replace(&mut self.inner, Closed).unwrap(),
+                        buffer: vec![],
+                        keys,
+                    };
+
+                    self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
+                }
+                None => {}
+            }
             self.writing_to_file = true;
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
