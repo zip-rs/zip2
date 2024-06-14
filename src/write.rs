@@ -2636,7 +2636,7 @@ mod test {
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let options = FileOptions { compression_method: Deflate64, compression_level: None, last_modified_time: DateTime::from_date_and_time(2039, 4, 17, 6, 18, 19)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 4, zopfli_buffer_size: None };
+        let options = FileOptions { compression_method: Deflate64, compression_level: None, last_modified_time: DateTime::from_date_and_time(2039, 4, 17, 6, 18, 19)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 4, ..Default::default() };
         writer.add_directory_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
@@ -2650,7 +2650,7 @@ mod test {
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
-            let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 4, 14, 6, 11, 54)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 185, zopfli_buffer_size: None };
+            let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 4, 14, 6, 11, 54)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 185, ..Default::default() };
             writer.add_symlink_from_path("", "", options)?;
             writer
         };
