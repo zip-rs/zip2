@@ -306,7 +306,7 @@ impl ExtendedFileOptions {
                 }
             };
             Self::add_extra_data_unchecked(vec, header_id, data)?;
-            Self::validate_extra_data(vec)?;
+            Self::validate_extra_data(vec, 0)?;
             Ok(())
         }
     }
@@ -323,12 +323,12 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(data: &[u8]) -> ZipResult<()> {
+    fn validate_extra_data(data: &[u8], reserved: u64) -> ZipResult<()> {
         let len = data.len() as u64;
         if len == 0 {
             return Ok(());
         }
-        if len > u16::MAX as u64 {
+        if len + reserved > u16::MAX as u64 {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 "Extra-data field can't exceed u16::MAX bytes",
@@ -360,7 +360,7 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos)?;
+            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, true)?;
             pos = data.position();
         }
         Ok(())
@@ -927,13 +927,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             // file name
             writer.write_all(&file.file_name_raw)?;
-            // zip64 extra field
+            let zip64_start = writer.stream_position()?;
             if file.large_file {
                 write_local_zip64_extra_field(writer, file)?;
             }
             let header_end = writer.stream_position()?;
-
-            file.extra_data_start = Some(writer.stream_position()?);
+            file.extra_data_start = Some(header_end);
             let mut extra_data_end = header_end + extra_data.len() as u64;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
@@ -960,13 +959,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                 extra_data_end = writer.stream_position()?;
                 debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
                 self.stats.start = extra_data_end;
-                ExtendedFileOptions::validate_extra_data(&extra_data)?;
+                ExtendedFileOptions::validate_extra_data(&extra_data, header_end - zip64_start)?;
                 file.extra_field = Some(extra_data.into());
             } else {
                 self.stats.start = extra_data_end;
             }
             if let Some(data) = central_extra_data {
-                ExtendedFileOptions::validate_extra_data(&data)?;
+                ExtendedFileOptions::validate_extra_data(&data, extra_data_len as u64)?;
                 let central_extra_data_len = extra_data_len + data.len();
                 if central_extra_data_len > u16::MAX as usize {
                     self.abort_file()?;
@@ -2763,6 +2762,47 @@ mod test {
             ..Default::default()
         };
         writer.start_file_from_path("", options)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn test_fuzz_crash_2024_06_14b() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2078, 3, 6, 12, 48, 58)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 65521,
+            ..Default::default()
+        };
+        writer.start_file_from_path("\u{4}\0@\n//\u{c}", options)?;
+        writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.abort_file()?;
+        let options = FileOptions {
+            compression_method: CompressionMethod::Unsupported(65535),
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2055, 10, 2, 11, 48, 49)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![255, 255, 1, 0, 255, 0, 0, 0, 0].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 65535,
+            ..Default::default()
+        };
+        writer.add_directory_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }

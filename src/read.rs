@@ -1245,7 +1245,7 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
     /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
     let mut position = reader.position();
     while (position as usize) < len {
-        parse_single_extra_field(file, &mut reader, position)?;
+        parse_single_extra_field(file, &mut reader, position, false)?;
         position = reader.position();
     }
     Ok(())
@@ -1255,12 +1255,18 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     file: &mut ZipFileData,
     reader: &mut R,
     bytes_already_read: u64,
+    disallow_zip64: bool,
 ) -> ZipResult<()> {
     let kind = reader.read_u16_le()?;
     let len = reader.read_u16_le()?;
     match kind {
         // Zip64 extended information extra field
         0x0001 => {
+            if disallow_zip64 {
+                return Err(InvalidArchive(
+                    "Can't write a custom field using the ZIP64 ID",
+                ));
+            }
             let mut consumed_len = 0;
             if len >= 24 || file.uncompressed_size == spec::ZIP64_BYTES_THR {
                 file.large_file = true;
