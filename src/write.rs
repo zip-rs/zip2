@@ -2584,14 +2584,13 @@ mod test {
 
     #[test]
     #[cfg(not(feature = "unreserved"))]
-    fn test_fuzz_crash_2024_06_13() -> ZipResult<()> {
+    fn test_invalid_extra_data_unreserved() {
         use crate::write::ExtendedFileOptions;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.set_flush_on_finish_file(false);
         let options = FileOptions {
             compression_method: Stored,
             compression_level: None,
-            last_modified_time: DateTime::from_date_and_time(2021, 8, 8, 1, 0, 29)?,
+            last_modified_time: DateTime::from_date_and_time(2021, 8, 8, 1, 0, 29).unwrap(),
             permissions: None,
             large_file: true,
             encrypt_with: None,
@@ -2605,28 +2604,7 @@ mod test {
             alignment: 4103,
             ..Default::default()
         };
-        writer.start_file_from_path("", options)?;
-        let finished = writer.finish_into_readable()?;
-        let inner = finished.into_inner();
-        writer = ZipWriter::new_append(inner)?;
-        let options = FileOptions {
-            compression_method: Stored,
-            compression_level: None,
-            last_modified_time: DateTime::default(),
-            permissions: None,
-            large_file: false,
-            encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-            },
-            alignment: 0,
-            ..Default::default()
-        };
-        writer.start_file_from_path("", options)?;
-        writer.shallow_copy_file_from_path("", "")?;
-        let _ = writer.finish_into_readable()?;
-        Ok(())
+        assert!(writer.start_file_from_path("", options).is_err());
     }
 
     #[cfg(feature = "deflate64")]

@@ -1285,7 +1285,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
             file.file_comment = String::from_utf8(
                 UnicodeExtraField::try_from_reader(reader, len)?
-                    .unwrap_valid()?
+                    .unwrap_valid(file.file_comment.as_bytes())?
                     .into_vec(),
             )?
             .into();
@@ -1293,7 +1293,8 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         0x7075 => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            file.file_name_raw = UnicodeExtraField::try_from_reader(reader, len)?.unwrap_valid()?;
+            file.file_name_raw = UnicodeExtraField::try_from_reader(reader, len)?
+                .unwrap_valid(&file.file_name_raw)?;
             file.file_name =
                 String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
             file.is_utf8 = true;
