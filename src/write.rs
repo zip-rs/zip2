@@ -966,7 +966,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             file.extra_data_start = Some(writer.stream_position()?);
             writer.write_all(&extensions.extra_data)?;
             extra_data_end = writer.stream_position()?;
-            debug_assert_eq!(extra_data_end % (options.alignment as u64), 0);
+            debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
             self.stats.start = extra_data_end;
             debug_assert!(file.data_start.get().is_none());
             file.data_start.get_or_init(|| extra_data_end);
