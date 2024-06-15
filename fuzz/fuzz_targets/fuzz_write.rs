@@ -51,12 +51,10 @@ impl <'k> Debug for FileOperation<'k> {
                 for content_slice in contents {
                     f.write_fmt(format_args!("writer.write_all(&({:?}[..] as [u8]))?;\n", content_slice))?;
                 }
-                f.write_str("drop(options);\n")
             },
             BasicFileOperation::WriteDirectory(options) => {
                 f.write_fmt(format_args!("let options = {:?};\n\
-                writer.add_directory_from_path({:?}, options)?;\n\
-                drop(options);\n",
+                writer.add_directory_from_path({:?}, options)?;\n",
                              options, self.path))
             },
             BasicFileOperation::WriteSymlinkWithTarget {target, options} => {

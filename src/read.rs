@@ -1212,9 +1212,11 @@ fn central_header_to_zip_file_inner<R: Read>(
         aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
-
     match parse_extra_field(&mut result) {
-        Ok(..) | Err(ZipError::Io(..)) => {}
+        Ok(stripped_extra_field) => {
+            result.extra_field = stripped_extra_field;
+        }
+        Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
 
@@ -1234,21 +1236,33 @@ fn central_header_to_zip_file_inner<R: Read>(
     Ok(result)
 }
 
-pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<Option<Arc<Vec<u8>>>> {
     let Some(ref extra_field) = file.extra_field else {
-        return Ok(());
+        return Ok(None);
     };
+    let extra_field = extra_field.clone();
+    let mut processed_extra_field = extra_field.clone();
     let len = extra_field.len();
-    let extra_field = extra_field.to_vec();
-    let mut reader = io::Cursor::new(extra_field);
+    let mut reader = io::Cursor::new(&**extra_field);
 
     /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
-    let mut position = reader.position();
-    while (position as usize) < len {
-        parse_single_extra_field(file, &mut reader, position, false)?;
-        position = reader.position();
+    let mut position = reader.position() as usize;
+    while (position) < len {
+        let old_position = position;
+        let remove = parse_single_extra_field(file, &mut reader, position as u64, false)?;
+        position = reader.position() as usize;
+        if remove {
+            let remaining = len - (position - old_position);
+            if remaining == 0 {
+                return Ok(None);
+            }
+            let mut new_extra_field = Vec::with_capacity(remaining);
+            new_extra_field.extend_from_slice(&extra_field[0..old_position]);
+            new_extra_field.extend_from_slice(&extra_field[position..]);
+            processed_extra_field = Arc::new(new_extra_field);
+        }
     }
-    Ok(())
+    Ok(Some(processed_extra_field))
 }
 
 pub(crate) fn parse_single_extra_field<R: Read>(
@@ -1256,7 +1270,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     reader: &mut R,
     bytes_already_read: u64,
     disallow_zip64: bool,
-) -> ZipResult<()> {
+) -> ZipResult<bool> {
     let kind = reader.read_u16_le()?;
     let len = reader.read_u16_le()?;
     match kind {
@@ -1286,6 +1300,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 return Err(InvalidArchive("ZIP64 extra-data field is the wrong length"));
             };
             reader.read_exact(&mut vec![0u8; leftover_len])?;
+            return Ok(true);
         }
         0x9901 => {
             // AES
@@ -1350,7 +1365,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             // Other fields are ignored
         }
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Methods for retrieving information on zip files

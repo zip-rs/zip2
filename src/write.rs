@@ -401,7 +401,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
         u.arbitrary_loop(Some(0), Some(10), |u| {
             options
                 .add_extra_data(
-                    u16::arbitrary(u)?,
+                    u.int_in_range(2..=u16::MAX)?,
                     Box::<[u8]>::arbitrary(u)?,
                     bool::arbitrary(u)?,
                 )
@@ -2803,6 +2803,26 @@ mod test {
             ..Default::default()
         };
         writer.add_directory_from_path("", options)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14c() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2060, 4, 6, 13, 13, 3)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default()};
+            writer.start_file_from_path("\0", options)?;
+            writer.write_all(&([]))?;
+            writer = ZipWriter::new_append(writer.finish()?)?;
+            writer.deep_copy_file_from_path("\0", "")?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer.deep_copy_file_from_path("", "_copy")?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
