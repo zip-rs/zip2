@@ -55,18 +55,18 @@ impl <'k> Debug for FileOperation<'k> {
             BasicFileOperation::WriteDirectory(options) => {
                 f.write_fmt(format_args!("let options = {:?};\n\
                 writer.add_directory_from_path({:?}, options)?;\n",
-                             options, self.path))
+                             options, self.path))?;
             },
             BasicFileOperation::WriteSymlinkWithTarget {target, options} => {
                 f.write_fmt(format_args!("let options = {:?};\n\
                 writer.add_symlink_from_path({:?}, {:?}, options)?;\n",
-                             options, self.path, target.to_owned()))
+                             options, self.path, target.to_owned()))?;
             },
             BasicFileOperation::ShallowCopy(base) => {
-                f.write_fmt(format_args!("{:?}writer.shallow_copy_file_from_path({:?}, {:?})?;\n", base, base.path, self.path))
+                f.write_fmt(format_args!("{:?}writer.shallow_copy_file_from_path({:?}, {:?})?;\n", base, base.path, self.path))?;
             },
             BasicFileOperation::DeepCopy(base) => {
-                f.write_fmt(format_args!("{:?}writer.deep_copy_file_from_path({:?}, {:?})?;\n", base, base.path, self.path))
+                f.write_fmt(format_args!("{:?}writer.deep_copy_file_from_path({:?}, {:?})?;\n", base, base.path, self.path))?;
             },
             BasicFileOperation::MergeWithOtherFile {operations} => {
                 f.write_str("let sub_writer = {\n\
@@ -82,7 +82,7 @@ impl <'k> Debug for FileOperation<'k> {
                 }).collect::<Result<(), _>>()?;
                 f.write_str("writer\n\
                 };\n\
-                writer.merge_archive(sub_writer.finish_into_readable()?)?;\n")
+                writer.merge_archive(sub_writer.finish_into_readable()?)?;\n")?;
             },
         }?;
         match &self.reopen {
