@@ -2563,7 +2563,7 @@ mod test {
                     central_extra_data: vec![].into(),
                 },
                 alignment: 2048,
-                zopfli_buffer_size: None,
+                ..Default::default()
             };
             writer.add_symlink_from_path(SYMLINK_PATH, "||\0\0\0\0", options)?;
             writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
@@ -2868,7 +2868,7 @@ mod test {
                 .into(),
             },
             alignment: 65535,
-            zopfli_buffer_size: None,
+            ..Default::default()
         };
         writer.add_directory_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
@@ -2895,7 +2895,7 @@ mod test {
                 .into(),
             },
             alignment: 65535,
-            zopfli_buffer_size: None,
+            ..Default::default()
         };
         assert!(writer.add_directory_from_path("", options).is_err());
         let _ = writer.finish_into_readable()?;
