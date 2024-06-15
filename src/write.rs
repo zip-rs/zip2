@@ -1875,7 +1875,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let mut zip64_extra_field = [0; 28];
     let zip64_extra_field_length =
         write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
-    let block = file.block(zip64_extra_field_length);
+    let block = file.block(zip64_extra_field_length)?;
     block.write(writer)?;
     // file name
     writer.write_all(&file.file_name_raw)?;
@@ -2836,6 +2836,40 @@ mod test {
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
         writer.deep_copy_file_from_path("", "_copy")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
+    #[test]
+    fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
+        use crate::write::EncryptWith::Aes;
+        use crate::AesMode::Aes256;
+        use CompressionMethod::Deflated;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Deflated,
+            compression_level: Some(5),
+            last_modified_time: DateTime::from_date_and_time(2107, 4, 8, 15, 54, 19)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: Some(Aes {
+                mode: Aes256,
+                password: "",
+            }),
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![2, 0, 1, 0, 0].into(),
+                central_extra_data: vec![
+                    35, 229, 2, 0, 41, 41, 231, 44, 2, 0, 52, 233, 82, 201, 0, 0, 3, 0, 2, 0, 233,
+                    255, 3, 0, 2, 0, 26, 154, 38, 251, 0, 0,
+                ]
+                .into(),
+            },
+            alignment: 65535,
+            zopfli_buffer_size: None,
+        };
+        writer.add_directory_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }

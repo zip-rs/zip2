@@ -803,13 +803,13 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipCentralEntryBlock {
+    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipResult<ZipCentralEntryBlock> {
         let extra_field_len: u16 = self.extra_field_len().try_into().unwrap();
         let central_extra_field_len: u16 = self.central_extra_field_len().try_into().unwrap();
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
-        ZipCentralEntryBlock {
+        Ok(ZipCentralEntryBlock {
             magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: (self.system as u16) << 8
                 | (self.version_made_by as u16).max(self.version_needed()),
@@ -831,8 +831,10 @@ impl ZipFileData {
                 .unwrap(),
             file_name_length: self.file_name_raw.len().try_into().unwrap(),
             extra_field_length: zip64_extra_field_length
-                + extra_field_len
-                + central_extra_field_len,
+                .checked_add(extra_field_len + central_extra_field_len)
+                .ok_or(ZipError::InvalidArchive(
+                    "Extra field length in central directory exceeds 64KiB",
+                ))?,
             file_comment_length: self.file_comment.as_bytes().len().try_into().unwrap(),
             disk_number: 0,
             internal_file_attributes: 0,
@@ -842,7 +844,7 @@ impl ZipFileData {
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
                 .unwrap(),
-        }
+        })
     }
 
     pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
