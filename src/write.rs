@@ -2870,8 +2870,7 @@ mod test {
             alignment: 65535,
             ..Default::default()
         };
-        writer.add_directory_from_path("", options)?;
-        let _ = writer.finish_into_readable()?;
+        assert!(writer.add_directory_from_path("", options).is_err());
         Ok(())
     }
 
