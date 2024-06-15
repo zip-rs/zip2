@@ -2814,7 +2814,20 @@ mod test {
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
-            let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2060, 4, 6, 13, 13, 3)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default()};
+            let options = FileOptions {
+                compression_method: Stored,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(2060, 4, 6, 13, 13, 3)?,
+                permissions: None,
+                large_file: true,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 0,
+                ..Default::default()
+            };
             writer.start_file_from_path("\0", options)?;
             writer.write_all(&([]))?;
             writer = ZipWriter::new_append(writer.finish()?)?;

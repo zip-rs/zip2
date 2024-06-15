@@ -84,7 +84,7 @@ impl <'k> Debug for FileOperation<'k> {
                 };\n\
                 writer.merge_archive(sub_writer.finish_into_readable()?)?;\n")?;
             },
-        }?;
+        }
         match &self.reopen {
             ReopenOption::DoNotReopen => Ok(()),
             ReopenOption::ViaFinish => {
