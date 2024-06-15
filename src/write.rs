@@ -965,11 +965,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.stats.start = extra_data_end;
             }
             if let Some(data) = central_extra_data {
-                ExtendedFileOptions::validate_extra_data(&data, extra_data_len as u64)?;
-                let central_extra_data_len = extra_data_len + data.len();
-                if central_extra_data_len > u16::MAX as usize {
+                let validation_result = ExtendedFileOptions::validate_extra_data(&data, extra_data_end - zip64_start);
+                if validation_result.is_err() {
                     self.abort_file()?;
-                    return Err(InvalidArchive("Central extra data would exceed 64 KiB"));
+                    return validation_result;
                 }
                 file.central_extra_field = Some(data.clone());
             }
@@ -2869,6 +2868,16 @@ mod test {
             alignment: 65535,
             zopfli_buffer_size: None,
         };
+        writer.add_directory_from_path("", options)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14e() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1988, 1, 1, 1, 6, 26)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![76, 0, 1, 0, 0, 2, 0, 0, 0].into(), central_extra_data: vec![1, 149, 1, 0, 255, 3, 0, 0, 0, 2, 255, 0, 0, 12, 65, 1, 0, 0, 67, 149, 0, 0, 76, 149, 2, 0, 149, 149, 67, 149, 0, 0].into()}, alignment: 65535, zopfli_buffer_size: None };
         writer.add_directory_from_path("", options)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
