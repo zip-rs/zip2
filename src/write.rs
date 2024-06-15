@@ -579,7 +579,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                     if self.stats.bytes_written > spec::ZIP64_BYTES_THR
                         && !self.files.last_mut().unwrap().1.large_file
                     {
-                        self.abort_file().unwrap();
+                        let _ = self.abort_file();
                         return Err(io::Error::new(
                             io::ErrorKind::Other,
                             "Large file option has not been set",
@@ -739,10 +739,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
         self.writing_to_file = true;
         self.writing_raw = true;
-        if let Err(e) = self.write_all(&copy) {
-            self.abort_file().unwrap();
-            return Err(e.into());
-        }
+        self.do_or_abort_file(|| self.write_all(&copy))?;
         self.finish_file()
     }
 
@@ -845,6 +842,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         &self.comment
     }
 
+    fn do_or_abort_file<T, R: Into<ZipResult<T>>, F: FnOnce() -> R>(&mut self, method: F) -> ZipResult<T> {
+        let result = method();
+        if result.is_err() {
+            let _ = self.abort_file();
+        }
+        result.into()
+    }
+
     /// Start a new file for with the requested options.
     fn start_entry<S, SToOwned, T: FileOptionExtension>(
         &mut self,
@@ -910,21 +915,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
             let writer = self.inner.get_plain();
-
-            let block = match file.local_block() {
-                Ok(block) => block,
-                Err(e) => {
-                    let _ = self.abort_file();
-                    return Err(e);
-                }
-            };
-            match block.write(writer) {
-                Ok(()) => (),
-                Err(e) => {
-                    let _ = self.abort_file();
-                    return Err(e);
-                }
-            }
+            self.do_or_abort_file(|| file.local_block()?.write(writer))?;
             // file name
             writer.write_all(&file.file_name_raw)?;
             let zip64_start = writer.stream_position()?;
@@ -955,21 +946,19 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             let extra_data_len = extra_data.len();
             if extra_data_len > 0 {
-                writer.write_all(&extra_data)?;
-                extra_data_end = writer.stream_position()?;
-                debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
-                self.stats.start = extra_data_end;
-                ExtendedFileOptions::validate_extra_data(&extra_data, header_end - zip64_start)?;
+                self.do_or_abort_file(|| {
+                    writer.write_all(&extra_data)?;
+                    extra_data_end = writer.stream_position()?;
+                    debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
+                    self.stats.start = extra_data_end;
+                    ExtendedFileOptions::validate_extra_data(&extra_data, header_end - zip64_start)
+                })?;
                 file.extra_field = Some(extra_data.into());
             } else {
                 self.stats.start = extra_data_end;
             }
             if let Some(data) = central_extra_data {
-                let validation_result = ExtendedFileOptions::validate_extra_data(&data, extra_data_end - zip64_start);
-                if validation_result.is_err() {
-                    self.abort_file()?;
-                    return validation_result;
-                }
+                self.do_or_abort_file(|| ExtendedFileOptions::validate_extra_data(&data, extra_data_end - zip64_start))?;
                 file.central_extra_field = Some(data.clone());
             }
             debug_assert!(file.data_start.get().is_none());
@@ -1062,10 +1051,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writer.seek(SeekFrom::Start(file_end))?;
         }
         if self.flush_on_finish_file {
-            if let Err(e) = writer.flush() {
-                self.abort_file()?;
-                return Err(e.into());
-            }
+            self.do_or_abort_file(|| writer.flush())?;
         }
 
         self.writing_to_file = false;
@@ -1142,10 +1128,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             options.zopfli_buffer_size,
         )?;
         self.start_entry(name, options, None)?;
-        if let Err(e) = self.inner.switch_to(make_new_self) {
-            self.abort_file().unwrap();
-            return Err(e);
-        }
+        self.do_or_abort_file(|| self.inner.switch_to(make_new_self))?;
         self.writing_raw = false;
         Ok(())
     }
@@ -1421,10 +1404,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
-        if let Err(e) = self.write_all(target.into().as_bytes()) {
-            self.abort_file().unwrap();
-            return Err(e.into());
-        }
+        self.do_or_abort_file(|| self.write_all(target.into().as_bytes()))?;
         self.writing_raw = false;
         self.finish_file()?;
 
