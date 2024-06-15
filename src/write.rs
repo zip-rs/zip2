@@ -973,7 +973,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             if let Some(data) = central_extra_data {
                 let validation_result =
-                    ExtendedFileOptions::validate_extra_data(&data, extra_data_end - zip64_start);
+                    ExtendedFileOptions::validate_extra_data(data, extra_data_end - zip64_start);
                 if let Err(e) = validation_result {
                     let _ = self.abort_file();
                     return Err(e);
