@@ -953,9 +953,13 @@ impl<W: Write + Seek> ZipWriter<W> {
             let extra_data_len = extra_data.len();
             if extra_data_len > 0 {
                 let result = (|| {
+                    ExtendedFileOptions::validate_extra_data(
+                        &extra_data,
+                        header_end - zip64_start,
+                    )?;
                     writer.write_all(&extra_data)?;
                     extra_data_end = writer.stream_position()?;
-                    ExtendedFileOptions::validate_extra_data(&extra_data, header_end - zip64_start)
+                    Ok(())
                 })();
                 if let Err(e) = result {
                     let _ = self.abort_file();
