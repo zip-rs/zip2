@@ -3,6 +3,7 @@
 use arbitrary::Arbitrary;
 use core::fmt::{Debug, Formatter};
 use std::borrow::Cow;
+use std::fmt::Write;
 use libfuzzer_sys::fuzz_target;
 use replace_with::replace_with_or_abort;
 use std::io::{Cursor, Read, Seek, Write};
@@ -31,7 +32,8 @@ pub enum BasicFileOperation<'k> {
 pub enum ReopenOption {
     DoNotReopen,
     ViaFinish,
-    ViaFinishIntoReadable
+    ViaFinishIntoReadable,
+    ViaReadZipfileFromStream
 }
 
 #[derive(Arbitrary, Clone)]
@@ -92,6 +94,14 @@ impl <'k> Debug for FileOperation<'k> {
             },
             ReopenOption::ViaFinishIntoReadable => {
                 f.write_str("writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;\n")
+            },
+            ReopenOption::ViaReadZipfileFromStream => {
+                f.write_str("let stream = old_writer.finish_into_readable().unwrap().into_inner();\n"
+                    + "let mut new_archive = zip::ZipWriter::new(Cursor::new(Vec::new()));\n"
+                    + "while let Ok(Some(file)) = zip::read::read_zipfile_from_stream() {\n"
+                    + "    new_archive.deep_copy_file(file)?;\n"
+                    + "}\n"
+                    + "Ok(new_archive)")
             }
         }
     }
@@ -217,6 +227,14 @@ where
         ReopenOption::ViaFinishIntoReadable => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
             zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
         }),
+        ReopenOption::ViaReadZipfileFromStream => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+            let stream = old_writer.finish_into_readable().unwrap().into_inner();
+            let mut new_archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            while let Ok(Some(file)) = zip::read::read_zipfile_from_stream() {
+                new_archive.deep_copy_file(file)?;
+            }
+            Ok(new_archive)
+        })
     }
     assert_eq!(&old_comment, writer.get_raw_comment());
     Ok(())
