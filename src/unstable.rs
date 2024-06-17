@@ -82,9 +82,10 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
                 return MAIN_SEPARATOR.to_string().into_boxed_str();
             } else if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
                 && !original.ends_with('.')
-                    && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
-                    && !original.contains([MAIN_SEPARATOR, '.', MAIN_SEPARATOR])
-                    && !original.contains([MAIN_SEPARATOR, '.', '.', MAIN_SEPARATOR]) {
+                && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
+                && !original.contains([MAIN_SEPARATOR, '.', MAIN_SEPARATOR])
+                && !original.contains([MAIN_SEPARATOR, '.', '.', MAIN_SEPARATOR])
+            {
                 maybe_original = Some(&original[1..]);
             }
         } else if !original.contains(MAIN_SEPARATOR) {
@@ -106,7 +107,7 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
             Component::ParentDir => {
                 recreate = true;
                 normalized_components.pop();
-            },
+            }
             _ => {
                 recreate = true;
             }
