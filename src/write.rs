@@ -663,8 +663,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// widely-compatible archive compared to [Self::shallow_copy_file]. Does not copy alignment.
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
-        if src_name == dest_name {
-            return Err(InvalidArchive("Trying to copy a file to itself"));
+        if src_name == dest_name || self.files.contains_key(dest_name) {
+            return Err(InvalidArchive("That file already exists"));
         }
         let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
