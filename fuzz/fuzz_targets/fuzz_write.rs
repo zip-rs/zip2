@@ -42,6 +42,16 @@ pub struct FileOperation<'k> {
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
+impl <'k> FileOperation<'k> {
+    fn get_path(&self) -> Cow<PathBuf> {
+        if let BasicFileOperation::WriteDirectory(_) = self.basic {
+            Cow::Owned(self.path.join("/"))
+        } else {
+            Cow::Borrowed(&self.path)
+        }
+    }
+}
+
 impl <'k> Debug for FileOperation<'k> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.basic {
@@ -63,10 +73,10 @@ impl <'k> Debug for FileOperation<'k> {
                              options, self.path, target.to_owned()))?;
             },
             BasicFileOperation::ShallowCopy(base) => {
-                f.write_fmt(format_args!("{:?}writer.shallow_copy_file_from_path({:?}, {:?})?;\n", base, base.path, self.path))?;
+                f.write_fmt(format_args!("{:?}writer.shallow_copy_file_from_path({:?}, {:?})?;\n", base, base.get_path(), self.path))?;
             },
             BasicFileOperation::DeepCopy(base) => {
-                f.write_fmt(format_args!("{:?}writer.deep_copy_file_from_path({:?}, {:?})?;\n", base, base.path, self.path))?;
+                f.write_fmt(format_args!("{:?}writer.deep_copy_file_from_path({:?}, {:?})?;\n", base, base.get_path(), self.path))?;
             },
             BasicFileOperation::MergeWithOtherFile {operations} => {
                 f.write_str("let sub_writer = {\n\
@@ -177,15 +187,15 @@ where
             *files_added += 1;
         }
         BasicFileOperation::ShallowCopy(base) => {
-            deduplicate_paths(&mut path, &base.path);
+            deduplicate_paths(&mut path, &base.get_path());
             do_operation(writer, &base, false, flush_on_finish_file, files_added)?;
-            writer.shallow_copy_file_from_path(&base.path, &*path)?;
+            writer.shallow_copy_file_from_path(&*base.get_path(), &*path)?;
             *files_added += 1;
         }
         BasicFileOperation::DeepCopy(base) => {
-            deduplicate_paths(&mut path, &base.path);
+            deduplicate_paths(&mut path, &base.get_path());
             do_operation(writer, &base, false, flush_on_finish_file, files_added)?;
-            writer.deep_copy_file_from_path(&base.path, &*path)?;
+            writer.deep_copy_file_from_path(&*base.get_path(), &*path)?;
             *files_added += 1;
         }
         BasicFileOperation::MergeWithOtherFile { operations } => {

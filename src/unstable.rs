@@ -74,22 +74,21 @@ impl<R: Read> LittleEndianReadExt for R {}
 pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
     let mut maybe_original = None;
     if let Some(original) = path.as_ref().to_str() {
-        if original.is_empty() {
+        if original.is_empty() || original == "." || original == ".." {
             return String::new().into_boxed_str();
         }
-        if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
-            && !original.ends_with('.')
-            && !original.starts_with(['.', MAIN_SEPARATOR])
-            && !original.starts_with(['.', '.', MAIN_SEPARATOR])
-            && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
-            && !original.contains([MAIN_SEPARATOR, '.', MAIN_SEPARATOR])
-            && !original.contains([MAIN_SEPARATOR, '.', '.', MAIN_SEPARATOR])
-        {
-            if original.starts_with(MAIN_SEPARATOR) {
+        if original.starts_with(MAIN_SEPARATOR) {
+            if original.len() == 1 {
+                return MAIN_SEPARATOR.to_string().into_boxed_str();
+            } else if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
+                && !original.ends_with('.')
+                    && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
+                    && !original.contains([MAIN_SEPARATOR, '.', MAIN_SEPARATOR])
+                    && !original.contains([MAIN_SEPARATOR, '.', '.', MAIN_SEPARATOR]) {
                 maybe_original = Some(&original[1..]);
-            } else {
-                maybe_original = Some(original);
             }
+        } else if !original.contains(MAIN_SEPARATOR) {
+            return original.into();
         }
     }
     let mut recreate = maybe_original.is_none();
@@ -107,7 +106,7 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
             Component::ParentDir => {
                 recreate = true;
                 normalized_components.pop();
-            }
+            },
             _ => {
                 recreate = true;
             }

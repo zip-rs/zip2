@@ -754,7 +754,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         src_path: T,
         dest_path: U,
     ) -> ZipResult<()> {
-        self.deep_copy_file(&path_to_string(src_path), &path_to_string(dest_path))
+        let src = path_to_string(src_path);
+        let dest = path_to_string(dest_path);
+        self.deep_copy_file(&src, &dest)
     }
 
     /// Write the zip file into the backing stream, then produce a readable archive of that data.
@@ -1967,7 +1969,10 @@ mod test {
     use crate::ZipArchive;
     use std::io;
     use std::io::{Cursor, Read, Write};
+    use std::marker::PhantomData;
     use std::path::PathBuf;
+    use crate::write::EncryptWith::ZipCrypto;
+    use crate::zipcrypto::ZipCryptoKeys;
 
     #[test]
     fn write_empty_zip() {
@@ -2897,6 +2902,95 @@ mod test {
             ..Default::default()
         };
         assert!(writer.add_directory_from_path("", options).is_err());
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn test_fuzz_crash_2024_06_17() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let sub_writer = {
+                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                writer.set_flush_on_finish_file(false);
+                let sub_writer = {
+                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                    writer.set_flush_on_finish_file(false);
+                    let sub_writer = {
+                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                        writer.set_flush_on_finish_file(false);
+                        let sub_writer = {
+                            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                            writer.set_flush_on_finish_file(false);
+                            let sub_writer = {
+                                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                writer.set_flush_on_finish_file(false);
+                                let sub_writer = {
+                                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                    writer.set_flush_on_finish_file(false);
+                                    let sub_writer = {
+                                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                        writer.set_flush_on_finish_file(false);
+                                        let sub_writer = {
+                                            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                            writer.set_flush_on_finish_file(false);
+                                            let options = FileOptions { compression_method: CompressionMethod::Unsupported(65535), compression_level: Some(5), last_modified_time: DateTime::from_date_and_time(2107, 2, 8, 15, 0, 0)?, permissions: None, large_file: true, encrypt_with: Some(ZipCrypto(ZipCryptoKeys::of(0x63ff,0xc62d3103,0xfffe00ea), PhantomData::default())), extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 255, ..Default::default() };
+                                            writer.add_symlink_from_path("1\0PK\u{6}\u{6}\u{b}\u{6}\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{b}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0\u{10}\0\0\0K\u{6}\u{6}\0\0\0\0\0\0\0\0PK\u{2}\u{6}", "", options)?;
+                                            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                                            writer
+                                        };
+                                        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                                        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1992, 7, 3, 0, 0, 0)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 43, ..Default::default() };
+                                        writer.start_file_from_path("\0\0\0\u{3}\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1a}\u{1a}", options)?;
+                                        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2006, 3, 27, 2, 24, 26)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 26, ..Default::default() };
+                                        writer.start_file_from_path("\0K\u{6}\u{6}\0PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0PK\u{2}\u{6}", options)?;
+                                        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                                        let options = FileOptions { compression_method: Stored, compression_level: Some(17), last_modified_time: DateTime::from_date_and_time(2103, 4, 10, 23, 15, 18)?, permissions: Some(3284386755), large_file: true, encrypt_with: Some(ZipCrypto(ZipCryptoKeys::of(0x8888c5bf,0x88888888,0xff888888), PhantomData::default())), extended_options: ExtendedFileOptions {extra_data: vec![3, 0, 1, 0, 255, 144, 136, 0, 0].into(), central_extra_data: vec![].into()}, alignment: 65535, ..Default::default() };
+                                        writer.add_symlink_from_path("", "\nu", options)?;
+                                        writer = ZipWriter::new_append(writer.finish()?)?;
+                                        writer
+                                    };
+                                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                    writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                                    writer
+                                };
+                                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                writer = ZipWriter::new_append(writer.finish()?)?;
+                                writer
+                            };
+                            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                            writer.abort_file()?;
+                            let options = FileOptions { compression_method: CompressionMethod::Unsupported(49603), compression_level: Some(20), last_modified_time: DateTime::from_date_and_time(2047, 4, 14, 3, 15, 14)?, permissions: Some(3284386755), large_file: true, encrypt_with: Some(ZipCrypto(ZipCryptoKeys::of(      0xc3,       0x0,       0x0), PhantomData::default())), extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default() };
+                            writer.add_directory_from_path("", options)?;
+                            writer.deep_copy_file_from_path("/", "")?;
+                            writer.shallow_copy_file_from_path("", "copy")?;
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            writer
+                        };
+                        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                        writer
+                    };
+                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                    writer
+                };
+                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                writer
+            };
+            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
