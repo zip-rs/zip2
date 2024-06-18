@@ -44,10 +44,11 @@ pub struct FileOperation<'k> {
 
 impl <'k> FileOperation<'k> {
     fn get_path(&self) -> Cow<PathBuf> {
-        if let BasicFileOperation::WriteDirectory(_) = self.basic {
-            Cow::Owned(self.path.join("/"))
-        } else {
-            Cow::Borrowed(&self.path)
+        match self.basic {
+            BasicFileOperation::WriteDirectory(_) => Cow::Owned(self.path.join("/")),
+            BasicFileOperation::MergeWithOtherFile { operations } =>
+                operations[0].0.get_path(),
+            _ => Cow::Borrowed(&self.path)
         }
     }
 }
