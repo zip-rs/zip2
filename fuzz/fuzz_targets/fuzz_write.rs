@@ -125,7 +125,8 @@ impl <'k> Debug for FuzzTestCase<'k> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "let mut writer = ZipWriter::new(Cursor::new(Vec::new()));\n\
-            writer.set_flush_on_finish_file({:?});\n", self.flush_on_finish_file))?;
+            writer.set_flush_on_finish_file({:?});\n\
+            writer.set_raw_comment(Box::<[u8]>::from({:?}));\n", self.flush_on_finish_file, self.comment))?;
         self.operations.iter().map(|op| {
             f.write_fmt(format_args!("{:?}", op.0))?;
             if op.1 {
@@ -135,9 +136,6 @@ impl <'k> Debug for FuzzTestCase<'k> {
             }
         })
             .collect::<Result<(), _>>()?;
-        if self.comment.len() > 0 {
-            f.write_fmt(format_args!("writer.set_raw_comment(Box::<[u8]>::from({:?}));\n", self.comment))?;
-        }
         f.write_str("writer\n")
     }
 }

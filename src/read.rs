@@ -810,13 +810,17 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let (footer, cde_start_pos) = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut reader)?;
-        let shared = Self::get_metadata(config, &mut reader, &footer, cde_start_pos)?;
-        Ok(ZipArchive {
-            reader,
-            shared: shared.into(),
-            comment: footer.zip_file_comment.into(),
-        })
+        let results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut reader)?;
+        for (footer, cde_start_pos) in results {
+            if let Ok(shared) = Self::get_metadata(config, &mut reader, &footer, cde_start_pos) {
+                return Ok(ZipArchive {
+                    reader,
+                    shared: shared.into(),
+                    comment: footer.zip_file_comment.into(),
+                });
+            }
+        }
+        Err(InvalidArchive("No valid central directory found"))
     }
 
     /// Extract a Zip archive into a directory, overwriting files if they

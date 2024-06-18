@@ -298,7 +298,8 @@ impl Zip32CentralDirectoryEnd {
 
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
-    ) -> ZipResult<(Zip32CentralDirectoryEnd, u64)> {
+    ) -> ZipResult<Box<[(Zip32CentralDirectoryEnd, u64)]>> {
+        let mut results = vec![];
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
         if file_length < mem::size_of::<Zip32CDEBlock>() as u64 {
@@ -337,7 +338,7 @@ impl Zip32CentralDirectoryEnd {
                 reader.seek(io::SeekFrom::Start(cde_start_pos))?;
                 /* Drop any headers that don't parse. */
                 if let Ok(cde) = Self::parse(reader) {
-                    return Ok((cde, cde_start_pos));
+                    results.push((cde, cde_start_pos));
                 }
             }
 
@@ -365,10 +366,13 @@ impl Zip32CentralDirectoryEnd {
                  * `if window_start == search_lower_bound` check above. */
                 .max(search_lower_bound);
         }
-
-        Err(ZipError::InvalidArchive(
-            "Could not find central directory end",
-        ))
+        if results.is_empty() {
+            Err(ZipError::InvalidArchive(
+                "Could not find central directory end",
+            ))
+        } else {
+            Ok(results.into_boxed_slice())
+        }
     }
 
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {

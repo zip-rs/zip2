@@ -625,19 +625,23 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
-        let (footer, cde_start_pos) =
-            spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
-        let metadata = ZipArchive::get_metadata(config, &mut readwriter, &footer, cde_start_pos)?;
-
-        Ok(ZipWriter {
-            inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: metadata.files,
-            stats: Default::default(),
-            writing_to_file: false,
-            comment: footer.zip_file_comment,
-            writing_raw: true, // avoid recomputing the last file's header
-            flush_on_finish_file: false,
-        })
+        let results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
+        for (footer, cde_start_pos) in results {
+            if let Ok(metadata) =
+                ZipArchive::get_metadata(config, &mut readwriter, &footer, cde_start_pos)
+            {
+                return Ok(ZipWriter {
+                    inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
+                    files: metadata.files,
+                    stats: Default::default(),
+                    writing_to_file: false,
+                    comment: footer.zip_file_comment,
+                    writing_raw: true, // avoid recomputing the last file's header
+                    flush_on_finish_file: false,
+                });
+            }
+        }
+        Err(InvalidArchive("No central-directory end header found"))
     }
 
     /// `flush_on_finish_file` is designed to support a streaming `inner` that may unload flushed
@@ -3274,6 +3278,25 @@ mod test {
             writer
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_18() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_raw_comment(Box::<[u8]>::from([
+            80, 75, 5, 6, 255, 255, 255, 255, 255, 255, 80, 75, 5, 6, 255, 255, 255, 255, 255, 255,
+            13, 0, 13, 13, 13, 13, 13, 255, 255, 255, 255, 255, 255, 255, 255,
+        ]));
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            writer.set_raw_comment(Box::new([]));
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer = ZipWriter::new_append(writer.finish()?)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
