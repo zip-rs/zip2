@@ -44,7 +44,7 @@ pub struct FileOperation<'k> {
 
 impl <'k> FileOperation<'k> {
     fn get_path(&self) -> Cow<PathBuf> {
-        match self.basic {
+        match &self.basic {
             BasicFileOperation::WriteDirectory(_) => Cow::Owned(self.path.join("/")),
             BasicFileOperation::MergeWithOtherFile { operations } =>
                 operations[0].0.get_path(),
