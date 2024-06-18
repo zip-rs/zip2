@@ -625,17 +625,17 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
-        let results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
-        for (footer, cde_start_pos) in results {
+        let mut results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
+        for (footer, cde_start_pos) in results.iter_mut() {
             if let Ok(metadata) =
-                ZipArchive::get_metadata(config, &mut readwriter, &footer, cde_start_pos)
+                ZipArchive::get_metadata(config, &mut readwriter, &footer, *cde_start_pos)
             {
                 return Ok(ZipWriter {
                     inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
                     files: metadata.files,
                     stats: Default::default(),
                     writing_to_file: false,
-                    comment: footer.zip_file_comment,
+                    comment: mem::replace(&mut footer.zip_file_comment, Box::new([])),
                     writing_raw: true, // avoid recomputing the last file's header
                     flush_on_finish_file: false,
                 });

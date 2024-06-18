@@ -810,13 +810,13 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut reader)?;
-        for (footer, cde_start_pos) in results {
-            if let Ok(shared) = Self::get_metadata(config, &mut reader, &footer, cde_start_pos) {
+        let mut results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut reader)?;
+        for (footer, cde_start_pos) in results.iter_mut() {
+            if let Ok(shared) = Self::get_metadata(config, &mut reader, &footer, *cde_start_pos) {
                 return Ok(ZipArchive {
                     reader,
                     shared: shared.into(),
-                    comment: footer.zip_file_comment.into(),
+                    comment: Arc::from(mem::replace(&mut footer.zip_file_comment, Box::new([]))),
                 });
             }
         }
