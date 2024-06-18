@@ -1124,11 +1124,14 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 
     // Parse central header
     let block = ZipCentralEntryBlock::parse(reader)?;
-    let file = central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
+    let file =
+        central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
     let central_header_end = reader.stream_position()?;
     let data_start = find_data_start(&file, reader)?;
     if data_start > central_header_start {
-        return Err(InvalidArchive("A file can't start after its central-directory header"));
+        return Err(InvalidArchive(
+            "A file can't start after its central-directory header",
+        ));
     }
     file.data_start.get_or_init(|| data_start);
     reader.seek(SeekFrom::Start(central_header_end))?;
