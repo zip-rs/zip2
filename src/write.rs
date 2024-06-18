@@ -3102,6 +3102,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::octal_escapes)]
     fn test_fuzz_crash_2024_06_17a() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3136,6 +3137,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::octal_escapes)]
     #[cfg(feature = "bzip2")]
     fn test_fuzz_crash_2024_06_17b() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
