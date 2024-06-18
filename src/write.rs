@@ -628,7 +628,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let mut results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
         for (footer, cde_start_pos) in results.iter_mut() {
             if let Ok(metadata) =
-                ZipArchive::get_metadata(config, &mut readwriter, &footer, *cde_start_pos)
+                ZipArchive::get_metadata(config, &mut readwriter, footer, *cde_start_pos)
             {
                 return Ok(ZipWriter {
                     inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
