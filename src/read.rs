@@ -284,7 +284,7 @@ fn find_data_start(
         // If the value was already set in the meantime, ensure it matches (this is probably
         // unnecessary).
         Err(_) => {
-            assert_eq!(*data.data_start.get().unwrap(), data_start);
+            debug_assert_eq!(*data.data_start.get().unwrap(), data_start);
         }
     }
     Ok(data_start)
@@ -730,25 +730,21 @@ impl<R: Read + Seek> ZipArchive<R> {
         } else {
             dir_info.number_of_files
         };
+        if dir_info.disk_number != dir_info.disk_with_central_directory {
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
+        }
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
             let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
-            let central_end = reader.stream_position()?;
-            find_data_start(&file, reader)?;
-            reader.seek(SeekFrom::Start(central_end))?;
             files.push(file);
         }
-        if dir_info.disk_number != dir_info.disk_with_central_directory {
-            unsupported_zip_error("Support for multi-disk files is not implemented")
-        } else {
-            Ok(SharedBuilder {
-                files,
-                offset: dir_info.archive_offset,
-                dir_start: dir_info.directory_start,
-                config,
-            })
-        }
+        Ok(SharedBuilder {
+            files,
+            offset: dir_info.archive_offset,
+            dir_start: dir_info.directory_start,
+            config,
+        })
     }
 
     fn sort_result(
@@ -1128,7 +1124,15 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 
     // Parse central header
     let block = ZipCentralEntryBlock::parse(reader)?;
-    central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)
+    let file = central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
+    let central_header_end = reader.stream_position()?;
+    let data_start = find_data_start(&file, reader)?;
+    if data_start > central_header_start {
+        return Err(InvalidArchive("A file can't start after its central-directory header"));
+    }
+    file.data_start.get_or_init(|| data_start);
+    reader.seek(SeekFrom::Start(central_header_end))?;
+    Ok(file)
 }
 
 #[inline]
@@ -1173,7 +1177,6 @@ fn central_header_to_zip_file_inner<R: Read>(
     let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
-
     let file_name: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_name_raw).into(),
         false => file_name_raw.clone().from_cp437(),

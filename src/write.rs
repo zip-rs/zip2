@@ -3105,6 +3105,7 @@ mod test {
     fn test_fuzz_crash_2024_06_17a() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
+        const PATH_1: &'static str = "\0I\01\0P\0\0\u{2}\0\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1b}\u{1a}UT\u{5}\0\0\u{1a}\u{1a}\u{1a}\u{1a}UT\u{5}\0\u{1}\0\u{1a}\u{1a}\u{1a}UT\t\0uc\u{5}\0\0\0\0\u{7f}\u{7f}\u{7f}\u{7f}PK\u{6}";
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
@@ -3120,18 +3121,81 @@ mod test {
             writer.merge_archive(sub_writer.finish_into_readable()?)?;
             writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
             let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 11, 14, 10, 46, 47)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default() };
-            writer.start_file_from_path("\0I\01\0P\0\0\u{2}\0\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1b}\u{1a}UT\u{5}\0\0\u{1a}\u{1a}\u{1a}\u{1a}UT\u{5}\0\u{1}\0\u{1a}\u{1a}\u{1a}UT\t\0uc\u{5}\0\0\0\0\u{7f}\u{7f}\u{7f}\u{7f}PK\u{6}", options)?;
-            writer.deep_copy_file_from_path("\0I\01\0P\0\0\u{2}\0\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1b}\u{1a}UT\u{5}\0\0\u{1a}\u{1a}\u{1a}\u{1a}UT\u{5}\0\u{1}\0\u{1a}\u{1a}\u{1a}UT\t\0uc\u{5}\0\0\0\0\u{7f}\u{7f}\u{7f}\u{7f}PK\u{6}", "eee\u{6}\0\0\0\0\0\0\0\0\0\0\0$\0\0\0\0\0\0\u{7f}\u{7f}PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{1e},\0\0\0\0\0\0\0\0\0\0\0\u{8}\0*\0\0\u{1}PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0}K\u{2}\u{6}")?;
+            writer.start_file_from_path(PATH_1, options)?;
+            writer.deep_copy_file_from_path(PATH_1, "eee\u{6}\0\0\0\0\0\0\0\0\0\0\0$\0\0\0\0\0\0\u{7f}\u{7f}PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{1e},\0\0\0\0\0\0\0\0\0\0\0\u{8}\0*\0\0\u{1}PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0}K\u{2}\u{6}")?;
             writer
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
-        writer.deep_copy_file_from_path("", "copy")?;
+        writer.deep_copy_file_from_path(PATH_1, "")?;
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         writer.shallow_copy_file_from_path("", "copy")?;
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
-        writer.deep_copy_file_from_path("", "copy")?;
-        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "bzip2")]
+    fn test_fuzz_crash_2024_06_17b() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let sub_writer = {
+                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                writer.set_flush_on_finish_file(false);
+                let sub_writer = {
+                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                    writer.set_flush_on_finish_file(false);
+                    let sub_writer = {
+                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                        writer.set_flush_on_finish_file(false);
+                        let sub_writer = {
+                            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                            writer.set_flush_on_finish_file(false);
+                            let sub_writer = {
+                                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                writer.set_flush_on_finish_file(false);
+                                let sub_writer = {
+                                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                    writer.set_flush_on_finish_file(false);
+                                    let sub_writer = {
+                                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                        writer.set_flush_on_finish_file(false);
+                                        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1981, 1, 1, 0, 0, 21)?, permissions: Some(16908288), large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 20555, ..Default::default() };
+                                        writer.start_file_from_path("\0\u{7}\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2};\u{1a}\u{18}\u{1a}UT\t.........................\0u", options)?;
+                                        writer
+                                    };
+                                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                    let options = FileOptions { compression_method: CompressionMethod::Bzip2, compression_level: Some(5), last_modified_time: DateTime::from_date_and_time(2055, 7, 7, 3, 6, 6)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default() };
+                                    writer.start_file_from_path("\0\0\0\0..\0\0\0\0\0\u{7f}\u{7f}PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{1e},\0\0\0\0\0\0\0\0\0\0\0\u{8}\0*\0\0\u{1}PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0}K\u{2}\u{6}", options)?;
+                                    writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                                    writer
+                                };
+                                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                                writer
+                            };
+                            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                            writer
+                        };
+                        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                        writer
+                    };
+                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                    writer
+                };
+                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                writer
+            };
+            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
