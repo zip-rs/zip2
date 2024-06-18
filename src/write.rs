@@ -3106,7 +3106,7 @@ mod test {
     fn test_fuzz_crash_2024_06_17a() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        const PATH_1: &'static str = "\0I\01\0P\0\0\u{2}\0\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1b}\u{1a}UT\u{5}\0\0\u{1a}\u{1a}\u{1a}\u{1a}UT\u{5}\0\u{1}\0\u{1a}\u{1a}\u{1a}UT\t\0uc\u{5}\0\0\0\0\u{7f}\u{7f}\u{7f}\u{7f}PK\u{6}";
+        const PATH_1: &str = "\0I\01\0P\0\0\u{2}\0\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1b}\u{1a}UT\u{5}\0\0\u{1a}\u{1a}\u{1a}\u{1a}UT\u{5}\0\u{1}\0\u{1a}\u{1a}\u{1a}UT\t\0uc\u{5}\0\0\0\0\u{7f}\u{7f}\u{7f}\u{7f}PK\u{6}";
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
