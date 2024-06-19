@@ -625,6 +625,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
+        readwriter.seek(SeekFrom::Start(0))?;
         if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
             Ok(ZipWriter {
                 inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
@@ -3365,6 +3366,48 @@ mod test {
             writer
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "bzip2", feature = "aes-crypto"))]
+    #[test]
+    fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(true);
+        writer.set_raw_comment([0].into());
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        assert_eq!(writer.get_raw_comment()[0], 0);
+        let options = FileOptions {
+            compression_method: CompressionMethod::Bzip2,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2009, 6, 3, 13, 37, 39)?,
+            permissions: Some(2644352413),
+            large_file: true,
+            encrypt_with: Some(crate::write::EncryptWith::Aes {
+                mode: crate::AesMode::Aes256,
+                password: "",
+            }),
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 255,
+            ..Default::default()
+        };
+        writer.add_symlink_from_path("", "", options)?;
+        writer.deep_copy_file_from_path("", "PK\u{5}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\u{4}\0\0\0")?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        assert_eq!(writer.get_raw_comment()[0], 0);
+        writer.deep_copy_file_from_path(
+            "PK\u{5}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\u{4}\0\0\0",
+            "\u{2}yy\u{5}qu\0",
+        )?;
+        let finished = writer.finish()?;
+        let archive = ZipArchive::new(finished.clone())?;
+        assert_eq!(archive.comment(), [0]);
+        writer = ZipWriter::new_append(finished)?;
+        assert_eq!(writer.get_raw_comment()[0], 0);
         let _ = writer.finish_into_readable()?;
         Ok(())
     }

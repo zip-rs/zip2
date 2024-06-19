@@ -69,6 +69,7 @@ pub(crate) mod zip_archive {
         pub(crate) files: Vec<super::ZipFileData>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
+        pub(super) dir_end: u64,
         // This isn't yet used anywhere, but it is here for use cases in the future.
         #[allow(dead_code)]
         pub(super) config: super::Config,
@@ -721,7 +722,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let (footer, shared) = ok_results
             .into_iter()
-            .max_by_key(|(_, shared)| (shared.dir_start - shared.offset, shared.dir_start))
+            .max_by_key(|(_, shared)| (shared.dir_end, u64::MAX - shared.dir_start))
             .unwrap();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
         Ok((Rc::try_unwrap(footer).unwrap(), shared.build()))
@@ -748,10 +749,12 @@ impl<R: Read + Seek> ZipArchive<R> {
             let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
             files.push(file);
         }
+        let dir_end = reader.stream_position()?;
         Ok(SharedBuilder {
             files,
             offset: dir_info.archive_offset,
             dir_start: dir_info.directory_start,
+            dir_end,
             config,
         })
     }
@@ -820,6 +823,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
+        reader.seek(SeekFrom::Start(0))?;
         if let Ok((footer, shared)) = Self::get_metadata(config, &mut reader) {
             return Ok(ZipArchive {
                 reader,
