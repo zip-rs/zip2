@@ -24,7 +24,8 @@ pub enum BasicFileOperation<'k> {
     DeepCopy(Box<FileOperation<'k>>),
     MergeWithOtherFile {
         operations: Box<[(FileOperation<'k>, bool)]>
-    }
+    },
+    SetArchiveComment(Box<[u8]>)
 }
 
 #[derive(Arbitrary, Clone, Debug, Eq, PartialEq)]
@@ -45,6 +46,7 @@ pub struct FileOperation<'k> {
 impl <'k> FileOperation<'k> {
     fn get_path(&self) -> Option<Cow<PathBuf>> {
         match &self.basic {
+            BasicFileOperation::SetArchiveComment(_) => None,
             BasicFileOperation::WriteDirectory(_) => Some(Cow::Owned(self.path.join("/"))),
             BasicFileOperation::MergeWithOtherFile { operations } =>
                 operations.iter().flat_map(|(op, abort)| if !abort { op.get_path() } else { None }).next(),
@@ -101,6 +103,9 @@ impl <'k> Debug for FileOperation<'k> {
                 };\n\
                 writer.merge_archive(sub_writer.finish_into_readable()?)?;\n")?;
             },
+            BasicFileOperation::SetArchiveComment(comment) => {
+                f.write_fmt(format_args!("writer.set_raw_comment({:?}.into());\n", comment))?;
+            }
         }
         match &self.reopen {
             ReopenOption::DoNotReopen => Ok(()),
@@ -116,7 +121,6 @@ impl <'k> Debug for FileOperation<'k> {
 
 #[derive(Arbitrary, Clone)]
 pub struct FuzzTestCase<'k> {
-    comment: Box<[u8]>,
     operations: Box<[(FileOperation<'k>, bool)]>,
     flush_on_finish_file: bool,
 }
@@ -125,8 +129,7 @@ impl <'k> Debug for FuzzTestCase<'k> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "let mut writer = ZipWriter::new(Cursor::new(Vec::new()));\n\
-            writer.set_flush_on_finish_file({:?});\n\
-            writer.set_raw_comment(Box::<[u8]>::from({:?}));\n", self.flush_on_finish_file, self.comment))?;
+            writer.set_flush_on_finish_file({:?});\n", self.flush_on_finish_file))?;
         self.operations.iter().map(|op| {
             f.write_fmt(format_args!("{:?}", op.0))?;
             if op.1 {
@@ -223,6 +226,9 @@ where
             });
             writer.merge_archive(other_writer.finish_into_readable()?)?;
             *files_added += inner_files_added;
+        },
+        BasicFileOperation::SetArchiveComment(comment) => {
+            writer.set_raw_comment(comment.clone());
         }
     }
     if abort && *files_added != 0 {
@@ -246,7 +252,6 @@ where
 fuzz_target!(|test_case: FuzzTestCase| {
     let mut files_added = 0;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    writer.set_raw_comment(test_case.comment);
     let mut final_reopen = false;
     if let Some((last_op, _)) = test_case.operations.last() {
         if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
