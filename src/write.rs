@@ -625,23 +625,19 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
-        let mut results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
-        for (footer, cde_start_pos) in results.iter_mut() {
-            if let Ok(metadata) =
-                ZipArchive::get_metadata(config, &mut readwriter, footer, *cde_start_pos)
-            {
-                return Ok(ZipWriter {
-                    inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-                    files: metadata.files,
-                    stats: Default::default(),
-                    writing_to_file: false,
-                    comment: mem::replace(&mut footer.zip_file_comment, Box::new([])),
-                    writing_raw: true, // avoid recomputing the last file's header
-                    flush_on_finish_file: false,
-                });
-            }
+        if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
+            Ok(ZipWriter {
+                inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
+                files: shared.files,
+                stats: Default::default(),
+                writing_to_file: false,
+                comment: footer.zip_file_comment,
+                writing_raw: true, // avoid recomputing the last file's header
+                flush_on_finish_file: false,
+            })
+        } else {
+            Err(InvalidArchive("No central-directory end header found"))
         }
-        Err(InvalidArchive("No central-directory end header found"))
     }
 
     /// `flush_on_finish_file` is designed to support a streaming `inner` that may unload flushed
@@ -3297,6 +3293,78 @@ mod test {
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
         writer = ZipWriter::new_append(writer.finish()?)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_18a() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        writer.set_raw_comment(Box::<[u8]>::from([]));
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let sub_writer = {
+                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                writer.set_flush_on_finish_file(false);
+                let sub_writer = {
+                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                    writer.set_flush_on_finish_file(false);
+                    let options = FullFileOptions {
+                        compression_method: Stored,
+                        compression_level: None,
+                        last_modified_time: DateTime::from_date_and_time(2107, 4, 8, 14, 0, 19)?,
+                        permissions: None,
+                        large_file: false,
+                        encrypt_with: None,
+                        extended_options: ExtendedFileOptions {
+                            extra_data: vec![
+                                182, 180, 1, 0, 180, 182, 74, 0, 0, 200, 0, 0, 0, 2, 0, 0, 0,
+                            ]
+                            .into(),
+                            central_extra_data: vec![].into(),
+                        },
+                        alignment: 1542,
+                        ..Default::default()
+                    };
+                    writer.start_file_from_path("\0\0PK\u{6}\u{6}K\u{6}PK\u{3}\u{4}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\u{1}\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0P\u{7}\u{4}/.\0KP\0\0;\0\0\0\u{1e}\0\0\0\0\0\0\0\0\0\0\0\0\0", options)?;
+                    let finished = writer.finish_into_readable()?;
+                    assert_eq!(1, finished.file_names().count());
+                    writer = ZipWriter::new_append(finished.into_inner())?;
+                    let options = FullFileOptions {
+                        compression_method: Stored,
+                        compression_level: Some(5),
+                        last_modified_time: DateTime::from_date_and_time(2107, 4, 1, 0, 0, 0)?,
+                        permissions: None,
+                        large_file: false,
+                        encrypt_with: Some(ZipCrypto(
+                            ZipCryptoKeys::of(0x0, 0x62e4b50, 0x100),
+                            PhantomData,
+                        )),
+                        ..Default::default()
+                    };
+                    writer.add_symlink_from_path(
+                        "\0K\u{6}\0PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0PK\u{2}\u{6}",
+                        "\u{8}\0\0\0\0/\0",
+                        options,
+                    )?;
+                    let finished = writer.finish_into_readable()?;
+                    assert_eq!(2, finished.file_names().count());
+                    writer = ZipWriter::new_append(finished.into_inner())?;
+                    assert_eq!(2, writer.files.len());
+                    writer
+                };
+                let finished = sub_writer.finish_into_readable()?;
+                assert_eq!(2, finished.file_names().count());
+                writer.merge_archive(finished)?;
+                writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                writer
+            };
+            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
         let _ = writer.finish_into_readable()?;
         Ok(())
     }

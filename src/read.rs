@@ -8,7 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock};
+use crate::spec::{self, FixedSizeBlock, Zip32CentralDirectoryEnd};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -23,6 +23,7 @@ use std::mem;
 use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "deflate-flate2")]
@@ -671,51 +672,55 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn get_metadata(
         config: Config,
         reader: &mut R,
-        footer: &spec::Zip32CentralDirectoryEnd,
-        cde_start_pos: u64,
-    ) -> ZipResult<Shared> {
-        // Check if file has a zip64 footer
-        let results = Self::get_directory_info_zip64(&config, reader, footer, cde_start_pos)
-            .unwrap_or_else(|e| vec![Err(e)]);
+    ) -> ZipResult<(Zip32CentralDirectoryEnd, Shared)> {
         let mut invalid_errors = Vec::new();
         let mut unsupported_errors = Vec::new();
         let mut ok_results = Vec::new();
-        results
-            .into_iter()
-            .map(|result| {
-                result.and_then(|dir_info| Self::read_central_header(dir_info, config, reader))
-            })
-            .for_each(|result| {
-                Self::sort_result(
-                    result,
-                    &mut invalid_errors,
-                    &mut unsupported_errors,
-                    &mut ok_results,
-                )
-            });
-        if ok_results.is_empty() {
+        let cde_locations = spec::Zip32CentralDirectoryEnd::find_and_parse(reader)?;
+        IntoIterator::into_iter(cde_locations).for_each(|(footer, cde_start_pos)| {
             let zip32_result =
-                Self::get_directory_info_zip32(&config, reader, footer, cde_start_pos);
+                Self::get_directory_info_zip32(&config, reader, &footer, cde_start_pos);
             Self::sort_result(
                 zip32_result.and_then(|result| Self::read_central_header(result, config, reader)),
                 &mut invalid_errors,
                 &mut unsupported_errors,
                 &mut ok_results,
+                &footer,
             );
-        }
+            // Check if file has a zip64 footer
+            if let Ok(zip64_footers) =
+                Self::get_directory_info_zip64(&config, reader, &footer, cde_start_pos)
+            {
+                zip64_footers
+                    .into_iter()
+                    .map(|result| {
+                        result.and_then(|dir_info| {
+                            Self::read_central_header(dir_info, config, reader)
+                        })
+                    })
+                    .for_each(|result| {
+                        Self::sort_result(
+                            result,
+                            &mut invalid_errors,
+                            &mut unsupported_errors,
+                            &mut ok_results,
+                            &footer,
+                        )
+                    });
+            }
+        });
         if ok_results.is_empty() {
             return Err(unsupported_errors
                 .into_iter()
                 .next()
                 .unwrap_or_else(|| invalid_errors.into_iter().next().unwrap()));
         }
-        let shared = ok_results
+        let (footer, shared) = ok_results
             .into_iter()
-            .max_by_key(|shared| (shared.dir_start - shared.offset, shared.dir_start))
-            .unwrap()
-            .build();
+            .max_by_key(|(_, shared)| (shared.dir_start - shared.offset, shared.dir_start))
+            .unwrap();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
-        Ok(shared)
+        Ok((Rc::try_unwrap(footer).unwrap(), shared.build()))
     }
 
     fn read_central_header(
@@ -751,14 +756,15 @@ impl<R: Read + Seek> ZipArchive<R> {
         result: Result<SharedBuilder, ZipError>,
         invalid_errors: &mut Vec<ZipError>,
         unsupported_errors: &mut Vec<ZipError>,
-        ok_results: &mut Vec<SharedBuilder>,
+        ok_results: &mut Vec<(Rc<Zip32CentralDirectoryEnd>, SharedBuilder)>,
+        footer: &Rc<Zip32CentralDirectoryEnd>,
     ) {
         match result {
             Err(ZipError::UnsupportedArchive(e)) => {
                 unsupported_errors.push(ZipError::UnsupportedArchive(e))
             }
             Err(e) => invalid_errors.push(e),
-            Ok(o) => ok_results.push(o),
+            Ok(o) => ok_results.push((footer.clone(), o)),
         }
     }
 
@@ -810,15 +816,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let mut results = spec::Zip32CentralDirectoryEnd::find_and_parse(&mut reader)?;
-        for (footer, cde_start_pos) in results.iter_mut() {
-            if let Ok(shared) = Self::get_metadata(config, &mut reader, footer, *cde_start_pos) {
-                return Ok(ZipArchive {
-                    reader,
-                    shared: shared.into(),
-                    comment: Arc::from(mem::replace(&mut footer.zip_file_comment, Box::new([]))),
-                });
-            }
+        if let Ok((footer, shared)) = Self::get_metadata(config, &mut reader) {
+            return Ok(ZipArchive {
+                reader,
+                shared: shared.into(),
+                comment: footer.zip_file_comment.into(),
+            });
         }
         Err(InvalidArchive("No valid central directory found"))
     }

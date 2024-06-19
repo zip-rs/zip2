@@ -5,6 +5,7 @@ use memchr::memmem::FinderRev;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
+use std::rc::Rc;
 
 /// "Magic" header values used in the zip spec to locate metadata records.
 ///
@@ -298,7 +299,7 @@ impl Zip32CentralDirectoryEnd {
 
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
-    ) -> ZipResult<Box<[(Zip32CentralDirectoryEnd, u64)]>> {
+    ) -> ZipResult<Box<[(Rc<Zip32CentralDirectoryEnd>, u64)]>> {
         let mut results = vec![];
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
@@ -338,7 +339,7 @@ impl Zip32CentralDirectoryEnd {
                 reader.seek(io::SeekFrom::Start(cde_start_pos))?;
                 /* Drop any headers that don't parse. */
                 if let Ok(cde) = Self::parse(reader) {
-                    results.push((cde, cde_start_pos));
+                    results.push((Rc::new(cde), cde_start_pos));
                 }
             }
 
