@@ -297,6 +297,7 @@ impl Zip32CentralDirectoryEnd {
         })
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
     ) -> ZipResult<Box<[(Rc<Zip32CentralDirectoryEnd>, u64)]>> {

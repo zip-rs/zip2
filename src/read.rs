@@ -677,7 +677,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut unsupported_errors = Vec::new();
         let mut ok_results = Vec::new();
         let cde_locations = spec::Zip32CentralDirectoryEnd::find_and_parse(reader)?;
-        IntoIterator::into_iter(cde_locations).for_each(|(footer, cde_start_pos)| {
+        cde_locations.into_vec().into_iter().for_each(|(footer, cde_start_pos)| {
             let zip32_result =
                 Self::get_directory_info_zip32(&config, reader, &footer, cde_start_pos);
             Self::sort_result(
