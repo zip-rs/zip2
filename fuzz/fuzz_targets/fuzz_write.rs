@@ -235,17 +235,26 @@ where
         writer.abort_file()?;
         *files_added -= 1;
     }
-    let old_comment = writer.get_raw_comment().to_owned();
+    // If a comment is set, we finish the archive, reopen it for append and then set a shorter
+    // comment, then there will be junk after the new comment that we can't get rid of. Thus, we
+    // can only check that the expected is a prefix of the actual
     match operation.reopen {
-        ReopenOption::DoNotReopen => {},
-        ReopenOption::ViaFinish => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-            zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap()
-        }),
-        ReopenOption::ViaFinishIntoReadable => replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-            zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
-        }),
+        ReopenOption::DoNotReopen => return Ok(()),
+        ReopenOption::ViaFinish => {
+            let old_comment = writer.get_raw_comment().to_owned();
+            replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+                zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap()
+            });
+            assert!(writer.get_raw_comment().starts_with(&old_comment));
+        },
+        ReopenOption::ViaFinishIntoReadable => {
+            let old_comment = writer.get_raw_comment().to_owned();
+            replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
+                zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
+            });
+            assert!(writer.get_raw_comment().starts_with(&old_comment));
+        },
     }
-    assert_eq!(&old_comment, writer.get_raw_comment());
     Ok(())
 }
 
