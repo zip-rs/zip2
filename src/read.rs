@@ -677,38 +677,42 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut unsupported_errors = Vec::new();
         let mut ok_results = Vec::new();
         let cde_locations = spec::Zip32CentralDirectoryEnd::find_and_parse(reader)?;
-        cde_locations.into_vec().into_iter().for_each(|(footer, cde_start_pos)| {
-            let zip32_result =
-                Self::get_directory_info_zip32(&config, reader, &footer, cde_start_pos);
-            Self::sort_result(
-                zip32_result.and_then(|result| Self::read_central_header(result, config, reader)),
-                &mut invalid_errors,
-                &mut unsupported_errors,
-                &mut ok_results,
-                &footer,
-            );
-            // Check if file has a zip64 footer
-            if let Ok(zip64_footers) =
-                Self::get_directory_info_zip64(&config, reader, &footer, cde_start_pos)
-            {
-                zip64_footers
-                    .into_iter()
-                    .map(|result| {
-                        result.and_then(|dir_info| {
-                            Self::read_central_header(dir_info, config, reader)
+        cde_locations
+            .into_vec()
+            .into_iter()
+            .for_each(|(footer, cde_start_pos)| {
+                let zip32_result =
+                    Self::get_directory_info_zip32(&config, reader, &footer, cde_start_pos);
+                Self::sort_result(
+                    zip32_result
+                        .and_then(|result| Self::read_central_header(result, config, reader)),
+                    &mut invalid_errors,
+                    &mut unsupported_errors,
+                    &mut ok_results,
+                    &footer,
+                );
+                // Check if file has a zip64 footer
+                if let Ok(zip64_footers) =
+                    Self::get_directory_info_zip64(&config, reader, &footer, cde_start_pos)
+                {
+                    zip64_footers
+                        .into_iter()
+                        .map(|result| {
+                            result.and_then(|dir_info| {
+                                Self::read_central_header(dir_info, config, reader)
+                            })
                         })
-                    })
-                    .for_each(|result| {
-                        Self::sort_result(
-                            result,
-                            &mut invalid_errors,
-                            &mut unsupported_errors,
-                            &mut ok_results,
-                            &footer,
-                        )
-                    });
-            }
-        });
+                        .for_each(|result| {
+                            Self::sort_result(
+                                result,
+                                &mut invalid_errors,
+                                &mut unsupported_errors,
+                                &mut ok_results,
+                                &footer,
+                            )
+                        });
+                }
+            });
         if ok_results.is_empty() {
             return Err(unsupported_errors
                 .into_iter()
