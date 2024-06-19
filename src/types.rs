@@ -685,9 +685,8 @@ impl ZipFileData {
             ));
         }
 
-        /* FIXME: these were previously incorrect: add testing! */
         /* flags & (1 << 3) != 0 */
-        let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
+        let using_data_descriptor: bool = (flags & (1 << 3) == 1 << 3) && compressed_size == 0 && uncompressed_size == 0 && crc32 == 0;
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
