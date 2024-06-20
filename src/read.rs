@@ -771,7 +771,13 @@ impl<R: Read + Seek> ZipArchive<R> {
                 unsupported_errors.push(ZipError::UnsupportedArchive(e))
             }
             Err(e) => invalid_errors.push(e),
-            Ok(o) => ok_results.push((footer.clone(), o)),
+            Ok(o) => {
+                if o.files.len() >= footer.number_of_files as usize {
+                    ok_results.push((footer.clone(), o))
+                } else {
+                    invalid_errors.push(InvalidArchive("wrong number of files"))
+                }
+            }
         }
     }
 
