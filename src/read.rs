@@ -773,7 +773,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             Err(e) => invalid_errors.push(e),
             Ok(o) => {
                 if o.files.len() == footer.number_of_files as usize
-                        || footer.number_of_files == ZIP64_ENTRY_THR as u16 {
+                    || footer.number_of_files == ZIP64_ENTRY_THR as u16
+                {
                     ok_results.push((footer.clone(), o))
                 } else {
                     invalid_errors.push(InvalidArchive("wrong number of files"))
