@@ -562,7 +562,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             disk_number: footer.disk_number as u32,
             disk_with_central_directory: footer.disk_with_central_directory as u32,
             cde_position: cde_start_pos,
-            is_zip64: false
+            is_zip64: false,
         })
     }
 
@@ -685,7 +685,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut unsupported_errors_64 = Vec::new();
         let mut ok_results = Vec::new();
         let cde_locations = spec::Zip32CentralDirectoryEnd::find_and_parse(reader)?;
-        cde_locations.into_vec().into_iter().for_each(|(footer, cde_start_pos)| {
+        cde_locations
+            .into_vec()
+            .into_iter()
+            .for_each(|(footer, cde_start_pos)| {
                 let zip32_result =
                     Self::get_directory_info_zip32(&config, reader, &footer, cde_start_pos);
                 Self::sort_result(
@@ -717,12 +720,13 @@ impl<R: Read + Seek> ZipArchive<R> {
                         );
                     });
                 });
-            }
-        );
-        ok_results.sort_by_key(|(_, result)| (
-            !result.is_zip64, // try ZIP64 first
-            u64::MAX - result.cde_position, // try the last one first
-            ));
+            });
+        ok_results.sort_by_key(|(_, result)| {
+            (
+                !result.is_zip64,               // try ZIP64 first
+                u64::MAX - result.cde_position, // try the last one first
+            )
+        });
         let mut best_result = None;
         for (footer, result) in ok_results {
             let mut inner_result = Vec::with_capacity(1);
@@ -740,7 +744,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     &mut unsupported_errors_32
                 },
                 &mut inner_result,
-                &()
+                &(),
             );
             if let Some((_, shared)) = inner_result.into_iter().next() {
                 if shared.files.len() == footer.number_of_files as usize
@@ -753,16 +757,17 @@ impl<R: Read + Seek> ZipArchive<R> {
                         &mut invalid_errors_64
                     } else {
                         &mut invalid_errors_32
-                    }.push(InvalidArchive("wrong number of files"))
+                    }
+                    .push(InvalidArchive("wrong number of files"))
                 }
             }
         }
         let Some((footer, shared)) = best_result else {
-            return Err(unsupported_errors_32.into_iter()
+            return Err(unsupported_errors_32
+                .into_iter()
                 .chain(unsupported_errors_64.into_iter())
                 .chain(invalid_errors_32.into_iter())
                 .chain(invalid_errors_64.into_iter())
-
                 .next()
                 .unwrap());
         };
@@ -1691,12 +1696,12 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 
 #[cfg(test)]
 mod test {
+    use crate::result::ZipResult;
+    use crate::write::SimpleFileOptions;
+    use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Read, Write};
     use tempdir::TempDir;
-    use crate::CompressionMethod::Stored;
-    use crate::result::ZipResult;
-    use crate::write::SimpleFileOptions;
 
     #[test]
     fn invalid_offset() {
@@ -1932,7 +1937,10 @@ mod test {
     #[test]
     fn test_64k_files() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions {compression_method: Stored, ..Default::default()};
+        let options = SimpleFileOptions {
+            compression_method: Stored,
+            ..Default::default()
+        };
         for i in 0..=u16::MAX {
             let file_name = format!("{i}.txt");
             writer.start_file(&*file_name, options)?;
