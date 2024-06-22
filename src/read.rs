@@ -765,9 +765,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         let Some((footer, shared)) = best_result else {
             return Err(unsupported_errors_32
                 .into_iter()
-                .chain(unsupported_errors_64.into_iter())
-                .chain(invalid_errors_32.into_iter())
-                .chain(invalid_errors_64.into_iter())
+                .chain(unsupported_errors_64)
+                .chain(invalid_errors_32)
+                .chain(invalid_errors_64)
                 .next()
                 .unwrap());
         };
