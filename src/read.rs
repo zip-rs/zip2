@@ -743,8 +743,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             });
         ok_results.sort_by_key(|(_, result)| {
             (
-                !result.is_zip64,               // try ZIP64 first
                 u64::MAX - result.cde_position, // try the last one first
+                !result.is_zip64,               // try ZIP64 first
             )
         });
         let mut best_result = None;

@@ -7,7 +7,7 @@ use crate::read::{
     find_content, parse_single_extra_field, Config, ZipArchive, ZipFile, ZipFileReader,
 };
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Magic};
+use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
@@ -1455,27 +1455,24 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn finalize(&mut self) -> ZipResult<u64> {
         self.finish_file()?;
 
-        let central_start = {
-            let mut central_start = self.write_central_and_footer()?;
-            let writer = self.inner.get_plain();
-            let footer_end = writer.stream_position()?;
-            let file_end = writer.seek(SeekFrom::End(0))?;
-            if footer_end < file_end {
-                // Data from an aborted file is past the end of the footer.
+        let mut central_start = self.write_central_and_footer()?;
+        let writer = self.inner.get_plain();
+        let footer_end = writer.stream_position()?;
+        let file_end = writer.seek(SeekFrom::End(0))?;
+        if footer_end < file_end {
+            // Data from an aborted file is past the end of the footer.
 
-                // Overwrite the magic so the footer is no longer valid.
-                writer.seek(SeekFrom::Start(central_start))?;
-                writer.write_u32_le(0)?;
-                writer.seek(SeekFrom::Start(footer_end - size_of::<Magic>() as u64))?;
-                writer.write_u32_le(0)?;
+            // Overwrite the magic so the footer is no longer valid.
+            writer.seek(SeekFrom::Start(central_start))?;
+            writer.write_u32_le(0)?;
+            writer.seek(SeekFrom::Start(footer_end - size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64))?;
+            writer.write_u32_le(0)?;
 
-                // Rewrite the footer at the actual end.
-                let central_and_footer_size = footer_end - central_start;
-                writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
-                central_start = self.write_central_and_footer()?;
-            }
-            central_start
-        };
+            // Rewrite the footer at the actual end.
+            let central_and_footer_size = footer_end - central_start;
+            writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
+            central_start = self.write_central_and_footer()?;
+        }
 
         Ok(central_start)
     }
@@ -3470,6 +3467,25 @@ mod test {
         assert_eq!(writer.get_raw_comment(), [255, 0]);
         let archive = writer.finish_into_readable()?;
         assert_eq!(archive.comment(), [255, 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn fuzz_crash_2024_06_21() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FullFileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 2, 1, 0, 0, 0)?, permissions: None, large_file: false, encrypt_with: None, ..Default::default() };
+        const LONG_PATH: &'static str = "\0@PK\u{6}\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@/\0\0\00ΝPK\u{5}\u{6}O\0\u{10}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@PK\u{6}\u{7}\u{6}\0/@\0\0\0\0\0\0\0\0 \0\0";
+        writer.start_file_from_path(LONG_PATH, options)?;
+        writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.deep_copy_file_from_path(LONG_PATH, "oo\0\0\0")?;
+        writer.abort_file()?;
+        writer.set_raw_comment([33].into());
+        let archive = writer.finish_into_readable()?;
+        writer = ZipWriter::new_append(archive.into_inner())?;
+        assert!(writer.get_raw_comment().starts_with(&[33]));
+        let archive = writer.finish_into_readable()?;
+        assert!(archive.comment().starts_with(&[33]));
         Ok(())
     }
 }
