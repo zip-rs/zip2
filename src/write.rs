@@ -1465,7 +1465,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             // Overwrite the magic so the footer is no longer valid.
             writer.seek(SeekFrom::Start(central_start))?;
             writer.write_u32_le(0)?;
-            writer.seek(SeekFrom::Start(footer_end - size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64))?;
+            writer.seek(SeekFrom::Start(
+                footer_end - size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64,
+            ))?;
             writer.write_u32_le(0)?;
 
             // Rewrite the footer at the actual end.
@@ -1963,6 +1965,7 @@ const EXTRA_FIELD_MAPPING: [u16; 43] = [
 #[cfg(test)]
 #[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0
 #[allow(clippy::needless_update)] // So we can use the same FileOptions decls with and without zopfli_buffer_size
+#[allow(clippy::octal_escapes)] // many false positives in converted fuzz cases
 mod test {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
@@ -3104,7 +3107,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::octal_escapes)]
     fn test_fuzz_crash_2024_06_17a() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3474,8 +3476,16 @@ mod test {
     fn fuzz_crash_2024_06_21() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let options = FullFileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 2, 1, 0, 0, 0)?, permissions: None, large_file: false, encrypt_with: None, ..Default::default() };
-        const LONG_PATH: &'static str = "\0@PK\u{6}\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@/\0\0\00ΝPK\u{5}\u{6}O\0\u{10}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@PK\u{6}\u{7}\u{6}\0/@\0\0\0\0\0\0\0\0 \0\0";
+        let options = FullFileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(1980, 2, 1, 0, 0, 0)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            ..Default::default()
+        };
+        const LONG_PATH: &str = "\0@PK\u{6}\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@/\0\0\00ΝPK\u{5}\u{6}O\0\u{10}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@PK\u{6}\u{7}\u{6}\0/@\0\0\0\0\0\0\0\0 \0\0";
         writer.start_file_from_path(LONG_PATH, options)?;
         writer = ZipWriter::new_append(writer.finish()?)?;
         writer.deep_copy_file_from_path(LONG_PATH, "oo\0\0\0")?;
