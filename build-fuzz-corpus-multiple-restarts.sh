@@ -4,11 +4,12 @@ ncpus=$(nproc || getconf NPROCESSORS_ONLN)
 ncpus=$(( ncpus / ( 1 + $(cat /sys/devices/system/cpu/smt/active))))
 NORMAL_RESTARTS=10
 rm -rf "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
-mv "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
+mkdir "fuzz/corpus/fuzz_$1_pre_fresh_blood"
+mv "fuzz/corpus/fuzz_$1"/* "fuzz/corpus/fuzz_$1_pre_fresh_blood"
 for i in $(seq 1 $NORMAL_RESTARTS); do
   mv "fuzz/corpus/fuzz_$1_restart_${i}"/* "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
   echo "$(date): RESTART ${i}"
-  mkdir "fuzz/corpus/fuzz_$1"
+  mkdir "fuzz/corpus/fuzz_$1" || true
   cargo fuzz run --all-features "fuzz_$1" "fuzz/corpus/fuzz_$1" -- \
     -dict=fuzz/fuzz.dict -max_len="$2" -fork="$ncpus" \
     -max_total_time=5100 -runs=100000000
