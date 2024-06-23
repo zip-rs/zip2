@@ -17,4 +17,4 @@ for i in $(seq 1 $RESTARTS); do
   mv "fuzz/corpus/fuzz_$1_restart_${i}"/* "fuzz/corpus/fuzz_$1"
   rmdir "fuzz/corpus/fuzz_$1_restart_${i}"
 done
-./fuzz-until-converged.sh $1 $2
+./fuzz-until-converged.sh "$1" "$2"
