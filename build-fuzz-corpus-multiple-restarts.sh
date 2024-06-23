@@ -3,6 +3,7 @@ set -euxo pipefail
 ncpus=$(nproc || getconf NPROCESSORS_ONLN)
 ncpus=$(( ncpus / ( 1 + $(cat /sys/devices/system/cpu/smt/active))))
 NORMAL_RESTARTS=10
+rm -rf "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
 mv "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
 for i in $(seq 1 $NORMAL_RESTARTS); do
   mv "fuzz/corpus/fuzz_$1_restart_${i}"/* "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
