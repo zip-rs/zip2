@@ -34,7 +34,7 @@ cargo fuzz run --all-features "fuzz_$1" "fuzz/corpus/fuzz_$1" -- \
   -max_len="$2" -fork="$ncpus" -max_total_time=5100 -runs=100000000
 find "fuzz/corpus/fuzz_$1" -type f -exec mv '{}' "fuzz/corpus/fuzz_$1_restart_dictionaryless_012byte" ';'
 
-find "fuzz/corpus/fuzz_$1_restart_012byte"/* -type f -exec mv '{}' "fuzz/corpus/fuzz_$1_pre_fresh_blood" ';' || true
+find "fuzz/corpus/fuzz_$1_restart_012byte" -type f -exec mv '{}' "fuzz/corpus/fuzz_$1_pre_fresh_blood" ';' || true
 rm -rf "fuzz/corpus/fuzz_$1_restart_012byte" || true
 mkdir "fuzz/corpus/fuzz_$1_restart_012byte" || true
 echo "$(date): RESTART WITH DICTIONARY AND 0-2 BYTE CORPUS"
