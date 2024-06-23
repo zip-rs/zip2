@@ -11,7 +11,7 @@ while true; do
   if diff "fuzz/corpus/fuzz_$1_iter_${i}.bak" "fuzz/corpus/fuzz_$1_iter_${j}"; then
     # Last iteration made no difference, so we're done
     rm -r "fuzz/corpus/fuzz_$1"
-    mv "fuzz/corpus/fuzz_$1_iter_${j}" "fuzz/corpus/fuzz_$1"
+    find "fuzz/corpus/fuzz_$1_iter_${j}" -type f -exec mv '{}' "fuzz/corpus/fuzz_$1" ';'
     find fuzz/corpus -iname "fuzz_$1_iter_*" -exec rm -r {} +
     exit 0
   fi
