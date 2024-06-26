@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::PathBuf, str::FromStr};
 
 use walkdir::WalkDir;
 
@@ -16,6 +16,7 @@ fn repro_old423() -> zip::result::ZipResult<()> {
 }
 
 #[test]
+#[cfg(unix)]
 fn extract_should_respect_links(){
     use std::io;
     use tempdir::TempDir;
@@ -30,15 +31,10 @@ fn extract_should_respect_links(){
     
     let symlink_path = temp_dir.path().join("pandoc-3.2-arm64/bin/pandoc-lua");
     
-    // Check if the file is a symbolic link
-    let metadata = fs::symlink_metadata(&symlink_path).unwrap();
-
-    // assert!(metadata.is_symlink());
-
     // Read the target of the symbolic link
     let target_path = fs::read_link(&symlink_path).unwrap();
-    eprintln!("Symbolic link points to: {:?}", target_path);
-
+    
+    assert_eq!(target_path, PathBuf::from_str("pandoc").unwrap());
 
 
 }
