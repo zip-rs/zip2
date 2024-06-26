@@ -3,7 +3,7 @@ set -euxo pipefail
 mkdir "fuzz/corpus/fuzz_$1_recombination_sources" || true
 
 # Ensure the 0-byte, 1-byte and 2-byte strings won't gain duplicates during recombination
-find "fuzz/corpus/fuzz_$1_recombination_sources" -type f -size -2c -delete
+find "fuzz/corpus/fuzz_$1_recombination_sources" -type f -size -3c -delete
 
 for size in "${@:2}"; do
   echo "$(date): STARTING ON SIZE $size"
