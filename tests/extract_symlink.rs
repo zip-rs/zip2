@@ -14,7 +14,7 @@ fn extract_should_respect_links() {
     let symlink_path = temp_dir.path().join("pandoc-3.2-arm64/bin/pandoc-lua");
 
     // Read the target of the symbolic link
-    let target_path = fs::read_link(&symlink_path).unwrap();
+    let target_path = fs::read_link(symlink_path).unwrap();
 
     assert_eq!(target_path, PathBuf::from_str("pandoc").unwrap());
 }
