@@ -51,6 +51,13 @@ pub(crate) mod lzma;
 #[cfg(feature = "xz")]
 pub(crate) mod xz;
 
+#[cfg(feature = "parallelism")]
+pub(crate) mod pipelining;
+#[cfg(all(unix, feature = "parallelism"))]
+pub use pipelining::split_extraction::{split_extract, ExtractionParameters, SplitExtractionError};
+#[cfg(feature = "parallelism")]
+pub(crate) mod split;
+
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
     use indexmap::IndexMap;
@@ -1076,6 +1083,9 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
         create_dir_all(outpath.as_ref())?;
+        /* TODO: do we want to automatically make the directory writable? Wouldn't we prefer to
+         * respect the write permissions of the extraction dir? Pipelined extraction does not
+         * mutate permissions like this. */
         #[cfg(unix)]
         {
             // Dirs must be writable until all normal files are extracted
