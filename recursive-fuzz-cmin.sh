@@ -2,7 +2,7 @@
 i=0
 rm -rf "fuzz/corpus/fuzz_$1_iter_0" || true
 mkdir "fuzz/corpus/fuzz_$1_iter_0"
-find "fuzz/corpus/fuzz_$1" -exec mv '{}' "fuzz/corpus/fuzz_$1_iter_0" ';'
+find "fuzz/corpus/fuzz_$1" -type f -exec mv '{}' "fuzz/corpus/fuzz_$1_iter_0" ';'
 while true; do
   j=$((i + 1))
   rm -rf "fuzz/corpus/fuzz_$1_iter_${i}.bak" || true
