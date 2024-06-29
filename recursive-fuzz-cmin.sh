@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euxo pipefail
 i=0
 rm -rf "fuzz/corpus/fuzz_$1_iter_0" || true
 mkdir "fuzz/corpus/fuzz_$1_iter_0"
