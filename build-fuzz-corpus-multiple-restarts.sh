@@ -2,7 +2,7 @@
 set -euxo pipefail
 ncpus=$(nproc || getconf NPROCESSORS_ONLN)
 ncpus=$(( ncpus / ( 1 + $(cat /sys/devices/system/cpu/smt/active))))
-NORMAL_RESTARTS=10
+NORMAL_RESTARTS=5
 rm -rf "fuzz/corpus/fuzz_$1_pre_fresh_blood" || true
 mkdir "fuzz/corpus/fuzz_$1_pre_fresh_blood"
 find "fuzz/corpus/fuzz_$1" -type f -exec mv '{}' "fuzz/corpus/fuzz_$1_pre_fresh_blood" ';' || true
