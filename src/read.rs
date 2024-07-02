@@ -13,7 +13,7 @@ use crate::spec::{
     Zip64CentralDirectoryEnd, ZIP64_ENTRY_THR,
 };
 use crate::types::{
-    AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
+    AesMode, AesModeInfo, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
 };
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
@@ -24,7 +24,6 @@ use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
 use std::mem::size_of;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
@@ -116,9 +115,15 @@ pub(crate) mod zip_archive {
 use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
 use crate::result::ZipError::{InvalidArchive, InvalidPassword};
-use crate::spec::is_dir;
 use crate::types::ffi::S_IFLNK;
 use crate::unstable::{path_to_string, LittleEndianReadExt};
+
+use crate::crc32::non_crypto::Crc32Reader as NewCrc32Reader;
+use crate::unstable::read::{
+    construct_decompressing_reader, find_entry_content_range, CryptoEntryReader, CryptoVariant,
+    ZipEntry,
+};
+
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
@@ -343,9 +348,9 @@ fn find_content_seek<'a, R: Read + Seek>(
     Ok(SeekableTake::new(reader, data.compressed_size)?)
 }
 
-fn find_data_start(
+pub(crate) fn find_data_start(
     data: &ZipFileData,
-    reader: &mut (impl Read + Seek + Sized),
+    reader: &mut (impl Read + Seek),
 ) -> Result<u64, ZipError> {
     // Go to start of data.
     reader.seek(SeekFrom::Start(data.header_start))?;
@@ -377,7 +382,7 @@ pub(crate) fn make_crypto_reader<'a>(
     data: &ZipFileData,
     reader: io::Take<&'a mut dyn Read>,
     password: Option<&[u8]>,
-    aes_info: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    aes_info: Option<AesModeInfo>,
 ) -> ZipResult<CryptoReader<'a>> {
     #[allow(deprecated)]
     {
@@ -394,7 +399,14 @@ pub(crate) fn make_crypto_reader<'a>(
             ))
         }
         #[cfg(feature = "aes-crypto")]
-        (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
+        (
+            Some(password),
+            Some(AesModeInfo {
+                aes_mode,
+                vendor_version,
+                ..
+            }),
+        ) => CryptoReader::Aes {
             reader: AesReader::new(reader, aes_mode, data.compressed_size).validate(password)?,
             vendor_version,
         },
@@ -478,6 +490,75 @@ impl<R> ZipArchive<R> {
             total = total.checked_add(file.uncompressed_size as u128)?;
         }
         Some(total)
+    }
+
+    const fn zip64_cde_len() -> usize {
+        mem::size_of::<spec::Zip64CentralDirectoryEnd>()
+            + mem::size_of::<spec::Zip64CentralDirectoryEndLocator>()
+    }
+
+    const fn order_lower_upper_bounds(a: u64, b: u64) -> (u64, u64) {
+        if a > b {
+            (b, a)
+        } else {
+            (a, b)
+        }
+    }
+
+    /// Number of files contained in this zip.
+    pub fn len(&self) -> usize {
+        self.shared.files.len()
+    }
+
+    /// Whether this zip archive contains no files
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get the offset from the beginning of the underlying reader that this zip begins at, in bytes.
+    ///
+    /// Normally this value is zero, but if the zip has arbitrary data prepended to it, then this value will be the size
+    /// of that prepended data.
+    pub fn offset(&self) -> u64 {
+        self.shared.offset
+    }
+
+    /// Get the comment of the zip archive.
+    pub fn comment(&self) -> &[u8] {
+        &self.comment
+    }
+
+    /// Returns an iterator over all the file and directory names in this archive.
+    pub fn file_names(&self) -> impl Iterator<Item = &str> {
+        self.shared.files.keys().map(|s| s.as_ref())
+    }
+
+    /// Get the index of a file entry by name, if it's present.
+    #[inline(always)]
+    pub fn index_for_name(&self, name: &str) -> Option<usize> {
+        self.shared.files.get_index_of(name)
+    }
+
+    /// Get the index of a file entry by path, if it's present.
+    #[inline(always)]
+    pub fn index_for_path<T: AsRef<Path>>(&self, path: T) -> Option<usize> {
+        self.index_for_name(&path_to_string(path))
+    }
+
+    #[inline(always)]
+    fn index_for_name_err(&self, name: impl AsRef<str>) -> Result<usize, ZipError> {
+        self.index_for_name(name.as_ref())
+            .map(Ok)
+            .unwrap_or(Err(ZipError::FileNotFound))
+    }
+
+    /// Get the name of a file entry, if it's present.
+    #[inline(always)]
+    pub fn name_for_index(&self, index: usize) -> Option<&str> {
+        self.shared
+            .files
+            .get_index(index)
+            .map(|(name, _)| name.as_ref())
     }
 }
 
@@ -875,7 +956,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let limit_reader = find_content(data, &mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
-            Some((aes_mode, _, _)) => {
+            Some(AesModeInfo { aes_mode, .. }) => {
                 let (verification_value, salt) =
                     AesReader::new(limit_reader, aes_mode, data.compressed_size)
                         .get_verification_value_and_salt()?;
@@ -942,6 +1023,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             }
             let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                 let mut target = Vec::with_capacity(file.size() as usize);
+                /* FIXME: this is broken: needs to be .read_to_end(), otherwise it writes into an
+                 * empty slice. */
                 file.read_to_end(&mut target)?;
                 Some(target)
             } else {
@@ -1025,34 +1108,6 @@ impl<R: Read + Seek> ZipArchive<R> {
         Ok(())
     }
 
-    /// Number of files contained in this zip.
-    pub fn len(&self) -> usize {
-        self.shared.files.len()
-    }
-
-    /// Whether this zip archive contains no files
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Get the offset from the beginning of the underlying reader that this zip begins at, in bytes.
-    ///
-    /// Normally this value is zero, but if the zip has arbitrary data prepended to it, then this value will be the size
-    /// of that prepended data.
-    pub fn offset(&self) -> u64 {
-        self.shared.offset
-    }
-
-    /// Get the comment of the zip archive.
-    pub fn comment(&self) -> &[u8] {
-        &self.comment
-    }
-
-    /// Returns an iterator over all the file and directory names in this archive.
-    pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.shared.files.keys().map(|s| s.as_ref())
-    }
-
     /// Search for a file entry by name, decrypt with given password
     ///
     /// # Warning
@@ -1131,9 +1186,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'a>> {
-        let Some(index) = self.shared.files.get_index_of(name) else {
-            return Err(ZipError::FileNotFound);
-        };
+        let index = self.index_for_name_err(name)?;
         self.by_index_with_optional_password(index, password)
     }
 
@@ -1211,6 +1264,146 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 }
 
+impl<R> ZipArchive<R>
+where
+    R: Read + Seek,
+{
+    /// Search for a file entry by name
+    pub fn by_name_new(
+        &mut self,
+        name: impl AsRef<str>,
+    ) -> ZipResult<ZipEntry<'_, impl Read + '_>> {
+        let index = self.index_for_name_err(name)?;
+        self.by_index_new(index)
+    }
+
+    /// Get a contained file by index
+    pub fn by_index_new(&mut self, file_number: usize) -> ZipResult<ZipEntry<'_, impl Read + '_>> {
+        let Self {
+            ref mut reader,
+            ref shared,
+            ..
+        } = self;
+        let (_, data) = shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        let content = find_entry_content_range(data, reader)?;
+        let entry_reader = construct_decompressing_reader(&data.compression_method, content)?;
+        let crc32_reader = NewCrc32Reader::new(entry_reader, data.crc32);
+        Ok(ZipEntry {
+            data,
+            reader: crc32_reader,
+        })
+    }
+
+    /// Get a contained file by name without decompressing it
+    pub fn by_name_raw_new(
+        &mut self,
+        name: impl AsRef<str>,
+    ) -> ZipResult<ZipEntry<'_, impl Read + '_>> {
+        let index = self.index_for_name_err(name)?;
+        self.by_index_raw_new(index)
+    }
+
+    /// Get a contained file by index without decompressing it
+    pub fn by_index_raw_new(
+        &mut self,
+        file_number: usize,
+    ) -> ZipResult<ZipEntry<'_, impl Read + '_>> {
+        let Self {
+            ref mut reader,
+            ref shared,
+            ..
+        } = self;
+        let (_, data) = shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        let content = find_entry_content_range(data, reader)?;
+        Ok(ZipEntry {
+            data,
+            reader: content,
+        })
+    }
+
+    /// Search for a file entry by name, decrypt with given password
+    ///
+    /// # Warning
+    ///
+    /// The implementation of the cryptographic algorithms has not
+    /// gone through a correctness review, and you should assume it is insecure:
+    /// passwords used with this API may be compromised.
+    ///
+    /// This function sometimes accepts wrong password. This is because the ZIP spec only allows us
+    /// to check for a 1/256 chance that the password is correct.
+    /// There are many passwords out there that will also pass the validity checks
+    /// we are able to perform. This is a weakness of the ZipCrypto algorithm,
+    /// due to its fairly primitive approach to cryptography.
+    pub fn by_name_decrypt_new(
+        &mut self,
+        name: impl AsRef<str>,
+        password: &[u8],
+    ) -> ZipResult<ZipEntry<'_, impl Read + '_>> {
+        let index = self.index_for_name_err(name)?;
+        self.by_index_decrypt_new(index, password)
+    }
+
+    /// Get a contained file by index, decrypt with given password
+    ///
+    /// # Warning
+    ///
+    /// The implementation of the cryptographic algorithms has not
+    /// gone through a correctness review, and you should assume it is insecure:
+    /// passwords used with this API may be compromised.
+    ///
+    /// This function sometimes accepts wrong password. This is because the ZIP spec only allows us
+    /// to check for a 1/256 chance that the password is correct.
+    /// There are many passwords out there that will also pass the validity checks
+    /// we are able to perform. This is a weakness of the ZipCrypto algorithm,
+    /// due to its fairly primitive approach to cryptography.
+    pub fn by_index_decrypt_new(
+        &mut self,
+        file_number: usize,
+        password: &[u8],
+    ) -> ZipResult<ZipEntry<'_, impl Read + '_>> {
+        let Self {
+            ref mut reader,
+            ref shared,
+            ..
+        } = self;
+        let (_, data) = shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+
+        let content = find_entry_content_range(data, reader)?;
+
+        let final_reader = if data.encrypted {
+            let crypto_variant = CryptoVariant::from_data(data)?;
+            let is_ae2_encrypted = crypto_variant.is_ae2_encrypted();
+            let crypto_reader = crypto_variant.make_crypto_reader(password, content)?;
+            let entry_reader =
+                construct_decompressing_reader(&data.compression_method, crypto_reader)?;
+            if is_ae2_encrypted {
+                /* Ae2 voids crc checking: https://www.winzip.com/en/support/aes-encryption/ */
+                CryptoEntryReader::Ae2Encrypted(entry_reader)
+            } else {
+                CryptoEntryReader::NonAe2Encrypted(NewCrc32Reader::new(entry_reader, data.crc32))
+            }
+        } else {
+            /* Not encrypted, so do the same as in .by_index_new(): */
+            let entry_reader = construct_decompressing_reader(&data.compression_method, content)?;
+            CryptoEntryReader::Unencrypted(NewCrc32Reader::new(entry_reader, data.crc32))
+        };
+
+        Ok(ZipEntry {
+            data,
+            reader: final_reader,
+        })
+    }
+}
+
 /// Holds the AES information of a file in the zip archive
 #[derive(Debug)]
 #[cfg(feature = "aes-crypto")]
@@ -1257,7 +1450,7 @@ fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> io::R
 }
 
 /// Parse a central directory entry to collect the information for the file.
-fn central_header_to_zip_file_inner<R: Read>(
+pub(crate) fn central_header_to_zip_file_inner<R: Read>(
     reader: &mut R,
     archive_offset: u64,
     central_header_start: u64,
@@ -1441,9 +1634,27 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 _ => return Err(InvalidArchive("Invalid AES vendor version")),
             };
             match aes_mode {
-                0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version, compression_method)),
-                0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version, compression_method)),
-                0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method)),
+                0x01 => {
+                    file.aes_mode = Some(AesModeInfo {
+                        aes_mode: AesMode::Aes128,
+                        vendor_version,
+                        compression_method,
+                    })
+                }
+                0x02 => {
+                    file.aes_mode = Some(AesModeInfo {
+                        aes_mode: AesMode::Aes192,
+                        vendor_version,
+                        compression_method,
+                    })
+                }
+                0x03 => {
+                    file.aes_mode = Some(AesModeInfo {
+                        aes_mode: AesMode::Aes256,
+                        vendor_version,
+                        compression_method,
+                    })
+                }
                 _ => return Err(InvalidArchive("Invalid AES encryption strength")),
             };
             file.compression_method = compression_method;
@@ -1597,9 +1808,10 @@ impl<'a> ZipFile<'a> {
     pub fn last_modified(&self) -> Option<DateTime> {
         self.data.last_modified_time
     }
+
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-        is_dir(self.name())
+        self.data.is_dir()
     }
 
     /// Returns whether the file is actually a symbolic link
@@ -1627,8 +1839,8 @@ impl<'a> ZipFile<'a> {
     pub fn extra_data(&self) -> Option<&[u8]> {
         self.get_metadata()
             .extra_field
-            .as_ref()
-            .map(|v| v.deref().deref())
+            .as_deref()
+            .map(|v| v.as_ref())
     }
 
     /// Get the starting offset of the data of the compressed file
