@@ -3,6 +3,7 @@ use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
 use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::mem;
 use std::path;
 use std::sync::{Arc, OnceLock};
@@ -11,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, Block};
+use crate::spec::{self, FixedSizeBlock};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -33,11 +34,12 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum System {
     Dos = 0,
     Unix = 3,
+    #[default]
     Unknown,
 }
 
@@ -77,7 +79,7 @@ impl From<System> for u8 {
 ///
 /// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
 /// for details.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     year: u16,
     month: u8,
@@ -85,6 +87,18 @@ pub struct DateTime {
     hour: u8,
     minute: u8,
     second: u8,
+}
+
+impl Debug for DateTime {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if *self == Self::default() {
+            return f.write_str("DateTime::default()");
+        }
+        f.write_fmt(format_args!(
+            "DateTime::from_date_and_time({}, {}, {}, {}, {}, {})?",
+            self.year, self.month, self.day, self.hour, self.minute, self.second
+        ))
+    }
 }
 
 impl DateTime {
@@ -112,7 +126,7 @@ impl arbitrary::Arbitrary<'_> for DateTime {
             day: u.int_in_range(1..=31)?,
             hour: u.int_in_range(0..=23)?,
             minute: u.int_in_range(0..=59)?,
-            second: u.int_in_range(0..=60)?,
+            second: u.int_in_range(0..=58)?,
         })
     }
 }
@@ -235,10 +249,10 @@ impl DateTime {
     /// The bounds are:
     /// * year: [1980, 2107]
     /// * month: [1, 12]
-    /// * day: [1, 31]
+    /// * day: [1, 28..=31]
     /// * hour: [0, 23]
     /// * minute: [0, 59]
-    /// * second: [0, 60]
+    /// * second: [0, 58]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -247,6 +261,10 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
+        fn is_leap_year(year: u16) -> bool {
+            (year % 4 == 0) && ((year % 25 != 0) || (year % 16 == 0))
+        }
+
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -254,6 +272,17 @@ impl DateTime {
             && minute <= 59
             && second <= 60
         {
+            let second = second.min(58); // exFAT can't store leap seconds
+            let max_day = match month {
+                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+                4 | 6 | 9 | 11 => 30,
+                2 if is_leap_year(year) => 29,
+                2 => 28,
+                _ => unreachable!(),
+            };
+            if day > max_day {
+                return Err(DateTimeRangeError);
+            }
             Ok(DateTime {
                 year,
                 month,
@@ -392,7 +421,7 @@ pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,
@@ -400,6 +429,8 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// True if the file is encrypted.
     pub encrypted: bool,
+    /// True if file_name and file_comment are UTF8
+    pub is_utf8: bool,
     /// True if the file uses a data-descriptor section
     pub using_data_descriptor: bool,
     /// Compression method used to store the file
@@ -448,6 +479,11 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    /// Get the starting offset of the data of the compressed file
+    pub fn data_start(&self) -> u64 {
+        *self.data_start.get().unwrap()
+    }
+
     #[allow(dead_code)]
     pub fn is_dir(&self) -> bool {
         is_dir(&self.file_name)
@@ -534,6 +570,8 @@ impl ZipFileData {
             CompressionMethod::Deflate64 => 21,
             #[cfg(feature = "lzma")]
             CompressionMethod::Lzma => 63,
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz => 63,
             // APPNOTE doesn't specify a version for Zstandard
             _ => DEFAULT_VERSION as u16,
         };
@@ -584,7 +622,7 @@ impl ZipFileData {
         aes_extra_data_start: u64,
         compression_method: crate::compression::CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-        extra_field: Option<Arc<Vec<u8>>>,
+        extra_field: &[u8],
     ) -> Self
     where
         S: Into<Box<str>>,
@@ -597,6 +635,7 @@ impl ZipFileData {
             version_made_by: DEFAULT_VERSION,
             encrypted: options.encrypt_with.is_some(),
             using_data_descriptor: false,
+            is_utf8: !file_name.is_ascii(),
             compression_method,
             compression_level: options.compression_level,
             last_modified_time: Some(options.last_modified_time),
@@ -605,7 +644,7 @@ impl ZipFileData {
             uncompressed_size: raw_values.uncompressed_size,
             file_name, // Never used for saving, but used as map key in insert_file_data()
             file_name_raw,
-            extra_field,
+            extra_field: Some(extra_field.to_vec().into()),
             central_extra_field: options.extended_options.central_extra_data().cloned(),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,
@@ -680,6 +719,7 @@ impl ZipFileData {
             version_made_by: version_made_by as u8,
             encrypted,
             using_data_descriptor,
+            is_utf8,
             compression_method,
             compression_level: None,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
@@ -765,13 +805,13 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipCentralEntryBlock {
+    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipResult<ZipCentralEntryBlock> {
         let extra_field_len: u16 = self.extra_field_len().try_into().unwrap();
         let central_extra_field_len: u16 = self.central_extra_field_len().try_into().unwrap();
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
-        ZipCentralEntryBlock {
+        Ok(ZipCentralEntryBlock {
             magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: (self.system as u16) << 8
                 | (self.version_made_by as u16).max(self.version_needed()),
@@ -793,8 +833,10 @@ impl ZipFileData {
                 .unwrap(),
             file_name_length: self.file_name_raw.len().try_into().unwrap(),
             extra_field_length: zip64_extra_field_length
-                + extra_field_len
-                + central_extra_field_len,
+                .checked_add(extra_field_len + central_extra_field_len)
+                .ok_or(ZipError::InvalidArchive(
+                    "Extra field length in central directory exceeds 64KiB",
+                ))?,
             file_comment_length: self.file_comment.as_bytes().len().try_into().unwrap(),
             disk_number: 0,
             internal_file_attributes: 0,
@@ -804,7 +846,7 @@ impl ZipFileData {
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
                 .unwrap(),
-        }
+        })
     }
 
     pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
@@ -872,7 +914,7 @@ pub(crate) struct ZipCentralEntryBlock {
     pub offset: u32,
 }
 
-impl Block for ZipCentralEntryBlock {
+impl FixedSizeBlock for ZipCentralEntryBlock {
     const MAGIC: spec::Magic = spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
     #[inline(always)]
@@ -880,7 +922,8 @@ impl Block for ZipCentralEntryBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid Central Directory header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid Central Directory header");
 
     to_and_from_le![
         (magic, spec::Magic),
@@ -919,7 +962,7 @@ pub(crate) struct ZipLocalEntryBlock {
     pub extra_field_length: u16,
 }
 
-impl Block for ZipLocalEntryBlock {
+impl FixedSizeBlock for ZipLocalEntryBlock {
     const MAGIC: spec::Magic = spec::Magic::LOCAL_FILE_HEADER_SIGNATURE;
 
     #[inline(always)]
@@ -927,7 +970,7 @@ impl Block for ZipLocalEntryBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid local file header");
+    const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive("Invalid local file header");
 
     to_and_from_le![
         (magic, spec::Magic),
@@ -1056,6 +1099,7 @@ mod test {
             version_made_by: 0,
             encrypted: false,
             using_data_descriptor: false,
+            is_utf8: true,
             compression_method: crate::compression::CompressionMethod::Stored,
             compression_level: None,
             last_modified_time: None,
@@ -1093,8 +1137,8 @@ mod test {
     #[allow(clippy::unusual_byte_groupings)]
     fn datetime_max() {
         use super::DateTime;
-        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
-        assert_eq!(dt.timepart(), 0b10111_111011_11110);
+        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 58).unwrap();
+        assert_eq!(dt.timepart(), 0b10111_111011_11101);
         assert_eq!(dt.datepart(), 0b1111111_1100_11111);
     }
 
@@ -1156,9 +1200,9 @@ mod test {
         assert_eq!(
             format!(
                 "{}",
-                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 59).unwrap()
+                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 58).unwrap()
             ),
-            "2107-12-31 23:59:59"
+            "2107-12-31 23:59:58"
         );
     }
 
@@ -1179,6 +1223,31 @@ mod test {
         assert!(DateTime::from_date_and_time(2108, 12, 31, 0, 0, 0).is_err());
         assert!(DateTime::from_date_and_time(2107, 13, 31, 0, 0, 0).is_err());
         assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
+
+        assert!(DateTime::from_date_and_time(2018, 1, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 2, 28, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 2, 29, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 3, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 4, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 4, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 5, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 6, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 6, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 7, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 8, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 9, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 9, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 10, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 11, 30, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(2018, 11, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2018, 12, 31, 0, 0, 0).is_ok());
+
+        // leap year: divisible by 4
+        assert!(DateTime::from_date_and_time(2024, 2, 29, 0, 0, 0).is_ok());
+        // leap year: divisible by 100 and by 400
+        assert!(DateTime::from_date_and_time(2000, 2, 29, 0, 0, 0).is_ok());
+        // common year: divisible by 100 but not by 400
+        assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
     #[cfg(feature = "time")]

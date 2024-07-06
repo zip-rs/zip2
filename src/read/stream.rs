@@ -6,7 +6,7 @@ use super::{
     central_header_to_zip_file_inner, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError,
     ZipFile, ZipFileData, ZipResult,
 };
-use crate::spec::Block;
+use crate::spec::FixedSizeBlock;
 
 /// Stream decoder for zip.
 #[derive(Debug)]
@@ -195,11 +195,6 @@ impl ZipStreamFileMetadata {
         &self.0.file_comment
     }
 
-    /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self) -> u64 {
-        *self.0.data_start.get().unwrap_or(&0)
-    }
-
     /// Get unix mode for the file
     pub const fn unix_mode(&self) -> Option<u32> {
         self.0.unix_mode()
@@ -225,6 +220,7 @@ mod test {
         }
     }
 
+    #[allow(dead_code)]
     #[derive(Default, Debug, Eq, PartialEq)]
     struct CounterVisitor(u64, u64);
     impl ZipStreamVisitor for CounterVisitor {

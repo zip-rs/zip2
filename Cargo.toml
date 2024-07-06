@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "2.1.0"
+version = "2.1.3"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -30,34 +30,34 @@ aes = { version = "0.8.4", optional = true }
 bzip2 = { version = "0.4.4", optional = true }
 chrono = { version = "0.4.38", optional = true }
 constant_time_eq = { version = "0.3.0", optional = true }
-crc32fast = "1.4.0"
+crc32fast = "1.4.2"
 displaydoc = { version = "0.2.4", default-features = false }
-flate2 = { version = "1.0.28", default-features = false, optional = true }
+flate2 = { version = "1.0.30", default-features = false, optional = true }
 indexmap = "2"
 hmac = { version = "0.12.1", optional = true, features = ["reset"] }
 memchr = "2.7.2"
 pbkdf2 = { version = "0.12.2", optional = true }
 rand = { version = "0.8.5", optional = true }
 sha1 = { version = "0.10.6", optional = true }
-thiserror = "1.0.48"
+thiserror = "1.0.61"
 time = { workspace = true, optional = true, features = [
     "std",
 ] }
-zeroize = { version = "1.6.0", optional = true, features = ["zeroize_derive"] }
+zeroize = { version = "1.8.1", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "0.13.1", optional = true, default-features = false }
 zopfli = { version = "0.8.1", optional = true }
 deflate64 = { version = "0.1.8", optional = true }
 lzma-rs = { version = "0.3.0", default-features = false, optional = true }
 
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
-crossbeam-utils = "0.8.19"
+crossbeam-utils = "0.8.20"
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.3.2", features = ["derive"] }
 
 [dev-dependencies]
 bencher = "0.1.5"
-getrandom = { version = "0.2.14", features = ["js", "std"] }
+getrandom = { version = "0.2.15", features = ["js", "std"] }
 walkdir = "2.5.0"
 time = { workspace = true, features = ["formatting", "macros"] }
 anyhow = "1"
@@ -78,6 +78,7 @@ deflate-zlib-ng = ["flate2/zlib-ng", "deflate-flate2"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
 lzma = ["lzma-rs/stream"]
 unreserved = []
+xz = ["lzma-rs/raw_decoder"]
 default = [
     "aes-crypto",
     "bzip2",
@@ -86,6 +87,7 @@ default = [
     "lzma",
     "time",
     "zstd",
+    "xz",
 ]
 
 [[bench]]

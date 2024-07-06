@@ -3,9 +3,11 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
-use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{
+    find_content, parse_single_extra_field, Config, ZipArchive, ZipFile, ZipFileReader,
+};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, Block};
+use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
@@ -21,17 +23,14 @@ use std::default::Default;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::io::{BufReader, SeekFrom};
 use std::marker::PhantomData;
 use std::mem;
 use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng"
-))]
+#[cfg(feature = "deflate-flate2")]
 use flate2::{write::DeflateEncoder, Compression};
 
 #[cfg(feature = "bzip2")]
@@ -42,6 +41,7 @@ use zopfli::Options;
 
 #[cfg(feature = "deflate-zopfli")]
 use std::io::BufWriter;
+use std::mem::size_of;
 use std::path::Path;
 
 #[cfg(feature = "zstd")]
@@ -152,7 +152,6 @@ pub(crate) mod zip_writer {
     /// # }
     /// # doit().unwrap();
     /// ```
-    #[derive(Debug)]
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: IndexMap<Box<str>, ZipFileData>,
@@ -162,13 +161,22 @@ pub(crate) mod zip_writer {
         pub(super) comment: Box<[u8]>,
         pub(super) flush_on_finish_file: bool,
     }
+
+    impl<W: Write + Seek> Debug for ZipWriter<W> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            f.write_fmt(format_args!(
+                "ZipWriter {{files: {:?}, stats: {:?}, writing_to_file: {}, writing_raw: {}, comment: {:?}, flush_on_finish_file: {}}}",
+                self.files, self.stats, self.writing_to_file, self.writing_raw,
+                self.comment, self.flush_on_finish_file))
+        }
+    }
 }
 #[doc(inline)]
 pub use self::sealed::FileOptionExtension;
 use crate::result::ZipError::InvalidArchive;
-#[cfg(feature = "lzma")]
+#[cfg(any(feature = "lzma", feature = "xz"))]
 use crate::result::ZipError::UnsupportedArchive;
-use crate::spec::path_to_string;
+use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
@@ -264,10 +272,106 @@ pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct ExtendedFileOptions {
     extra_data: Arc<Vec<u8>>,
     central_extra_data: Arc<Vec<u8>>,
+}
+
+impl ExtendedFileOptions {
+    /// Adds an extra data field, unless we detect that it's invalid.
+    pub fn add_extra_data(
+        &mut self,
+        header_id: u16,
+        data: Box<[u8]>,
+        central_only: bool,
+    ) -> ZipResult<()> {
+        let len = data.len() + 4;
+        if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
+            Err(InvalidArchive(
+                "Extra data field would be longer than allowed",
+            ))
+        } else {
+            let field = if central_only {
+                &mut self.central_extra_data
+            } else {
+                &mut self.extra_data
+            };
+            let vec = Arc::get_mut(field);
+            let vec = match vec {
+                Some(exclusive) => exclusive,
+                None => {
+                    *field = Arc::new(field.to_vec());
+                    Arc::get_mut(field).unwrap()
+                }
+            };
+            Self::add_extra_data_unchecked(vec, header_id, data)?;
+            Self::validate_extra_data(vec, 0)?;
+            Ok(())
+        }
+    }
+
+    pub(crate) fn add_extra_data_unchecked(
+        vec: &mut Vec<u8>,
+        header_id: u16,
+        data: Box<[u8]>,
+    ) -> Result<(), ZipError> {
+        vec.reserve_exact(data.len() + 4);
+        vec.write_u16_le(header_id)?;
+        vec.write_u16_le(data.len() as u16)?;
+        vec.write_all(&data)?;
+        Ok(())
+    }
+
+    fn validate_extra_data(data: &[u8], reserved: u64) -> ZipResult<()> {
+        let len = data.len() as u64;
+        if len == 0 {
+            return Ok(());
+        }
+        if len + reserved > u16::MAX as u64 {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Extra-data field can't exceed u16::MAX bytes",
+            )));
+        }
+        let mut data = Cursor::new(data);
+        let mut pos = data.position();
+        while pos < len {
+            if len - data.position() < 4 {
+                return Err(ZipError::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Extra-data field doesn't have room for ID and length",
+                )));
+            }
+            #[cfg(not(feature = "unreserved"))]
+            {
+                use crate::unstable::LittleEndianReadExt;
+                let header_id = data.read_u16_le()?;
+                if EXTRA_FIELD_MAPPING
+                    .iter()
+                    .any(|&mapped| mapped == header_id)
+                {
+                    return Err(ZipError::Io(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
+                        ),
+                    )));
+                }
+                data.seek(SeekFrom::Current(-2))?;
+            }
+            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, true)?;
+            pos = data.position();
+        }
+        Ok(())
+    }
+}
+
+impl Debug for ExtendedFileOptions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_fmt(format_args!("ExtendedFileOptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
+        self.extra_data, self.central_extra_data))
+    }
 }
 
 #[cfg(fuzzing)]
@@ -291,13 +395,14 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
         };
         #[cfg(feature = "deflate-zopfli")]
         if options.compression_method == CompressionMethod::Deflated && bool::arbitrary(u)? {
-            options.zopfli_buffer_size = Some(1 << u.int_in_range(9..=30)?);
+            options.zopfli_buffer_size =
+                Some(if bool::arbitrary(u)? { 2 } else { 3 } << u.int_in_range(8..=20)?);
         }
-        u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
+        u.arbitrary_loop(Some(0), Some(10), |u| {
             options
                 .add_extra_data(
-                    u16::arbitrary(u)?,
-                    &Vec::<u8>::arbitrary(u)?,
+                    u.int_in_range(2..=u16::MAX)?,
+                    Box::<[u8]>::arbitrary(u)?,
                     bool::arbitrary(u)?,
                 )
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
@@ -418,39 +523,11 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
     pub fn add_extra_data(
         &mut self,
         header_id: u16,
-        data: &[u8],
+        data: Box<[u8]>,
         central_only: bool,
     ) -> ZipResult<()> {
-        validate_extra_data(header_id, data)?;
-        let len = data.len() + 4;
-        if self.extended_options.extra_data.len()
-            + self.extended_options.central_extra_data.len()
-            + len
-            > u16::MAX as usize
-        {
-            Err(InvalidArchive(
-                "Extra data field would be longer than allowed",
-            ))
-        } else {
-            let field = if central_only {
-                &mut self.extended_options.central_extra_data
-            } else {
-                &mut self.extended_options.extra_data
-            };
-            let vec = Arc::get_mut(field);
-            let vec = match vec {
-                Some(exclusive) => exclusive,
-                None => {
-                    *field = Arc::new(field.to_vec());
-                    Arc::get_mut(field).unwrap()
-                }
-            };
-            vec.reserve_exact(data.len() + 4);
-            vec.write_u16_le(header_id)?;
-            vec.write_u16_le(data.len() as u16)?;
-            vec.write_all(data)?;
-            Ok(())
-        }
+        self.extended_options
+            .add_extra_data(header_id, data, central_only)
     }
 
     /// Removes the extra data fields.
@@ -502,7 +579,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                     if self.stats.bytes_written > spec::ZIP64_BYTES_THR
                         && !self.files.last_mut().unwrap().1.large_file
                     {
-                        self.abort_file().unwrap();
+                        let _ = self.abort_file();
                         return Err(io::Error::new(
                             io::ErrorKind::Other,
                             "Large file option has not been set",
@@ -538,20 +615,30 @@ impl ZipWriterStats {
 
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
-    pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
-        let (footer, cde_start_pos) =
-            spec::Zip32CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
-        let metadata = ZipArchive::get_metadata(&mut readwriter, &footer, cde_start_pos)?;
+    ///
+    /// This uses a default configuration to initially read the archive.
+    pub fn new_append(readwriter: A) -> ZipResult<ZipWriter<A>> {
+        Self::new_append_with_config(Default::default(), readwriter)
+    }
 
-        Ok(ZipWriter {
-            inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: metadata.files,
-            stats: Default::default(),
-            writing_to_file: false,
-            comment: footer.zip_file_comment,
-            writing_raw: true, // avoid recomputing the last file's header
-            flush_on_finish_file: false,
-        })
+    /// Initializes the archive from an existing ZIP archive, making it ready for append.
+    ///
+    /// This uses the given read configuration to initially read the archive.
+    pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
+        readwriter.seek(SeekFrom::Start(0))?;
+        if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
+            Ok(ZipWriter {
+                inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
+                files: shared.files,
+                stats: Default::default(),
+                writing_to_file: false,
+                comment: footer.zip_file_comment,
+                writing_raw: true, // avoid recomputing the last file's header
+                flush_on_finish_file: false,
+            })
+        } else {
+            Err(InvalidArchive("No central-directory end header found"))
+        }
     }
 
     /// `flush_on_finish_file` is designed to support a streaming `inner` that may unload flushed
@@ -577,12 +664,18 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// widely-compatible archive compared to [Self::shallow_copy_file]. Does not copy alignment.
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
+        if src_name == dest_name || self.files.contains_key(dest_name) {
+            return Err(InvalidArchive("That file already exists"));
+        }
         let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
-        let src_data = &self.files[src_index];
-        let data_start = *src_data.data_start.get().unwrap_or(&0);
-        let compressed_size = src_data.compressed_size;
-        debug_assert!(compressed_size <= write_position - data_start);
+        let src_data = &mut self.files[src_index];
+        let data_start = src_data.data_start();
+        let mut compressed_size = src_data.compressed_size;
+        if compressed_size > (write_position - data_start) {
+            compressed_size = write_position - data_start;
+            src_data.compressed_size = compressed_size;
+        }
         let uncompressed_size = src_data.uncompressed_size;
 
         let raw_values = ZipRawValues {
@@ -647,10 +740,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
         self.writing_to_file = true;
         self.writing_raw = true;
-        if let Err(e) = self.write_all(&copy) {
-            self.abort_file().unwrap();
-            return Err(e.into());
-        }
+        let result = self.write_all(&copy);
+        self.ok_or_abort_file(result)?;
         self.finish_file()
     }
 
@@ -664,7 +755,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         src_path: T,
         dest_path: U,
     ) -> ZipResult<()> {
-        self.deep_copy_file(&path_to_string(src_path), &path_to_string(dest_path))
+        let src = path_to_string(src_path);
+        let dest = path_to_string(dest_path);
+        self.deep_copy_file(&src, &dest)
     }
 
     /// Write the zip file into the backing stream, then produce a readable archive of that data.
@@ -753,6 +846,16 @@ impl<W: Write + Seek> ZipWriter<W> {
         &self.comment
     }
 
+    fn ok_or_abort_file<T, E: Into<ZipError>>(&mut self, result: Result<T, E>) -> ZipResult<T> {
+        match result {
+            Err(e) => {
+                let _ = self.abort_file();
+                Err(e.into())
+            }
+            Ok(t) => Ok(t),
+        }
+    }
+
     /// Start a new file for with the requested options.
     fn start_entry<S, SToOwned, T: FileOptionExtension>(
         &mut self,
@@ -772,39 +875,26 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
         });
 
-        #[allow(unused_mut)]
-        let mut extra_field = options.extended_options.extra_data().cloned();
+        let mut extra_data = match options.extended_options.extra_data() {
+            Some(data) => data.to_vec(),
+            None => vec![],
+        };
+        let central_extra_data = options.extended_options.central_extra_data();
 
         // Write AES encryption extra data.
         #[allow(unused_mut)]
         let mut aes_extra_data_start = 0;
         #[cfg(feature = "aes-crypto")]
-        if let Some(EncryptWith::Aes { .. }) = options.encrypt_with {
-            const AES_DUMMY_EXTRA_DATA: [u8; 11] = [
-                0x01, 0x99, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            ];
-
-            let extra_data = extra_field.get_or_insert_with(Default::default);
-            let extra_data = match Arc::get_mut(extra_data) {
-                Some(exclusive) => exclusive,
-                None => {
-                    let new = Arc::new(extra_data.to_vec());
-                    Arc::get_mut(extra_field.insert(new)).unwrap()
-                }
-            };
-
-            if extra_data.len() + AES_DUMMY_EXTRA_DATA.len() > u16::MAX as usize {
-                let _ = self.abort_file();
-                return Err(InvalidArchive("Extra data field is too large"));
-            }
-
+        if let Some(EncryptWith::Aes { mode, .. }) = options.encrypt_with {
+            let aes_dummy_extra_data =
+                vec![0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00].into_boxed_slice();
             aes_extra_data_start = extra_data.len() as u64;
-
-            // We write zero bytes for now since we need to update the data when finishing the
-            // file.
-            extra_data.write_all(&AES_DUMMY_EXTRA_DATA)?;
+            ExtendedFileOptions::add_extra_data_unchecked(
+                &mut extra_data,
+                0x9901,
+                aes_dummy_extra_data,
+            )?;
         }
-
         {
             let header_start = self.inner.get_plain().stream_position()?;
 
@@ -816,7 +906,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 ),
                 _ => (options.compression_method, None),
             };
-
             let mut file = ZipFileData::initialize_local_block(
                 name,
                 &options,
@@ -826,73 +915,73 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_extra_data_start,
                 compression_method,
                 aes_mode,
-                extra_field,
+                &extra_data,
             );
             file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
+            let block = file.local_block();
             let index = self.insert_file_data(file)?;
-            let file = &mut self.files[index];
             let writer = self.inner.get_plain();
-
-            let block = match file.local_block() {
-                Ok(block) => block,
-                Err(e) => {
-                    let _ = self.abort_file();
-                    return Err(e);
-                }
-            };
-            match block.write(writer) {
-                Ok(()) => (),
-                Err(e) => {
-                    let _ = self.abort_file();
-                    return Err(e);
-                }
-            }
+            let result = block?.write(writer);
+            self.ok_or_abort_file(result)?;
+            let writer = self.inner.get_plain();
+            let file = &mut self.files[index];
             // file name
             writer.write_all(&file.file_name_raw)?;
-            // zip64 extra field
+            let zip64_start = writer.stream_position()?;
             if file.large_file {
                 write_local_zip64_extra_field(writer, file)?;
             }
-            if let Some(extra_field) = &file.extra_field {
-                file.extra_data_start = Some(writer.stream_position()?);
-                writer.write_all(extra_field)?;
-            }
-            let mut header_end = writer.stream_position()?;
+            let header_end = writer.stream_position()?;
+            file.extra_data_start = Some(header_end);
+            let mut extra_data_end = header_end + extra_data.len() as u64;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
-                let unaligned_header_bytes = header_end % align;
+                let unaligned_header_bytes = extra_data_end % align;
                 if unaligned_header_bytes != 0 {
-                    let pad_length = (align - unaligned_header_bytes) as usize;
-                    let Some(new_extra_field_length) =
-                        (pad_length as u16).checked_add(block.extra_field_length)
-                    else {
-                        let _ = self.abort_file();
-                        return Err(InvalidArchive(
-                            "Extra data field would be larger than allowed after aligning",
-                        ));
-                    };
-                    if pad_length >= 4 {
-                        // Add an extra field to the extra_data
-                        let pad_body = vec![0; pad_length - 4];
-                        writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
-                        writer
-                            .write_u16_le(pad_body.len() as u16)
-                            .map_err(ZipError::from)?;
-                        writer.write_all(&pad_body).map_err(ZipError::from)?;
-                    } else {
-                        // extra_data padding is too small for an extra field header, so pad with
-                        // zeroes
-                        let pad = vec![0; pad_length];
-                        writer.write_all(&pad).map_err(ZipError::from)?;
+                    let mut pad_length = (align - unaligned_header_bytes) as usize;
+                    while pad_length < 6 {
+                        pad_length += align as usize;
                     }
-                    header_end = writer.stream_position()?;
-
-                    // Update extra field length in local file header.
-                    writer.seek(SeekFrom::Start(file.header_start + 28))?;
-                    writer.write_u16_le(new_extra_field_length)?;
-                    writer.seek(SeekFrom::Start(header_end))?;
-                    debug_assert_eq!(header_end % align, 0);
+                    // Add an extra field to the extra_data, per APPNOTE 4.6.11
+                    let mut pad_body = vec![0; pad_length - 4];
+                    debug_assert!(pad_body.len() >= 2);
+                    [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
+                    ExtendedFileOptions::add_extra_data_unchecked(
+                        &mut extra_data,
+                        0xa11e,
+                        pad_body.into_boxed_slice(),
+                    )?;
                 }
+            }
+            let extra_data_len = extra_data.len();
+            if extra_data_len > 0 {
+                let result = (|| {
+                    ExtendedFileOptions::validate_extra_data(
+                        &extra_data,
+                        header_end - zip64_start,
+                    )?;
+                    writer.write_all(&extra_data)?;
+                    extra_data_end = writer.stream_position()?;
+                    Ok(())
+                })();
+                if let Err(e) = result {
+                    let _ = self.abort_file();
+                    return Err(e);
+                }
+                debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
+                self.stats.start = extra_data_end;
+                file.extra_field = Some(extra_data.into());
+            } else {
+                self.stats.start = extra_data_end;
+            }
+            if let Some(data) = central_extra_data {
+                let validation_result =
+                    ExtendedFileOptions::validate_extra_data(data, extra_data_end - zip64_start);
+                if let Err(e) = validation_result {
+                    let _ = self.abort_file();
+                    return Err(e);
+                }
+                file.central_extra_field = Some(data.clone());
             }
             match options.encrypt_with {
                 #[cfg(feature = "aes-crypto")]
@@ -913,14 +1002,14 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let crypto_header = [0u8; 12];
 
                     zipwriter.write_all(&crypto_header)?;
-                    header_end = zipwriter.writer.stream_position()?;
+                    self.stats.start = zipwriter.writer.stream_position()?;
                     self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
                 }
                 None => {}
             }
-            self.stats.start = header_end;
+
             debug_assert!(file.data_start.get().is_none());
-            file.data_start.get_or_init(|| header_end);
+            file.data_start.get_or_init(|| self.stats.start);
             self.writing_to_file = true;
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
@@ -962,8 +1051,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let file_end = writer.stream_position()?;
             debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
-
-            file.crc32 = self.stats.hasher.clone().finalize();
+            let mut crc = true;
             if let Some(aes_mode) = &mut file.aes_mode {
                 // We prefer using AE-1 which provides an extra CRC check, but for small files we
                 // switch to AE-2 to prevent being able to use the CRC value to to reconstruct the
@@ -971,22 +1059,24 @@ impl<W: Write + Seek> ZipWriter<W> {
                 //
                 // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
                 aes_mode.1 = if self.stats.bytes_written < 20 {
-                    file.crc32 = 0;
+                    crc = false;
                     AesVendorVersion::Ae2
                 } else {
                     AesVendorVersion::Ae1
-                }
+                };
             }
-
+            file.crc32 = if crc {
+                self.stats.hasher.clone().finalize()
+            } else {
+                0
+            };
             update_aes_extra_data(writer, file)?;
             update_local_file_header(writer, file)?;
             writer.seek(SeekFrom::Start(file_end))?;
         }
         if self.flush_on_finish_file {
-            if let Err(e) = writer.flush() {
-                self.abort_file()?;
-                return Err(e.into());
-            }
+            let result = writer.flush();
+            self.ok_or_abort_file(result)?;
         }
 
         self.writing_to_file = false;
@@ -1063,10 +1153,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             options.zopfli_buffer_size,
         )?;
         self.start_entry(name, options, None)?;
-        if let Err(e) = self.inner.switch_to(make_new_self) {
-            self.abort_file().unwrap();
-            return Err(e);
-        }
+        let result = self.inner.switch_to(make_new_self);
+        self.ok_or_abort_file(result)?;
         self.writing_raw = false;
         Ok(())
     }
@@ -1342,10 +1430,8 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
-        if let Err(e) = self.write_all(target.into().as_bytes()) {
-            self.abort_file().unwrap();
-            return Err(e.into());
-        }
+        let result = self.write_all(target.into().as_bytes());
+        self.ok_or_abort_file(result)?;
         self.writing_raw = false;
         self.finish_file()?;
 
@@ -1369,20 +1455,26 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn finalize(&mut self) -> ZipResult<u64> {
         self.finish_file()?;
 
-        let central_start = {
-            let central_start = self.write_central_and_footer()?;
-            let writer = self.inner.get_plain();
-            let footer_end = writer.stream_position()?;
-            let file_end = writer.seek(SeekFrom::End(0))?;
-            if footer_end < file_end {
-                // Data from an aborted file is past the end of the footer, so rewrite the footer at
-                // the actual end.
-                let central_and_footer_size = footer_end - central_start;
-                writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
-                self.write_central_and_footer()?;
-            }
-            central_start
-        };
+        let mut central_start = self.write_central_and_footer()?;
+        let writer = self.inner.get_plain();
+        let footer_end = writer.stream_position()?;
+        let file_end = writer.seek(SeekFrom::End(0))?;
+        if footer_end < file_end {
+            // Data from an aborted file is past the end of the footer.
+
+            // Overwrite the magic so the footer is no longer valid.
+            writer.seek(SeekFrom::Start(central_start))?;
+            writer.write_u32_le(0)?;
+            writer.seek(SeekFrom::Start(
+                footer_end - size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64,
+            ))?;
+            writer.write_u32_le(0)?;
+
+            // Rewrite the footer at the actual end.
+            let central_and_footer_size = footer_end - central_start;
+            writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
+            central_start = self.write_central_and_footer()?;
+        }
 
         Ok(central_start)
     }
@@ -1449,6 +1541,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// some other software (e.g. Minecraft) will refuse to extract a file copied this way.
     pub fn shallow_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
+        if src_name == dest_name {
+            return Err(InvalidArchive("Trying to copy a file to itself"));
+        }
         let src_index = self.index_by_name(src_name)?;
         let mut dest_data = self.files[src_index].to_owned();
         dest_data.file_name = dest_name.to_string().into();
@@ -1557,11 +1652,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         }
                     }
 
-                    #[cfg(any(
-                        feature = "deflate",
-                        feature = "deflate-zlib",
-                        feature = "deflate-zlib-ng",
-                    ))]
+                    #[cfg(feature = "deflate-flate2")]
                     {
                         Ok(Box::new(move |bare| {
                             GenericZipWriter::Deflater(DeflateEncoder::new(
@@ -1611,6 +1702,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 CompressionMethod::Lzma => {
                     Err(UnsupportedArchive("LZMA isn't supported for compression"))
                 }
+                #[cfg(feature = "xz")]
+                CompressionMethod::Xz => {
+                    Err(UnsupportedArchive("XZ isn't supported for compression"))
+                }
                 CompressionMethod::Unsupported(..) => {
                     Err(ZipError::UnsupportedArchive("Unsupported compression"))
                 }
@@ -1621,11 +1716,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     fn switch_to(&mut self, make_new_self: SwitchWriterFunction<W>) -> ZipResult<()> {
         let bare = match mem::replace(self, Closed) {
             Storer(w) => w,
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
@@ -1653,11 +1744,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match self {
             Storer(ref mut w) => Some(w as &mut dyn Write),
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
@@ -1797,7 +1884,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let mut zip64_extra_field = [0; 28];
     let zip64_extra_field_length =
         write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
-    let block = file.block(zip64_extra_field_length);
+    let block = file.block(zip64_extra_field_length)?;
     block.write(writer)?;
     // file name
     writer.write_all(&file.file_name_raw)?;
@@ -1812,39 +1899,6 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     }
     // file comment
     writer.write_all(file.file_comment.as_bytes())?;
-
-    Ok(())
-}
-
-fn validate_extra_data(header_id: u16, data: &[u8]) -> ZipResult<()> {
-    if data.len() > u16::MAX as usize {
-        return Err(ZipError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            "Extra-data field can't exceed u16::MAX bytes",
-        )));
-    }
-    if header_id == 0x0001 {
-        return Err(ZipError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            "No custom ZIP64 extra data allowed",
-        )));
-    }
-
-    #[cfg(not(feature = "unreserved"))]
-    {
-        if header_id <= 31
-            || EXTRA_FIELD_MAPPING
-                .iter()
-                .any(|&mapped| mapped == header_id)
-        {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
-                ),
-            )));
-        }
-    }
 
     Ok(())
 }
@@ -1901,25 +1955,30 @@ fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData)
 }
 
 #[cfg(not(feature = "unreserved"))]
-const EXTRA_FIELD_MAPPING: [u16; 49] = [
-    0x0001, 0x0007, 0x0008, 0x0009, 0x000a, 0x000c, 0x000d, 0x000e, 0x000f, 0x0014, 0x0015, 0x0016,
-    0x0017, 0x0018, 0x0019, 0x0020, 0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690, 0x07c8, 0x2605,
-    0x2705, 0x2805, 0x334d, 0x4341, 0x4453, 0x4704, 0x470f, 0x4b46, 0x4c41, 0x4d49, 0x4f4c, 0x5356,
-    0x5455, 0x554e, 0x5855, 0x6375, 0x6542, 0x7075, 0x756e, 0x7855, 0xa11e, 0xa220, 0xfd4a, 0x9901,
-    0x9902,
+const EXTRA_FIELD_MAPPING: [u16; 43] = [
+    0x0007, 0x0008, 0x0009, 0x000a, 0x000c, 0x000d, 0x000e, 0x000f, 0x0014, 0x0015, 0x0016, 0x0017,
+    0x0018, 0x0019, 0x0020, 0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690, 0x07c8, 0x2605, 0x2705,
+    0x2805, 0x334d, 0x4341, 0x4453, 0x4704, 0x470f, 0x4b46, 0x4c41, 0x4d49, 0x4f4c, 0x5356, 0x554e,
+    0x5855, 0x6542, 0x756e, 0x7855, 0xa220, 0xfd4a, 0x9902,
 ];
 
 #[cfg(test)]
+#[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0
+#[allow(clippy::needless_update)] // So we can use the same FileOptions decls with and without zopfli_buffer_size
+#[allow(clippy::octal_escapes)] // many false positives in converted fuzz cases
 mod test {
-    use super::{FileOptions, ZipWriter};
+    use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
+    use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
+    use crate::zipcrypto::ZipCryptoKeys;
     use crate::CompressionMethod::Stored;
     use crate::ZipArchive;
     use std::io;
     use std::io::{Cursor, Read, Write};
+    use std::marker::PhantomData;
     use std::path::PathBuf;
 
     #[test]
@@ -2489,6 +2548,954 @@ mod test {
         let second_archive = second_writer.finish_into_readable()?;
         first_writer.merge_archive(second_archive)?;
         let _ = ZipArchive::new(first_writer.finish()?)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "bzip2")]
+    #[test]
+    fn test_fuzz_failure_2024_06_08() -> ZipResult<()> {
+        use crate::write::ExtendedFileOptions;
+        use CompressionMethod::Bzip2;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        const SYMLINK_PATH: &str = "PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\u{18}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0l\0\0\0\0\0\0PK\u{6}\u{7}P\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0";
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FileOptions {
+                compression_method: Bzip2,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(1980, 5, 20, 21, 0, 57)?,
+                permissions: None,
+                large_file: false,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 2048,
+                ..Default::default()
+            };
+            writer.add_symlink_from_path(SYMLINK_PATH, "||\0\0\0\0", options)?;
+            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+            writer.deep_copy_file_from_path(SYMLINK_PATH, "")?;
+            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+            writer.abort_file()?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        writer.deep_copy_file_from_path(SYMLINK_PATH, "foo")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_short_extra_data() {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![99, 0, 15, 0, 207].into(),
+            },
+            ..Default::default()
+        };
+        assert!(writer.start_file_from_path("", options).is_err());
+    }
+
+    #[test]
+    #[cfg(not(feature = "unreserved"))]
+    fn test_invalid_extra_data() -> ZipResult<()> {
+        use crate::write::ExtendedFileOptions;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(1980, 1, 4, 6, 54, 0)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![
+                    7, 0, 15, 0, 207, 117, 177, 117, 112, 2, 0, 255, 255, 131, 255, 255, 255, 80,
+                    185,
+                ]
+                .into(),
+            },
+            alignment: 32787,
+            ..Default::default()
+        };
+        assert!(writer.start_file_from_path("", options).is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(not(feature = "unreserved"))]
+    fn test_invalid_extra_data_unreserved() {
+        use crate::write::ExtendedFileOptions;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2021, 8, 8, 1, 0, 29).unwrap(),
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![
+                    1, 41, 4, 0, 1, 255, 245, 117, 117, 112, 5, 0, 80, 255, 149, 255, 247,
+                ]
+                .into(),
+            },
+            alignment: 4103,
+            ..Default::default()
+        };
+        assert!(writer.start_file_from_path("", options).is_err());
+    }
+
+    #[cfg(feature = "deflate64")]
+    #[test]
+    fn test_fuzz_crash_2024_06_13a() -> ZipResult<()> {
+        use crate::write::ExtendedFileOptions;
+        use CompressionMethod::Deflate64;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Deflate64,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2039, 4, 17, 6, 18, 19)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 4,
+            ..Default::default()
+        };
+        writer.add_directory_from_path("", options)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_13b() -> ZipResult<()> {
+        use crate::write::ExtendedFileOptions;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FileOptions {
+                compression_method: Stored,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(1980, 4, 14, 6, 11, 54)?,
+                permissions: None,
+                large_file: false,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 185,
+                ..Default::default()
+            };
+            writer.add_symlink_from_path("", "", options)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer.deep_copy_file_from_path("", "_copy")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FullFileOptions {
+                compression_method: Stored,
+                large_file: true,
+                alignment: 93,
+                ..Default::default()
+            };
+            writer.start_file_from_path("\0", options)?;
+            writer = ZipWriter::new_append(writer.finish()?)?;
+            writer.deep_copy_file_from_path("\0", "")?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer.deep_copy_file_from_path("", "copy")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14a() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2083, 5, 30, 21, 45, 35)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 2565,
+            ..Default::default()
+        };
+        writer.add_symlink_from_path("", "", options)?;
+        writer.abort_file()?;
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::default(),
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 0,
+            ..Default::default()
+        };
+        writer.start_file_from_path("", options)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn test_fuzz_crash_2024_06_14b() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2078, 3, 6, 12, 48, 58)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 65521,
+            ..Default::default()
+        };
+        writer.start_file_from_path("\u{4}\0@\n//\u{c}", options)?;
+        writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.abort_file()?;
+        let options = FileOptions {
+            compression_method: CompressionMethod::Unsupported(65535),
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2055, 10, 2, 11, 48, 49)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![255, 255, 1, 0, 255, 0, 0, 0, 0].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 65535,
+            ..Default::default()
+        };
+        writer.add_directory_from_path("", options)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14c() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FileOptions {
+                compression_method: Stored,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(2060, 4, 6, 13, 13, 3)?,
+                permissions: None,
+                large_file: true,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 0,
+                ..Default::default()
+            };
+            writer.start_file_from_path("\0", options)?;
+            writer.write_all(&([]))?;
+            writer = ZipWriter::new_append(writer.finish()?)?;
+            writer.deep_copy_file_from_path("\0", "")?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer.deep_copy_file_from_path("", "_copy")?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
+    #[test]
+    fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
+        use crate::write::EncryptWith::Aes;
+        use crate::AesMode::Aes256;
+        use CompressionMethod::Deflated;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Deflated,
+            compression_level: Some(5),
+            last_modified_time: DateTime::from_date_and_time(2107, 4, 8, 15, 54, 19)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: Some(Aes {
+                mode: Aes256,
+                password: "",
+            }),
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![2, 0, 1, 0, 0].into(),
+                central_extra_data: vec![
+                    35, 229, 2, 0, 41, 41, 231, 44, 2, 0, 52, 233, 82, 201, 0, 0, 3, 0, 2, 0, 233,
+                    255, 3, 0, 2, 0, 26, 154, 38, 251, 0, 0,
+                ]
+                .into(),
+            },
+            alignment: 65535,
+            ..Default::default()
+        };
+        assert!(writer.add_directory_from_path("", options).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_14e() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(1988, 1, 1, 1, 6, 26)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![76, 0, 1, 0, 0, 2, 0, 0, 0].into(),
+                central_extra_data: vec![
+                    1, 149, 1, 0, 255, 3, 0, 0, 0, 2, 255, 0, 0, 12, 65, 1, 0, 0, 67, 149, 0, 0,
+                    76, 149, 2, 0, 149, 149, 67, 149, 0, 0,
+                ]
+                .into(),
+            },
+            alignment: 65535,
+            ..Default::default()
+        };
+        assert!(writer.add_directory_from_path("", options).is_err());
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn test_fuzz_crash_2024_06_17() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let sub_writer = {
+                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                writer.set_flush_on_finish_file(false);
+                let sub_writer = {
+                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                    writer.set_flush_on_finish_file(false);
+                    let sub_writer = {
+                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                        writer.set_flush_on_finish_file(false);
+                        let sub_writer = {
+                            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                            writer.set_flush_on_finish_file(false);
+                            let sub_writer = {
+                                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                writer.set_flush_on_finish_file(false);
+                                let sub_writer = {
+                                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                    writer.set_flush_on_finish_file(false);
+                                    let sub_writer = {
+                                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                        writer.set_flush_on_finish_file(false);
+                                        let sub_writer = {
+                                            let mut writer =
+                                                ZipWriter::new(Cursor::new(Vec::new()));
+                                            writer.set_flush_on_finish_file(false);
+                                            let options = FileOptions {
+                                                compression_method: CompressionMethod::Unsupported(
+                                                    65535,
+                                                ),
+                                                compression_level: Some(5),
+                                                last_modified_time: DateTime::from_date_and_time(
+                                                    2107, 2, 8, 15, 0, 0,
+                                                )?,
+                                                permissions: None,
+                                                large_file: true,
+                                                encrypt_with: Some(ZipCrypto(
+                                                    ZipCryptoKeys::of(
+                                                        0x63ff, 0xc62d3103, 0xfffe00ea,
+                                                    ),
+                                                    PhantomData,
+                                                )),
+                                                extended_options: ExtendedFileOptions {
+                                                    extra_data: vec![].into(),
+                                                    central_extra_data: vec![].into(),
+                                                },
+                                                alignment: 255,
+                                                ..Default::default()
+                                            };
+                                            writer.add_symlink_from_path("1\0PK\u{6}\u{6}\u{b}\u{6}\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{b}\0\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0\u{10}\0\0\0K\u{6}\u{6}\0\0\0\0\0\0\0\0PK\u{2}\u{6}", "", options)?;
+                                            writer = ZipWriter::new_append(
+                                                writer.finish_into_readable()?.into_inner(),
+                                            )?;
+                                            writer
+                                        };
+                                        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                        writer = ZipWriter::new_append(
+                                            writer.finish_into_readable()?.into_inner(),
+                                        )?;
+                                        let options = FileOptions {
+                                            compression_method: Stored,
+                                            compression_level: None,
+                                            last_modified_time: DateTime::from_date_and_time(
+                                                1992, 7, 3, 0, 0, 0,
+                                            )?,
+                                            permissions: None,
+                                            large_file: true,
+                                            encrypt_with: None,
+                                            extended_options: ExtendedFileOptions {
+                                                extra_data: vec![].into(),
+                                                central_extra_data: vec![].into(),
+                                            },
+                                            alignment: 43,
+                                            ..Default::default()
+                                        };
+                                        writer.start_file_from_path(
+                                            "\0\0\0\u{3}\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1a}\u{1a}",
+                                            options,
+                                        )?;
+                                        let options = FileOptions {
+                                            compression_method: Stored,
+                                            compression_level: None,
+                                            last_modified_time: DateTime::from_date_and_time(
+                                                2006, 3, 27, 2, 24, 26,
+                                            )?,
+                                            permissions: None,
+                                            large_file: false,
+                                            encrypt_with: None,
+                                            extended_options: ExtendedFileOptions {
+                                                extra_data: vec![].into(),
+                                                central_extra_data: vec![].into(),
+                                            },
+                                            alignment: 26,
+                                            ..Default::default()
+                                        };
+                                        writer.start_file_from_path("\0K\u{6}\u{6}\0PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0PK\u{2}\u{6}", options)?;
+                                        writer = ZipWriter::new_append(
+                                            writer.finish_into_readable()?.into_inner(),
+                                        )?;
+                                        let options = FileOptions {
+                                            compression_method: Stored,
+                                            compression_level: Some(17),
+                                            last_modified_time: DateTime::from_date_and_time(
+                                                2103, 4, 10, 23, 15, 18,
+                                            )?,
+                                            permissions: Some(3284386755),
+                                            large_file: true,
+                                            encrypt_with: Some(ZipCrypto(
+                                                ZipCryptoKeys::of(
+                                                    0x8888c5bf, 0x88888888, 0xff888888,
+                                                ),
+                                                PhantomData,
+                                            )),
+                                            extended_options: ExtendedFileOptions {
+                                                extra_data: vec![3, 0, 1, 0, 255, 144, 136, 0, 0]
+                                                    .into(),
+                                                central_extra_data: vec![].into(),
+                                            },
+                                            alignment: 65535,
+                                            ..Default::default()
+                                        };
+                                        writer.add_symlink_from_path("", "\nu", options)?;
+                                        writer = ZipWriter::new_append(writer.finish()?)?;
+                                        writer
+                                    };
+                                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                    writer = ZipWriter::new_append(
+                                        writer.finish_into_readable()?.into_inner(),
+                                    )?;
+                                    writer
+                                };
+                                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                writer = ZipWriter::new_append(writer.finish()?)?;
+                                writer
+                            };
+                            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                            writer =
+                                ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                            writer.abort_file()?;
+                            let options = FileOptions {
+                                compression_method: CompressionMethod::Unsupported(49603),
+                                compression_level: Some(20),
+                                last_modified_time: DateTime::from_date_and_time(
+                                    2047, 4, 14, 3, 15, 14,
+                                )?,
+                                permissions: Some(3284386755),
+                                large_file: true,
+                                encrypt_with: Some(ZipCrypto(
+                                    ZipCryptoKeys::of(0xc3, 0x0, 0x0),
+                                    PhantomData,
+                                )),
+                                extended_options: ExtendedFileOptions {
+                                    extra_data: vec![].into(),
+                                    central_extra_data: vec![].into(),
+                                },
+                                alignment: 0,
+                                ..Default::default()
+                            };
+                            writer.add_directory_from_path("", options)?;
+                            writer.deep_copy_file_from_path("/", "")?;
+                            writer.shallow_copy_file_from_path("", "copy")?;
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            assert!(writer.shallow_copy_file_from_path("", "copy").is_err());
+                            writer
+                        };
+                        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                        writer
+                    };
+                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                    writer
+                };
+                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                writer
+            };
+            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_17a() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        const PATH_1: &str = "\0I\01\0P\0\0\u{2}\0\0\u{1a}\u{1a}\u{1a}\u{1a}\u{1b}\u{1a}UT\u{5}\0\0\u{1a}\u{1a}\u{1a}\u{1a}UT\u{5}\0\u{1}\0\u{1a}\u{1a}\u{1a}UT\t\0uc\u{5}\0\0\0\0\u{7f}\u{7f}\u{7f}\u{7f}PK\u{6}";
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let sub_writer = {
+                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                writer.set_flush_on_finish_file(false);
+                let options = FileOptions {
+                    compression_method: Stored,
+                    compression_level: None,
+                    last_modified_time: DateTime::from_date_and_time(1981, 1, 1, 0, 24, 21)?,
+                    permissions: Some(16908288),
+                    large_file: false,
+                    encrypt_with: None,
+                    extended_options: ExtendedFileOptions {
+                        extra_data: vec![].into(),
+                        central_extra_data: vec![].into(),
+                    },
+                    alignment: 20555,
+                    ..Default::default()
+                };
+                writer.start_file_from_path(
+                    "\0\u{7}\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2};",
+                    options,
+                )?;
+                writer.write_all(
+                    &([
+                        255, 255, 255, 255, 253, 253, 253, 203, 203, 203, 253, 253, 253, 253, 255,
+                        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 249, 191, 225, 225,
+                        241, 197,
+                    ]),
+                )?;
+                writer.write_all(
+                    &([
+                        197, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                        255, 75, 0,
+                    ]),
+                )?;
+                writer
+            };
+            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+            let options = FileOptions {
+                compression_method: Stored,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(1980, 11, 14, 10, 46, 47)?,
+                permissions: None,
+                large_file: false,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 0,
+                ..Default::default()
+            };
+            writer.start_file_from_path(PATH_1, options)?;
+            writer.deep_copy_file_from_path(PATH_1, "eee\u{6}\0\0\0\0\0\0\0\0\0\0\0$\0\0\0\0\0\0\u{7f}\u{7f}PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{1e},\0\0\0\0\0\0\0\0\0\0\0\u{8}\0*\0\0\u{1}PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0}K\u{2}\u{6}")?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        writer.deep_copy_file_from_path(PATH_1, "")?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        writer.shallow_copy_file_from_path("", "copy")?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    #[allow(clippy::octal_escapes)]
+    #[cfg(feature = "bzip2")]
+    fn test_fuzz_crash_2024_06_17b() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let sub_writer = {
+                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                writer.set_flush_on_finish_file(false);
+                let sub_writer = {
+                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                    writer.set_flush_on_finish_file(false);
+                    let sub_writer = {
+                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                        writer.set_flush_on_finish_file(false);
+                        let sub_writer = {
+                            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                            writer.set_flush_on_finish_file(false);
+                            let sub_writer = {
+                                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                writer.set_flush_on_finish_file(false);
+                                let sub_writer = {
+                                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                    writer.set_flush_on_finish_file(false);
+                                    let sub_writer = {
+                                        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                                        writer.set_flush_on_finish_file(false);
+                                        let options = FileOptions {
+                                            compression_method: Stored,
+                                            compression_level: None,
+                                            last_modified_time: DateTime::from_date_and_time(
+                                                1981, 1, 1, 0, 0, 21,
+                                            )?,
+                                            permissions: Some(16908288),
+                                            large_file: false,
+                                            encrypt_with: None,
+                                            extended_options: ExtendedFileOptions {
+                                                extra_data: vec![].into(),
+                                                central_extra_data: vec![].into(),
+                                            },
+                                            alignment: 20555,
+                                            ..Default::default()
+                                        };
+                                        writer.start_file_from_path("\0\u{7}\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{2};\u{1a}\u{18}\u{1a}UT\t.........................\0u", options)?;
+                                        writer
+                                    };
+                                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                    let options = FileOptions {
+                                        compression_method: CompressionMethod::Bzip2,
+                                        compression_level: Some(5),
+                                        last_modified_time: DateTime::from_date_and_time(
+                                            2055, 7, 7, 3, 6, 6,
+                                        )?,
+                                        permissions: None,
+                                        large_file: false,
+                                        encrypt_with: None,
+                                        extended_options: ExtendedFileOptions {
+                                            extra_data: vec![].into(),
+                                            central_extra_data: vec![].into(),
+                                        },
+                                        alignment: 0,
+                                        ..Default::default()
+                                    };
+                                    writer.start_file_from_path("\0\0\0\0..\0\0\0\0\0\u{7f}\u{7f}PK\u{6}\u{6}K\u{6}\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\0\0PK\u{1}\u{1e},\0\0\0\0\0\0\0\0\0\0\0\u{8}\0*\0\0\u{1}PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0}K\u{2}\u{6}", options)?;
+                                    writer = ZipWriter::new_append(
+                                        writer.finish_into_readable()?.into_inner(),
+                                    )?;
+                                    writer
+                                };
+                                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                                writer = ZipWriter::new_append(
+                                    writer.finish_into_readable()?.into_inner(),
+                                )?;
+                                writer
+                            };
+                            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                            writer =
+                                ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                            writer
+                        };
+                        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                        writer =
+                            ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                        writer
+                    };
+                    writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                    writer
+                };
+                writer.merge_archive(sub_writer.finish_into_readable()?)?;
+                writer
+            };
+            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_18() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_raw_comment(Box::<[u8]>::from([
+            80, 75, 5, 6, 255, 255, 255, 255, 255, 255, 80, 75, 5, 6, 255, 255, 255, 255, 255, 255,
+            13, 0, 13, 13, 13, 13, 13, 255, 255, 255, 255, 255, 255, 255, 255,
+        ]));
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            writer.set_raw_comment(Box::new([]));
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer = ZipWriter::new_append(writer.finish()?)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_18a() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        writer.set_raw_comment(Box::<[u8]>::from([]));
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let sub_writer = {
+                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                writer.set_flush_on_finish_file(false);
+                let sub_writer = {
+                    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                    writer.set_flush_on_finish_file(false);
+                    let options = FullFileOptions {
+                        compression_method: Stored,
+                        compression_level: None,
+                        last_modified_time: DateTime::from_date_and_time(2107, 4, 8, 14, 0, 19)?,
+                        permissions: None,
+                        large_file: false,
+                        encrypt_with: None,
+                        extended_options: ExtendedFileOptions {
+                            extra_data: vec![
+                                182, 180, 1, 0, 180, 182, 74, 0, 0, 200, 0, 0, 0, 2, 0, 0, 0,
+                            ]
+                            .into(),
+                            central_extra_data: vec![].into(),
+                        },
+                        alignment: 1542,
+                        ..Default::default()
+                    };
+                    writer.start_file_from_path("\0\0PK\u{6}\u{6}K\u{6}PK\u{3}\u{4}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\u{1}\u{1}\0PK\u{1}\u{2},\0\0\0\0\0\0\0\0\0\0\0P\u{7}\u{4}/.\0KP\0\0;\0\0\0\u{1e}\0\0\0\0\0\0\0\0\0\0\0\0\0", options)?;
+                    let finished = writer.finish_into_readable()?;
+                    assert_eq!(1, finished.file_names().count());
+                    writer = ZipWriter::new_append(finished.into_inner())?;
+                    let options = FullFileOptions {
+                        compression_method: Stored,
+                        compression_level: Some(5),
+                        last_modified_time: DateTime::from_date_and_time(2107, 4, 1, 0, 0, 0)?,
+                        permissions: None,
+                        large_file: false,
+                        encrypt_with: Some(ZipCrypto(
+                            ZipCryptoKeys::of(0x0, 0x62e4b50, 0x100),
+                            PhantomData,
+                        )),
+                        ..Default::default()
+                    };
+                    writer.add_symlink_from_path(
+                        "\0K\u{6}\0PK\u{6}\u{7}PK\u{6}\u{6}\0\0\0\0\0\0\0\0PK\u{2}\u{6}",
+                        "\u{8}\0\0\0\0/\0",
+                        options,
+                    )?;
+                    let finished = writer.finish_into_readable()?;
+                    assert_eq!(2, finished.file_names().count());
+                    writer = ZipWriter::new_append(finished.into_inner())?;
+                    assert_eq!(2, writer.files.len());
+                    writer
+                };
+                let finished = sub_writer.finish_into_readable()?;
+                assert_eq!(2, finished.file_names().count());
+                writer.merge_archive(finished)?;
+                writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+                writer
+            };
+            writer.merge_archive(sub_writer.finish_into_readable()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "bzip2", feature = "aes-crypto"))]
+    #[test]
+    fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(true);
+        writer.set_raw_comment([0].into());
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        assert_eq!(writer.get_raw_comment()[0], 0);
+        let options = FileOptions {
+            compression_method: CompressionMethod::Bzip2,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2009, 6, 3, 13, 37, 39)?,
+            permissions: Some(2644352413),
+            large_file: true,
+            encrypt_with: Some(crate::write::EncryptWith::Aes {
+                mode: crate::AesMode::Aes256,
+                password: "",
+            }),
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 255,
+            ..Default::default()
+        };
+        writer.add_symlink_from_path("", "", options)?;
+        writer.deep_copy_file_from_path("", "PK\u{5}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\u{4}\0\0\0")?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        assert_eq!(writer.get_raw_comment()[0], 0);
+        writer.deep_copy_file_from_path(
+            "PK\u{5}\u{6}\0\0\0\0\0\0\0\0\0\0\0\0\0\u{4}\0\0\0",
+            "\u{2}yy\u{5}qu\0",
+        )?;
+        let finished = writer.finish()?;
+        let archive = ZipArchive::new(finished.clone())?;
+        assert_eq!(archive.comment(), [0]);
+        writer = ZipWriter::new_append(finished)?;
+        assert_eq!(writer.get_raw_comment()[0], 0);
+        let _ = writer.finish_into_readable()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_fuzz_crash_2024_06_19() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(1980, 3, 1, 19, 55, 58)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 256,
+            ..Default::default()
+        };
+        writer.start_file_from_path(
+            "\0\0\0PK\u{5}\u{6}\0\0\0\0\u{1}\0\u{12}\u{6}\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\0",
+            options,
+        )?;
+        writer.set_flush_on_finish_file(false);
+        writer.shallow_copy_file_from_path(
+            "\0\0\0PK\u{5}\u{6}\0\0\0\0\u{1}\0\u{12}\u{6}\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\0",
+            "",
+        )?;
+        writer.set_flush_on_finish_file(false);
+        writer.deep_copy_file_from_path("", "copy")?;
+        writer.abort_file()?;
+        writer.set_flush_on_finish_file(false);
+        writer.set_raw_comment([255, 0].into());
+        writer.abort_file()?;
+        assert_eq!(writer.get_raw_comment(), [255, 0]);
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        assert_eq!(writer.get_raw_comment(), [255, 0]);
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::default(),
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            ..Default::default()
+        };
+        writer.start_file_from_path("", options)?;
+        assert_eq!(writer.get_raw_comment(), [255, 0]);
+        let archive = writer.finish_into_readable()?;
+        assert_eq!(archive.comment(), [255, 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn fuzz_crash_2024_06_21() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FullFileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(1980, 2, 1, 0, 0, 0)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            ..Default::default()
+        };
+        const LONG_PATH: &str = "\0@PK\u{6}\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@/\0\0\00ΝPK\u{5}\u{6}O\0\u{10}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0@PK\u{6}\u{7}\u{6}\0/@\0\0\0\0\0\0\0\0 \0\0";
+        writer.start_file_from_path(LONG_PATH, options)?;
+        writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.deep_copy_file_from_path(LONG_PATH, "oo\0\0\0")?;
+        writer.abort_file()?;
+        writer.set_raw_comment([33].into());
+        let archive = writer.finish_into_readable()?;
+        writer = ZipWriter::new_append(archive.into_inner())?;
+        assert!(writer.get_raw_comment().starts_with(&[33]));
+        let archive = writer.finish_into_readable()?;
+        assert!(archive.comment().starts_with(&[33]));
         Ok(())
     }
 }
