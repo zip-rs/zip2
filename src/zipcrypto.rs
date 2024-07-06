@@ -7,6 +7,8 @@ use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 use std::num::Wrapping;
 
+use crate::result::ZipError;
+
 /// A container to hold the current key state
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -29,7 +31,7 @@ impl Debug for ZipCryptoKeys {
         }
         #[cfg(any(test, fuzzing))]
         return f.write_fmt(format_args!(
-            "ZipCryptoKeys({:#10x},{:#10x},{:#10x})",
+            "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
             self.key_0, self.key_1, self.key_2
         ));
     }
@@ -41,6 +43,15 @@ impl ZipCryptoKeys {
             key_0: Wrapping(0x12345678),
             key_1: Wrapping(0x23456789),
             key_2: Wrapping(0x34567890),
+        }
+    }
+
+    #[allow(unused)]
+    pub const fn of(key_0: u32, key_1: u32, key_2: u32) -> ZipCryptoKeys {
+        ZipCryptoKeys {
+            key_0: Wrapping(key_0),
+            key_1: Wrapping(key_1),
+            key_2: Wrapping(key_2),
         }
     }
 
@@ -110,7 +121,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     pub fn validate(
         mut self,
         validator: ZipCryptoValidator,
-    ) -> Result<Option<ZipCryptoReaderValid<R>>, std::io::Error> {
+    ) -> Result<ZipCryptoReaderValid<R>, ZipError> {
         // ZipCrypto prefixes a file with a 12 byte header
         let mut header_buf = [0u8; 12];
         self.file.read_exact(&mut header_buf)?;
@@ -125,7 +136,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
                 // We also use 1 byte CRC.
 
                 if (crc32_plaintext >> 24) as u8 != header_buf[11] {
-                    return Ok(None); // Wrong password
+                    return Err(ZipError::InvalidPassword);
                 }
             }
             ZipCryptoValidator::InfoZipMsdosTime(last_mod_time) => {
@@ -137,12 +148,12 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
                 // We check only 1 byte.
 
                 if (last_mod_time >> 8) as u8 != header_buf[11] {
-                    return Ok(None); // Wrong password
+                    return Err(ZipError::InvalidPassword);
                 }
             }
         }
 
-        Ok(Some(ZipCryptoReaderValid { reader: self }))
+        Ok(ZipCryptoReaderValid { reader: self })
     }
 }
 #[allow(unused)]
