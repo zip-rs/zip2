@@ -2,8 +2,8 @@
 set -euxo pipefail
 i=0
 rm -rf "fuzz/corpus/fuzz_$1_iter_0" || true
-mkdir "fuzz/corpus/fuzz_$1_iter_0"
-find "fuzz/corpus/fuzz_$1" -type f -exec mv '{}' "fuzz/corpus/fuzz_$1_iter_0" ';'
+mv "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_iter_0"
+mkdir "fuzz/corpus/fuzz_$1"
 while true; do
   j=$((i + 1))
   rm -rf "fuzz/corpus/fuzz_$1_iter_${i}.bak" || true
@@ -15,8 +15,7 @@ while true; do
   if diff "fuzz/corpus/fuzz_$1_iter_${i}.bak" "fuzz/corpus/fuzz_$1_iter_${j}"; then
     # Last iteration made no difference, so we're done
     rm -rf "fuzz/corpus/fuzz_$1"
-    mkdir "fuzz/corpus/fuzz_$1"
-    find "fuzz/corpus/fuzz_$1_iter_${j}" -type f -exec mv '{}' "fuzz/corpus/fuzz_$1" ';'
+    mv "fuzz/corpus/fuzz_$1_iter_${j}" "fuzz/corpus/fuzz_$1"
     rm -rf "fuzz/corpus/fuzz_$1_iter_${i}.bak"
     exit 0
   fi
