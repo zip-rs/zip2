@@ -7,7 +7,7 @@ use crate::read::{
     find_content, parse_single_extra_field, Config, ZipArchive, ZipFile, ZipFileReader,
 };
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, HasZipMetadata, Zip32CDEBlock};
+use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
@@ -545,8 +545,6 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
 impl<'k, T: FileOptionExtension> Default for FileOptions<'k, T> {
     /// Construct a new FileOptions object
     fn default() -> Self {
-        #[cfg(feature = "time")]
-        use core::convert::TryInto;
         Self {
             compression_method: Default::default(),
             compression_level: None,
@@ -1978,7 +1976,7 @@ mod test {
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
     use crate::CompressionMethod::Stored;
-    use crate::{HasZipMetadata, ZipArchive};
+    use crate::ZipArchive;
     use std::io;
     use std::io::{Cursor, Read, Write};
     use std::marker::PhantomData;

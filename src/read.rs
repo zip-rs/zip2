@@ -343,8 +343,11 @@ fn find_content_seek<'a, R: Read + Seek>(
     reader: &'a mut R,
 ) -> ZipResult<SeekableTake<'a, R>> {
     // Parse local header
-    reader.seek(io::SeekFrom::Start(find_data_start(data, reader)?))?;
-    SeekableTake::new(reader, data.compressed_size)
+    let data_start = find_data_start(data, reader)?;
+    reader.seek(io::SeekFrom::Start(data_start))?;
+
+    // Explicit Ok and ? are needed to convert io::Error to ZipError
+    Ok(SeekableTake::new(reader, data.compressed_size)?)
 }
 
 fn find_data_start(
@@ -1584,7 +1587,7 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get the version of the file
-    fn version_made_by(&self) -> (u8, u8) {
+    pub fn version_made_by(&self) -> (u8, u8) {
         (
             self.get_metadata().version_made_by / 10,
             self.get_metadata().version_made_by % 10,
@@ -1603,14 +1606,14 @@ impl<'a> ZipFile<'a> {
     ///
     /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
-    fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.get_metadata().file_name
     }
 
     /// Get the name of the file, in the raw (internal) byte representation.
     ///
     /// The encoding of this data is currently undefined.
-    fn name_raw(&self) -> &[u8] {
+    pub fn name_raw(&self) -> &[u8] {
         &self.get_metadata().file_name_raw
     }
 
@@ -1621,7 +1624,7 @@ impl<'a> ZipFile<'a> {
         note = "by stripping `..`s from the path, the meaning of paths can change.
                 `mangled_name` can be used if this behaviour is desirable"
     )]
-    fn sanitized_name(&self) -> PathBuf {
+    pub fn sanitized_name(&self) -> PathBuf {
         self.mangled_name()
     }
 
@@ -1637,7 +1640,7 @@ impl<'a> ZipFile<'a> {
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
-    fn mangled_name(&self) -> PathBuf {
+    pub fn mangled_name(&self) -> PathBuf {
         self.get_metadata().file_name_sanitized()
     }
 
@@ -1651,27 +1654,27 @@ impl<'a> ZipFile<'a> {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    fn enclosed_name(&self) -> Option<PathBuf> {
+    pub fn enclosed_name(&self) -> Option<PathBuf> {
         self.get_metadata().enclosed_name()
     }
 
     /// Get the comment of the file
-    fn comment(&self) -> &str {
+    pub fn comment(&self) -> &str {
         &self.get_metadata().file_comment
     }
 
     /// Get the compression method used to store the file
-    fn compression(&self) -> CompressionMethod {
+    pub fn compression(&self) -> CompressionMethod {
         self.get_metadata().compression_method
     }
 
     /// Get the size of the file, in bytes, in the archive
-    fn compressed_size(&self) -> u64 {
+    pub fn compressed_size(&self) -> u64 {
         self.get_metadata().compressed_size
     }
 
     /// Get the size of the file, in bytes, when uncompressed
-    fn size(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.get_metadata().uncompressed_size
     }
 
@@ -1696,17 +1699,17 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get unix mode for the file
-    fn unix_mode(&self) -> Option<u32> {
+    pub fn unix_mode(&self) -> Option<u32> {
         self.get_metadata().unix_mode()
     }
 
     /// Get the CRC32 hash of the original file
-    fn crc32(&self) -> u32 {
+    pub fn crc32(&self) -> u32 {
         self.get_metadata().crc32
     }
 
     /// Get the extra data of the zip header for this file
-    fn extra_data(&self) -> Option<&[u8]> {
+    pub fn extra_data(&self) -> Option<&[u8]> {
         self.get_metadata()
             .extra_field
             .as_ref()
@@ -1719,34 +1722,17 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get the starting offset of the zip header for this file
-    fn header_start(&self) -> u64 {
+    pub fn header_start(&self) -> u64 {
         self.get_metadata().header_start
     }
     /// Get the starting offset of the zip header in the central directory for this file
-    fn central_header_start(&self) -> u64 {
+    pub fn central_header_start(&self) -> u64 {
         self.get_metadata().central_header_start
     }
 }
 
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
-    fn get_reader(&mut self) -> &mut ZipFileReader<'a> {
-        if let ZipFileReader::NoReader = self.reader {
-            let data = &self.data;
-            let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
-            self.reader = make_reader(data.compression_method, data.crc32, crypto_reader)
-        }
-        &mut self.reader
-    }
-
-    pub(crate) fn get_raw_reader(&mut self) -> &mut dyn Read {
-        if let ZipFileReader::NoReader = self.reader {
-            let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
-            self.reader = ZipFileReader::Raw(crypto_reader.into_inner())
-        }
-        &mut self.reader
-    }
-
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
         self.data.extra_fields.iter()
@@ -1916,7 +1902,6 @@ mod test {
 
     #[test]
     fn zip_contents() {
-        use super::HasZipMetadata;
         use super::ZipArchive;
 
         let mut v = Vec::new();
@@ -1942,7 +1927,6 @@ mod test {
 
     #[test]
     fn zip_clone() {
-        use super::HasZipMetadata;
         use super::ZipArchive;
         use std::io::Read;
 
@@ -1984,7 +1968,6 @@ mod test {
 
     #[test]
     fn file_and_dir_predicates() {
-        use super::HasZipMetadata;
         use super::ZipArchive;
 
         let mut v = Vec::new();
