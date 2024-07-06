@@ -1,8 +1,8 @@
-use byteorder::{LittleEndian, WriteBytesExt};
 use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::Cursor;
 use zip::result::ZipResult;
+use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
@@ -128,7 +128,9 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
     zip.start_file("test/☃.txt", options.clone()).unwrap();
     zip.write_all(b"Hello, World!\n").unwrap();
 
-    options.add_extra_data(0xbeef, EXTRA_DATA, false).unwrap();
+    options
+        .add_extra_data(0xbeef, EXTRA_DATA.to_owned().into_boxed_slice(), false)
+        .unwrap();
 
     zip.start_file("test_with_extra_data/🐢.txt", options)
         .unwrap();
@@ -159,8 +161,8 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
     {
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
         let mut extra_data = Vec::new();
-        extra_data.write_u16::<LittleEndian>(0xbeef)?;
-        extra_data.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
+        extra_data.write_u16_le(0xbeef)?;
+        extra_data.write_u16_le(EXTRA_DATA.len() as u16)?;
         extra_data.write_all(EXTRA_DATA)?;
         assert_eq!(
             file_with_extra_data.extra_data(),

@@ -1,5 +1,179 @@
 # Changelog
 
+## [2.1.3](https://github.com/zip-rs/zip2/compare/v2.1.2...v2.1.3) - 2024-06-04
+
+### <!-- 1 -->🐛 Bug Fixes
+- Some date/time filters were previously unreliable (i.e. later-pass filters had no earliest-pass or latest-fail, and vice-versa)
+- Decode Zip-Info UTF8 name and comment fields ([#159](https://github.com/zip-rs/zip2/pull/159))
+
+### <!-- 2 -->🚜 Refactor
+- Return extended timestamp fields copied rather than borrowed ([#183](https://github.com/zip-rs/zip2/pull/183))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Fix a new Clippy warning
+- Fix a bug and inline `deserialize` for safety
+- Add check for wrong-length blocks, and incorporate fixed-size requirement into the trait name
+- Fix a fuzz failure by using checked_sub
+- Add feature gate for new unit test
+
+## [2.1.1](https://github.com/zip-rs/zip2/compare/v2.1.0...v2.1.1) - 2024-05-28
+
+### <!-- 1 -->🐛 Bug Fixes
+- Derive `Debug` for `ZipWriter`
+- lower default version to 4.5 and use the version-needed-to-extract where feasible.
+
+### <!-- 2 -->🚜 Refactor
+- use a MIN_VERSION constant
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Bug fixes for debug implementation
+- Bug fixes for debug implementation
+- Update unit tests
+- Remove unused import
+
+## [2.1.0](https://github.com/zip-rs/zip2/compare/v2.0.0...v2.1.0) - 2024-05-25
+
+### <!-- 0 -->🚀 Features
+- Support mutual conversion between `DateTime` and MS-DOS pair
+
+### <!-- 1 -->🐛 Bug Fixes
+- version-needed-to-extract was incorrect in central header, and version-made-by could be lower than that ([#100](https://github.com/zip-rs/zip2/pull/100))
+- version-needed-to-extract was incorrect in central header, and version-made-by could be lower than that ([#100](https://github.com/zip-rs/zip2/pull/100))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Another tweak to ensure `version_needed` is applied
+- Tweaks to make `version_needed` and `version_made_by` work with recently-merged changes
+
+## [2.0.0](https://github.com/zip-rs/zip2/compare/v1.3.1...v2.0.0) - 2024-05-24
+
+### <!-- 0 -->🚀 Features
+- Add `fmt::Display` for `DateTime`
+- Implement more traits for `DateTime`
+
+### <!-- 2 -->🚜 Refactor
+- Change type of `last_modified_time` to `Option<DateTime>`
+- [**breaking**] Rename `from_msdos` to `from_msdos_unchecked`, make it unsafe, and add `try_from_msdos` ([#145](https://github.com/zip-rs/zip2/pull/145))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Continue to accept archives with invalid DateTime, and use `now_utc()` as default only when writing, not reading
+
+## [1.3.1](https://github.com/zip-rs/zip2/compare/v1.3.0...v1.3.1) - 2024-05-21
+
+### <!-- 2 -->🚜 Refactor
+- Make `deflate` enable both default implementations
+- Merge the hidden deflate-flate2 flag into the public one
+- Rename _deflate-non-zopfli to _deflate-flate2
+- Reject encrypted and using_data_descriptor files slightly faster in read_zipfile_from_stream
+- Convert `impl TryInto<NaiveDateTime> for DateTime` to `impl TryFrom<DateTime> for NaiveDateTime` ([#136](https://github.com/zip-rs/zip2/pull/136))
+
+### <!-- 4 -->⚡ Performance
+- Change default compression implementation to `flate2/zlib-ng`
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- chore([#132](https://github.com/zip-rs/zip2/pull/132)): Attribution for some copied test data
+- chore([#133](https://github.com/zip-rs/zip2/pull/133)): chmod -x src/result.rs
+
+## [1.3.0](https://github.com/zip-rs/zip2/compare/v1.2.3...v1.3.0) - 2024-05-17
+
+### <!-- 0 -->🚀 Features
+- Add `is_symlink` method
+
+### <!-- 1 -->🐛 Bug Fixes
+- Extract symlinks into symlinks on Unix and Windows, and fix a bug that affected making directories writable on MacOS
+
+### <!-- 2 -->🚜 Refactor
+- Eliminate deprecation warning when `--all-features` implicitly enables the deprecated feature
+- Check if archive contains a symlink's target, without borrowing both at the same time
+- Eliminate a clone that's no longer necessary
+- is_dir only needs to look at the filename
+- Remove unnecessary #[cfg] attributes
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Fix borrow-of-moved-value
+- Box<str> doesn't directly convert to PathBuf, so convert back to String first
+- partial revert - only &str has chars(), but Box<str> should auto-deref
+- contains_key needs a `Box<str>`, so generify `is_dir` to accept one
+- Add missing `ZipFileData::is_dir()` method
+- Fix another Windows-specific error
+- More bug fixes for Windows-specific symlink code
+- More bug fixes for Windows-specific symlink code
+- Bug fix: variable name change
+- Bug fix: need both internal and output path to determine whether to symlink_dir
+- Another bug fix
+- Fix another error-type conversion error
+- Fix error-type conversion on Windows
+- Fix conditionally-unused import
+- Fix continued issues, and factor out the Vec<u8>-to-OsString conversion (cc: [#125](https://github.com/zip-rs/zip2/pull/125))
+- Fix CI failure involving conversion to OsString for symlinks (see my comments on [#125](https://github.com/zip-rs/zip2/pull/125))
+- Move path join into platform-independent code
+
+## [1.2.3](https://github.com/zip-rs/zip2/compare/v1.2.2...v1.2.3) - 2024-05-10
+
+### <!-- 1 -->🐛 Bug Fixes
+- Remove a window when an extracted directory might be unexpectedly listable and/or `cd`able by non-owners
+- Extract directory contents on Unix even if the directory doesn't have write permission (https://github.com/zip-rs/zip-old/issues/423)
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- More conditionally-unused imports
+
+## [1.2.2](https://github.com/zip-rs/zip2/compare/v1.2.1...v1.2.2) - 2024-05-09
+
+### <!-- 1 -->🐛 Bug Fixes
+- Failed to clear "writing_raw" before finishing a symlink, leading to dropped extra fields
+
+### <!-- 4 -->⚡ Performance
+- Use boxed slice for archive comment, since it can't be concatenated
+- Optimize for the fact that false signatures can't overlap with real ones
+
+## [1.2.1](https://github.com/zip-rs/zip2/compare/v1.2.0...v1.2.1) - 2024-05-06
+
+### <!-- 1 -->🐛 Bug Fixes
+- Prevent panic when trying to read a file with an unsupported compression method
+- Prevent panic after reading an invalid LZMA file
+- Make `Stored` the default compression method if `Deflated` isn't available, so that zip files are readable by as much software as possible
+- version_needed was wrong when e.g. cfg(bzip2) but current file wasn't bzip2 ([#100](https://github.com/zip-rs/zip2/pull/100))
+- file paths shouldn't start with slashes ([#102](https://github.com/zip-rs/zip2/pull/102))
+
+### <!-- 2 -->🚜 Refactor
+- Overhaul `impl Arbitrary for FileOptions`
+- Remove unused `atomic` module
+
+## [1.2.0](https://github.com/zip-rs/zip2/compare/v1.1.4...v1.2.0) - 2024-05-06
+
+### <!-- 0 -->🚀 Features
+- Add method `decompressed_size()` so non-recursive ZIP bombs can be detected
+
+### <!-- 2 -->🚜 Refactor
+- Make `ZipWriter::finish()` consume the `ZipWriter`
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Use panic! rather than abort to ensure the fuzz harness can process the failure
+- Update fuzz_write to use replace_with
+- Remove a drop that can no longer be explicit
+- Add `#![allow(unexpected_cfgs)]` in nightly
+
+## [1.1.4](https://github.com/zip-rs/zip2/compare/v1.1.3...v1.1.4) - 2024-05-04
+
+### <!-- 1 -->🐛 Bug Fixes
+- Build was failing with bzip2 enabled
+- use is_dir in more places where Windows paths might be handled incorrectly
+
+### <!-- 4 -->⚡ Performance
+- Quick filter for paths that contain "/../" or "/./" or start with "./" or "../"
+- Fast handling for separator-free paths
+- Speed up logic if main separator isn't '/'
+- Drop `normalized_components` slightly sooner when not using it
+- Speed up `path_to_string` in cases where the path is already in the proper format
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Refactor: can short-circuit handling of paths that start with MAIN_SEPARATOR, no matter what MAIN_SEPARATOR is
+- Bug fix: non-canonical path detection when MAIN_SEPARATOR is not slash or occurs twice in a row
+- Bug fix: must recreate if . or .. is a path element
+- Bug fix
+
+### <!-- 9 -->◀️ Revert
+- [#58](https://github.com/zip-rs/zip2/pull/58) (partial): `bzip2-rs` can't replace `bzip2` because it's decompress-only
+
 ## [1.1.3](https://github.com/zip-rs/zip2/compare/v1.1.2...v1.1.3) - 2024-04-30
 
 ### <!-- 1 -->🐛 Bug Fixes
