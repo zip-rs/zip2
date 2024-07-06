@@ -128,7 +128,9 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
     zip.start_file("test/☃.txt", options.clone()).unwrap();
     zip.write_all(b"Hello, World!\n").unwrap();
 
-    options.add_extra_data(0xbeef, EXTRA_DATA, false).unwrap();
+    options
+        .add_extra_data(0xbeef, EXTRA_DATA.to_owned().into_boxed_slice(), false)
+        .unwrap();
 
     zip.start_file("test_with_extra_data/🐢.txt", options)
         .unwrap();

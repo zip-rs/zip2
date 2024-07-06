@@ -34,11 +34,12 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum System {
     Dos = 0,
     Unix = 3,
+    #[default]
     Unknown,
 }
 
@@ -420,7 +421,7 @@ pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,
@@ -569,6 +570,8 @@ impl ZipFileData {
             CompressionMethod::Deflate64 => 21,
             #[cfg(feature = "lzma")]
             CompressionMethod::Lzma => 63,
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz => 63,
             // APPNOTE doesn't specify a version for Zstandard
             _ => DEFAULT_VERSION as u16,
         };
@@ -619,7 +622,7 @@ impl ZipFileData {
         aes_extra_data_start: u64,
         compression_method: crate::compression::CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-        extra_field: Option<Arc<Vec<u8>>>,
+        extra_field: &[u8],
     ) -> Self
     where
         S: Into<Box<str>>,
@@ -641,7 +644,7 @@ impl ZipFileData {
             uncompressed_size: raw_values.uncompressed_size,
             file_name, // Never used for saving, but used as map key in insert_file_data()
             file_name_raw,
-            extra_field,
+            extra_field: Some(extra_field.to_vec().into()),
             central_extra_field: options.extended_options.central_extra_data().cloned(),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,
@@ -802,13 +805,13 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipCentralEntryBlock {
+    pub(crate) fn block(&self, zip64_extra_field_length: u16) -> ZipResult<ZipCentralEntryBlock> {
         let extra_field_len: u16 = self.extra_field_len().try_into().unwrap();
         let central_extra_field_len: u16 = self.central_extra_field_len().try_into().unwrap();
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
-        ZipCentralEntryBlock {
+        Ok(ZipCentralEntryBlock {
             magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: (self.system as u16) << 8
                 | (self.version_made_by as u16).max(self.version_needed()),
@@ -830,8 +833,10 @@ impl ZipFileData {
                 .unwrap(),
             file_name_length: self.file_name_raw.len().try_into().unwrap(),
             extra_field_length: zip64_extra_field_length
-                + extra_field_len
-                + central_extra_field_len,
+                .checked_add(extra_field_len + central_extra_field_len)
+                .ok_or(ZipError::InvalidArchive(
+                    "Extra field length in central directory exceeds 64KiB",
+                ))?,
             file_comment_length: self.file_comment.as_bytes().len().try_into().unwrap(),
             disk_number: 0,
             internal_file_attributes: 0,
@@ -841,7 +846,7 @@ impl ZipFileData {
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
                 .unwrap(),
-        }
+        })
     }
 
     pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
