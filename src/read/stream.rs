@@ -1,12 +1,12 @@
-use crate::unstable::LittleEndianReadExt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use super::{
-    central_header_to_zip_file_inner, read_zipfile_from_stream, spec, HasZipMetadata, ZipError,
-    ZipFile, ZipFileData, ZipResult,
+    central_header_to_zip_file_inner, read_zipfile_from_stream, spec, HasZipMetadata, ZipCentralEntryBlock,
+    ZipError, ZipFile, ZipFileData, ZipResult,
 };
+use crate::spec::FixedSizeBlock;
 
 /// Stream decoder for zip.
 #[derive(Debug)]
@@ -20,31 +20,31 @@ impl<R> ZipStreamReader<R> {
 }
 
 impl<R: Read> ZipStreamReader<R> {
-    fn parse_central_directory(&mut self) -> ZipResult<Option<ZipStreamFileMetadata>> {
+    fn parse_central_directory(&mut self) -> ZipResult<ZipStreamFileMetadata> {
         // Give archive_offset and central_header_start dummy value 0, since
         // they are not used in the output.
         let archive_offset = 0;
         let central_header_start = 0;
 
         // Parse central header
-        let signature = self.0.read_u32_le()?;
-        if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-            Ok(None)
-        } else {
-            central_header_to_zip_file_inner(&mut self.0, archive_offset, central_header_start)
-                .map(ZipStreamFileMetadata)
-                .map(Some)
-        }
+        let block = ZipCentralEntryBlock::parse(&mut self.0)?;
+        let file = central_header_to_zip_file_inner(
+            &mut self.0,
+            archive_offset,
+            central_header_start,
+            block,
+        )?;
+        Ok(ZipStreamFileMetadata(file))
     }
 
-    /// Iteraate over the stream and extract all file and their
+    /// Iterate over the stream and extract all file and their
     /// metadata.
     pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
         while let Some(mut file) = read_zipfile_from_stream(&mut self.0)? {
             visitor.visit_file(&mut file)?;
         }
 
-        while let Some(metadata) = self.parse_central_directory()? {
+        while let Ok(metadata) = self.parse_central_directory() {
             visitor.visit_additional_metadata(&metadata)?;
         }
 
@@ -195,11 +195,6 @@ impl ZipStreamFileMetadata {
         &self.0.file_comment
     }
 
-    /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self) -> u64 {
-        *self.0.data_start.get().unwrap_or(&0)
-    }
-
     /// Get unix mode for the file
     pub const fn unix_mode(&self) -> Option<u32> {
         self.0.unix_mode()
@@ -225,6 +220,7 @@ mod test {
         }
     }
 
+    #[allow(dead_code)]
     #[derive(Default, Debug, Eq, PartialEq)]
     struct CounterVisitor(u64, u64);
     impl ZipStreamVisitor for CounterVisitor {
