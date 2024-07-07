@@ -53,5 +53,8 @@ for i in "${SPECIAL_RESTARTS[@]}"; do
   rm -rf "fuzz/corpus/fuzz_$1_restart_${i}"
 done
 echo "$(date): RUNNING WITH MERGED CORPUS"
-./fuzz-until-converged.sh "$1" "$2"
+cargo fuzz run --all-features "fuzz_$1" "fuzz/corpus/fuzz_$1" -- \
+  -dict=fuzz/fuzz.dict -max_len="$2" -fork="$ncpus" \
+  -max_total_time=1800 -runs=25000000 -rss_limit_mb=8192 -timeout=30
+./recursive-fuzz-cmin.sh "$1" "$2"
 echo "$(date): DONE BUILDING FUZZ CORPUS AT SIZE $2"
