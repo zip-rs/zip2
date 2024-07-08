@@ -7,7 +7,11 @@ use libfuzzer_sys::fuzz_target;
 use replace_with::replace_with_or_abort;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
+use tikv_jemallocator::Jemalloc;
 use zip::unstable::path_to_string;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Arbitrary, Clone)]
 pub enum BasicFileOperation<'k> {

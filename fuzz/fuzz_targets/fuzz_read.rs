@@ -1,9 +1,14 @@
 #![no_main]
+
 use libfuzzer_sys::fuzz_target;
 use std::io::{Read, Seek, SeekFrom};
+use tikv_jemallocator::Jemalloc;
 use zip::read::read_zipfile_from_stream;
 
 const MAX_BYTES_TO_READ: u64 = 1 << 24;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let reader = std::io::Cursor::new(data);
