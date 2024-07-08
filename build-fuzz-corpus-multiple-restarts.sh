@@ -22,7 +22,7 @@ find "fuzz/corpus/fuzz_$1_restart_dictionaryless" -type f -exec mv '{}' "fuzz/co
 rm -rf "fuzz/corpus/fuzz_$1_restart_dictionaryless" || true
 echo "$(date): DICTIONARY-LESS RESTART"
 cargo fuzz run --all-features "fuzz_$1" "fuzz/corpus/fuzz_$1" -- \
-  -dict=/dev/null -max_len="$2" -fork="$ncpus" -max_total_time=5100 -runs=100000000
+  -max_len="$2" -fork="$ncpus" -max_total_time=5100 -runs=100000000
 mv "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_restart_dictionaryless"
 mkdir "fuzz/corpus/fuzz_$1"
 
@@ -31,7 +31,7 @@ rm -rf "fuzz/corpus/fuzz_$1_restart_dictionaryless_012byte" || true
 echo "$(date): DICTIONARY-LESS RESTART WITH 0-2 BYTE CORPUS"
 tar -xvzf "fuzz/012byte.tar.gz" -C "fuzz/corpus/fuzz_$1"
 cargo fuzz run --all-features "fuzz_$1" "fuzz/corpus/fuzz_$1" -- \
-  -dict=/dev/null -max_len="$2" -fork="$ncpus" -max_total_time=5100 -runs=100000000
+  -max_len="$2" -fork="$ncpus" -max_total_time=5100 -runs=100000000
 mv "fuzz/corpus/fuzz_$1" "fuzz/corpus/fuzz_$1_restart_dictionaryless_012byte"
 mkdir "fuzz/corpus/fuzz_$1"
 
