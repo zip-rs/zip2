@@ -246,7 +246,6 @@ impl<'a> ZipFileReader<'a> {
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
     pub(crate) data: Cow<'a, ZipFileData>,
-    pub(crate) crypto_reader: Option<CryptoReader<'a>>,
     pub(crate) reader: ZipFileReader<'a>,
 }
 
@@ -1063,7 +1062,6 @@ impl<R: Read + Seek> ZipArchive<R> {
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
         Ok(ZipFile {
-            crypto_reader: None,
             reader: ZipFileReader::Raw(find_content(data, reader)?),
             data: Cow::Borrowed(data),
         })
@@ -1098,10 +1096,10 @@ impl<R: Read + Seek> ZipArchive<R> {
             #[cfg(feature = "aes-crypto")]
             data.compressed_size,
         )?;
+
         Ok(ZipFile {
-            crypto_reader: Some(crypto_reader),
-            reader: ZipFileReader::NoReader,
             data: Cow::Borrowed(data),
+            reader: make_reader(data.compression_method, data.crc32, crypto_reader)?,
         })
     }
 
@@ -1390,21 +1388,8 @@ pub(crate) fn parse_single_extra_field<R: Read>(
 
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
-    fn get_reader(&mut self) -> ZipResult<&mut ZipFileReader<'a>> {
-        if let ZipFileReader::NoReader = self.reader {
-            let data = &self.data;
-            let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
-            self.reader = make_reader(data.compression_method, data.crc32, crypto_reader)?;
-        }
-        Ok(&mut self.reader)
-    }
-
-    pub(crate) fn get_raw_reader(&mut self) -> &mut dyn Read {
-        if let ZipFileReader::NoReader = self.reader {
-            let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
-            self.reader = ZipFileReader::Raw(crypto_reader.into_inner())
-        }
-        &mut self.reader
+    pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut dyn Read>> {
+        std::mem::replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
     }
 
     /// Get the version of the file
@@ -1556,19 +1541,19 @@ impl<'a> ZipFile<'a> {
 
 impl<'a> Read for ZipFile<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.get_reader()?.read(buf)
+        self.reader.read(buf)
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.get_reader()?.read_exact(buf)
+        self.reader.read_exact(buf)
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        self.get_reader()?.read_to_end(buf)
+        self.reader.read_to_end(buf)
     }
 
     fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
-        self.get_reader()?.read_to_string(buf)
+        self.reader.read_to_string(buf)
     }
 }
 
@@ -1578,9 +1563,7 @@ impl<'a> Drop for ZipFile<'a> {
         // In this case, we want to exhaust the reader so that the next file is accessible.
         if let Cow::Owned(_) = self.data {
             // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
-            if let Ok(mut inner) =
-                std::mem::replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
-            {
+            if let Ok(mut inner) = self.take_raw_reader() {
                 let _ = copy(&mut inner, &mut sink());
             }
         }
@@ -1647,7 +1630,6 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        crypto_reader: None,
         reader: make_reader(result_compression_method, result_crc32, crypto_reader)?,
     }))
 }
