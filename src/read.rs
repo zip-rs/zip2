@@ -294,18 +294,14 @@ fn find_data_start(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn make_crypto_reader<'a>(
-    compression_method: CompressionMethod,
-    crc32: u32,
-    mut last_modified_time: Option<DateTime>,
-    using_data_descriptor: bool,
+    data: &ZipFileData,
     reader: io::Take<&'a mut dyn Read>,
     password: Option<&[u8]>,
     aes_info: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-    #[cfg(feature = "aes-crypto")] compressed_size: u64,
 ) -> ZipResult<CryptoReader<'a>> {
     #[allow(deprecated)]
     {
-        if let CompressionMethod::Unsupported(_) = compression_method {
+        if let CompressionMethod::Unsupported(_) = data.compression_method {
             return unsupported_zip_error("Compression method not supported");
         }
     }
@@ -319,17 +315,18 @@ pub(crate) fn make_crypto_reader<'a>(
         }
         #[cfg(feature = "aes-crypto")]
         (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
-            reader: AesReader::new(reader, aes_mode, compressed_size).validate(password)?,
+            reader: AesReader::new(reader, aes_mode, data.compressed_size).validate(password)?,
             vendor_version,
         },
         (Some(password), None) => {
-            if !using_data_descriptor {
+            let mut last_modified_time = data.last_modified_time;
+            if !data.using_data_descriptor {
                 last_modified_time = None;
             }
             let validator = if let Some(last_modified_time) = last_modified_time {
                 ZipCryptoValidator::InfoZipMsdosTime(last_modified_time.timepart())
             } else {
-                ZipCryptoValidator::PkzipCrc32(crc32)
+                ZipCryptoValidator::PkzipCrc32(data.crc32)
             };
             CryptoReader::ZipCrypto(ZipCryptoReader::new(reader, password).validate(validator)?)
         }
@@ -1085,17 +1082,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let limit_reader = find_content(data, &mut self.reader)?;
 
-        let crypto_reader = make_crypto_reader(
-            data.compression_method,
-            data.crc32,
-            data.last_modified_time,
-            data.using_data_descriptor,
-            limit_reader,
-            password,
-            data.aes_mode,
-            #[cfg(feature = "aes-crypto")]
-            data.compressed_size,
-        )?;
+        let crypto_reader = make_crypto_reader(data, limit_reader, password, data.aes_mode)?;
 
         Ok(ZipFile {
             data: Cow::Borrowed(data),
@@ -1616,17 +1603,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
-    let crypto_reader = make_crypto_reader(
-        result_compression_method,
-        result_crc32,
-        result.last_modified_time,
-        result.using_data_descriptor,
-        limit_reader,
-        None,
-        None,
-        #[cfg(feature = "aes-crypto")]
-        result.compressed_size,
-    )?;
+    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
 
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
