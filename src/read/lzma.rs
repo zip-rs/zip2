@@ -1,6 +1,6 @@
 use lzma_rs::decompress::{Options, Stream, UnpackedSize};
 use std::collections::VecDeque;
-use std::io::{copy, Error, Read, Result, Write};
+use std::io::{Read, Result, Write};
 
 const COMPRESSED_BYTES_TO_BUFFER: usize = 4096;
 
@@ -24,9 +24,8 @@ impl<R: Read> LzmaDecoder<R> {
         }
     }
 
-    pub fn finish(mut self) -> Result<VecDeque<u8>> {
-        copy(&mut self.compressed_reader, &mut self.stream)?;
-        self.stream.finish().map_err(Error::from)
+    pub fn into_inner(self) -> R {
+        self.compressed_reader
     }
 }
 

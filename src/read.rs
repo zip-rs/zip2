@@ -2,7 +2,7 @@
 
 #[cfg(feature = "aes-crypto")]
 use crate::aes::{AesReader, AesReaderValid};
-use crate::compression::CompressionMethod;
+use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
@@ -25,18 +25,6 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
-
-#[cfg(feature = "deflate-flate2")]
-use flate2::read::DeflateDecoder;
-
-#[cfg(feature = "deflate64")]
-use deflate64::Deflate64Decoder;
-
-#[cfg(feature = "bzip2")]
-use bzip2::read::BzDecoder;
-
-#[cfg(feature = "zstd")]
-use zstd::stream::read::Decoder as ZstdDecoder;
 
 mod config;
 
@@ -123,11 +111,7 @@ pub(crate) mod zip_archive {
 #[cfg(feature = "aes-crypto")]
 use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
-#[cfg(feature = "lzma")]
-use crate::read::lzma::LzmaDecoder;
-#[cfg(feature = "xz")]
-use crate::read::xz::XzDecoder;
-use crate::result::ZipError::{InvalidArchive, InvalidPassword, UnsupportedArchive};
+use crate::result::ZipError::{InvalidArchive, InvalidPassword};
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFLNK;
 use crate::unstable::{path_to_string, LittleEndianReadExt};
@@ -199,134 +183,63 @@ impl<'a> CryptoReader<'a> {
     }
 }
 
+#[cold]
+fn invalid_state() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Other,
+        "ZipFileReader was in an invalid state",
+    )
+}
+
 pub(crate) enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn Read>),
-    Stored(Crc32Reader<CryptoReader<'a>>),
-    #[cfg(feature = "_deflate-any")]
-    Deflated(Crc32Reader<DeflateDecoder<CryptoReader<'a>>>),
-    #[cfg(feature = "deflate64")]
-    Deflate64(Crc32Reader<Deflate64Decoder<io::BufReader<CryptoReader<'a>>>>),
-    #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
-    #[cfg(feature = "zstd")]
-    Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a>>>>),
-    #[cfg(feature = "lzma")]
-    Lzma(Crc32Reader<Box<LzmaDecoder<CryptoReader<'a>>>>),
-    #[cfg(feature = "xz")]
-    Xz(Crc32Reader<XzDecoder<CryptoReader<'a>>>),
+    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a>>>>>),
 }
 
 impl<'a> Read for ZipFileReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::NoReader => Err(invalid_state()),
             ZipFileReader::Raw(r) => r.read(buf),
-            ZipFileReader::Stored(r) => r.read(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read(buf),
-            #[cfg(feature = "xz")]
-            ZipFileReader::Xz(r) => r.read(buf),
+            ZipFileReader::Compressed(r) => r.read(buf),
         }
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
         match self {
-            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::NoReader => Err(invalid_state()),
             ZipFileReader::Raw(r) => r.read_exact(buf),
-            ZipFileReader::Stored(r) => r.read_exact(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read_exact(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read_exact(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read_exact(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read_exact(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read_exact(buf),
-            #[cfg(feature = "xz")]
-            ZipFileReader::Xz(r) => r.read_exact(buf),
+            ZipFileReader::Compressed(r) => r.read_exact(buf),
         }
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
         match self {
-            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::NoReader => Err(invalid_state()),
             ZipFileReader::Raw(r) => r.read_to_end(buf),
-            ZipFileReader::Stored(r) => r.read_to_end(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read_to_end(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read_to_end(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read_to_end(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read_to_end(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read_to_end(buf),
-            #[cfg(feature = "xz")]
-            ZipFileReader::Xz(r) => r.read_to_end(buf),
+            ZipFileReader::Compressed(r) => r.read_to_end(buf),
         }
     }
 
     fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
         match self {
-            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::NoReader => Err(invalid_state()),
             ZipFileReader::Raw(r) => r.read_to_string(buf),
-            ZipFileReader::Stored(r) => r.read_to_string(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read_to_string(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read_to_string(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read_to_string(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read_to_string(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read_to_string(buf),
-            #[cfg(feature = "xz")]
-            ZipFileReader::Xz(r) => r.read_to_string(buf),
+            ZipFileReader::Compressed(r) => r.read_to_string(buf),
         }
     }
 }
 
 impl<'a> ZipFileReader<'a> {
-    /// Consumes this decoder, returning the underlying reader.
-    pub fn drain(self) {
-        let mut inner = match self {
-            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
-            ZipFileReader::Raw(r) => r,
-            ZipFileReader::Stored(r) => r.into_inner().into_inner(),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.into_inner().into_inner().into_inner(),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.into_inner().into_inner().into_inner().into_inner(),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner(),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.into_inner().finish().into_inner().into_inner(),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => {
-                // Lzma reader owns its buffer rather than mutably borrowing it, so we have to drop
-                // it separately
-                if let Ok(mut remaining) = r.into_inner().finish() {
-                    let _ = copy(&mut remaining, &mut sink());
-                }
-                return;
+    fn into_inner(self) -> io::Result<io::Take<&'a mut dyn Read>> {
+        match self {
+            ZipFileReader::NoReader => Err(invalid_state()),
+            ZipFileReader::Raw(r) => Ok(r),
+            ZipFileReader::Compressed(r) => {
+                Ok(r.into_inner().into_inner().into_inner().into_inner())
             }
-            #[cfg(feature = "xz")]
-            ZipFileReader::Xz(r) => r.into_inner().into_inner().into_inner(),
-        };
-        let _ = copy(&mut inner, &mut sink());
+        }
     }
 }
 
@@ -434,68 +347,11 @@ pub(crate) fn make_reader(
 ) -> ZipResult<ZipFileReader> {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
-    match compression_method {
-        CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(
-            reader,
-            crc32,
-            ae2_encrypted,
-        ))),
-        #[cfg(feature = "_deflate-any")]
-        CompressionMethod::Deflated => {
-            let deflate_reader = DeflateDecoder::new(reader);
-            Ok(ZipFileReader::Deflated(Crc32Reader::new(
-                deflate_reader,
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "deflate64")]
-        CompressionMethod::Deflate64 => {
-            let deflate64_reader = Deflate64Decoder::new(reader);
-            Ok(ZipFileReader::Deflate64(Crc32Reader::new(
-                deflate64_reader,
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "bzip2")]
-        CompressionMethod::Bzip2 => {
-            let bzip2_reader = BzDecoder::new(reader);
-            Ok(ZipFileReader::Bzip2(Crc32Reader::new(
-                bzip2_reader,
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "zstd")]
-        CompressionMethod::Zstd => {
-            let zstd_reader = ZstdDecoder::new(reader).unwrap();
-            Ok(ZipFileReader::Zstd(Crc32Reader::new(
-                zstd_reader,
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "lzma")]
-        CompressionMethod::Lzma => {
-            let reader = LzmaDecoder::new(reader);
-            Ok(ZipFileReader::Lzma(Crc32Reader::new(
-                Box::new(reader),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "xz")]
-        CompressionMethod::Xz => {
-            let reader = XzDecoder::new(reader);
-            Ok(ZipFileReader::Xz(Crc32Reader::new(
-                reader,
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        _ => Err(UnsupportedArchive("Compression method not supported")),
-    }
+    Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
+        Decompressor::new(io::BufReader::new(reader), compression_method)?,
+        crc32,
+        ae2_encrypted,
+    ))))
 }
 
 #[derive(Debug)]
@@ -1722,19 +1578,11 @@ impl<'a> Drop for ZipFile<'a> {
         // In this case, we want to exhaust the reader so that the next file is accessible.
         if let Cow::Owned(_) = self.data {
             // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
-            match &mut self.reader {
-                ZipFileReader::NoReader => {
-                    let innerreader = self.crypto_reader.take();
-                    let _ = copy(
-                        &mut innerreader.expect("Invalid reader state").into_inner(),
-                        &mut sink(),
-                    );
-                }
-                reader => {
-                    let innerreader = std::mem::replace(reader, ZipFileReader::NoReader);
-                    innerreader.drain();
-                }
-            };
+            if let Ok(mut inner) =
+                std::mem::replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
+            {
+                let _ = copy(&mut inner, &mut sink());
+            }
         }
     }
 }
