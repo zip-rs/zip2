@@ -1807,7 +1807,6 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     value: T,
     range: std::ops::RangeInclusive<U>,
 ) -> Option<T> {
-    use core::convert::TryInto;
     if range.contains(&value.try_into().ok()?) {
         Some(value)
     } else {
