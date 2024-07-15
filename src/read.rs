@@ -153,6 +153,24 @@ impl<'a> Read for CryptoReader<'a> {
             CryptoReader::Aes { reader: r, .. } => r.read(buf),
         }
     }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self {
+            CryptoReader::Plaintext(r) => r.read_to_end(buf),
+            CryptoReader::ZipCrypto(r) => r.read_to_end(buf),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader: r, .. } => r.read_to_end(buf),
+        }
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        match self {
+            CryptoReader::Plaintext(r) => r.read_to_string(buf),
+            CryptoReader::ZipCrypto(r) => r.read_to_string(buf),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader: r, .. } => r.read_to_string(buf),
+        }
+    }
 }
 
 impl<'a> CryptoReader<'a> {
@@ -217,6 +235,66 @@ impl<'a> Read for ZipFileReader<'a> {
             ZipFileReader::Lzma(r) => r.read(buf),
             #[cfg(feature = "xz")]
             ZipFileReader::Xz(r) => r.read(buf),
+        }
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        match self {
+            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::Raw(r) => r.read_exact(buf),
+            ZipFileReader::Stored(r) => r.read_exact(buf),
+            #[cfg(feature = "_deflate-any")]
+            ZipFileReader::Deflated(r) => r.read_exact(buf),
+            #[cfg(feature = "deflate64")]
+            ZipFileReader::Deflate64(r) => r.read_exact(buf),
+            #[cfg(feature = "bzip2")]
+            ZipFileReader::Bzip2(r) => r.read_exact(buf),
+            #[cfg(feature = "zstd")]
+            ZipFileReader::Zstd(r) => r.read_exact(buf),
+            #[cfg(feature = "lzma")]
+            ZipFileReader::Lzma(r) => r.read_exact(buf),
+            #[cfg(feature = "xz")]
+            ZipFileReader::Xz(r) => r.read_exact(buf),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self {
+            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::Raw(r) => r.read_to_end(buf),
+            ZipFileReader::Stored(r) => r.read_to_end(buf),
+            #[cfg(feature = "_deflate-any")]
+            ZipFileReader::Deflated(r) => r.read_to_end(buf),
+            #[cfg(feature = "deflate64")]
+            ZipFileReader::Deflate64(r) => r.read_to_end(buf),
+            #[cfg(feature = "bzip2")]
+            ZipFileReader::Bzip2(r) => r.read_to_end(buf),
+            #[cfg(feature = "zstd")]
+            ZipFileReader::Zstd(r) => r.read_to_end(buf),
+            #[cfg(feature = "lzma")]
+            ZipFileReader::Lzma(r) => r.read_to_end(buf),
+            #[cfg(feature = "xz")]
+            ZipFileReader::Xz(r) => r.read_to_end(buf),
+        }
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        match self {
+            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::Raw(r) => r.read_to_string(buf),
+            ZipFileReader::Stored(r) => r.read_to_string(buf),
+            #[cfg(feature = "_deflate-any")]
+            ZipFileReader::Deflated(r) => r.read_to_string(buf),
+            #[cfg(feature = "deflate64")]
+            ZipFileReader::Deflate64(r) => r.read_to_string(buf),
+            #[cfg(feature = "bzip2")]
+            ZipFileReader::Bzip2(r) => r.read_to_string(buf),
+            #[cfg(feature = "zstd")]
+            ZipFileReader::Zstd(r) => r.read_to_string(buf),
+            #[cfg(feature = "lzma")]
+            ZipFileReader::Lzma(r) => r.read_to_string(buf),
+            #[cfg(feature = "xz")]
+            ZipFileReader::Xz(r) => r.read_to_string(buf),
         }
     }
 }
@@ -1622,6 +1700,18 @@ impl<'a> ZipFile<'a> {
 impl<'a> Read for ZipFile<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.get_reader()?.read(buf)
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        self.get_reader()?.read_exact(buf)
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        self.get_reader()?.read_to_end(buf)
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        self.get_reader()?.read_to_string(buf)
     }
 }
 
