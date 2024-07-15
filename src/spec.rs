@@ -1,12 +1,12 @@
 #![macro_use]
 
 use crate::result::{ZipError, ZipResult};
+use core::mem;
+use core::mem::align_of;
 use memchr::memmem::FinderRev;
-use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
-use std::mem;
-use std::path::{Component, Path, MAIN_SEPARATOR};
+use std::rc::Rc;
 
 /// "Magic" header values used in the zip spec to locate metadata records.
 ///
@@ -97,26 +97,28 @@ impl ExtraFieldMagic {
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
-pub(crate) trait Block: Sized + Copy {
+pub(crate) trait FixedSizeBlock: Sized + Copy {
     const MAGIC: Magic;
 
     fn magic(self) -> Magic;
 
-    const ERROR: ZipError;
+    const WRONG_MAGIC_ERROR: ZipError;
 
     /* TODO: use smallvec? */
-    fn interpret(bytes: Box<[u8]>) -> ZipResult<Self> {
-        let block = Self::deserialize(&bytes).from_le();
+    fn interpret(bytes: &[u8]) -> ZipResult<Self> {
+        if bytes.len() != mem::size_of::<Self>() {
+            return Err(ZipError::InvalidArchive("Block is wrong size"));
+        }
+        let block_ptr: *const Self = bytes.as_ptr().cast();
+
+        // If alignment could be more than 1, we'd have to use read_unaligned() below
+        debug_assert_eq!(align_of::<Self>(), 1);
+
+        let block = unsafe { block_ptr.read() }.from_le();
         if block.magic() != Self::MAGIC {
-            return Err(Self::ERROR);
+            return Err(Self::WRONG_MAGIC_ERROR);
         }
         Ok(block)
-    }
-
-    fn deserialize(block: &[u8]) -> Self {
-        assert_eq!(block.len(), mem::size_of::<Self>());
-        let block_ptr: *const Self = block.as_ptr().cast();
-        unsafe { block_ptr.read() }
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -125,7 +127,7 @@ pub(crate) trait Block: Sized + Copy {
     fn parse<T: Read>(reader: &mut T) -> ZipResult<Self> {
         let mut block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
         reader.read_exact(&mut block)?;
-        Self::interpret(block)
+        Self::interpret(&block)
     }
 
     fn encode(self) -> Box<[u8]> {
@@ -138,6 +140,10 @@ pub(crate) trait Block: Sized + Copy {
     fn serialize(self) -> Box<[u8]> {
         /* TODO: use Box::new_zeroed() when stabilized! */
         /* TODO: also consider using smallvec! */
+
+        // If alignment could be more than 1, we'd have to use write_unaligned() below
+        debug_assert_eq!(align_of::<Self>(), 1);
+
         let mut out_block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
         let out_ptr: *mut Self = out_block.as_mut_ptr().cast();
         unsafe {
@@ -212,7 +218,7 @@ pub(crate) struct Zip32CDEBlock {
     pub zip_file_comment_length: u16,
 }
 
-impl Block for Zip32CDEBlock {
+impl FixedSizeBlock for Zip32CDEBlock {
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
     #[inline(always)]
@@ -220,7 +226,8 @@ impl Block for Zip32CDEBlock {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid digital signature header");
 
     to_and_from_le![
         (magic, Magic),
@@ -299,9 +306,11 @@ impl Zip32CentralDirectoryEnd {
         })
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
-    ) -> ZipResult<(Zip32CentralDirectoryEnd, u64)> {
+    ) -> ZipResult<Box<[(Rc<Zip32CentralDirectoryEnd>, u64)]>> {
+        let mut results = vec![];
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
         if file_length < mem::size_of::<Zip32CDEBlock>() as u64 {
@@ -340,7 +349,7 @@ impl Zip32CentralDirectoryEnd {
                 reader.seek(io::SeekFrom::Start(cde_start_pos))?;
                 /* Drop any headers that don't parse. */
                 if let Ok(cde) = Self::parse(reader) {
-                    return Ok((cde, cde_start_pos));
+                    results.push((Rc::new(cde), cde_start_pos));
                 }
             }
 
@@ -368,10 +377,13 @@ impl Zip32CentralDirectoryEnd {
                  * `if window_start == search_lower_bound` check above. */
                 .max(search_lower_bound);
         }
-
-        Err(ZipError::InvalidArchive(
-            "Could not find central directory end",
-        ))
+        if results.is_empty() {
+            Err(ZipError::InvalidArchive(
+                "Could not find central directory end",
+            ))
+        } else {
+            Ok(results.into_boxed_slice())
+        }
     }
 
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
@@ -391,7 +403,7 @@ pub(crate) struct Zip64CDELocatorBlock {
     pub number_of_disks: u32,
 }
 
-impl Block for Zip64CDELocatorBlock {
+impl FixedSizeBlock for Zip64CDELocatorBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
     #[inline(always)]
@@ -399,7 +411,7 @@ impl Block for Zip64CDELocatorBlock {
         self.magic
     }
 
-    const ERROR: ZipError =
+    const WRONG_MAGIC_ERROR: ZipError =
         ZipError::InvalidArchive("Invalid zip64 locator digital signature header");
 
     to_and_from_le![
@@ -467,14 +479,15 @@ pub(crate) struct Zip64CDEBlock {
     pub central_directory_offset: u64,
 }
 
-impl Block for Zip64CDEBlock {
+impl FixedSizeBlock for Zip64CDEBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
 
     fn magic(self) -> Magic {
         self.magic
     }
 
-    const ERROR: ZipError = ZipError::InvalidArchive("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive("Invalid digital signature header");
 
     to_and_from_le![
         (magic, Magic),
@@ -649,53 +662,6 @@ pub(crate) fn is_dir(filename: &str) -> bool {
         .map_or(false, |c| c == '/' || c == '\\')
 }
 
-/// Converts a path to the ZIP format (forward-slash-delimited and normalized).
-pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
-    let mut maybe_original = None;
-    if let Some(original) = path.as_ref().to_str() {
-        if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
-            && !original.ends_with('.')
-            && !original.starts_with(['.', MAIN_SEPARATOR])
-            && !original.starts_with(['.', '.', MAIN_SEPARATOR])
-            && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
-            && !original.contains([MAIN_SEPARATOR, '.', MAIN_SEPARATOR])
-            && !original.contains([MAIN_SEPARATOR, '.', '.', MAIN_SEPARATOR])
-        {
-            if original.starts_with(MAIN_SEPARATOR) {
-                maybe_original = Some(&original[1..]);
-            } else {
-                maybe_original = Some(original);
-            }
-        }
-    }
-    let mut recreate = maybe_original.is_none();
-    let mut normalized_components = Vec::new();
-
-    for component in path.as_ref().components() {
-        match component {
-            Component::Normal(os_str) => match os_str.to_str() {
-                Some(valid_str) => normalized_components.push(Cow::Borrowed(valid_str)),
-                None => {
-                    recreate = true;
-                    normalized_components.push(os_str.to_string_lossy());
-                }
-            },
-            Component::ParentDir => {
-                recreate = true;
-                normalized_components.pop();
-            }
-            _ => {
-                recreate = true;
-            }
-        }
-    }
-    if recreate {
-        normalized_components.join("/").into()
-    } else {
-        maybe_original.unwrap().into()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -708,14 +674,14 @@ mod test {
         pub file_name_length: u16,
     }
 
-    impl Block for TestBlock {
+    impl FixedSizeBlock for TestBlock {
         const MAGIC: Magic = Magic::literal(0x01111);
 
         fn magic(self) -> Magic {
             self.magic
         }
 
-        const ERROR: ZipError = ZipError::InvalidArchive("unreachable");
+        const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive("unreachable");
 
         to_and_from_le![(magic, Magic), (file_name_length, u16)];
     }

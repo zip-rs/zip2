@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.1.3](https://github.com/zip-rs/zip2/compare/v2.1.2...v2.1.3) - 2024-06-04
+
+### <!-- 1 -->🐛 Bug Fixes
+- Some date/time filters were previously unreliable (i.e. later-pass filters had no earliest-pass or latest-fail, and vice-versa)
+- Decode Zip-Info UTF8 name and comment fields ([#159](https://github.com/zip-rs/zip2/pull/159))
+
+### <!-- 2 -->🚜 Refactor
+- Return extended timestamp fields copied rather than borrowed ([#183](https://github.com/zip-rs/zip2/pull/183))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Fix a new Clippy warning
+- Fix a bug and inline `deserialize` for safety
+- Add check for wrong-length blocks, and incorporate fixed-size requirement into the trait name
+- Fix a fuzz failure by using checked_sub
+- Add feature gate for new unit test
+
+## [2.1.1](https://github.com/zip-rs/zip2/compare/v2.1.0...v2.1.1) - 2024-05-28
+
+### <!-- 1 -->🐛 Bug Fixes
+- Derive `Debug` for `ZipWriter`
+- lower default version to 4.5 and use the version-needed-to-extract where feasible.
+
+### <!-- 2 -->🚜 Refactor
+- use a MIN_VERSION constant
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Bug fixes for debug implementation
+- Bug fixes for debug implementation
+- Update unit tests
+- Remove unused import
+
 ## [2.1.0](https://github.com/zip-rs/zip2/compare/v2.0.0...v2.1.0) - 2024-05-25
 
 ### <!-- 0 -->🚀 Features

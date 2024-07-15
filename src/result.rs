@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 use std::num::TryFromIntError;
+use std::string::FromUtf8Error;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
@@ -65,6 +66,12 @@ impl From<ZipError> for io::Error {
 impl From<DateTimeRangeError> for ZipError {
     fn from(_: DateTimeRangeError) -> Self {
         ZipError::InvalidArchive("Invalid date or time")
+    }
+}
+
+impl From<FromUtf8Error> for ZipError {
+    fn from(_: FromUtf8Error) -> Self {
+        ZipError::InvalidArchive("Invalid UTF-8")
     }
 }
 

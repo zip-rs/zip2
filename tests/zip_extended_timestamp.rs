@@ -12,7 +12,7 @@ fn test_extended_timestamp() {
             zip::ExtraField::ExtendedTimestamp(ts) => {
                 assert!(ts.ac_time().is_none());
                 assert!(ts.cr_time().is_none());
-                assert_eq!(*ts.mod_time().unwrap(), 1714635025);
+                assert_eq!(ts.mod_time().unwrap(), 1714635025);
             }
         }
     }
