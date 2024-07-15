@@ -224,7 +224,10 @@ impl<R: Read> Read for XzDecoder<R> {
             }
             digest.update(&b);
         }
-        let mut b = vec![0u8; header_end - *reader.count];
+        let Some(padding_bytes) = header_end.checked_sub(*reader.count) else {
+            return error("Invalid XZ block header (too short)");
+        };
+        let mut b = vec![0u8; padding_bytes];
         reader.read_exact(b.as_mut_slice())?;
         if !b.iter().all(|&b| b == 0) {
             return error("Invalid XZ block header padding");
