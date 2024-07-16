@@ -421,7 +421,7 @@ pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
 #[derive(Debug, Copy, Clone)]
-pub struct AesModeInfo {
+pub(crate) struct AesModeInfo {
     pub aes_mode: AesMode,
     pub vendor_version: AesVendorVersion,
     pub compression_method: CompressionMethod,
