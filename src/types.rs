@@ -421,7 +421,7 @@ pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct AesModeInfo {
+pub struct AesModeInfo {
     pub aes_mode: AesMode,
     pub vendor_version: AesVendorVersion,
     pub compression_method: CompressionMethod,
@@ -429,7 +429,7 @@ pub(crate) struct AesModeInfo {
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ZipFileData {
+pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,
     /// Specification version

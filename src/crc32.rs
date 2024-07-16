@@ -32,6 +32,7 @@ impl<R> Crc32Reader<R> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn into_inner(self) -> R {
         self.inner
     }
