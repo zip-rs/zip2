@@ -31,6 +31,7 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 
 use std::io::{self, Read, Seek};
 use std::path::PathBuf;
+use std::slice;
 
 pub(crate) enum EntryReader<R> {
     Stored(R),
@@ -259,7 +260,7 @@ pub trait ArchiveEntry: Read + sealed_data::ArchiveData {
     }
 
     /// iterate through all extra fields
-    fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
+    fn extra_data_fields(&self) -> slice::Iter<'_, ExtraField> {
         self.data().extra_fields.iter()
     }
 }
