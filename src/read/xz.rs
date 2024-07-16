@@ -262,9 +262,3 @@ impl<R: BufRead> Read for XzDecoder<R> {
         Ok(written)
     }
 }
-
-impl<R: BufRead> XzDecoder<R> {
-    pub fn into_inner(self) -> R {
-        self.compressed_reader
-    }
-}
