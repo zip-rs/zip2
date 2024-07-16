@@ -1072,11 +1072,13 @@ pub mod util {
             Self { inner, limit }
         }
 
+        #[allow(dead_code)]
         #[inline(always)]
         pub const fn limit(&self) -> u64 {
             self.limit
         }
 
+        #[allow(dead_code)]
         pub fn into_inner(self) -> W {
             self.inner
         }
