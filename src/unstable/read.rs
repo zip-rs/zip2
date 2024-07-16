@@ -522,7 +522,7 @@ pub mod streaming {
             } = self;
             if *remaining_before_next_entry > 0 {
                 io::copy(
-                    &mut (reader as &mut dyn Read).take(*remaining_before_next_entry),
+                    &mut reader.by_ref().take(*remaining_before_next_entry),
                     &mut io::sink(),
                 )?;
                 *remaining_before_next_entry = 0;
@@ -577,7 +577,7 @@ pub mod streaming {
             } = self;
             if *remaining_before_next_entry > 0 {
                 io::copy(
-                    &mut (reader as &mut dyn Read).take(*remaining_before_next_entry),
+                    &mut reader.by_ref().take(*remaining_before_next_entry),
                     &mut io::sink(),
                 )?;
                 *remaining_before_next_entry = 0;
