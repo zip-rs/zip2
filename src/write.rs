@@ -13,7 +13,7 @@ use crate::types::{
     ffi, AesModeInfo, AesVendorVersion, DateTime, ZipFileData, ZipLocalEntryBlock, ZipRawValues,
     MIN_VERSION,
 };
-use crate::unstable::read::{find_entry_content_range, ArchiveEntry, ZipEntry};
+use crate::unstable::read::find_entry_content_range;
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
