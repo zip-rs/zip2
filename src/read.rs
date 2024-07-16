@@ -120,8 +120,8 @@ use crate::unstable::{path_to_string, LittleEndianReadExt};
 
 use crate::crc32::non_crypto::Crc32Reader as NewCrc32Reader;
 use crate::unstable::read::{
-    construct_decompressing_reader, find_entry_content_range, CryptoEntryReader, CryptoVariant,
-    ZipEntry,
+    construct_decompressing_reader, find_entry_content_range, ArchiveEntry, CryptoEntryReader,
+    CryptoVariant, ZipEntry,
 };
 
 pub use zip_archive::ZipArchive;
@@ -947,27 +947,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         file_number: usize,
     ) -> ZipResult<Option<AesInfo>> {
-        let (_, data) = self
-            .shared
-            .files
-            .get_index(file_number)
-            .ok_or(ZipError::FileNotFound)?;
-
-        let limit_reader = find_content(data, &mut self.reader)?;
-        match data.aes_mode {
-            None => Ok(None),
-            Some(AesModeInfo { aes_mode, .. }) => {
-                let (verification_value, salt) =
-                    AesReader::new(limit_reader, aes_mode, data.compressed_size)
-                        .get_verification_value_and_salt()?;
-                let aes_info = AesInfo {
-                    aes_mode,
-                    verification_value,
-                    salt,
-                };
-                Ok(Some(aes_info))
-            }
-        }
+        let entry = self.by_index_raw_new(file_number)?;
+        entry.get_aes_verification_key_and_salt()
     }
 
     /// Read a ZIP archive, collecting the files it contains.
@@ -1010,7 +991,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         #[cfg(unix)]
         let mut files_by_unix_mode = Vec::new();
         for i in 0..self.len() {
-            let mut file = self.by_index(i)?;
+            let mut file = self.by_index_new(i)?;
             let filepath = file
                 .enclosed_name()
                 .ok_or(InvalidArchive("Invalid file path"))?;
@@ -1065,7 +1046,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 }
                 continue;
             }
-            let mut file = self.by_index(i)?;
+            let mut file = self.by_index_new(i)?;
             let mut outfile = fs::File::create(&outpath)?;
             io::copy(&mut file, &mut outfile)?;
             #[cfg(unix)]
