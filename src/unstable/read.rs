@@ -6,7 +6,7 @@ use crate::extra_fields::ExtraField;
 use crate::read::find_data_start;
 use crate::result::{ZipError, ZipResult};
 use crate::types::ffi::S_IFLNK;
-use crate::types::{AesModeInfo, AesVendorVersion, DateTime, ZipFileData};
+use crate::types::{DateTime, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 
 #[cfg(feature = "lzma")]
@@ -17,6 +17,7 @@ use crate::read::xz::XzDecoder;
 use crate::{
     aes::{AesReader, AesReaderValid},
     read::AesInfo,
+    types::{AesModeInfo, AesVendorVersion},
 };
 
 #[cfg(feature = "bzip2")]
@@ -372,6 +373,7 @@ impl CryptoVariant {
             data.encrypted,
             "should never enter this method except on encrypted entries"
         );
+
         #[allow(deprecated)]
         if let CompressionMethod::Unsupported(_) = data.compression_method {
             /* TODO: make this into its own EntryReadError error type! */
@@ -379,24 +381,29 @@ impl CryptoVariant {
                 "Compression method not supported",
             ));
         }
+
+        #[cfg(feature = "aes-crypto")]
         if let Some(info) = data.aes_mode {
-            #[cfg(not(feature = "aes-crypto"))]
-            /* TODO: make this into its own EntryReadError error type! */
-            return Err(ZipError::UnsupportedArchive(
-                "AES encrypted files cannot be decrypted without the aes-crypto feature.",
-            ));
-            #[cfg(feature = "aes-crypto")]
             return Ok(Self::Aes {
                 info,
                 compressed_size: data.compressed_size,
             });
         }
+        #[cfg(not(feature = "aes-crypto"))]
+        if data.aes_mode.is_some() {
+            /* TODO: make this into its own EntryReadError error type! */
+            return Err(ZipError::UnsupportedArchive(
+                "AES encrypted files cannot be decrypted without the aes-crypto feature.",
+            ));
+        }
+
         if let Some(last_modified_time) = data.last_modified_time {
             /* TODO: use let chains once stabilized! */
             if data.using_data_descriptor {
                 return Ok(Self::DateTime(last_modified_time));
             }
         }
+
         Ok(Self::Crc32(data.crc32))
     }
 
@@ -425,14 +432,11 @@ impl CryptoVariant {
         R: Read,
     {
         match self {
+            #[cfg(feature = "aes-crypto")]
             Self::Aes {
                 info: AesModeInfo { aes_mode, .. },
                 compressed_size,
             } => {
-                assert!(
-                    cfg!(feature = "aes-crypto"),
-                    "should never get here unless aes support was enabled"
-                );
                 let aes_reader =
                     AesReader::new(reader, aes_mode, compressed_size).validate(password)?;
                 Ok(CryptoReader::Aes(aes_reader))
