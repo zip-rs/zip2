@@ -86,7 +86,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
     }
 }
 
-enum GenericZipWriter<W: Write + Seek> {
+enum GenericZipWriter<W: Write> {
     Closed,
     Storer(MaybeEncrypted<W>),
     #[cfg(feature = "deflate-flate2")]
