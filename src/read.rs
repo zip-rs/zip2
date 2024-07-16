@@ -1041,13 +1041,8 @@ pub(crate) fn central_header_to_zip_file_inner<R: Read>(
         aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
-    match parse_extra_field(&mut result) {
-        Ok(stripped_extra_field) => {
-            result.extra_field = stripped_extra_field;
-        }
-        Err(ZipError::Io(..)) => {}
-        Err(e) => return Err(e),
-    }
+    let stripped_extra_field = parse_extra_field(&mut result)?;
+    result.extra_field = stripped_extra_field;
 
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
@@ -1076,9 +1071,17 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<Option<Arc<
 
     /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
     let mut position = reader.position() as usize;
-    while (position) < len {
+    while position < len {
         let old_position = position;
-        let remove = parse_single_extra_field(file, &mut reader, position as u64, false)?;
+        let remove = match parse_single_extra_field(file, &mut reader, position as u64, false) {
+            Ok(b) => b,
+            /* If we get an error reading too far, then assume this is an extra field we don't know
+             * how to handle, and just return the remaining amount. */
+            Err(ZipError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                return Ok(Some(processed_extra_field))
+            }
+            Err(e) => return Err(e),
+        };
         position = reader.position() as usize;
         if remove {
             let remaining = len - (position - old_position);
