@@ -85,6 +85,7 @@ pub(crate) mod zip_archive {
     ///
     /// ```no_run
     /// use std::io::prelude::*;
+    /// use zip::read::ArchiveEntry;
     /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
     ///     use zip::HasZipMetadata;
     ///     let mut zip = zip::ZipArchive::new(reader)?;
@@ -115,9 +116,9 @@ use crate::unstable::{path_to_string, LittleEndianReadExt};
 
 use crate::crc32::Crc32Reader;
 use crate::unstable::read::{
-    construct_decompressing_reader, find_entry_content_range, ArchiveEntry, CryptoEntryReader,
-    CryptoVariant, ZipEntry,
+    construct_decompressing_reader, find_entry_content_range, CryptoEntryReader, CryptoVariant,
 };
+pub use crate::unstable::read::{ArchiveEntry, ZipEntry};
 
 pub use zip_archive::ZipArchive;
 
