@@ -3,7 +3,6 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
-use crate::read::ZipFile;
 use crate::read::{parse_single_extra_field, Config, ZipArchive};
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock};
@@ -14,7 +13,7 @@ use crate::types::{
     ZipRawValues,
     MIN_VERSION,
 };
-use crate::unstable::read::find_entry_content_range;
+use crate::unstable::read::{find_entry_content_range, ArchiveEntry, ZipEntry};
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
@@ -1157,7 +1156,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This method extracts file metadata from the `source` archive, then simply performs a single
     /// big [`io::copy()`](io::copy) to transfer all the actual file contents without any
     /// decompression or decryption. This is more performant than the equivalent operation of
-    /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
+    /// calling [`Self::copy_file()`] for each entry from the `source` archive in sequence.
     ///
     ///```
     /// # fn main() -> Result<(), zip::result::ZipError> {
@@ -1198,7 +1197,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         /* Ensure we accept the file contents on faith (and avoid overwriting the data).
-         * See raw_copy_file_rename(). */
+         * See copy_file_rename(). */
         self.writing_to_file = true;
         self.writing_raw = true;
 
@@ -1253,19 +1252,23 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///     W: Write + Seek,
     /// {
     ///     // Retrieve file entry by name
-    ///     let file = src.by_name("src_file.txt")?;
+    ///     let file = src.by_name_raw("src_file.txt")?;
     ///
     ///     // Copy and rename the previously obtained file entry to the destination zip archive
-    ///     dst.raw_copy_file_rename(file, "new_name.txt")?;
+    ///     dst.copy_file_rename(file, "new_name.txt")?;
     ///
     ///     Ok(())
     /// }
     /// ```
-    pub fn raw_copy_file_rename<S: ToString>(
+    pub fn copy_file_rename<S, SToOwned>(
         &mut self,
-        mut file: ZipFile,
+        mut file: ZipEntry<'_, impl Read>,
         name: S,
-    ) -> ZipResult<()> {
+    ) -> ZipResult<()>
+    where
+        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
+        SToOwned: Into<Box<str>>,
+    {
         let mut options = SimpleFileOptions::default()
             .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
             .last_modified_time(
@@ -1288,21 +1291,21 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.writing_to_file = true;
         self.writing_raw = true;
 
-        io::copy(&mut file.take_raw_reader()?, self)?;
+        io::copy(&mut file, self)?;
         self.finish_file()
     }
 
-    /// Like `raw_copy_file_to_path`, but uses Path arguments.
+    /// Like `copy_file_rename`, but uses Path arguments.
     ///
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
     /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
     /// root.
-    pub fn raw_copy_file_to_path<P: AsRef<Path>>(
+    pub fn copy_file_to_path<P: AsRef<Path>>(
         &mut self,
-        file: ZipFile,
+        file: ZipEntry<'_, impl Read>,
         path: P,
     ) -> ZipResult<()> {
-        self.raw_copy_file_rename(file, path_to_string(path))
+        self.copy_file_rename(file, path_to_string(path))
     }
 
     /// Add a new file using the already compressed data from a ZIP file being read, this allows faster
@@ -1320,17 +1323,17 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///     W: Write + Seek,
     /// {
     ///     // Retrieve file entry by name
-    ///     let file = src.by_name("src_file.txt")?;
+    ///     let file = src.by_name_raw("src_file.txt")?;
     ///
     ///     // Copy the previously obtained file entry to the destination zip archive
-    ///     dst.raw_copy_file(file)?;
+    ///     dst.copy_file(file)?;
     ///
     ///     Ok(())
     /// }
     /// ```
-    pub fn raw_copy_file(&mut self, file: ZipFile) -> ZipResult<()> {
+    pub fn copy_file(&mut self, file: ZipEntry<'_, impl Read>) -> ZipResult<()> {
         let name = file.name().to_owned();
-        self.raw_copy_file_rename(file, name)
+        self.copy_file_rename(file, name)
     }
 
     /// Add a directory entry.
@@ -1910,6 +1913,7 @@ mod test {
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
+    use crate::unstable::read::ArchiveEntry;
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;

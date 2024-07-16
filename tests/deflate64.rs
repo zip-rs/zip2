@@ -1,7 +1,7 @@
 #![cfg(feature = "deflate64")]
 
 use std::io::{self, Read};
-use zip::ZipArchive;
+use zip::{unstable::read::ArchiveEntry, ZipArchive};
 
 #[test]
 fn decompress_deflate64() {

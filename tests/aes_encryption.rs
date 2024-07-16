@@ -1,7 +1,10 @@
 #![cfg(feature = "aes-crypto")]
 
 use std::io::{self, Read, Write};
-use zip::{result::ZipError, write::SimpleFileOptions, AesMode, CompressionMethod, ZipArchive};
+use zip::{
+    result::ZipError, unstable::read::ArchiveEntry, write::SimpleFileOptions, AesMode,
+    CompressionMethod, ZipArchive,
+};
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 

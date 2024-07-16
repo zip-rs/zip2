@@ -1,6 +1,8 @@
 use std::fs;
 use std::io::BufReader;
 
+use zip::unstable::read::ArchiveEntry;
+
 fn main() {
     std::process::exit(real_main());
 }

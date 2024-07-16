@@ -1,5 +1,5 @@
 use std::io;
-use zip::ZipArchive;
+use zip::{unstable::read::ArchiveEntry, ZipArchive};
 
 #[test]
 fn test_extended_timestamp() {
