@@ -31,11 +31,6 @@ impl<R> Crc32Reader<R> {
             Err("Invalid checksum")
         }
     }
-
-    #[allow(dead_code)]
-    pub fn into_inner(self) -> R {
-        self.inner
-    }
 }
 
 impl<R: Read> Read for Crc32Reader<R> {
