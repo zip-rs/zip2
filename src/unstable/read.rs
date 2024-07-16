@@ -119,7 +119,8 @@ mod sealed_data {
     use super::ZipFileData;
 
     #[doc(hidden)]
-    #[allow(private_interfaces)]
+    /* NB: This should be allow(private_interfaces), but that's currently unstable. */
+    #[allow(warnings)]
     pub trait ArchiveData {
         fn data(&self) -> &ZipFileData;
     }
@@ -264,7 +265,7 @@ pub trait ArchiveEntry: Read + sealed_data::ArchiveData {
 }
 
 impl<'a, R> sealed_data::ArchiveData for ZipEntry<'a, R> {
-    #[allow(private_interfaces)]
+    #[allow(warnings)]
     fn data(&self) -> &ZipFileData {
         self.data
     }
@@ -725,7 +726,7 @@ pub mod streaming {
     }
 
     impl<R> sealed_data::ArchiveData for StreamingZipEntry<R> {
-        #[allow(private_interfaces)]
+        #[allow(warnings)]
         fn data(&self) -> &ZipFileData {
             &self.data
         }
@@ -738,7 +739,7 @@ pub mod streaming {
     pub struct ZipStreamFileMetadata(ZipFileData);
 
     impl sealed_data::ArchiveData for ZipStreamFileMetadata {
-        #[allow(private_interfaces)]
+        #[allow(warnings)]
         fn data(&self) -> &ZipFileData {
             let Self(data) = self;
             data
