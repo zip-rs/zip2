@@ -715,7 +715,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     };
                     let target = target.into_boxed_str();
                     let target_is_dir_from_archive =
-                        self.shared.files.contains_key(&target) && is_dir(&target);
+                        self.shared.files.contains_key(&target) && spec::is_dir(&target);
                     let target_path = directory.as_ref().join(OsString::from(target.to_string()));
                     let target_is_dir = if target_is_dir_from_archive {
                         true
