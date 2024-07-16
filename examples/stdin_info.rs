@@ -1,16 +1,19 @@
 use std::io::{self, Read};
 
+use zip::unstable::read::{streaming::StreamingArchive, ArchiveEntry};
+
 fn main() {
     std::process::exit(real_main());
 }
 
 fn real_main() -> i32 {
     let stdin = io::stdin();
-    let mut stdin_handle = stdin.lock();
+    let stdin_handle = stdin.lock();
     let mut buf = [0u8; 16];
 
+    let mut archive = StreamingArchive::new(stdin_handle);
     loop {
-        match zip::read::read_zipfile_from_stream(&mut stdin_handle) {
+        match archive.next_entry() {
             Ok(Some(mut file)) => {
                 println!(
                     "{}: {} bytes ({} bytes packed)",

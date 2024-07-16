@@ -484,6 +484,7 @@ pub mod streaming {
     use std::mem;
     use std::ops;
 
+    #[derive(Debug)]
     pub struct StreamingArchive<R> {
         reader: R,
         remaining_before_next_entry: u64,
@@ -591,7 +592,23 @@ pub mod streaming {
                     }
                     Err(e) => return Err(e),
                 },
-                Some(block) => ZipCentralEntryBlock::parse(&mut io::Cursor::new(block))?,
+                Some(block) => {
+                    assert_eq!(block.len(), mem::size_of::<ZipLocalEntryBlock>());
+                    assert!(
+                        mem::size_of::<ZipLocalEntryBlock>()
+                            < mem::size_of::<ZipCentralEntryBlock>()
+                    );
+
+                    let mut remaining_block = [0u8; mem::size_of::<ZipCentralEntryBlock>()
+                        - mem::size_of::<ZipLocalEntryBlock>()];
+                    reader.read_exact(remaining_block.as_mut())?;
+
+                    let mut joined_block = [0u8; mem::size_of::<ZipCentralEntryBlock>()];
+                    joined_block[..block.len()].copy_from_slice(&block);
+                    joined_block[block.len()..].copy_from_slice(&remaining_block);
+
+                    ZipCentralEntryBlock::interpret(&joined_block)?
+                }
             };
 
             // Give archive_offset and central_header_start dummy value 0, since
