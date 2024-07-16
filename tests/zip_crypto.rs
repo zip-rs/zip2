@@ -34,6 +34,7 @@ const ZIP_CRYPTO_FILE: &[u8] = &[
 
 use std::io::Cursor;
 use zip::result::ZipError;
+use zip::unstable::read::ArchiveEntry;
 
 #[test]
 fn encrypting_file() {
