@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::Cursor;
 use zip::result::ZipResult;
-use zip::unstable::read::ArchiveEntry;
 use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
@@ -47,18 +46,18 @@ fn copy() {
 
             {
                 let file = src_archive
-                    .by_name_raw(ENTRY_NAME)
+                    .by_name(ENTRY_NAME)
                     .expect("Missing expected file");
 
-                zip.copy_file(file).expect("Couldn't copy file");
+                zip.raw_copy_file(file).expect("Couldn't copy file");
             }
 
             {
                 let file = src_archive
-                    .by_name_raw(ENTRY_NAME)
+                    .by_name(ENTRY_NAME)
                     .expect("Missing expected file");
 
-                zip.copy_file_rename(file, COPY_ENTRY_NAME)
+                zip.raw_copy_file_rename(file, COPY_ENTRY_NAME)
                     .expect("Couldn't copy and rename file");
             }
         }
