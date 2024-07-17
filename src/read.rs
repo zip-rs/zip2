@@ -101,6 +101,7 @@ pub(crate) mod zip_archive {
     /// ```no_run
     /// use std::io::prelude::*;
     /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
+    ///     use zip::HasZipMetadata;
     ///     let mut zip = zip::ZipArchive::new(reader)?;
     ///
     ///     for i in 0..zip.len() {
@@ -337,6 +338,70 @@ pub struct ZipFile<'a> {
     pub(crate) reader: ZipFileReader<'a>,
 }
 
+/// A struct for reading and seeking a zip file
+pub struct ZipFileSeek<'a, R> {
+    data: Cow<'a, ZipFileData>,
+    reader: ZipFileSeekReader<'a, R>,
+}
+
+enum ZipFileSeekReader<'a, R> {
+    Raw(SeekableTake<'a, R>),
+}
+
+struct SeekableTake<'a, R> {
+    inner: &'a mut R,
+    inner_starting_offset: u64,
+    length: u64,
+    current_offset: u64,
+}
+
+impl<'a, R: Seek> SeekableTake<'a, R> {
+    pub fn new(inner: &'a mut R, length: u64) -> io::Result<Self> {
+        let inner_starting_offset = inner.stream_position()?;
+        Ok(Self {
+            inner,
+            inner_starting_offset,
+            length,
+            current_offset: 0,
+        })
+    }
+}
+
+impl<'a, R: Seek> Seek for SeekableTake<'a, R> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let offset = match pos {
+            SeekFrom::Start(offset) => Some(offset),
+            SeekFrom::End(offset) => self.length.checked_add_signed(offset),
+            SeekFrom::Current(offset) => self.current_offset.checked_add_signed(offset),
+        };
+        match offset {
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid seek to a negative or overflowing position",
+            )),
+            Some(offset) => {
+                let clamped_offset = std::cmp::min(self.length, offset);
+                let new_inner_offset = self
+                    .inner
+                    .seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
+                self.current_offset = new_inner_offset - self.inner_starting_offset;
+                Ok(new_inner_offset)
+            }
+        }
+    }
+}
+
+impl<'a, R: Read> Read for SeekableTake<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let written = self
+            .inner
+            .take(self.length - self.current_offset)
+            .read(buf)?;
+        self.current_offset += written as u64;
+        Ok(written)
+    }
+}
+
 pub(crate) fn find_content<'a>(
     data: &ZipFileData,
     reader: &'a mut (impl Read + Seek),
@@ -349,6 +414,18 @@ pub(crate) fn find_content<'a>(
 
     reader.seek(io::SeekFrom::Start(data_start))?;
     Ok((reader as &mut dyn Read).take(data.compressed_size))
+}
+
+fn find_content_seek<'a, R: Read + Seek>(
+    data: &ZipFileData,
+    reader: &'a mut R,
+) -> ZipResult<SeekableTake<'a, R>> {
+    // Parse local header
+    let data_start = find_data_start(data, reader)?;
+    reader.seek(io::SeekFrom::Start(data_start))?;
+
+    // Explicit Ok and ? are needed to convert io::Error to ZipError
+    Ok(SeekableTake::new(reader, data.compressed_size)?)
 }
 
 fn find_data_start(
@@ -1161,6 +1238,36 @@ impl<R: Read + Seek> ZipArchive<R> {
             .map(|(name, _)| name.as_ref())
     }
 
+    /// Search for a file entry by name and return a seekable object.
+    pub fn by_name_seek(&mut self, name: &str) -> ZipResult<ZipFileSeek<R>> {
+        self.by_index_seek(self.index_for_name(name).ok_or(ZipError::FileNotFound)?)
+    }
+
+    /// Search for a file entry by index and return a seekable object.
+    pub fn by_index_seek(&mut self, index: usize) -> ZipResult<ZipFileSeek<R>> {
+        let reader = &mut self.reader;
+        self.shared
+            .files
+            .get_index(index)
+            .ok_or(ZipError::FileNotFound)
+            .and_then(move |(_, data)| {
+                let seek_reader = match data.compression_method {
+                    CompressionMethod::Stored => {
+                        ZipFileSeekReader::Raw(find_content_seek(data, reader)?)
+                    }
+                    _ => {
+                        return Err(ZipError::UnsupportedArchive(
+                            "Seekable compressed files are not yet supported",
+                        ))
+                    }
+                };
+                Ok(ZipFileSeek {
+                    reader: seek_reader,
+                    data: Cow::Borrowed(data),
+                })
+            })
+    }
+
     fn by_name_with_optional_password<'a>(
         &'a mut self,
         name: &str,
@@ -1532,6 +1639,12 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     Ok(false)
 }
 
+/// A trait for exposing file metadata inside the zip.
+pub trait HasZipMetadata {
+    /// Get the file metadata
+    fn get_metadata(&self) -> &ZipFileData;
+}
+
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
     fn get_reader(&mut self) -> ZipResult<&mut ZipFileReader<'a>> {
@@ -1554,8 +1667,8 @@ impl<'a> ZipFile<'a> {
     /// Get the version of the file
     pub fn version_made_by(&self) -> (u8, u8) {
         (
-            self.data.version_made_by / 10,
-            self.data.version_made_by % 10,
+            self.get_metadata().version_made_by / 10,
+            self.get_metadata().version_made_by % 10,
         )
     }
 
@@ -1572,14 +1685,14 @@ impl<'a> ZipFile<'a> {
     /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
     pub fn name(&self) -> &str {
-        &self.data.file_name
+        &self.get_metadata().file_name
     }
 
     /// Get the name of the file, in the raw (internal) byte representation.
     ///
     /// The encoding of this data is currently undefined.
     pub fn name_raw(&self) -> &[u8] {
-        &self.data.file_name_raw
+        &self.get_metadata().file_name_raw
     }
 
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
@@ -1606,7 +1719,7 @@ impl<'a> ZipFile<'a> {
     ///
     /// [`ParentDir`]: `Component::ParentDir`
     pub fn mangled_name(&self) -> PathBuf {
-        self.data.file_name_sanitized()
+        self.get_metadata().file_name_sanitized()
     }
 
     /// Ensure the file path is safe to use as a [`Path`].
@@ -1620,27 +1733,27 @@ impl<'a> ZipFile<'a> {
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
     pub fn enclosed_name(&self) -> Option<PathBuf> {
-        self.data.enclosed_name()
+        self.get_metadata().enclosed_name()
     }
 
     /// Get the comment of the file
     pub fn comment(&self) -> &str {
-        &self.data.file_comment
+        &self.get_metadata().file_comment
     }
 
     /// Get the compression method used to store the file
     pub fn compression(&self) -> CompressionMethod {
-        self.data.compression_method
+        self.get_metadata().compression_method
     }
 
     /// Get the size of the file, in bytes, in the archive
     pub fn compressed_size(&self) -> u64 {
-        self.data.compressed_size
+        self.get_metadata().compressed_size
     }
 
     /// Get the size of the file, in bytes, when uncompressed
     pub fn size(&self) -> u64 {
-        self.data.uncompressed_size
+        self.get_metadata().uncompressed_size
     }
 
     /// Get the time the file was last modified
@@ -1665,17 +1778,20 @@ impl<'a> ZipFile<'a> {
 
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
-        self.data.unix_mode()
+        self.get_metadata().unix_mode()
     }
 
     /// Get the CRC32 hash of the original file
     pub fn crc32(&self) -> u32 {
-        self.data.crc32
+        self.get_metadata().crc32
     }
 
     /// Get the extra data of the zip header for this file
     pub fn extra_data(&self) -> Option<&[u8]> {
-        self.data.extra_field.as_ref().map(|v| v.deref().deref())
+        self.get_metadata()
+            .extra_field
+            .as_ref()
+            .map(|v| v.deref().deref())
     }
 
     /// Get the starting offset of the data of the compressed file
@@ -1685,16 +1801,25 @@ impl<'a> ZipFile<'a> {
 
     /// Get the starting offset of the zip header for this file
     pub fn header_start(&self) -> u64 {
-        self.data.header_start
+        self.get_metadata().header_start
     }
     /// Get the starting offset of the zip header in the central directory for this file
     pub fn central_header_start(&self) -> u64 {
-        self.data.central_header_start
+        self.get_metadata().central_header_start
     }
+}
 
+/// Methods for retrieving information on zip files
+impl<'a> ZipFile<'a> {
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
         self.data.extra_fields.iter()
+    }
+}
+
+impl<'a> HasZipMetadata for ZipFile<'a> {
+    fn get_metadata(&self) -> &ZipFileData {
+        self.data.as_ref()
     }
 }
 
@@ -1713,6 +1838,28 @@ impl<'a> Read for ZipFile<'a> {
 
     fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
         self.get_reader()?.read_to_string(buf)
+    }
+}
+
+impl<'a, R: Read> Read for ZipFileSeek<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match &mut self.reader {
+            ZipFileSeekReader::Raw(r) => r.read(buf),
+        }
+    }
+}
+
+impl<'a, R: Seek> Seek for ZipFileSeek<'a, R> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match &mut self.reader {
+            ZipFileSeekReader::Raw(r) => r.seek(pos),
+        }
+    }
+}
+
+impl<'a, R> HasZipMetadata for ZipFileSeek<'a, R> {
+    fn get_metadata(&self) -> &ZipFileData {
+        self.data.as_ref()
     }
 }
 
