@@ -1,7 +1,7 @@
 //! Alternate implementation of [`crate::read`].
 
 use crate::compression::CompressionMethod;
-use crate::crc32::Crc32Reader;
+use crate::crc32::non_crypto::Crc32Reader;
 use crate::extra_fields::ExtraField;
 use crate::read::find_data_start;
 use crate::result::{ZipError, ZipResult};

@@ -41,8 +41,8 @@ fn perform_raw_copy_file<R: Read + Seek, W: Write + Seek>(
     mut target: ZipWriter<W>,
 ) -> ZipResult<ZipWriter<W>> {
     for i in 0..src.len() {
-        let entry = src.by_index_raw(i)?;
-        target.copy_file(entry)?;
+        let entry = src.by_index(i)?;
+        target.raw_copy_file(entry)?;
     }
     Ok(target)
 }

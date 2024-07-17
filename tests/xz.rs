@@ -1,7 +1,7 @@
 #![cfg(feature = "xz")]
 
 use std::io::{self, Read};
-use zip::{unstable::read::ArchiveEntry, ZipArchive};
+use zip::ZipArchive;
 
 #[test]
 fn decompress_xz() -> io::Result<()> {
