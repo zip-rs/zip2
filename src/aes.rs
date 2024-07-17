@@ -216,6 +216,13 @@ impl<R: Read> Read for AesReaderValid<R> {
     }
 }
 
+impl<R> AesReaderValid<R> {
+    /// Consumes this decoder, returning the underlying reader.
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
+}
+
 pub struct AesWriter<W> {
     writer: W,
     cipher: Cipher,

@@ -23,6 +23,11 @@ impl<R: Read> LzmaDecoder<R> {
             stream: Stream::new_with_options(&OPTIONS, VecDeque::new()),
         }
     }
+
+    pub fn finish(mut self) -> Result<VecDeque<u8>> {
+        copy(&mut self.compressed_reader, &mut self.stream)?;
+        self.stream.finish().map_err(Error::from)
+    }
 }
 
 impl<R: BufRead> Read for LzmaDecoder<R> {
