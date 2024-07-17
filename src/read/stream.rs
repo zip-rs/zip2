@@ -1,33 +1,50 @@
 use std::fs;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{ZipError, ZipResult};
-use crate::unstable::read::{
-    streaming::{StreamingArchive, StreamingZipEntry, ZipStreamFileMetadata},
-    ArchiveEntry,
+use super::{
+    central_header_to_zip_file_inner, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError,
+    ZipFile, ZipFileData, ZipResult,
 };
+use crate::spec::FixedSizeBlock;
 
 /// Stream decoder for zip.
 #[derive(Debug)]
-pub struct ZipStreamReader<R>(StreamingArchive<R>);
+pub struct ZipStreamReader<R>(R);
 
 impl<R> ZipStreamReader<R> {
     /// Create a new ZipStreamReader
     pub const fn new(reader: R) -> Self {
-        Self(StreamingArchive::new(reader))
+        Self(reader)
     }
 }
 
 impl<R: Read> ZipStreamReader<R> {
+    fn parse_central_directory(&mut self) -> ZipResult<ZipStreamFileMetadata> {
+        // Give archive_offset and central_header_start dummy value 0, since
+        // they are not used in the output.
+        let archive_offset = 0;
+        let central_header_start = 0;
+
+        // Parse central header
+        let block = ZipCentralEntryBlock::parse(&mut self.0)?;
+        let file = central_header_to_zip_file_inner(
+            &mut self.0,
+            archive_offset,
+            central_header_start,
+            block,
+        )?;
+        Ok(ZipStreamFileMetadata(file))
+    }
+
     /// Iterate over the stream and extract all file and their
     /// metadata.
     pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
-        while let Some(mut file) = self.0.next_entry()? {
+        while let Some(mut file) = read_zipfile_from_stream(&mut self.0)? {
             visitor.visit_file(&mut file)?;
         }
 
-        while let Some(metadata) = self.0.next_metadata_entry()? {
+        while let Ok(metadata) = self.parse_central_directory() {
             visitor.visit_additional_metadata(&metadata)?;
         }
 
@@ -42,7 +59,7 @@ impl<R: Read> ZipStreamReader<R> {
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         struct Extractor<'a>(&'a Path);
         impl ZipStreamVisitor for Extractor<'_> {
-            fn visit_file(&mut self, file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()> {
+            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 let filepath = file
                     .enclosed_name()
                     .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
@@ -96,12 +113,92 @@ pub trait ZipStreamVisitor {
     ///     - `comment`: set to an empty string
     ///     - `data_start`: set to 0
     ///     - `external_attributes`: `unix_mode()`: will return None
-    fn visit_file(&mut self, file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()>;
+    fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()>;
 
     /// This function is guranteed to be called after all `visit_file`s.
     ///
     ///  * `metadata` - Provides missing metadata in `visit_file`.
     fn visit_additional_metadata(&mut self, metadata: &ZipStreamFileMetadata) -> ZipResult<()>;
+}
+
+/// Additional metadata for the file.
+#[derive(Debug)]
+pub struct ZipStreamFileMetadata(ZipFileData);
+
+impl ZipStreamFileMetadata {
+    /// Get the name of the file
+    ///
+    /// # Warnings
+    ///
+    /// It is dangerous to use this name directly when extracting an archive.
+    /// It may contain an absolute path (`/etc/shadow`), or break out of the
+    /// current directory (`../runtime`). Carelessly writing to these paths
+    /// allows an attacker to craft a ZIP archive that will overwrite critical
+    /// files.
+    ///
+    /// You can use the [`ZipFile::enclosed_name`] method to validate the name
+    /// as a safe path.
+    pub fn name(&self) -> &str {
+        &self.0.file_name
+    }
+
+    /// Get the name of the file, in the raw (internal) byte representation.
+    ///
+    /// The encoding of this data is currently undefined.
+    pub fn name_raw(&self) -> &[u8] {
+        &self.0.file_name_raw
+    }
+
+    /// Rewrite the path, ignoring any path components with special meaning.
+    ///
+    /// - Absolute paths are made relative
+    /// - [std::path::Component::ParentDir]s are ignored
+    /// - Truncates the filename at a NULL byte
+    ///
+    /// This is appropriate if you need to be able to extract *something* from
+    /// any archive, but will easily misrepresent trivial paths like
+    /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
+    /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
+    pub fn mangled_name(&self) -> PathBuf {
+        self.0.file_name_sanitized()
+    }
+
+    /// Ensure the file path is safe to use as a [`Path`].
+    ///
+    /// - It can't contain NULL bytes
+    /// - It can't resolve to a path outside the current directory
+    ///   > `foo/../bar` is fine, `foo/../../bar` is not.
+    /// - It can't be an absolute path
+    ///
+    /// This will read well-formed ZIP files correctly, and is resistant
+    /// to path-based exploits. It is recommended over
+    /// [`ZipFile::mangled_name`].
+    pub fn enclosed_name(&self) -> Option<PathBuf> {
+        self.0.enclosed_name()
+    }
+
+    /// Returns whether the file is actually a directory
+    pub fn is_dir(&self) -> bool {
+        self.name()
+            .chars()
+            .next_back()
+            .map_or(false, |c| c == '/' || c == '\\')
+    }
+
+    /// Returns whether the file is a regular file
+    pub fn is_file(&self) -> bool {
+        !self.is_dir()
+    }
+
+    /// Get the comment of the file
+    pub fn comment(&self) -> &str {
+        &self.0.file_comment
+    }
+
+    /// Get unix mode for the file
+    pub const fn unix_mode(&self) -> Option<u32> {
+        self.0.unix_mode()
+    }
 }
 
 #[cfg(test)]
@@ -111,7 +208,7 @@ mod test {
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {
-        fn visit_file(&mut self, _file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()> {
+        fn visit_file(&mut self, _file: &mut ZipFile<'_>) -> ZipResult<()> {
             Ok(())
         }
 
@@ -127,7 +224,7 @@ mod test {
     #[derive(Default, Debug, Eq, PartialEq)]
     struct CounterVisitor(u64, u64);
     impl ZipStreamVisitor for CounterVisitor {
-        fn visit_file(&mut self, _file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()> {
+        fn visit_file(&mut self, _file: &mut ZipFile<'_>) -> ZipResult<()> {
             self.0 += 1;
             Ok(())
         }
@@ -170,7 +267,7 @@ mod test {
             filenames: BTreeSet<Box<str>>,
         }
         impl ZipStreamVisitor for V {
-            fn visit_file(&mut self, file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()> {
+            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 if file.is_file() {
                     self.filenames.insert(file.name().into());
                 }
@@ -207,7 +304,7 @@ mod test {
             filenames: BTreeSet<Box<str>>,
         }
         impl ZipStreamVisitor for V {
-            fn visit_file(&mut self, file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()> {
+            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 let full_name = file.enclosed_name().unwrap();
                 let file_name = full_name.file_name().unwrap().to_str().unwrap();
                 assert!(

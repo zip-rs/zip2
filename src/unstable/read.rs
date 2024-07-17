@@ -487,7 +487,6 @@ pub mod streaming {
     use std::mem;
     use std::ops;
 
-    #[derive(Debug)]
     pub struct StreamingArchive<R> {
         reader: R,
         remaining_before_next_entry: u64,
