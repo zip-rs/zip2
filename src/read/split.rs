@@ -45,6 +45,7 @@ pub mod file {
                     ops::Bound::Excluded(&end) => end,
                     ops::Bound::Unbounded => len,
                 };
+                #[allow(clippy::let_and_return)]
                 let clamped_end = unclamped_end.min(len);
                 clamped_end
             };
@@ -140,6 +141,7 @@ pub mod file {
             mut to: (&mut Self::OutF, u64),
             len: usize,
         ) -> io::Result<()> {
+            #[allow(clippy::needless_borrow)]
             let (ref from, from_offset) = from;
             let (ref mut to, to_offset) = to;
 
@@ -314,6 +316,7 @@ pub mod file {
                 mut to: (&mut Self::OutF, u64),
                 len: usize,
             ) -> io::Result<usize> {
+                #[allow(clippy::needless_borrow)]
                 let (ref from, from_start) = from;
                 let (ref mut to, to_start) = to;
 
@@ -362,6 +365,7 @@ pub mod file {
                 Ok(i)
             }
 
+            #[allow(clippy::missing_transmute_annotations)]
             #[test]
             fn pread() {
                 let i = readable_file(b"asdf").unwrap();
@@ -527,6 +531,7 @@ pub mod pipe {
 
     use std::io;
 
+    #[allow(dead_code)]
     pub trait WriteEnd: io::Write {}
 
     pub trait WriteSplicer {
@@ -546,6 +551,7 @@ pub mod pipe {
             to: &mut Self::OutP,
             len: usize,
         ) -> io::Result<()> {
+            #[allow(clippy::needless_borrow)]
             let (ref from, from_offset) = from;
 
             let mut remaining_to_read: usize = len;
@@ -572,6 +578,7 @@ pub mod pipe {
         }
     }
 
+    #[allow(dead_code)]
     pub trait ReadEnd: io::Read {}
 
     pub trait ReadSplicer {
@@ -719,6 +726,7 @@ pub mod pipe {
         }
 
         impl<'infd, 'buf> PipeWriteBufferSplicer<'infd, 'buf> {
+            #[allow(dead_code)]
             pub fn new(buf: &'buf mut [u8]) -> Self {
                 assert!(!buf.is_empty());
                 Self {
@@ -738,6 +746,7 @@ pub mod pipe {
                 to: &mut Self::OutP,
                 len: usize,
             ) -> io::Result<usize> {
+                #[allow(clippy::needless_borrow)]
                 let (ref from, from_start) = from;
 
                 let buf_clamped_len = len.min(self.buf.len());
@@ -773,6 +782,7 @@ pub mod pipe {
         }
 
         impl<'buf> PipeReadBufferSplicer<'buf> {
+            #[allow(dead_code)]
             pub fn new(buf: &'buf mut [u8]) -> Self {
                 assert!(!buf.is_empty());
                 Self { buf }
@@ -894,7 +904,7 @@ pub mod pipe {
                 /* Get remaining chars written. */
                 buf.clear();
                 r.read_to_end(&mut buf).unwrap();
-                assert_eq!(&buf[..], &[b'd', b'f', b'a', b's', b'd', b'f']);
+                assert_eq!(&buf[..], b"dfasdf".as_ref());
 
                 t.join().unwrap().unwrap();
             }
@@ -1051,7 +1061,7 @@ pub mod pipe {
                 /* Get remaining chars written. */
                 buf.clear();
                 r.read_to_end(&mut buf).unwrap();
-                assert_eq!(&buf[..], &[b'f', b'a', b's', b'd', b'f']);
+                assert_eq!(&buf[..], b"fasdf".as_ref());
 
                 t.join().unwrap().unwrap();
             }
@@ -1155,7 +1165,7 @@ pub mod util {
             let mut limited = TakeWrite::take(out, 3);
             assert_eq!(3, limited.limit());
 
-            let mut buf = vec![0u8; 15];
+            let mut buf = [0u8; 15];
 
             assert_eq!(
                 io::ErrorKind::WriteZero,

@@ -17,9 +17,7 @@ pub mod path_splitting {
         FileDirOverlap(String),
     }
 
-    fn split_by_separator<'a>(
-        entry_path: &'a str,
-    ) -> Result<impl Iterator<Item = &'a str>, PathSplitError> {
+    fn split_by_separator(entry_path: &str) -> Result<impl Iterator<Item = &str>, PathSplitError> {
         if entry_path.contains('\\') {
             if entry_path.contains('/') {
                 return Err(PathSplitError::PathFormat(format!(
@@ -152,20 +150,20 @@ pub mod path_splitting {
                     .entry(component)
                     .or_insert_with(|| Box::new(FSEntry::Dir(DirEntry::default())));
                 cur_dir = match next_subdir.as_mut() {
-                    &mut FSEntry::File(_) => {
+                    FSEntry::File(_) => {
                         return Err(PathSplitError::FileDirOverlap(format!(
                             "a file was already registered at the same path as the dir entry {:?}",
                             entry_path
                         )));
                     }
-                    &mut FSEntry::Dir(ref mut subdir) => subdir,
+                    FSEntry::Dir(ref mut subdir) => subdir,
                 }
             }
             match file_component {
                 Some(filename) => {
                     /* We can't handle duplicate file paths, as that might mess up our
                      * parallelization strategy. */
-                    if let Some(_) = cur_dir.children.get(filename) {
+                    if cur_dir.children.contains_key(filename) {
                         return Err(PathSplitError::FileDirOverlap(format!(
                             "another file or directory was already registered at the same path as the file entry {:?}",
                             entry_path
@@ -179,7 +177,7 @@ pub mod path_splitting {
                     /* We can't handle duplicate directory entries for the exact same normalized
                      * path, as it's not clear how to merge the possibility of two separate file
                      * permissions. */
-                    if let Some(_) = cur_dir.properties.replace(data) {
+                    if cur_dir.properties.replace(data).is_some() {
                         return Err(PathSplitError::FileDirOverlap(format!(
                             "another directory was already registered at the path {:?}",
                             entry_path
@@ -456,6 +454,7 @@ pub mod handle_creation {
          * as a proxy. This should be considered if requested by users. */
         fs::create_dir_all(top_level_extraction_dir)?;
 
+        #[allow(clippy::mutable_key_type)]
         let mut file_handle_mapping: HashMap<ZipDataHandle<'a>, fs::File> = HashMap::new();
         let mut entry_queue: VecDeque<(PathBuf, Box<FSEntry<'a, &'a ZipFileData>>)> =
             lex_entry_trie
@@ -757,6 +756,7 @@ pub mod split_extraction {
     ) -> impl FnOnce() + Send + 'scope {
         move || match f() {
             Ok(()) => (),
+            #[allow(clippy::single_match)]
             Err(e) => match err_sender.send(e) {
                 Ok(()) => (),
                 /* We use an async sender, so this should only error if the receiver has hung
@@ -804,7 +804,7 @@ pub mod split_extraction {
          *     sections in parallel across a thread pool. */
         let input_file = FileInput::new(input_file)?;
 
-        thread::scope(move |ref scope| {
+        thread::scope(move |scope| {
             /* (4) Create n parallel consumer pipelines. Threads are spawned into the scope, so
              *     panics get propagated automatically, and all threads are joined at the end of the
              *     scope. wrap_spawn_err() is used to enable thread closures to return a Result and
@@ -833,6 +833,7 @@ pub mod split_extraction {
                     /* Send this consumer pipeline's index to the zip-input-reader thread when it's
                      * ready to receive new input. */
                     let queue_sender = queue_sender.clone();
+                    #[allow(clippy::single_match)]
                     let notify_readiness = move || match queue_sender.send(consumer_index) {
                         Ok(()) => (),
                         /* Disconnected; this is expected to occur at the end of extraction. */
@@ -856,7 +857,7 @@ pub mod split_extraction {
                                 #[cfg(not(target_os = "linux"))]
                                 let mut s = PipeReadBufferSplicer::new(&mut splice_buf);
 
-                                for (ref entry, mut output_file) in uncompressed_receiver.iter() {
+                                for (entry, mut output_file) in uncompressed_receiver.iter() {
                                     s.splice_to_file_all(
                                         &mut uncompressed_read_end,
                                         (&mut output_file, 0),
@@ -891,7 +892,7 @@ pub mod split_extraction {
                                 let mut buffer_allocation: Box<[u8]> =
                                     vec![0u8; decompression_copy_buffer_length].into_boxed_slice();
 
-                                for (ref entry, output_file) in compressed_receiver.iter() {
+                                for (entry, output_file) in compressed_receiver.iter() {
                                     /* Construct the decompressing reader. */
                                     let limited_reader = ((&mut compressed_read_end)
                                         as &mut dyn Read)
@@ -960,7 +961,7 @@ pub mod split_extraction {
                                  * until we notify them. */
                                 notify_readiness();
 
-                                for (ref entry, data_start, mut output_file) in read_recv.iter() {
+                                for (entry, data_start, mut output_file) in read_recv.iter() {
                                     /* If uncompressed, we can use copy_file_range() directly, and
                                      * avoid splicing through our decompression pipeline. */
                                     if entry.compression_method == CompressionMethod::Stored {
@@ -1059,6 +1060,7 @@ pub mod split_extraction {
                 .spawn_scoped(
                     scope,
                     wrap_spawn_err(err_sender, move || {
+                        #[allow(clippy::mutable_key_type)]
                         let mut file_handle_mapping = file_handle_mapping;
                         /* All consumer pipelines share the same channel to notify us of their
                          * identity when ready. */
@@ -1071,7 +1073,7 @@ pub mod split_extraction {
 
                         /* Entries are ordered by their offset, so we will be going monotonically
                          * forward in the underlying file. */
-                        for ref entry in shared.files.values() {
+                        for entry in shared.files.values() {
                             /* We have already created all necessary directories, and we set any
                              * dir perms after extracting file contents. */
                             if entry.is_dir() || entry.is_dir_by_mode() {
@@ -1112,7 +1114,7 @@ pub mod split_extraction {
             /* If no I/O errors occurred, this won't trigger. We will only be able to propagate
              * a single I/O error, but this also avoids propagating any errors triggered after the
              * initial one. */
-            for err in err_receiver.iter() {
+            if let Some(err) = err_receiver.iter().next() {
                 return Err(err);
             }
 
