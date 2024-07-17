@@ -8,7 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Zip32CentralDirectoryEnd, ZIP64_ENTRY_THR};
+use crate::spec::{self, FixedSizeBlock, Pod, Zip32CentralDirectoryEnd, ZIP64_ENTRY_THR};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -1760,19 +1760,17 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
     /* TODO: smallvec? */
-    let mut block = [0u8; mem::size_of::<ZipLocalEntryBlock>()];
-    reader.read_exact(&mut block)?;
-    let block: Box<[u8]> = block.into();
 
-    let signature = spec::Magic::from_first_le_bytes(&block);
+    let mut block = ZipLocalEntryBlock::zeroed();
+    reader.read_exact(block.as_bytes_mut())?;
 
-    match signature {
+    match block.magic().from_le() {
         spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
         spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
 
-    let block = ZipLocalEntryBlock::interpret(&block)?;
+    let block = block.from_le();
 
     let mut result = ZipFileData::from_local_block(block, reader)?;
 
