@@ -7,14 +7,7 @@ use bencher::Bencher;
 use getrandom::getrandom;
 use tempdir::TempDir;
 use zip::write::SimpleFileOptions;
-use zip::{
-    result::ZipResult,
-    unstable::{
-        read::streaming::{StreamingZipEntry, ZipStreamFileMetadata},
-        stream::{ZipStreamReader, ZipStreamVisitor},
-    },
-    CompressionMethod, ZipArchive, ZipWriter,
-};
+use zip::{result::ZipResult, CompressionMethod, ZipArchive, ZipWriter};
 
 const FILE_COUNT: usize = 15_000;
 const FILE_SIZE: usize = 1024;
@@ -113,24 +106,12 @@ fn parse_stream_archive(bench: &mut Bencher) {
     let out = dir.path().join("bench-out.zip");
     fs::write(&out, &bytes).unwrap();
 
-    struct V;
-    impl ZipStreamVisitor for V {
-        fn visit_file(&mut self, _file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()> {
-            Ok(())
-        }
-
-        fn visit_additional_metadata(
-            &mut self,
-            _metadata: &ZipStreamFileMetadata,
-        ) -> ZipResult<()> {
-            Ok(())
-        }
-    }
-
     bench.iter(|| {
-        let f = fs::File::open(&out).unwrap();
-        let archive = ZipStreamReader::new(f);
-        archive.visit(&mut V).unwrap();
+        let mut f = fs::File::open(&out).unwrap();
+        while zip::read::read_zipfile_from_stream(&mut f)
+            .unwrap()
+            .is_some()
+        {}
     });
     bench.bytes = bytes.len() as u64;
 }

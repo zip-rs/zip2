@@ -3,10 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use std::io::{Read, Seek, SeekFrom};
 use tikv_jemallocator::Jemalloc;
-use zip::unstable::{
-    read::streaming::{StreamingArchive, StreamingZipEntry, ZipStreamFileMetadata},
-    stream::ZipStreamVisitor,
-};
+use zip::read::read_zipfile_from_stream;
 
 const MAX_BYTES_TO_READ: u64 = 1 << 24;
 
@@ -21,24 +18,11 @@ fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         let mut file = zip.by_index(i)?.take(MAX_BYTES_TO_READ);
         std::io::copy(&mut file, &mut std::io::sink())?;
     }
-
     let mut reader = zip.into_inner();
-    reader.rewind()?;
-
-    struct V;
-    impl ZipStreamVisitor for V {
-        fn visit_file(&mut self, file: &mut StreamingZipEntry<impl Read>) -> ZipResult<()> {
-            std::io::copy(&mut file, &mut std::io::sink())?
-        }
-
-        fn visit_additional_metadata(&mut self, metadata: &ZipStreamFileMetadata) -> ZipResult<()> {
-            Ok(())
-        }
+    reader.seek(SeekFrom::Start(0))?;
+    while let Ok(Some(mut file)) = read_zipfile_from_stream(&mut reader) {
+        std::io::copy(&mut file, &mut std::io::sink())?;
     }
-
-    let archive = StreamingArchive::new(reader)?;
-    archive.visit(&mut V)?;
-
     Ok(())
 }
 

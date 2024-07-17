@@ -1914,6 +1914,71 @@ impl<'a> Drop for ZipFile<'a> {
     }
 }
 
+/// Read ZipFile structures from a non-seekable reader.
+///
+/// This is an alternative method to read a zip file. If possible, use the ZipArchive functions
+/// as some information will be missing when reading this manner.
+///
+/// Reads a file header from the start of the stream. Will return `Ok(Some(..))` if a file is
+/// present at the start of the stream. Returns `Ok(None)` if the start of the central directory
+/// is encountered. No more files should be read after this.
+///
+/// The Drop implementation of ZipFile ensures that the reader will be correctly positioned after
+/// the structure is done.
+///
+/// Missing fields are:
+/// * `comment`: set to an empty string
+/// * `data_start`: set to 0
+/// * `external_attributes`: `unix_mode()`: will return None
+pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
+    // We can't use the typical ::parse() method, as we follow separate code paths depending on the
+    // "magic" value (since the magic value will be from the central directory header if we've
+    // finished iterating over all the actual files).
+    /* TODO: smallvec? */
+    let mut block = [0u8; mem::size_of::<ZipLocalEntryBlock>()];
+    reader.read_exact(&mut block)?;
+    let block: Box<[u8]> = block.into();
+
+    let signature = spec::Magic::from_first_le_bytes(&block);
+
+    match signature {
+        spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
+        spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
+    }
+
+    let block = ZipLocalEntryBlock::interpret(&block)?;
+
+    let mut result = ZipFileData::from_local_block(block, reader)?;
+
+    match parse_extra_field(&mut result) {
+        Ok(..) | Err(ZipError::Io(..)) => {}
+        Err(e) => return Err(e),
+    }
+
+    let limit_reader = (reader as &'a mut dyn Read).take(result.compressed_size);
+
+    let result_crc32 = result.crc32;
+    let result_compression_method = result.compression_method;
+    let crypto_reader = make_crypto_reader(
+        result_compression_method,
+        result_crc32,
+        result.last_modified_time,
+        result.using_data_descriptor,
+        limit_reader,
+        None,
+        None,
+        #[cfg(feature = "aes-crypto")]
+        result.compressed_size,
+    )?;
+
+    Ok(Some(ZipFile {
+        data: Cow::Owned(result),
+        crypto_reader: None,
+        reader: make_reader(result_compression_method, result_crc32, crypto_reader)?,
+    }))
+}
+
 #[cfg(test)]
 mod test {
     use crate::result::ZipResult;
@@ -1966,13 +2031,16 @@ mod test {
 
     #[test]
     fn zip_read_streaming() {
-        use crate::unstable::read::streaming::StreamingArchive;
+        use super::read_zipfile_from_stream;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
-        let reader = Cursor::new(v);
-        let mut archive = StreamingArchive::new(reader);
-        while archive.next_entry().unwrap().is_some() {}
+        let mut reader = Cursor::new(v);
+        loop {
+            if read_zipfile_from_stream(&mut reader).unwrap().is_none() {
+                break;
+            }
+        }
     }
 
     #[test]
