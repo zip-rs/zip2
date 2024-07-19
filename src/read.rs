@@ -184,11 +184,11 @@ impl<'a> CryptoReader<'a> {
 }
 
 #[cold]
-fn invalid_state() -> io::Error {
-    io::Error::new(
+fn invalid_state<T>() -> io::Result<T> {
+    Err(io::Error::new(
         io::ErrorKind::Other,
         "ZipFileReader was in an invalid state",
-    )
+    ))
 }
 
 pub(crate) enum ZipFileReader<'a> {
@@ -200,7 +200,7 @@ pub(crate) enum ZipFileReader<'a> {
 impl<'a> Read for ZipFileReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            ZipFileReader::NoReader => Err(invalid_state()),
+            ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read(buf),
             ZipFileReader::Compressed(r) => r.read(buf),
         }
@@ -208,7 +208,7 @@ impl<'a> Read for ZipFileReader<'a> {
 
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
         match self {
-            ZipFileReader::NoReader => Err(invalid_state()),
+            ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_exact(buf),
             ZipFileReader::Compressed(r) => r.read_exact(buf),
         }
@@ -216,7 +216,7 @@ impl<'a> Read for ZipFileReader<'a> {
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
         match self {
-            ZipFileReader::NoReader => Err(invalid_state()),
+            ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_end(buf),
             ZipFileReader::Compressed(r) => r.read_to_end(buf),
         }
@@ -224,7 +224,7 @@ impl<'a> Read for ZipFileReader<'a> {
 
     fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
         match self {
-            ZipFileReader::NoReader => Err(invalid_state()),
+            ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_string(buf),
             ZipFileReader::Compressed(r) => r.read_to_string(buf),
         }
@@ -234,7 +234,7 @@ impl<'a> Read for ZipFileReader<'a> {
 impl<'a> ZipFileReader<'a> {
     fn into_inner(self) -> io::Result<io::Take<&'a mut dyn Read>> {
         match self {
-            ZipFileReader::NoReader => Err(invalid_state()),
+            ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => Ok(r),
             ZipFileReader::Compressed(r) => {
                 Ok(r.into_inner().into_inner().into_inner().into_inner())
