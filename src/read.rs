@@ -1083,7 +1083,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             }
             let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                 let mut target = Vec::with_capacity(file.size() as usize);
-                file.read_exact(&mut target)?;
+                file.read_to_end(&mut target)?;
                 Some(target)
             } else {
                 None
@@ -1097,8 +1097,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 {
                     use std::os::unix::ffi::OsStringExt;
                     let target = OsString::from_vec(target);
-                    let target_path = directory.as_ref().join(target);
-                    std::os::unix::fs::symlink(target_path, outpath.as_path())?;
+                    std::os::unix::fs::symlink(&target, outpath.as_path())?;
                 }
                 #[cfg(windows)]
                 {
@@ -1717,7 +1716,7 @@ impl<'a> ZipFile<'a> {
     /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
-    /// [`ParentDir`]: `Component::ParentDir`
+    /// [`ParentDir`]: `PathBuf::Component::ParentDir`
     pub fn mangled_name(&self) -> PathBuf {
         self.get_metadata().file_name_sanitized()
     }
@@ -1744,6 +1743,11 @@ impl<'a> ZipFile<'a> {
     /// Get the compression method used to store the file
     pub fn compression(&self) -> CompressionMethod {
         self.get_metadata().compression_method
+    }
+
+    /// Get if the files is encrypted or not
+    pub fn encrypted(&self) -> bool {
+        self.data.encrypted
     }
 
     /// Get the size of the file, in bytes, in the archive
