@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock};
+use crate::spec::{self, FixedSizeBlock, Pod};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -895,7 +895,7 @@ impl ZipFileData {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[repr(packed)]
+#[repr(packed, C)]
 pub(crate) struct ZipCentralEntryBlock {
     magic: spec::Magic,
     pub version_made_by: u16,
@@ -915,6 +915,8 @@ pub(crate) struct ZipCentralEntryBlock {
     pub external_file_attributes: u32,
     pub offset: u32,
 }
+
+unsafe impl Pod for ZipCentralEntryBlock {}
 
 impl FixedSizeBlock for ZipCentralEntryBlock {
     const MAGIC: spec::Magic = spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
@@ -949,7 +951,7 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[repr(packed)]
+#[repr(packed, C)]
 pub(crate) struct ZipLocalEntryBlock {
     magic: spec::Magic,
     pub version_made_by: u16,
@@ -963,6 +965,8 @@ pub(crate) struct ZipLocalEntryBlock {
     pub file_name_length: u16,
     pub extra_field_length: u16,
 }
+
+unsafe impl Pod for ZipLocalEntryBlock {}
 
 impl FixedSizeBlock for ZipLocalEntryBlock {
     const MAGIC: spec::Magic = spec::Magic::LOCAL_FILE_HEADER_SIGNATURE;

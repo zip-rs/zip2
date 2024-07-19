@@ -2,11 +2,11 @@
 
 use crate::result::{ZipError, ZipResult};
 use core::mem;
-use core::mem::align_of;
 use memchr::memmem::FinderRev;
 use std::io;
 use std::io::prelude::*;
 use std::rc::Rc;
+use std::slice;
 
 /// "Magic" header values used in the zip spec to locate metadata records.
 ///
@@ -24,12 +24,6 @@ impl Magic {
     #[inline(always)]
     pub const fn from_le_bytes(bytes: [u8; 4]) -> Self {
         Self(u32::from_le_bytes(bytes))
-    }
-
-    #[inline(always)]
-    pub fn from_first_le_bytes(data: &[u8]) -> Self {
-        let first_bytes: [u8; 4] = data[..mem::size_of::<Self>()].try_into().unwrap();
-        Self::from_le_bytes(first_bytes)
     }
 
     #[inline(always)]
@@ -97,64 +91,56 @@ impl ExtraFieldMagic {
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
-pub(crate) trait FixedSizeBlock: Sized + Copy {
+/// # Safety
+///
+/// - No padding/uninit bytes
+/// - All bytes patterns must be valid
+/// - No cell, pointers
+///
+/// See `bytemuck::Pod` for more details.
+pub(crate) unsafe trait Pod: Copy + 'static {
+    #[inline]
+    fn zeroed() -> Self {
+        unsafe { mem::zeroed() }
+    }
+
+    #[inline]
+    fn as_bytes(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self as *const Self as *const u8, mem::size_of::<Self>()) }
+    }
+
+    #[inline]
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self as *mut Self as *mut u8, mem::size_of::<Self>()) }
+    }
+}
+
+pub(crate) trait FixedSizeBlock: Pod {
     const MAGIC: Magic;
 
     fn magic(self) -> Magic;
 
     const WRONG_MAGIC_ERROR: ZipError;
 
-    /* TODO: use smallvec? */
-    fn interpret(bytes: &[u8]) -> ZipResult<Self> {
-        if bytes.len() != mem::size_of::<Self>() {
-            return Err(ZipError::InvalidArchive("Block is wrong size"));
-        }
-        let block_ptr: *const Self = bytes.as_ptr().cast();
+    #[allow(clippy::wrong_self_convention)]
+    fn from_le(self) -> Self;
 
-        // If alignment could be more than 1, we'd have to use read_unaligned() below
-        debug_assert_eq!(align_of::<Self>(), 1);
+    fn parse<R: Read>(reader: &mut R) -> ZipResult<Self> {
+        let mut block = Self::zeroed();
+        reader.read_exact(block.as_bytes_mut())?;
+        let block = Self::from_le(block);
 
-        let block = unsafe { block_ptr.read() }.from_le();
         if block.magic() != Self::MAGIC {
             return Err(Self::WRONG_MAGIC_ERROR);
         }
         Ok(block)
     }
 
-    #[allow(clippy::wrong_self_convention)]
-    fn from_le(self) -> Self;
-
-    fn parse<T: Read>(reader: &mut T) -> ZipResult<Self> {
-        let mut block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
-        reader.read_exact(&mut block)?;
-        Self::interpret(&block)
-    }
-
-    fn encode(self) -> Box<[u8]> {
-        self.to_le().serialize()
-    }
-
     fn to_le(self) -> Self;
 
-    /* TODO: use Box<[u8; mem::size_of::<Self>()]> when generic_const_exprs are stabilized! */
-    fn serialize(self) -> Box<[u8]> {
-        /* TODO: use Box::new_zeroed() when stabilized! */
-        /* TODO: also consider using smallvec! */
-
-        // If alignment could be more than 1, we'd have to use write_unaligned() below
-        debug_assert_eq!(align_of::<Self>(), 1);
-
-        let mut out_block = vec![0u8; mem::size_of::<Self>()].into_boxed_slice();
-        let out_ptr: *mut Self = out_block.as_mut_ptr().cast();
-        unsafe {
-            out_ptr.write(self);
-        }
-        out_block
-    }
-
     fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        let block = self.encode();
-        writer.write_all(&block)?;
+        let block = self.to_le();
+        writer.write_all(block.as_bytes())?;
         Ok(())
     }
 }
@@ -206,7 +192,7 @@ macro_rules! to_and_from_le {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[repr(packed)]
+#[repr(packed, C)]
 pub(crate) struct Zip32CDEBlock {
     magic: Magic,
     pub disk_number: u16,
@@ -217,6 +203,8 @@ pub(crate) struct Zip32CDEBlock {
     pub central_directory_offset: u32,
     pub zip_file_comment_length: u16,
 }
+
+unsafe impl Pod for Zip32CDEBlock {}
 
 impl FixedSizeBlock for Zip32CDEBlock {
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
@@ -395,13 +383,15 @@ impl Zip32CentralDirectoryEnd {
 }
 
 #[derive(Copy, Clone)]
-#[repr(packed)]
+#[repr(packed, C)]
 pub(crate) struct Zip64CDELocatorBlock {
     magic: Magic,
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
 }
+
+unsafe impl Pod for Zip64CDELocatorBlock {}
 
 impl FixedSizeBlock for Zip64CDELocatorBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
@@ -465,7 +455,7 @@ impl Zip64CentralDirectoryEndLocator {
 }
 
 #[derive(Copy, Clone)]
-#[repr(packed)]
+#[repr(packed, C)]
 pub(crate) struct Zip64CDEBlock {
     magic: Magic,
     pub record_size: u64,
@@ -478,6 +468,8 @@ pub(crate) struct Zip64CDEBlock {
     pub central_directory_size: u64,
     pub central_directory_offset: u64,
 }
+
+unsafe impl Pod for Zip64CDEBlock {}
 
 impl FixedSizeBlock for Zip64CDEBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
@@ -668,11 +660,13 @@ mod test {
     use std::io::Cursor;
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-    #[repr(packed)]
+    #[repr(packed, C)]
     pub struct TestBlock {
         magic: Magic,
         pub file_name_length: u16,
     }
+
+    unsafe impl Pod for TestBlock {}
 
     impl FixedSizeBlock for TestBlock {
         const MAGIC: Magic = Magic::literal(0x01111);

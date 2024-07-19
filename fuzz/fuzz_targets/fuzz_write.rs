@@ -2,9 +2,9 @@
 
 use arbitrary::Arbitrary;
 use core::fmt::{Debug, Formatter};
-use std::borrow::Cow;
 use libfuzzer_sys::fuzz_target;
 use replace_with::replace_with_or_abort;
+use std::borrow::Cow;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
 use tikv_jemallocator::Jemalloc;
@@ -27,16 +27,16 @@ pub enum BasicFileOperation<'k> {
     ShallowCopy(Box<FileOperation<'k>>),
     DeepCopy(Box<FileOperation<'k>>),
     MergeWithOtherFile {
-        operations: Box<[(FileOperation<'k>, bool)]>
+        operations: Box<[(FileOperation<'k>, bool)]>,
     },
-    SetArchiveComment(Box<[u8]>)
+    SetArchiveComment(Box<[u8]>),
 }
 
 #[derive(Arbitrary, Clone, Debug, Eq, PartialEq)]
 pub enum ReopenOption {
     DoNotReopen,
     ViaFinish,
-    ViaFinishIntoReadable
+    ViaFinishIntoReadable,
 }
 
 #[derive(Arbitrary, Clone)]
@@ -47,78 +47,105 @@ pub struct FileOperation<'k> {
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
-impl <'k> FileOperation<'k> {
+impl<'k> FileOperation<'k> {
     fn get_path(&self) -> Option<Cow<PathBuf>> {
         match &self.basic {
             BasicFileOperation::SetArchiveComment(_) => None,
             BasicFileOperation::WriteDirectory(_) => Some(Cow::Owned(self.path.join("/"))),
-            BasicFileOperation::MergeWithOtherFile { operations } =>
-                operations.iter().flat_map(|(op, abort)| if !abort { op.get_path() } else { None }).next(),
-            _ => Some(Cow::Borrowed(&self.path))
+            BasicFileOperation::MergeWithOtherFile { operations } => operations
+                .iter()
+                .flat_map(|(op, abort)| if !abort { op.get_path() } else { None })
+                .next(),
+            _ => Some(Cow::Borrowed(&self.path)),
         }
     }
 }
 
-impl <'k> Debug for FileOperation<'k> {
+impl<'k> Debug for FileOperation<'k> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.basic {
-            BasicFileOperation::WriteNormalFile {contents, options} => {
-                f.write_fmt(format_args!("let options = {:?};\n\
-                writer.start_file_from_path({:?}, options)?;\n", options, self.path))?;
+            BasicFileOperation::WriteNormalFile { contents, options } => {
+                f.write_fmt(format_args!(
+                    "let options = {:?};\n\
+                writer.start_file_from_path({:?}, options)?;\n",
+                    options, self.path
+                ))?;
                 for content_slice in contents {
                     f.write_fmt(format_args!("writer.write_all(&({:?}))?;\n", content_slice))?;
                 }
-            },
+            }
             BasicFileOperation::WriteDirectory(options) => {
-                f.write_fmt(format_args!("let options = {:?};\n\
+                f.write_fmt(format_args!(
+                    "let options = {:?};\n\
                 writer.add_directory_from_path({:?}, options)?;\n",
-                             options, self.path))?;
-            },
-            BasicFileOperation::WriteSymlinkWithTarget {target, options} => {
-                f.write_fmt(format_args!("let options = {:?};\n\
+                    options, self.path
+                ))?;
+            }
+            BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
+                f.write_fmt(format_args!(
+                    "let options = {:?};\n\
                 writer.add_symlink_from_path({:?}, {:?}, options)?;\n",
-                             options, self.path, target.to_owned()))?;
-            },
+                    options,
+                    self.path,
+                    target.to_owned()
+                ))?;
+            }
             BasicFileOperation::ShallowCopy(base) => {
                 let Some(base_path) = base.get_path() else {
-                    return Ok(())
+                    return Ok(());
                 };
-                f.write_fmt(format_args!("{:?}writer.shallow_copy_file_from_path({:?}, {:?})?;\n", base, base_path, self.path))?;
-            },
+                f.write_fmt(format_args!(
+                    "{:?}writer.shallow_copy_file_from_path({:?}, {:?})?;\n",
+                    base, base_path, self.path
+                ))?;
+            }
             BasicFileOperation::DeepCopy(base) => {
                 let Some(base_path) = base.get_path() else {
-                    return Ok(())
+                    return Ok(());
                 };
-                f.write_fmt(format_args!("{:?}writer.deep_copy_file_from_path({:?}, {:?})?;\n", base, base_path, self.path))?;
-            },
-            BasicFileOperation::MergeWithOtherFile {operations} => {
-                f.write_str("let sub_writer = {\n\
+                f.write_fmt(format_args!(
+                    "{:?}writer.deep_copy_file_from_path({:?}, {:?})?;\n",
+                    base, base_path, self.path
+                ))?;
+            }
+            BasicFileOperation::MergeWithOtherFile { operations } => {
+                f.write_str(
+                    "let sub_writer = {\n\
                     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));\n\
-                    writer.set_flush_on_finish_file(false);\n")?;
-                operations.iter().map(|op| {
-                    f.write_fmt(format_args!("{:?}", op.0))?;
-                    if op.1 {
-                        f.write_str("writer.abort_file()?;\n")
-                    } else {
-                        Ok(())
-                    }
-                }).collect::<Result<(), _>>()?;
-                f.write_str("writer\n\
+                    writer.set_flush_on_finish_file(false);\n",
+                )?;
+                operations
+                    .iter()
+                    .map(|op| {
+                        f.write_fmt(format_args!("{:?}", op.0))?;
+                        if op.1 {
+                            f.write_str("writer.abort_file()?;\n")
+                        } else {
+                            Ok(())
+                        }
+                    })
+                    .collect::<Result<(), _>>()?;
+                f.write_str(
+                    "writer\n\
                 };\n\
-                writer.merge_archive(sub_writer.finish_into_readable()?)?;\n")?;
-            },
+                writer.merge_archive(sub_writer.finish_into_readable()?)?;\n",
+                )?;
+            }
             BasicFileOperation::SetArchiveComment(comment) => {
-                f.write_fmt(format_args!("writer.set_raw_comment({:?}.into());\n", comment))?;
+                f.write_fmt(format_args!(
+                    "writer.set_raw_comment({:?}.into());\n",
+                    comment
+                ))?;
             }
         }
         match &self.reopen {
             ReopenOption::DoNotReopen => Ok(()),
             ReopenOption::ViaFinish => {
                 f.write_str("writer = ZipWriter::new_append(writer.finish()?)?;\n")
-            },
-            ReopenOption::ViaFinishIntoReadable => {
-                f.write_str("writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;\n")
             }
+            ReopenOption::ViaFinishIntoReadable => f.write_str(
+                "writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;\n",
+            ),
         }
     }
 }
@@ -129,19 +156,23 @@ pub struct FuzzTestCase<'k> {
     flush_on_finish_file: bool,
 }
 
-impl <'k> Debug for FuzzTestCase<'k> {
+impl<'k> Debug for FuzzTestCase<'k> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "let mut writer = ZipWriter::new(Cursor::new(Vec::new()));\n\
-            writer.set_flush_on_finish_file({:?});\n", self.flush_on_finish_file))?;
-        self.operations.iter().map(|op| {
-            f.write_fmt(format_args!("{:?}", op.0))?;
-            if op.1 {
-                f.write_str("writer.abort_file()?;\n")
-            } else {
-                Ok(())
-            }
-        })
+            writer.set_flush_on_finish_file({:?});\n",
+            self.flush_on_finish_file
+        ))?;
+        self.operations
+            .iter()
+            .map(|op| {
+                f.write_fmt(format_args!("{:?}", op.0))?;
+                if op.1 {
+                    f.write_str("writer.abort_file()?;\n")
+                } else {
+                    Ok(())
+                }
+            })
             .collect::<Result<(), _>>()?;
         f.write_str("writer\n")
     }
@@ -154,8 +185,8 @@ fn deduplicate_paths(copy: &mut Cow<PathBuf>, original: &PathBuf) {
                 let mut new_name = name.to_owned();
                 new_name.push("_copy");
                 copy.with_file_name(new_name)
-            },
-            None => copy.with_file_name("copy")
+            }
+            None => copy.with_file_name("copy"),
         };
         *copy = Cow::Owned(new_path);
     }
@@ -166,7 +197,7 @@ fn do_operation<'k, T>(
     operation: &FileOperation<'k>,
     abort: bool,
     flush_on_finish_file: bool,
-    files_added: &mut usize
+    files_added: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     T: Read + Write + Seek,
@@ -175,9 +206,7 @@ where
     let mut path = Cow::Borrowed(&operation.path);
     match &operation.basic {
         BasicFileOperation::WriteNormalFile {
-            contents,
-            options,
-            ..
+            contents, options, ..
         } => {
             let uncompressed_size = contents.iter().map(|chunk| chunk.len()).sum::<usize>();
             let mut options = (*options).to_owned();
@@ -225,12 +254,12 @@ where
                     &operation,
                     *abort,
                     false,
-                    &mut inner_files_added
+                    &mut inner_files_added,
                 );
             });
             writer.merge_archive(other_writer.finish_into_readable()?)?;
             *files_added += inner_files_added;
-        },
+        }
         BasicFileOperation::SetArchiveComment(comment) => {
             writer.set_raw_comment(comment.clone());
         }
@@ -250,14 +279,15 @@ where
                 zip::ZipWriter::new_append(old_writer.finish().unwrap()).unwrap()
             });
             assert!(writer.get_raw_comment().starts_with(&old_comment));
-        },
+        }
         ReopenOption::ViaFinishIntoReadable => {
             let old_comment = writer.get_raw_comment().to_owned();
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<T>| {
-                zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner()).unwrap()
+                zip::ZipWriter::new_append(old_writer.finish_into_readable().unwrap().into_inner())
+                    .unwrap()
             });
             assert!(writer.get_raw_comment().starts_with(&old_comment));
-        },
+        }
     }
     Ok(())
 }
@@ -279,7 +309,7 @@ fuzz_target!(|test_case: FuzzTestCase| {
             &operation,
             *abort,
             test_case.flush_on_finish_file,
-            &mut files_added
+            &mut files_added,
         );
     }
     if final_reopen {
