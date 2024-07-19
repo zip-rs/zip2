@@ -267,6 +267,14 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
 }
+
+impl<'k, T: FileOptionExtension> FileOptions<'k, T> {
+    /// True if this instance will encrypt the file contents or symlink target.
+    pub fn has_encryption(&self) -> bool {
+        self.encrypt_with.is_some()
+    }
+}
+
 /// Simple File Options. Can be copied and good for simple writing zip files
 pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.

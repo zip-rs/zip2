@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
 use tikv_jemallocator::Jemalloc;
+use zip::read::read_zipfile_from_stream;
 use zip::unstable::path_to_string;
 
 #[global_allocator]
@@ -57,6 +58,19 @@ impl<'k> FileOperation<'k> {
                 .flat_map(|(op, abort)| if !abort { op.get_path() } else { None })
                 .next(),
             _ => Some(Cow::Borrowed(&self.path)),
+        }
+    }
+
+    fn is_streamable(&self) -> bool {
+        match &self.basic {
+            BasicFileOperation::WriteNormalFile {options, ..} => !options.has_encryption(),
+            BasicFileOperation::WriteDirectory(options) => !options.has_encryption(),
+            BasicFileOperation::WriteSymlinkWithTarget {options, ..} => !options.has_encryption(),
+            BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
+            BasicFileOperation::DeepCopy(base) => base.is_streamable(),
+            BasicFileOperation::MergeWithOtherFile {operations, ..} =>
+                operations.iter().all(|(op, _)| op.is_streamable()),
+            _ => true
         }
     }
 }
@@ -295,6 +309,7 @@ where
 fuzz_target!(|test_case: FuzzTestCase| {
     let mut files_added = 0;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let mut streamable = true;
     let mut final_reopen = false;
     if let Some((last_op, _)) = test_case.operations.last() {
         if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
@@ -304,6 +319,9 @@ fuzz_target!(|test_case: FuzzTestCase| {
     #[allow(unknown_lints)]
     #[allow(boxed_slice_into_iter)]
     for (operation, abort) in test_case.operations.into_iter() {
+        if streamable {
+            streamable = operation.is_streamable();
+        }
         let _ = do_operation(
             &mut writer,
             &operation,
@@ -312,7 +330,10 @@ fuzz_target!(|test_case: FuzzTestCase| {
             &mut files_added,
         );
     }
-    if final_reopen {
+    if streamable {
+        let mut stream = writer.finish().unwrap();
+        while read_zipfile_from_stream(&mut stream).unwrap().is_some() {}
+    } else if final_reopen {
         let _ = writer.finish_into_readable().unwrap();
     }
 });
