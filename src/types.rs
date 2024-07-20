@@ -625,10 +625,10 @@ impl ZipFileData {
         extra_field: &[u8],
     ) -> Self
     where
-        S: Into<Box<str>>,
+        S: ToString,
     {
         let permissions = options.permissions.unwrap_or(0o100644);
-        let file_name: Box<str> = name.into();
+        let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
         let mut local_block = ZipFileData {
             system: System::Unix,
@@ -778,12 +778,8 @@ impl ZipFileData {
     pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
         let compressed_size: u32 = self.clamp_size_field(self.compressed_size);
         let uncompressed_size: u32 = self.clamp_size_field(self.uncompressed_size);
-
-        let extra_block_len: usize = self
-            .zip64_extra_field_block()
-            .map(|block| block.full_size())
-            .unwrap_or(0);
-        let extra_field_length: u16 = (self.extra_field_len() + extra_block_len)
+        let extra_field_length: u16 = self
+            .extra_field_len()
             .try_into()
             .map_err(|_| ZipError::InvalidArchive("Extra data field is too large"))?;
 

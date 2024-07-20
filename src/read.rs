@@ -356,7 +356,7 @@ fn find_data_start(
         // easily overflow a u16.
         block.file_name_length as u64 + block.extra_field_length as u64;
     let data_start =
-        data.header_start + mem::size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+        data.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
     // Set the value so we don't have to read it again.
     match data.data_start.set(data_start) {
         Ok(()) => (),
@@ -1245,7 +1245,6 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
             "A file can't start after its central-directory header",
         ));
     }
-    file.data_start.get_or_init(|| data_start);
     reader.seek(SeekFrom::Start(central_header_end))?;
     Ok(file)
 }

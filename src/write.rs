@@ -631,12 +631,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
         if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
-            let write_start = shared
-                .files
-                .last()
-                .map(|(_, f)| f.data_start() + f.compressed_size)
-                .unwrap_or(0);
-            readwriter.seek(SeekFrom::Start(write_start))?;
             Ok(ZipWriter {
                 inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
                 files: shared.files,
@@ -679,42 +673,51 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         }
         let src_index = self.index_by_name(src_name)?;
         let src_data = &mut self.files[src_index];
-        let data_start = src_data.data_start();
+        let src_data_start = src_data.data_start();
         let plain_writer = self.inner.get_plain();
         let write_position = plain_writer.stream_position()?;
-        debug_assert!(data_start <= write_position);
+        debug_assert!(src_data_start <= write_position);
         let mut compressed_size = src_data.compressed_size;
-        if compressed_size > (write_position - data_start) {
-            compressed_size = write_position - data_start;
+        if compressed_size > (write_position - src_data_start) {
+            compressed_size = write_position - src_data_start;
             src_data.compressed_size = compressed_size;
         }
         let mut reader = BufReader::new(ZipFileReader::Raw(find_content(src_data, plain_writer)?));
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
-        plain_writer.seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
+        let dest_name_raw = dest_name.as_bytes();
         new_data.file_name = dest_name.into();
-        new_data.file_name_raw = dest_name.as_bytes().into();
+        new_data.file_name_raw = dest_name_raw.into();
         new_data.is_utf8 = !dest_name.is_ascii();
         new_data.header_start = write_position;
-        plain_writer.write_all(new_data.local_block()?.as_bytes())?;
-        plain_writer.write_all(dest_name.as_bytes())?;
-        new_data.extra_data_start = Some(plain_writer.stream_position()?);
-        new_data.central_header_start = 0;
-        if let Some(data) = &src_data.extra_field {
-            plain_writer.write_all(data)?;
+        let extra_data_start = write_position
+            + size_of::<ZipLocalEntryBlock>() as u64
+            + new_data.file_name_raw.len() as u64;
+        new_data.extra_data_start = Some(extra_data_start);
+        let mut data_start = extra_data_start;
+        let extra_field = src_data.extra_field.clone();
+        if let Some(extra) = &extra_field {
+            data_start += extra.len() as u64;
         }
-        if let Some(data) = &src_data.central_extra_field {
-            plain_writer.write_all(data)?;
-        }
-        let data_start = plain_writer.stream_position()?;
         new_data.data_start.take();
         new_data.data_start.get_or_init(|| data_start);
+        new_data.central_header_start = 0;
+        let block = new_data.local_block()?;
         self.files.insert(dest_name.into(), new_data);
-        self.writing_to_file = true;
-        self.writing_raw = true;
-        let result = plain_writer.write_all(&copy);
+        let result = (|| {
+            plain_writer.write_all(block.as_bytes())?;
+            plain_writer.write_all(dest_name_raw)?;
+
+            if let Some(data) = &extra_field {
+                plain_writer.write_all(data)?;
+            }
+            debug_assert_eq!(data_start, plain_writer.stream_position()?);
+            self.writing_to_file = true;
+            self.writing_raw = true;
+            plain_writer.write_all(&copy)
+        })();
         self.ok_or_abort_file(result)?;
         self.writing_to_file = false;
         self.writing_raw = false;
@@ -851,16 +854,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S, SToOwned, T: FileOptionExtension>(
+    fn start_entry<S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
         options: FileOptions<T>,
         raw_values: Option<ZipRawValues>,
-    ) -> ZipResult<()>
-    where
-        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
-        SToOwned: Into<Box<str>>,
-    {
+    ) -> ZipResult<()> {
         self.finish_file()?;
 
         let header_start = self.inner.get_plain().stream_position()?;
@@ -905,6 +904,39 @@ impl<W: Write + Seek> ZipWriter<W> {
             ),
             _ => (options.compression_method, None),
         };
+        let header_end = header_start
+            + size_of::<ZipLocalEntryBlock>() as u64
+            + name.to_string().as_bytes().len() as u64;
+        if options.alignment > 1 {
+            let extra_data_end = header_end + extra_data.len() as u64;
+            let align = options.alignment as u64;
+            let unaligned_header_bytes = extra_data_end % align;
+            if unaligned_header_bytes != 0 {
+                let mut pad_length = (align - unaligned_header_bytes) as usize;
+                while pad_length < 6 {
+                    pad_length += align as usize;
+                }
+                // Add an extra field to the extra_data, per APPNOTE 4.6.11
+                let mut pad_body = vec![0; pad_length - 4];
+                debug_assert!(pad_body.len() >= 2);
+                debug_assert_eq!((extra_data_end + pad_body.len() as u64) % align, 0);
+                [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
+                ExtendedFileOptions::add_extra_data_unchecked(
+                    &mut extra_data,
+                    0xa11e,
+                    pad_body.into_boxed_slice(),
+                )?;
+            }
+        }
+        let extra_data_len = extra_data.len();
+        if let Some(data) = central_extra_data {
+            if extra_data_len + data.len() > u16::MAX as usize {
+                return Err(InvalidArchive(
+                    "Extra data and central extra data must be less than 64KiB when combined",
+                ));
+            }
+            ExtendedFileOptions::validate_extra_data(data, true)?;
+        }
         let mut file = ZipFileData::initialize_local_block(
             name,
             &options,
@@ -917,69 +949,25 @@ impl<W: Write + Seek> ZipWriter<W> {
             &extra_data,
         );
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
-        let block = file.local_block();
+        file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file)?;
-        let writer = self.inner.get_plain();
-        let result = block?.write(writer);
+        let result: ZipResult<()> = (|| {
+            ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
+            let file = &mut self.files[index];
+            let block = file.local_block()?;
+            let writer = self.inner.get_plain();
+            block.write(writer)?;
+            // file name
+            writer.write_all(&file.file_name_raw)?;
+            if extra_data_len > 0 {
+                writer.write_all(&extra_data)?;
+                file.extra_field = Some(extra_data.into());
+            }
+            Ok(())
+        })();
         self.ok_or_abort_file(result)?;
         let writer = self.inner.get_plain();
-        let file = &mut self.files[index];
-        // file name
-        writer.write_all(&file.file_name_raw)?;
-        let header_end = writer.stream_position()?;
-        file.extra_data_start = Some(header_end);
-        let mut extra_data_end = header_end + extra_data.len() as u64;
-        if options.alignment > 1 {
-            let align = options.alignment as u64;
-            let unaligned_header_bytes = extra_data_end % align;
-            if unaligned_header_bytes != 0 {
-                let mut pad_length = (align - unaligned_header_bytes) as usize;
-                while pad_length < 6 {
-                    pad_length += align as usize;
-                }
-                // Add an extra field to the extra_data, per APPNOTE 4.6.11
-                let mut pad_body = vec![0; pad_length - 4];
-                debug_assert!(pad_body.len() >= 2);
-                [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                ExtendedFileOptions::add_extra_data_unchecked(
-                    &mut extra_data,
-                    0xa11e,
-                    pad_body.into_boxed_slice(),
-                )?;
-            }
-        }
-        let extra_data_len = extra_data.len();
-        if let Some(data) = central_extra_data {
-            if extra_data_len + data.len() > u16::MAX as usize {
-                let _ = self.abort_file();
-                return Err(InvalidArchive(
-                    "Extra data and central extra data must be less than 64KiB when combined",
-                ));
-            }
-            let validation_result = ExtendedFileOptions::validate_extra_data(data, true);
-            if let Err(e) = validation_result {
-                let _ = self.abort_file();
-                return Err(e);
-            }
-            file.central_extra_field = Some(data.clone());
-        }
-        if extra_data_len > 0 {
-            let result = (|| {
-                ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
-                writer.write_all(&extra_data)?;
-                extra_data_end = writer.stream_position()?;
-                Ok(())
-            })();
-            if let Err(e) = result {
-                let _ = self.abort_file();
-                return Err(e);
-            }
-            debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
-            self.stats.start = extra_data_end;
-            file.extra_field = Some(extra_data.into());
-        } else {
-            self.stats.start = extra_data_end;
-        }
+        self.stats.start = writer.stream_position()?;
         match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, password }) => {
@@ -997,14 +985,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                     keys,
                 };
                 let crypto_header = [0u8; 12];
-
-                zipwriter.write_all(&crypto_header)?;
-                self.stats.start = zipwriter.writer.stream_position()?;
+                let result = zipwriter.write_all(&crypto_header);
+                self.ok_or_abort_file(result)?;
                 self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
             }
             None => {}
         }
-
+        let file = &mut self.files[index];
         debug_assert!(file.data_start.get().is_none());
         file.data_start.get_or_init(|| self.stats.start);
         self.writing_to_file = true;
@@ -1132,15 +1119,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
-    pub fn start_file<S, T: FileOptionExtension, SToOwned>(
+    pub fn start_file<S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
         mut options: FileOptions<T>,
-    ) -> ZipResult<()>
-    where
-        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
-        SToOwned: Into<Box<str>>,
-    {
+    ) -> ZipResult<()> {
         Self::normalize_options(&mut options);
         let make_new_self = self.inner.prepare_next_writer(
             options.compression_method,
@@ -1266,11 +1249,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///     Ok(())
     /// }
     /// ```
-    pub fn raw_copy_file_rename<S, SToOwned>(&mut self, mut file: ZipFile, name: S) -> ZipResult<()>
-    where
-        S: Into<Box<str>> + ToOwned<Owned = SToOwned>,
-        SToOwned: Into<Box<str>>,
-    {
+    pub fn raw_copy_file_rename<S: ToString>(
+        &mut self,
+        mut file: ZipFile,
+        name: S,
+    ) -> ZipResult<()> {
         let mut options = SimpleFileOptions::default()
             .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
             .last_modified_time(
@@ -1405,17 +1388,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// implementations may materialize a symlink as a regular file, possibly with the
     /// content incorrectly set to the symlink target. For maximum portability, consider
     /// storing a regular file instead.
-    pub fn add_symlink<N, NToOwned, T, E: FileOptionExtension>(
+    pub fn add_symlink<N: ToString, T: ToString, E: FileOptionExtension>(
         &mut self,
         name: N,
         target: T,
         mut options: FileOptions<E>,
-    ) -> ZipResult<()>
-    where
-        N: Into<Box<str>> + ToOwned<Owned = NToOwned>,
-        NToOwned: Into<Box<str>>,
-        T: Into<Box<str>>,
-    {
+    ) -> ZipResult<()> {
         if options.permissions.is_none() {
             options.permissions = Some(0o777);
         }
@@ -1426,7 +1404,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
-        let result = self.write_all(target.into().as_bytes());
+        let result = self.write_all(target.to_string().as_bytes());
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
         self.finish_file()?;
@@ -1454,8 +1432,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut central_start = self.write_central_and_footer()?;
         let writer = self.inner.get_plain();
         let footer_end = writer.stream_position()?;
-        let file_end = writer.seek(SeekFrom::End(0))?;
-        if footer_end < file_end {
+        let archive_end = writer.seek(SeekFrom::End(0))?;
+        if footer_end < archive_end {
             // Data from an aborted file is past the end of the footer.
 
             // Overwrite the magic so the footer is no longer valid.
