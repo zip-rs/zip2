@@ -951,7 +951,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let header_end = writer.stream_position()?;
         file.extra_data_start = Some(header_end);
-        let mut extra_data_end = header_end;
+        let mut extra_data_end = header_end + extra_data.len() as u64;
         if options.alignment > 1 {
             let align = options.alignment as u64;
             let unaligned_header_bytes = extra_data_end % align;
