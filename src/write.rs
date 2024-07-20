@@ -11,7 +11,8 @@ use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
-    ffi, AesVendorVersion, DateTime, ZipFileData, ZipLocalEntryBlock, ZipRawValues, MIN_VERSION,
+    ffi, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock,
+    ZipRawValues, MIN_VERSION,
 };
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
@@ -862,6 +863,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     {
         self.finish_file()?;
 
+        let header_start = self.inner.get_plain().stream_position()?;
         let raw_values = raw_values.unwrap_or(ZipRawValues {
             crc32: 0,
             compressed_size: 0,
@@ -873,7 +875,13 @@ impl<W: Write + Seek> ZipWriter<W> {
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-
+        if let Some(zip64_block) =
+            Zip64ExtraFieldBlock::maybe_new(options.large_file, 0, 0, header_start)
+        {
+            let mut new_extra_data = zip64_block.serialize().into_vec();
+            new_extra_data.append(&mut extra_data);
+            extra_data = new_extra_data;
+        }
         // Write AES encryption extra data.
         #[allow(unused_mut)]
         let mut aes_extra_data_start = 0;
@@ -888,7 +896,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_dummy_extra_data,
             )?;
         }
-        let header_start = self.inner.get_plain().stream_position()?;
 
         let (compression_method, aes_mode) = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
@@ -919,11 +926,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         let file = &mut self.files[index];
         // file name
         writer.write_all(&file.file_name_raw)?;
-        if let Some(block) = file.zip64_extra_field_block() {
-            let mut new_extra_data = block.serialize().into_vec();
-            new_extra_data.append(&mut extra_data);
-            extra_data = new_extra_data;
-        }
         let header_end = writer.stream_position()?;
         file.extra_data_start = Some(header_end);
         let mut extra_data_end = header_end + extra_data.len() as u64;
@@ -1843,12 +1845,7 @@ fn update_aes_extra_data<W: Write + io::Seek>(
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
     let extra_field = Arc::get_mut(file.extra_field.as_mut().unwrap()).unwrap();
-    extra_field
-        .splice(
-            aes_extra_data_start..(aes_extra_data_start + buf.len()),
-            buf,
-        )
-        .count();
+    extra_field[aes_extra_data_start..aes_extra_data_start + buf.len()].copy_from_slice(&buf);
 
     Ok(())
 }
@@ -3507,6 +3504,35 @@ mod test {
         writer.deep_copy_file_from_path("/", "")?;
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         writer.deep_copy_file_from_path("", "copy")?;
+        let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "aes-crypto")]
+    fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
+        use crate::write::EncryptWith::Aes;
+        use crate::AesMode::Aes128;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2107, 6, 5, 13, 0, 21)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: Some(Aes {
+                mode: Aes128,
+                password: "",
+            }),
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![3, 0, 4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 65535,
+            ..Default::default()
+        };
+        writer.start_file_from_path("", options)?;
         let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         Ok(())
     }

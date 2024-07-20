@@ -24,7 +24,7 @@ use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
-use crate::CompressionMethod;
+use crate::{CompressionMethod, ZIP64_BYTES_THR};
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
@@ -848,45 +848,12 @@ impl ZipFileData {
     }
 
     pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
-        let uncompressed_size: Option<u64> =
-            if self.uncompressed_size >= spec::ZIP64_BYTES_THR || self.large_file {
-                Some(spec::ZIP64_BYTES_THR)
-            } else {
-                None
-            };
-        let compressed_size: Option<u64> =
-            if self.compressed_size >= spec::ZIP64_BYTES_THR || self.large_file {
-                Some(spec::ZIP64_BYTES_THR)
-            } else {
-                None
-            };
-        let header_start: Option<u64> = if self.header_start >= spec::ZIP64_BYTES_THR {
-            Some(spec::ZIP64_BYTES_THR)
-        } else {
-            None
-        };
-
-        let mut size: u16 = 0;
-        if uncompressed_size.is_some() {
-            size += mem::size_of::<u64>() as u16;
-        }
-        if compressed_size.is_some() {
-            size += mem::size_of::<u64>() as u16;
-        }
-        if header_start.is_some() {
-            size += mem::size_of::<u64>() as u16;
-        }
-        if size == 0 {
-            return None;
-        }
-
-        Some(Zip64ExtraFieldBlock {
-            magic: spec::ExtraFieldMagic::ZIP64_EXTRA_FIELD_TAG,
-            size,
-            uncompressed_size,
-            compressed_size,
-            header_start,
-        })
+        Zip64ExtraFieldBlock::maybe_new(
+            self.large_file,
+            self.uncompressed_size,
+            self.compressed_size,
+            self.header_start,
+        )
     }
 }
 
@@ -998,6 +965,46 @@ pub(crate) struct Zip64ExtraFieldBlock {
     header_start: Option<u64>,
     // Excluded fields:
     // u32: disk start number
+}
+
+impl Zip64ExtraFieldBlock {
+    pub(crate) fn maybe_new(
+        large_file: bool,
+        uncompressed_size: u64,
+        compressed_size: u64,
+        header_start: u64,
+    ) -> Option<Zip64ExtraFieldBlock> {
+        let mut size: u16 = 0;
+        let uncompressed_size = if uncompressed_size >= ZIP64_BYTES_THR || large_file {
+            size += mem::size_of::<u64>() as u16;
+            Some(uncompressed_size)
+        } else {
+            None
+        };
+        let compressed_size = if compressed_size >= ZIP64_BYTES_THR || large_file {
+            size += mem::size_of::<u64>() as u16;
+            Some(compressed_size)
+        } else {
+            None
+        };
+        let header_start = if header_start >= ZIP64_BYTES_THR {
+            size += mem::size_of::<u64>() as u16;
+            Some(header_start)
+        } else {
+            None
+        };
+        if size == 0 {
+            return None;
+        }
+
+        Some(Zip64ExtraFieldBlock {
+            magic: spec::ExtraFieldMagic::ZIP64_EXTRA_FIELD_TAG,
+            size,
+            uncompressed_size,
+            compressed_size,
+            header_start,
+        })
+    }
 }
 
 impl Zip64ExtraFieldBlock {
