@@ -7,7 +7,7 @@ use crate::read::{
     find_content, parse_single_extra_field, Config, ZipArchive, ZipFile, ZipFileReader,
 };
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
+use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
@@ -676,68 +676,32 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             compressed_size = write_position - data_start;
             src_data.compressed_size = compressed_size;
         }
-        let uncompressed_size = src_data.uncompressed_size;
-
-        let raw_values = ZipRawValues {
-            crc32: src_data.crc32,
-            compressed_size,
-            uncompressed_size,
-        };
+        let plain_writer = self.inner.get_plain();
         let mut reader = BufReader::new(ZipFileReader::Raw(find_content(
             src_data,
-            self.inner.get_plain(),
+            plain_writer,
         )?));
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
-        self.inner
-            .get_plain()
-            .seek(SeekFrom::Start(write_position))?;
-        if src_data.extra_field.is_some() || src_data.central_extra_field.is_some() {
-            let mut options = FileOptions::<ExtendedFileOptions> {
-                compression_method: src_data.compression_method,
-                compression_level: src_data.compression_level,
-                last_modified_time: src_data
-                    .last_modified_time
-                    .unwrap_or_else(DateTime::default_for_write),
-                permissions: src_data.unix_mode(),
-                large_file: src_data.large_file,
-                encrypt_with: None,
-                extended_options: ExtendedFileOptions {
-                    extra_data: src_data.extra_field.clone().unwrap_or_default(),
-                    central_extra_data: src_data.central_extra_field.clone().unwrap_or_default(),
-                },
-                alignment: 1,
-                #[cfg(feature = "deflate-zopfli")]
-                zopfli_buffer_size: None,
-            };
-            if let Some(perms) = src_data.unix_mode() {
-                options = options.unix_permissions(perms);
-            }
-            Self::normalize_options(&mut options);
-            self.start_entry(dest_name, options, Some(raw_values))?;
-        } else {
-            let mut options = FileOptions::<()> {
-                compression_method: src_data.compression_method,
-                compression_level: src_data.compression_level,
-                last_modified_time: src_data
-                    .last_modified_time
-                    .unwrap_or_else(DateTime::default_for_write),
-                permissions: src_data.unix_mode(),
-                large_file: src_data.large_file,
-                encrypt_with: None,
-                extended_options: (),
-                alignment: 1,
-                #[cfg(feature = "deflate-zopfli")]
-                zopfli_buffer_size: None,
-            };
-            if let Some(perms) = src_data.unix_mode() {
-                options = options.unix_permissions(perms);
-            }
-            Self::normalize_options(&mut options);
-            self.start_entry(dest_name, options, Some(raw_values))?;
+        plain_writer.seek(SeekFrom::Start(write_position))?;
+        let mut new_data = src_data.clone();
+        new_data.file_name = dest_name.into();
+        new_data.file_name_raw = dest_name.as_bytes().into();
+        new_data.is_utf8 = !dest_name.is_ascii();
+        new_data.header_start = write_position;
+        plain_writer.write_all(new_data.local_block()?.as_bytes())?;
+        plain_writer.write_all(dest_name.as_bytes())?;
+        if let Some(data) = &src_data.extra_field {
+            plain_writer.write_all(data)?;
         }
-
+        if let Some(data) = &src_data.central_extra_field {
+            plain_writer.write_all(data)?;
+        }
+        let data_start = plain_writer.stream_position()?;
+        new_data.data_start.take();
+        new_data.data_start.get_or_init(|| data_start);
+        self.files.insert(dest_name.into(), new_data);
         self.writing_to_file = true;
         self.writing_raw = true;
         let result = self.write_all(&copy);
@@ -1899,16 +1863,10 @@ fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData)
 }
 
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    // buffer zip64 extra field to determine its variable length
-    let mut zip64_extra_field = [0; 28];
-    let zip64_extra_field_length =
-        write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
-    let block = file.block(zip64_extra_field_length)?;
+    let block = file.block()?;
     block.write(writer)?;
     // file name
     writer.write_all(&file.file_name_raw)?;
-    // zip64 extra field
-    writer.write_all(&zip64_extra_field[..zip64_extra_field_length as usize])?;
     // extra field
     if let Some(extra_field) = &file.extra_field {
         writer.write_all(extra_field)?;
@@ -1942,22 +1900,6 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     let block = block.serialize();
     writer.write_all(&block)?;
     Ok(())
-}
-
-fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<u16> {
-    // The order of the fields in the zip64 extended
-    // information record is fixed, but the fields MUST
-    // only appear if the corresponding Local or Central
-    // directory record field is set to 0xFFFF or 0xFFFFFFFF.
-    match file.zip64_extra_field_block() {
-        None => Ok(0),
-        Some(block) => {
-            let block = block.serialize();
-            writer.write_all(&block)?;
-            let len: u16 = block.len().try_into().unwrap();
-            Ok(len)
-        }
-    }
 }
 
 #[cfg(not(feature = "unreserved"))]
@@ -3524,7 +3466,10 @@ mod test {
             alignment: 65535,
             ..Default::default()
         };
-        assert!(writer.start_file_from_path("", options).is_err());
+        writer.start_file_from_path("", options)?;
+        //writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        writer.deep_copy_file_from_path("", "copy")?;
+        let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         Ok(())
     }
 }
