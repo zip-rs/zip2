@@ -677,10 +677,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             src_data.compressed_size = compressed_size;
         }
         let plain_writer = self.inner.get_plain();
-        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(
-            src_data,
-            plain_writer,
-        )?));
+        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(src_data, plain_writer)?));
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
