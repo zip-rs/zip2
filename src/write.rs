@@ -671,21 +671,26 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         if src_name == dest_name || self.files.contains_key(dest_name) {
             return Err(InvalidArchive("That file already exists"));
         }
+        let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
         let src_data = &mut self.files[src_index];
         let src_data_start = src_data.data_start();
-        let plain_writer = self.inner.get_plain();
-        let write_position = plain_writer.stream_position()?;
         debug_assert!(src_data_start <= write_position);
         let mut compressed_size = src_data.compressed_size;
         if compressed_size > (write_position - src_data_start) {
             compressed_size = write_position - src_data_start;
             src_data.compressed_size = compressed_size;
         }
-        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(src_data, plain_writer)?));
+        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(
+            src_data,
+            self.inner.get_plain(),
+        )?));
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
+        self.inner
+            .get_plain()
+            .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
         let dest_name_raw = dest_name.as_bytes();
         new_data.file_name = dest_name.into();
@@ -697,20 +702,20 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         let mut data_start = extra_data_start;
-        let extra_field = src_data.extra_field.clone();
-        if let Some(extra) = &extra_field {
+        if let Some(extra) = &src_data.extra_field {
             data_start += extra.len() as u64;
         }
         new_data.data_start.take();
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
         let block = new_data.local_block()?;
-        self.files.insert(dest_name.into(), new_data);
+        let index = self.insert_file_data(new_data)?;
         let result = (|| {
+            let plain_writer = self.inner.get_plain();
             plain_writer.write_all(block.as_bytes())?;
             plain_writer.write_all(dest_name_raw)?;
-
-            if let Some(data) = &extra_field {
+            let new_data = &self.files[index];
+            if let Some(data) = &new_data.extra_field {
                 plain_writer.write_all(data)?;
             }
             debug_assert_eq!(data_start, plain_writer.stream_position()?);
@@ -719,6 +724,12 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             plain_writer.write_all(&copy)
         })();
         self.ok_or_abort_file(result)?;
+
+        // Copying will overwrite the central header
+        self.files
+            .values_mut()
+            .for_each(|file| file.central_header_start = 0);
+
         self.writing_to_file = false;
         self.writing_raw = false;
         Ok(())
@@ -919,13 +930,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // Add an extra field to the extra_data, per APPNOTE 4.6.11
                 let mut pad_body = vec![0; pad_length - 4];
                 debug_assert!(pad_body.len() >= 2);
-                debug_assert_eq!((extra_data_end + pad_body.len() as u64) % align, 0);
                 [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                 ExtendedFileOptions::add_extra_data_unchecked(
                     &mut extra_data,
                     0xa11e,
                     pad_body.into_boxed_slice(),
                 )?;
+                debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
             }
         }
         let extra_data_len = extra_data.len();
@@ -1524,6 +1535,12 @@ impl<W: Write + Seek> ZipWriter<W> {
         dest_data.file_name_raw = dest_name.to_string().into_bytes().into();
         dest_data.central_header_start = 0;
         self.insert_file_data(dest_data)?;
+
+        // Copying will overwrite the central header
+        self.files
+            .values_mut()
+            .for_each(|file| file.central_header_start = 0);
+
         Ok(())
     }
 
