@@ -409,7 +409,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
         ZipWriter::new(Cursor::new(Vec::new()))
-            .start_file("", options)
+            .start_file("", options.clone())
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
         Ok(options)
     }
