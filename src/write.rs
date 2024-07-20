@@ -306,7 +306,7 @@ impl ExtendedFileOptions {
                 }
             };
             Self::add_extra_data_unchecked(vec, header_id, data)?;
-            Self::validate_extra_data(vec, 0)?;
+            Self::validate_extra_data(vec, true)?;
             Ok(())
         }
     }
@@ -323,12 +323,12 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(data: &[u8], reserved: u64) -> ZipResult<()> {
+    fn validate_extra_data(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
         let len = data.len() as u64;
         if len == 0 {
             return Ok(());
         }
-        if len + reserved > u16::MAX as u64 {
+        if len > u16::MAX as u64 {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 "Extra-data field can't exceed u16::MAX bytes",
@@ -360,7 +360,7 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, true)?;
+            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, disallow_zip64)?;
             pos = data.position();
         }
         Ok(())
@@ -913,125 +913,129 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_dummy_extra_data,
             )?;
         }
-        {
-            let header_start = self.inner.get_plain().stream_position()?;
+        let header_start = self.inner.get_plain().stream_position()?;
 
-            let (compression_method, aes_mode) = match options.encrypt_with {
-                #[cfg(feature = "aes-crypto")]
-                Some(EncryptWith::Aes { mode, .. }) => (
-                    CompressionMethod::Aes,
-                    Some((mode, AesVendorVersion::Ae2, options.compression_method)),
-                ),
-                _ => (options.compression_method, None),
-            };
-            let mut file = ZipFileData::initialize_local_block(
-                name,
-                &options,
-                raw_values,
-                header_start,
-                None,
-                aes_extra_data_start,
-                compression_method,
-                aes_mode,
-                &extra_data,
-            );
-            file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
-            let block = file.local_block();
-            let index = self.insert_file_data(file)?;
-            let writer = self.inner.get_plain();
-            let result = block?.write(writer);
-            self.ok_or_abort_file(result)?;
-            let writer = self.inner.get_plain();
-            let file = &mut self.files[index];
-            // file name
-            writer.write_all(&file.file_name_raw)?;
-            let zip64_start = writer.stream_position()?;
-            if file.large_file {
-                write_local_zip64_extra_field(writer, file)?;
-            }
-            let header_end = writer.stream_position()?;
-            file.extra_data_start = Some(header_end);
-            let mut extra_data_end = header_end + extra_data.len() as u64;
-            if options.alignment > 1 {
-                let align = options.alignment as u64;
-                let unaligned_header_bytes = extra_data_end % align;
-                if unaligned_header_bytes != 0 {
-                    let mut pad_length = (align - unaligned_header_bytes) as usize;
-                    while pad_length < 6 {
-                        pad_length += align as usize;
-                    }
-                    // Add an extra field to the extra_data, per APPNOTE 4.6.11
-                    let mut pad_body = vec![0; pad_length - 4];
-                    debug_assert!(pad_body.len() >= 2);
-                    [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    ExtendedFileOptions::add_extra_data_unchecked(
-                        &mut extra_data,
-                        0xa11e,
-                        pad_body.into_boxed_slice(),
-                    )?;
-                }
-            }
-            let extra_data_len = extra_data.len();
-            if extra_data_len > 0 {
-                let result = (|| {
-                    ExtendedFileOptions::validate_extra_data(
-                        &extra_data,
-                        header_end - zip64_start,
-                    )?;
-                    writer.write_all(&extra_data)?;
-                    extra_data_end = writer.stream_position()?;
-                    Ok(())
-                })();
-                if let Err(e) = result {
-                    let _ = self.abort_file();
-                    return Err(e);
-                }
-                debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
-                self.stats.start = extra_data_end;
-                file.extra_field = Some(extra_data.into());
-            } else {
-                self.stats.start = extra_data_end;
-            }
-            if let Some(data) = central_extra_data {
-                let validation_result =
-                    ExtendedFileOptions::validate_extra_data(data, extra_data_end - zip64_start);
-                if let Err(e) = validation_result {
-                    let _ = self.abort_file();
-                    return Err(e);
-                }
-                file.central_extra_field = Some(data.clone());
-            }
-            match options.encrypt_with {
-                #[cfg(feature = "aes-crypto")]
-                Some(EncryptWith::Aes { mode, password }) => {
-                    let aeswriter = AesWriter::new(
-                        mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(),
-                        mode,
-                        password.as_bytes(),
-                    )?;
-                    self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
-                }
-                Some(EncryptWith::ZipCrypto(keys, ..)) => {
-                    let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
-                        writer: mem::replace(&mut self.inner, Closed).unwrap(),
-                        buffer: vec![],
-                        keys,
-                    };
-                    let crypto_header = [0u8; 12];
-
-                    zipwriter.write_all(&crypto_header)?;
-                    self.stats.start = zipwriter.writer.stream_position()?;
-                    self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
-                }
-                None => {}
-            }
-
-            debug_assert!(file.data_start.get().is_none());
-            file.data_start.get_or_init(|| self.stats.start);
-            self.writing_to_file = true;
-            self.stats.bytes_written = 0;
-            self.stats.hasher = Hasher::new();
+        let (compression_method, aes_mode) = match options.encrypt_with {
+            #[cfg(feature = "aes-crypto")]
+            Some(EncryptWith::Aes { mode, .. }) => (
+                CompressionMethod::Aes,
+                Some((mode, AesVendorVersion::Ae2, options.compression_method)),
+            ),
+            _ => (options.compression_method, None),
+        };
+        let mut file = ZipFileData::initialize_local_block(
+            name,
+            &options,
+            raw_values,
+            header_start,
+            None,
+            aes_extra_data_start,
+            compression_method,
+            aes_mode,
+            &extra_data,
+        );
+        file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
+        let block = file.local_block();
+        let index = self.insert_file_data(file)?;
+        let writer = self.inner.get_plain();
+        let result = block?.write(writer);
+        self.ok_or_abort_file(result)?;
+        let writer = self.inner.get_plain();
+        let file = &mut self.files[index];
+        // file name
+        writer.write_all(&file.file_name_raw)?;
+        if let Some(block) = file.zip64_extra_field_block() {
+            let mut new_extra_data = block.serialize().into_vec();
+            new_extra_data.append(&mut extra_data);
+            extra_data = new_extra_data;
         }
+        let header_end = writer.stream_position()?;
+        file.extra_data_start = Some(header_end);
+        let mut extra_data_end = header_end;
+        if options.alignment > 1 {
+            let align = options.alignment as u64;
+            let unaligned_header_bytes = extra_data_end % align;
+            if unaligned_header_bytes != 0 {
+                let mut pad_length = (align - unaligned_header_bytes) as usize;
+                while pad_length < 6 {
+                    pad_length += align as usize;
+                }
+                // Add an extra field to the extra_data, per APPNOTE 4.6.11
+                let mut pad_body = vec![0; pad_length - 4];
+                debug_assert!(pad_body.len() >= 2);
+                [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
+                ExtendedFileOptions::add_extra_data_unchecked(
+                    &mut extra_data,
+                    0xa11e,
+                    pad_body.into_boxed_slice(),
+                )?;
+            }
+        }
+        let extra_data_len = extra_data.len();
+        if let Some(data) = central_extra_data {
+            if extra_data_len + data.len() > u16::MAX as usize {
+                let _ = self.abort_file();
+                return Err(InvalidArchive(
+                    "Extra data and central extra data must be less than 64KiB when combined"));
+            }
+            let validation_result =
+                ExtendedFileOptions::validate_extra_data(data, true);
+            if let Err(e) = validation_result {
+                let _ = self.abort_file();
+                return Err(e);
+            }
+            file.central_extra_field = Some(data.clone());
+        }
+        if extra_data_len > 0 {
+            let result = (|| {
+                ExtendedFileOptions::validate_extra_data(
+                    &extra_data,
+                    false,
+                )?;
+                writer.write_all(&extra_data)?;
+                extra_data_end = writer.stream_position()?;
+                Ok(())
+            })();
+            if let Err(e) = result {
+                let _ = self.abort_file();
+                return Err(e);
+            }
+            debug_assert_eq!(extra_data_end % (options.alignment.max(1) as u64), 0);
+            self.stats.start = extra_data_end;
+            file.extra_field = Some(extra_data.into());
+        } else {
+            self.stats.start = extra_data_end;
+        }
+        match options.encrypt_with {
+            #[cfg(feature = "aes-crypto")]
+            Some(EncryptWith::Aes { mode, password }) => {
+                let aeswriter = AesWriter::new(
+                    mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(),
+                    mode,
+                    password.as_bytes(),
+                )?;
+                self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
+            }
+            Some(EncryptWith::ZipCrypto(keys, ..)) => {
+                let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
+                    writer: mem::replace(&mut self.inner, Closed).unwrap(),
+                    buffer: vec![],
+                    keys,
+                };
+                let crypto_header = [0u8; 12];
+
+                zipwriter.write_all(&crypto_header)?;
+                self.stats.start = zipwriter.writer.stream_position()?;
+                self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
+            }
+            None => {}
+        }
+
+        debug_assert!(file.data_start.get().is_none());
+        file.data_start.get_or_init(|| self.stats.start);
+        self.writing_to_file = true;
+        self.stats.bytes_written = 0;
+        self.stats.hasher = Hasher::new();
         Ok(())
     }
 
@@ -1918,19 +1922,6 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file comment
     writer.write_all(file.file_comment.as_bytes())?;
 
-    Ok(())
-}
-
-fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    // This entry in the Local header MUST include BOTH original
-    // and compressed file size fields.
-    let Some(block) = file.zip64_extra_field_block() else {
-        return Err(ZipError::InvalidArchive(
-            "Attempted to write a ZIP64 extra field for a file that's within zip32 limits",
-        ));
-    };
-    let block = block.serialize();
-    writer.write_all(&block)?;
     Ok(())
 }
 
@@ -3514,6 +3505,16 @@ mod test {
         assert!(writer.get_raw_comment().starts_with(&[33]));
         let archive = writer.finish_into_readable()?;
         assert!(archive.comment().starts_with(&[33]));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "bzip2")]
+    fn fuzz_crash_2024_07_17() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions { compression_method: CompressionMethod::Bzip2, compression_level: None, last_modified_time: DateTime::from_date_and_time(2095, 2, 16, 21, 0, 1)?, permissions: Some(84238341), large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![117, 99, 6, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 2, 0, 0, 0].into(), central_extra_data: vec![].into()}, alignment: 65535, ..Default::default() };
+        assert!(writer.start_file_from_path("", options).is_err());
         Ok(())
     }
 }
