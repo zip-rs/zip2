@@ -1315,7 +1315,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.writing_to_file = true;
         self.writing_raw = true;
 
-        io::copy(file.get_raw_reader(), self)?;
+        io::copy(&mut file.take_raw_reader()?, self)?;
 
         Ok(())
     }

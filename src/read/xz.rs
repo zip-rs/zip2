@@ -2,12 +2,12 @@ use crc32fast::Hasher;
 use lzma_rs::decompress::raw::Lzma2Decoder;
 use std::{
     collections::VecDeque,
-    io::{BufRead, BufReader, Error, Read, Result, Write},
+    io::{BufRead, Error, Read, Result, Write},
 };
 
 #[derive(Debug)]
-pub struct XzDecoder<R> {
-    compressed_reader: BufReader<R>,
+pub struct XzDecoder<R: BufRead> {
+    compressed_reader: R,
     stream_size: usize,
     buf: VecDeque<u8>,
     check_size: usize,
@@ -15,10 +15,10 @@ pub struct XzDecoder<R> {
     flags: [u8; 2],
 }
 
-impl<R: Read> XzDecoder<R> {
+impl<R: BufRead> XzDecoder<R> {
     pub fn new(inner: R) -> Self {
         XzDecoder {
-            compressed_reader: BufReader::new(inner),
+            compressed_reader: inner,
             stream_size: 0,
             buf: VecDeque::new(),
             check_size: 0,
@@ -83,7 +83,7 @@ fn error<T>(s: &'static str) -> Result<T> {
     Err(Error::new(std::io::ErrorKind::InvalidData, s))
 }
 
-fn get_multibyte<R: Read>(input: &mut R, hasher: &mut Hasher) -> Result<u64> {
+fn get_multibyte<R: BufRead>(input: &mut R, hasher: &mut Hasher) -> Result<u64> {
     let mut result = 0;
     for i in 0..9 {
         let mut b = [0u8; 1];
@@ -98,7 +98,7 @@ fn get_multibyte<R: Read>(input: &mut R, hasher: &mut Hasher) -> Result<u64> {
     error("Invalid multi-byte encoding")
 }
 
-impl<R: Read> Read for XzDecoder<R> {
+impl<R: BufRead> Read for XzDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         if !self.buf.is_empty() {
             let len = std::cmp::min(buf.len(), self.buf.len());
@@ -263,8 +263,8 @@ impl<R: Read> Read for XzDecoder<R> {
     }
 }
 
-impl<R: Read> XzDecoder<R> {
+impl<R: BufRead> XzDecoder<R> {
     pub fn into_inner(self) -> R {
-        self.compressed_reader.into_inner()
+        self.compressed_reader
     }
 }
