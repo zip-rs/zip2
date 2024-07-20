@@ -976,10 +976,10 @@ impl<W: Write + Seek> ZipWriter<W> {
             if extra_data_len + data.len() > u16::MAX as usize {
                 let _ = self.abort_file();
                 return Err(InvalidArchive(
-                    "Extra data and central extra data must be less than 64KiB when combined"));
+                    "Extra data and central extra data must be less than 64KiB when combined",
+                ));
             }
-            let validation_result =
-                ExtendedFileOptions::validate_extra_data(data, true);
+            let validation_result = ExtendedFileOptions::validate_extra_data(data, true);
             if let Err(e) = validation_result {
                 let _ = self.abort_file();
                 return Err(e);
@@ -988,10 +988,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         if extra_data_len > 0 {
             let result = (|| {
-                ExtendedFileOptions::validate_extra_data(
-                    &extra_data,
-                    false,
-                )?;
+                ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
                 writer.write_all(&extra_data)?;
                 extra_data_end = writer.stream_position()?;
                 Ok(())
@@ -3513,7 +3510,20 @@ mod test {
     fn fuzz_crash_2024_07_17() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let options = FileOptions { compression_method: CompressionMethod::Bzip2, compression_level: None, last_modified_time: DateTime::from_date_and_time(2095, 2, 16, 21, 0, 1)?, permissions: Some(84238341), large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![117, 99, 6, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 2, 0, 0, 0].into(), central_extra_data: vec![].into()}, alignment: 65535, ..Default::default() };
+        let options = FileOptions {
+            compression_method: CompressionMethod::Bzip2,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2095, 2, 16, 21, 0, 1)?,
+            permissions: Some(84238341),
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![117, 99, 6, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 2, 0, 0, 0].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 65535,
+            ..Default::default()
+        };
         assert!(writer.start_file_from_path("", options).is_err());
         Ok(())
     }
