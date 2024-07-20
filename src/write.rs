@@ -408,6 +408,8 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
+        ZipWriter::new(Cursor::new(Vec::new())).start_file("", options)
+            .map_err(|_| arbitrary::Error::IncorrectFormat)?;
         Ok(options)
     }
 }
