@@ -630,7 +630,11 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
         if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
-            let write_start = shared.files.last().map(|(_, f)| f.data_start() + f.compressed_size).unwrap_or(0);
+            let write_start = shared
+                .files
+                .last()
+                .map(|(_, f)| f.data_start() + f.compressed_size)
+                .unwrap_or(0);
             readwriter.seek(SeekFrom::Start(write_start))?;
             Ok(ZipWriter {
                 inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
@@ -3484,7 +3488,20 @@ mod test {
     fn fuzz_crash_2024_07_19() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 6, 1, 0, 34, 47)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 45232, ..Default::default() };
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(1980, 6, 1, 0, 34, 47)?,
+            permissions: None,
+            large_file: true,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 45232,
+            ..Default::default()
+        };
         writer.add_directory_from_path("", options)?;
         writer.deep_copy_file_from_path("/", "")?;
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;

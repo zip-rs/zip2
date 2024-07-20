@@ -654,7 +654,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             /* This is an atomic variable so it can be updated from another thread in the
              * implementation (which is good!). */
             f.data_start.take();
-            f.data_start.get_or_init(|| new_header_start + header_length);
+            f.data_start
+                .get_or_init(|| new_header_start + header_length);
             Ok::<_, ZipError>(())
         })?;
 
