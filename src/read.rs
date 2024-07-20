@@ -635,31 +635,26 @@ impl<R: Read + Seek> ZipArchive<R> {
             return Ok(IndexMap::new());
         }
         let mut new_files = self.shared.files.clone();
-        /* The first file header will probably start at the beginning of the file, but zip doesn't
-         * enforce that, and executable zips like PEX files will have a shebang line so will
-         * definitely be greater than 0.
-         *
-         * assert_eq!(0, new_files[0].header_start); // Avoid this.
-         */
-
-        let new_initial_header_start = w.stream_position()?;
         /* Push back file header starts for all entries in the covered files. */
         new_files.values_mut().try_for_each(|f| {
+            /* The first file header will probably start at the beginning of the file, but zip doesn't
+             * enforce that, and executable zips like PEX files will have a shebang line so will
+             * definitely be greater than 0.
+             *
+             * assert_eq!(0, new_files[0].header_start); // Avoid this.
+             */
+
+            let new_header_start = w.stream_position()?;
+            let header_length = f.data_start() - f.header_start;
             /* This is probably the only really important thing to change. */
-            f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
-                ZipError::InvalidArchive("new header start from merge would have been too large"),
-            )?;
+            f.header_start = new_header_start;
             /* This is only ever used internally to cache metadata lookups (it's not part of the
              * zip spec), and 0 is the sentinel value. */
             // f.central_header_start = 0;
             /* This is an atomic variable so it can be updated from another thread in the
              * implementation (which is good!). */
-            if let Some(old_data_start) = f.data_start.take() {
-                let new_data_start = old_data_start.checked_add(new_initial_header_start).ok_or(
-                    ZipError::InvalidArchive("new data start from merge would have been too large"),
-                )?;
-                f.data_start.get_or_init(|| new_data_start);
-            }
+            f.data_start.take();
+            f.data_start.get_or_init(|| new_header_start + header_length);
             Ok::<_, ZipError>(())
         })?;
 

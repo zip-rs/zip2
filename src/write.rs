@@ -630,6 +630,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
         if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
+            let write_start = shared.files.last().map(|(_, f)| f.data_start() + f.compressed_size).unwrap_or(0);
+            readwriter.seek(SeekFrom::Start(write_start))?;
             Ok(ZipWriter {
                 inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
                 files: shared.files,
@@ -670,16 +672,17 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         if src_name == dest_name || self.files.contains_key(dest_name) {
             return Err(InvalidArchive("That file already exists"));
         }
-        let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
         let src_data = &mut self.files[src_index];
         let data_start = src_data.data_start();
+        let plain_writer = self.inner.get_plain();
+        let write_position = plain_writer.stream_position()?;
+        debug_assert!(data_start <= write_position);
         let mut compressed_size = src_data.compressed_size;
         if compressed_size > (write_position - data_start) {
             compressed_size = write_position - data_start;
             src_data.compressed_size = compressed_size;
         }
-        let plain_writer = self.inner.get_plain();
         let mut reader = BufReader::new(ZipFileReader::Raw(find_content(src_data, plain_writer)?));
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
@@ -3472,6 +3475,19 @@ mod test {
         };
         writer.start_file_from_path("", options)?;
         //writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        writer.deep_copy_file_from_path("", "copy")?;
+        let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        Ok(())
+    }
+
+    #[test]
+    fn fuzz_crash_2024_07_19() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 6, 1, 0, 34, 47)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 45232, zopfli_buffer_size: None };
+        writer.add_directory_from_path("", options)?;
+        writer.deep_copy_file_from_path("/", "")?;
+        writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         writer.deep_copy_file_from_path("", "copy")?;
         let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         Ok(())
