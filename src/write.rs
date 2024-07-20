@@ -691,6 +691,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.header_start = write_position;
         plain_writer.write_all(new_data.local_block()?.as_bytes())?;
         plain_writer.write_all(dest_name.as_bytes())?;
+        new_data.extra_data_start = Some(plain_writer.stream_position()?);
+        new_data.central_header_start = 0;
         if let Some(data) = &src_data.extra_field {
             plain_writer.write_all(data)?;
         }
@@ -703,9 +705,11 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         self.files.insert(dest_name.into(), new_data);
         self.writing_to_file = true;
         self.writing_raw = true;
-        let result = self.write_all(&copy);
+        let result = plain_writer.write_all(&copy);
         self.ok_or_abort_file(result)?;
-        self.finish_file()
+        self.writing_to_file = false;
+        self.writing_raw = false;
+        Ok(())
     }
 
     /// Like `deep_copy_file`, but uses Path arguments.
