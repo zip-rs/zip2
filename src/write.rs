@@ -3484,7 +3484,7 @@ mod test {
     fn fuzz_crash_2024_07_19() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 6, 1, 0, 34, 47)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 45232, zopfli_buffer_size: None };
+        let options = FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(1980, 6, 1, 0, 34, 47)?, permissions: None, large_file: true, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 45232, ..Default::default() };
         writer.add_directory_from_path("", options)?;
         writer.deep_copy_file_from_path("/", "")?;
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
