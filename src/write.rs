@@ -226,7 +226,7 @@ mod sealed {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
@@ -255,7 +255,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
 }
 
 /// Metadata for a file to be written
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
     pub(crate) compression_level: Option<i64>,
@@ -273,7 +273,7 @@ pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
     extra_data: Arc<Vec<u8>>,
     central_extra_data: Arc<Vec<u8>>,
@@ -3528,6 +3528,68 @@ mod test {
             ..Default::default()
         };
         writer.start_file_from_path("", options)?;
+        let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+        Ok(())
+    }
+
+    #[test]
+    fn fuzz_crash_2024_07_20() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(true);
+        let options = FileOptions {
+            compression_method: Stored,
+            compression_level: None,
+            last_modified_time: DateTime::from_date_and_time(2041, 8, 2, 19, 38, 0)?,
+            permissions: None,
+            large_file: false,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+            },
+            alignment: 0,
+            ..Default::default()
+        };
+        writer.add_directory_from_path("\0\0\0\0\0\0\07黻", options)?;
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.set_flush_on_finish_file(false);
+            let options = FileOptions {
+                compression_method: Stored,
+                compression_level: None,
+                last_modified_time: DateTime::default(),
+                permissions: None,
+                large_file: false,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 4,
+                ..Default::default()
+            };
+            writer.add_directory_from_path("\0\0\0黻", options)?;
+            writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
+            writer.abort_file()?;
+            let options = FileOptions {
+                compression_method: Stored,
+                compression_level: None,
+                last_modified_time: DateTime::from_date_and_time(1980, 1, 1, 0, 7, 0)?,
+                permissions: Some(2663103419),
+                large_file: false,
+                encrypt_with: None,
+                extended_options: ExtendedFileOptions {
+                    extra_data: vec![].into(),
+                    central_extra_data: vec![].into(),
+                },
+                alignment: 32256,
+                ..Default::default()
+            };
+            writer.add_directory_from_path("\0", options)?;
+            writer = ZipWriter::new_append(writer.finish()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
         let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         Ok(())
     }

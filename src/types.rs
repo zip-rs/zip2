@@ -1051,7 +1051,7 @@ pub enum AesVendorVersion {
 }
 
 /// AES variant used.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum AesMode {
