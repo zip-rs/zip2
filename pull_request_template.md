@@ -32,6 +32,7 @@ These are our requirements for PRs, in addition to the usual functionality and r
   explaining what the exception applies to and why it's needed.
 - The PR title must conform to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) and start 
   with one of the types specified by the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#type).
+  This is also recommended for commit messages; but it's not required, because they'll be replaced when the PR is squash-merged.
 
 Thanks in advance for submitting a bug fix or proposed feature that meets these requirements!
 -->
