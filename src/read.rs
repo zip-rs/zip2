@@ -449,15 +449,6 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
-        debug_assert!(initial_offset < central_start);
-        files.iter_mut().try_for_each(|(_, file)|-> ZipResult<()> {
-            file.header_start += initial_offset;
-            if let Some(prev_data_start) = file.data_start.take() {
-                file.data_start.set(prev_data_start + initial_offset)
-                    .map_err(|_| ZipError::InvalidArchive("Failed to finalize a written file"))?;
-            }
-            Ok(())
-        })?;
         let shared = Arc::new(zip_archive::Shared {
             files,
             offset: initial_offset,
