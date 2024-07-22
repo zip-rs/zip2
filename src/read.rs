@@ -440,7 +440,7 @@ pub(crate) struct CentralDirectoryInfo {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        mut files: IndexMap<Box<str>, ZipFileData>,
+        files: IndexMap<Box<str>, ZipFileData>,
         comment: Box<[u8]>,
         reader: R,
         central_start: u64,
