@@ -8,7 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Pod, Zip32CentralDirectoryEnd, ZIP64_ENTRY_THR};
+use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock, Zip32CentralDirectoryEnd, ZIP64_ENTRY_THR};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -618,7 +618,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         // comment length. Therefore:
         /* TODO: compute this from constant sizes and offsets! */
         reader.seek(io::SeekFrom::End(
-            -(20 + 22 + footer.zip_file_comment.len() as i64),
+            -(20 + size_of::<Zip32CDEBlock> as i64 + footer.zip_file_comment.len() as i64),
         ))?;
         let locator64 = spec::Zip64CentralDirectoryEndLocator::parse(reader)?;
 
