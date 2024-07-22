@@ -3593,4 +3593,23 @@ mod test {
         let _ = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         Ok(())
     }
+
+    #[test]
+    fn fuzz_crash_2024_07_21() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let sub_writer = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.add_directory_from_path(&"", FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2105, 8, 1, 15, 0, 0)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0, ..Default::default() })?;
+            writer.abort_file()?;
+            let mut writer = ZipWriter::new_append(writer.finish()?)?;
+            writer.add_directory_from_path(&"", FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::default(), permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 16, ..Default::default() })?;
+            let writer = ZipWriter::new_append(writer.finish()?)?;
+            writer
+        };
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        let writer = ZipWriter::new_append(writer.finish()?)?;
+        let _ = writer.finish_into_readable()?;
+
+        Ok(())
+    }
 }
