@@ -2525,6 +2525,28 @@ mod test {
     }
 
     #[test]
+    fn test_alignment_2() {
+        let page_size = 4096;
+        let mut data = Vec::new();
+        {
+            let options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Stored)
+                .with_alignment(page_size);
+            let mut zip = ZipWriter::new(io::Cursor::new(&mut data));
+            let contents = b"sleeping";
+            let () = zip.start_file("sleep", options).unwrap();
+            let _count = zip.write(&contents[..]).unwrap();
+        }
+        assert_eq!(data[4096..4104], b"sleeping"[..]);
+        {
+            let mut zip = ZipArchive::new(io::Cursor::new(&mut data)).unwrap();
+            let file = zip.by_index(0).unwrap();
+            assert_eq!(file.name(), "sleep");
+            assert_eq!(file.data_start(), page_size.into());
+        }
+    }
+
+    #[test]
     fn test_crash_short_read() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let comment = vec![
