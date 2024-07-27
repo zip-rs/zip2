@@ -3574,7 +3574,7 @@ mod test {
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.add_directory_from_path(
-                &"",
+                "",
                 FileOptions {
                     compression_method: Stored,
                     compression_level: None,
@@ -3593,7 +3593,7 @@ mod test {
             writer.abort_file()?;
             let mut writer = ZipWriter::new_append(writer.finish()?)?;
             writer.add_directory_from_path(
-                &"",
+                "",
                 FileOptions {
                     compression_method: Stored,
                     compression_level: None,

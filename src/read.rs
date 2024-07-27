@@ -502,18 +502,23 @@ impl<R: Read + Seek> ZipArchive<R> {
         /* Push back file header starts for all entries in the covered files. */
         new_files.values_mut().try_for_each(|f| {
             /* This is probably the only really important thing to change. */
-            f.header_start = f.header_start.checked_add(first_new_file_header_start).ok_or(
-                InvalidArchive("new header start from merge would have been too large"),
-            )?;
+            f.header_start = f
+                .header_start
+                .checked_add(first_new_file_header_start)
+                .ok_or(InvalidArchive(
+                    "new header start from merge would have been too large",
+                ))?;
             /* This is only ever used internally to cache metadata lookups (it's not part of the
              * zip spec), and 0 is the sentinel value. */
             f.central_header_start = 0;
             /* This is an atomic variable so it can be updated from another thread in the
              * implementation (which is good!). */
             if let Some(old_data_start) = f.data_start.take() {
-                let new_data_start = old_data_start.checked_add(first_new_file_header_start).ok_or(
-                    InvalidArchive("new data start from merge would have been too large"),
-                )?;
+                let new_data_start = old_data_start
+                    .checked_add(first_new_file_header_start)
+                    .ok_or(InvalidArchive(
+                        "new data start from merge would have been too large",
+                    ))?;
                 f.data_start.get_or_init(|| new_data_start);
             }
             Ok::<_, ZipError>(())
@@ -633,7 +638,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let search_upper_bound = cde_start_pos
             .checked_sub(
                 (size_of::<Zip64CentralDirectoryEnd>()
-                + size_of::<spec::Zip64CentralDirectoryEndLocator>()) as u64,
+                    + size_of::<spec::Zip64CentralDirectoryEndLocator>()) as u64,
             )
             .ok_or(InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
