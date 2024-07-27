@@ -3609,8 +3609,7 @@ mod test {
                     ..Default::default()
                 },
             )?;
-            let writer = ZipWriter::new_append(writer.finish()?)?;
-            writer
+            ZipWriter::new_append(writer.finish()?)?
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
         let writer = ZipWriter::new_append(writer.finish()?)?;
