@@ -240,8 +240,8 @@ impl <'k> FuzzTestCase<'k> {
         let mut files_added = 0;
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let mut streamable = true;
-    let mut final_reopen = false;
-    if let Some((last_op, _)) = self.operations.last() {
+        let mut final_reopen = false;
+        if let Some((last_op, _)) = self.operations.last() {
             if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
                 final_reopen = true;
             }
