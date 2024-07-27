@@ -720,7 +720,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             }
             debug_assert_eq!(data_start, plain_writer.stream_position()?);
             self.writing_to_file = true;
-            self.writing_raw = true;
             plain_writer.write_all(&copy)
         })();
         self.ok_or_abort_file(result)?;
@@ -731,7 +730,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .for_each(|file| file.central_header_start = 0);
 
         self.writing_to_file = false;
-        self.writing_raw = false;
         Ok(())
     }
 
@@ -962,6 +960,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file)?;
+        self.writing_to_file = true;
         let result: ZipResult<()> = (|| {
             ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
             let file = &mut self.files[index];
@@ -1005,7 +1004,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         let file = &mut self.files[index];
         debug_assert!(file.data_start.get().is_none());
         file.data_start.get_or_init(|| self.stats.start);
-        self.writing_to_file = true;
         self.stats.bytes_written = 0;
         self.stats.hasher = Hasher::new();
         Ok(())
@@ -1288,8 +1286,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.writing_raw = true;
 
         io::copy(&mut file.take_raw_reader()?, self)?;
-
-        Ok(())
+        self.finish_file()
     }
 
     /// Like `raw_copy_file_to_path`, but uses Path arguments.
@@ -1535,11 +1532,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         dest_data.file_name_raw = dest_name.to_string().into_bytes().into();
         dest_data.central_header_start = 0;
         self.insert_file_data(dest_data)?;
-
-        // Copying will overwrite the central header
-        self.files
-            .values_mut()
-            .for_each(|file| file.central_header_start = 0);
 
         Ok(())
     }
