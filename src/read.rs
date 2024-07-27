@@ -486,9 +486,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         mut w: W,
     ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
-        let Some((_, first_old_file)) = self.shared.files.first() else {
+        if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
-        };
+        }
         let mut new_files = self.shared.files.clone();
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
@@ -496,26 +496,24 @@ impl<R: Read + Seek> ZipArchive<R> {
          *
          * assert_eq!(0, new_files[0].header_start); // Avoid this.
          */
-        let new_initial_header_start = w.stream_position()? as i64;
-        let header_offset = new_initial_header_start - first_old_file.header_start as i64;
+
+        let first_new_file_header_start = w.stream_position()?;
+
         /* Push back file header starts for all entries in the covered files. */
         new_files.values_mut().try_for_each(|f| {
             /* This is probably the only really important thing to change. */
-            f.header_start = f.header_start
-                    .checked_add_signed(header_offset)
-                    .ok_or(InvalidArchive(
-                        "new header start from merge would have been too large",
-                    ))?;
-            /* Merging will overwrite the central header. */
+            f.header_start = f.header_start.checked_add(first_new_file_header_start).ok_or(
+                InvalidArchive("new header start from merge would have been too large"),
+            )?;
+            /* This is only ever used internally to cache metadata lookups (it's not part of the
+             * zip spec), and 0 is the sentinel value. */
             f.central_header_start = 0;
             /* This is an atomic variable so it can be updated from another thread in the
              * implementation (which is good!). */
             if let Some(old_data_start) = f.data_start.take() {
-                let new_data_start = old_data_start
-                        .checked_add_signed(header_offset)
-                        .ok_or(InvalidArchive(
-                            "new data start from merge would have been too large",
-                        ))?;
+                let new_data_start = old_data_start.checked_add(first_new_file_header_start).ok_or(
+                    InvalidArchive("new data start from merge would have been too large"),
+                )?;
                 f.data_start.get_or_init(|| new_data_start);
             }
             Ok::<_, ZipError>(())
