@@ -269,12 +269,12 @@ impl <'k> FuzzTestCase<'k> {
         if streamable {
             writeln!(stringifier, "let mut stream = writer.finish()?;\n\
                     while read_zipfile_from_stream(&mut stream)?.is_some() {{}}")
-                .map_err(|_| ZipError::InvalidArchive(""))?;
+                .map_err(|_| ZipError::InvalidArchive("Failed to read from stream"))?;
             let mut stream = writer.finish()?;
             while read_zipfile_from_stream(&mut stream)?.is_some() {}
         } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
-                .map_err(|_| ZipError::InvalidArchive(""))?;
+                .map_err(|_| ZipError::InvalidArchive("Failed to finish_into_readable"))?;
             let _ = writer.finish_into_readable()?;
         }
         Ok(())
