@@ -173,9 +173,7 @@ pub(crate) mod zip_writer {
 }
 #[doc(inline)]
 pub use self::sealed::FileOptionExtension;
-use crate::result::ZipError::InvalidArchive;
-#[cfg(any(feature = "lzma", feature = "xz"))]
-use crate::result::ZipError::UnsupportedArchive;
+use crate::result::ZipError::{InvalidArchive, UnsupportedArchive};
 use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
@@ -1615,9 +1613,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             match compression {
                 Stored => {
                     if compression_level.is_some() {
-                        Err(UnsupportedArchive(
-                            "Unsupported compression level",
-                        ))
+                        Err(UnsupportedArchive("Unsupported compression level"))
                     } else {
                         Ok(Box::new(|bare| Storer(bare)))
                     }
@@ -1637,9 +1633,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(default),
                         deflate_compression_level_range(),
                     )
-                    .ok_or(UnsupportedArchive(
-                        "Unsupported compression level",
-                    ))? as u32;
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                        as u32;
 
                     #[cfg(feature = "deflate-zopfli")]
                     {
@@ -1681,18 +1676,17 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     }
                 }
                 #[cfg(feature = "deflate64")]
-                CompressionMethod::Deflate64 => Err(UnsupportedArchive(
-                    "Compressing Deflate64 is not supported",
-                )),
+                CompressionMethod::Deflate64 => {
+                    Err(UnsupportedArchive("Compressing Deflate64 is not supported"))
+                }
                 #[cfg(feature = "bzip2")]
                 CompressionMethod::Bzip2 => {
                     let level = clamp_opt(
                         compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
                         bzip2_compression_level_range(),
                     )
-                    .ok_or(UnsupportedArchive(
-                        "Unsupported compression level",
-                    ))? as u32;
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                        as u32;
                     Ok(Box::new(move |bare| {
                         GenericZipWriter::Bzip2(BzEncoder::new(
                             bare,
@@ -1709,9 +1703,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
                         zstd::compression_level_range(),
                     )
-                    .ok_or(UnsupportedArchive(
-                        "Unsupported compression level",
-                    ))?;
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                     Ok(Box::new(move |bare| {
                         GenericZipWriter::Zstd(ZstdEncoder::new(bare, level as i32).unwrap())
                     }))
@@ -1832,10 +1824,7 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
-fn update_aes_extra_data<W: Write + Seek>(
-    writer: &mut W,
-    file: &mut ZipFileData,
-) -> ZipResult<()> {
+fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData) -> ZipResult<()> {
     let Some((aes_mode, version, compression_method)) = file.aes_mode else {
         return Ok(());
     };
@@ -1938,11 +1927,9 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    let block = file
-        .zip64_extra_field_block()
-        .ok_or(InvalidArchive(
-            "Attempted to update a nonexistent ZIP64 extra field",
-        ))?;
+    let block = file.zip64_extra_field_block().ok_or(InvalidArchive(
+        "Attempted to update a nonexistent ZIP64 extra field",
+    ))?;
 
     let zip64_extra_field_start = file.header_start
         + size_of::<ZipLocalEntryBlock>() as u64
@@ -2494,9 +2481,7 @@ mod test {
         const ORIGINAL_FILE_NAME: &str = "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\u{2}g\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\u{7}\0\t'";
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let mut options = SimpleFileOptions::default();
-        options = options
-            .with_alignment(3584)
-            .compression_method(Stored);
+        options = options.with_alignment(3584).compression_method(Stored);
         writer.start_file(ORIGINAL_FILE_NAME, options)?;
         let archive = writer.finish()?;
         let mut writer = ZipWriter::new_append(archive)?;
