@@ -50,7 +50,7 @@ use zstd::stream::write::Encoder as ZstdEncoder;
 enum MaybeEncrypted<W> {
     Unencrypted(W),
     #[cfg(feature = "aes-crypto")]
-    Aes(crate::aes::AesWriter<W>),
+    Aes(AesWriter<W>),
     ZipCrypto(crate::zipcrypto::ZipCryptoWriter<W>),
 }
 
@@ -649,7 +649,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// read previously-written files and not overwrite them.
     ///
     /// Note: when using an `inner` that cannot overwrite flushed bytes, do not wrap it in a
-    /// [std::io::BufWriter], because that has a [Seek::seek] method that implicitly calls
+    /// [BufWriter], because that has a [Seek::seek] method that implicitly calls
     /// [BufWriter::flush], and ZipWriter needs to seek backward to update each file's header with
     /// the size and checksum after writing the body.
     ///
@@ -859,7 +859,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 "No file has been started",
             )));
         }
-        self.stats.hasher = crc32fast::Hasher::new_with_initial_len(crc32, length);
+        self.stats.hasher = Hasher::new_with_initial_len(crc32, length);
         self.stats.bytes_written = length;
         Ok(())
     }
@@ -1005,11 +1005,11 @@ impl<W: Write + Seek> ZipWriter<W> {
                 #[cfg(feature = "aes-crypto")]
                 Some(EncryptWith::Aes { mode, password }) => {
                     let aeswriter = AesWriter::new(
-                        mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(),
+                        mem::replace(&mut self.inner, Closed).unwrap(),
                         mode,
                         password.as_bytes(),
                     )?;
-                    self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
+                    self.inner = Storer(MaybeEncrypted::Aes(aeswriter));
                 }
                 Some(EncryptWith::ZipCrypto(keys, ..)) => {
                     let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
@@ -1220,7 +1220,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///```
     pub fn merge_archive<R>(&mut self, mut source: ZipArchive<R>) -> ZipResult<()>
     where
-        R: Read + io::Seek,
+        R: Read + Seek,
     {
         self.finish_file()?;
 
@@ -1615,7 +1615,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             match compression {
                 Stored => {
                     if compression_level.is_some() {
-                        Err(ZipError::UnsupportedArchive(
+                        Err(UnsupportedArchive(
                             "Unsupported compression level",
                         ))
                     } else {
@@ -1637,7 +1637,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(default),
                         deflate_compression_level_range(),
                     )
-                    .ok_or(ZipError::UnsupportedArchive(
+                    .ok_or(UnsupportedArchive(
                         "Unsupported compression level",
                     ))? as u32;
 
@@ -1681,7 +1681,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     }
                 }
                 #[cfg(feature = "deflate64")]
-                CompressionMethod::Deflate64 => Err(ZipError::UnsupportedArchive(
+                CompressionMethod::Deflate64 => Err(UnsupportedArchive(
                     "Compressing Deflate64 is not supported",
                 )),
                 #[cfg(feature = "bzip2")]
@@ -1690,7 +1690,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
                         bzip2_compression_level_range(),
                     )
-                    .ok_or(ZipError::UnsupportedArchive(
+                    .ok_or(UnsupportedArchive(
                         "Unsupported compression level",
                     ))? as u32;
                     Ok(Box::new(move |bare| {
@@ -1700,7 +1700,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         ))
                     }))
                 }
-                CompressionMethod::AES => Err(ZipError::UnsupportedArchive(
+                CompressionMethod::AES => Err(UnsupportedArchive(
                     "AES encryption is enabled through FileOptions::with_aes_encryption",
                 )),
                 #[cfg(feature = "zstd")]
@@ -1709,7 +1709,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
                         zstd::compression_level_range(),
                     )
-                    .ok_or(ZipError::UnsupportedArchive(
+                    .ok_or(UnsupportedArchive(
                         "Unsupported compression level",
                     ))?;
                     Ok(Box::new(move |bare| {
@@ -1725,7 +1725,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     Err(UnsupportedArchive("XZ isn't supported for compression"))
                 }
                 CompressionMethod::Unsupported(..) => {
-                    Err(ZipError::UnsupportedArchive("Unsupported compression"))
+                    Err(UnsupportedArchive("Unsupported compression"))
                 }
             }
         }
@@ -1832,7 +1832,7 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
-fn update_aes_extra_data<W: Write + io::Seek>(
+fn update_aes_extra_data<W: Write + Seek>(
     writer: &mut W,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
@@ -1842,7 +1842,7 @@ fn update_aes_extra_data<W: Write + io::Seek>(
 
     let extra_data_start = file.extra_data_start.unwrap();
 
-    writer.seek(io::SeekFrom::Start(
+    writer.seek(SeekFrom::Start(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
@@ -1925,7 +1925,7 @@ fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -
     // This entry in the Local header MUST include BOTH original
     // and compressed file size fields.
     let Some(block) = file.zip64_extra_field_block() else {
-        return Err(ZipError::InvalidArchive(
+        return Err(InvalidArchive(
             "Attempted to write a ZIP64 extra field for a file that's within zip32 limits",
         ));
     };
@@ -1938,14 +1938,14 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    let block = file.zip64_extra_field_block().ok_or(
-        ZipError::InvalidArchive(
+    let block = file
+        .zip64_extra_field_block()
+        .ok_or(InvalidArchive(
             "Attempted to update a nonexistent ZIP64 extra field",
-        )
-    )?;
+        ))?;
 
     let zip64_extra_field_start = file.header_start
-        + mem::size_of::<ZipLocalEntryBlock>() as u64
+        + size_of::<ZipLocalEntryBlock>() as u64
         + file.file_name_raw.len() as u64;
 
     writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
@@ -1992,14 +1992,13 @@ mod test {
     use crate::zipcrypto::ZipCryptoKeys;
     use crate::CompressionMethod::Stored;
     use crate::ZipArchive;
-    use std::io;
     use std::io::{Cursor, Read, Write};
     use std::marker::PhantomData;
     use std::path::PathBuf;
 
     #[test]
     fn write_empty_zip() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_comment("ZIP");
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 25);
@@ -2018,7 +2017,7 @@ mod test {
 
     #[test]
     fn write_zip_dir() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .add_directory(
                 "test",
@@ -2046,7 +2045,7 @@ mod test {
 
     #[test]
     fn write_symlink_simple() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .add_symlink(
                 "name",
@@ -2081,7 +2080,7 @@ mod test {
         path.push("..");
         path.push(".");
         path.push("example.txt");
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file_from_path(path, SimpleFileOptions::default())
             .unwrap();
@@ -2091,7 +2090,7 @@ mod test {
 
     #[test]
     fn write_symlink_wonky_paths() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .add_symlink(
                 "directory\\link",
@@ -2123,9 +2122,9 @@ mod test {
 
     #[test]
     fn write_mimetype_zip() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
-            compression_method: CompressionMethod::Stored,
+            compression_method: Stored,
             compression_level: None,
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
@@ -2160,9 +2159,9 @@ mod test {
 
     #[test]
     fn write_non_utf8() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
-            compression_method: CompressionMethod::Stored,
+            compression_method: Stored,
             compression_level: None,
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
@@ -2197,7 +2196,7 @@ mod test {
 
     #[test]
     fn path_to_string() {
-        let mut path = std::path::PathBuf::new();
+        let mut path = PathBuf::new();
         #[cfg(windows)]
         path.push(r"C:\");
         #[cfg(unix)]
@@ -2212,7 +2211,7 @@ mod test {
 
     #[test]
     fn test_shallow_copy() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: CompressionMethod::default(),
             compression_level: None,
@@ -2262,7 +2261,7 @@ mod test {
 
     #[test]
     fn test_deep_copy() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: CompressionMethod::default(),
             compression_level: None,
@@ -2310,7 +2309,7 @@ mod test {
 
     #[test]
     fn duplicate_filenames() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file("foo/bar/test", SimpleFileOptions::default())
             .unwrap();
@@ -2324,7 +2323,7 @@ mod test {
 
     #[test]
     fn test_filename_looks_like_zip64_locator() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file(
                 "PK\u{6}\u{7}\0\0\0\u{11}\0\0\0\0\0\0\0\0\0\0\0\0",
@@ -2337,7 +2336,7 @@ mod test {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_2() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file(
                 "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
@@ -2350,7 +2349,7 @@ mod test {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_2a() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file(
                 "PK\u{6}\u{6}PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
@@ -2363,7 +2362,7 @@ mod test {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_3() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file("\0PK\u{6}\u{6}", SimpleFileOptions::default())
             .unwrap();
@@ -2379,7 +2378,7 @@ mod test {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_4() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file("PK\u{6}\u{6}", SimpleFileOptions::default())
             .unwrap();
@@ -2405,7 +2404,7 @@ mod test {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_5() -> ZipResult<()> {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .add_directory("", SimpleFileOptions::default().with_alignment(21))
             .unwrap();
@@ -2431,7 +2430,7 @@ mod test {
 
     #[test]
     fn remove_shallow_copy_keeps_original() -> ZipResult<()> {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file("original", SimpleFileOptions::default())
             .unwrap();
@@ -2450,7 +2449,7 @@ mod test {
 
     #[test]
     fn remove_encrypted_file() -> ZipResult<()> {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let first_file_options = SimpleFileOptions::default()
             .with_alignment(65535)
             .with_deprecated_encryption(b"Password");
@@ -2467,7 +2466,7 @@ mod test {
         let mut options = SimpleFileOptions::default();
         options = options.with_deprecated_encryption(b"Password");
         options.alignment = 65535;
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.add_symlink("", "s\t\0\0ggggg\0\0", options).unwrap();
         writer.abort_file().unwrap();
         let zip = writer.finish().unwrap();
@@ -2483,7 +2482,7 @@ mod test {
         options = options
             .compression_method(CompressionMethod::default())
             .compression_level(Some(264));
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.start_file("", options).unwrap();
         writer.write_all(&[]).unwrap();
         writer.write_all(&[]).unwrap();
@@ -2493,11 +2492,11 @@ mod test {
     #[test]
     fn crash_with_no_features() -> ZipResult<()> {
         const ORIGINAL_FILE_NAME: &str = "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\u{2}g\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\u{7}\0\t'";
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let mut options = SimpleFileOptions::default();
         options = options
             .with_alignment(3584)
-            .compression_method(CompressionMethod::Stored);
+            .compression_method(Stored);
         writer.start_file(ORIGINAL_FILE_NAME, options)?;
         let archive = writer.finish()?;
         let mut writer = ZipWriter::new_append(archive)?;
@@ -2510,9 +2509,9 @@ mod test {
     fn test_alignment() {
         let page_size = 4096;
         let options = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Stored)
+            .compression_method(Stored)
             .with_alignment(page_size);
-        let mut zip = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
         let contents = b"sleeping";
         let () = zip.start_file("sleep", options).unwrap();
         let _count = zip.write(&contents[..]).unwrap();

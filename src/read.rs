@@ -8,7 +8,10 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock, Zip32CentralDirectoryEnd, ZIP64_ENTRY_THR, Zip64CentralDirectoryEnd};
+use crate::spec::{
+    self, FixedSizeBlock, Pod, Zip32CentralDirectoryEnd, Zip64CDELocatorBlock,
+    Zip64CentralDirectoryEnd, ZIP64_ENTRY_THR,
+};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -556,9 +559,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let mut offset = cde_start_pos
                     .checked_sub(footer.central_directory_size as u64)
                     .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
-                    .ok_or(InvalidArchive(
-                        "Invalid central directory size or offset",
-                    ))?;
+                    .ok_or(InvalidArchive("Invalid central directory size or offset"))?;
 
                 if config.archive_offset == ArchiveOffset::Detect {
                     // Check whether the archive offset makes sense by peeking at the directory start. If it
@@ -604,16 +605,18 @@ impl<R: Read + Seek> ZipArchive<R> {
     fn get_directory_info_zip64(
         config: &Config,
         reader: &mut R,
-        footer: &Zip32CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<Vec<ZipResult<CentralDirectoryInfo>>> {
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
         // comment length. Therefore:
-        /* TODO: compute this from constant sizes and offsets! */
-        reader.seek(SeekFrom::End(
-            -((size_of::<Zip64CentralDirectoryEnd>() + size_of::<Zip32CDEBlock>() + footer.zip_file_comment.len()) as i64),
+        reader.seek(SeekFrom::Start(
+            cde_start_pos
+                .checked_sub(size_of::<Zip64CDELocatorBlock>() as u64)
+                .ok_or(InvalidArchive(
+                    "No room for ZIP64 locator before central directory end",
+                ))?,
         ))?;
         let locator64 = spec::Zip64CentralDirectoryEndLocator::parse(reader)?;
 
@@ -627,8 +630,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         // ZIP comment data.
 
         let search_upper_bound = cde_start_pos
-            .checked_sub((size_of::<Zip64CentralDirectoryEnd>()
-                + size_of::<spec::Zip64CentralDirectoryEndLocator>()) as u64)
+            .checked_sub(
+                (size_of::<Zip64CentralDirectoryEnd>()
+                    + size_of::<spec::Zip64CentralDirectoryEndLocator>()) as u64,
+            )
             .ok_or(InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
             ))?;
@@ -724,7 +729,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let mut inner_results = Vec::with_capacity(1);
                 // Check if file has a zip64 footer
                 let zip64_vec_result =
-                    Self::get_directory_info_zip64(&config, reader, &footer, cde_start_pos);
+                    Self::get_directory_info_zip64(&config, reader, cde_start_pos);
                 Self::sort_result(
                     zip64_vec_result,
                     &mut invalid_errors_64,
