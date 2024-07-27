@@ -1769,7 +1769,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     }
 
     const fn is_closed(&self) -> bool {
-        matches!(*self, GenericZipWriter::Closed)
+        matches!(*self, Closed)
     }
 
     fn get_plain(&mut self) -> &mut W {
