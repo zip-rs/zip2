@@ -1938,19 +1938,17 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    if !file.large_file {
-        return Err(ZipError::InvalidArchive(
+    let block = file.zip64_extra_field_block().ok_or(
+        ZipError::InvalidArchive(
             "Attempted to update a nonexistent ZIP64 extra field",
-        ));
-    }
+        )
+    )?;
 
-    let zip64_extra_field = file.header_start
+    let zip64_extra_field_start = file.header_start
         + mem::size_of::<ZipLocalEntryBlock>() as u64
         + file.file_name_raw.len() as u64;
 
-    writer.seek(SeekFrom::Start(zip64_extra_field))?;
-
-    let block = file.zip64_extra_field_block().unwrap();
+    writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
     let block = block.serialize();
     writer.write_all(&block)?;
     Ok(())
