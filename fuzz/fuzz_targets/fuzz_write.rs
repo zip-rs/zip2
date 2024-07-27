@@ -105,9 +105,9 @@ fn do_operation<'k>(
     abort: bool,
     flush_on_finish_file: bool,
     files_added: &mut usize,
-    stringifier: &mut impl Write,
-    panic_on_error: bool
+    stringifier: &mut impl Write
 ) -> Result<(), Box<dyn std::error::Error>> {
+    writeln!(stringifier, "writer.set_flush_on_finish_file({});", flush_on_finish_file)?;
     writer.set_flush_on_finish_file(flush_on_finish_file);
     let mut path = Cow::Borrowed(&operation.path);
     match &operation.basic {
@@ -146,7 +146,7 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, &base, false, flush_on_finish_file, files_added, stringifier, panic_on_error)?;
+            do_operation(writer, &base, false, flush_on_finish_file, files_added, stringifier)?;
             writeln!(stringifier, "writer.shallow_copy_file_from_path({:?}, {:?});", base_path, path)?;
             writer.shallow_copy_file_from_path(&*base_path, &*path)?;
             *files_added += 1;
@@ -156,7 +156,7 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, &base, false, flush_on_finish_file, files_added, stringifier, panic_on_error)?;
+            do_operation(writer, &base, false, flush_on_finish_file, files_added, stringifier)?;
             writeln!(stringifier, "writer.deep_copy_file_from_path({:?}, {:?});", base_path, path)?;
             writer.deep_copy_file_from_path(&*base_path, &*path)?;
             *files_added += 1;
@@ -173,8 +173,7 @@ fn do_operation<'k>(
                     *abort,
                     false,
                     &mut inner_files_added,
-                    stringifier,
-                    panic_on_error
+                    stringifier
                 );
             });
             writeln!(stringifier, "writer\n}};\nwriter.merge_archive(sub_writer.finish_into_readable()?)?;")?;
@@ -191,6 +190,7 @@ fn do_operation<'k>(
         writer.abort_file()?;
         *files_added -= 1;
     }
+    let mut abort = false;
     // If a comment is set, we finish the archive, reopen it for append and then set a shorter
     // comment, then there will be junk after the new comment that we can't get rid of. Thus, we
     // can only check that the expected is a prefix of the actual
@@ -200,20 +200,20 @@ fn do_operation<'k>(
             return Ok(())
         },
         ReopenOption::ViaFinish => {
+            writeln!(stringifier, "let old_comment = writer.get_raw_comment().to_owned();")?;
             let old_comment = writer.get_raw_comment().to_owned();
             writeln!(stringifier, "let mut writer = ZipWriter::new_append(writer.finish()?)?;")?;
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
                 (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
                     zip::ZipWriter::new_append(old_writer.finish()?)
                 })().unwrap_or_else(|_| {
-                    if panic_on_error {
-                        panic!("Failed to create new ZipWriter")
-                    }
+                    abort = true;
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
             });
-            if panic_on_error {
-                assert!(writer.get_raw_comment().starts_with(&old_comment));
+            writeln!(stringifier, "assert!(writer.get_raw_comment().starts_with(&old_comment));")?;
+            if !writer.get_raw_comment().starts_with(&old_comment) {
+                return Err("Comment mismatch".into());
             }
         }
         ReopenOption::ViaFinishIntoReadable => {
@@ -223,20 +223,25 @@ fn do_operation<'k>(
                 (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
                     zip::ZipWriter::new_append(old_writer.finish()?)
                 })().unwrap_or_else(|_| {
-                    if panic_on_error {
-                        panic!("Failed to create new ZipWriter")
-                    }
+                    abort = true;
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
             });
-            assert!(writer.get_raw_comment().starts_with(&old_comment));
+            writeln!(stringifier, "assert!(writer.get_raw_comment().starts_with(&old_comment));")?;
+            if !writer.get_raw_comment().starts_with(&old_comment) {
+                return Err("Comment mismatch".into());
+            }
         }
     }
-    Ok(())
+    if abort {
+        Err("Failed to reopen writer".into())
+    } else {
+        Ok(())
+    }
 }
 
 impl <'k> FuzzTestCase<'k> {
-    fn execute(&self, stringifier: &mut impl Write, panic_on_error: bool) -> ZipResult<()> {
+    fn execute(&self, stringifier: &mut impl Write) -> ZipResult<()> {
         let mut files_added = 0;
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let mut streamable = true;
@@ -257,17 +262,16 @@ impl <'k> FuzzTestCase<'k> {
             &operation,
             *abort,
             self.flush_on_finish_file,
-                &mut files_added,
-                stringifier,
-                panic_on_error
-            );
+            &mut files_added,
+            stringifier
+        );
         }
         if streamable {
-            writeln!(stringifier, "let mut stream = writer.finish().unwrap();\n\
-                    while read_zipfile_from_stream(&mut stream).unwrap().is_some() {{}}")
+            writeln!(stringifier, "let mut stream = writer.finish()?;\n\
+                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}")
                 .map_err(|_| ZipError::InvalidArchive(""))?;
-            let mut stream = writer.finish().unwrap();
-            while read_zipfile_from_stream(&mut stream).unwrap().is_some() {}
+            let mut stream = writer.finish()?;
+            while read_zipfile_from_stream(&mut stream)?.is_some() {}
         } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
                 .map_err(|_| ZipError::InvalidArchive(""))?;
@@ -280,7 +284,7 @@ impl <'k> FuzzTestCase<'k> {
 impl <'k> Debug for FuzzTestCase<'k> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "let mut writer = ZipWriter::new(Cursor::new(Vec::new()));")?;
-        let _ = self.execute(f, false);
+        let _ = self.execute(f);
         Ok(())
     }
 }
@@ -303,5 +307,5 @@ impl Write for NoopWrite {
 }
 
 fuzz_target!(|test_case: FuzzTestCase| {
-    test_case.execute(&mut NoopWrite::default(), true).unwrap()
+    test_case.execute(&mut NoopWrite::default()).unwrap()
 });
