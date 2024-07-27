@@ -6,7 +6,7 @@ use libfuzzer_sys::fuzz_target;
 use replace_with::replace_with_or_abort;
 use std::borrow::Cow;
 use std::fmt::{Arguments, Formatter, Write};
-use std::io::Cursor;
+use std::io::{Cursor, Seek};
 use std::io::Write as IoWrite;
 use std::path::PathBuf;
 use tikv_jemallocator::Jemalloc;
@@ -268,9 +268,11 @@ impl <'k> FuzzTestCase<'k> {
         }
         if streamable {
             writeln!(stringifier, "let mut stream = writer.finish()?;\n\
+                    stream.rewind()?;\n\
                     while read_zipfile_from_stream(&mut stream)?.is_some() {{}}")
                 .map_err(|_| ZipError::InvalidArchive("Failed to read from stream"))?;
             let mut stream = writer.finish()?;
+            stream.rewind()?;
             while read_zipfile_from_stream(&mut stream)?.is_some() {}
         } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
