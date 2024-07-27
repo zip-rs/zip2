@@ -263,9 +263,13 @@ impl <'k> FuzzTestCase<'k> {
             );
         }
         if streamable {
-        let mut stream = writer.finish().unwrap();
-        while read_zipfile_from_stream(&mut stream).unwrap().is_some() {}
-    } else if final_reopen {writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
+            writeln!(stringifier, "let mut stream = writer.finish().unwrap();\n\
+                    while read_zipfile_from_stream(&mut stream).unwrap().is_some() {{}}")
+                .map_err(|_| ZipError::InvalidArchive(""))?;
+            let mut stream = writer.finish().unwrap();
+            while read_zipfile_from_stream(&mut stream).unwrap().is_some() {}
+        } else if final_reopen {
+            writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
                 .map_err(|_| ZipError::InvalidArchive(""))?;
             let _ = writer.finish_into_readable()?;
         }
