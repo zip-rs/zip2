@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.5](https://github.com/zip-rs/zip2/compare/v2.1.4...v2.1.5) - 2024-07-20
+
+### <!-- 2 -->🚜 Refactor
+- change invalid_state() return type to io::Result<T>
+
 ## [2.1.4](https://github.com/zip-rs/zip2/compare/v2.1.3...v2.1.4) - 2024-07-18
 
 ### <!-- 1 -->🐛 Bug Fixes
