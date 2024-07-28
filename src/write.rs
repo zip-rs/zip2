@@ -2512,16 +2512,16 @@ mod test {
         let mut data = Vec::new();
         {
             let options = SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Stored)
+                .compression_method(Stored)
                 .with_alignment(page_size);
-            let mut zip = ZipWriter::new(io::Cursor::new(&mut data));
+            let mut zip = ZipWriter::new(Cursor::new(&mut data));
             let contents = b"sleeping";
             let () = zip.start_file("sleep", options).unwrap();
             let _count = zip.write(&contents[..]).unwrap();
         }
         assert_eq!(data[4096..4104], b"sleeping"[..]);
         {
-            let mut zip = ZipArchive::new(io::Cursor::new(&mut data)).unwrap();
+            let mut zip = ZipArchive::new(Cursor::new(&mut data)).unwrap();
             let file = zip.by_index(0).unwrap();
             assert_eq!(file.name(), "sleep");
             assert_eq!(file.data_start(), page_size.into());
