@@ -999,6 +999,11 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
                 file.central_extra_field = Some(data.clone());
             }
+            debug_assert!(file.data_start.get().is_none());
+            file.data_start.get_or_init(|| self.stats.start);
+            self.writing_to_file = true;
+            self.stats.bytes_written = 0;
+            self.stats.hasher = Hasher::new();
             match options.encrypt_with {
                 #[cfg(feature = "aes-crypto")]
                 Some(EncryptWith::Aes { mode, password }) => {
@@ -1016,19 +1021,12 @@ impl<W: Write + Seek> ZipWriter<W> {
                         keys,
                     };
                     let crypto_header = [0u8; 12];
-
                     zipwriter.write_all(&crypto_header)?;
-                    self.stats.start = zipwriter.writer.stream_position()?;
+                    self.stats.hasher.update(&crypto_header);
                     self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
                 }
                 None => {}
             }
-
-            debug_assert!(file.data_start.get().is_none());
-            file.data_start.get_or_init(|| self.stats.start);
-            self.writing_to_file = true;
-            self.stats.bytes_written = 0;
-            self.stats.hasher = Hasher::new();
         }
         Ok(())
     }
@@ -3496,6 +3494,20 @@ mod test {
         assert!(writer.get_raw_comment().starts_with(&[33]));
         let archive = writer.finish_into_readable()?;
         assert!(archive.comment().starts_with(&[33]));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_crc_bug195() -> ZipResult<()> {
+        let file = File::create("test.zip").unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .large_file(true);
+        zip.start_file("hello_world.txt", options).unwrap();
+        zip.write(b"Hello\nWorld!").unwrap();
+        zip.finish().unwrap();
         Ok(())
     }
 }
