@@ -992,6 +992,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                     buffer: vec![],
                     keys,
                 };
+                self.stats.start = zipwriter.writer.stream_position()?;
+                // crypto_header is counted as part of the data
                 let crypto_header = [0u8; 12];
                 let result = zipwriter.write_all(&crypto_header);
                 self.ok_or_abort_file(result)?;
