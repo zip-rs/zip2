@@ -146,7 +146,7 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, &base, false, flush_on_finish_file, files_added, stringifier)?;
+            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier)?;
             writeln!(stringifier, "writer.shallow_copy_file_from_path({:?}, {:?});", base_path, path)?;
             writer.shallow_copy_file_from_path(&*base_path, &*path)?;
             *files_added += 1;
@@ -156,7 +156,7 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, &base, false, flush_on_finish_file, files_added, stringifier)?;
+            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier)?;
             writeln!(stringifier, "writer.deep_copy_file_from_path({:?}, {:?});", base_path, path)?;
             writer.deep_copy_file_from_path(&*base_path, path)?;
             *files_added += 1;
@@ -251,7 +251,9 @@ fn do_operation<'k>(
 }
 
 impl <'k> FuzzTestCase<'k> {
-    fn execute(self, stringifier: &mut impl Write, panic_on_error: bool) -> ZipResult<()> {
+    fn execute(self, stringifier: &mut impl Write) -> ZipResult<()> {
+        let junk_len = self.initial_junk.len();
+        let mut streamable = true;
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
         let mut writer = zip::ZipWriter::new(initial_junk);
@@ -264,25 +266,26 @@ impl <'k> FuzzTestCase<'k> {
         }
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
-        for (operation, abort) in self.operations.iter() {
+        for (operation, abort) in self.operations.into_vec().into_iter() {
             if streamable {
-            streamable = operation.is_streamable();
+                streamable = operation.is_streamable();
+            }
+            let _ = do_operation(
+                &mut writer,
+                operation,
+                abort,
+                self.flush_on_finish_file,
+                &mut files_added,
+                stringifier
+            );
         }
-        let _ = do_operation(
-            &mut writer,
-            &operation,
-            *abort,
-            self.flush_on_finish_file,
-            &mut files_added,
-            stringifier
-        );
         if streamable {
             writeln!(stringifier, "let mut stream = writer.finish()?;\n\
                     stream.rewind()?;\n\
                     while read_zipfile_from_stream(&mut stream)?.is_some() {{}}")
                 .map_err(|_| ZipError::InvalidArchive("Failed to read from stream"))?;
             let mut stream = writer.finish()?;
-            stream.seek(SeekFrom::Start(initial_junk.len()))?;
+            stream.seek(SeekFrom::Start(junk_len as u64))?;
             while read_zipfile_from_stream(&mut stream)?.is_some() {}
         } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
@@ -302,7 +305,7 @@ impl <'k> Debug for FuzzTestCase<'k> {
                          initial_junk.seek(SeekFrom::End(0))?;\n\
                          let mut writer = ZipWriter::new(initial_junk);", &self.initial_junk)?;
         }
-        let _ = self.clone().execute(f, false);
+        let _ = self.clone().execute(f);
         Ok(())
     }
 }
