@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.6](https://github.com/zip-rs/zip2/compare/v2.1.5...v2.1.6) - 2024-07-29
+
+### <!-- 1 -->🐛 Bug Fixes
+- ([#33](https://github.com/zip-rs/zip2/pull/33)) Rare combination of settings could lead to writing a corrupt archive with overlength extra data, and data_start locations when reading the archive back were also wrong ([#221](https://github.com/zip-rs/zip2/pull/221))
+
+### <!-- 2 -->🚜 Refactor
+- Eliminate some magic numbers and unnecessary path prefixes ([#225](https://github.com/zip-rs/zip2/pull/225))
+
 ## [2.1.5](https://github.com/zip-rs/zip2/compare/v2.1.4...v2.1.5) - 2024-07-20
 
 ### <!-- 2 -->🚜 Refactor
