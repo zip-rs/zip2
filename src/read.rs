@@ -563,7 +563,7 @@ impl<R> ZipArchive<R> {
     }
 }
 
-impl<R: Read + Seek> ZipArchive<R> {
+impl<R: BufRead + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + Seek>(
         &mut self,
         mut w: W,
@@ -1187,7 +1187,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
 impl<R> ZipArchive<R>
 where
-    R: Read + Seek,
+    R: BufRead + Seek,
 {
     /// Search for a file entry by name
     pub fn by_name_new(

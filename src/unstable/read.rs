@@ -29,11 +29,11 @@ use flate2::read::DeflateDecoder;
 #[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-use std::io::{self, Read, Seek};
+use std::io::{self, BufRead, Read, Seek};
 use std::path::PathBuf;
 use std::slice;
 
-pub(crate) enum EntryReader<R> {
+pub(crate) enum EntryReader<R: BufRead> {
     Stored(R),
     #[cfg(feature = "_deflate-any")]
     Deflated(DeflateDecoder<R>),
@@ -51,26 +51,42 @@ pub(crate) enum EntryReader<R> {
     Xz(XzDecoder<R>),
 }
 
+macro_rules! entry_reader_delegate {
+    ($target:expr, $method:ident, $($params:expr),*) => {
+        match $target {
+            Self::Stored(r) => r.$method($($params),*),
+            #[cfg(feature = "_deflate-any")]
+            Self::Deflated(r) => r.$method($($params),*),
+            #[cfg(feature = "deflate64")]
+            Self::Deflate64(r) => r.$method($($params),*),
+            #[cfg(feature = "bzip2")]
+            Self::Bzip2(r) => r.$method($($params),*),
+            #[cfg(feature = "zstd")]
+            Self::Zstd(r) => r.$method($($params),*),
+            #[cfg(feature = "lzma")]
+            Self::Lzma(r) => r.$method($($params),*),
+            #[cfg(feature = "xz")]
+            Self::Xz(r) => r.$method($($params),*),
+        }
+    };
+}
+
 impl<R> Read for EntryReader<R>
 where
-    R: Read,
+    R: BufRead,
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            Self::Stored(r) => r.read(buf),
-            #[cfg(feature = "_deflate-any")]
-            Self::Deflated(r) => r.read(buf),
-            #[cfg(feature = "deflate64")]
-            Self::Deflate64(r) => r.read(buf),
-            #[cfg(feature = "bzip2")]
-            Self::Bzip2(r) => r.read(buf),
-            #[cfg(feature = "zstd")]
-            Self::Zstd(r) => r.read(buf),
-            #[cfg(feature = "lzma")]
-            Self::Lzma(r) => r.read(buf),
-            #[cfg(feature = "xz")]
-            Self::Xz(r) => r.read(buf),
-        }
+        entry_reader_delegate!(self, read, buf)
+    }
+}
+
+impl<R: BufRead> BufRead for EntryReader<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        entry_reader_delegate!(self, fill_buf, )
+    }
+
+    fn consume(&mut self, amt: usize) {
+        entry_reader_delegate!(self, consume, amt)
     }
 }
 
@@ -296,7 +312,7 @@ where
     /* TODO: this really shouldn't be required upon construction (especially since the reader
      * doesn't need to be mutable, indicating the Read capability isn't used), but multiple of our
      * constituent constructors require it. We should be able to make upstream PRs to fix these. */
-    R: Read,
+    R: BufRead,
 {
     match compression_method {
         &CompressionMethod::Stored => Ok(EntryReader::Stored(reader)),
@@ -343,16 +359,32 @@ pub(crate) enum CryptoReader<R> {
     Aes(AesReaderValid<R>),
 }
 
+macro_rules! get_crypto_reader_delegate {
+    ($target:expr, $method:ident, $($params:expr),*) => {
+        match $target {
+            CryptoReader::ZipCrypto(r) => r.$method($($params),*),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes(r) => r.$method($($params),*),
+        }
+    };
+}
+
 impl<R> Read for CryptoReader<R>
 where
     R: Read,
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            CryptoReader::ZipCrypto(r) => r.read(buf),
-            #[cfg(feature = "aes-crypto")]
-            CryptoReader::Aes(r) => r.read(buf),
-        }
+        get_crypto_reader_delegate!(self, read, buf)
+    }
+}
+
+impl<R: BufRead> BufRead for CryptoReader<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        get_crypto_reader_delegate!(self, fill_buf, )
+    }
+
+    fn consume(&mut self, amt: usize) {
+        get_crypto_reader_delegate!(self, consume, amt)
     }
 }
 
@@ -454,7 +486,7 @@ impl CryptoVariant {
     }
 }
 
-pub(crate) enum CryptoEntryReader<R> {
+pub(crate) enum CryptoEntryReader<R: BufRead> {
     Unencrypted(Crc32Reader<EntryReader<R>>),
     Ae2Encrypted(EntryReader<CryptoReader<R>>),
     NonAe2Encrypted(Crc32Reader<EntryReader<CryptoReader<R>>>),
@@ -462,7 +494,7 @@ pub(crate) enum CryptoEntryReader<R> {
 
 impl<R> Read for CryptoEntryReader<R>
 where
-    R: Read,
+    R: BufRead,
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -483,7 +515,7 @@ pub mod streaming {
     use crate::spec::{self, FixedSizeBlock};
     use crate::types::{ZipCentralEntryBlock, ZipLocalEntryBlock};
 
-    use std::io::{self, Read};
+    use std::io::{self, BufRead, Read};
     use std::mem;
     use std::ops;
 
@@ -510,7 +542,7 @@ pub mod streaming {
 
     impl<R> StreamingArchive<R>
     where
-        R: Read,
+        R: BufRead,
     {
         fn drain_remaining(&mut self) -> Result<(), ZipError> {
             let Self {
@@ -675,7 +707,9 @@ pub mod streaming {
         R: Read,
     {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            assert!(!buf.is_empty());
+            if buf.is_empty() {
+                return Ok(0);
+            }
             let to_read = self.remaining().min(buf.len());
             /* If the input is exhausted, or `buf` was empty, we are done. */
             if to_read == 0 {
@@ -694,6 +728,16 @@ pub mod streaming {
             debug_assert!(count <= to_read);
             self.current_progress += count;
             Ok(count)
+        }
+    }
+
+    impl<'a, R: BufRead> BufRead for DrainWrapper<'a, R> {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            self.inner.fill_buf()
+        }
+
+        fn consume(&mut self, amt: usize) {
+            self.inner.consume(amt)
         }
     }
 
