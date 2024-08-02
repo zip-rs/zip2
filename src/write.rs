@@ -3,17 +3,17 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
-use crate::read::{
-    find_content, parse_single_extra_field, Config, ZipArchive, ZipFile, ZipFileReader,
-};
+use crate::read::ZipFile;
+use crate::read::{parse_single_extra_field, Config, ZipArchive};
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
-    ffi, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock,
+    ffi, AesModeInfo, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock, 
     ZipRawValues, MIN_VERSION,
 };
+use crate::unstable::read::find_entry_content_range;
 use crate::write::ffi::S_IFLNK;
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
@@ -86,7 +86,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
     }
 }
 
-enum GenericZipWriter<W: Write + Seek> {
+enum GenericZipWriter<W: Write> {
     Closed,
     Storer(MaybeEncrypted<W>),
     #[cfg(feature = "deflate-flate2")]
@@ -679,10 +679,14 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             compressed_size = write_position - src_data_start;
             src_data.compressed_size = compressed_size;
         }
-        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(
-            src_data,
-            self.inner.get_plain(),
-        )?));
+        let uncompressed_size = src_data.uncompressed_size;
+        let raw_values = ZipRawValues {
+            crc32: src_data.crc32,
+            compressed_size,
+            uncompressed_size,
+        };
+        let mut reader =
+            BufReader::new(find_entry_content_range(src_data, self.inner.get_plain())?);
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
@@ -902,15 +906,25 @@ impl<W: Write + Seek> ZipWriter<W> {
                 aes_dummy_extra_data,
             )?;
         }
-
-        let (compression_method, aes_mode) = match options.encrypt_with {
-            #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, .. }) => (
-                CompressionMethod::Aes,
-                Some((mode, AesVendorVersion::Ae2, options.compression_method)),
-            ),
-            _ => (options.compression_method, None),
-        };
+            file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
+            let block = file.local_block();
+            let index = self.insert_file_data(file)?;
+            let writer = self.inner.get_plain();
+            let result = block?.write(writer);
+            self.ok_or_abort_file(result)?;
+            let writer = self.inner.get_plain();
+            let (compression_method, aes_mode) = match options.encrypt_with {
+                #[cfg(feature = "aes-crypto")]
+                Some(EncryptWith::Aes { mode, .. }) => (
+                    CompressionMethod::Aes,
+                    Some(AesModeInfo {
+                        aes_mode: mode,
+                        vendor_version: AesVendorVersion::Ae2,
+                        compression_method: options.compression_method,
+                    }),
+                ),
+                _ => (options.compression_method, None),
+            };
         let header_end = header_start
             + size_of::<ZipLocalEntryBlock>() as u64
             + name.to_string().as_bytes().len() as u64;
@@ -1050,7 +1064,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // unencrypted contents.
                 //
                 // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
-                aes_mode.1 = if self.stats.bytes_written < 20 {
+                aes_mode.vendor_version = if self.stats.bytes_written < 20 {
                     crc = false;
                     AesVendorVersion::Ae2
                 } else {
@@ -1235,7 +1249,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Add a new file using the already compressed data from a ZIP file being read and renames it, this
     /// allows faster copies of the `ZipFile` since there is no need to decompress and compress it again.
     /// Any `ZipFile` metadata is copied and not checked, for example the file CRC.
-
+    ///
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
@@ -1792,8 +1806,16 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
-fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData) -> ZipResult<()> {
-    let Some((aes_mode, version, compression_method)) = file.aes_mode else {
+fn update_aes_extra_data<W: Write + io::Seek>(
+    writer: &mut W,
+    file: &mut ZipFileData,
+) -> ZipResult<()> {
+    let Some(AesModeInfo {
+        aes_mode,
+        vendor_version: version,
+        compression_method,
+    }) = file.aes_mode
+    else {
         return Ok(());
     };
 

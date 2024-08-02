@@ -420,6 +420,13 @@ impl TryFrom<DateTime> for OffsetDateTime {
 pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
+#[derive(Debug, Copy, Clone)]
+pub struct AesModeInfo {
+    pub aes_mode: AesMode,
+    pub vendor_version: AesVendorVersion,
+    pub compression_method: CompressionMethod,
+}
+
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
 pub struct ZipFileData {
@@ -470,7 +477,7 @@ pub struct ZipFileData {
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
     /// AES mode if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    pub aes_mode: Option<AesModeInfo>,
     /// Specifies where in the extra data the AES metadata starts
     pub aes_extra_data_start: u64,
 
@@ -621,7 +628,7 @@ impl ZipFileData {
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
         compression_method: crate::compression::CompressionMethod,
-        aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+        aes_mode: Option<AesModeInfo>,
         extra_field: &[u8],
     ) -> Self
     where

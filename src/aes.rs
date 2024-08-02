@@ -66,7 +66,7 @@ pub struct AesReader<R> {
     data_length: u64,
 }
 
-impl<R: Read> AesReader<R> {
+impl<R> AesReader<R> {
     pub const fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> AesReader<R> {
         let data_length = compressed_size
             - (PWD_VERIFY_LENGTH + AUTH_CODE_LENGTH + aes_mode.salt_length()) as u64;
@@ -77,7 +77,9 @@ impl<R: Read> AesReader<R> {
             data_length,
         }
     }
+}
 
+impl<R: Read> AesReader<R> {
     /// Read the AES header bytes and validate the password.
     ///
     /// Even if the validation succeeds, there is still a 1 in 65536 chance that an incorrect
@@ -150,7 +152,7 @@ impl<R: Read> AesReader<R> {
 /// There is a 1 in 65536 chance that an invalid password passes that check.
 /// After the data has been read and decrypted an HMAC will be checked and provide a final means
 /// to check if either the password is invalid or if the data has been changed.
-pub struct AesReaderValid<R: Read> {
+pub struct AesReaderValid<R> {
     reader: R,
     data_remaining: u64,
     cipher: Cipher,
@@ -214,7 +216,7 @@ impl<R: Read> Read for AesReaderValid<R> {
     }
 }
 
-impl<R: Read> AesReaderValid<R> {
+impl<R> AesReaderValid<R> {
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> R {
         self.reader
