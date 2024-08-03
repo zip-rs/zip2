@@ -10,9 +10,8 @@ use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
-    ffi, AesModeInfo, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock,
-    ZipRawValues,
-    MIN_VERSION,
+    ffi, AesModeInfo, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData,
+    ZipLocalEntryBlock, ZipRawValues, MIN_VERSION,
 };
 use crate::unstable::read::find_entry_content_range;
 use crate::write::ffi::S_IFLNK;
@@ -907,10 +906,10 @@ impl<W: Write + Seek> ZipWriter<W> {
             Some(EncryptWith::Aes { mode, .. }) => (
                 CompressionMethod::Aes,
                 Some(AesModeInfo {
-                        aes_mode: mode,
-                        vendor_version: AesVendorVersion::Ae2,
-                        compression_method: options.compression_method,
-                    }),
+                    aes_mode: mode,
+                    vendor_version: AesVendorVersion::Ae2,
+                    compression_method: options.compression_method,
+                }),
             ),
             _ => (options.compression_method, None),
         };

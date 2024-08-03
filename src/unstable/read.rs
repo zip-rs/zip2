@@ -29,9 +29,14 @@ use flate2::read::DeflateDecoder;
 #[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-use std::io::{self, Read, Seek};
-#[cfg(any(feature = "zstd", feature = "deflate64", feature = "zstd", feature = "lzma"))]
+#[cfg(any(
+    feature = "zstd",
+    feature = "deflate64",
+    feature = "zstd",
+    feature = "lzma"
+))]
 use std::io::BufReader;
+use std::io::{self, Read, Seek};
 use std::path::PathBuf;
 use std::slice;
 
@@ -474,8 +479,7 @@ pub(crate) enum CryptoEntryReader<R: Read> {
     NonAe2Encrypted(Crc32Reader<EntryReader<CryptoReader<R>>>),
 }
 
-impl<R: Read> Read for CryptoEntryReader<R>
-{
+impl<R: Read> Read for CryptoEntryReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Self::Unencrypted(r) => r.read(buf),
@@ -491,10 +495,10 @@ pub mod streaming {
         ZipFileData, ZipResult,
     };
 
-    use core::mem::size_of;
     use crate::read::{central_header_to_zip_file_inner, parse_extra_field};
     use crate::spec::{self, FixedSizeBlock};
     use crate::types::{ZipCentralEntryBlock, ZipLocalEntryBlock};
+    use core::mem::size_of;
 
     use std::io::{self, BufRead, Cursor, Read};
 
@@ -565,10 +569,7 @@ pub mod streaming {
                         first_metadata_block.is_none(),
                         "metadata block should never be set except exactly once"
                     );
-                    assert!(
-                        size_of::<ZipLocalEntryBlock>()
-                            < size_of::<ZipCentralEntryBlock>()
-                    );
+                    assert!(size_of::<ZipLocalEntryBlock>() < size_of::<ZipCentralEntryBlock>());
                     *first_metadata_block = Some(block);
                     return Ok(None);
                 }
@@ -604,41 +605,39 @@ pub mod streaming {
             assert_eq!(0, *remaining_before_next_entry);
 
             /* Get the bytes out of the stream necessary to create a parseable central block. */
-            let block: [u8; size_of::<ZipCentralEntryBlock>()] =
-                match first_metadata_block.take() {
-                    /* If we have a block we tried to parse earlier from .next_entry(), get the
-                     * data from there, then read the additional bytes necessary to construct
-                     * a central directory entry. This should always happen exactly once. */
-                    Some(block) => {
-                        debug_assert!(
-                            size_of::<ZipLocalEntryBlock>()
-                                < size_of::<ZipCentralEntryBlock>()
-                        );
-                        debug_assert_eq!(block.len(), size_of::<ZipLocalEntryBlock>());
+            let block: [u8; size_of::<ZipCentralEntryBlock>()] = match first_metadata_block.take() {
+                /* If we have a block we tried to parse earlier from .next_entry(), get the
+                 * data from there, then read the additional bytes necessary to construct
+                 * a central directory entry. This should always happen exactly once. */
+                Some(block) => {
+                    debug_assert!(
+                        size_of::<ZipLocalEntryBlock>() < size_of::<ZipCentralEntryBlock>()
+                    );
+                    debug_assert_eq!(block.len(), size_of::<ZipLocalEntryBlock>());
 
-                        let mut remaining_block = [0u8; size_of::<ZipCentralEntryBlock>()
-                            - size_of::<ZipLocalEntryBlock>()];
-                        reader.read_exact(remaining_block.as_mut())?;
+                    let mut remaining_block =
+                        [0u8; size_of::<ZipCentralEntryBlock>() - size_of::<ZipLocalEntryBlock>()];
+                    reader.read_exact(remaining_block.as_mut())?;
 
-                        let mut joined_block = [0u8; size_of::<ZipCentralEntryBlock>()];
-                        joined_block[..block.len()].copy_from_slice(&block);
-                        joined_block[block.len()..].copy_from_slice(&remaining_block);
-                        joined_block
-                    }
-                    /* After the first central block is parsed, we should always go into this
-                     * branch, reading the necessary bytes from the stream. */
-                    None => {
-                        let mut block = [0u8; size_of::<ZipCentralEntryBlock>()];
-                        match reader.read_exact(&mut block) {
-                            Ok(()) => (),
-                            /* The reader is done! This is expected to happen exactly once when the
-                             * stream is completely finished. */
-                            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-                            Err(e) => return Err(e.into()),
-                        };
-                        block
-                    }
-                };
+                    let mut joined_block = [0u8; size_of::<ZipCentralEntryBlock>()];
+                    joined_block[..block.len()].copy_from_slice(&block);
+                    joined_block[block.len()..].copy_from_slice(&remaining_block);
+                    joined_block
+                }
+                /* After the first central block is parsed, we should always go into this
+                 * branch, reading the necessary bytes from the stream. */
+                None => {
+                    let mut block = [0u8; size_of::<ZipCentralEntryBlock>()];
+                    match reader.read_exact(&mut block) {
+                        Ok(()) => (),
+                        /* The reader is done! This is expected to happen exactly once when the
+                         * stream is completely finished. */
+                        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
+                        Err(e) => return Err(e.into()),
+                    };
+                    block
+                }
+            };
             // Parse central header
             let block = ZipCentralEntryBlock::parse(&mut Cursor::new(&block))?;
 
