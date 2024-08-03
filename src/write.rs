@@ -616,7 +616,7 @@ impl ZipWriterStats {
     }
 }
 
-impl<A: BufRead + Write + Seek> ZipWriter<A> {
+impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
     ///
     /// This uses a default configuration to initially read the archive.
@@ -1193,7 +1193,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///```
     pub fn merge_archive<R>(&mut self, mut source: ZipArchive<R>) -> ZipResult<()>
     where
-        R: BufRead + Seek,
+        R: Read + Seek,
     {
         self.finish_file()?;
 

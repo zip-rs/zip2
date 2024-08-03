@@ -260,15 +260,18 @@ pub struct ZipFile<'a> {
 }
 
 /// A struct for reading and seeking a zip file
+#[allow(unused)]
 pub struct ZipFileSeek<'a, R> {
     data: Cow<'a, ZipFileData>,
     reader: ZipFileSeekReader<'a, R>,
 }
 
+#[allow(unused)]
 enum ZipFileSeekReader<'a, R> {
     Raw(SeekableTake<'a, R>),
 }
 
+#[allow(unused)]
 struct SeekableTake<'a, R> {
     inner: &'a mut R,
     inner_starting_offset: u64,
@@ -276,6 +279,7 @@ struct SeekableTake<'a, R> {
     current_offset: u64,
 }
 
+#[allow(unused)]
 impl<'a, R: Seek> SeekableTake<'a, R> {
     pub fn new(inner: &'a mut R, length: u64) -> io::Result<Self> {
         let inner_starting_offset = inner.stream_position()?;
@@ -337,6 +341,7 @@ pub(crate) fn find_content<'a>(
     Ok((reader as &mut dyn Read).take(data.compressed_size))
 }
 
+#[allow(unused)]
 fn find_content_seek<'a, R: Read + Seek>(
     data: &ZipFileData,
     reader: &'a mut R,
@@ -493,11 +498,6 @@ impl<R> ZipArchive<R> {
         Some(total)
     }
 
-    const fn zip64_cde_len() -> usize {
-        mem::size_of::<spec::Zip64CentralDirectoryEnd>()
-            + mem::size_of::<spec::Zip64CentralDirectoryEndLocator>()
-    }
-
     const fn order_lower_upper_bounds(a: u64, b: u64) -> (u64, u64) {
         if a > b {
             (b, a)
@@ -563,7 +563,7 @@ impl<R> ZipArchive<R> {
     }
 }
 
-impl<R: BufRead + Seek> ZipArchive<R> {
+impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + Seek>(
         &mut self,
         mut w: W,
@@ -1187,7 +1187,7 @@ impl<R: BufRead + Seek> ZipArchive<R> {
 
 impl<R> ZipArchive<R>
 where
-    R: BufRead + Seek,
+    R: Read + Seek,
 {
     /// Search for a file entry by name
     pub fn by_name_new(

@@ -29,26 +29,26 @@ use flate2::read::DeflateDecoder;
 #[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-use std::io::{self, BufRead, Read, Seek};
+use std::io::{self, BufReader, Read, Seek};
 use std::path::PathBuf;
 use std::slice;
 
-pub(crate) enum EntryReader<R: BufRead> {
+pub(crate) enum EntryReader<R: Read> {
     Stored(R),
     #[cfg(feature = "_deflate-any")]
     Deflated(DeflateDecoder<R>),
     #[cfg(feature = "deflate64")]
-    Deflate64(Deflate64Decoder<io::BufReader<R>>),
+    Deflate64(Deflate64Decoder<BufReader<R>>),
     #[cfg(feature = "bzip2")]
     Bzip2(BzDecoder<R>),
     #[cfg(feature = "zstd")]
-    Zstd(ZstdDecoder<'static, io::BufReader<R>>),
+    Zstd(ZstdDecoder<'static, BufReader<R>>),
     #[cfg(feature = "lzma")]
     /* According to clippy, this is >30x larger than the other variants, so we box it to avoid
      * unnecessary large stack allocations. */
-    Lzma(Box<LzmaDecoder<R>>),
+    Lzma(Box<LzmaDecoder<BufReader<R>>>),
     #[cfg(feature = "xz")]
-    Xz(XzDecoder<R>),
+    Xz(XzDecoder<BufReader<R>>),
 }
 
 macro_rules! entry_reader_delegate {
@@ -73,20 +73,10 @@ macro_rules! entry_reader_delegate {
 
 impl<R> Read for EntryReader<R>
 where
-    R: BufRead,
+    R: Read,
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         entry_reader_delegate!(self, read, buf)
-    }
-}
-
-impl<R: BufRead> BufRead for EntryReader<R> {
-    fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        entry_reader_delegate!(self, fill_buf, )
-    }
-
-    fn consume(&mut self, amt: usize) {
-        entry_reader_delegate!(self, consume, amt)
     }
 }
 
@@ -312,7 +302,7 @@ where
     /* TODO: this really shouldn't be required upon construction (especially since the reader
      * doesn't need to be mutable, indicating the Read capability isn't used), but multiple of our
      * constituent constructors require it. We should be able to make upstream PRs to fix these. */
-    R: BufRead,
+    R: Read,
 {
     match compression_method {
         &CompressionMethod::Stored => Ok(EntryReader::Stored(reader)),
@@ -338,12 +328,12 @@ where
         }
         #[cfg(feature = "lzma")]
         &CompressionMethod::Lzma => {
-            let reader = LzmaDecoder::new(reader);
+            let reader = LzmaDecoder::new(BufReader::new(reader));
             Ok(EntryReader::Lzma(Box::new(reader)))
         }
         #[cfg(feature = "xz")]
         &CompressionMethod::Xz => {
-            let reader = XzDecoder::new(reader);
+            let reader = XzDecoder::new(BufReader::new(reader));
             Ok(EntryReader::Xz(reader))
         }
         /* TODO: make this into its own EntryReadError error type! */
@@ -375,16 +365,6 @@ where
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         get_crypto_reader_delegate!(self, read, buf)
-    }
-}
-
-impl<R: BufRead> BufRead for CryptoReader<R> {
-    fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        get_crypto_reader_delegate!(self, fill_buf, )
-    }
-
-    fn consume(&mut self, amt: usize) {
-        get_crypto_reader_delegate!(self, consume, amt)
     }
 }
 
@@ -486,15 +466,13 @@ impl CryptoVariant {
     }
 }
 
-pub(crate) enum CryptoEntryReader<R: BufRead> {
+pub(crate) enum CryptoEntryReader<R: Read> {
     Unencrypted(Crc32Reader<EntryReader<R>>),
     Ae2Encrypted(EntryReader<CryptoReader<R>>),
     NonAe2Encrypted(Crc32Reader<EntryReader<CryptoReader<R>>>),
 }
 
-impl<R> Read for CryptoEntryReader<R>
-where
-    R: BufRead,
+impl<R: Read> Read for CryptoEntryReader<R>
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -515,14 +493,12 @@ pub mod streaming {
     use crate::spec::{self, FixedSizeBlock};
     use crate::types::{ZipCentralEntryBlock, ZipLocalEntryBlock};
 
-    use std::io::{self, BufRead, Read};
-    use std::mem;
-    use std::ops;
+    use std::io::{self, BufRead, Cursor, Read};
 
     pub struct StreamingArchive<R> {
         reader: R,
         remaining_before_next_entry: u64,
-        first_metadata_block: Option<[u8; mem::size_of::<ZipLocalEntryBlock>()]>,
+        first_metadata_block: Option<[u8; size_of::<ZipLocalEntryBlock>()]>,
     }
 
     impl<R> StreamingArchive<R> {
@@ -572,7 +548,7 @@ pub mod streaming {
             } = self;
             assert_eq!(0, *remaining_before_next_entry);
 
-            let mut block = [0u8; mem::size_of::<ZipLocalEntryBlock>()];
+            let mut block = [0u8; size_of::<ZipLocalEntryBlock>()];
             reader.read_exact(&mut block)?;
 
             let signature = spec::Magic::from_first_le_bytes(block.as_ref());
@@ -587,16 +563,15 @@ pub mod streaming {
                         "metadata block should never be set except exactly once"
                     );
                     assert!(
-                        mem::size_of::<ZipLocalEntryBlock>()
-                            < mem::size_of::<ZipCentralEntryBlock>()
+                        size_of::<ZipLocalEntryBlock>()
+                            < size_of::<ZipCentralEntryBlock>()
                     );
                     *first_metadata_block = Some(block);
                     return Ok(None);
                 }
                 _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
             }
-            let block = ZipLocalEntryBlock::interpret(&block)?;
-
+            let block = ZipLocalEntryBlock::parse(&mut Cursor::new(&block))?;
             let mut data = ZipFileData::from_local_block(block, reader)?;
 
             let stripped_extra_field = parse_extra_field(&mut data)?;
@@ -626,23 +601,23 @@ pub mod streaming {
             assert_eq!(0, *remaining_before_next_entry);
 
             /* Get the bytes out of the stream necessary to create a parseable central block. */
-            let block: [u8; mem::size_of::<ZipCentralEntryBlock>()] =
+            let block: [u8; size_of::<ZipCentralEntryBlock>()] =
                 match first_metadata_block.take() {
                     /* If we have a block we tried to parse earlier from .next_entry(), get the
                      * data from there, then read the additional bytes necessary to construct
                      * a central directory entry. This should always happen exactly once. */
                     Some(block) => {
-                        assert!(
-                            mem::size_of::<ZipLocalEntryBlock>()
-                                < mem::size_of::<ZipCentralEntryBlock>()
+                        debug_assert!(
+                            size_of::<ZipLocalEntryBlock>()
+                                < size_of::<ZipCentralEntryBlock>()
                         );
-                        assert_eq!(block.len(), mem::size_of::<ZipLocalEntryBlock>());
+                        debug_assert_eq!(block.len(), size_of::<ZipLocalEntryBlock>());
 
-                        let mut remaining_block = [0u8; mem::size_of::<ZipCentralEntryBlock>()
-                            - mem::size_of::<ZipLocalEntryBlock>()];
+                        let mut remaining_block = [0u8; size_of::<ZipCentralEntryBlock>()
+                            - size_of::<ZipLocalEntryBlock>()];
                         reader.read_exact(remaining_block.as_mut())?;
 
-                        let mut joined_block = [0u8; mem::size_of::<ZipCentralEntryBlock>()];
+                        let mut joined_block = [0u8; size_of::<ZipCentralEntryBlock>()];
                         joined_block[..block.len()].copy_from_slice(&block);
                         joined_block[block.len()..].copy_from_slice(&remaining_block);
                         joined_block
@@ -650,7 +625,7 @@ pub mod streaming {
                     /* After the first central block is parsed, we should always go into this
                      * branch, reading the necessary bytes from the stream. */
                     None => {
-                        let mut block = [0u8; mem::size_of::<ZipCentralEntryBlock>()];
+                        let mut block = [0u8; size_of::<ZipCentralEntryBlock>()];
                         match reader.read_exact(&mut block) {
                             Ok(()) => (),
                             /* The reader is done! This is expected to happen exactly once when the
@@ -662,7 +637,7 @@ pub mod streaming {
                     }
                 };
             // Parse central header
-            let block = ZipCentralEntryBlock::interpret(&block)?;
+            let block = ZipCentralEntryBlock::parse(&mut Cursor::new(&block))?;
 
             // Give archive_offset and central_header_start dummy value 0, since
             // they are not used in the output.
@@ -741,7 +716,7 @@ pub mod streaming {
         }
     }
 
-    impl<'a, R> ops::Drop for DrainWrapper<'a, R> {
+    impl<'a, R> Drop for DrainWrapper<'a, R> {
         fn drop(&mut self) {
             assert_eq!(
                 0, *self.remaining_to_notify,

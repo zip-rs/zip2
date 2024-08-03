@@ -43,6 +43,11 @@ impl Magic {
         Self(u32::to_le(self.0))
     }
 
+    #[inline(always)]
+    pub fn from_first_le_bytes(data: &[u8]) -> Self {
+        Self::from_le_bytes([data[0], data[1], data[2], data[3]])
+    }
+
     pub const LOCAL_FILE_HEADER_SIGNATURE: Self = Self::literal(0x04034b50);
     pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Self = Self::literal(0x02014b50);
     pub const CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x06054b50);
