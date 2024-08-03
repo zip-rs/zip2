@@ -29,7 +29,9 @@ use flate2::read::DeflateDecoder;
 #[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-use std::io::{self, BufReader, Read, Seek};
+use std::io::{self, Read, Seek};
+#[cfg(any(feature = "zstd", feature = "deflate64", feature = "zstd", feature = "lzma"))]
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::slice;
 
@@ -489,6 +491,7 @@ pub mod streaming {
         ZipFileData, ZipResult,
     };
 
+    use core::mem::size_of;
     use crate::read::{central_header_to_zip_file_inner, parse_extra_field};
     use crate::spec::{self, FixedSizeBlock};
     use crate::types::{ZipCentralEntryBlock, ZipLocalEntryBlock};
