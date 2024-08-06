@@ -6,6 +6,8 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
+#[cfg(feature = "legacy-zip")]
+use crate::legacy::{ImplodeDecoder, ReduceDecoder, ShrinkDecoder};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{
@@ -416,10 +418,13 @@ pub(crate) fn make_crypto_reader<'a>(
     Ok(reader)
 }
 
+#[allow(unused_variables)]
 pub(crate) fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
     reader: CryptoReader,
+    uncompressed_size: u64,
+    flags: u16,
 ) -> ZipResult<ZipFileReader> {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
@@ -1314,6 +1319,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         crc32,
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
+        flags,
         file_name,
         file_name_raw,
         extra_field: Some(Arc::new(extra_field.to_vec())),
