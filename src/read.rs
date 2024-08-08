@@ -1030,6 +1030,11 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.shared.files.len()
     }
 
+    /// Get the starting offset of the zip central directory.
+    pub fn central_directory_start(&self) -> u64 {
+        self.shared.dir_start
+    }
+
     /// Whether this zip archive contains no files
     pub fn is_empty(&self) -> bool {
         self.len() == 0
