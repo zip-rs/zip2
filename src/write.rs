@@ -253,6 +253,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
 }
 
 /// Metadata for a file to be written
+/* TODO: add accessors for this data as well so options can be introspected! */
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
@@ -1396,6 +1397,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// implementations may materialize a symlink as a regular file, possibly with the
     /// content incorrectly set to the symlink target. For maximum portability, consider
     /// storing a regular file instead.
+    /* TODO: support OsStr instead of just str, for non-unicode paths. */
     pub fn add_symlink<N: ToString, T: ToString, E: FileOptionExtension>(
         &mut self,
         name: N,
