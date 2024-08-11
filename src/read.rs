@@ -34,7 +34,7 @@ mod config;
 pub use config::*;
 
 /// Provides high level API for reading from a stream.
-pub(crate) mod stream;
+pub mod stream;
 
 #[cfg(feature = "lzma")]
 pub(crate) mod lzma;
