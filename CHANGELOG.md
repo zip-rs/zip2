@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.0](https://github.com/zip-rs/zip2/compare/v2.1.6...v2.2.0) - 2024-08-11
+
+### <!-- 0 -->🚀 Features
+- Expose `ZipArchive::central_directory_start` ([#232](https://github.com/zip-rs/zip2/pull/232))
+
 ## [2.1.6](https://github.com/zip-rs/zip2/compare/v2.1.5...v2.1.6) - 2024-07-29
 
 ### <!-- 1 -->🐛 Bug Fixes
