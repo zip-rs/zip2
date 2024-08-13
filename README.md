@@ -21,6 +21,7 @@ Supported compression formats:
 * bzip2
 * zstd
 * lzma (decompression only)
+* xz (decompression only)
 
 Currently unsupported zip extensions:
 
