@@ -902,17 +902,8 @@ pub mod split_extraction {
                                     let limited_reader = ((&mut compressed_read_end)
                                         as &mut dyn Read)
                                         .take(entry.compressed_size);
-                                    let crypto_reader = make_crypto_reader(
-                                        entry.compression_method,
-                                        entry.crc32,
-                                        None,
-                                        false,
-                                        limited_reader,
-                                        None,
-                                        None,
-                                        #[cfg(feature = "aes-crypto")]
-                                        entry.compressed_size,
-                                    )?;
+                                    let crypto_reader =
+                                        make_crypto_reader(entry, limited_reader, None, None)?;
                                     let mut decompressing_reader = make_reader(
                                         entry.compression_method,
                                         entry.crc32,
