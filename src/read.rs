@@ -1018,9 +1018,6 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
         create_dir_all(outpath.as_ref())?;
-        /* TODO: do we want to automatically make the directory writable? Wouldn't we prefer to
-         * respect the write permissions of the extraction dir? Pipelined extraction does not
-         * mutate permissions like this. */
         #[cfg(unix)]
         {
             // Dirs must be writable until all normal files are extracted

@@ -13,11 +13,14 @@ pub mod path_splitting {
     pub enum PathSplitError {
         /// entry path format error: {0:?}
         PathFormat(String),
-        /// file and directory paths overlapped: {0:?}
-        FileDirOverlap(String),
+        /// duplicate path used for file and directory: {0:?}
+        DuplicateFileDirPath(String),
     }
 
     fn split_by_separator(entry_path: &str) -> Result<impl Iterator<Item = &str>, PathSplitError> {
+        /* FIXME: The ZIP spec states (APPNOTE 4.4.17) that file paths are in Unix format, and Unix
+         * filesystems treat a backslash as a normal character. Thus they should be allowed on Unix
+         * and replaced with \u{fffd} on Windows. */
         if entry_path.contains('\\') {
             if entry_path.contains('/') {
                 return Err(PathSplitError::PathFormat(format!(
@@ -151,7 +154,7 @@ pub mod path_splitting {
                     .or_insert_with(|| Box::new(FSEntry::Dir(DirEntry::default())));
                 cur_dir = match next_subdir.as_mut() {
                     FSEntry::File(_) => {
-                        return Err(PathSplitError::FileDirOverlap(format!(
+                        return Err(PathSplitError::DuplicateFileDirPath(format!(
                             "a file was already registered at the same path as the dir entry {:?}",
                             entry_path
                         )));
@@ -164,7 +167,7 @@ pub mod path_splitting {
                     /* We can't handle duplicate file paths, as that might mess up our
                      * parallelization strategy. */
                     if cur_dir.children.contains_key(filename) {
-                        return Err(PathSplitError::FileDirOverlap(format!(
+                        return Err(PathSplitError::DuplicateFileDirPath(format!(
                             "another file or directory was already registered at the same path as the file entry {:?}",
                             entry_path
                         )));
@@ -178,7 +181,7 @@ pub mod path_splitting {
                      * path, as it's not clear how to merge the possibility of two separate file
                      * permissions. */
                     if cur_dir.properties.replace(data).is_some() {
-                        return Err(PathSplitError::FileDirOverlap(format!(
+                        return Err(PathSplitError::DuplicateFileDirPath(format!(
                             "another directory was already registered at the path {:?}",
                             entry_path
                         )));
@@ -191,7 +194,7 @@ pub mod path_splitting {
             properties,
             children,
         } = base_dir;
-        assert!(properties.is_none(), "setting metadata on the top-level extraction dir is not allowed and should have been filtered out");
+        debug_assert!(properties.is_none(), "setting metadata on the top-level extraction dir is not allowed and should have been filtered out");
         Ok(children)
     }
 
@@ -491,6 +494,8 @@ pub mod handle_creation {
                     properties,
                     children,
                 }) => {
+                    /* FIXME: use something like make_writable_dir_all() and then add to
+                     * perms_todo! */
                     match fs::create_dir(&path) {
                         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
                         Err(e) => return Err(e.into()),
