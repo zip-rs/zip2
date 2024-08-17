@@ -9,7 +9,7 @@ use std::path::Path;
 use zip::result::ZipResult;
 use zip::ZipArchive;
 
-#[cfg(all(feature = "parallelism", unix))]
+#[cfg(all(feature = "parallelism", feature = "bzip2", unix))]
 use zip::read::{split_extract, ExtractionParameters};
 
 /* This archive has a set of entries repeated 20x:
@@ -47,10 +47,10 @@ fn extract_basic(bench: &mut Bencher) {
     });
 }
 
-#[cfg(all(feature = "parallelism", unix))]
+#[cfg(all(feature = "parallelism", feature = "bzip2", unix))]
 const DECOMPRESSION_THREADS: usize = 8;
 
-#[cfg(all(feature = "parallelism", unix))]
+#[cfg(all(feature = "parallelism", feature = "bzip2", unix))]
 fn extract_split(bench: &mut Bencher) {
     let readable_archive = get_test_archive().unwrap();
     let total_size: u64 = readable_archive
@@ -77,10 +77,10 @@ fn extract_split(bench: &mut Bencher) {
     });
 }
 
-#[cfg(not(all(feature = "parallelism", unix)))]
+#[cfg(not(all(feature = "parallelism", feature = "bzip2", unix)))]
 benchmark_group!(benches, extract_basic);
 
-#[cfg(all(feature = "parallelism", unix))]
+#[cfg(all(feature = "parallelism", feature = "bzip2", unix))]
 benchmark_group!(benches, extract_basic, extract_split);
 
 benchmark_main!(benches);
