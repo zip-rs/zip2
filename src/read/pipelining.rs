@@ -10,11 +10,11 @@ pub mod path_splitting {
 
     /// Errors encountered during path splitting.
     #[derive(Debug, Display, Error)]
-    pub enum PathSplitError {
-        /// entry path format error: {0:?}
-        PathFormat(String),
-        /// duplicate path used for file and directory: {0:?}
-        DuplicateFileDirPath(String),
+    pub enum PathSplitError<'a> {
+        /// entry path {0:?} would escape extraction dir: {0:?}
+        ExtractionPathEscapesDirectory(&'a str, &'static str),
+        /// duplicate entry path {0:?} used: {0:?}
+        DuplicatePath(&'a str, &'static str),
     }
 
     /* NB: path_to_string() performs some of this logic, but is intended to coerce filesystems
@@ -22,15 +22,15 @@ pub mod path_splitting {
      * perform much less error handling. */
     pub(crate) fn normalize_parent_dirs<'a>(
         entry_path: &'a str,
-    ) -> Result<(Vec<&'a str>, bool), PathSplitError> {
+    ) -> Result<(Vec<&'a str>, bool), PathSplitError<'a>> {
         /* The ZIP spec states (APPNOTE 4.4.17) that file paths are in Unix format, and Unix
          * filesystems treat a backslash as a normal character. Thus they should be allowed on Unix
          * and replaced with \u{fffd} on Windows. */
         if entry_path.starts_with('/') {
-            return Err(PathSplitError::PathFormat(format!(
-                "path {:?} began with '/' and is absolute",
-                entry_path
-            )));
+            return Err(PathSplitError::ExtractionPathEscapesDirectory(
+                entry_path,
+                "path began with '/' and is absolute",
+            ));
         }
         let is_dir = is_dir(entry_path);
 
@@ -45,10 +45,10 @@ pub mod path_splitting {
                 /* If ".." is present, pop off the last element or return an error. */
                 ".." => {
                     if ret.pop().is_none() {
-                        return Err(PathSplitError::PathFormat(format!(
-                        "path {:?} has too many '..' components and would escape the containing dir",
-                        entry_path
-                    )));
+                        return Err(PathSplitError::ExtractionPathEscapesDirectory(
+                            entry_path,
+                            "path has too many '..' components and would escape the containing dir",
+                        ));
                     }
                 }
                 _ => {
@@ -57,10 +57,10 @@ pub mod path_splitting {
             }
         }
         if ret.is_empty() {
-            return Err(PathSplitError::PathFormat(format!(
-                "path {:?} resolves to the top-level directory",
-                entry_path
-            )));
+            return Err(PathSplitError::ExtractionPathEscapesDirectory(
+                entry_path,
+                "path resolves to the top-level directory",
+            ));
         }
 
         Ok((ret, is_dir))
@@ -113,7 +113,7 @@ pub mod path_splitting {
      * any other data for the top-level extraction directory. */
     pub(crate) fn lexicographic_entry_trie<'a, Data>(
         all_entries: impl IntoIterator<Item = (&'a str, Data)>,
-    ) -> Result<BTreeMap<&'a str, Box<FSEntry<'a, Data>>>, PathSplitError>
+    ) -> Result<BTreeMap<&'a str, Box<FSEntry<'a, Data>>>, PathSplitError<'a>>
     where
         Data: DirByMode,
     {
@@ -139,10 +139,10 @@ pub mod path_splitting {
                     .or_insert_with(|| Box::new(FSEntry::Dir(DirEntry::default())));
                 cur_dir = match next_subdir.as_mut() {
                     FSEntry::File(_) => {
-                        return Err(PathSplitError::DuplicateFileDirPath(format!(
-                            "a file was already registered at the same path as the dir entry {:?}",
-                            entry_path
-                        )));
+                        return Err(PathSplitError::DuplicatePath(
+                            entry_path,
+                            "a file was already registered at the same path as this dir entry",
+                        ));
                     }
                     FSEntry::Dir(ref mut subdir) => subdir,
                 }
@@ -152,10 +152,10 @@ pub mod path_splitting {
                     /* We can't handle duplicate file paths, as that might mess up our
                      * parallelization strategy. */
                     if cur_dir.children.contains_key(filename) {
-                        return Err(PathSplitError::DuplicateFileDirPath(format!(
-                            "another file or directory was already registered at the same path as the file entry {:?}",
-                            entry_path
-                        )));
+                        return Err(PathSplitError::DuplicatePath(
+                            entry_path,
+                            "an entry was already registered at the same path as this file entry",
+                        ));
                     }
                     cur_dir
                         .children
@@ -166,10 +166,10 @@ pub mod path_splitting {
                      * path, as it's not clear how to merge the possibility of two separate file
                      * permissions. */
                     if cur_dir.properties.replace(data).is_some() {
-                        return Err(PathSplitError::DuplicateFileDirPath(format!(
-                            "another directory was already registered at the path {:?}",
-                            entry_path
-                        )));
+                        return Err(PathSplitError::DuplicatePath(
+                            entry_path,
+                            "another directory was already registered at this path",
+                        ));
                     }
                 }
             }
@@ -640,9 +640,16 @@ pub mod split_extraction {
         /// zip error: {0}
         Zip(#[from] ZipError),
         /// path split error: {0}
-        PathSplit(#[from] PathSplitError),
+        PathSplit(String),
         /// handle creation error: {0}
         HandleCreation(#[from] HandleCreationError),
+    }
+
+    impl<'a> From<PathSplitError<'a>> for SplitExtractionError {
+        fn from(e: PathSplitError<'a>) -> Self {
+            let msg = format!("{}", e);
+            Self::PathSplit(msg)
+        }
     }
 
     /* TODO: make this share code with find_data_start()! */

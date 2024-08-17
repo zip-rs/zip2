@@ -173,6 +173,7 @@ pub(crate) trait FixedSizeBlock: Pod {
     #[allow(clippy::wrong_self_convention)]
     fn from_le(self) -> Self;
 
+    #[allow(dead_code)]
     fn interpret(input_block: &[u8]) -> ZipResult<Self> {
         let mut block = Self::zeroed();
         block.as_bytes_mut().copy_from_slice(input_block);
