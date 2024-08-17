@@ -17,40 +17,25 @@ pub mod path_splitting {
         DuplicateFileDirPath(String),
     }
 
-    fn split_by_separator(entry_path: &str) -> Result<impl Iterator<Item = &str>, PathSplitError> {
-        /* FIXME: The ZIP spec states (APPNOTE 4.4.17) that file paths are in Unix format, and Unix
-         * filesystems treat a backslash as a normal character. Thus they should be allowed on Unix
-         * and replaced with \u{fffd} on Windows. */
-        if entry_path.contains('\\') {
-            if entry_path.contains('/') {
-                return Err(PathSplitError::PathFormat(format!(
-                    "path {:?} contained both '\\' and '/' separators",
-                    entry_path
-                )));
-            }
-            Ok(entry_path.split('\\'))
-        } else {
-            Ok(entry_path.split('/'))
-        }
-    }
-
-    /* TODO: consider using crate::unstable::path_to_string() for this--it involves new
-     * allocations, but that really shouldn't matter for our purposes. I like the idea of using our
-     * own logic here, since parallel/pipelined extraction is really a different use case than the
-     * rest of the zip crate, but it's definitely worth considering. */
+    /* NB: path_to_string() performs some of this logic, but is intended to coerce filesystems
+     * paths into zip entry names, whereas we are processing entry names from a zip archive, so we
+     * perform much less error handling. */
     pub(crate) fn normalize_parent_dirs<'a>(
         entry_path: &'a str,
     ) -> Result<(Vec<&'a str>, bool), PathSplitError> {
-        if entry_path.starts_with('/') || entry_path.starts_with('\\') {
+        /* The ZIP spec states (APPNOTE 4.4.17) that file paths are in Unix format, and Unix
+         * filesystems treat a backslash as a normal character. Thus they should be allowed on Unix
+         * and replaced with \u{fffd} on Windows. */
+        if entry_path.starts_with('/') {
             return Err(PathSplitError::PathFormat(format!(
-                "path {:?} began with '/' or '\\' and is absolute",
+                "path {:?} began with '/' and is absolute",
                 entry_path
             )));
         }
         let is_dir = is_dir(entry_path);
 
         let mut ret: Vec<&'a str> = Vec::new();
-        for component in split_by_separator(entry_path)? {
+        for component in entry_path.split('/') {
             match component {
                 /* Skip over repeated separators "//". We check separately for ending '/' with the
                  * `is_dir` variable. */
@@ -139,7 +124,7 @@ pub mod path_splitting {
             let mut cur_dir = &mut base_dir;
 
             /* Split entries by directory components, and normalize any non-literal paths
-             * (e.g. '..', '.', leading '/', repeated '/', similarly for windows '\\'). */
+             * (e.g. '..', '.', leading '/', repeated '/'). */
             let (all_components, is_dir) = normalize_parent_dirs(entry_path)?;
             /* If the entry is a directory by mode, then it does not need to end in '/'. */
             let is_dir = is_dir || data.is_dir_by_mode();
@@ -211,10 +196,13 @@ pub mod path_splitting {
             );
             assert_eq!(normalize_parent_dirs("./a").unwrap(), (vec!["a"], false));
             assert_eq!(normalize_parent_dirs("a/../b/").unwrap(), (vec!["b"], true));
-            assert_eq!(normalize_parent_dirs("a\\").unwrap(), (vec!["a"], true));
+            assert_eq!(normalize_parent_dirs("a/").unwrap(), (vec!["a"], true));
             assert!(normalize_parent_dirs("/a").is_err());
-            assert!(normalize_parent_dirs("\\a").is_err());
-            assert!(normalize_parent_dirs("a\\b/").is_err());
+            assert_eq!(normalize_parent_dirs("\\a").unwrap(), (vec!["\\a"], false));
+            assert_eq!(
+                normalize_parent_dirs("a\\b/").unwrap(),
+                (vec!["a\\b"], true)
+            );
             assert!(normalize_parent_dirs("a/../../b").is_err());
             assert!(normalize_parent_dirs("./").is_err());
         }
