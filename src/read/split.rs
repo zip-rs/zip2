@@ -1,5 +1,7 @@
 //! Traits for splitting and teeing file contents into multiple parallel streams.
 
+#![cfg_attr(not(unix), allow(dead_code))]
+
 macro_rules! interruptible_buffered_io_op {
     ($op:expr) => {
         match $op {
@@ -10,6 +12,7 @@ macro_rules! interruptible_buffered_io_op {
     };
 }
 
+#[cfg_attr(not(unix), allow(unused_macros))]
 macro_rules! syscall_errno {
     ($syscall:expr) => {
         match $syscall {

@@ -1,5 +1,7 @@
 //! Pipelined extraction into a filesystem directory.
 
+#![cfg_attr(not(unix), allow(dead_code))]
+
 pub mod path_splitting {
     use displaydoc::Display;
     use thiserror::Error;
@@ -461,6 +463,7 @@ pub mod handle_creation {
                 FSEntry::File(data) => {
                     let key = ZipDataHandle::wrap(data);
 
+                    #[cfg_attr(not(unix), allow(unused_variables))]
                     if let Some(mode) = data.unix_mode() {
                         /* TODO: consider handling the readonly bit on windows. We don't currently
                          * do this in normal extraction, so we don't need to do this yet for
@@ -478,6 +481,7 @@ pub mod handle_creation {
                         .open(path)?;
                     assert!(file_handle_mapping.insert(key, handle).is_none());
                 }
+                #[cfg_attr(not(unix), allow(unused_variables))]
                 FSEntry::Dir(DirEntry {
                     properties,
                     children,
@@ -555,6 +559,7 @@ pub mod handle_creation {
             .unwrap();
 
             /* (2) Generate handles. */
+            #[cfg_attr(not(unix), allow(unused_variables))]
             let AllocatedHandles {
                 file_handle_mapping,
                 perms_todo,
