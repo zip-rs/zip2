@@ -27,6 +27,12 @@ impl Magic {
     }
 
     #[inline(always)]
+    pub(crate) fn from_first_le_bytes(bytes: &[u8]) -> Self {
+        let first_bytes: &[u8; 4] = bytes[..4].try_into().unwrap();
+        Self::from_le_bytes(*first_bytes)
+    }
+
+    #[inline(always)]
     pub const fn to_le_bytes(self) -> [u8; 4] {
         self.0.to_le_bytes()
     }
@@ -172,6 +178,17 @@ pub(crate) trait FixedSizeBlock: Pod {
 
     #[allow(clippy::wrong_self_convention)]
     fn from_le(self) -> Self;
+
+    fn interpret(input_block: &[u8]) -> ZipResult<Self> {
+        let mut block = Self::zeroed();
+        block.as_bytes_mut().copy_from_slice(input_block);
+        let block = Self::from_le(block);
+
+        if block.magic() != Self::MAGIC {
+            return Err(Self::WRONG_MAGIC_ERROR);
+        }
+        Ok(block)
+    }
 
     fn parse<R: Read>(reader: &mut R) -> ZipResult<Self> {
         let mut block = Self::zeroed();

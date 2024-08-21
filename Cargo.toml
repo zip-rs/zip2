@@ -95,6 +95,10 @@ name = "read_entry"
 harness = false
 
 [[bench]]
+name = "decompress_sink"
+harness = false
+
+[[bench]]
 name = "read_metadata"
 harness = false
 

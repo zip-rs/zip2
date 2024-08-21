@@ -6,7 +6,7 @@ use std::{
 };
 
 #[derive(Debug)]
-pub struct XzDecoder<R: BufRead> {
+pub struct XzDecoder<R> {
     compressed_reader: R,
     stream_size: usize,
     buf: VecDeque<u8>,

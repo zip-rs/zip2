@@ -5,6 +5,8 @@ use std::io;
 use std::io::{Read, Write};
 use std::path::{Component, Path, MAIN_SEPARATOR};
 
+pub mod read;
+
 /// Provides high level API for reading from a stream.
 pub mod stream {
     pub use crate::read::stream::*;

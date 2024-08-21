@@ -1,15 +1,16 @@
 use bencher::{benchmark_group, benchmark_main};
 
-use std::io::{Cursor, Read, Write};
+use std::io::{prelude::*, Cursor};
 
 use bencher::Bencher;
 use getrandom::getrandom;
-use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
+
+use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     writer.start_file("random.dat", options).unwrap();
     let mut bytes = vec![0u8; size];
@@ -39,4 +40,5 @@ fn read_entry(bench: &mut Bencher) {
 }
 
 benchmark_group!(benches, read_entry);
+
 benchmark_main!(benches);
