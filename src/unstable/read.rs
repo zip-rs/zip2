@@ -120,6 +120,10 @@ impl<'a, R> HasZipMetadata for ZipEntry<'a, R> {
 
 impl<'a, R> EntryData for ZipEntry<'a, R> {}
 
+pub trait ReadableEntry: EntryData + Read {}
+
+impl<'a, R> ReadableEntry for ZipEntry<'a, R> where R: Read {}
+
 pub(crate) fn find_entry_content_range<R>(
     data: &ZipFileData,
     mut reader: R,
@@ -324,7 +328,10 @@ where
 }
 
 pub mod streaming {
-    use super::{construct_decompressing_reader, Crc32Reader, ZipError, ZipFileData, ZipResult};
+    use super::{
+        construct_decompressing_reader, Crc32Reader, ReadableEntry, ZipError, ZipFileData,
+        ZipResult,
+    };
 
     use crate::read::{
         central_header_to_zip_file_inner, parse_extra_field, EntryData, HasZipMetadata,
@@ -578,6 +585,8 @@ pub mod streaming {
     }
 
     impl<R> EntryData for StreamingZipEntry<R> {}
+
+    impl<R> ReadableEntry for StreamingZipEntry<R> where R: Read {}
 
     /// Additional metadata for the file.
     #[derive(Debug)]
