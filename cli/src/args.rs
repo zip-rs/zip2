@@ -674,6 +674,8 @@ pub mod info {
 pub mod extract {
     use super::{ArgParseError, CommandFormat};
 
+    use zip::CompressionMethod;
+
     use std::{collections::VecDeque, ffi::OsString, mem, path::PathBuf};
 
     #[derive(Debug)]
@@ -821,11 +823,8 @@ pub mod extract {
 
     #[derive(Debug)]
     pub enum EntryType {
-        /// file
         File,
-        /// dir
         Dir,
-        /// symlink
         Symlink,
     }
 
@@ -842,13 +841,11 @@ pub mod extract {
 
     #[derive(Debug, PartialEq, Eq)]
     pub enum NonSpecificCompressionMethodArg {
-        /// any
         Any,
-        /// known
         Known,
     }
 
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
     pub enum SpecificCompressionMethodArg {
         Stored,
         Deflated,
@@ -862,6 +859,40 @@ pub mod extract {
         Lzma,
         #[cfg(feature = "xz")]
         Xz,
+    }
+
+    impl SpecificCompressionMethodArg {
+        pub const KNOWN_COMPRESSION_METHODS: &[CompressionMethod] = &[
+            CompressionMethod::Stored,
+            CompressionMethod::Deflated,
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64,
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd,
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma,
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz,
+        ];
+
+        pub fn translate_to_zip(self) -> CompressionMethod {
+            match self {
+                Self::Stored => CompressionMethod::Stored,
+                Self::Deflated => CompressionMethod::Deflated,
+                #[cfg(feature = "deflate64")]
+                Self::Deflate64 => CompressionMethod::Deflate64,
+                #[cfg(feature = "bzip2")]
+                Self::Bzip2 => CompressionMethod::Bzip2,
+                #[cfg(feature = "zstd")]
+                Self::Zstd => CompressionMethod::Zstd,
+                #[cfg(feature = "lzma")]
+                Self::Lzma => CompressionMethod::Lzma,
+                #[cfg(feature = "xz")]
+                Self::Xz => CompressionMethod::Xz,
+            }
+        }
     }
 
     #[derive(Debug, PartialEq, Eq)]

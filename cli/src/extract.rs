@@ -180,6 +180,81 @@ where
     }
 }
 
+struct Matcher<W> {
+    err: RefCell<W>,
+    expr: MatchExpression,
+}
+
+impl<W> Matcher<W>
+where
+    W: Write,
+{
+    pub fn evaluate(&self, entry: &ZipFile) -> Result<bool, CommandError> {
+        let Self { err, expr } = self;
+        Self::recursive_match(err, &expr, entry)
+    }
+
+    fn recursive_match(
+        err: &RefCell<W>,
+        expr: &MatchExpression,
+        entry: &ZipFile,
+    ) -> Result<bool, CommandError> {
+        match expr {
+            MatchExpression::PrimitivePredicate(predicate) => match predicate {
+                Predicate::Trivial(trivial) => match trivial {
+                    TrivialPredicate::True => Ok(true),
+                    TrivialPredicate::False => Ok(false),
+                },
+                Predicate::EntryType(entry_type) => match entry_type {
+                    EntryType::File => Ok(!entry.is_dir() && !entry.is_symlink()),
+                    EntryType::Dir => Ok(entry.is_dir()),
+                    EntryType::Symlink => Ok(entry.is_symlink()),
+                },
+                Predicate::CompressionMethod(method_arg) => match method_arg {
+                    CompressionMethodArg::NonSpecific(nonspecific_arg) => match nonspecific_arg {
+                        NonSpecificCompressionMethodArg::Any => Ok(true),
+                        NonSpecificCompressionMethodArg::Known => {
+                            Ok(SpecificCompressionMethodArg::KNOWN_COMPRESSION_METHODS
+                                .contains(&entry.compression()))
+                        }
+                    },
+                    CompressionMethodArg::Specific(specific_arg) => {
+                        Ok(specific_arg.translate_to_zip() == entry.compression())
+                    }
+                },
+                Predicate::DepthLimit(limit_arg) => match limit_arg {
+                    DepthLimitArg::Max(max) => {
+                        let max: usize = (*max).into();
+                        Ok(entry.name().split('/').count() <= max)
+                    }
+                    DepthLimitArg::Min(min) => {
+                        let min: usize = (*min).into();
+                        Ok(entry.name().split('/').count() >= min)
+                    }
+                },
+                Predicate::Match(match_arg) => todo!("{match_arg:?}"),
+            },
+            MatchExpression::Negated(inner) => {
+                Self::recursive_match(err, inner.as_ref(), entry).map(|result| !result)
+            }
+            MatchExpression::And {
+                explicit: _,
+                left,
+                right,
+            } => {
+                /* Short-circuiting, so do left first. */
+                Ok(Self::recursive_match(err, left.as_ref(), entry)?
+                    && Self::recursive_match(err, right.as_ref(), entry)?)
+            }
+            MatchExpression::Or { left, right } => {
+                Ok(Self::recursive_match(err, left.as_ref(), entry)?
+                    || Self::recursive_match(err, right.as_ref(), entry)?)
+            }
+            MatchExpression::Grouped(inner) => Self::recursive_match(err, inner.as_ref(), entry),
+        }
+    }
+}
+
 struct ZipFileInput<W> {
     err: RefCell<W>,
     inner: ZipArchive<fs::File>,
