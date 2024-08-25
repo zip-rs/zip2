@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     collections::VecDeque,
     env, fs,
     io::{self, Read, Write},
@@ -386,18 +386,18 @@ struct EntrySpecTransformer<W> {
 }
 
 impl<W> EntrySpecTransformer<W> {
-    pub fn new(
-        err: Rc<RefCell<W>>,
-        match_expr: Option<MatchExpression>,
-        name_transforms: impl IntoIterator<Item = NameTransform>,
-        content: ContentTransform,
-    ) -> Self {
+    pub fn new(err: Rc<RefCell<W>>, entry_spec: EntrySpec) -> Self {
+        let EntrySpec {
+            match_expr,
+            name_transforms,
+            content_transform,
+        } = entry_spec;
         let matcher = match_expr.map(|expr| Matcher::new(err.clone(), expr));
         let name_transformers: Vec<_> = name_transforms
             .into_iter()
             .map(|trans| Transformer::new(err.clone(), trans))
             .collect();
-        let content = ContentTransformer::new(err.clone(), content);
+        let content = ContentTransformer::new(err.clone(), content_transform);
         Self {
             err,
             matcher,
@@ -419,6 +419,17 @@ impl<W> EntrySpecTransformer<W> {
 
 trait IterateEntries {
     fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError>;
+}
+
+fn make_entry_iterator<'a>(
+    err: Rc<RefCell<impl Write + 'a>>,
+    input_type: InputType,
+) -> Result<Box<dyn IterateEntries + 'a>, CommandError> {
+    let ret: Box<dyn IterateEntries + 'a> = match input_type {
+        InputType::StreamingStdin => Box::new(StdinInput::new(err)),
+        InputType::ZipPaths(zip_paths) => Box::new(AllInputZips::new(err, zip_paths)?),
+    };
+    Ok(ret)
 }
 
 struct StdinInput<W> {
@@ -482,7 +493,8 @@ impl<W> IterateEntries for ZipFileInput<W> {
 
 struct AllInputZips<W> {
     err: Rc<RefCell<W>>,
-    zips_todo: Vec<ZipFileInput<W>>,
+    zips_todo: VecDeque<ZipFileInput<W>>,
+    cur_zip: UnsafeCell<ZipFileInput<W>>,
 }
 
 impl<W> AllInputZips<W> {
@@ -490,7 +502,7 @@ impl<W> AllInputZips<W> {
         err: Rc<RefCell<W>>,
         zip_paths: impl IntoIterator<Item = impl AsRef<Path>>,
     ) -> Result<Self, CommandError> {
-        let zips_todo = zip_paths
+        let mut zips_todo = zip_paths
             .into_iter()
             .map(|p| {
                 fs::File::open(p.as_ref())
@@ -504,19 +516,54 @@ impl<W> AllInputZips<W> {
                     })
                     .map(|archive| ZipFileInput::new(Rc::clone(&err), archive))
             })
-            .collect::<Result<Vec<_>, CommandError>>()?;
-        Ok(Self { err, zips_todo })
-    }
-
-    pub fn iter_zips(self) -> impl IntoIterator<Item = ZipFileInput<W>> {
-        self.zips_todo.into_iter()
+            .collect::<Result<VecDeque<_>, CommandError>>()?;
+        debug_assert!(!zips_todo.is_empty());
+        let cur_zip = zips_todo.pop_front().unwrap();
+        Ok(Self {
+            err,
+            zips_todo,
+            cur_zip: UnsafeCell::new(cur_zip),
+        })
     }
 }
 
-pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), CommandError> {
-    writeln!(err, "asdf!").unwrap();
+impl<W> IterateEntries for AllInputZips<W> {
+    fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError> {
+        loop {
+            if let Some(entry) = unsafe { &mut *self.cur_zip.get() }.next_entry()? {
+                return Ok(Some(entry));
+            }
+            match self.zips_todo.pop_front() {
+                Some(zip) => {
+                    self.cur_zip = UnsafeCell::new(zip);
+                }
+                None => {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+}
 
-    dbg!(extract);
+pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandError> {
+    dbg!(&extract);
+    let Extract {
+        output,
+        entry_specs,
+        input,
+    } = extract;
+    let err = Rc::new(RefCell::new(err));
+
+    let entry_receiver = make_entry_receiver(err.clone(), output)?;
+    let entry_spec_transformers: Vec<EntrySpecTransformer<_>> = if entry_specs.is_empty() {
+        vec![EntrySpecTransformer::empty(err.clone())]
+    } else {
+        entry_specs
+            .into_iter()
+            .map(|entry_spec| EntrySpecTransformer::new(err.clone(), entry_spec))
+            .collect()
+    };
+    let entry_iterator = make_entry_iterator(err.clone(), input)?;
 
     Ok(())
 }
