@@ -17,8 +17,12 @@ use zip::{
 use crate::{args::extract::*, CommandError, WrapCommandErr};
 
 trait EntryReceiver {
-    fn receive_entry(&self, entry: ZipFile, name: &str) -> Result<(), CommandError>;
-    fn finalize_entries(&self) -> Result<(), CommandError>;
+    fn receive_entry<'a>(
+        &mut self,
+        entry: &mut ZipFile<'a>,
+        name: &str,
+    ) -> Result<(), CommandError>;
+    fn finalize_entries(&mut self) -> Result<(), CommandError>;
 }
 
 fn make_entry_receiver<'a>(
@@ -63,7 +67,11 @@ impl<W> EntryReceiver for StdoutReceiver<W>
 where
     W: Write,
 {
-    fn receive_entry(&self, mut entry: ZipFile, name: &str) -> Result<(), CommandError> {
+    fn receive_entry<'a>(
+        &mut self,
+        entry: &mut ZipFile<'a>,
+        name: &str,
+    ) -> Result<(), CommandError> {
         let mut err = self.err.borrow_mut();
         writeln!(err, "receiving entry {} with name {name}", entry.name()).unwrap();
         if entry.is_dir() {
@@ -71,13 +79,13 @@ where
         } else if entry.is_symlink() {
             writeln!(err, "entry is symlink, ignoring").unwrap();
         } else {
-            io::copy(&mut entry, &mut self.stdout.lock())
+            io::copy(entry, &mut self.stdout)
                 .wrap_err_with(|| format!("failed to write entry {name} to stdout"))?;
         }
         Ok(())
     }
 
-    fn finalize_entries(&self) -> Result<(), CommandError> {
+    fn finalize_entries(&mut self) -> Result<(), CommandError> {
         Ok(())
     }
 }
@@ -86,7 +94,7 @@ struct FilesystemReceiver<W> {
     err: Rc<RefCell<W>>,
     output_dir: PathBuf,
     #[cfg(unix)]
-    perms_to_set: RefCell<Vec<(PathBuf, u32)>>,
+    perms_to_set: Vec<(PathBuf, u32)>,
 }
 
 impl<W> FilesystemReceiver<W> {
@@ -95,7 +103,7 @@ impl<W> FilesystemReceiver<W> {
             err,
             output_dir,
             #[cfg(unix)]
-            perms_to_set: RefCell::new(Vec::new()),
+            perms_to_set: Vec::new(),
         }
     }
 }
@@ -104,7 +112,11 @@ impl<W> EntryReceiver for FilesystemReceiver<W>
 where
     W: Write,
 {
-    fn receive_entry(&self, mut entry: ZipFile, name: &str) -> Result<(), CommandError> {
+    fn receive_entry<'a>(
+        &mut self,
+        entry: &mut ZipFile<'a>,
+        name: &str,
+    ) -> Result<(), CommandError> {
         let mut err = self.err.borrow_mut();
         let full_output_path = self.output_dir.join(name);
         writeln!(
@@ -121,9 +133,7 @@ where
                 "storing unix mode {mode} for path {full_output_path:?}"
             )
             .unwrap();
-            self.perms_to_set
-                .borrow_mut()
-                .push((full_output_path.clone(), mode));
+            self.perms_to_set.push((full_output_path.clone(), mode));
         }
 
         if entry.is_dir() {
@@ -170,7 +180,7 @@ where
             }
             let mut outfile = fs::File::create(&full_output_path)
                 .wrap_err_with(|| format!("failed to create file at {full_output_path:?}"))?;
-            io::copy(&mut entry, &mut outfile).wrap_err_with(|| {
+            io::copy(entry, &mut outfile).wrap_err_with(|| {
                 format!(
                     "failed to copy file contents from {} to {full_output_path:?}",
                     entry.name()
@@ -180,12 +190,12 @@ where
         Ok(())
     }
 
-    fn finalize_entries(&self) -> Result<(), CommandError> {
+    fn finalize_entries(&mut self) -> Result<(), CommandError> {
         #[cfg(unix)]
         {
             use std::{cmp::Reverse, os::unix::fs::PermissionsExt};
 
-            let mut perms_to_set = mem::take(&mut *self.perms_to_set.borrow_mut());
+            let mut perms_to_set = mem::take(&mut self.perms_to_set);
             perms_to_set.sort_unstable_by_key(|(path, _)| Reverse(path.clone()));
             for (path, mode) in perms_to_set.into_iter() {
                 let perms = fs::Permissions::from_mode(mode);
@@ -403,8 +413,8 @@ where
     ///      at the end, if substring-only transformations reduced its length. This is because Cow
     ///      can only describe a substring of the original input or an entirely new allocated
     ///      string, as opposed to a more general sort of string view wrapper.
-    pub fn transform_name<'a>(&self, entry: &'a ZipFile<'a>) -> Result<Cow<'a, str>, CommandError> {
-        let mut original_name: &'a str = entry.name();
+    pub fn transform_name(&self, entry: &ZipFile) -> Result<String, CommandError> {
+        let mut original_name: &str = entry.name();
         let mut newly_allocated_name: Option<String> = None;
         let mut newly_allocated_str: Option<&str> = None;
         for transformer in self.name_transformers.iter() {
@@ -432,16 +442,16 @@ where
         let ret = if newly_allocated_name.is_none() {
             /* If we have never allocated anything new, just return the substring of the original
              * name! */
-            Cow::Borrowed(original_name)
+            original_name.to_string()
         } else {
             let subref = newly_allocated_str.unwrap();
             /* If the active substring is the same length as the backing string, assume it's
              * unchanged, so we can return the backing string without reallocating. */
             if subref.len() == newly_allocated_name.as_ref().unwrap().len() {
-                Cow::Owned(newly_allocated_name.unwrap())
+                newly_allocated_name.unwrap()
             } else {
                 let reallocated_string = subref.to_string();
-                Cow::Owned(reallocated_string)
+                reallocated_string
             }
         };
         Ok(ret)
@@ -580,8 +590,48 @@ impl<W> IterateEntries for AllInputZips<W> {
     }
 }
 
+fn process_entry_specs<W>(
+    err: Rc<RefCell<W>>,
+    entry_specs: impl IntoIterator<Item = EntrySpec>,
+) -> Result<Vec<EntrySpecTransformer<W>>, CommandError>
+where
+    W: Write,
+{
+    let entry_spec_transformers: Vec<EntrySpecTransformer<_>> = entry_specs
+        .into_iter()
+        .map(|spec| EntrySpecTransformer::new(err.clone(), spec))
+        .collect();
+    if entry_spec_transformers.is_empty() {
+        return Ok(vec![EntrySpecTransformer::empty(err.clone())]);
+    };
+
+    /* Perform some validation on the transforms since we don't currently support everything we
+     * want to. */
+    if entry_spec_transformers
+        .iter()
+        .any(|t| *t.content_transform() == ContentTransform::Raw)
+    {
+        /* TODO: this can be solved if we can convert a ZipFile into a Raw reader! */
+        return Err(CommandError::InvalidArg(
+            "--raw extraction output is not yet supported".to_string(),
+        ));
+    }
+    if entry_spec_transformers
+        .iter()
+        .filter(|t| *t.content_transform() != ContentTransform::LogToStderr)
+        .count()
+        > 1
+    {
+        /* TODO: this can be solved by separating data from entries! */
+        return Err(CommandError::InvalidArg(
+            "more than one entry spec using a content transform which reads content (i.e. was not --log-to-stderr) was provided; this requires teeing entry contents which is not yet supported".to_string(),
+        ));
+    }
+
+    Ok(entry_spec_transformers)
+}
+
 pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandError> {
-    dbg!(&extract);
     let Extract {
         output,
         entry_specs,
@@ -589,16 +639,35 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
     } = extract;
     let err = Rc::new(RefCell::new(err));
 
-    let entry_receiver = make_entry_receiver(err.clone(), output)?;
-    let entry_spec_transformers: Vec<EntrySpecTransformer<_>> = if entry_specs.is_empty() {
-        vec![EntrySpecTransformer::empty(err.clone())]
-    } else {
-        entry_specs
-            .into_iter()
-            .map(|entry_spec| EntrySpecTransformer::new(err.clone(), entry_spec))
-            .collect()
-    };
-    let entry_iterator = make_entry_iterator(err.clone(), input)?;
+    let mut entry_receiver = make_entry_receiver(err.clone(), output)?;
+    let entry_spec_transformers = process_entry_specs(err.clone(), entry_specs)?;
+    let mut stderr_log_output = io::stderr();
+    let mut entry_iterator = make_entry_iterator(err.clone(), input)?;
+
+    while let Some(mut entry) = entry_iterator.next_entry()? {
+        for transformer in entry_spec_transformers.iter() {
+            if !transformer.matches(&entry)? {
+                continue;
+            }
+            let name: String = transformer.transform_name(&entry)?;
+            match transformer.content_transform() {
+                ContentTransform::Raw => unreachable!(),
+                ContentTransform::LogToStderr => {
+                    writeln!(
+                        &mut stderr_log_output,
+                        "log to stderr: entry with original name {} and transformed name {}, compression method {}, uncompressed size {}",
+                        entry.name(), name, entry.compression(), entry.size()
+                    )
+                    .unwrap();
+                    continue;
+                }
+                ContentTransform::Extract => {
+                    entry_receiver.receive_entry(&mut entry, &name)?;
+                }
+            }
+        }
+    }
+    entry_receiver.finalize_entries()?;
 
     Ok(())
 }

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ffi::OsString, sync::OnceLock};
+use std::{collections::VecDeque, ffi::OsString, fmt, sync::OnceLock};
 
 #[derive(Debug)]
 pub enum ArgParseError {
@@ -150,7 +150,7 @@ pub enum ZipCommand {
     Extract(extract::Extract),
 }
 
-pub trait CommandFormat {
+pub trait CommandFormat: fmt::Debug {
     const COMMAND_NAME: &'static str;
     const COMMAND_TABS: &'static str;
     const COMMAND_DESCRIPTION: &'static str;
@@ -682,7 +682,9 @@ pub mod extract {
     pub enum ContentTransform {
         Extract,
         /* FIXME: not yet supported -- could be done by exposing ZipFile::take_raw_reader(), but
-         * should probably just refactor extract.rs to avoid the need for that. */
+         * should probably just refactor extract.rs to avoid the need for that.
+         * NB: actually, we can't do that while supporting streaming archives unless we expose
+         * take_raw_reader()! */
         Raw,
         LogToStderr,
     }
@@ -1599,6 +1601,8 @@ These results are dependent on the entry data:
           the string argument <pattern> is interpreted into a string matching
           predicate against the entry name.
 
+          TODO: this flag is not yet supported and will produce an error.
+
 
 ## Name transforms (name-transform):
 
@@ -1633,6 +1637,8 @@ Complex:
 These transformers perform complex pattern matching and replacement upon the
 entry name string:
 
+TODO: these flags are not yet supported and will produce an error.
+
       --transform[=<comp-sel>][:<pat-sel>] <pattern> <replacement-spec>
           Extract the portion of the entry name corresponding to <comp-sel>,
           search it against <pattern> corresponding to <pat-sel>, and then
@@ -1656,6 +1662,9 @@ entry itself.
 entry may be matched more than once. In this case, the entry's content will be
 extracted more than once over the execution of this command.
 
+TODO: multiple entry specs with content transforms that extract output more than once require entry
+teeing, which is not yet supported, so will produce an error.
+
   -x, --extract
           Decompress the entry's contents (if necessary) before writing it to
           the output.
@@ -1663,6 +1672,8 @@ extracted more than once over the execution of this command.
       --raw
           Do not decompress entry contents at all before writing its content to
           the output.
+
+          TODO: this flag is not yet supported and will produce an error.
 
       --log-to-stderr
           Write the (possibly transformed) entry name to stderr, without reading

@@ -108,10 +108,11 @@ pub mod driver {
     pub trait ExecuteCommand: CommandFormat {
         fn execute(self, err: impl Write) -> Result<(), CommandError>;
 
-        fn do_main(self, err: impl Write) -> !
+        fn do_main(self, mut err: impl Write) -> !
         where
             Self: Sized,
         {
+            writeln!(&mut err, "{} args: {:?}", Self::COMMAND_NAME, &self).unwrap();
             match self.execute(err) {
                 Ok(()) => process::exit(ZipCli::NON_FAILURE_EXIT_CODE),
                 Err(e) => match e {
