@@ -294,7 +294,7 @@ where
     W: Write,
 {
     pub fn evaluate<'s>(&self, name: &'s str) -> Result<Cow<'s, str>, CommandError> {
-        match self.trans {
+        match &self.trans {
             NameTransform::Trivial(TrivialTransform::Identity) => Ok(Cow::Borrowed(name)),
             NameTransform::Basic(basic_trans) => match basic_trans {
                 BasicTransform::StripComponents(num_components_to_strip) => {
@@ -303,7 +303,7 @@ where
                         return Ok(Cow::Borrowed(name));
                     }
                     /* We allow stripping 0 components, which does nothing. */
-                    if num_components_to_strip == 0 {
+                    if *num_components_to_strip == 0 {
                         return Ok(Cow::Borrowed(name));
                     }
                     /* Pop off prefix components until only one is left or we have stripped all the
@@ -322,7 +322,7 @@ where
                     let leftmost_remaining_separator_index: usize =
                         separator_indices.pop_front().unwrap();
                     Ok(Cow::Borrowed(
-                        name[(leftmost_remaining_separator_index + 1)..],
+                        &name[(leftmost_remaining_separator_index + 1)..],
                     ))
                 }
                 BasicTransform::AddPrefix(prefix_to_add) => {
@@ -374,6 +374,45 @@ where
             ContentTransform::Extract => EntryContent::Decompressed(entry),
             ContentTransform::Raw => unreachable!("this has not been implemented"),
             ContentTransform::LogToStderr => EntryContent::LogToStderr(entry),
+        }
+    }
+}
+
+struct EntrySpecTransformer<W> {
+    err: Rc<RefCell<W>>,
+    matcher: Option<Matcher<W>>,
+    name_transformers: Vec<Transformer<W>>,
+    content: ContentTransformer<W>,
+}
+
+impl<W> EntrySpecTransformer<W> {
+    pub fn new(
+        err: Rc<RefCell<W>>,
+        match_expr: Option<MatchExpression>,
+        name_transforms: impl IntoIterator<Item = NameTransform>,
+        content: ContentTransform,
+    ) -> Self {
+        let matcher = match_expr.map(|expr| Matcher::new(err.clone(), expr));
+        let name_transformers: Vec<_> = name_transforms
+            .into_iter()
+            .map(|trans| Transformer::new(err.clone(), trans))
+            .collect();
+        let content = ContentTransformer::new(err.clone(), content);
+        Self {
+            err,
+            matcher,
+            name_transformers,
+            content,
+        }
+    }
+
+    pub fn empty(err: Rc<RefCell<W>>) -> Self {
+        let content = ContentTransformer::new(err.clone(), ContentTransform::Extract);
+        Self {
+            err,
+            matcher: None,
+            name_transformers: Vec::new(),
+            content,
         }
     }
 }
@@ -476,6 +515,8 @@ impl<W> AllInputZips<W> {
 
 pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), CommandError> {
     writeln!(err, "asdf!").unwrap();
+
     dbg!(extract);
+
     Ok(())
 }
