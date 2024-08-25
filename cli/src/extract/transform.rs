@@ -6,54 +6,113 @@ use crate::{args::extract::*, CommandError};
 
 use super::matcher::{EntryMatcher, WrappedMatcher};
 
-struct Transformer {
-    trans: NameTransform,
+trait NameTransformer {
+    type Arg
+    where
+        Self: Sized;
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized;
+    fn transform_name<'s>(&self, name: &'s str) -> Cow<'s, str>;
 }
 
-impl Transformer {
-    pub fn new(trans: NameTransform) -> Self {
-        Self { trans }
+#[derive(Copy, Clone)]
+enum Trivial {
+    Identity,
+}
+
+impl NameTransformer for Trivial {
+    type Arg = TrivialTransform where Self: Sized;
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(match arg {
+            TrivialTransform::Identity => Self::Identity,
+        })
+    }
+    fn transform_name<'s>(&self, name: &'s str) -> Cow<'s, str> {
+        match self {
+            Self::Identity => Cow::Borrowed(name),
+        }
     }
 }
 
-impl Transformer {
-    pub fn evaluate<'s>(&self, name: &'s str) -> Cow<'s, str> {
-        match &self.trans {
-            NameTransform::Trivial(TrivialTransform::Identity) => Cow::Borrowed(name),
+struct StripComponents {
+    num_components_to_strip: usize,
+}
+
+impl NameTransformer for StripComponents {
+    type Arg = u8 where Self: Sized;
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            num_components_to_strip: arg.into(),
+        })
+    }
+    fn transform_name<'s>(&self, name: &'s str) -> Cow<'s, str> {
+        /* If no directory components, then nothing to strip. */
+        if !name.contains('/') {
+            return Cow::Borrowed(name);
+        }
+        /* We allow stripping 0 components, which does nothing. */
+        if self.num_components_to_strip == 0 {
+            return Cow::Borrowed(name);
+        }
+        /* Pop off prefix components until only one is left or we have stripped all the
+         * requested prefix components. */
+        let mut remaining_to_strip = self.num_components_to_strip;
+        let mut separator_indices: VecDeque<usize> =
+            name.match_indices('/').map(|(i, _)| i).collect();
+        debug_assert!(separator_indices.len() > 0);
+        /* Always keep the final separator, as regardless of how many we strip, we want
+         * to keep the basename in all cases. */
+        while separator_indices.len() > 1 && remaining_to_strip > 0 {
+            let _ = separator_indices.pop_front().unwrap();
+            remaining_to_strip -= 1;
+        }
+        debug_assert!(separator_indices.len() > 0);
+        let leftmost_remaining_separator_index: usize = separator_indices.pop_front().unwrap();
+        Cow::Borrowed(&name[(leftmost_remaining_separator_index + 1)..])
+    }
+}
+
+struct AddPrefix {
+    prefix_to_add: String,
+}
+
+impl NameTransformer for AddPrefix {
+    type Arg = String where Self: Sized;
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(Self { prefix_to_add: arg })
+    }
+    fn transform_name<'s>(&self, name: &'s str) -> Cow<'s, str> {
+        /* We allow an empty prefix, which means to do nothing. */
+        if self.prefix_to_add.is_empty() {
+            return Cow::Borrowed(name);
+        }
+        Cow::Owned(format!("{}/{}", self.prefix_to_add, name))
+    }
+}
+
+pub struct EntrySpecTransformer {
+    matcher: Option<WrappedMatcher>,
+    name_transformers: Vec<Box<dyn NameTransformer>>,
+    content_transform: ContentTransform,
+}
+
+impl EntrySpecTransformer {
+    fn make_transformer(trans: NameTransform) -> Result<Box<dyn NameTransformer>, CommandError> {
+        Ok(match trans {
+            NameTransform::Trivial(arg) => Box::new(Trivial::from_arg(arg)?),
             NameTransform::Basic(basic_trans) => match basic_trans {
-                BasicTransform::StripComponents(num_components_to_strip) => {
-                    /* If no directory components, then nothing to strip. */
-                    if !name.contains('/') {
-                        return Cow::Borrowed(name);
-                    }
-                    /* We allow stripping 0 components, which does nothing. */
-                    if *num_components_to_strip == 0 {
-                        return Cow::Borrowed(name);
-                    }
-                    /* Pop off prefix components until only one is left or we have stripped all the
-                     * requested prefix components. */
-                    let mut num_components_to_strip: usize = (*num_components_to_strip).into();
-                    let mut separator_indices: VecDeque<usize> =
-                        name.match_indices('/').map(|(i, _)| i).collect();
-                    debug_assert!(separator_indices.len() > 0);
-                    /* Always keep the final separator, as regardless of how many we strip, we want
-                     * to keep the basename in all cases. */
-                    while separator_indices.len() > 1 && num_components_to_strip > 0 {
-                        let _ = separator_indices.pop_front().unwrap();
-                        num_components_to_strip -= 1;
-                    }
-                    debug_assert!(separator_indices.len() > 0);
-                    let leftmost_remaining_separator_index: usize =
-                        separator_indices.pop_front().unwrap();
-                    Cow::Borrowed(&name[(leftmost_remaining_separator_index + 1)..])
-                }
-                BasicTransform::AddPrefix(prefix_to_add) => {
-                    /* We allow an empty prefix, which means to do nothing. */
-                    if prefix_to_add.is_empty() {
-                        return Cow::Borrowed(name);
-                    }
-                    Cow::Owned(format!("{}/{}", prefix_to_add, name))
-                }
+                BasicTransform::StripComponents(arg) => Box::new(StripComponents::from_arg(arg)?),
+                BasicTransform::AddPrefix(arg) => Box::new(AddPrefix::from_arg(arg)?),
             },
             NameTransform::Complex(complex_trans) => match complex_trans {
                 ComplexTransform::RemovePrefix(remove_prefix_arg) => {
@@ -63,17 +122,9 @@ impl Transformer {
                     todo!("impl transform: {:?}", transform_arg)
                 }
             },
-        }
+        })
     }
-}
 
-pub struct EntrySpecTransformer {
-    matcher: Option<WrappedMatcher>,
-    name_transformers: Vec<Transformer>,
-    content_transform: ContentTransform,
-}
-
-impl EntrySpecTransformer {
     pub fn new(entry_spec: EntrySpec) -> Result<Self, CommandError> {
         let EntrySpec {
             match_expr,
@@ -86,8 +137,8 @@ impl EntrySpecTransformer {
         };
         let name_transformers: Vec<_> = name_transforms
             .into_iter()
-            .map(|trans| Transformer::new(trans))
-            .collect();
+            .map(Self::make_transformer)
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             matcher,
             name_transformers,
@@ -127,7 +178,7 @@ impl EntrySpecTransformer {
         let mut newly_allocated_str: Option<&str> = None;
         for transformer in self.name_transformers.iter() {
             match newly_allocated_str {
-                Some(s) => match transformer.evaluate(s) {
+                Some(s) => match transformer.transform_name(s) {
                     Cow::Borrowed(t) => {
                         let _ = newly_allocated_str.replace(t);
                     }
@@ -136,7 +187,7 @@ impl EntrySpecTransformer {
                         newly_allocated_str = Some(newly_allocated_name.as_ref().unwrap().as_str());
                     }
                 },
-                None => match transformer.evaluate(original_name) {
+                None => match transformer.transform_name(original_name) {
                     Cow::Borrowed(t) => {
                         original_name = t;
                     }

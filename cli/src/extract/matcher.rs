@@ -3,15 +3,12 @@ use std::path::Path;
 use glob;
 use regex;
 
-use zip::{
-    read::ZipFile,
-    CompressionMethod,
-};
+use zip::{read::ZipFile, CompressionMethod};
 
 use crate::{args::extract::*, CommandError};
 
 #[inline(always)]
-fn process_component_selector<'s>(sel: ComponentSelector, name: &'s str) -> Option<&'s str> {
+pub fn process_component_selector<'s>(sel: ComponentSelector, name: &'s str) -> Option<&'s str> {
     let path = Path::new(name);
     match sel {
         ComponentSelector::Path => Some(name),
