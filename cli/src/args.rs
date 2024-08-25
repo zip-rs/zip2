@@ -678,7 +678,7 @@ pub mod extract {
 
     use std::{collections::VecDeque, ffi::OsString, mem, path::PathBuf};
 
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ContentTransform {
         Extract,
         /* FIXME: not yet supported -- could be done by exposing ZipFile::take_raw_reader(), but

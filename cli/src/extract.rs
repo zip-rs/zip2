@@ -345,44 +345,11 @@ where
     }
 }
 
-enum EntryContent<'a> {
-    Decompressed(ZipFile<'a>),
-    /* See ContentTransform::Raw -- need to refactor this file to avoid the need to convert
-     * a ZipFile into a Raw after it's already constructed. */
-    #[allow(dead_code)]
-    Raw(ZipFile<'a>),
-    LogToStderr(ZipFile<'a>),
-}
-
-struct ContentTransformer<W> {
-    err: Rc<RefCell<W>>,
-    arg: ContentTransform,
-}
-
-impl<W> ContentTransformer<W> {
-    pub fn new(err: Rc<RefCell<W>>, arg: ContentTransform) -> Self {
-        Self { err, arg }
-    }
-}
-
-impl<W> ContentTransformer<W>
-where
-    W: Write,
-{
-    pub fn transform_matched_entry<'a>(&self, entry: ZipFile<'a>) -> EntryContent<'a> {
-        match self.arg {
-            ContentTransform::Extract => EntryContent::Decompressed(entry),
-            ContentTransform::Raw => unreachable!("this has not been implemented"),
-            ContentTransform::LogToStderr => EntryContent::LogToStderr(entry),
-        }
-    }
-}
-
 struct EntrySpecTransformer<W> {
     err: Rc<RefCell<W>>,
     matcher: Option<Matcher<W>>,
     name_transformers: Vec<Transformer<W>>,
-    content: ContentTransformer<W>,
+    content_transform: ContentTransform,
 }
 
 impl<W> EntrySpecTransformer<W> {
@@ -397,23 +364,91 @@ impl<W> EntrySpecTransformer<W> {
             .into_iter()
             .map(|trans| Transformer::new(err.clone(), trans))
             .collect();
-        let content = ContentTransformer::new(err.clone(), content_transform);
         Self {
             err,
             matcher,
             name_transformers,
-            content,
+            content_transform,
         }
     }
 
     pub fn empty(err: Rc<RefCell<W>>) -> Self {
-        let content = ContentTransformer::new(err.clone(), ContentTransform::Extract);
         Self {
             err,
             matcher: None,
             name_transformers: Vec::new(),
-            content,
+            content_transform: ContentTransform::Extract,
         }
+    }
+}
+
+impl<W> EntrySpecTransformer<W>
+where
+    W: Write,
+{
+    pub fn matches(&self, entry: &ZipFile) -> Result<bool, CommandError> {
+        match &self.matcher {
+            None => Ok(true),
+            Some(matcher) => matcher.evaluate(entry),
+        }
+    }
+
+    /// Transform the name from the zip entry, maintaining a few invariants:
+    /// 1. If the transformations all return substrings (no prefixing, non-empty replacements, or
+    ///    empty replacements that lead to non-contiguous input chunks), return a slice of the
+    ///    original input, pointing back to the ZipFile's memory location with associated lifetime.
+    /// 2. If some intermediate transformation requires an allocation (e.g. adding a prefix), do
+    ///    not perform intermediate reallocations for subsequent substring-only transformations.
+    ///    - TODO: The returned string may be reallocated from the initial allocation exactly once
+    ///      at the end, if substring-only transformations reduced its length. This is because Cow
+    ///      can only describe a substring of the original input or an entirely new allocated
+    ///      string, as opposed to a more general sort of string view wrapper.
+    pub fn transform_name<'a>(&self, entry: &'a ZipFile<'a>) -> Result<Cow<'a, str>, CommandError> {
+        let mut original_name: &'a str = entry.name();
+        let mut newly_allocated_name: Option<String> = None;
+        let mut newly_allocated_str: Option<&str> = None;
+        for transformer in self.name_transformers.iter() {
+            match newly_allocated_str {
+                Some(s) => match transformer.evaluate(s)? {
+                    Cow::Borrowed(t) => {
+                        let _ = newly_allocated_str.replace(t);
+                    }
+                    Cow::Owned(t) => {
+                        assert!(newly_allocated_name.replace(t).is_some());
+                        newly_allocated_str = Some(newly_allocated_name.as_ref().unwrap().as_str());
+                    }
+                },
+                None => match transformer.evaluate(original_name)? {
+                    Cow::Borrowed(t) => {
+                        original_name = t;
+                    }
+                    Cow::Owned(t) => {
+                        assert!(newly_allocated_name.replace(t).is_none());
+                        newly_allocated_str = Some(newly_allocated_name.as_ref().unwrap().as_str());
+                    }
+                },
+            }
+        }
+        let ret = if newly_allocated_name.is_none() {
+            /* If we have never allocated anything new, just return the substring of the original
+             * name! */
+            Cow::Borrowed(original_name)
+        } else {
+            let subref = newly_allocated_str.unwrap();
+            /* If the active substring is the same length as the backing string, assume it's
+             * unchanged, so we can return the backing string without reallocating. */
+            if subref.len() == newly_allocated_name.as_ref().unwrap().len() {
+                Cow::Owned(newly_allocated_name.unwrap())
+            } else {
+                let reallocated_string = subref.to_string();
+                Cow::Owned(reallocated_string)
+            }
+        };
+        Ok(ret)
+    }
+
+    pub fn content_transform(&self) -> &ContentTransform {
+        &self.content_transform
     }
 }
 
