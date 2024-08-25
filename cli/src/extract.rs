@@ -14,7 +14,7 @@ use regex;
 
 use zip::{
     read::{read_zipfile_from_stream, ZipFile},
-    ZipArchive,
+    CompressionMethod, ZipArchive,
 };
 
 use crate::{args::extract::*, CommandError, WrapCommandErr};
@@ -210,6 +210,7 @@ where
     }
 }
 
+#[inline(always)]
 fn process_component_selector<'s>(sel: ComponentSelector, name: &'s str) -> Option<&'s str> {
     let path = Path::new(name);
     match sel {
@@ -311,83 +312,249 @@ impl NameMatcher for RegexMatcher {
     }
 }
 
-struct Matcher<W> {
-    err: Rc<RefCell<W>>,
-    expr: MatchExpression,
+trait EntryMatcher {
+    type Arg
+    where
+        Self: Sized;
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized;
+    fn matches(&self, entry: &ZipFile) -> bool;
 }
 
-impl<W> Matcher<W> {
-    pub fn new(err: Rc<RefCell<W>>, expr: MatchExpression) -> Self {
-        Self { err, expr }
+#[derive(Copy, Clone)]
+enum TrivialMatcher {
+    True,
+    False,
+}
+
+impl EntryMatcher for TrivialMatcher {
+    type Arg = TrivialPredicate where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(match arg {
+            TrivialPredicate::True => Self::True,
+            TrivialPredicate::False => Self::False,
+        })
+    }
+
+    fn matches(&self, _entry: &ZipFile) -> bool {
+        match self {
+            Self::True => true,
+            Self::False => false,
+        }
     }
 }
 
-impl<W> Matcher<W>
-where
-    W: Write,
-{
-    pub fn evaluate(&self, entry: &ZipFile) -> Result<bool, CommandError> {
-        let Self { err, expr } = self;
-        Self::recursive_match(err, &expr, entry)
+#[derive(Copy, Clone)]
+enum EntryTypeMatcher {
+    File,
+    Dir,
+    Symlink,
+}
+
+impl EntryMatcher for EntryTypeMatcher {
+    type Arg = EntryType where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(match arg {
+            EntryType::File => Self::File,
+            EntryType::Dir => Self::Dir,
+            EntryType::Symlink => Self::Symlink,
+        })
     }
 
-    fn recursive_match(
-        err: &RefCell<W>,
-        expr: &MatchExpression,
-        entry: &ZipFile,
-    ) -> Result<bool, CommandError> {
-        match expr {
-            MatchExpression::PrimitivePredicate(predicate) => match predicate {
-                Predicate::Trivial(trivial) => match trivial {
-                    TrivialPredicate::True => Ok(true),
-                    TrivialPredicate::False => Ok(false),
-                },
-                Predicate::EntryType(entry_type) => match entry_type {
-                    EntryType::File => Ok(!entry.is_dir() && !entry.is_symlink()),
-                    EntryType::Dir => Ok(entry.is_dir()),
-                    EntryType::Symlink => Ok(entry.is_symlink()),
-                },
-                Predicate::CompressionMethod(method_arg) => match method_arg {
-                    CompressionMethodArg::NonSpecific(nonspecific_arg) => match nonspecific_arg {
-                        NonSpecificCompressionMethodArg::Any => Ok(true),
-                        NonSpecificCompressionMethodArg::Known => {
-                            Ok(SpecificCompressionMethodArg::KNOWN_COMPRESSION_METHODS
-                                .contains(&entry.compression()))
-                        }
-                    },
-                    CompressionMethodArg::Specific(specific_arg) => {
-                        Ok(specific_arg.translate_to_zip() == entry.compression())
-                    }
-                },
-                Predicate::DepthLimit(limit_arg) => match limit_arg {
-                    DepthLimitArg::Max(max) => {
-                        let max: usize = (*max).into();
-                        Ok(entry.name().split('/').count() <= max)
-                    }
-                    DepthLimitArg::Min(min) => {
-                        let min: usize = (*min).into();
-                        Ok(entry.name().split('/').count() >= min)
-                    }
-                },
-                Predicate::Match(match_arg) => todo!("{match_arg:?}"),
+    fn matches(&self, entry: &ZipFile) -> bool {
+        match self {
+            Self::File => !entry.is_dir() && !entry.is_symlink(),
+            Self::Dir => entry.is_dir(),
+            Self::Symlink => entry.is_symlink(),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+enum NonSpecificMethods {
+    Any,
+    Known,
+}
+
+impl EntryMatcher for NonSpecificMethods {
+    type Arg = NonSpecificCompressionMethodArg where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(match arg {
+            NonSpecificCompressionMethodArg::Any => Self::Any,
+            NonSpecificCompressionMethodArg::Known => Self::Known,
+        })
+    }
+
+    fn matches(&self, entry: &ZipFile) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Known => SpecificCompressionMethodArg::KNOWN_COMPRESSION_METHODS
+                .contains(&entry.compression()),
+        }
+    }
+}
+
+struct SpecificMethods {
+    specific_method: CompressionMethod,
+}
+
+impl EntryMatcher for SpecificMethods {
+    type Arg = SpecificCompressionMethodArg where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            specific_method: arg.translate_to_zip(),
+        })
+    }
+
+    fn matches(&self, entry: &ZipFile) -> bool {
+        self.specific_method == entry.compression()
+    }
+}
+
+#[derive(Copy, Clone)]
+enum DepthLimit {
+    Max(usize),
+    Min(usize),
+}
+
+impl EntryMatcher for DepthLimit {
+    type Arg = DepthLimitArg where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(match arg {
+            DepthLimitArg::Max(max) => Self::Max(max.into()),
+            DepthLimitArg::Min(min) => Self::Min(min.into()),
+        })
+    }
+
+    fn matches(&self, entry: &ZipFile) -> bool {
+        let num_components = entry.name().split('/').count();
+        match self {
+            Self::Max(max) => num_components <= *max,
+            Self::Min(min) => num_components >= *min,
+        }
+    }
+}
+
+struct PatternMatcher {
+    matcher: Box<dyn NameMatcher>,
+    comp_sel: ComponentSelector,
+}
+
+impl EntryMatcher for PatternMatcher {
+    type Arg = MatchArg where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        let MatchArg {
+            comp_sel,
+            pat_sel: PatternSelector { pat_sel, modifiers },
+            pattern,
+        } = arg;
+
+        let matcher: Box<dyn NameMatcher> = match pat_sel {
+            PatternSelectorType::Glob => Box::new(GlobMatcher::create(&pattern, modifiers)?),
+            PatternSelectorType::Literal => Box::new(LiteralMatcher::create(&pattern, modifiers)?),
+            PatternSelectorType::Regexp => Box::new(RegexMatcher::create(&pattern, modifiers)?),
+        };
+
+        Ok(Self { matcher, comp_sel })
+    }
+
+    fn matches(&self, entry: &ZipFile) -> bool {
+        match process_component_selector(self.comp_sel, entry.name()) {
+            None => false,
+            Some(s) => self.matcher.matches(s),
+        }
+    }
+}
+
+enum WrappedMatcher {
+    Primitive(Box<dyn EntryMatcher>),
+    Negated(Box<dyn EntryMatcher>),
+    And {
+        left: Box<dyn EntryMatcher>,
+        right: Box<dyn EntryMatcher>,
+    },
+    Or {
+        left: Box<dyn EntryMatcher>,
+        right: Box<dyn EntryMatcher>,
+    },
+}
+
+impl WrappedMatcher {
+    fn create_primitive(arg: Predicate) -> Result<Self, CommandError> {
+        Ok(Self::Primitive(match arg {
+            Predicate::Trivial(arg) => Box::new(TrivialMatcher::from_arg(arg)?),
+            Predicate::EntryType(arg) => Box::new(EntryTypeMatcher::from_arg(arg)?),
+            Predicate::CompressionMethod(method_arg) => match method_arg {
+                CompressionMethodArg::NonSpecific(arg) => {
+                    Box::new(NonSpecificMethods::from_arg(arg)?)
+                }
+                CompressionMethodArg::Specific(arg) => Box::new(SpecificMethods::from_arg(arg)?),
             },
-            MatchExpression::Negated(inner) => {
-                Self::recursive_match(err, inner.as_ref(), entry).map(|result| !result)
-            }
+            Predicate::DepthLimit(arg) => Box::new(DepthLimit::from_arg(arg)?),
+            Predicate::Match(arg) => Box::new(PatternMatcher::from_arg(arg)?),
+        }))
+    }
+}
+
+impl EntryMatcher for WrappedMatcher {
+    type Arg = MatchExpression where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(match arg {
+            MatchExpression::PrimitivePredicate(pred) => Self::create_primitive(pred)?,
+            MatchExpression::Negated(arg) => Self::Negated(Box::new(Self::from_arg(*arg)?)),
             MatchExpression::And {
                 explicit: _,
                 left,
                 right,
             } => {
-                /* Short-circuiting, so do left first. */
-                Ok(Self::recursive_match(err, left.as_ref(), entry)?
-                    && Self::recursive_match(err, right.as_ref(), entry)?)
+                let left = Box::new(Self::from_arg(*left)?);
+                let right = Box::new(Self::from_arg(*right)?);
+                Self::And { left, right }
             }
             MatchExpression::Or { left, right } => {
-                Ok(Self::recursive_match(err, left.as_ref(), entry)?
-                    || Self::recursive_match(err, right.as_ref(), entry)?)
+                let left = Box::new(Self::from_arg(*left)?);
+                let right = Box::new(Self::from_arg(*right)?);
+                Self::Or { left, right }
             }
-            MatchExpression::Grouped(inner) => Self::recursive_match(err, inner.as_ref(), entry),
+            MatchExpression::Grouped(inner) => Self::from_arg(*inner)?,
+        })
+    }
+
+    fn matches(&self, entry: &ZipFile) -> bool {
+        match self {
+            Self::Primitive(m) => m.matches(entry),
+            Self::Negated(m) => !m.matches(entry),
+            Self::And { left, right } => left.matches(entry) && right.matches(entry),
+            Self::Or { left, right } => left.matches(entry) || right.matches(entry),
         }
     }
 }
@@ -407,18 +574,18 @@ impl<W> Transformer<W>
 where
     W: Write,
 {
-    pub fn evaluate<'s>(&self, name: &'s str) -> Result<Cow<'s, str>, CommandError> {
+    pub fn evaluate<'s>(&self, name: &'s str) -> Cow<'s, str> {
         match &self.trans {
-            NameTransform::Trivial(TrivialTransform::Identity) => Ok(Cow::Borrowed(name)),
+            NameTransform::Trivial(TrivialTransform::Identity) => Cow::Borrowed(name),
             NameTransform::Basic(basic_trans) => match basic_trans {
                 BasicTransform::StripComponents(num_components_to_strip) => {
                     /* If no directory components, then nothing to strip. */
                     if !name.contains('/') {
-                        return Ok(Cow::Borrowed(name));
+                        return Cow::Borrowed(name);
                     }
                     /* We allow stripping 0 components, which does nothing. */
                     if *num_components_to_strip == 0 {
-                        return Ok(Cow::Borrowed(name));
+                        return Cow::Borrowed(name);
                     }
                     /* Pop off prefix components until only one is left or we have stripped all the
                      * requested prefix components. */
@@ -435,16 +602,14 @@ where
                     debug_assert!(separator_indices.len() > 0);
                     let leftmost_remaining_separator_index: usize =
                         separator_indices.pop_front().unwrap();
-                    Ok(Cow::Borrowed(
-                        &name[(leftmost_remaining_separator_index + 1)..],
-                    ))
+                    Cow::Borrowed(&name[(leftmost_remaining_separator_index + 1)..])
                 }
                 BasicTransform::AddPrefix(prefix_to_add) => {
                     /* We allow an empty prefix, which means to do nothing. */
                     if prefix_to_add.is_empty() {
-                        return Ok(Cow::Borrowed(name));
+                        return Cow::Borrowed(name);
                     }
-                    Ok(Cow::Owned(format!("{}/{}", prefix_to_add, name)))
+                    Cow::Owned(format!("{}/{}", prefix_to_add, name))
                 }
             },
             NameTransform::Complex(complex_trans) => match complex_trans {
@@ -461,29 +626,32 @@ where
 
 struct EntrySpecTransformer<W> {
     err: Rc<RefCell<W>>,
-    matcher: Option<Matcher<W>>,
+    matcher: Option<WrappedMatcher>,
     name_transformers: Vec<Transformer<W>>,
     content_transform: ContentTransform,
 }
 
 impl<W> EntrySpecTransformer<W> {
-    pub fn new(err: Rc<RefCell<W>>, entry_spec: EntrySpec) -> Self {
+    pub fn new(err: Rc<RefCell<W>>, entry_spec: EntrySpec) -> Result<Self, CommandError> {
         let EntrySpec {
             match_expr,
             name_transforms,
             content_transform,
         } = entry_spec;
-        let matcher = match_expr.map(|expr| Matcher::new(err.clone(), expr));
+        let matcher = match match_expr {
+            None => None,
+            Some(expr) => Some(WrappedMatcher::from_arg(expr)?),
+        };
         let name_transformers: Vec<_> = name_transforms
             .into_iter()
             .map(|trans| Transformer::new(err.clone(), trans))
             .collect();
-        Self {
+        Ok(Self {
             err,
             matcher,
             name_transformers,
             content_transform,
-        }
+        })
     }
 
     pub fn empty(err: Rc<RefCell<W>>) -> Self {
@@ -500,10 +668,10 @@ impl<W> EntrySpecTransformer<W>
 where
     W: Write,
 {
-    pub fn matches(&self, entry: &ZipFile) -> Result<bool, CommandError> {
+    pub fn matches(&self, entry: &ZipFile) -> bool {
         match &self.matcher {
-            None => Ok(true),
-            Some(matcher) => matcher.evaluate(entry),
+            None => true,
+            Some(matcher) => matcher.matches(entry),
         }
     }
 
@@ -517,13 +685,12 @@ where
     ///      at the end, if substring-only transformations reduced its length. This is because Cow
     ///      can only describe a substring of the original input or an entirely new allocated
     ///      string, as opposed to a more general sort of string view wrapper.
-    pub fn transform_name(&self, entry: &ZipFile) -> Result<String, CommandError> {
-        let mut original_name: &str = entry.name();
+    pub fn transform_name<'s>(&self, mut original_name: &'s str) -> Cow<'s, str> {
         let mut newly_allocated_name: Option<String> = None;
         let mut newly_allocated_str: Option<&str> = None;
         for transformer in self.name_transformers.iter() {
             match newly_allocated_str {
-                Some(s) => match transformer.evaluate(s)? {
+                Some(s) => match transformer.evaluate(s) {
                     Cow::Borrowed(t) => {
                         let _ = newly_allocated_str.replace(t);
                     }
@@ -532,7 +699,7 @@ where
                         newly_allocated_str = Some(newly_allocated_name.as_ref().unwrap().as_str());
                     }
                 },
-                None => match transformer.evaluate(original_name)? {
+                None => match transformer.evaluate(original_name) {
                     Cow::Borrowed(t) => {
                         original_name = t;
                     }
@@ -543,22 +710,22 @@ where
                 },
             }
         }
-        let ret = if newly_allocated_name.is_none() {
+
+        if newly_allocated_name.is_none() {
             /* If we have never allocated anything new, just return the substring of the original
              * name! */
-            original_name.to_string()
+            Cow::Borrowed(original_name)
         } else {
             let subref = newly_allocated_str.unwrap();
             /* If the active substring is the same length as the backing string, assume it's
              * unchanged, so we can return the backing string without reallocating. */
             if subref.len() == newly_allocated_name.as_ref().unwrap().len() {
-                newly_allocated_name.unwrap()
+                Cow::Owned(newly_allocated_name.unwrap())
             } else {
                 let reallocated_string = subref.to_string();
-                reallocated_string
+                Cow::Owned(reallocated_string)
             }
-        };
-        Ok(ret)
+        }
     }
 
     pub fn content_transform(&self) -> &ContentTransform {
@@ -704,7 +871,7 @@ where
     let entry_spec_transformers: Vec<EntrySpecTransformer<_>> = entry_specs
         .into_iter()
         .map(|spec| EntrySpecTransformer::new(err.clone(), spec))
-        .collect();
+        .collect::<Result<_, _>>()?;
     if entry_spec_transformers.is_empty() {
         return Ok(vec![EntrySpecTransformer::empty(err.clone())]);
     };
@@ -750,10 +917,10 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
 
     while let Some(mut entry) = entry_iterator.next_entry()? {
         for transformer in entry_spec_transformers.iter() {
-            if !transformer.matches(&entry)? {
+            if !transformer.matches(&entry) {
                 continue;
             }
-            let name: String = transformer.transform_name(&entry)?;
+            let name = transformer.transform_name(entry.name());
             match transformer.content_transform() {
                 ContentTransform::Raw => unreachable!(),
                 ContentTransform::LogToStderr => {
@@ -766,6 +933,7 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
                     continue;
                 }
                 ContentTransform::Extract => {
+                    let name = name.into_owned();
                     entry_receiver.receive_entry(&mut entry, &name)?;
                 }
             }
