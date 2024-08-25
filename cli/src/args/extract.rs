@@ -804,37 +804,76 @@ impl CommandFormat for Extract {
         "Extract individual entries or an entire archive into a stream or the filesystem.";
 
     const USAGE_LINE: &'static str =
-        "[-h|--help] OUTPUT-SPEC... [ENTRY-SPEC]... [--stdin|[--] ZIP-PATH...]";
+        "[-h|--help] [OUTPUT-SPEC]... [ENTRY-SPEC]... [--stdin] [--] [ZIP-PATH]...";
 
     fn generate_help() -> String {
         format!(
             r#"
   -h, --help	Print help
 
-# Output specs:
+# Output flags:
 Where and how to collate the extracted entries.
 
-  -d, --output-directory <dir>
+## Directory extraction:
+Extract entries into relative paths of a named directory according to the
+entry's name.
+
+  -d, --output-directory[:mkdir] <dir>
           Output directory path to write extracted entries into.
           Paths for extracted entries will be constructed by interpreting entry
-          names as relative paths to the provided directory. If the provided
-          path is not a directory, an error is produced. If the provided path
-          does not exist, an error is produced unless --mkdir is specified.
+          names as relative paths to the provided directory.
+
+          If the provided path is not a directory, an error is produced. If the
+          provided path does not exist, an error is produced, unless :mkdir is
+          specified, which attempts to create the specified directory along with
+          any missing parent directories.
+
           If not provided, entries will be extracted into the current directory
           (as if '-d .' had been provided).
 
-      --mkdir
-          If an output directory is provided with -d and the directory path does
-          not exist, create it along with any missing parent directories.
-          If the path provided to -d is not a directory, an error will still be
-          produced if this flag is also provided.
+## Pipe decompression:
+Concatenate decompressed entry data into a pipe or file. Entry names are
+effectively ignored. This disables some optimizations that are possible when
+extracting to the filesystem.
 
       --stdout
           Concatenate all extracted entries and write them in order to stdout
           instead of writing anything to the filesystem.
-          This disables some optimizations that are possible when extracting to
-          the filesystem.
           This will write output to stdout even if stdout is a tty.
+
+  -f, --output-file[:append] <file>
+          Write all entries into the specified file path <file>.
+
+          The output file will be truncated if it already exists, unless :append
+          is provided. If the specified file path could not be created
+          (e.g. because the containing directory does not exist, or because the
+          path exists but does not point to a regular file), an error
+          is produced.
+
+## Output teeing:
+Entries may be *received* by one or more named outputs. Without any output names specified, the
+above flags will produce a single receiver named "default". This is the default receiver used for
+the -x/--extract argument unless otherwise specified. However, multiple named receivers may be
+specified in sequence, separated by the --name flag:
+
+      --name <name>
+          Assign the output receiver created from the following output flags to the name <name>.
+
+Note that the first output in a list need not have a name, as it will be assigned to the name
+"default" if not provided.
+
+'--stdout'	Creates a single default receiver decompressing contents to stdout.
+'-d ./a'	Creates a single default receiver extracting entries into './a'.
+
+'--name one -d ./a'
+    Creates a single named receiver "one" extracting into './a'. -x/--extract
+    must specify the name "one", or an error will be produced.
+'--output-directory:mkdir ./a --name two --stdout'
+    Creates a default receiver extracting into './a', which will be created if
+    it does not exist, and a named receiver "two" concatenating into stdout.
+'--name one -d ./a --name two -f ./b'
+    Creates a named receiver "one" extracting into './a', and a second named receiver "two"
+    concatenating into the file './b'.
 
 # Entry specs:
 
@@ -1004,25 +1043,14 @@ extracted more than once over the execution of this command.
 TODO: multiple entry specs with content transforms that extract output more than once require entry
 teeing, which is not yet supported, so will produce an error.
 
-  -x, --extract
+  -x, --extract[=<name>]
           Decompress the entry's contents (if necessary) before writing it to
-          the output.
-
-      --raw
-          Do not decompress entry contents at all before writing its content to
-          the output.
-
-          TODO: this flag is not yet supported and will produce an error.
-
-      --log-to-stderr
-          Write the (possibly transformed) entry name to stderr, without reading
-          its content at all.
+          the named output <name>, or the default output if the receiver name is
+          not specified.
 
 Attempting to extract an entry using an unsupported compression method with
 -x/--extract will produce an error. In this case, --compression-method can be
-used to filter out such entries, and --raw may be used to avoid the failure and
-decompress the entry later, or --log-to-stderr can be used to print the names of
-all unsupported entries.
+used to filter out such entries.
 
 
 ## Selector syntax:
@@ -1062,11 +1090,11 @@ applies to string replacement, and using it for a match expression like
 '--match:rx:g' will produce an error.
 
 # Input arguments:
-Zip file inputs to extract from can be specified in exactly one of two ways:
-streaming from stdin, or as at least one path pointing to an existing zip file.
-Input arguments are always specified after all output flags and entry
-specs on the command line. If no positional argument is provided and --stdin is
-not present, an error will be produced.
+Zip file inputs to extract from can be specified by streaming from stdin, or as
+at least one path pointing to an existing zip file.  Input arguments are always
+specified after all output flags and entry specs on the command line. If no
+positional argument is provided and --stdin is not present, an error will
+be produced.
 
       --stdin
           If this argument is provided, the streaming API will be used to read
@@ -1081,6 +1109,9 @@ Positional paths:
           of the provided zip files. At least one zip path must be provided, and
           all provided paths must exist and point to an existing zip file. Pipes
           are not supported and will produce an error.
+
+          If --stdin is provided, it will be read in a streaming manner before
+          reading entries from any positional zip paths.
 "#,
             Self::DEFLATE64_HELP_LINE,
             Self::BZIP2_HELP_LINE,
