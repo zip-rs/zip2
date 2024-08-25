@@ -1417,7 +1417,6 @@ content transform. add -x/--extract to construct a complete entry spec"
 
     #[derive(Debug)]
     pub enum InputType {
-        /* FIXME: not yet supported */
         StreamingStdin,
         ZipPaths(Vec<PathBuf>),
     }

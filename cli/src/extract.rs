@@ -1,13 +1,16 @@
 use std::{
-    cell::{RefCell, RefMut},
+    cell::RefCell,
     env, fs,
-    io::{self, Read, Seek, Write},
-    marker::PhantomData,
+    io::{self, Read, Write},
     mem,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    rc::Rc,
 };
 
-use zip::{read::ZipFile, result::ZipError, ZipArchive};
+use zip::{
+    read::{read_zipfile_from_stream, ZipFile},
+    ZipArchive,
+};
 
 use crate::{args::extract::*, CommandError, WrapCommandErr};
 
@@ -17,14 +20,11 @@ trait EntryReceiver {
 }
 
 fn make_entry_receiver<'a>(
-    err: RefCell<impl Write + 'a>,
+    err: Rc<RefCell<impl Write + 'a>>,
     collation: OutputCollation,
 ) -> Result<Box<dyn EntryReceiver + 'a>, CommandError> {
     let ret: Box<dyn EntryReceiver + 'a> = match collation {
-        OutputCollation::ConcatenateStdout => Box::new(StdoutReceiver {
-            err,
-            stdout: io::stdout(),
-        }),
+        OutputCollation::ConcatenateStdout => Box::new(StdoutReceiver::new(err)),
         OutputCollation::Filesystem { output_dir, mkdir } => {
             let output_dir = match output_dir {
                 Some(dir) => {
@@ -37,20 +37,24 @@ fn make_entry_receiver<'a>(
                 }
                 None => env::current_dir().wrap_err("failed to get current dir")?,
             };
-            Box::new(FilesystemReceiver {
-                err,
-                output_dir,
-                #[cfg(unix)]
-                perms_to_set: RefCell::new(Vec::new()),
-            })
+            Box::new(FilesystemReceiver::new(err, output_dir))
         }
     };
     Ok(ret)
 }
 
 struct StdoutReceiver<W> {
-    err: RefCell<W>,
+    err: Rc<RefCell<W>>,
     stdout: io::Stdout,
+}
+
+impl<W> StdoutReceiver<W> {
+    pub fn new(err: Rc<RefCell<W>>) -> Self {
+        Self {
+            err,
+            stdout: io::stdout(),
+        }
+    }
 }
 
 impl<W> EntryReceiver for StdoutReceiver<W>
@@ -77,10 +81,21 @@ where
 }
 
 struct FilesystemReceiver<W> {
-    err: RefCell<W>,
+    err: Rc<RefCell<W>>,
     output_dir: PathBuf,
     #[cfg(unix)]
     perms_to_set: RefCell<Vec<(PathBuf, u32)>>,
+}
+
+impl<W> FilesystemReceiver<W> {
+    pub fn new(err: Rc<RefCell<W>>, output_dir: PathBuf) -> Self {
+        Self {
+            err,
+            output_dir,
+            #[cfg(unix)]
+            perms_to_set: RefCell::new(Vec::new()),
+        }
+    }
 }
 
 impl<W> EntryReceiver for FilesystemReceiver<W>
@@ -181,7 +196,7 @@ where
 }
 
 struct Matcher<W> {
-    err: RefCell<W>,
+    err: Rc<RefCell<W>>,
     expr: MatchExpression,
 }
 
@@ -255,9 +270,100 @@ where
     }
 }
 
+trait IterateEntries {
+    fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError>;
+}
+
+struct StdinInput<W> {
+    err: Rc<RefCell<W>>,
+    inner: io::Stdin,
+}
+
+impl<W> StdinInput<W> {
+    pub fn new(err: Rc<RefCell<W>>) -> Self {
+        Self {
+            err,
+            inner: io::stdin(),
+        }
+    }
+}
+
+impl<W> IterateEntries for StdinInput<W> {
+    fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError> {
+        read_zipfile_from_stream(&mut self.inner).wrap_err("failed to read zip entries from stdin")
+    }
+}
+
+#[derive(Debug)]
 struct ZipFileInput<W> {
-    err: RefCell<W>,
+    err: Rc<RefCell<W>>,
     inner: ZipArchive<fs::File>,
+    file_counter: usize,
+}
+
+impl<W> ZipFileInput<W> {
+    pub fn new(err: Rc<RefCell<W>>, inner: ZipArchive<fs::File>) -> Self {
+        Self {
+            err,
+            inner: inner,
+            file_counter: 0,
+        }
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.inner.len() - self.file_counter
+    }
+
+    pub fn none_left(&self) -> bool {
+        self.remaining() == 0
+    }
+}
+
+impl<W> IterateEntries for ZipFileInput<W> {
+    fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError> {
+        if self.none_left() {
+            return Ok(None);
+        }
+        let prev_counter = self.file_counter;
+        self.file_counter += 1;
+        self.inner
+            .by_index(prev_counter)
+            .map(Some)
+            .wrap_err_with(|| format!("failed to read entry #{prev_counter} from zip",))
+    }
+}
+
+struct AllInputZips<W> {
+    err: Rc<RefCell<W>>,
+    zips_todo: Vec<ZipFileInput<W>>,
+}
+
+impl<W> AllInputZips<W> {
+    pub fn new(
+        err: Rc<RefCell<W>>,
+        zip_paths: impl IntoIterator<Item = impl AsRef<Path>>,
+    ) -> Result<Self, CommandError> {
+        let zips_todo = zip_paths
+            .into_iter()
+            .map(|p| {
+                fs::File::open(p.as_ref())
+                    .wrap_err_with(|| {
+                        format!("failed to open zip input file path {:?}", p.as_ref())
+                    })
+                    .and_then(|f| {
+                        ZipArchive::new(f).wrap_err_with(|| {
+                            format!("failed to create zip archive for file {:?}", p.as_ref())
+                        })
+                    })
+                    .map(|archive| ZipFileInput::new(Rc::clone(&err), archive))
+            })
+            .collect::<Result<Vec<_>, CommandError>>()?;
+        Ok(Self { err, zips_todo })
+    }
+
+    pub fn iter_zips(self) -> impl IntoIterator<Item = ZipFileInput<W>> {
+        self.zips_todo.into_iter()
+    }
 }
 
 pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), CommandError> {
