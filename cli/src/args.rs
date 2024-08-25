@@ -681,7 +681,8 @@ pub mod extract {
     #[derive(Debug)]
     pub enum ContentTransform {
         Extract,
-        /* FIXME: not yet supported */
+        /* FIXME: not yet supported -- could be done by exposing ZipFile::take_raw_reader(), but
+         * should probably just refactor extract.rs to avoid the need for that. */
         Raw,
         LogToStderr,
     }

@@ -345,6 +345,39 @@ where
     }
 }
 
+enum EntryContent<'a> {
+    Decompressed(ZipFile<'a>),
+    /* See ContentTransform::Raw -- need to refactor this file to avoid the need to convert
+     * a ZipFile into a Raw after it's already constructed. */
+    #[allow(dead_code)]
+    Raw(ZipFile<'a>),
+    LogToStderr(ZipFile<'a>),
+}
+
+struct ContentTransformer<W> {
+    err: Rc<RefCell<W>>,
+    arg: ContentTransform,
+}
+
+impl<W> ContentTransformer<W> {
+    pub fn new(err: Rc<RefCell<W>>, arg: ContentTransform) -> Self {
+        Self { err, arg }
+    }
+}
+
+impl<W> ContentTransformer<W>
+where
+    W: Write,
+{
+    pub fn transform_matched_entry<'a>(&self, entry: ZipFile<'a>) -> EntryContent<'a> {
+        match self.arg {
+            ContentTransform::Extract => EntryContent::Decompressed(entry),
+            ContentTransform::Raw => unreachable!("this has not been implemented"),
+            ContentTransform::LogToStderr => EntryContent::LogToStderr(entry),
+        }
+    }
+}
+
 trait IterateEntries {
     fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError>;
 }
