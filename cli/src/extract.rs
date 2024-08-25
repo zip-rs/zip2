@@ -1,5 +1,7 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
+    collections::VecDeque,
     env, fs,
     io::{self, Read, Write},
     mem,
@@ -200,6 +202,12 @@ struct Matcher<W> {
     expr: MatchExpression,
 }
 
+impl<W> Matcher<W> {
+    pub fn new(err: Rc<RefCell<W>>, expr: MatchExpression) -> Self {
+        Self { err, expr }
+    }
+}
+
 impl<W> Matcher<W>
 where
     W: Write,
@@ -266,6 +274,73 @@ where
                     || Self::recursive_match(err, right.as_ref(), entry)?)
             }
             MatchExpression::Grouped(inner) => Self::recursive_match(err, inner.as_ref(), entry),
+        }
+    }
+}
+
+struct Transformer<W> {
+    err: Rc<RefCell<W>>,
+    trans: NameTransform,
+}
+
+impl<W> Transformer<W> {
+    pub fn new(err: Rc<RefCell<W>>, trans: NameTransform) -> Self {
+        Self { err, trans }
+    }
+}
+
+impl<W> Transformer<W>
+where
+    W: Write,
+{
+    pub fn evaluate<'s>(&self, name: &'s str) -> Result<Cow<'s, str>, CommandError> {
+        match self.trans {
+            NameTransform::Trivial(TrivialTransform::Identity) => Ok(Cow::Borrowed(name)),
+            NameTransform::Basic(basic_trans) => match basic_trans {
+                BasicTransform::StripComponents(num_components_to_strip) => {
+                    /* If no directory components, then nothing to strip. */
+                    if !name.contains('/') {
+                        return Ok(Cow::Borrowed(name));
+                    }
+                    /* We allow stripping 0 components, which does nothing. */
+                    if num_components_to_strip == 0 {
+                        return Ok(Cow::Borrowed(name));
+                    }
+                    /* Pop off prefix components until only one is left or we have stripped all the
+                     * requested prefix components. */
+                    let mut num_components_to_strip: usize = (*num_components_to_strip).into();
+                    let mut separator_indices: VecDeque<usize> =
+                        name.match_indices('/').map(|(i, _)| i).collect();
+                    debug_assert!(separator_indices.len() > 0);
+                    /* Always keep the final separator, as regardless of how many we strip, we want
+                     * to keep the basename in all cases. */
+                    while separator_indices.len() > 1 && num_components_to_strip > 0 {
+                        let _ = separator_indices.pop_front().unwrap();
+                        num_components_to_strip -= 1;
+                    }
+                    debug_assert!(separator_indices.len() > 0);
+                    let leftmost_remaining_separator_index: usize =
+                        separator_indices.pop_front().unwrap();
+                    Ok(Cow::Borrowed(
+                        name[(leftmost_remaining_separator_index + 1)..],
+                    ))
+                }
+                BasicTransform::AddPrefix(prefix_to_add) => {
+                    /* We allow an empty prefix, which means to do nothing. */
+                    if prefix_to_add.is_empty() {
+                        return Ok(Cow::Borrowed(name));
+                    }
+                    Ok(Cow::Owned(format!("{}/{}", prefix_to_add, name)))
+                }
+            },
+            NameTransform::Complex(complex_trans) => match complex_trans {
+                ComplexTransform::RemovePrefix(remove_prefix_arg) => {
+                    todo!("impl remove prefix: {:?}", remove_prefix_arg)
+                }
+                ComplexTransform::Transform(transform_arg) => {
+                    todo!("impl transform: {:?}", transform_arg)
+                }
+            },
         }
     }
 }

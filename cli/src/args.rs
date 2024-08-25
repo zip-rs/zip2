@@ -1313,7 +1313,7 @@ pub mod extract {
     #[derive(Debug)]
     pub enum BasicTransform {
         StripComponents(u8),
-        AddPrefix(PathBuf),
+        AddPrefix(String),
     }
 
     #[derive(Debug)]
@@ -1845,7 +1845,7 @@ Positional paths:
                         )));
                     }
                     b"--add-prefix" => {
-                        let prefix: PathBuf = argv
+                        let prefix = argv
                             .pop_front()
                             .ok_or_else(|| {
                                 Self::exit_arg_invalid("no argument provided for --add-prefix")
@@ -1855,8 +1855,7 @@ Positional paths:
                                 Self::exit_arg_invalid(&format!(
                                     "invalid unicode provided for --add-prefix: {prefix:?}"
                                 ))
-                            })?
-                            .into();
+                            })?;
                         args.push(ExtractArg::NameTransform(NameTransform::Basic(
                             BasicTransform::AddPrefix(prefix),
                         )));
