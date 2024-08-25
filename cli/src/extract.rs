@@ -9,6 +9,9 @@ use std::{
     rc::Rc,
 };
 
+use glob;
+use regex;
+
 use zip::{
     read::{read_zipfile_from_stream, ZipFile},
     ZipArchive,
@@ -204,6 +207,107 @@ where
             }
         }
         Ok(())
+    }
+}
+
+fn process_component_selector<'s>(sel: ComponentSelector, name: &'s str) -> Option<&'s str> {
+    let path = Path::new(name);
+    match sel {
+        ComponentSelector::Path => Some(name),
+        ComponentSelector::Basename => path.file_name().map(|bname| bname.to_str().unwrap()),
+        ComponentSelector::Dirname => path
+            .parent()
+            .map(|p| p.to_str().unwrap())
+            /* "a".parent() becomes Some(""), which we want to treat as no parent */
+            .filter(|s| !s.is_empty()),
+        ComponentSelector::FileExtension => path.extension().map(|ext| ext.to_str().unwrap()),
+    }
+}
+
+trait NameMatcher {
+    fn create(pattern: &str, opts: PatternModifiers) -> Result<Self, CommandError>
+    where
+        Self: Sized;
+    fn matches(&self, input: &str) -> bool;
+}
+
+struct LiteralMatcher {
+    lit: String,
+    case_insensitive: bool,
+}
+
+impl NameMatcher for LiteralMatcher {
+    fn create(pattern: &str, opts: PatternModifiers) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        let PatternModifiers { case_insensitive } = opts;
+        Ok(Self {
+            lit: pattern.to_string(),
+            case_insensitive,
+        })
+    }
+
+    fn matches(&self, input: &str) -> bool {
+        if self.case_insensitive {
+            self.lit.eq_ignore_ascii_case(input)
+        } else {
+            input == &self.lit
+        }
+    }
+}
+
+struct GlobMatcher {
+    pat: glob::Pattern,
+    glob_opts: glob::MatchOptions,
+}
+
+impl NameMatcher for GlobMatcher {
+    fn create(pattern: &str, opts: PatternModifiers) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        let PatternModifiers { case_insensitive } = opts;
+        let glob_opts = glob::MatchOptions {
+            case_sensitive: !case_insensitive,
+            ..Default::default()
+        };
+        let pat = glob::Pattern::new(pattern).map_err(|e| {
+            CommandError::InvalidArg(format!(
+                "failed to construct glob matcher from pattern {pattern:?}: {e}"
+            ))
+        })?;
+        Ok(Self { pat, glob_opts })
+    }
+
+    fn matches(&self, input: &str) -> bool {
+        self.pat.matches_with(input, self.glob_opts)
+    }
+}
+
+struct RegexMatcher {
+    pat: regex::Regex,
+}
+
+impl NameMatcher for RegexMatcher {
+    fn create(pattern: &str, opts: PatternModifiers) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        let PatternModifiers { case_insensitive } = opts;
+        let pat = regex::RegexBuilder::new(pattern)
+            .case_insensitive(case_insensitive)
+            .build()
+            .map_err(|e| {
+                CommandError::InvalidArg(format!(
+                    "failed to construct regex matcher from pattern {pattern:?}: {e}"
+                ))
+            })?;
+        Ok(Self { pat })
+    }
+
+    fn matches(&self, input: &str) -> bool {
+        self.pat.is_match(input)
     }
 }
 

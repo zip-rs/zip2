@@ -689,7 +689,7 @@ pub mod extract {
         LogToStderr,
     }
 
-    #[derive(Debug, Default, PartialEq, Eq)]
+    #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone)]
     pub enum ComponentSelector {
         #[default]
         Path,
@@ -710,7 +710,7 @@ pub mod extract {
         }
     }
 
-    #[derive(Debug, Default, PartialEq, Eq)]
+    #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone)]
     pub enum PatternSelectorType {
         #[default]
         Glob,
@@ -743,10 +743,15 @@ pub mod extract {
         }
     }
 
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    pub struct PatternModifiers {
+        pub case_insensitive: bool,
+    }
+
     #[derive(Debug, Default)]
     pub struct PatternSelector {
         pub pat_sel: PatternSelectorType,
-        pub modifiers: Vec<PatternSelectorModifier>,
+        pub modifiers: PatternModifiers,
     }
 
     impl PatternSelector {
@@ -757,17 +762,26 @@ pub mod extract {
                     let modifiers_str = &s[(modifiers_ind + 1)..];
 
                     let pat_sel = PatternSelectorType::parse(pat_sel_str)?;
-                    let modifiers = modifiers_str
+
+                    let mut modifiers = PatternModifiers::default();
+                    let mod_els = modifiers_str
                         .split(|c| *c == b':')
                         .map(PatternSelectorModifier::parse)
                         .collect::<Option<Vec<_>>>()?;
+                    for m in mod_els.into_iter() {
+                        match m {
+                            PatternSelectorModifier::CaseInsensitive => {
+                                modifiers.case_insensitive = true;
+                            }
+                        }
+                    }
                     Some(Self { pat_sel, modifiers })
                 }
                 None => {
                     let pat_sel = PatternSelectorType::parse(s)?;
                     Some(Self {
                         pat_sel,
-                        modifiers: Vec::new(),
+                        modifiers: Default::default(),
                     })
                 }
             }
