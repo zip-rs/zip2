@@ -4,7 +4,10 @@ use zip::read::ZipFile;
 
 use crate::{args::extract::*, CommandError};
 
-use super::matcher::{EntryMatcher, WrappedMatcher};
+use super::{
+    matcher::{process_component_selector, EntryMatcher, WrappedMatcher},
+    receiver::{EntryData, EntryReceiver},
+};
 
 trait NameTransformer {
     type Arg
@@ -100,6 +103,16 @@ impl NameTransformer for AddPrefix {
     }
 }
 
+enum ContentProcessor {
+    StderrLog,
+    /* FileLog(fs::File), */
+    WriteContent,
+}
+
+impl ContentProcessor {
+    /* pub fn process_entry(&mut self, entry: &mut ZipFile, ) */
+}
+
 pub struct EntrySpecTransformer {
     matcher: Option<WrappedMatcher>,
     name_transformers: Vec<Box<dyn NameTransformer>>,
@@ -156,7 +169,7 @@ impl EntrySpecTransformer {
 }
 
 impl EntrySpecTransformer {
-    pub fn matches(&self, entry: &ZipFile) -> bool {
+    pub fn matches(&self, entry: &EntryData) -> bool {
         match &self.matcher {
             None => true,
             Some(matcher) => matcher.matches(entry),

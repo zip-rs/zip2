@@ -10,6 +10,7 @@ mod entries;
 mod matcher;
 mod receiver;
 mod transform;
+use receiver::EntryData;
 
 pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandError> {
     let Extract {
@@ -26,7 +27,7 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
 
     while let Some(mut entry) = entry_iterator.next_entry()? {
         for transformer in entry_spec_transformers.iter() {
-            if !transformer.matches(&entry) {
+            if !transformer.matches(&EntryData::from_entry(&entry)) {
                 continue;
             }
             let name = transformer.transform_name(entry.name());

@@ -5,6 +5,7 @@ use regex;
 
 use zip::{read::ZipFile, CompressionMethod};
 
+use super::receiver::{EntryData, EntryKind};
 use crate::{args::extract::*, CommandError};
 
 #[inline(always)]
@@ -39,7 +40,9 @@ impl NameMatcher for LiteralMatcher {
     where
         Self: Sized,
     {
-        let PatternModifiers { case_insensitive } = opts;
+        let PatternModifiers {
+            case_insensitive, ..
+        } = opts;
         Ok(Self {
             lit: pattern.to_string(),
             case_insensitive,
@@ -65,7 +68,9 @@ impl NameMatcher for GlobMatcher {
     where
         Self: Sized,
     {
-        let PatternModifiers { case_insensitive } = opts;
+        let PatternModifiers {
+            case_insensitive, ..
+        } = opts;
         let glob_opts = glob::MatchOptions {
             case_sensitive: !case_insensitive,
             ..Default::default()
@@ -92,7 +97,9 @@ impl NameMatcher for RegexMatcher {
     where
         Self: Sized,
     {
-        let PatternModifiers { case_insensitive } = opts;
+        let PatternModifiers {
+            case_insensitive, ..
+        } = opts;
         let pat = regex::RegexBuilder::new(pattern)
             .case_insensitive(case_insensitive)
             .build()
@@ -116,7 +123,7 @@ pub trait EntryMatcher {
     fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
     where
         Self: Sized;
-    fn matches(&self, entry: &ZipFile) -> bool;
+    fn matches(&self, entry: &EntryData) -> bool;
 }
 
 #[derive(Copy, Clone)]
@@ -138,7 +145,7 @@ impl EntryMatcher for TrivialMatcher {
         })
     }
 
-    fn matches(&self, _entry: &ZipFile) -> bool {
+    fn matches(&self, _entry: &EntryData) -> bool {
         match self {
             Self::True => true,
             Self::False => false,
@@ -167,11 +174,12 @@ impl EntryMatcher for EntryTypeMatcher {
         })
     }
 
-    fn matches(&self, entry: &ZipFile) -> bool {
-        match self {
-            Self::File => !entry.is_dir() && !entry.is_symlink(),
-            Self::Dir => entry.is_dir(),
-            Self::Symlink => entry.is_symlink(),
+    fn matches(&self, entry: &EntryData) -> bool {
+        match (self, entry.kind) {
+            (Self::File, EntryKind::File) => true,
+            (Self::Dir, EntryKind::Dir) => true,
+            (Self::Symlink, EntryKind::Symlink) => true,
+            _ => false,
         }
     }
 }
@@ -195,11 +203,12 @@ impl EntryMatcher for NonSpecificMethods {
         })
     }
 
-    fn matches(&self, entry: &ZipFile) -> bool {
+    fn matches(&self, entry: &EntryData) -> bool {
         match self {
             Self::Any => true,
-            Self::Known => SpecificCompressionMethodArg::KNOWN_COMPRESSION_METHODS
-                .contains(&entry.compression()),
+            Self::Known => {
+                SpecificCompressionMethodArg::KNOWN_COMPRESSION_METHODS.contains(&entry.compression)
+            }
         }
     }
 }
@@ -220,8 +229,8 @@ impl EntryMatcher for SpecificMethods {
         })
     }
 
-    fn matches(&self, entry: &ZipFile) -> bool {
-        self.specific_method == entry.compression()
+    fn matches(&self, entry: &EntryData) -> bool {
+        self.specific_method == entry.compression
     }
 }
 
@@ -244,8 +253,8 @@ impl EntryMatcher for DepthLimit {
         })
     }
 
-    fn matches(&self, entry: &ZipFile) -> bool {
-        let num_components = entry.name().split('/').count();
+    fn matches(&self, entry: &EntryData) -> bool {
+        let num_components = entry.name.split('/').count();
         match self {
             Self::Max(max) => num_components <= *max,
             Self::Min(min) => num_components >= *min,
@@ -280,8 +289,8 @@ impl EntryMatcher for PatternMatcher {
         Ok(Self { matcher, comp_sel })
     }
 
-    fn matches(&self, entry: &ZipFile) -> bool {
-        match process_component_selector(self.comp_sel, entry.name()) {
+    fn matches(&self, entry: &EntryData) -> bool {
+        match process_component_selector(self.comp_sel, entry.name) {
             None => false,
             Some(s) => self.matcher.matches(s),
         }
@@ -346,7 +355,7 @@ impl EntryMatcher for WrappedMatcher {
         })
     }
 
-    fn matches(&self, entry: &ZipFile) -> bool {
+    fn matches(&self, entry: &EntryData) -> bool {
         match self {
             Self::Primitive(m) => m.matches(entry),
             Self::Negated(m) => !m.matches(entry),

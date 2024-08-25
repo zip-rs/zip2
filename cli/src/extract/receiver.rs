@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     env, fs,
     io::{self, Read, Write},
@@ -7,9 +8,44 @@ use std::{
     rc::Rc,
 };
 
-use zip::read::ZipFile;
+use zip::{read::ZipFile, CompressionMethod};
 
 use crate::{args::extract::*, CommandError, WrapCommandErr};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum EntryKind {
+    File,
+    Dir,
+    Symlink,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EntryData<'a> {
+    pub name: &'a str,
+    pub kind: EntryKind,
+    pub compression: CompressionMethod,
+    pub unix_mode: Option<u32>,
+    pub size: u64,
+}
+
+impl<'a> EntryData<'a> {
+    #[inline(always)]
+    pub fn from_entry<'b>(entry: &'a ZipFile<'b>) -> Self {
+        Self {
+            name: entry.name(),
+            kind: if entry.is_dir() {
+                EntryKind::Dir
+            } else if entry.is_symlink() {
+                EntryKind::Symlink
+            } else {
+                EntryKind::File
+            },
+            compression: entry.compression(),
+            unix_mode: entry.unix_mode(),
+            size: entry.size(),
+        }
+    }
+}
 
 pub trait EntryReceiver {
     fn receive_entry<'a>(
