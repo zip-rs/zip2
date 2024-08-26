@@ -79,7 +79,7 @@ impl ParsedEntrySpecArg {
         let transforms = if name_transforms.is_empty() {
             None
         } else {
-            Some(CompiledTransformer::from_arg()?)
+            Some(CompiledTransformer::from_arg(name_transforms)?)
         };
         let output_name = match content_transform {
             ContentTransform::Extract { name } => name
@@ -132,7 +132,7 @@ impl ParsedNamedOutputs {
     pub fn process_entry_specs_for_outputs(
         self,
         args: impl IntoIterator<Item = ParsedEntrySpecArg>,
-    ) -> Result<Vec<CompiledEntrySpec, CommandError>> {
+    ) -> Result<Vec<CompiledEntrySpec>, CommandError> {
         args.into_iter()
             .map(|arg| self.lookup_entry_spec_arg(arg))
             .collect()
@@ -149,9 +149,9 @@ impl ParsedNamedOutputs {
         } = arg;
         if let Some(stream) = self.concats.get(&output_name) {
             if transforms.is_some() {
-                return Err(CommandError::InvalidArg(
-                    format!("entry name transforms {transforms:?} do not apply to concat output {output_name:?}")
-                ));
+                return Err(CommandError::InvalidArg(format!(
+                    "entry name transforms do not apply to concat output {output_name:?}"
+                )));
             }
             return Ok(CompiledEntrySpec::Concat(ConcatEntry {
                 matcher,
@@ -186,7 +186,7 @@ impl ParsedNamedOutputs {
                 "output name {name:?} provided more than once"
             )));
         }
-        assert!(!concats.contains(&name));
+        assert!(!concats.contains_key(&name));
 
         let handle: Rc<RefCell<dyn Write>> = Rc::new(RefCell::new(io::stdout()));
 
@@ -209,7 +209,7 @@ impl ParsedNamedOutputs {
                 "output name {name:?} provided more than once"
             )));
         }
-        assert!(!concats.contains(&name));
+        assert!(!concats.contains_key(&name));
         let canon_path = path
             .canonicalize()
             .wrap_err_with(|| format!("canonicalizing path {path:?} failed"))?;
@@ -254,10 +254,10 @@ impl ParsedNamedOutputs {
                 "output name {name:?} provided more than once"
             )));
         }
-        assert!(!extracts.contains(&name));
-        let canon_path = path
+        assert!(!extracts.contains_key(&name));
+        let canon_path = output_dir
             .canonicalize()
-            .wrap_err_with(|| format!("canonicalizing dir path {path:?} failed"))?;
+            .wrap_err_with(|| format!("canonicalizing dir path {output_dir:?} failed"))?;
         if seen_dirs.contains(&canon_path) {
             return Err(CommandError::InvalidArg(format!(
                 "canonical output dir path {canon_path:?} provided more than once"
@@ -324,6 +324,7 @@ impl ParsedNamedOutputs {
             }
         }
         for NamedOutput { name, output } in named.into_iter() {
+            let name = OutputName(name);
             match output {
                 OutputCollation::ConcatenateStdout => {
                     Self::add_stdout(&mut seen_stdout, name, &mut seen_names, &mut concats)?;
@@ -466,7 +467,7 @@ impl EntryReceiver for FilesystemReceiver {
     /*     Ok(()) */
     /* } */
 
-    fn finalize_entries(&mut self) -> Result<(), CommandError> {
+    fn finalize_entries(&self) -> Result<(), CommandError> {
         #[cfg(unix)]
         {
             use std::{cmp::Reverse, os::unix::fs::PermissionsExt};

@@ -1,10 +1,11 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     io::{self, Read, Write},
     rc::Rc,
 };
 
-use crate::{args::extract::*, CommandError};
+use crate::{args::extract::*, CommandError, WrapCommandErr};
 
 mod entries;
 mod matcher;
@@ -35,7 +36,7 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
         for spec in compiled_specs.iter() {
             match spec {
                 CompiledEntrySpec::Concat(ConcatEntry { matcher, stream }) => {
-                    if matcher.map(|m| m.matches(&data)).unwrap_or(true) {
+                    if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
                         matching_concats.push(stream.clone());
                     }
                 }
@@ -44,8 +45,9 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
                     transforms,
                     recv,
                 }) => {
-                    if matcher.map(|m| m.matches(&data)).unwrap_or(true) {
+                    if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
                         let new_name = transforms
+                            .as_ref()
                             .map(|t| t.transform_name(&data.name))
                             .unwrap_or_else(|| Cow::Borrowed(&data.name));
                         matching_extracts.push((new_name, recv.clone()));
@@ -82,7 +84,7 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
             }
         }
 
-        let matching_handles: Vec<Box<dyn Write>> = deduped_matching_extracts
+        let mut matching_handles: Vec<Box<dyn Write>> = deduped_matching_extracts
             .into_iter()
             .map(|(name, recv)| recv.generate_entry_handle(name))
             .collect::<Result<_, _>>()?;
@@ -95,10 +97,15 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
             }
             let cur_data: &[u8] = &copy_buf[..read_len];
             for concat_writer in deduped_concat_writers.iter() {
-                concat_writer.borrow_mut().write_all(cur_data)?;
+                concat_writer
+                    .borrow_mut()
+                    .write_all(cur_data)
+                    .wrap_err("failed to write data to concat output")?;
             }
-            for extract_writer in matching_handles.iter() {
-                extract_writer.write_all(cur_data)?;
+            for extract_writer in matching_handles.iter_mut() {
+                extract_writer
+                    .write_all(cur_data)
+                    .wrap_err("failed to write data to extract output")?;
             }
         }
     }
