@@ -4,15 +4,9 @@ use zip::CompressionMethod;
 
 use std::{collections::VecDeque, ffi::OsString, mem, path::PathBuf};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ContentTransform {
-    Extract,
-    /* FIXME: not yet supported -- could be done by exposing ZipFile::take_raw_reader(), but
-     * should probably just refactor extract.rs to avoid the need for that.
-     * NB: actually, we can't do that while supporting streaming archives unless we expose
-     * take_raw_reader()! */
-    Raw,
-    LogToStderr,
+    Extract { name: Option<String> },
 }
 
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone)]
@@ -751,23 +745,190 @@ content transform. add -x/--extract to construct a complete entry spec"
 #[derive(Debug)]
 pub enum OutputCollation {
     ConcatenateStdout,
-    Filesystem {
-        output_dir: Option<PathBuf>,
-        mkdir: bool,
-    },
+    ConcatenateFile { path: PathBuf, append: bool },
+    Filesystem { output_dir: PathBuf, mkdir: bool },
 }
 
 #[derive(Debug)]
-pub enum InputType {
-    StreamingStdin,
-    ZipPaths(Vec<PathBuf>),
+pub struct NamedOutput {
+    pub name: String,
+    pub output: OutputCollation,
+}
+
+#[derive(Debug)]
+pub struct OutputSpecs {
+    pub default: Option<OutputCollation>,
+    pub named: Vec<NamedOutput>,
+}
+
+impl Default for OutputSpecs {
+    fn default() -> Self {
+        Self {
+            default: Some(OutputCollation::Filesystem {
+                output_dir: PathBuf::from("."),
+                mkdir: false,
+            }),
+            named: Vec::new(),
+        }
+    }
+}
+
+impl OutputSpecs {
+    pub fn parse_argv(argv: &mut VecDeque<OsString>) -> Result<Self, ArgParseError> {
+        let mut default: Option<OutputCollation> = None;
+        let mut named: Vec<NamedOutput> = Vec::new();
+        let mut cur_name: Option<String> = None;
+
+        while let Some(arg) = argv.pop_front() {
+            match arg.as_encoded_bytes() {
+                b"-h" | b"--help" => {
+                    let help_text = Extract::generate_full_help_text();
+                    return Err(ArgParseError::StdoutMessage(help_text));
+                }
+                b"--name" => {
+                    let name = argv
+                        .pop_front()
+                        .ok_or_else(|| {
+                            Extract::exit_arg_invalid("no argument provided for --name")
+                        })?
+                        .into_string()
+                        .map_err(|name| {
+                            Extract::exit_arg_invalid(&format!(
+                                "invalid unicode provided for --name: {name:?}"
+                            ))
+                        })?;
+                    if let Some(prev_name) = cur_name.take() {
+                        return Err(Extract::exit_arg_invalid(&format!(
+                            "multiple names provided for output: {prev_name:?} and {name:?}"
+                        )));
+                    }
+                    cur_name = Some(name);
+                }
+                b"-d" => {
+                    let dir_path = argv
+                        .pop_front()
+                        .map(PathBuf::from)
+                        .ok_or_else(|| Extract::exit_arg_invalid("no argument provided for -d"))?;
+                    let output = OutputCollation::Filesystem {
+                        output_dir: dir_path,
+                        mkdir: false,
+                    };
+                    if let Some(name) = cur_name.take() {
+                        named.push(NamedOutput { name, output });
+                    } else if let Some(default) = default.replace(output) {
+                        return Err(Extract::exit_arg_invalid(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}",
+                        ));
+                    }
+                }
+                arg_bytes if arg_bytes.starts_with(b"--output-directory") => {
+                    let mkdir = match arg_bytes {
+                        b"--output-directory" => false,
+                        b"--output-directory:mkdir" => true,
+                        _ => {
+                            return Err(Extract::exit_arg_invalid(&format!(
+                                "invalid suffix provided to --output-directory: {arg:?}"
+                            )));
+                        }
+                    };
+                    let dir_path = argv.pop_front().map(PathBuf::from).ok_or_else(|| {
+                        Extract::exit_arg_invalid("no argument provided for --output-directory")
+                    })?;
+                    let output = OutputCollation::Filesystem {
+                        output_dir: dir_path,
+                        mkdir,
+                    };
+                    if let Some(name) = cur_name.take() {
+                        named.push(NamedOutput { name, output });
+                    } else if let Some(default) = default.replace(output) {
+                        return Err(Extract::exit_arg_invalid(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}",
+                        ));
+                    }
+                }
+                b"--stdout" => {
+                    let output = OutputCollation::ConcatenateStdout;
+                    if let Some(name) = cur_name.take() {
+                        named.push(NamedOutput { name, output });
+                    } else if let Some(default) = default.replace(output) {
+                        return Err(Extract::exit_arg_invalid(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}",
+                        ));
+                    }
+                }
+                b"-f" => {
+                    let file_path = argv
+                        .pop_front()
+                        .map(PathBuf::from)
+                        .ok_or_else(|| Extract::exit_arg_invalid("no argument provided for -f"))?;
+                    let output = OutputCollation::ConcatenateFile {
+                        path: file_path,
+                        append: false,
+                    };
+                    if let Some(name) = cur_name.take() {
+                        named.push(NamedOutput { name, output });
+                    } else if let Some(default) = default.replace(output) {
+                        return Err(Extract::exit_arg_invalid(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}",
+                        ));
+                    }
+                }
+                arg_bytes if arg_bytes.starts_with(b"--output-file") => {
+                    let append = match arg_bytes {
+                        b"--output-file" => false,
+                        b"--output-file:append" => true,
+                        _ => {
+                            return Err(Extract::exit_arg_invalid(&format!(
+                                "invalid suffix provided to --output-file: {arg:?}"
+                            )));
+                        }
+                    };
+                    let file_path = argv.pop_front().map(PathBuf::from).ok_or_else(|| {
+                        Extract::exit_arg_invalid("no argument provided for --output-file")
+                    })?;
+                    let output = OutputCollation::ConcatenateFile {
+                        path: file_path,
+                        append,
+                    };
+                    if let Some(name) = cur_name.take() {
+                        named.push(NamedOutput { name, output });
+                    } else if let Some(default) = default.replace(output) {
+                        return Err(Extract::exit_arg_invalid(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}",
+                        ));
+                    }
+                }
+                _ => {
+                    argv.push_front(arg);
+                    break;
+                }
+            }
+        }
+        if let Some(name) = cur_name {
+            return Err(Extract::exit_arg_invalid(&format!(
+                "trailing --name argument provided without output spec: {name:?}"
+            )));
+        }
+
+        Ok(if default.is_none() && named.is_empty() {
+            Self::default()
+        } else {
+            Self { default, named }
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct InputSpec {
+    pub stdin_stream: bool,
+    pub zip_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
 pub struct Extract {
-    pub output: OutputCollation,
+    pub output_specs: OutputSpecs,
     pub entry_specs: Vec<EntrySpec>,
-    pub input: InputType,
+    pub input_spec: InputSpec,
 }
 
 impl Extract {
@@ -1122,12 +1283,11 @@ Positional paths:
     }
 
     fn parse_argv(mut argv: VecDeque<OsString>) -> Result<Self, ArgParseError> {
-        let mut output_dir: Option<PathBuf> = None;
-        let mut mkdir_flag: bool = false;
-        let mut stdout_flag: bool = false;
         let mut args: Vec<ExtractArg> = Vec::new();
         let mut stdin_flag: bool = false;
         let mut positional_zips: Vec<PathBuf> = Vec::new();
+
+        let output_specs = OutputSpecs::parse_argv(&mut argv)?;
 
         while let Some(arg) = argv.pop_front() {
             match arg.as_encoded_bytes() {
@@ -1136,72 +1296,27 @@ Positional paths:
                     return Err(ArgParseError::StdoutMessage(help_text));
                 }
 
-                /* Output args */
-                b"-d" | b"--output-directory" => {
-                    let new_path = argv.pop_front().map(PathBuf::from).ok_or_else(|| {
-                        Self::exit_arg_invalid("no argument provided for -d/--output-directory")
-                    })?;
-                    if let Some(prev_path) = output_dir.take() {
-                        return Err(Self::exit_arg_invalid(&format!(
-                            "--output-directory provided twice: {prev_path:?} and {new_path:?}"
-                        )));
-                    } else if stdout_flag {
-                        return Err(Self::exit_arg_invalid(
-                            "--stdout provided along with output dir",
-                        ));
-                    } else if !args.is_empty() || stdin_flag || !positional_zips.is_empty() {
-                        return Err(Self::exit_arg_invalid(
-                            "-d/--output-directory provided after entry specs or inputs",
-                        ));
-                    } else {
-                        output_dir = Some(new_path);
-                    }
-                }
-                b"--mkdir" => {
-                    if mkdir_flag {
-                        return Err(Self::exit_arg_invalid("--mkdir provided twice"));
-                    } else if stdout_flag {
-                        return Err(Self::exit_arg_invalid(
-                            "--stdout provided along with --mkdir",
-                        ));
-                    } else if !args.is_empty() || stdin_flag || !positional_zips.is_empty() {
-                        return Err(Self::exit_arg_invalid(
-                            "--mkdir provided after entry specs or inputs",
-                        ));
-                    } else {
-                        mkdir_flag = true;
-                    }
-                }
-                b"--stdout" => {
-                    if let Some(output_dir) = output_dir.take() {
-                        return Err(Self::exit_arg_invalid(&format!(
-                            "--stdout provided along with output directory {output_dir:?}"
-                        )));
-                    } else if stdout_flag {
-                        return Err(Self::exit_arg_invalid("--stdout provided twice"));
-                    } else if mkdir_flag {
-                        return Err(Self::exit_arg_invalid(
-                            "--stdout provided along with --mkdir",
-                        ));
-                    } else if !args.is_empty() || stdin_flag || !positional_zips.is_empty() {
-                        return Err(Self::exit_arg_invalid(
-                            "--stdout provided after entry specs or inputs",
-                        ));
-                    } else {
-                        stdout_flag = true;
-                    }
-                }
-
                 /* Transition to entry specs */
                 /* Try content transforms first, as they are unambiguous sentinel values. */
                 b"-x" | b"--extract" => {
-                    args.push(ExtractArg::ContentTransform(ContentTransform::Extract));
+                    args.push(ExtractArg::ContentTransform(ContentTransform::Extract {
+                        name: None,
+                    }));
                 }
-                b"--raw" => {
-                    args.push(ExtractArg::ContentTransform(ContentTransform::Raw));
-                }
-                b"--log-to-stderr" => {
-                    args.push(ExtractArg::ContentTransform(ContentTransform::LogToStderr));
+                arg_bytes if arg_bytes.starts_with(b"--extract=") => {
+                    let name = arg
+                        .into_string()
+                        .map_err(|arg| {
+                            Self::exit_arg_invalid(&format!(
+                                "invalid unicode provided to --extract=<name>: {arg:?}"
+                            ))
+                        })?
+                        .strip_prefix("--extract=")
+                        .unwrap()
+                        .to_string();
+                    args.push(ExtractArg::ContentTransform(ContentTransform::Extract {
+                        name: Some(name),
+                    }));
                 }
 
                 /* Try name transforms next, as they only stack linearly and do not require CFG
@@ -1324,7 +1439,6 @@ Positional paths:
                 /* Transition to input args */
                 b"--stdin" => {
                     stdin_flag = true;
-                    break;
                 }
                 b"--" => break,
                 arg_bytes => {
@@ -1341,37 +1455,22 @@ Positional paths:
         }
 
         positional_zips.extend(argv.into_iter().map(|arg| arg.into()));
-        if stdin_flag && !positional_zips.is_empty() {
-            return Err(Self::exit_arg_invalid(&format!(
-                "--stdin was provided at the same time as positional args {positional_zips:?}"
-            )));
-        }
-        let input = if stdin_flag {
-            InputType::StreamingStdin
-        } else {
-            if positional_zips.is_empty() {
-                return Err(Self::exit_arg_invalid(
-                    "no zip input files were provided, and --stdin was not provided",
-                ));
-            }
-            InputType::ZipPaths(positional_zips)
+        if !stdin_flag && positional_zips.is_empty() {
+            return Err(Self::exit_arg_invalid(
+                "no zip input files were provided, and --stdin was not provided",
+            ));
         };
-
-        let output = if stdout_flag {
-            OutputCollation::ConcatenateStdout
-        } else {
-            OutputCollation::Filesystem {
-                output_dir,
-                mkdir: mkdir_flag,
-            }
+        let input_spec = InputSpec {
+            stdin_stream: stdin_flag,
+            zip_paths: positional_zips,
         };
 
         let entry_specs = EntrySpec::parse_extract_args(args)?;
 
         Ok(Self {
-            output,
+            output_specs,
             entry_specs,
-            input,
+            input_spec,
         })
     }
 }
