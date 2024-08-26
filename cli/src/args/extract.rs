@@ -30,9 +30,8 @@ impl ComponentSelector {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone)]
 pub enum PatternSelectorType {
-    #[default]
     Glob,
     Literal,
     Regexp,
@@ -46,6 +45,14 @@ impl PatternSelectorType {
             b"rx" => Some(Self::Regexp),
             _ => None,
         }
+    }
+
+    pub const fn default_for_match() -> Self {
+        Self::Glob
+    }
+
+    pub const fn default_for_replacement() -> Self {
+        Self::Regexp
     }
 }
 
@@ -71,7 +78,7 @@ pub struct PatternModifiers {
     pub multiple_matches: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PatternSelector {
     pub pat_sel: PatternSelectorType,
     pub modifiers: PatternModifiers,
@@ -112,9 +119,36 @@ impl PatternSelector {
             }
         }
     }
+
+    pub fn default_for_context(ctx: PatternContext) -> Self {
+        match ctx {
+            PatternContext::Match => Self::default_for_match(),
+            PatternContext::Replacement => Self::default_for_replacement(),
+        }
+    }
+
+    pub fn default_for_match() -> Self {
+        Self {
+            pat_sel: PatternSelectorType::default_for_match(),
+            modifiers: PatternModifiers::default(),
+        }
+    }
+
+    pub fn default_for_replacement() -> Self {
+        Self {
+            pat_sel: PatternSelectorType::default_for_replacement(),
+            modifiers: PatternModifiers::default(),
+        }
+    }
 }
 
-pub fn parse_only_pat_sel(s: &[u8]) -> Option<PatternSelector> {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PatternContext {
+    Match,
+    Replacement,
+}
+
+pub fn parse_only_pat_sel(s: &[u8], ctx: PatternContext) -> Option<PatternSelector> {
     match s.iter().position(|c| *c == b':') {
         Some(pat_sel_ind) => {
             let pat_sel_str = &s[(pat_sel_ind + 1)..];
@@ -122,11 +156,14 @@ pub fn parse_only_pat_sel(s: &[u8]) -> Option<PatternSelector> {
             let pat_sel = PatternSelector::parse(pat_sel_str)?;
             Some(pat_sel)
         }
-        None => Some(PatternSelector::default()),
+        None => Some(PatternSelector::default_for_context(ctx)),
     }
 }
 
-pub fn parse_comp_and_pat_sel(s: &[u8]) -> Option<(ComponentSelector, PatternSelector)> {
+pub fn parse_comp_and_pat_sel(
+    s: &[u8],
+    ctx: PatternContext,
+) -> Option<(ComponentSelector, PatternSelector)> {
     match (
         s.iter().position(|c| *c == b'='),
         s.iter().position(|c| *c == b':'),
@@ -146,7 +183,7 @@ pub fn parse_comp_and_pat_sel(s: &[u8]) -> Option<(ComponentSelector, PatternSel
             let comp_sel_str = &s[(comp_sel_ind + 1)..];
 
             let comp_sel = ComponentSelector::parse(comp_sel_str)?;
-            let pat_sel = PatternSelector::default();
+            let pat_sel = PatternSelector::default_for_context(ctx);
             Some((comp_sel, pat_sel))
         }
         (None, Some(pat_sel_ind)) => {
@@ -158,7 +195,7 @@ pub fn parse_comp_and_pat_sel(s: &[u8]) -> Option<(ComponentSelector, PatternSel
         }
         (None, None) => {
             let comp_sel = ComponentSelector::default();
-            let pat_sel = PatternSelector::default();
+            let pat_sel = PatternSelector::default_for_context(ctx);
             Some((comp_sel, pat_sel))
         }
     }
@@ -554,7 +591,7 @@ impl MatchExpression {
                             ))
                         })?;
                     let comp_sel = ComponentSelector::default();
-                    let pat_sel = PatternSelector::default();
+                    let pat_sel = PatternSelector::default_for_context(PatternContext::Match);
                     top_exprs.push_arg(ExprArg::PrimitivePredicate(Predicate::Match(MatchArg {
                         comp_sel,
                         pat_sel,
@@ -563,11 +600,13 @@ impl MatchExpression {
                 }
                 arg_bytes if arg_bytes.starts_with(b"--match") => {
                     let (comp_sel, pat_sel) =
-                        parse_comp_and_pat_sel(arg_bytes).ok_or_else(|| {
-                            Extract::exit_arg_invalid(&format!(
-                                "invalid --match argument modifiers: {arg:?}"
-                            ))
-                        })?;
+                        parse_comp_and_pat_sel(arg_bytes, PatternContext::Match).ok_or_else(
+                            || {
+                                Extract::exit_arg_invalid(&format!(
+                                    "invalid --match argument modifiers: {arg:?}"
+                                ))
+                            },
+                        )?;
                     if pat_sel.modifiers.multiple_matches {
                         return Err(Extract::exit_arg_invalid(&format!(
                             "multimatch modifier :g is unused in match expressions: {arg:?}"
@@ -1150,9 +1189,6 @@ These results are dependent on the entry data:
           the string argument <pattern> is interpreted into a string matching
           predicate against the entry name.
 
-          TODO: this flag is not yet supported and will produce an error.
-
-
 ## Name transforms (name-transform):
 
 Name transforms modify the entry name before writing the entry to the
@@ -1211,9 +1247,6 @@ entry itself.
 entry may be matched more than once. In this case, the entry's content will be
 extracted more than once over the execution of this command.
 
-TODO: multiple entry specs with content transforms that extract output more than once require entry
-teeing, which is not yet supported, so will produce an error.
-
   -x, --extract[=<name>]
           Decompress the entry's contents (if necessary) before writing it to
           the named output <name>, or the default output if the receiver name is
@@ -1245,10 +1278,13 @@ comp-sel = path		[DEFAULT] (match full entry)
          = ext		(match only the file extension, if available)
 
 ### Pattern selector (pat-sel):
-pat-sel  = glob		[DEFAULT] (interpret as a shell glob)
+pat-sel  = glob		[DEFAULT for matching] (interpret as a shell glob)
          = lit		(interpret as literal string)
-         = rx		(interpret as a regular expression)
+         = rx		[DEFAULT for replacement] (interpret as a regular expression)
          = <pat-sel><pat-mod...>	(apply search modifiers from <pat-mod>)
+
+*Note:* glob patterns are not supported for replacement, and attempting to use
+them with e.g '--transform:glob' will produce an error.
 
 #### Pattern modifiers (pat-mod):
 pat-mod  = :i	(use case-insensitive matching for the given pattern)
@@ -1378,11 +1414,18 @@ Positional paths:
                 }
                 arg_bytes if arg_bytes.starts_with(b"--transform") => {
                     let (comp_sel, pat_sel) =
-                        parse_comp_and_pat_sel(arg_bytes).ok_or_else(|| {
-                            Self::exit_arg_invalid(&format!(
-                                "invalid --transform argument modifiers: {arg:?}"
-                            ))
-                        })?;
+                        parse_comp_and_pat_sel(arg_bytes, PatternContext::Replacement).ok_or_else(
+                            || {
+                                Self::exit_arg_invalid(&format!(
+                                    "invalid --transform argument modifiers: {arg:?}"
+                                ))
+                            },
+                        )?;
+                    if pat_sel.pat_sel == PatternSelectorType::Glob {
+                        return Err(Self::exit_arg_invalid(&format!(
+                            ":glob pattern type is unsupported in transform expressions: {arg:?}"
+                        )));
+                    }
                     let pattern = argv
                         .pop_front()
                         .ok_or_else(|| {
@@ -1417,11 +1460,17 @@ Positional paths:
                     )));
                 }
                 arg_bytes if arg_bytes.starts_with(b"--remove-prefix") => {
-                    let pat_sel = parse_only_pat_sel(arg_bytes).ok_or_else(|| {
-                        Self::exit_arg_invalid(&format!(
-                            "invalid --remove-prefix argument modifiers: {arg:?}"
-                        ))
-                    })?;
+                    let pat_sel = parse_only_pat_sel(arg_bytes, PatternContext::Replacement)
+                        .ok_or_else(|| {
+                            Self::exit_arg_invalid(&format!(
+                                "invalid --remove-prefix argument modifiers: {arg:?}"
+                            ))
+                        })?;
+                    if pat_sel.pat_sel == PatternSelectorType::Glob {
+                        return Err(Self::exit_arg_invalid(&format!(
+                            ":glob pattern type is unsupported in transform expressions: {arg:?}"
+                        )));
+                    }
                     let pattern = argv
                             .pop_front()
                             .ok_or_else(|| {
