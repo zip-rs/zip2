@@ -216,14 +216,6 @@ impl ParsedNamedOutputs {
             )));
         }
         assert!(!concats.contains_key(&name));
-        let canon_path = path
-            .canonicalize()
-            .wrap_err_with(|| format!("canonicalizing path {path:?} failed"))?;
-        if seen_files.contains(&canon_path) {
-            return Err(CommandError::InvalidArg(format!(
-                "canonical output file path {canon_path:?} provided more than once"
-            )));
-        }
 
         let handle: Rc<RefCell<dyn Write>> = {
             let mut f: fs::File = if append {
@@ -240,6 +232,15 @@ impl ParsedNamedOutputs {
                 .wrap_err_with(|| format!("failed to seek to end of opened file {f:?}"))?;
             Rc::new(RefCell::new(f))
         };
+
+        let canon_path = path
+            .canonicalize()
+            .wrap_err_with(|| format!("canonicalizing path {path:?} failed"))?;
+        if seen_files.contains(&canon_path) {
+            return Err(CommandError::InvalidArg(format!(
+                "canonical output file path {canon_path:?} provided more than once"
+            )));
+        }
 
         assert!(seen_files.insert(canon_path));
         assert!(seen_names.insert(name.clone()));
