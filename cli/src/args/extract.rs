@@ -310,6 +310,12 @@ pub enum DepthLimitArg {
 }
 
 #[derive(Debug)]
+pub enum SizeArg {
+    Max(u64),
+    Min(u64),
+}
+
+#[derive(Debug)]
 pub struct MatchArg {
     pub comp_sel: ComponentSelector,
     pub pat_sel: PatternSelector,
@@ -328,6 +334,7 @@ pub enum Predicate {
     EntryType(EntryType),
     CompressionMethod(CompressionMethodArg),
     DepthLimit(DepthLimitArg),
+    Size(SizeArg),
     Match(MatchArg),
 }
 
@@ -551,7 +558,7 @@ impl MatchExpression {
                         .parse::<u8>()
                         .map_err(|e| {
                             Extract::exit_arg_invalid(&format!(
-                                "failed to parse --max-depth arg {e:?} as u8"
+                                "failed to parse --max-depth arg as u8: {e:?}"
                             ))
                         })?;
                     top_exprs.push_arg(ExprArg::PrimitivePredicate(Predicate::DepthLimit(
@@ -573,12 +580,56 @@ impl MatchExpression {
                         .parse::<u8>()
                         .map_err(|e| {
                             Extract::exit_arg_invalid(&format!(
-                                "failed to parse --min-depth arg {e:?} as u8"
+                                "failed to parse --min-depth arg as u8: {e:?}"
                             ))
                         })?;
                     top_exprs.push_arg(ExprArg::PrimitivePredicate(Predicate::DepthLimit(
                         DepthLimitArg::Min(min_depth),
                     )));
+                }
+                b"--max-size" => {
+                    let max_size: u64 = argv
+                        .pop_front()
+                        .ok_or_else(|| {
+                            Extract::exit_arg_invalid("no argument provided for --max-size")
+                        })?
+                        .into_string()
+                        .map_err(|size_arg| {
+                            Extract::exit_arg_invalid(&format!(
+                                "invalid unicode provided for --max-size: {size_arg:?}"
+                            ))
+                        })?
+                        .parse::<u64>()
+                        .map_err(|e| {
+                            Extract::exit_arg_invalid(&format!(
+                                "failed to parse --max-size arg as u64: {e:?}"
+                            ))
+                        })?;
+                    top_exprs.push_arg(ExprArg::PrimitivePredicate(Predicate::Size(SizeArg::Max(
+                        max_size,
+                    ))));
+                }
+                b"--min-size" => {
+                    let min_size: u64 = argv
+                        .pop_front()
+                        .ok_or_else(|| {
+                            Extract::exit_arg_invalid("no argument provided for --min-size")
+                        })?
+                        .into_string()
+                        .map_err(|size_arg| {
+                            Extract::exit_arg_invalid(&format!(
+                                "invalid unicode provided for --min-size: {size_arg:?}"
+                            ))
+                        })?
+                        .parse::<u64>()
+                        .map_err(|e| {
+                            Extract::exit_arg_invalid(&format!(
+                                "failed to parse --min-size arg as u64: {e:?}"
+                            ))
+                        })?;
+                    top_exprs.push_arg(ExprArg::PrimitivePredicate(Predicate::Size(SizeArg::Min(
+                        min_size,
+                    ))));
                 }
                 b"-m" => {
                     let pattern: String = argv
@@ -1178,9 +1229,22 @@ These results are dependent on the entry data:
           special handling of entries compressed with an unsupported method.
 
       --max-depth <num>
-          Match entries with at *most* <num> components of their containing directory.
+          Match entries with at *most* <num> components of their
+          containing directory.
       --min-depth <num>
-          Match entries with at *least* <num> components of their containing directory.
+          Match entries with at *least* <num> components of their
+          containing directory.
+
+      --max-size <bytes>
+          Match entries of at *most* <bytes> in *uncompressed* size.
+      --min-size <bytes>
+          Match entries of at *least* <bytes> in *uncompressed* size.
+
+          Directory entries are 0 bytes in size, and symlink entries are the
+          size required to store their target.
+
+          TODO: Abbrevations such as 1k, 1M are not currently supported; the
+          precise byte number must be provided, parseable as a u64.
 
   -m, --match[=<comp-sel>][:<pat-sel>] <pattern>
           Return true for entries whose name matches <pattern>.

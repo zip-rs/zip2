@@ -262,6 +262,33 @@ impl EntryMatcher for DepthLimit {
     }
 }
 
+#[derive(Copy, Clone)]
+enum Size {
+    Max(u64),
+    Min(u64),
+}
+
+impl EntryMatcher for Size {
+    type Arg = SizeArg where Self: Sized;
+
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        Ok(match arg {
+            SizeArg::Max(max) => Self::Max(max),
+            SizeArg::Min(min) => Self::Min(min),
+        })
+    }
+
+    fn matches(&self, entry: &EntryData) -> bool {
+        match self {
+            Self::Max(max) => entry.size <= *max,
+            Self::Min(min) => entry.size >= *min,
+        }
+    }
+}
+
 struct PatternMatcher {
     matcher: Box<dyn NameMatcher>,
     comp_sel: ComponentSelector,
@@ -322,6 +349,7 @@ impl CompiledMatcher {
                 CompressionMethodArg::Specific(arg) => Box::new(SpecificMethods::from_arg(arg)?),
             },
             Predicate::DepthLimit(arg) => Box::new(DepthLimit::from_arg(arg)?),
+            Predicate::Size(arg) => Box::new(Size::from_arg(arg)?),
             Predicate::Match(arg) => Box::new(PatternMatcher::from_arg(arg)?),
         }))
     }
