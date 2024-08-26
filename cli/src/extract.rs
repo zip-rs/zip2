@@ -66,6 +66,8 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
                             .as_ref()
                             .map(|t| t.transform_name(&data.name))
                             .unwrap_or_else(|| Cow::Borrowed(&data.name));
+                        writeln!(&mut err, "{data:?}").unwrap();
+                        writeln!(&mut err, "{new_name:?}").unwrap();
                         matching_extracts.push((new_name, recv.clone()));
                     }
                 }

@@ -1,26 +1,19 @@
-use std::path::Path;
-
 use glob;
 use regex;
 
 use zip::CompressionMethod;
 
 use super::receiver::{EntryData, EntryKind};
+use super::transform::ComponentSplit;
 use crate::{args::extract::*, CommandError};
 
 #[inline(always)]
-pub fn process_component_selector<'s>(sel: ComponentSelector, name: &'s str) -> Option<&'s str> {
-    let path = Path::new(name);
-    match sel {
-        ComponentSelector::Path => Some(name),
-        ComponentSelector::Basename => path.file_name().map(|bname| bname.to_str().unwrap()),
-        ComponentSelector::Dirname => path
-            .parent()
-            .map(|p| p.to_str().unwrap())
-            /* "a".parent() becomes Some(""), which we want to treat as no parent */
-            .filter(|s| !s.is_empty()),
-        ComponentSelector::FileExtension => path.extension().map(|ext| ext.to_str().unwrap()),
-    }
+fn process_component_selector<'s>(sel: ComponentSelector, name: &'s str) -> Option<&'s str> {
+    ComponentSplit::split_by_component_selector(sel, name).map(|split| match split {
+        ComponentSplit::LeftAnchored { selected_left, .. } => selected_left,
+        ComponentSplit::RightAnchored { selected_right, .. } => selected_right,
+        ComponentSplit::Whole(s) => s,
+    })
 }
 
 trait NameMatcher {

@@ -1286,8 +1286,6 @@ Complex:
 These transformers perform complex pattern matching and replacement upon the
 entry name string:
 
-TODO: these flags are not yet supported and will produce an error.
-
       --transform[=<comp-sel>][:<pat-sel>] <pattern> <replacement-spec>
           Extract the portion of the entry name corresponding to <comp-sel>,
           search it against <pattern> corresponding to <pat-sel>, and then
@@ -1300,6 +1298,8 @@ TODO: these flags are not yet supported and will produce an error.
       --remove-prefix[:<pat-sel>] <pattern>
           Equivalent to "--transform=path:<pat-sel> <pattern> ''", except the
           <pattern> search is anchored at the beginning of the string.
+
+          TODO: this flag is not yet supported and will produce an error.
 
 
 ## Content transforms (content-transform):

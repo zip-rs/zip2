@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::VecDeque};
+use std::{borrow::Cow, collections::VecDeque, path::Path, slice, str};
 
 use regex;
 
@@ -297,10 +297,207 @@ impl PatternTransformer for RegexpTransformer {
     }
 }
 
-/* struct ComponentTransformer { */
-/*     pattern_trans: Box<dyn PatternTransformer>, */
-/*     comp_sel: ComponentSelector, */
-/* } */
+pub enum ComponentSplit<'s> {
+    LeftAnchored {
+        selected_left: &'s str,
+        right: &'s str,
+    },
+    RightAnchored {
+        left: &'s str,
+        selected_right: &'s str,
+    },
+    Whole(&'s str),
+}
+
+impl<'s> ComponentSplit<'s> {
+    #[inline(always)]
+    pub fn split_by_component_selector(sel: ComponentSelector, name: &'s str) -> Option<Self> {
+        let path = Path::new(name);
+        match sel {
+            ComponentSelector::Path => Some(ComponentSplit::Whole(name)),
+            ComponentSelector::Basename => path
+                .file_name()
+                .map(|bname| bname.to_str().unwrap())
+                .map(|bname| name.split_at(name.len() - bname.len()))
+                .map(|(pfx, bname)| ComponentSplit::RightAnchored {
+                    left: pfx,
+                    selected_right: bname,
+                }),
+            ComponentSelector::Dirname => path
+                .parent()
+                .map(|p| p.to_str().unwrap())
+                /* "a".parent() becomes Some(""), which we want to treat as no parent */
+                .filter(|s| !s.is_empty())
+                .map(|dirname| name.split_at(dirname.len()))
+                .map(|(dirname, sfx)| ComponentSplit::LeftAnchored {
+                    selected_left: dirname,
+                    right: sfx,
+                }),
+            ComponentSelector::FileExtension => path
+                .extension()
+                .map(|ext| ext.to_str().unwrap())
+                .map(|ext| name.split_at(name.len() - ext.len()))
+                .map(|(pfx, ext)| ComponentSplit::RightAnchored {
+                    left: pfx,
+                    selected_right: ext,
+                }),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum SubstringAnchoring {
+    RetainsLeftAnchor,
+    RetainsRightAnchor,
+    RetainsBothAnchors,
+    LosesBothAnchors,
+}
+
+impl SubstringAnchoring {
+    #[inline(always)]
+    pub fn analyze<'s, 't>(parent: &'s str, sub: &'t str) -> Self
+    where
+        't: 's,
+    {
+        let p = parent.as_bytes().as_ptr_range();
+        let s = sub.as_bytes().as_ptr_range();
+        assert!(s.start >= p.start);
+        assert!(s.end <= p.end);
+        if p.start == s.start {
+            if p.end == s.end {
+                debug_assert_eq!(parent, sub);
+                Self::RetainsBothAnchors
+            } else {
+                Self::RetainsLeftAnchor
+            }
+        } else {
+            if p.end == s.end {
+                Self::RetainsRightAnchor
+            } else {
+                Self::LosesBothAnchors
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub fn split_then_transform_then_reformulate<'s>(
+        input: &'s str,
+        split: impl FnOnce(&'s str) -> Option<ComponentSplit<'s>>,
+        transform: impl FnOnce(&'s str) -> Cow<'s, str>,
+    ) -> Cow<'s, str> {
+        let components = match split(input) {
+            /* If the given name doesn't have the specified component, return it unchanged. */
+            None => return Cow::Borrowed(input),
+            Some(s) => s,
+        };
+        match components {
+            /* If there was no splitting (the whole path was selected), then we don't need to do
+             * any work to hook things back up! */
+            ComponentSplit::Whole(s) => transform(s),
+            /* If there was splitting, we need to do more work. */
+            ComponentSplit::LeftAnchored {
+                selected_left,
+                right,
+            } => match transform(selected_left) {
+                /* If we reallocated, then we have to reallocate the whole thing, so reuse the
+                 * returned String. */
+                Cow::Owned(mut new_left) => {
+                    new_left.push_str(right);
+                    Cow::Owned(new_left)
+                }
+                /* If no reallocation, we now have to figure out whether the result is still
+                 * contiguous. */
+                Cow::Borrowed(left_sub) => match Self::analyze(selected_left, left_sub) {
+                    Self::RetainsBothAnchors => Cow::Borrowed(input),
+                    Self::RetainsRightAnchor => {
+                        Cow::Borrowed(Self::join_adjacent_strings(left_sub, right))
+                    }
+                    _ => Cow::Owned(format!("{}{}", left_sub, right)),
+                },
+            },
+            ComponentSplit::RightAnchored {
+                left,
+                selected_right,
+            } => match transform(selected_right) {
+                Cow::Owned(mut new_right) => {
+                    new_right.insert_str(0, left);
+                    Cow::Owned(new_right)
+                }
+                Cow::Borrowed(right_sub) => match Self::analyze(selected_right, right_sub) {
+                    Self::RetainsBothAnchors => Cow::Borrowed(input),
+                    Self::RetainsLeftAnchor => {
+                        Cow::Borrowed(Self::join_adjacent_strings(left, right_sub))
+                    }
+                    _ => Cow::Owned(format!("{}{}", left, right_sub)),
+                },
+            },
+        }
+    }
+
+    #[inline(always)]
+    fn join_adjacent_strings<'s>(left: &'s str, right: &'s str) -> &'s str {
+        assert!(left.len() + right.len() <= isize::MAX as usize);
+        let left = left.as_bytes().as_ptr_range();
+        let right = right.as_bytes().as_ptr_range();
+        assert_eq!(left.end, right.start);
+        let start: *const u8 = left.start;
+        let end: *const u8 = right.end;
+        unsafe {
+            let len: usize = end.offset_from(start) as usize;
+            let joined_slice = slice::from_raw_parts(start, len);
+            str::from_utf8_unchecked(joined_slice)
+        }
+    }
+}
+
+struct ComponentTransformer {
+    pattern_trans: Box<dyn PatternTransformer>,
+    comp_sel: ComponentSelector,
+}
+
+impl NameTransformer for ComponentTransformer {
+    type Arg = TransformArg where Self: Sized;
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        let TransformArg {
+            comp_sel,
+            pat_sel: PatternSelector { pat_sel, modifiers },
+            pattern,
+            replacement_spec,
+        } = arg;
+
+        let pattern_trans: Box<dyn PatternTransformer> = match pat_sel {
+            PatternSelectorType::Glob => {
+                unreachable!("glob patterns are not supported for name transformations")
+            }
+            PatternSelectorType::Literal => Box::new(LiteralTransformer::create(
+                &pattern,
+                modifiers,
+                replacement_spec,
+            )?),
+            PatternSelectorType::Regexp => Box::new(RegexpTransformer::create(
+                &pattern,
+                modifiers,
+                replacement_spec,
+            )?),
+        };
+
+        Ok(Self {
+            pattern_trans,
+            comp_sel,
+        })
+    }
+
+    fn transform_name<'s>(&self, name: &'s str) -> Cow<'s, str> {
+        SubstringAnchoring::split_then_transform_then_reformulate(
+            name,
+            move |name| ComponentSplit::split_by_component_selector(self.comp_sel, name),
+            |name| self.pattern_trans.replace(name),
+        )
+    }
+}
 
 pub struct CompiledTransformer {
     transformers: Vec<Box<dyn NameTransformer>>,
@@ -315,9 +512,7 @@ impl CompiledTransformer {
                 BasicTransform::AddPrefix(arg) => Box::new(AddPrefix::from_arg(arg)?),
             },
             NameTransform::Complex(complex_trans) => match complex_trans {
-                ComplexTransform::Transform(transform_arg) => {
-                    todo!("impl transform: {:?}", transform_arg)
-                }
+                ComplexTransform::Transform(arg) => Box::new(ComponentTransformer::from_arg(arg)?),
                 ComplexTransform::RemovePrefix(remove_prefix_arg) => {
                     todo!("impl remove prefix: {:?}", remove_prefix_arg)
                 }
