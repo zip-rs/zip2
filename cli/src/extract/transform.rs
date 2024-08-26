@@ -1,5 +1,7 @@
 use std::{borrow::Cow, collections::VecDeque};
 
+use regex;
+
 use crate::{args::extract::*, CommandError};
 
 pub trait NameTransformer {
@@ -96,6 +98,210 @@ impl NameTransformer for AddPrefix {
     }
 }
 
+trait PatternTransformer {
+    type Replacement
+    where
+        Self: Sized;
+    fn create(
+        pattern: &str,
+        opts: PatternModifiers,
+        rep: Self::Replacement,
+    ) -> Result<Self, CommandError>
+    where
+        Self: Sized;
+
+    fn replace<'s>(&self, input: &'s str) -> Cow<'s, str>;
+}
+
+struct LiteralTransformer {
+    lit: String,
+    case_insensitive: bool,
+    multiple_matches: bool,
+    rep: String,
+}
+
+impl LiteralTransformer {
+    fn format_single_replacement(
+        input: &str,
+        lit_len: usize,
+        rep: &str,
+        match_index: usize,
+    ) -> String {
+        debug_assert!(lit_len > 0);
+        debug_assert!(input.len() > 0);
+        debug_assert!(rep.len() > 0);
+        format!(
+            "{}{}{}",
+            &input[..match_index],
+            rep,
+            &input[(match_index + lit_len)..]
+        )
+    }
+
+    fn replace_single_exact<'s>(input: &'s str, lit: &str, rep: &str) -> Cow<'s, str> {
+        match input.find(lit) {
+            None => Cow::Borrowed(input),
+            Some(i) => Cow::Owned(Self::format_single_replacement(input, lit.len(), rep, i)),
+        }
+    }
+
+    fn replace_single_icase<'s>(input: &'s str, lit: &str, rep: &str) -> Cow<'s, str> {
+        /* NB: literal was already changed to uppercase upon construction in Self::create()! */
+        match input.to_ascii_uppercase().find(&lit) {
+            None => Cow::Borrowed(input),
+            Some(i) => Cow::Owned(Self::format_single_replacement(input, lit.len(), rep, i)),
+        }
+    }
+
+    fn format_multiple_replacements(
+        input: &str,
+        lit_len: usize,
+        rep: &str,
+        match_indices: Vec<usize>,
+    ) -> String {
+        debug_assert!(lit_len > 0);
+        debug_assert!(input.len() > 0);
+        debug_assert!(rep.len() > 0);
+        let expected_len: usize =
+            input.len() - (lit_len * match_indices.len()) + (rep.len() * match_indices.len());
+        let mut ret = String::with_capacity(expected_len);
+        let mut last_source_position: usize = 0;
+        for i in match_indices.into_iter() {
+            ret.push_str(&input[last_source_position..i]);
+            ret.push_str(rep);
+            last_source_position = i + lit_len;
+        }
+        assert_eq!(ret.len(), expected_len);
+        ret
+    }
+
+    fn replace_multiple_exact<'s>(input: &'s str, lit: &str, rep: &str) -> Cow<'s, str> {
+        let match_indices: Vec<usize> = input.match_indices(lit).map(|(i, _)| i).collect();
+        if match_indices.is_empty() {
+            return Cow::Borrowed(input);
+        }
+        Cow::Owned(Self::format_multiple_replacements(
+            input,
+            lit.len(),
+            rep,
+            match_indices,
+        ))
+    }
+
+    fn replace_multiple_icase<'s>(input: &'s str, lit: &str, rep: &str) -> Cow<'s, str> {
+        let match_indices: Vec<usize> = input
+            .to_ascii_uppercase()
+            /* NB: literal was already changed to uppercase upon construction in Self::create()! */
+            .match_indices(&lit)
+            .map(|(i, _)| i)
+            .collect();
+        if match_indices.is_empty() {
+            return Cow::Borrowed(input);
+        }
+        Cow::Owned(Self::format_multiple_replacements(
+            input,
+            lit.len(),
+            rep,
+            match_indices,
+        ))
+    }
+}
+
+impl PatternTransformer for LiteralTransformer {
+    type Replacement = String where Self: Sized;
+    fn create(
+        pattern: &str,
+        opts: PatternModifiers,
+        rep: Self::Replacement,
+    ) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        let PatternModifiers {
+            case_insensitive,
+            multiple_matches,
+        } = opts;
+        Ok(Self {
+            lit: match case_insensitive {
+                false => pattern.to_string(),
+                true => pattern.to_ascii_uppercase(),
+            },
+            case_insensitive,
+            multiple_matches,
+            rep,
+        })
+    }
+
+    fn replace<'s>(&self, input: &'s str) -> Cow<'s, str> {
+        /* Empty replacement or literal is allowed, it just does nothing. */
+        if self.lit.is_empty() || self.rep.is_empty() || input.is_empty() {
+            return Cow::Borrowed(input);
+        }
+        match self.multiple_matches {
+            false => match self.case_insensitive {
+                /* Single replacement, case-sensitive (exact) match: */
+                false => Self::replace_single_exact(input, &self.lit, &self.rep),
+                /* Single replacement, case-insensitive match: */
+                true => Self::replace_single_icase(input, &self.lit, &self.rep),
+            },
+            true => match self.case_insensitive {
+                /* Multiple replacements, case-sensitive (exact) match: */
+                false => Self::replace_multiple_exact(input, &self.lit, &self.rep),
+                /* Multiple replacements, case-insensitive match: */
+                true => Self::replace_multiple_icase(input, &self.lit, &self.rep),
+            },
+        }
+    }
+}
+
+struct RegexpTransformer {
+    pat: regex::Regex,
+    multiple_matches: bool,
+    rep: String,
+}
+
+impl PatternTransformer for RegexpTransformer {
+    type Replacement = String where Self: Sized;
+    fn create(
+        pattern: &str,
+        opts: PatternModifiers,
+        rep: Self::Replacement,
+    ) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        let PatternModifiers {
+            case_insensitive,
+            multiple_matches,
+        } = opts;
+        let pat = regex::RegexBuilder::new(pattern)
+            .case_insensitive(case_insensitive)
+            .build()
+            .map_err(|e| {
+                CommandError::InvalidArg(format!(
+                    "failed to construct regex replacer from search pattern {pattern:?}: {e}"
+                ))
+            })?;
+        Ok(Self {
+            pat,
+            multiple_matches,
+            rep,
+        })
+    }
+
+    fn replace<'s>(&self, input: &'s str) -> Cow<'s, str> {
+        match self.multiple_matches {
+            false => self.pat.replace(input, &self.rep),
+            true => self.pat.replace_all(input, &self.rep),
+        }
+    }
+}
+
+/* struct ComponentTransformer { */
+/*     pattern_trans: Box<dyn PatternTransformer>, */
+/*     comp_sel: ComponentSelector, */
+/* } */
+
 pub struct CompiledTransformer {
     transformers: Vec<Box<dyn NameTransformer>>,
 }
@@ -109,11 +315,11 @@ impl CompiledTransformer {
                 BasicTransform::AddPrefix(arg) => Box::new(AddPrefix::from_arg(arg)?),
             },
             NameTransform::Complex(complex_trans) => match complex_trans {
-                ComplexTransform::RemovePrefix(remove_prefix_arg) => {
-                    todo!("impl remove prefix: {:?}", remove_prefix_arg)
-                }
                 ComplexTransform::Transform(transform_arg) => {
                     todo!("impl transform: {:?}", transform_arg)
+                }
+                ComplexTransform::RemovePrefix(remove_prefix_arg) => {
+                    todo!("impl remove prefix: {:?}", remove_prefix_arg)
                 }
             },
         })

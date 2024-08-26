@@ -1225,8 +1225,8 @@ These results are dependent on the entry data:
           - stored:	uncompressed
           - deflated:	with deflate
 {}{}{}{}{}
-          Using e.g. '-not --compression-method known' as a filter enables
-          special handling of entries compressed with an unsupported method.
+          Using e.g. '--compression-method known' as a match expression filters
+          entries to only those which can be successfully decompressed.
 
       --max-depth <num>
           Match entries with at *most* <num> components of their
