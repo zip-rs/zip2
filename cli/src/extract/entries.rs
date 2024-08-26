@@ -17,16 +17,6 @@ pub trait IterateEntries {
     fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError>;
 }
 
-pub fn make_entry_iterator<'a>(
-    input_type: InputType,
-) -> Result<Box<dyn IterateEntries + 'a>, CommandError> {
-    let ret: Box<dyn IterateEntries + 'a> = match input_type {
-        InputType::StreamingStdin => Box::new(StdinInput::new()),
-        InputType::ZipPaths(zip_paths) => Box::new(AllInputZips::new(zip_paths)?),
-    };
-    Ok(ret)
-}
-
 struct StdinInput {
     inner: io::Stdin,
 }
@@ -128,5 +118,52 @@ impl IterateEntries for AllInputZips {
                 }
             }
         }
+    }
+}
+
+pub struct MergedInput {
+    stdin_stream: Option<UnsafeCell<StdinInput>>,
+    zips: Option<AllInputZips>,
+}
+
+impl MergedInput {
+    pub fn from_spec(spec: InputSpec) -> Result<Self, CommandError> {
+        let InputSpec {
+            stdin_stream,
+            zip_paths,
+        } = spec;
+        Ok(Self {
+            stdin_stream: if stdin_stream {
+                Some(UnsafeCell::new(StdinInput::new()))
+            } else {
+                None
+            },
+            zips: if zip_paths.is_empty() {
+                None
+            } else {
+                Some(AllInputZips::new(zip_paths)?)
+            },
+        })
+    }
+}
+
+impl IterateEntries for MergedInput {
+    fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError> {
+        let mut completed_stdin: bool = false;
+        if let Some(stdin_stream) = self.stdin_stream.as_mut() {
+            if let Some(entry) = unsafe { &mut *stdin_stream.get() }.next_entry()? {
+                return Ok(Some(entry));
+            }
+            completed_stdin = true;
+        }
+        if completed_stdin {
+            self.stdin_stream = None;
+        }
+        if let Some(zips) = self.zips.as_mut() {
+            if let Some(entry) = zips.next_entry()? {
+                return Ok(Some(entry));
+            }
+        }
+        Ok(None)
     }
 }

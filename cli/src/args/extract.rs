@@ -815,10 +815,12 @@ impl OutputSpecs {
                     };
                     if let Some(name) = cur_name.take() {
                         named.push(NamedOutput { name, output });
-                    } else if let Some(default) = default.replace(output) {
-                        return Err(Extract::exit_arg_invalid(
-                            "multiple unnamed outputs provided: {default:?} and {output:?}",
-                        ));
+                    } else if let Some(default) = default.take() {
+                        return Err(Extract::exit_arg_invalid(&format!(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}"
+                        )));
+                    } else {
+                        default = Some(output);
                     }
                 }
                 arg_bytes if arg_bytes.starts_with(b"--output-directory") => {
@@ -840,20 +842,24 @@ impl OutputSpecs {
                     };
                     if let Some(name) = cur_name.take() {
                         named.push(NamedOutput { name, output });
-                    } else if let Some(default) = default.replace(output) {
-                        return Err(Extract::exit_arg_invalid(
-                            "multiple unnamed outputs provided: {default:?} and {output:?}",
-                        ));
+                    } else if let Some(default) = default.take() {
+                        return Err(Extract::exit_arg_invalid(&format!(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}"
+                        )));
+                    } else {
+                        default = Some(output);
                     }
                 }
                 b"--stdout" => {
                     let output = OutputCollation::ConcatenateStdout;
                     if let Some(name) = cur_name.take() {
                         named.push(NamedOutput { name, output });
-                    } else if let Some(default) = default.replace(output) {
-                        return Err(Extract::exit_arg_invalid(
-                            "multiple unnamed outputs provided: {default:?} and {output:?}",
-                        ));
+                    } else if let Some(default) = default.take() {
+                        return Err(Extract::exit_arg_invalid(&format!(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}"
+                        )));
+                    } else {
+                        default = Some(output);
                     }
                 }
                 b"-f" => {
@@ -867,10 +873,12 @@ impl OutputSpecs {
                     };
                     if let Some(name) = cur_name.take() {
                         named.push(NamedOutput { name, output });
-                    } else if let Some(default) = default.replace(output) {
-                        return Err(Extract::exit_arg_invalid(
-                            "multiple unnamed outputs provided: {default:?} and {output:?}",
-                        ));
+                    } else if let Some(default) = default.take() {
+                        return Err(Extract::exit_arg_invalid(&format!(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}"
+                        )));
+                    } else {
+                        default = Some(output);
                     }
                 }
                 arg_bytes if arg_bytes.starts_with(b"--output-file") => {
@@ -892,10 +900,12 @@ impl OutputSpecs {
                     };
                     if let Some(name) = cur_name.take() {
                         named.push(NamedOutput { name, output });
-                    } else if let Some(default) = default.replace(output) {
-                        return Err(Extract::exit_arg_invalid(
-                            "multiple unnamed outputs provided: {default:?} and {output:?}",
-                        ));
+                    } else if let Some(default) = default.take() {
+                        return Err(Extract::exit_arg_invalid(&format!(
+                            "multiple unnamed outputs provided: {default:?} and {output:?}"
+                        )));
+                    } else {
+                        default = Some(output);
                     }
                 }
                 _ => {

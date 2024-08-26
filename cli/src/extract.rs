@@ -10,20 +10,21 @@ mod entries;
 mod matcher;
 mod receiver;
 mod transform;
+use entries::IterateEntries;
 use receiver::EntryData;
 
 pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandError> {
     let Extract {
-        output,
+        output_specs,
         entry_specs,
-        input,
+        input_spec,
     } = extract;
     let err = Rc::new(RefCell::new(err));
 
     let mut entry_receiver = receiver::make_entry_receiver(err.clone(), output)?;
     let entry_spec_transformers = transform::process_entry_specs(entry_specs)?;
     let mut stderr_log_output = io::stderr();
-    let mut entry_iterator = entries::make_entry_iterator(input)?;
+    let mut entry_iterator = entries::MergedInput::from_spec(input_spec)?;
 
     while let Some(mut entry) = entry_iterator.next_entry()? {
         for transformer in entry_spec_transformers.iter() {
