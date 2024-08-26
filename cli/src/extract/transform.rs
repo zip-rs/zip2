@@ -5,11 +5,11 @@ use zip::read::ZipFile;
 use crate::{args::extract::*, CommandError};
 
 use super::{
-    matcher::{process_component_selector, EntryMatcher, WrappedMatcher},
+    matcher::process_component_selector,
     receiver::{EntryData, EntryReceiver},
 };
 
-trait NameTransformer {
+pub trait NameTransformer {
     type Arg
     where
         Self: Sized;
@@ -103,24 +103,12 @@ impl NameTransformer for AddPrefix {
     }
 }
 
-enum ContentProcessor {
-    StderrLog,
-    /* FileLog(fs::File), */
-    WriteContent,
+pub struct CompiledTransformer {
+    transformers: Vec<Box<dyn NameTransformer>>,
 }
 
-impl ContentProcessor {
-    /* pub fn process_entry(&mut self, entry: &mut ZipFile, ) */
-}
-
-pub struct EntrySpecTransformer {
-    matcher: Option<WrappedMatcher>,
-    name_transformers: Vec<Box<dyn NameTransformer>>,
-    content_transform: ContentTransform,
-}
-
-impl EntrySpecTransformer {
-    fn make_transformer(trans: NameTransform) -> Result<Box<dyn NameTransformer>, CommandError> {
+impl CompiledTransformer {
+    fn make_single(trans: NameTransform) -> Result<Box<dyn NameTransformer>, CommandError> {
         Ok(match trans {
             NameTransform::Trivial(arg) => Box::new(Trivial::from_arg(arg)?),
             NameTransform::Basic(basic_trans) => match basic_trans {
@@ -137,43 +125,21 @@ impl EntrySpecTransformer {
             },
         })
     }
-
-    pub fn new(entry_spec: EntrySpec) -> Result<Self, CommandError> {
-        let EntrySpec {
-            match_expr,
-            name_transforms,
-            content_transform,
-        } = entry_spec;
-        let matcher = match match_expr {
-            None => None,
-            Some(expr) => Some(WrappedMatcher::from_arg(expr)?),
-        };
-        let name_transformers: Vec<_> = name_transforms
-            .into_iter()
-            .map(Self::make_transformer)
-            .collect::<Result<_, _>>()?;
-        Ok(Self {
-            matcher,
-            name_transformers,
-            content_transform,
-        })
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            matcher: None,
-            name_transformers: Vec::new(),
-            content_transform: ContentTransform::Extract,
-        }
-    }
 }
 
-impl EntrySpecTransformer {
-    pub fn matches(&self, entry: &EntryData) -> bool {
-        match &self.matcher {
-            None => true,
-            Some(matcher) => matcher.matches(entry),
-        }
+impl NameTransformer for CompiledTransformer {
+    type Arg = Vec<NameTransform> where Self: Sized;
+    fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
+    where
+        Self: Sized,
+    {
+        assert!(!arg.is_empty());
+        Ok(Self {
+            transformers: arg
+                .into_iter()
+                .map(Self::make_single)
+                .collect::<Result<_, _>>()?,
+        })
     }
 
     /// Transform the name from the zip entry, maintaining a few invariants:
@@ -186,10 +152,10 @@ impl EntrySpecTransformer {
     ///      at the end, if substring-only transformations reduced its length. This is because Cow
     ///      can only describe a substring of the original input or an entirely new allocated
     ///      string, as opposed to a more general sort of string view wrapper.
-    pub fn transform_name<'s>(&self, mut original_name: &'s str) -> Cow<'s, str> {
+    fn transform_name<'s>(&self, mut original_name: &'s str) -> Cow<'s, str> {
         let mut newly_allocated_name: Option<String> = None;
         let mut newly_allocated_str: Option<&str> = None;
-        for transformer in self.name_transformers.iter() {
+        for transformer in self.transformers.iter() {
             match newly_allocated_str {
                 Some(s) => match transformer.transform_name(s) {
                     Cow::Borrowed(t) => {
@@ -228,45 +194,4 @@ impl EntrySpecTransformer {
             }
         }
     }
-
-    pub fn content_transform(&self) -> &ContentTransform {
-        &self.content_transform
-    }
-}
-
-pub fn process_entry_specs(
-    entry_specs: impl IntoIterator<Item = EntrySpec>,
-) -> Result<Vec<EntrySpecTransformer>, CommandError> {
-    let entry_spec_transformers: Vec<EntrySpecTransformer> = entry_specs
-        .into_iter()
-        .map(|spec| EntrySpecTransformer::new(spec))
-        .collect::<Result<_, _>>()?;
-    if entry_spec_transformers.is_empty() {
-        return Ok(vec![EntrySpecTransformer::empty()]);
-    };
-
-    /* Perform some validation on the transforms since we don't currently support everything we
-     * want to. */
-    if entry_spec_transformers
-        .iter()
-        .any(|t| *t.content_transform() == ContentTransform::Raw)
-    {
-        /* TODO: this can be solved if we can convert a ZipFile into a Raw reader! */
-        return Err(CommandError::InvalidArg(
-            "--raw extraction output is not yet supported".to_string(),
-        ));
-    }
-    if entry_spec_transformers
-        .iter()
-        .filter(|t| *t.content_transform() != ContentTransform::LogToStderr)
-        .count()
-        > 1
-    {
-        /* TODO: this can be solved by separating data from entries! */
-        return Err(CommandError::InvalidArg(
-            "more than one entry spec using a content transform which reads content (i.e. was not --log-to-stderr) was provided; this requires teeing entry contents which is not yet supported".to_string(),
-        ));
-    }
-
-    Ok(entry_spec_transformers)
 }

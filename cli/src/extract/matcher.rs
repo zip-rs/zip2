@@ -297,7 +297,7 @@ impl EntryMatcher for PatternMatcher {
     }
 }
 
-pub enum WrappedMatcher {
+pub enum CompiledMatcher {
     Primitive(Box<dyn EntryMatcher>),
     Negated(Box<dyn EntryMatcher>),
     And {
@@ -310,7 +310,7 @@ pub enum WrappedMatcher {
     },
 }
 
-impl WrappedMatcher {
+impl CompiledMatcher {
     fn create_primitive(arg: Predicate) -> Result<Self, CommandError> {
         Ok(Self::Primitive(match arg {
             Predicate::Trivial(arg) => Box::new(TrivialMatcher::from_arg(arg)?),
@@ -327,7 +327,7 @@ impl WrappedMatcher {
     }
 }
 
-impl EntryMatcher for WrappedMatcher {
+impl EntryMatcher for CompiledMatcher {
     type Arg = MatchExpression where Self: Sized;
 
     fn from_arg(arg: Self::Arg) -> Result<Self, CommandError>
