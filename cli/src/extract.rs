@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
-    io::{self, Read, Write},
+    io::{Read, Write},
     rc::Rc,
 };
 
@@ -13,7 +13,7 @@ mod receiver;
 mod transform;
 use entries::IterateEntries;
 use matcher::EntryMatcher;
-use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryReceiver, ExtractEntry};
+use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryKind, EntryReceiver, ExtractEntry};
 use transform::NameTransformer;
 
 pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), CommandError> {
@@ -29,6 +29,22 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
 
     while let Some(mut entry) = entry_iterator.next_entry()? {
+        let symlink_target: Option<Vec<u8>> = {
+            let (kind, size) = {
+                let data = EntryData::from_entry(&entry);
+                (data.kind, data.size)
+            };
+            match kind {
+                EntryKind::Symlink => {
+                    let mut target: Vec<u8> = Vec::with_capacity(size.try_into().unwrap());
+                    entry
+                        .read_to_end(&mut target)
+                        .wrap_err("failed to read symlink target from zip archive entry")?;
+                    Some(target)
+                }
+                _ => None,
+            }
+        };
         let data = EntryData::from_entry(&entry);
 
         let mut matching_concats: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
@@ -86,10 +102,15 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
 
         let mut matching_handles: Vec<Box<dyn Write>> = deduped_matching_extracts
             .into_iter()
-            .map(|(name, recv)| recv.generate_entry_handle(name))
-            .collect::<Result<_, _>>()?;
+            .map(|(name, recv)| {
+                recv.generate_entry_handle(data, symlink_target.as_ref().map(|t| t.as_ref()), name)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
-        let mut read_len: usize = 0;
+        let mut read_len: usize;
         loop {
             read_len = entry.read(&mut copy_buf).wrap_err("read of entry failed")?;
             if read_len == 0 {

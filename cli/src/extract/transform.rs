@@ -1,13 +1,6 @@
 use std::{borrow::Cow, collections::VecDeque};
 
-use zip::read::ZipFile;
-
 use crate::{args::extract::*, CommandError};
-
-use super::{
-    matcher::process_component_selector,
-    receiver::{EntryData, EntryReceiver},
-};
 
 pub trait NameTransformer {
     type Arg

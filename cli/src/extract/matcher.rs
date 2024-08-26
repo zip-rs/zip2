@@ -3,7 +3,7 @@ use std::path::Path;
 use glob;
 use regex;
 
-use zip::{read::ZipFile, CompressionMethod};
+use zip::CompressionMethod;
 
 use super::receiver::{EntryData, EntryKind};
 use crate::{args::extract::*, CommandError};

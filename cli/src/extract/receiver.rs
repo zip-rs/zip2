@@ -2,8 +2,8 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     collections::{HashMap, HashSet},
-    env, fs,
-    io::{self, Read, Seek, Write},
+    fs,
+    io::{self, Seek, Write},
     mem,
     path::PathBuf,
     rc::Rc,
@@ -60,9 +60,9 @@ impl OutputName {
 }
 
 pub struct ParsedEntrySpecArg {
-    matcher: Option<CompiledMatcher>,
-    transforms: Option<CompiledTransformer>,
-    output_name: OutputName,
+    pub matcher: Option<CompiledMatcher>,
+    pub transforms: Option<CompiledTransformer>,
+    pub output_name: OutputName,
 }
 
 impl ParsedEntrySpecArg {
@@ -119,11 +119,17 @@ pub fn process_entry_and_output_specs(
     entry_specs: impl IntoIterator<Item = EntrySpec>,
     output_specs: OutputSpecs,
 ) -> Result<Vec<CompiledEntrySpec>, CommandError> {
-    let entry_specs: Vec<ParsedEntrySpecArg> = entry_specs
+    let mut entry_specs: Vec<ParsedEntrySpecArg> = entry_specs
         .into_iter()
         .map(ParsedEntrySpecArg::from_entry_spec)
         .collect::<Result<_, _>>()?;
-    assert!(!entry_specs.is_empty());
+    if entry_specs.is_empty() {
+        entry_specs.push(ParsedEntrySpecArg {
+            matcher: None,
+            transforms: None,
+            output_name: OutputName::default_name(),
+        });
+    }
     let parsed_outputs = ParsedNamedOutputs::from_output_specs(output_specs)?;
     parsed_outputs.process_entry_specs_for_outputs(entry_specs)
 }
@@ -255,6 +261,12 @@ impl ParsedNamedOutputs {
             )));
         }
         assert!(!extracts.contains_key(&name));
+
+        if mkdir {
+            fs::create_dir_all(&output_dir)
+                .wrap_err_with(|| format!("failed to create output directory {output_dir:?}"))?;
+        };
+
         let canon_path = output_dir
             .canonicalize()
             .wrap_err_with(|| format!("canonicalizing dir path {output_dir:?} failed"))?;
@@ -265,11 +277,6 @@ impl ParsedNamedOutputs {
         }
 
         let handle: Rc<dyn EntryReceiver> = {
-            if mkdir {
-                fs::create_dir_all(&output_dir).wrap_err_with(|| {
-                    format!("failed to create output directory {output_dir:?}")
-                })?;
-            };
             let d = FilesystemReceiver::new(output_dir);
             Rc::new(d)
         };
@@ -357,8 +364,12 @@ impl ParsedNamedOutputs {
 }
 
 pub trait EntryReceiver {
-    fn generate_entry_handle<'s>(&self, name: Cow<'s, str>)
-        -> Result<Box<dyn Write>, CommandError>;
+    fn generate_entry_handle<'s>(
+        &self,
+        data: EntryData<'s>,
+        symlink_target: Option<&[u8]>,
+        name: Cow<'s, str>,
+    ) -> Result<Option<Box<dyn Write>>, CommandError>;
 
     fn finalize_entries(&self) -> Result<(), CommandError>;
 }
@@ -382,90 +393,79 @@ impl FilesystemReceiver {
 impl EntryReceiver for FilesystemReceiver {
     fn generate_entry_handle<'s>(
         &self,
+        data: EntryData<'s>,
+        symlink_target: Option<&[u8]>,
         name: Cow<'s, str>,
-    ) -> Result<Box<dyn Write>, CommandError> {
-        todo!("wow!")
+    ) -> Result<Option<Box<dyn Write>>, CommandError> {
+        /* let mut err = self.err.borrow_mut(); */
+        let full_output_path = self.output_dir.join(name.as_ref());
+        /* writeln!( */
+        /*     err, */
+        /*     "receiving entry {} with name {name} and writing to path {full_output_path:?}", */
+        /*     entry.name() */
+        /* ) */
+        /* .unwrap(); */
+
+        #[cfg(unix)]
+        if let Some(mode) = data.unix_mode {
+            /* writeln!( */
+            /*     err, */
+            /*     "storing unix mode {mode} for path {full_output_path:?}" */
+            /* ) */
+            /* .unwrap(); */
+            self.perms_to_set
+                .borrow_mut()
+                .push((full_output_path.clone(), mode));
+        }
+
+        match data.kind {
+            EntryKind::Dir => {
+                /* writeln!(err, "entry is directory, creating").unwrap(); */
+                fs::create_dir_all(&full_output_path).wrap_err_with(|| {
+                    format!("failed to create directory entry at {full_output_path:?}")
+                })?;
+            }
+            EntryKind::Symlink => {
+                let target: Vec<u8> = symlink_target
+                    .expect("we should have generated this")
+                    .to_vec();
+
+                #[cfg(unix)]
+                {
+                    use std::{
+                        ffi::OsString,
+                        os::unix::{ffi::OsStringExt, fs::symlink},
+                    };
+                    let target = OsString::from_vec(target);
+                    /* writeln!(err, "entry is symlink to {target:?}, creating").unwrap(); */
+                    symlink(&target, &full_output_path).wrap_err_with(|| {
+                        format!(
+                        "failed to create symlink at {full_output_path:?} with target {target:?}"
+                    )
+                    })?;
+                }
+                #[cfg(not(unix))]
+                {
+                    /* FIXME: non-unix symlink extraction not yet supported! */
+                    todo!("TODO: cannot create symlink for entry {name} on non-unix yet!");
+                }
+            }
+            EntryKind::File => {
+                /* writeln!(err, "entry is file, creating").unwrap(); */
+                if let Some(containing_dir) = full_output_path.parent() {
+                    fs::create_dir_all(containing_dir).wrap_err_with(|| {
+                        format!("failed to create parent dirs for file at {full_output_path:?}")
+                    })?;
+                } else {
+                    /* writeln!(err, "entry had no parent dir (in root dir?)").unwrap(); */
+                }
+                let outfile = fs::File::create(&full_output_path)
+                    .wrap_err_with(|| format!("failed to create file at {full_output_path:?}"))?;
+                return Ok(Some(Box::new(outfile)));
+            }
+        }
+        Ok(None)
     }
-
-    /* fn receive_entry<'a>( */
-    /*     &mut self, */
-    /*     entry: &mut ZipFile<'a>, */
-    /*     name: &str, */
-    /* ) -> Result<(), CommandError> { */
-    /*     let mut err = self.err.borrow_mut(); */
-    /*     let full_output_path = self.output_dir.join(name); */
-    /*     writeln!( */
-    /*         err, */
-    /*         "receiving entry {} with name {name} and writing to path {full_output_path:?}", */
-    /*         entry.name() */
-    /*     ) */
-    /*     .unwrap(); */
-
-    /*     #[cfg(unix)] */
-    /*     if let Some(mode) = entry.unix_mode() { */
-    /*         writeln!( */
-    /*             err, */
-    /*             "storing unix mode {mode} for path {full_output_path:?}" */
-    /*         ) */
-    /*         .unwrap(); */
-    /*         self.perms_to_set */
-    /*             .borrow_mut() */
-    /*             .push((full_output_path.clone(), mode)); */
-    /*     } */
-
-    /*     if entry.is_dir() { */
-    /*         writeln!(err, "entry is directory, creating").unwrap(); */
-    /*         fs::create_dir_all(&full_output_path).wrap_err_with(|| { */
-    /*             format!("failed to create directory entry at {full_output_path:?}") */
-    /*         })?; */
-    /*     } else if entry.is_symlink() { */
-    /*         let mut target: Vec<u8> = Vec::with_capacity(entry.size().try_into().unwrap()); */
-    /*         entry.read_to_end(&mut target).wrap_err_with(|| { */
-    /*             format!( */
-    /*                 "failed to read symlink target from zip archive entry {}", */
-    /*                 entry.name() */
-    /*             ) */
-    /*         })?; */
-
-    /*         #[cfg(unix)] */
-    /*         { */
-    /*             use std::{ */
-    /*                 ffi::OsString, */
-    /*                 os::unix::{ffi::OsStringExt, fs::symlink}, */
-    /*             }; */
-    /*             let target = OsString::from_vec(target); */
-    /*             writeln!(err, "entry is symlink to {target:?}, creating").unwrap(); */
-    /*             symlink(&target, &full_output_path).wrap_err_with(|| { */
-    /*                 format!( */
-    /*                     "failed to create symlink at {full_output_path:?} with target {target:?}" */
-    /*                 ) */
-    /*             })?; */
-    /*         } */
-    /*         #[cfg(not(unix))] */
-    /*         { */
-    /*             /\* FIXME: non-unix symlink extraction not yet supported! *\/ */
-    /*             todo!("TODO: cannot create symlink for entry {name} on non-unix yet!"); */
-    /*         } */
-    /*     } else { */
-    /*         writeln!(err, "entry is file, creating").unwrap(); */
-    /*         if let Some(containing_dir) = full_output_path.parent() { */
-    /*             fs::create_dir_all(containing_dir).wrap_err_with(|| { */
-    /*                 format!("failed to create parent dirs for file at {full_output_path:?}") */
-    /*             })?; */
-    /*         } else { */
-    /*             writeln!(err, "entry had no parent dir (in root dir?)").unwrap(); */
-    /*         } */
-    /*         let mut outfile = fs::File::create(&full_output_path) */
-    /*             .wrap_err_with(|| format!("failed to create file at {full_output_path:?}"))?; */
-    /*         io::copy(entry, &mut outfile).wrap_err_with(|| { */
-    /*             format!( */
-    /*                 "failed to copy file contents from {} to {full_output_path:?}", */
-    /*                 entry.name() */
-    /*             ) */
-    /*         })?; */
-    /*     } */
-    /*     Ok(()) */
-    /* } */
 
     fn finalize_entries(&self) -> Result<(), CommandError> {
         #[cfg(unix)]
