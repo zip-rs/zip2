@@ -48,11 +48,19 @@ impl PatternSelectorType {
     }
 
     pub const fn default_for_match() -> Self {
-        Self::Glob
+        if cfg!(feature = "glob") {
+            Self::Glob
+        } else {
+            Self::Literal
+        }
     }
 
     pub const fn default_for_replacement() -> Self {
-        Self::Regexp
+        if cfg!(feature = "rx") {
+            Self::Regexp
+        } else {
+            Self::Literal
+        }
     }
 }
 
@@ -1303,7 +1311,7 @@ entry itself.
 
 *Note:* when multiple entry specs are provided on the command line, a single
 entry may be matched more than once. In this case, the entry's content will be
-extracted more than once over the execution of this command.
+teed to all the specified outputs.
 
   -x, --extract[=<name>]
           Decompress the entry's contents (if necessary) before writing it to
@@ -1343,6 +1351,12 @@ pat-sel  = glob		[DEFAULT for matching] (interpret as a shell glob)
 
 *Note:* glob patterns are not supported for replacement, and attempting to use
 them with e.g '--transform:glob' will produce an error.
+
+Also note that glob and regex patterns require building this binary with the
+"glob" and "rx" cargo features respectively. Specifying ':glob' or ':rx' without
+the requisite feature support will produce an error. If the requisite feature is
+not provided, the default is to use literal matching, which is supported in
+all cases.
 
 #### Pattern modifiers (pat-mod):
 pat-mod  = :i	(use case-insensitive matching for the given pattern)

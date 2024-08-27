@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "glob")]
 use glob;
+#[cfg(feature = "rx")]
 use regex;
 
 use zip::CompressionMethod;
@@ -146,11 +148,13 @@ impl NameMatcher for LiteralMatcher {
     }
 }
 
+#[cfg(feature = "glob")]
 struct GlobMatcher {
     pat: glob::Pattern,
     glob_opts: glob::MatchOptions,
 }
 
+#[cfg(feature = "glob")]
 impl NameMatcher for GlobMatcher {
     fn create(pattern: String, opts: MatchModifiers) -> Result<Self, CommandError>
     where
@@ -182,10 +186,12 @@ impl NameMatcher for GlobMatcher {
     }
 }
 
+#[cfg(feature = "rx")]
 struct RegexMatcher {
     pat: regex::Regex,
 }
 
+#[cfg(feature = "rx")]
 impl NameMatcher for RegexMatcher {
     fn create(pattern: String, opts: MatchModifiers) -> Result<Self, CommandError>
     where
@@ -407,9 +413,32 @@ impl EntryMatcher for PatternMatcher {
 
         let opts = MatchModifiers::from_flags(modifiers)?;
         let matcher: Box<dyn NameMatcher> = match pat_sel {
-            PatternSelectorType::Glob => Box::new(GlobMatcher::create(pattern, opts)?),
+            PatternSelectorType::Glob => {
+                #[cfg(feature = "glob")]
+                {
+                    Box::new(GlobMatcher::create(pattern, opts)?)
+                }
+                #[cfg(not(feature = "glob"))]
+                {
+                    return Err(CommandError::InvalidArg(format!(
+                        "glob patterns were requested, but this binary was built without the \"glob\" feature: {pattern:?}"
+                    )));
+                }
+            }
+
             PatternSelectorType::Literal => Box::new(LiteralMatcher::create(pattern, opts)?),
-            PatternSelectorType::Regexp => Box::new(RegexMatcher::create(pattern, opts)?),
+            PatternSelectorType::Regexp => {
+                #[cfg(feature = "rx")]
+                {
+                    Box::new(RegexMatcher::create(pattern, opts)?)
+                }
+                #[cfg(not(feature = "rx"))]
+                {
+                    return Err(CommandError::InvalidArg(format!(
+                        "regexp patterns were requested, but this binary was built without the \"rx\" feature: {pattern:?}"
+                    )));
+                }
+            }
         };
 
         Ok(Self { matcher, comp_sel })

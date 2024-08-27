@@ -24,9 +24,8 @@ members = ["."]
 name = "zip-cli"
 
 [dependencies]
-# TODO: make these optional deps?
-glob = "0.3"
-regex = "1"
+glob = { version = "0.3", optional = true }
+regex = { version = "1", optional = true }
 
 [dependencies.zip]
 path = ".."
@@ -47,6 +46,9 @@ time = ["zip/time"]
 xz = ["zip/xz"]
 zstd = ["zip/zstd"]
 
+glob = ["dep:glob"]
+rx = ["dep:regex"]
+
 default = [
     "aes-crypto",
     "bzip2",
@@ -56,6 +58,8 @@ default = [
     "time",
     "xz",
     "zstd",
+    "glob",
+    "rx",
 ]
 
 

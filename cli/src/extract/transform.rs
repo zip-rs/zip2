@@ -1,5 +1,6 @@
 use std::{borrow::Cow, collections::VecDeque, ops, path::Path, slice, str};
 
+#[cfg(feature = "rx")]
 use regex;
 
 use super::matcher::{CaseSensitivity, SearchAnchoring};
@@ -353,12 +354,14 @@ impl PatternTransformer for LiteralTransformer {
     }
 }
 
+#[cfg(feature = "rx")]
 struct RegexpTransformer {
     pat: regex::Regex,
     multi: Multiplicity,
     rep: String,
 }
 
+#[cfg(feature = "rx")]
 impl PatternTransformer for RegexpTransformer {
     type Replacement = String where Self: Sized;
     fn create(
@@ -580,7 +583,16 @@ impl NameTransformer for ComponentTransformer {
                 Box::new(LiteralTransformer::create(pattern, opts, replacement_spec)?)
             }
             PatternSelectorType::Regexp => {
-                Box::new(RegexpTransformer::create(pattern, opts, replacement_spec)?)
+                #[cfg(feature = "rx")]
+                {
+                    Box::new(RegexpTransformer::create(pattern, opts, replacement_spec)?)
+                }
+                #[cfg(not(feature = "rx"))]
+                {
+                    return Err(CommandError::InvalidArg(format!(
+                        "regexp patterns were requested, but this binary was built without the \"rx\" feature: {pattern:?}"
+                    )));
+                }
             }
         };
 
