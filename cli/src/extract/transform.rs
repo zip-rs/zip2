@@ -1,7 +1,8 @@
-use std::{borrow::Cow, collections::VecDeque, path::Path, slice, str};
+use std::{borrow::Cow, collections::VecDeque, ops, path::Path, slice, str};
 
 use regex;
 
+use super::matcher::{CaseSensitivity, SearchAnchoring};
 use crate::{args::extract::*, CommandError};
 
 pub trait NameTransformer {
@@ -98,13 +99,55 @@ impl NameTransformer for AddPrefix {
     }
 }
 
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Multiplicity {
+    #[default]
+    Single,
+    All,
+}
+
+impl Multiplicity {
+    pub const fn from_multiple_matches_flag(multiple_matches: bool) -> Self {
+        match multiple_matches {
+            true => Self::All,
+            false => Self::Single,
+        }
+    }
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReplaceModifiers {
+    pub anchoring: SearchAnchoring,
+    pub case: CaseSensitivity,
+    pub multi: Multiplicity,
+}
+
+impl ReplaceModifiers {
+    pub const fn from_flags(flags: PatternModifierFlags) -> Self {
+        let PatternModifierFlags {
+            case_insensitive,
+            multiple_matches,
+            prefix_anchored,
+            suffix_anchored,
+        } = flags;
+        let multi = Multiplicity::from_multiple_matches_flag(multiple_matches);
+        let case = CaseSensitivity::from_case_insensitive_flag(case_insensitive);
+        let anchoring = SearchAnchoring::from_prefix_suffix_flags(prefix_anchored, suffix_anchored);
+        Self {
+            anchoring,
+            case,
+            multi,
+        }
+    }
+}
+
 trait PatternTransformer {
     type Replacement
     where
         Self: Sized;
     fn create(
-        pattern: &str,
-        opts: PatternModifiers,
+        pattern: String,
+        opts: ReplaceModifiers,
         rep: Self::Replacement,
     ) -> Result<Self, CommandError>
     where
@@ -115,33 +158,58 @@ trait PatternTransformer {
 
 struct LiteralTransformer {
     lit: String,
-    case_insensitive: bool,
-    multiple_matches: bool,
+    case: CaseSensitivity,
+    anchoring: SearchAnchoring,
+    multi: Multiplicity,
     rep: String,
 }
 
 impl LiteralTransformer {
-    fn format_single_replacement(
-        input: &str,
+    fn format_single_replacement<'s>(
+        input: &'s str,
         lit_len: usize,
         rep: &str,
         match_index: usize,
-    ) -> String {
-        debug_assert!(lit_len > 0);
-        debug_assert!(input.len() > 0);
-        debug_assert!(rep.len() > 0);
-        format!(
+    ) -> Cow<'s, str> {
+        /* If the replacement is empty, we have the opportunity to return a borrowed Cow. */
+        if rep.is_empty() {
+            /* Remove the prefix alone! */
+            if match_index == 0 {
+                return Cow::Borrowed(&input[lit_len..]);
+            }
+            /* Remove the suffix alone! */
+            if match_index == input.len() - lit_len {
+                return Cow::Borrowed(&input[..match_index]);
+            }
+        }
+        /* Otherwise, we allocate a new string. */
+        Cow::Owned(format!(
             "{}{}{}",
             &input[..match_index],
             rep,
             &input[(match_index + lit_len)..]
-        )
+        ))
+    }
+
+    fn replace_single_anchored<'s>(
+        input: &'s str,
+        lit: &str,
+        rep: &str,
+        range: ops::Range<usize>,
+        case: CaseSensitivity,
+    ) -> Cow<'s, str> {
+        let sub = &input[range.clone()];
+        if case.string_equal(lit, sub) {
+            Self::format_single_replacement(input, lit.len(), rep, range.start)
+        } else {
+            Cow::Borrowed(input)
+        }
     }
 
     fn replace_single_exact<'s>(input: &'s str, lit: &str, rep: &str) -> Cow<'s, str> {
         match input.find(lit) {
             None => Cow::Borrowed(input),
-            Some(i) => Cow::Owned(Self::format_single_replacement(input, lit.len(), rep, i)),
+            Some(i) => Self::format_single_replacement(input, lit.len(), rep, i),
         }
     }
 
@@ -149,19 +217,22 @@ impl LiteralTransformer {
         /* NB: literal was already changed to uppercase upon construction in Self::create()! */
         match input.to_ascii_uppercase().find(&lit) {
             None => Cow::Borrowed(input),
-            Some(i) => Cow::Owned(Self::format_single_replacement(input, lit.len(), rep, i)),
+            Some(i) => Self::format_single_replacement(input, lit.len(), rep, i),
         }
     }
 
-    fn format_multiple_replacements(
-        input: &str,
+    fn format_multiple_replacements<'s>(
+        input: &'s str,
         lit_len: usize,
         rep: &str,
         match_indices: Vec<usize>,
-    ) -> String {
-        debug_assert!(lit_len > 0);
-        debug_assert!(input.len() > 0);
-        debug_assert!(rep.len() > 0);
+    ) -> Cow<'s, str> {
+        if match_indices.is_empty() {
+            return Cow::Borrowed(input);
+        }
+        if match_indices.len() == 1 {
+            return Self::format_single_replacement(input, lit_len, rep, match_indices[0]);
+        }
         let expected_len: usize =
             input.len() - (lit_len * match_indices.len()) + (rep.len() * match_indices.len());
         let mut ret = String::with_capacity(expected_len);
@@ -172,20 +243,12 @@ impl LiteralTransformer {
             last_source_position = i + lit_len;
         }
         assert_eq!(ret.len(), expected_len);
-        ret
+        Cow::Owned(ret)
     }
 
     fn replace_multiple_exact<'s>(input: &'s str, lit: &str, rep: &str) -> Cow<'s, str> {
         let match_indices: Vec<usize> = input.match_indices(lit).map(|(i, _)| i).collect();
-        if match_indices.is_empty() {
-            return Cow::Borrowed(input);
-        }
-        Cow::Owned(Self::format_multiple_replacements(
-            input,
-            lit.len(),
-            rep,
-            match_indices,
-        ))
+        Self::format_multiple_replacements(input, lit.len(), rep, match_indices)
     }
 
     fn replace_multiple_icase<'s>(input: &'s str, lit: &str, rep: &str) -> Cow<'s, str> {
@@ -195,60 +258,96 @@ impl LiteralTransformer {
             .match_indices(&lit)
             .map(|(i, _)| i)
             .collect();
-        if match_indices.is_empty() {
-            return Cow::Borrowed(input);
-        }
-        Cow::Owned(Self::format_multiple_replacements(
-            input,
-            lit.len(),
-            rep,
-            match_indices,
-        ))
+        Self::format_multiple_replacements(input, lit.len(), rep, match_indices)
     }
 }
 
 impl PatternTransformer for LiteralTransformer {
     type Replacement = String where Self: Sized;
     fn create(
-        pattern: &str,
-        opts: PatternModifiers,
+        pattern: String,
+        opts: ReplaceModifiers,
         rep: Self::Replacement,
     ) -> Result<Self, CommandError>
     where
         Self: Sized,
     {
-        let PatternModifiers {
-            case_insensitive,
-            multiple_matches,
+        let ReplaceModifiers {
+            case,
+            anchoring,
+            multi,
         } = opts;
+
+        if matches!(multi, Multiplicity::All) && !matches!(anchoring, SearchAnchoring::Unanchored) {
+            return Err(CommandError::InvalidArg(format!(
+                "multimatch replacement with :g is not supported with anchoring flags :p or :s for literal transforms: {opts:?} {pattern:?}"
+            )));
+        }
+
         Ok(Self {
-            lit: match case_insensitive {
-                false => pattern.to_string(),
-                true => pattern.to_ascii_uppercase(),
+            lit: match case {
+                CaseSensitivity::Sensitive => pattern,
+                CaseSensitivity::Insensitive => pattern.to_ascii_uppercase(),
             },
-            case_insensitive,
-            multiple_matches,
+            case,
+            anchoring,
+            multi,
             rep,
         })
     }
 
     fn replace<'s>(&self, input: &'s str) -> Cow<'s, str> {
         /* Empty replacement or literal is allowed, it just does nothing. */
-        if self.lit.is_empty() || self.rep.is_empty() || input.is_empty() {
+        if self.lit.is_empty() || input.is_empty() {
             return Cow::Borrowed(input);
         }
-        match self.multiple_matches {
-            false => match self.case_insensitive {
-                /* Single replacement, case-sensitive (exact) match: */
-                false => Self::replace_single_exact(input, &self.lit, &self.rep),
-                /* Single replacement, case-insensitive match: */
-                true => Self::replace_single_icase(input, &self.lit, &self.rep),
+        /* Can't match input longer than the literal. */
+        if self.lit.len() > input.len() {
+            return Cow::Borrowed(input);
+        }
+
+        match self.multi {
+            Multiplicity::Single => match self.anchoring {
+                SearchAnchoring::DoublyAnchored => Self::replace_single_anchored(
+                    input,
+                    &self.lit,
+                    &self.rep,
+                    0..input.len(),
+                    self.case,
+                ),
+                SearchAnchoring::LeftAnchored => Self::replace_single_anchored(
+                    input,
+                    &self.lit,
+                    &self.rep,
+                    0..self.lit.len(),
+                    self.case,
+                ),
+                SearchAnchoring::RightAnchored => Self::replace_single_anchored(
+                    input,
+                    &self.lit,
+                    &self.rep,
+                    (input.len() - self.lit.len())..input.len(),
+                    self.case,
+                ),
+                SearchAnchoring::Unanchored => match self.case {
+                    CaseSensitivity::Sensitive => {
+                        Self::replace_single_exact(input, &self.lit, &self.rep)
+                    }
+                    CaseSensitivity::Insensitive => {
+                        Self::replace_single_icase(input, &self.lit, &self.rep)
+                    }
+                },
             },
-            true => match self.case_insensitive {
-                /* Multiple replacements, case-sensitive (exact) match: */
-                false => Self::replace_multiple_exact(input, &self.lit, &self.rep),
-                /* Multiple replacements, case-insensitive match: */
-                true => Self::replace_multiple_icase(input, &self.lit, &self.rep),
+            Multiplicity::All => match self.anchoring {
+                SearchAnchoring::Unanchored => match self.case {
+                    CaseSensitivity::Sensitive => {
+                        Self::replace_multiple_exact(input, &self.lit, &self.rep)
+                    }
+                    CaseSensitivity::Insensitive => {
+                        Self::replace_multiple_icase(input, &self.lit, &self.rep)
+                    }
+                },
+                _ => unreachable!("checked during construction"),
             },
         }
     }
@@ -256,43 +355,45 @@ impl PatternTransformer for LiteralTransformer {
 
 struct RegexpTransformer {
     pat: regex::Regex,
-    multiple_matches: bool,
+    multi: Multiplicity,
     rep: String,
 }
 
 impl PatternTransformer for RegexpTransformer {
     type Replacement = String where Self: Sized;
     fn create(
-        pattern: &str,
-        opts: PatternModifiers,
+        pattern: String,
+        opts: ReplaceModifiers,
         rep: Self::Replacement,
     ) -> Result<Self, CommandError>
     where
         Self: Sized,
     {
-        let PatternModifiers {
-            case_insensitive,
-            multiple_matches,
+        let ReplaceModifiers {
+            case,
+            anchoring,
+            multi,
         } = opts;
-        let pat = regex::RegexBuilder::new(pattern)
-            .case_insensitive(case_insensitive)
+        let pattern = anchoring.wrap_regex_pattern(&pattern);
+
+        let pat = regex::RegexBuilder::new(&pattern)
+            .case_insensitive(match case {
+                CaseSensitivity::Insensitive => true,
+                CaseSensitivity::Sensitive => false,
+            })
             .build()
             .map_err(|e| {
                 CommandError::InvalidArg(format!(
                     "failed to construct regex replacer from search pattern {pattern:?}: {e}"
                 ))
             })?;
-        Ok(Self {
-            pat,
-            multiple_matches,
-            rep,
-        })
+        Ok(Self { pat, multi, rep })
     }
 
     fn replace<'s>(&self, input: &'s str) -> Cow<'s, str> {
-        match self.multiple_matches {
-            false => self.pat.replace(input, &self.rep),
-            true => self.pat.replace_all(input, &self.rep),
+        match self.multi {
+            Multiplicity::Single => self.pat.replace(input, &self.rep),
+            Multiplicity::All => self.pat.replace_all(input, &self.rep),
         }
     }
 }
@@ -468,20 +569,19 @@ impl NameTransformer for ComponentTransformer {
             replacement_spec,
         } = arg;
 
+        let opts = ReplaceModifiers::from_flags(modifiers);
         let pattern_trans: Box<dyn PatternTransformer> = match pat_sel {
             PatternSelectorType::Glob => {
-                unreachable!("glob patterns are not supported for name transformations")
+                return Err(CommandError::InvalidArg(format!(
+                    "glob patterns are not supported for name transformations: {pattern:?}"
+                )));
             }
-            PatternSelectorType::Literal => Box::new(LiteralTransformer::create(
-                &pattern,
-                modifiers,
-                replacement_spec,
-            )?),
-            PatternSelectorType::Regexp => Box::new(RegexpTransformer::create(
-                &pattern,
-                modifiers,
-                replacement_spec,
-            )?),
+            PatternSelectorType::Literal => {
+                Box::new(LiteralTransformer::create(pattern, opts, replacement_spec)?)
+            }
+            PatternSelectorType::Regexp => {
+                Box::new(RegexpTransformer::create(pattern, opts, replacement_spec)?)
+            }
         };
 
         Ok(Self {
@@ -513,9 +613,6 @@ impl CompiledTransformer {
             },
             NameTransform::Complex(complex_trans) => match complex_trans {
                 ComplexTransform::Transform(arg) => Box::new(ComponentTransformer::from_arg(arg)?),
-                ComplexTransform::RemovePrefix(remove_prefix_arg) => {
-                    todo!("impl remove prefix: {:?}", remove_prefix_arg)
-                }
             },
         })
     }

@@ -60,6 +60,8 @@ impl PatternSelectorType {
 pub enum PatternSelectorModifier {
     CaseInsensitive,
     MultipleMatches,
+    PrefixAnchored,
+    SuffixAnchored,
 }
 
 impl PatternSelectorModifier {
@@ -67,21 +69,25 @@ impl PatternSelectorModifier {
         match s {
             b"i" => Some(Self::CaseInsensitive),
             b"g" => Some(Self::MultipleMatches),
+            b"p" => Some(Self::PrefixAnchored),
+            b"s" => Some(Self::SuffixAnchored),
             _ => None,
         }
     }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct PatternModifiers {
+pub struct PatternModifierFlags {
     pub case_insensitive: bool,
     pub multiple_matches: bool,
+    pub prefix_anchored: bool,
+    pub suffix_anchored: bool,
 }
 
 #[derive(Debug)]
 pub struct PatternSelector {
     pub pat_sel: PatternSelectorType,
-    pub modifiers: PatternModifiers,
+    pub modifiers: PatternModifierFlags,
 }
 
 impl PatternSelector {
@@ -93,7 +99,7 @@ impl PatternSelector {
 
                 let pat_sel = PatternSelectorType::parse(pat_sel_str)?;
 
-                let mut modifiers = PatternModifiers::default();
+                let mut modifiers = PatternModifierFlags::default();
                 let mod_els = modifiers_str
                     .split(|c| *c == b':')
                     .map(PatternSelectorModifier::parse)
@@ -105,6 +111,12 @@ impl PatternSelector {
                         }
                         PatternSelectorModifier::MultipleMatches => {
                             modifiers.multiple_matches = true;
+                        }
+                        PatternSelectorModifier::PrefixAnchored => {
+                            modifiers.prefix_anchored = true;
+                        }
+                        PatternSelectorModifier::SuffixAnchored => {
+                            modifiers.suffix_anchored = true;
                         }
                     }
                 }
@@ -130,14 +142,14 @@ impl PatternSelector {
     pub fn default_for_match() -> Self {
         Self {
             pat_sel: PatternSelectorType::default_for_match(),
-            modifiers: PatternModifiers::default(),
+            modifiers: PatternModifierFlags::default(),
         }
     }
 
     pub fn default_for_replacement() -> Self {
         Self {
             pat_sel: PatternSelectorType::default_for_replacement(),
-            modifiers: PatternModifiers::default(),
+            modifiers: PatternModifierFlags::default(),
         }
     }
 }
@@ -658,11 +670,6 @@ impl MatchExpression {
                                 ))
                             },
                         )?;
-                    if pat_sel.modifiers.multiple_matches {
-                        return Err(Extract::exit_arg_invalid(&format!(
-                            "multimatch modifier :g is unused in match expressions: {arg:?}"
-                        )));
-                    }
                     let pattern: String = argv
                         .pop_front()
                         .ok_or_else(|| {
@@ -751,15 +758,8 @@ pub struct TransformArg {
 }
 
 #[derive(Debug)]
-pub struct RemovePrefixArg {
-    pub pat_sel: PatternSelector,
-    pub pattern: String,
-}
-
-#[derive(Debug)]
 pub enum ComplexTransform {
     Transform(TransformArg),
-    RemovePrefix(RemovePrefixArg),
 }
 
 #[derive(Debug)]
@@ -1295,12 +1295,6 @@ entry name string:
           to numbered capture groups specified by <pattern>. Otherwise,
           <replacement-spec> is interpreted as a literal string.
 
-      --remove-prefix[:<pat-sel>] <pattern>
-          Equivalent to "--transform=path:<pat-sel> <pattern> ''", except the
-          <pattern> search is anchored at the beginning of the string.
-
-          TODO: this flag is not yet supported and will produce an error.
-
 
 ## Content transforms (content-transform):
 
@@ -1353,12 +1347,19 @@ them with e.g '--transform:glob' will produce an error.
 #### Pattern modifiers (pat-mod):
 pat-mod  = :i	(use case-insensitive matching for the given pattern)
          = :g	(use multi-match behavior for string replacements)
+         = :p   (perform left-anchored "prefix" searches)
+         = :s   (perform right-anchored "suffix" searches)
 
-Pattern modifiers from (pat-mod) can be sequenced, e.g. ':i:g'.
+Pattern modifiers from (pat-mod) can be sequenced, e.g. ':i:g'. If ':p' and ':s'
+are provided together, the result is to perform a doubly-anchored match, against
+the entire string. For regexp matching with ':rx', ':p' and ':s' are converted
+to '^' or '$' anchors in the regexp pattern string. If the pattern string also
+contains '^' or '$' as well, no error is produced.
 
 *Note:* not all pattern modifiers apply everywhere. In particular, ':g' only
 applies to string replacement, and using it for a match expression like
-'--match:rx:g' will produce an error.
+'--match:rx:g' will produce an error. Additionally, ':p' and ':s' are
+incompatible with glob search and will produce an error.
 
 # Input arguments:
 Zip file inputs to extract from can be specified by streaming from stdin, or as
@@ -1485,11 +1486,6 @@ Positional paths:
                                 ))
                             },
                         )?;
-                    if pat_sel.pat_sel == PatternSelectorType::Glob {
-                        return Err(Self::exit_arg_invalid(&format!(
-                            ":glob pattern type is unsupported in transform expressions: {arg:?}"
-                        )));
-                    }
                     let pattern = argv
                         .pop_front()
                         .ok_or_else(|| {
@@ -1521,35 +1517,6 @@ Positional paths:
                             pattern,
                             replacement_spec,
                         }),
-                    )));
-                }
-                arg_bytes if arg_bytes.starts_with(b"--remove-prefix") => {
-                    let pat_sel = parse_only_pat_sel(arg_bytes, PatternContext::Replacement)
-                        .ok_or_else(|| {
-                            Self::exit_arg_invalid(&format!(
-                                "invalid --remove-prefix argument modifiers: {arg:?}"
-                            ))
-                        })?;
-                    if pat_sel.pat_sel == PatternSelectorType::Glob {
-                        return Err(Self::exit_arg_invalid(&format!(
-                            ":glob pattern type is unsupported in transform expressions: {arg:?}"
-                        )));
-                    }
-                    let pattern = argv
-                            .pop_front()
-                            .ok_or_else(|| {
-                                Self::exit_arg_invalid(
-                                    "no <pattern> argument provided for --remove-prefix",
-                                )
-                            })?
-                            .into_string()
-                            .map_err(|pattern| {
-                                Self::exit_arg_invalid(&format!(
-                                    "invalid unicode provided for --remove-prefix <pattern>: {pattern:?}"
-                                ))
-                            })?;
-                    args.push(ExtractArg::NameTransform(NameTransform::Complex(
-                        ComplexTransform::RemovePrefix(RemovePrefixArg { pat_sel, pattern }),
                     )));
                 }
 
