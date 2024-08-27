@@ -766,6 +766,6 @@ file-type = ''		[DEFAULT => full]
 
 impl crate::driver::ExecuteCommand for Info {
     fn execute(self, err: impl std::io::Write) -> Result<(), crate::CommandError> {
-        todo!()
+        crate::info::execute_info(err, self)
     }
 }
