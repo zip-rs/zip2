@@ -154,21 +154,15 @@ impl ArchiveOverviewFormatDirective {
     }
 }
 
-#[derive(Debug)]
-pub enum ArchiveOverviewFormatComponent {
-    Directive(ArchiveOverviewFormatDirective),
-    Escaped(char),
-    Literal(String),
-}
+trait ParseableFormat: Sized {
+    type Component: Sized;
+    const ESCAPED: Self::Component;
+    fn make_literal(s: &str) -> Self::Component;
+    fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError>;
+    fn from_components(components: Vec<Self::Component>) -> Self;
 
-#[derive(Debug)]
-pub struct ArchiveOverviewFormatSpec {
-    components: Vec<ArchiveOverviewFormatComponent>,
-}
-
-impl ArchiveOverviewFormatSpec {
-    pub fn parse(s: &str) -> Result<Self, FormatParseError> {
-        let mut components: Vec<ArchiveOverviewFormatComponent> = Vec::new();
+    fn parse_format(s: &str) -> Result<Self, FormatParseError> {
+        let mut components: Vec<Self::Component> = Vec::new();
         let mut last_source_position: usize = 0;
         while let Some(pcnt_pos) = s[last_source_position..]
             .find('%')
@@ -176,9 +170,7 @@ impl ArchiveOverviewFormatSpec {
         {
             /* Anything in between directives is a literal string. */
             if pcnt_pos > last_source_position {
-                components.push(ArchiveOverviewFormatComponent::Literal(
-                    s[last_source_position..pcnt_pos].to_string(),
-                ));
+                components.push(Self::make_literal(&s[last_source_position..pcnt_pos]));
                 last_source_position = pcnt_pos;
             }
             let next_pcnt = s[(pcnt_pos + 1)..]
@@ -191,23 +183,49 @@ impl ArchiveOverviewFormatSpec {
             match directive_contents {
                 /* An empty directive is a literal percent. */
                 "%%" => {
-                    components.push(ArchiveOverviewFormatComponent::Escaped('%'));
+                    components.push(Self::ESCAPED);
                 }
                 /* Otherwise, parse the space between percents. */
                 d => {
-                    let directive = ArchiveOverviewFormatDirective::parse(&d[1..(d.len() - 1)])
+                    let directive = Self::parse_directive(&d[1..(d.len() - 1)])
                         .map_err(FormatParseError::Directive)?;
-                    components.push(ArchiveOverviewFormatComponent::Directive(directive));
+                    components.push(directive);
                 }
             }
             last_source_position += directive_contents.len();
         }
         if s.len() > last_source_position {
-            components.push(ArchiveOverviewFormatComponent::Literal(
-                s[last_source_position..].to_string(),
-            ));
+            components.push(Self::make_literal(&s[last_source_position..]));
         }
-        Ok(Self { components })
+        Ok(Self::from_components(components))
+    }
+}
+
+#[derive(Debug)]
+pub enum ArchiveOverviewFormatComponent {
+    Directive(ArchiveOverviewFormatDirective),
+    EscapedPercent,
+    Literal(String),
+}
+
+#[derive(Debug)]
+pub struct ArchiveOverviewFormatSpec {
+    pub components: Vec<ArchiveOverviewFormatComponent>,
+}
+
+impl ParseableFormat for ArchiveOverviewFormatSpec {
+    type Component = ArchiveOverviewFormatComponent;
+    const ESCAPED: Self::Component = ArchiveOverviewFormatComponent::EscapedPercent;
+    fn make_literal(s: &str) -> Self::Component {
+        ArchiveOverviewFormatComponent::Literal(s.to_string())
+    }
+    fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError> {
+        Ok(ArchiveOverviewFormatComponent::Directive(
+            ArchiveOverviewFormatDirective::parse(s)?,
+        ))
+    }
+    fn from_components(components: Vec<Self::Component>) -> Self {
+        Self { components }
     }
 }
 
@@ -297,7 +315,7 @@ impl FormatSpec {
         archive_format: String,
         entry_format: String,
     ) -> Result<Self, ArgParseError> {
-        let overview = ArchiveOverviewFormatSpec::parse(&archive_format).map_err(|e| {
+        let overview = ArchiveOverviewFormatSpec::parse_format(&archive_format).map_err(|e| {
             Info::exit_arg_invalid(&format!(
                 "failed to parse archive format string {archive_format:?}: {e}"
             ))
