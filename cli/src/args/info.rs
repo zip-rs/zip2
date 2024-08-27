@@ -5,8 +5,126 @@ use super::{
 
 use std::{collections::VecDeque, ffi::OsString};
 
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ByteSizeFormat {
+    #[default]
+    FullDecimal,
+    HumanAbbreviated,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OffsetFormat {
+    Decimal,
+    #[default]
+    Hexadecimal,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BinaryStringFormat {
+    #[default]
+    PrintAsString,
+    WriteBinaryContents,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ArchiveOverviewFormatDirective {
+    ArchiveName,
+    TotalSize(ByteSizeFormat),
+    NumEntries,
+    ArchiveComment(BinaryStringFormat),
+    FirstEntryStart(OffsetFormat),
+    CentralDirectoryStart(OffsetFormat),
+}
+
+#[derive(Debug)]
+pub enum ArchiveOverviewFormatComponent {
+    Directive(ArchiveOverviewFormatDirective),
+    Literal(String),
+}
+
+#[derive(Debug)]
+pub struct ArchiveOverviewFormatSpec {
+    components: Vec<ArchiveOverviewFormatComponent>,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UnixModeFormat {
+    #[default]
+    Octal,
+    Pretty,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TimestampFormat {
+    UnixEpochMilliseconds,
+    DateOnly,
+    TimeOnly,
+    #[default]
+    DateAndTime,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CompressionMethodFormat {
+    Abbreviated,
+    #[default]
+    Full,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BinaryNumericValueFormat {
+    Decimal,
+    #[default]
+    Hexadecimal,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FileTypeFormat {
+    Abbreviated,
+    #[default]
+    Full,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EntryFormatDirective {
+    Name,
+    FileType(FileTypeFormat),
+    Comment(BinaryStringFormat),
+    LocalHeaderStart(OffsetFormat),
+    ContentStart(OffsetFormat),
+    ContentEnd(OffsetFormat),
+    CompressedSize(ByteSizeFormat),
+    UncompressedSize(ByteSizeFormat),
+    UnixMode(UnixModeFormat),
+    CompressionMethod(CompressionMethodFormat),
+    CrcValue(BinaryNumericValueFormat),
+    Timestamp(TimestampFormat),
+}
+
+#[derive(Debug)]
+pub enum EntryFormatComponent {
+    Directive(EntryFormatDirective),
+    Literal(String),
+}
+
+#[derive(Debug)]
+pub struct EntryFormatSpec {
+    components: Vec<EntryFormatComponent>,
+}
+
+#[derive(Debug, Default)]
+pub enum FormatSpec {
+    #[default]
+    Compact,
+    Extended,
+    Custom {
+        overview: ArchiveOverviewFormatSpec,
+        entry: EntryFormatSpec,
+    },
+}
+
 #[derive(Debug)]
 pub struct Info {
+    pub format_spec: FormatSpec,
     pub match_expr: Option<MatchExpression>,
     pub input_spec: InputSpec,
 }
@@ -25,17 +143,17 @@ impl CommandFormat for Info {
             r#"
   -h, --help	Print help
 
-...
-
-*Note:* if a match-expr is provided, it *must* be surrounded with --expr arguments on both sides!
-This is a necessary constraint of the current command line parsing.
+# Format specs:
+???
 
 {}
 
+{}
 {}
 "#,
             Extract::generate_match_expr_help_text(),
             Extract::generate_pattern_selector_help_text(true),
+            Extract::INPUT_HELP_TEXT,
         )
     }
 

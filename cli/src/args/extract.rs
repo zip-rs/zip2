@@ -1244,6 +1244,32 @@ applies to string replacement, and using it for a match expression like
             }
         )
     }
+
+    pub const INPUT_HELP_TEXT: &'static str = r#"
+# Input arguments:
+Zip file inputs to extract from can be specified by streaming from stdin, or as
+at least one path pointing to an existing zip file.  Input arguments are always
+specified after all output flags and entry specs on the command line. If no
+positional argument is provided and --stdin is not present, an error will
+be produced.
+
+      --stdin
+          If this argument is provided, the streaming API will be used to read
+          entries as they are encountered, instead of filtering them beforehand
+          as is done with file inputs. This disables some optimizations, but
+          also avoids waiting for the entire input to buffer to start writing
+          output, so can be used in a streaming context.
+
+Positional paths:
+  ZIP-PATH...
+          Apply the entry specs to filter and rename entries to extract from all
+          of the provided zip files. At least one zip path must be provided, and
+          all provided paths must exist and point to an existing zip file. Pipes
+          are not supported and will produce an error.
+
+          If --stdin is provided, it will be read in a streaming manner before
+          reading entries from any positional zip paths.
+"#;
 }
 
 impl CommandFormat for Extract {
@@ -1418,33 +1444,10 @@ Attempting to extract an entry using an unsupported compression method with
 used to filter out such entries.
 
 {}
-
-# Input arguments:
-Zip file inputs to extract from can be specified by streaming from stdin, or as
-at least one path pointing to an existing zip file.  Input arguments are always
-specified after all output flags and entry specs on the command line. If no
-positional argument is provided and --stdin is not present, an error will
-be produced.
-
-      --stdin
-          If this argument is provided, the streaming API will be used to read
-          entries as they are encountered, instead of filtering them beforehand
-          as is done with file inputs. This disables some optimizations, but
-          also avoids waiting for the entire input to buffer to start writing
-          output, so can be used in a streaming context.
-
-Positional paths:
-  ZIP-PATH...
-          Apply the entry specs to filter and rename entries to extract from all
-          of the provided zip files. At least one zip path must be provided, and
-          all provided paths must exist and point to an existing zip file. Pipes
-          are not supported and will produce an error.
-
-          If --stdin is provided, it will be read in a streaming manner before
-          reading entries from any positional zip paths.
-"#,
+{}"#,
             Self::generate_match_expr_help_text(),
             Self::generate_pattern_selector_help_text(false),
+            Self::INPUT_HELP_TEXT,
         )
     }
 
