@@ -1064,6 +1064,186 @@ impl Extract {
     const XZ_HELP_LINE: &'static str = "          - xz:\t\twith xz\n";
     #[cfg(not(feature = "xz"))]
     const XZ_HELP_LINE: &'static str = "";
+
+    pub fn generate_match_expr_help_text() -> String {
+        format!(
+            r#"
+## Match expressions (match-expr):
+
+Entry matching logic composes boolean arithmetic expressions ("expr") in terms
+of basic "predicates" which test some component of the zip entry. Expressions
+can be composed as follows, in order of precedence:
+
+expr = ( <expr> )	(grouping to force precedence)
+     = ! <expr>		(negation)
+     = <expr> & <expr>	(short-circuiting conjunction "and")
+     = <expr> <expr>	(implicit &)
+     = <expr> | <expr>	(disjunction "or")
+     = <predicate>	(evaluate <predicate> on entry)
+
+### Operators:
+The operators to compose match expressions must be quoted in shell commands
+(e.g. as \( or '('), so alternatives are provided which do not require
+special quoting:
+
+Grouping operators:
+  (,  -open
+  ),  -close
+
+Unary operators:
+  !,  -not
+
+Binary operators:
+  |,  -or
+  &,  -and
+
+### Predicates (predicate):
+These arguments are interpreted as basic predicates, returning true or false in
+response to a specific zip entry.
+
+Trivial:
+These results do not depend on the entry data at all:
+
+      -true	Always return true.
+      -false	Always return false.
+
+If a match expression is not provided, it defaults to the behavior of -true.
+
+Basic:
+These results are dependent on the entry data:
+
+  -t, --type [file|dir|symlink]
+          Match entries of the given type.
+          Note that directory entries may have specific mode bits set, or they may just be
+          zero-length entries whose name ends in '/'.
+
+      --compression-method <method-name>
+          Match entries compressed with the given compression technique.
+
+          Possible values:
+          - any:	any compression method at all
+          - known:	any compression method this binary is able to decompress
+          - stored:	uncompressed
+          - deflated:	with deflate
+{}{}{}{}{}
+          Using e.g. '--compression-method known' as a match expression filters
+          entries to only those which can be successfully decompressed.
+
+      --max-depth <num>
+          Match entries with at *most* <num> components of their
+          containing directory.
+      --min-depth <num>
+          Match entries with at *least* <num> components of their
+          containing directory.
+
+      --max-size <bytes>
+          Match entries of at *most* <bytes> in *uncompressed* size.
+      --min-size <bytes>
+          Match entries of at *least* <bytes> in *uncompressed* size.
+
+          Directory entries are 0 bytes in size, and symlink entries are the
+          size required to store their target.
+
+          TODO: Abbrevations such as 1k, 1M are not currently supported; the
+          precise byte number must be provided, parseable as a u64.
+
+  -m, --match[=<comp-sel>][:<pat-sel>] <pattern>
+          Return true for entries whose name matches <pattern>.
+
+          See section on "Selector syntax" for <comp-sel> and <pat-sel> for how
+          the string argument <pattern> is interpreted into a string matching
+          predicate against the entry name.
+"#,
+            Self::DEFLATE64_HELP_LINE,
+            Self::BZIP2_HELP_LINE,
+            Self::ZSTD_HELP_LINE,
+            Self::LZMA_HELP_LINE,
+            Self::XZ_HELP_LINE,
+        )
+    }
+
+    pub fn generate_pattern_selector_help_text(match_only: bool) -> String {
+        format!(
+            r#"
+## Selector syntax:
+
+The string matching operations of {} expose an interface to
+configure various pattern matching techniques on various components of the entry
+name string.
+
+These flags default to interpreting a <pattern> argument as a glob string to
+match against the entire entry name, which can be explicitly requested as
+follows:
+
+   --match=path:glob <pattern>
+
+The entire range of search options is described below:
+
+### Component selector (comp-sel):
+comp-sel = path		[DEFAULT] (match full entry)
+         = basename	(match only the final component of entry)
+         = dirname	(match all except final component of entry)
+         = ext		(match only the file extension, if available)
+
+### Pattern selector (pat-sel):
+pat-sel  = glob		[DEFAULT{}] (interpret as a shell glob)
+         = lit		(interpret as literal string)
+         = rx		{}(interpret as a regular expression)
+         = <pat-sel><pat-mod...>	(apply search modifiers from <pat-mod>)
+
+{}
+
+Also note that glob and regex patterns require building this binary with the
+"glob" and "rx" cargo features respectively. Specifying ':glob' or ':rx' without
+the requisite feature support will produce an error. If the requisite feature is
+not provided, the default is to use literal matching, which is supported in
+all cases.
+
+#### Pattern modifiers (pat-mod):
+pat-mod  = :i	(use case-insensitive matching for the given pattern)
+{}         = :p   (perform left-anchored "prefix" searches)
+         = :s   (perform right-anchored "suffix" searches)
+
+Pattern modifiers from (pat-mod) can be sequenced, e.g. ':i:p'. If ':p' and ':s'
+are provided together, the result is to perform a doubly-anchored match, against
+the entire string. For regexp matching with ':rx', ':p' and ':s' are converted
+to '^' or '$' anchors in the regexp pattern string. If the pattern string also
+contains '^' or '$' as well, no error is produced.
+
+*Note:* not all pattern modifiers apply everywhere. In particular, {}':p' and ':s' are
+incompatible with glob search and will produce an error.
+"#,
+            if match_only {
+                "--match"
+            } else {
+                "--match and --transform"
+            },
+            if match_only { "" } else { " for matching" },
+            if match_only {
+                ""
+            } else {
+                "[DEFAULT for replacement] "
+            },
+            if match_only {
+                ""
+            } else {
+                "*Note:* glob patterns are not supported for replacement, and attempting to use
+them with e.g '--transform:glob' will produce an error."
+            },
+            if match_only {
+                ""
+            } else {
+                "         = :g	(use multi-match behavior for string replacements)\n"
+            },
+            if match_only {
+                ""
+            } else {
+                "':g' only
+applies to string replacement, and using it for a match expression like
+'--match:rx:g' will produce an error. Additionally, "
+            }
+        )
+    }
 }
 
 impl CommandFormat for Extract {
@@ -1174,92 +1354,7 @@ with the command line:
 *Note:* if a match-expr is provided, it *must* be surrounded with --expr arguments on both sides!
 This is a necessary constraint of the current command line parsing.
 
-
-## Match expressions (match-expr):
-
-Entry matching logic composes boolean arithmetic expressions ("expr") in terms
-of basic "predicates" which test some component of the zip entry. Expressions
-can be composed as follows, in order of precedence:
-
-expr = ( <expr> )	(grouping to force precedence)
-     = ! <expr>		(negation)
-     = <expr> & <expr>	(short-circuiting conjunction "and")
-     = <expr> <expr>	(implicit &)
-     = <expr> | <expr>	(disjunction "or")
-     = <predicate>	(evaluate <predicate> on entry)
-
-### Operators:
-The operators to compose match expressions must be quoted in shell commands
-(e.g. as \( or '('), so alternatives are provided which do not require
-special quoting:
-
-Grouping operators:
-  (,  -open
-  ),  -close
-
-Unary operators:
-  !,  -not
-
-Binary operators:
-  |,  -or
-  &,  -and
-
-### Predicates (predicate):
-These arguments are interpreted as basic predicates, returning true or false in
-response to a specific zip entry.
-
-Trivial:
-These results do not depend on the entry data at all:
-
-      -true	Always return true.
-      -false	Always return false.
-
-If a match expression is not provided, it defaults to the behavior of -true.
-
-Basic:
-These results are dependent on the entry data:
-
-  -t, --type [file|dir|symlink]
-          Match entries of the given type.
-          Note that directory entries may have specific mode bits set, or they may just be
-          zero-length entries whose name ends in '/'.
-
-      --compression-method <method-name>
-          Match entries compressed with the given compression technique.
-
-          Possible values:
-          - any:	any compression method at all
-          - known:	any compression method this binary is able to decompress
-          - stored:	uncompressed
-          - deflated:	with deflate
-{}{}{}{}{}
-          Using e.g. '--compression-method known' as a match expression filters
-          entries to only those which can be successfully decompressed.
-
-      --max-depth <num>
-          Match entries with at *most* <num> components of their
-          containing directory.
-      --min-depth <num>
-          Match entries with at *least* <num> components of their
-          containing directory.
-
-      --max-size <bytes>
-          Match entries of at *most* <bytes> in *uncompressed* size.
-      --min-size <bytes>
-          Match entries of at *least* <bytes> in *uncompressed* size.
-
-          Directory entries are 0 bytes in size, and symlink entries are the
-          size required to store their target.
-
-          TODO: Abbrevations such as 1k, 1M are not currently supported; the
-          precise byte number must be provided, parseable as a u64.
-
-  -m, --match[=<comp-sel>][:<pat-sel>] <pattern>
-          Return true for entries whose name matches <pattern>.
-
-          See section on "Selector syntax" for <comp-sel> and <pat-sel> for how
-          the string argument <pattern> is interpreted into a string matching
-          predicate against the entry name.
+{}
 
 ## Name transforms (name-transform):
 
@@ -1322,58 +1417,7 @@ Attempting to extract an entry using an unsupported compression method with
 -x/--extract will produce an error. In this case, --compression-method can be
 used to filter out such entries.
 
-
-## Selector syntax:
-
-The string matching operations of --match and --transform expose an interface to
-configure various pattern matching techniques on various components of the entry
-name string.
-
-These flags default to interpreting a <pattern> argument as a glob string to
-match against the entire entry name, which can be explicitly requested as
-follows:
-
-   --match=path:glob <pattern>
-
-The entire range of search options is described below:
-
-### Component selector (comp-sel):
-comp-sel = path		[DEFAULT] (match full entry)
-         = basename	(match only the final component of entry)
-         = dirname	(match all except final component of entry)
-         = ext		(match only the file extension, if available)
-
-### Pattern selector (pat-sel):
-pat-sel  = glob		[DEFAULT for matching] (interpret as a shell glob)
-         = lit		(interpret as literal string)
-         = rx		[DEFAULT for replacement] (interpret as a regular expression)
-         = <pat-sel><pat-mod...>	(apply search modifiers from <pat-mod>)
-
-*Note:* glob patterns are not supported for replacement, and attempting to use
-them with e.g '--transform:glob' will produce an error.
-
-Also note that glob and regex patterns require building this binary with the
-"glob" and "rx" cargo features respectively. Specifying ':glob' or ':rx' without
-the requisite feature support will produce an error. If the requisite feature is
-not provided, the default is to use literal matching, which is supported in
-all cases.
-
-#### Pattern modifiers (pat-mod):
-pat-mod  = :i	(use case-insensitive matching for the given pattern)
-         = :g	(use multi-match behavior for string replacements)
-         = :p   (perform left-anchored "prefix" searches)
-         = :s   (perform right-anchored "suffix" searches)
-
-Pattern modifiers from (pat-mod) can be sequenced, e.g. ':i:g'. If ':p' and ':s'
-are provided together, the result is to perform a doubly-anchored match, against
-the entire string. For regexp matching with ':rx', ':p' and ':s' are converted
-to '^' or '$' anchors in the regexp pattern string. If the pattern string also
-contains '^' or '$' as well, no error is produced.
-
-*Note:* not all pattern modifiers apply everywhere. In particular, ':g' only
-applies to string replacement, and using it for a match expression like
-'--match:rx:g' will produce an error. Additionally, ':p' and ':s' are
-incompatible with glob search and will produce an error.
+{}
 
 # Input arguments:
 Zip file inputs to extract from can be specified by streaming from stdin, or as
@@ -1399,11 +1443,8 @@ Positional paths:
           If --stdin is provided, it will be read in a streaming manner before
           reading entries from any positional zip paths.
 "#,
-            Self::DEFLATE64_HELP_LINE,
-            Self::BZIP2_HELP_LINE,
-            Self::ZSTD_HELP_LINE,
-            Self::LZMA_HELP_LINE,
-            Self::XZ_HELP_LINE,
+            Self::generate_match_expr_help_text(),
+            Self::generate_pattern_selector_help_text(false),
         )
     }
 

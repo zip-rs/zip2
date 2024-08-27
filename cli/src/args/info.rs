@@ -1,5 +1,5 @@
 use super::{
-    extract::{InputSpec, MatchExpression},
+    extract::{Extract, InputSpec, MatchExpression},
     ArgParseError, CommandFormat,
 };
 
@@ -21,12 +21,22 @@ impl CommandFormat for Info {
         "[-h|--help] [FORMAT-SPEC] [--expr MATCH-EXPR --expr] [--stdin] [--] [ZIP-PATH]...";
 
     fn generate_help() -> String {
-        r#"
+        format!(
+            r#"
   -h, --help	Print help
 
 ...
-"#
-        .to_string()
+
+*Note:* if a match-expr is provided, it *must* be surrounded with --expr arguments on both sides!
+This is a necessary constraint of the current command line parsing.
+
+{}
+
+{}
+"#,
+            Extract::generate_match_expr_help_text(),
+            Extract::generate_pattern_selector_help_text(true),
+        )
     }
 
     fn parse_argv(mut argv: VecDeque<OsString>) -> Result<Self, ArgParseError> {
