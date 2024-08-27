@@ -518,7 +518,9 @@ pub enum MatchExpression {
 }
 
 impl MatchExpression {
-    pub fn parse_argv(argv: &mut VecDeque<OsString>) -> Result<Self, ArgParseError> {
+    pub fn parse_argv<C: CommandFormat>(
+        argv: &mut VecDeque<OsString>,
+    ) -> Result<Self, ArgParseError> {
         let mut expr_stack: Vec<SingleExprLevel> = Vec::new();
         let mut top_exprs = SingleExprLevel::default();
 
@@ -536,14 +538,12 @@ impl MatchExpression {
                     )));
                 }
                 b"-t" | b"--type" => {
-                    let type_arg = argv.pop_front().ok_or_else(|| {
-                        Extract::exit_arg_invalid("no argument provided for -t/--type")
-                    })?;
+                    let type_arg = argv
+                        .pop_front()
+                        .ok_or_else(|| C::exit_arg_invalid("no argument provided for -t/--type"))?;
                     let entry_type =
                         EntryType::parse(type_arg.as_encoded_bytes()).ok_or_else(|| {
-                            Extract::exit_arg_invalid(&format!(
-                                "invalid --type argument: {type_arg:?}"
-                            ))
+                            C::exit_arg_invalid(&format!("invalid --type argument: {type_arg:?}"))
                         })?;
                     top_exprs.push_arg(ExprArg::PrimitivePredicate(Predicate::EntryType(
                         entry_type,
@@ -551,11 +551,11 @@ impl MatchExpression {
                 }
                 b"--compression-method" => {
                     let method_arg = argv.pop_front().ok_or_else(|| {
-                        Extract::exit_arg_invalid("no argument provided for --compression-method")
+                        C::exit_arg_invalid("no argument provided for --compression-method")
                     })?;
                     let method = CompressionMethodArg::parse(method_arg.as_encoded_bytes())
                         .ok_or_else(|| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "invalid --compression-method argument: {method_arg:?}"
                             ))
                         })?;
@@ -566,18 +566,16 @@ impl MatchExpression {
                 b"--max-depth" => {
                     let max_depth: u8 = argv
                         .pop_front()
-                        .ok_or_else(|| {
-                            Extract::exit_arg_invalid("no argument provided for --max-depth")
-                        })?
+                        .ok_or_else(|| C::exit_arg_invalid("no argument provided for --max-depth"))?
                         .into_string()
                         .map_err(|depth_arg| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "invalid unicode provided for --max-depth: {depth_arg:?}"
                             ))
                         })?
                         .parse::<u8>()
                         .map_err(|e| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "failed to parse --max-depth arg as u8: {e:?}"
                             ))
                         })?;
@@ -588,18 +586,16 @@ impl MatchExpression {
                 b"--min-depth" => {
                     let min_depth: u8 = argv
                         .pop_front()
-                        .ok_or_else(|| {
-                            Extract::exit_arg_invalid("no argument provided for --min-depth")
-                        })?
+                        .ok_or_else(|| C::exit_arg_invalid("no argument provided for --min-depth"))?
                         .into_string()
                         .map_err(|depth_arg| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "invalid unicode provided for --min-depth: {depth_arg:?}"
                             ))
                         })?
                         .parse::<u8>()
                         .map_err(|e| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "failed to parse --min-depth arg as u8: {e:?}"
                             ))
                         })?;
@@ -610,18 +606,16 @@ impl MatchExpression {
                 b"--max-size" => {
                     let max_size: u64 = argv
                         .pop_front()
-                        .ok_or_else(|| {
-                            Extract::exit_arg_invalid("no argument provided for --max-size")
-                        })?
+                        .ok_or_else(|| C::exit_arg_invalid("no argument provided for --max-size"))?
                         .into_string()
                         .map_err(|size_arg| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "invalid unicode provided for --max-size: {size_arg:?}"
                             ))
                         })?
                         .parse::<u64>()
                         .map_err(|e| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "failed to parse --max-size arg as u64: {e:?}"
                             ))
                         })?;
@@ -632,18 +626,16 @@ impl MatchExpression {
                 b"--min-size" => {
                     let min_size: u64 = argv
                         .pop_front()
-                        .ok_or_else(|| {
-                            Extract::exit_arg_invalid("no argument provided for --min-size")
-                        })?
+                        .ok_or_else(|| C::exit_arg_invalid("no argument provided for --min-size"))?
                         .into_string()
                         .map_err(|size_arg| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "invalid unicode provided for --min-size: {size_arg:?}"
                             ))
                         })?
                         .parse::<u64>()
                         .map_err(|e| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "failed to parse --min-size arg as u64: {e:?}"
                             ))
                         })?;
@@ -654,10 +646,10 @@ impl MatchExpression {
                 b"-m" => {
                     let pattern: String = argv
                         .pop_front()
-                        .ok_or_else(|| Extract::exit_arg_invalid("no argument provided for -m"))?
+                        .ok_or_else(|| C::exit_arg_invalid("no argument provided for -m"))?
                         .into_string()
                         .map_err(|pattern| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "invalid unicode provided for -m: {pattern:?}"
                             ))
                         })?;
@@ -670,22 +662,19 @@ impl MatchExpression {
                     })));
                 }
                 arg_bytes if arg_bytes.starts_with(b"--match") => {
-                    let (comp_sel, pat_sel) =
-                        parse_comp_and_pat_sel(arg_bytes, PatternContext::Match).ok_or_else(
-                            || {
-                                Extract::exit_arg_invalid(&format!(
-                                    "invalid --match argument modifiers: {arg:?}"
-                                ))
-                            },
-                        )?;
+                    let (comp_sel, pat_sel) = parse_comp_and_pat_sel(
+                        arg_bytes,
+                        PatternContext::Match,
+                    )
+                    .ok_or_else(|| {
+                        C::exit_arg_invalid(&format!("invalid --match argument modifiers: {arg:?}"))
+                    })?;
                     let pattern: String = argv
                         .pop_front()
-                        .ok_or_else(|| {
-                            Extract::exit_arg_invalid("no argument provided for --match")
-                        })?
+                        .ok_or_else(|| C::exit_arg_invalid("no argument provided for --match"))?
                         .into_string()
                         .map_err(|pattern| {
-                            Extract::exit_arg_invalid(&format!(
+                            C::exit_arg_invalid(&format!(
                                 "invalid unicode provided for --match: {pattern:?}"
                             ))
                         })?;
@@ -714,7 +703,7 @@ impl MatchExpression {
                 b")" | b"-close" => {
                     /* Get the unevaluated exprs from the previous nesting level. */
                     let prev_level = expr_stack.pop().ok_or_else(|| {
-                        Extract::exit_arg_invalid("too many close parens inside match expr")
+                        C::exit_arg_invalid("too many close parens inside match expr")
                     })?;
                     /* Move the previous nesting level into current, and evaluate the current
                      * nesting level. */
@@ -730,7 +719,7 @@ impl MatchExpression {
                     break;
                 }
                 _ => {
-                    return Err(Extract::exit_arg_invalid(&format!(
+                    return Err(C::exit_arg_invalid(&format!(
                             "unrecognized match expression component {arg:?}: all match expressions must start and end with a --expr flag"
                         )));
                 }
@@ -738,7 +727,7 @@ impl MatchExpression {
         }
 
         if !expr_stack.is_empty() {
-            return Err(Extract::exit_arg_invalid(
+            return Err(C::exit_arg_invalid(
                 "not enough close parens inside match expr",
             ));
         }
@@ -1580,7 +1569,7 @@ used to filter out such entries.
 
                 /* Try parsing match specs! */
                 b"--expr" => {
-                    let match_expr = MatchExpression::parse_argv(&mut argv)?;
+                    let match_expr = MatchExpression::parse_argv::<Self>(&mut argv)?;
                     args.push(ExtractArg::Match(match_expr));
                 }
 

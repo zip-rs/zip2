@@ -3,13 +3,73 @@ use super::{
     ArgParseError, CommandFormat,
 };
 
-use std::{collections::VecDeque, ffi::OsString, path::PathBuf};
+use std::{collections::VecDeque, ffi::OsString, fmt, path::PathBuf};
+
+#[derive(Debug)]
+struct ModifierParseError(pub String);
+
+impl fmt::Display for ModifierParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+
+#[derive(Debug)]
+enum DirectiveParseError {
+    Modifier(String, ModifierParseError),
+    Unrecognized(String),
+}
+
+impl fmt::Display for DirectiveParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Modifier(d, e) => {
+                write!(f, "unrecognized modifier in directive {d:?}: {e}")
+            }
+            Self::Unrecognized(d) => {
+                write!(f, "unrecognized directive: {d:?}")
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum FormatParseError {
+    Directive(DirectiveParseError),
+    Search(String),
+}
+
+impl fmt::Display for FormatParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Directive(e) => {
+                write!(f, "{e}")
+            }
+            Self::Search(e) => {
+                write!(f, "error in parsing logic: {e}")
+            }
+        }
+    }
+}
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ByteSizeFormat {
     #[default]
     FullDecimal,
     HumanAbbreviated,
+}
+
+impl ByteSizeFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":decimal" => Ok(Self::FullDecimal),
+            ":human" => Ok(Self::HumanAbbreviated),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized byte size format: {s:?}"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,11 +79,39 @@ pub enum OffsetFormat {
     Hexadecimal,
 }
 
+impl OffsetFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":decimal" => Ok(Self::Decimal),
+            ":hex" => Ok(Self::Hexadecimal),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized offset format: {s:?}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BinaryStringFormat {
     #[default]
     PrintAsString,
+    EscapeBinary,
     WriteBinaryContents,
+}
+
+impl BinaryStringFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":print" => Ok(Self::PrintAsString),
+            ":escape" => Ok(Self::EscapeBinary),
+            ":write" => Ok(Self::WriteBinaryContents),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized string format: {s:?}"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -36,15 +124,91 @@ pub enum ArchiveOverviewFormatDirective {
     CentralDirectoryStart(OffsetFormat),
 }
 
+impl ArchiveOverviewFormatDirective {
+    pub fn parse(s: &str) -> Result<Self, DirectiveParseError> {
+        match s {
+            "name" => Ok(Self::ArchiveName),
+            s if s.starts_with("size") => {
+                let size_fmt = ByteSizeFormat::parse(&s["size".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::TotalSize(size_fmt))
+            }
+            "num" => Ok(Self::NumEntries),
+            s if s.starts_with("comment") => {
+                let str_fmt = BinaryStringFormat::parse(&s["comment".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::ArchiveComment(str_fmt))
+            }
+            s if s.starts_with("offset") => {
+                let offset_fmt = OffsetFormat::parse(&s["offset".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::FirstEntryStart(offset_fmt))
+            }
+            s if s.starts_with("cde-offset") => {
+                let offset_fmt = OffsetFormat::parse(&s["cde-offset".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::CentralDirectoryStart(offset_fmt))
+            }
+            _ => Err(DirectiveParseError::Unrecognized(s.to_string())),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ArchiveOverviewFormatComponent {
     Directive(ArchiveOverviewFormatDirective),
+    Escaped(char),
     Literal(String),
 }
 
 #[derive(Debug)]
 pub struct ArchiveOverviewFormatSpec {
     components: Vec<ArchiveOverviewFormatComponent>,
+}
+
+impl ArchiveOverviewFormatSpec {
+    pub fn parse(s: &str) -> Result<Self, FormatParseError> {
+        let mut components: Vec<ArchiveOverviewFormatComponent> = Vec::new();
+        let mut last_source_position: usize = 0;
+        while let Some(pcnt_pos) = s[last_source_position..]
+            .find('%')
+            .map(|p| p + last_source_position)
+        {
+            /* Anything in between directives is a literal string. */
+            if pcnt_pos > last_source_position {
+                components.push(ArchiveOverviewFormatComponent::Literal(
+                    s[last_source_position..pcnt_pos].to_string(),
+                ));
+                last_source_position = pcnt_pos;
+            }
+            let next_pcnt = s[(pcnt_pos + 1)..]
+                .find('%')
+                .map(|p| p + pcnt_pos + 1)
+                .ok_or_else(|| {
+                    FormatParseError::Search("% directive opened but not closed".to_string())
+                })?;
+            let directive_contents = &s[pcnt_pos..=next_pcnt];
+            match directive_contents {
+                /* An empty directive is a literal percent. */
+                "%%" => {
+                    components.push(ArchiveOverviewFormatComponent::Escaped('%'));
+                }
+                /* Otherwise, parse the space between percents. */
+                d => {
+                    let directive = ArchiveOverviewFormatDirective::parse(&d[1..(d.len() - 1)])
+                        .map_err(FormatParseError::Directive)?;
+                    components.push(ArchiveOverviewFormatComponent::Directive(directive));
+                }
+            }
+            last_source_position += directive_contents.len();
+        }
+        if s.len() > last_source_position {
+            components.push(ArchiveOverviewFormatComponent::Literal(
+                s[last_source_position..].to_string(),
+            ));
+        }
+        Ok(Self { components })
+    }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -111,6 +275,12 @@ pub struct EntryFormatSpec {
     components: Vec<EntryFormatComponent>,
 }
 
+impl EntryFormatSpec {
+    pub fn parse(s: &str) -> Result<Self, ArgParseError> {
+        todo!()
+    }
+}
+
 #[derive(Debug, Default)]
 pub enum FormatSpec {
     #[default]
@@ -127,7 +297,14 @@ impl FormatSpec {
         archive_format: String,
         entry_format: String,
     ) -> Result<Self, ArgParseError> {
-        todo!()
+        let overview = ArchiveOverviewFormatSpec::parse(&archive_format).map_err(|e| {
+            Info::exit_arg_invalid(&format!(
+                "failed to parse archive format string {archive_format:?}: {e}"
+            ))
+        })?;
+        dbg!(&overview);
+        let entry = EntryFormatSpec::parse(&entry_format)?;
+        Ok(Self::Custom { overview, entry })
     }
 }
 
@@ -247,7 +424,7 @@ output directory.
 
                 /* Try parsing match specs! */
                 b"--expr" => {
-                    let new_expr = MatchExpression::parse_argv(&mut argv)?;
+                    let new_expr = MatchExpression::parse_argv::<Self>(&mut argv)?;
                     if let Some(prev_expr) = match_expr.take() {
                         return Err(Self::exit_arg_invalid(&format!(
                             "multiple match expressions provided: {prev_expr:?} and {new_expr:?}"
