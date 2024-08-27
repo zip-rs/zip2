@@ -514,7 +514,7 @@ impl SubstringAnchoring {
                 Cow::Borrowed(left_sub) => match Self::analyze(selected_left, left_sub) {
                     Self::RetainsBothAnchors => Cow::Borrowed(input),
                     Self::RetainsRightAnchor => {
-                        Cow::Borrowed(Self::join_adjacent_strings(left_sub, right))
+                        Cow::Borrowed(Self::join_adjacent_strings(input, left_sub, right))
                     }
                     _ => Cow::Owned(format!("{}{}", left_sub, right)),
                 },
@@ -530,7 +530,7 @@ impl SubstringAnchoring {
                 Cow::Borrowed(right_sub) => match Self::analyze(selected_right, right_sub) {
                     Self::RetainsBothAnchors => Cow::Borrowed(input),
                     Self::RetainsLeftAnchor => {
-                        Cow::Borrowed(Self::join_adjacent_strings(left, right_sub))
+                        Cow::Borrowed(Self::join_adjacent_strings(input, left, right_sub))
                     }
                     _ => Cow::Owned(format!("{}{}", left, right_sub)),
                 },
@@ -539,18 +539,19 @@ impl SubstringAnchoring {
     }
 
     #[inline(always)]
-    fn join_adjacent_strings<'s>(left: &'s str, right: &'s str) -> &'s str {
-        assert!(left.len() + right.len() <= isize::MAX as usize);
+    fn join_adjacent_strings<'s, 't>(parent: &'s str, left: &'t str, right: &'t str) -> &'s str
+    where
+        't: 's,
+    {
+        let parent_range = parent.as_bytes().as_ptr_range();
         let left = left.as_bytes().as_ptr_range();
+        debug_assert!(left.start >= parent_range.start && left.end <= parent_range.end);
         let right = right.as_bytes().as_ptr_range();
-        assert_eq!(left.end, right.start);
-        let start: *const u8 = left.start;
-        let end: *const u8 = right.end;
-        unsafe {
-            let len: usize = end.offset_from(start) as usize;
-            let joined_slice = slice::from_raw_parts(start, len);
-            str::from_utf8_unchecked(joined_slice)
-        }
+        debug_assert!(right.start >= parent_range.start && right.end <= parent_range.end);
+        debug_assert_eq!(left.end, right.start);
+        let start_offset = (left.start as usize) - (parent_range.start as usize);
+        let end_offset = (parent_range.end as usize) - (right.end as usize);
+        &parent[start_offset..(parent.len() - end_offset)]
     }
 }
 
