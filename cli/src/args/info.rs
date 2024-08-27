@@ -498,6 +498,9 @@ archive and individual entries is printed to stdout. This format, along with the
 tools. For stable output, a custom format string should be provided with
 --format.
 
+*Note:* the archive metadata is printed *after* the metadata for each entry,
+because zip files store metadata at the end of the file!
+
 Note that the contents of individual entries are not accessible with this
 command, and should instead be extracted with the '{}' subcommand, which can
 write entries to stdout or a given file path as well as extracted into an
@@ -515,7 +518,133 @@ output directory.
           accepted. Explicit trailing newlines must be specified and will not be
           inserted automatically.
 
+          Note again that archive metadata is printed after all entries
+          are formatted.
+
 # Format specs:
+Format specs are literal strings interspersed with directives, which are
+surrounded by *paired* '%' characters. This is different from typical %-encoded
+format strings which only use a single '%'. A doubled '%%' produces a literal
+'%', while '%name%' encodes a directive "name". The directives for archive and
+entry format strings are different, but certain directives are parsed with
+modifier strings which are shared across both format types. These modifiers are
+discussed in the section on <mod-fmt>.
+
+## Archive format directives:
+This is printed at the bottom of the output, after all entries are formatted.
+
+%name%
+    The name of the file provided as input, or '<stdin>' for stdin.
+
+%size<byte-size>%
+    The size of the entire archive.
+
+%num%
+    The number of entries in the archive.
+
+%comment<bin-str>%
+    The archive comment, if provided (otherwise an empty string).
+
+%offset<offset>%
+    The offset of the first entry's local header from the start of the
+    file. This is where the zip file content starts, and arbitrary data may be
+    present in the space before this point.
+
+%cde-offset<offset>%
+    The offset of the central directory record from the start of the file. This
+    is where entry contents end, and after this point is only zip metadata until
+    the end of the file.
+
+## Entry format directives:
+This is printed for each entry. Note again that no newlines are inserted
+automatically, so an explicit trailing newline must be provided to avoid writing
+all the output to a single line.
+
+%name%
+    The name of the entry in the archive. This is the relative path that the
+    entry would be extracted to.
+
+%type<file-type>%
+    The type of the entry (file, directory, or symlink).
+
+%comment<bin-str>%
+    The entry comment, if provided (otherwise an empty string).
+
+%header-start<offset>%
+    The offset of the entry's local header, which comes before any
+    entry contents.
+
+%content-start<offset>%
+    The offset of the entry's possibly-compressed content, which comes after the
+    local header.
+
+%content-end<offset>%
+    The offset of the end of the entry's possibly-compressed content. The next
+    entry's local header begins immediately after.
+
+%compressed-size<byte-size>%
+    The size of the entry's possibly-compressed content as stored in
+    the archive.
+
+%uncompressed-size<byte-size>%
+    The size of the entry's content after decompression, as it would be
+    after extraction.
+
+%unix-mode<unix-mode>%
+    The mode bits for the entry, if set. If unset, this is interpreted as
+    a value of 0.
+
+%compression-method<compression-method>%
+    The method used to compress the entry.
+
+%crc<bin-num>%
+    The CRC32 value for the entry.
+
+%timestamp<timestamp>%
+    The timestamp for the entry.
+
+    Note that zip timestamps only have precision down to the minute.
+
+## Entry format directives:
+
+## Modifiers <mod-fmt>:
+byte-size = ''		[DEFAULT => decimal]
+          = ':decimal'	(decimal numeric representation)
+          = ':human'	(human-abbreviated size e.g. 1K, 1M)
+
+offset    = ''		[DEFAULT => hex]
+          = ':decimal'	(decimal numeric representation)
+          = ':hex'	(hexadecimal numeric representation)
+
+bin-str   = ''		[DEFAULT => print]
+          = ':print'	(print string, erroring upon invalid unicode)
+          = ':escape'	(surround with "" and escape non-unicode characters)
+          = ':write'	(write string to output without checking for unicode)
+
+unix-mode = ''		[DEFAULT => octal]
+          = ':octal'	(octal numeric representation)
+          = ':pretty'	(`ls`-like permissions string)
+
+timestamp = ''		[DEFAULT => date-time]
+          = ':epoch'	(milliseconds since unix epoch as a decimal number)
+          = ':date'	(ISO 8601 string representation of date)
+          = ':time'	(HH:MM string representation of time)
+          = ':date-time'
+                        (ISO 8601 date then HH:MM time joined by a space)
+
+compression-method
+          = ''		[DEFAULT => full]
+          = ':abbrev'	(abbreviated name of method)
+          = ':full'	(full name of method)
+
+bin-num   = ''		[DEFAULT => hex]
+          = ':decimal'	(decimal numeric representation)
+          = ':hex'	(hexadecimal numeric representation)
+
+file-type = ''		[DEFAULT => full]
+          = ':abbrev'	(abbreviated name of file type)
+          = ':full'	(full name of file type)
+
 
 {}
 

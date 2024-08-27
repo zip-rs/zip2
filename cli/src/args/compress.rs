@@ -70,6 +70,7 @@ impl Compress {
     const ZSTD_HELP_LINE: &'static str = "";
 }
 
+/* TODO: add support for entry and file comments! */
 impl CommandFormat for Compress {
     const COMMAND_NAME: &'static str = "compress";
     const COMMAND_TABS: &'static str = "\t";
