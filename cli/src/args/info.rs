@@ -236,6 +236,19 @@ pub enum UnixModeFormat {
     Pretty,
 }
 
+impl UnixModeFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":octal" => Ok(Self::Octal),
+            ":pretty" => Ok(Self::Pretty),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized unix mode format: {s:?}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TimestampFormat {
     UnixEpochMilliseconds,
@@ -245,11 +258,39 @@ pub enum TimestampFormat {
     DateAndTime,
 }
 
+impl TimestampFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":epoch" => Ok(Self::UnixEpochMilliseconds),
+            ":date" => Ok(Self::DateOnly),
+            ":time" => Ok(Self::TimeOnly),
+            ":date-time" => Ok(Self::DateAndTime),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized timestamp format: {s:?}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CompressionMethodFormat {
     Abbreviated,
     #[default]
     Full,
+}
+
+impl CompressionMethodFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":abbrev" => Ok(Self::Abbreviated),
+            ":full" => Ok(Self::Full),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized compression method format: {s:?}"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -259,11 +300,37 @@ pub enum BinaryNumericValueFormat {
     Hexadecimal,
 }
 
+impl BinaryNumericValueFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":decimal" => Ok(Self::Decimal),
+            ":hex" => Ok(Self::Hexadecimal),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized binary numeric value format: {s:?}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FileTypeFormat {
     Abbreviated,
     #[default]
     Full,
+}
+
+impl FileTypeFormat {
+    pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
+        match s {
+            "" => Ok(Self::default()),
+            ":abbrev" => Ok(Self::Abbreviated),
+            ":full" => Ok(Self::Full),
+            _ => Err(ModifierParseError(format!(
+                "unrecognized file type format: {s:?}"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -282,20 +349,95 @@ pub enum EntryFormatDirective {
     Timestamp(TimestampFormat),
 }
 
+impl EntryFormatDirective {
+    pub fn parse(s: &str) -> Result<Self, DirectiveParseError> {
+        match s {
+            "name" => Ok(Self::Name),
+            s if s.starts_with("type") => {
+                let type_fmt = FileTypeFormat::parse(&s["type".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::FileType(type_fmt))
+            }
+            s if s.starts_with("comment") => {
+                let str_fmt = BinaryStringFormat::parse(&s["comment".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::Comment(str_fmt))
+            }
+            s if s.starts_with("header-start") => {
+                let offset_fmt = OffsetFormat::parse(&s["header-start".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::LocalHeaderStart(offset_fmt))
+            }
+            s if s.starts_with("content-start") => {
+                let offset_fmt = OffsetFormat::parse(&s["content-start".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::ContentStart(offset_fmt))
+            }
+            s if s.starts_with("content-end") => {
+                let offset_fmt = OffsetFormat::parse(&s["content-end".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::ContentEnd(offset_fmt))
+            }
+            s if s.starts_with("compressed-size") => {
+                let size_fmt = ByteSizeFormat::parse(&s["compressed-size".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::CompressedSize(size_fmt))
+            }
+            s if s.starts_with("uncompressed-size") => {
+                let size_fmt = ByteSizeFormat::parse(&s["uncompressed-size".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::UncompressedSize(size_fmt))
+            }
+            s if s.starts_with("unix-mode") => {
+                let mode_fmt = UnixModeFormat::parse(&s["unix-mode".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::UnixMode(mode_fmt))
+            }
+            s if s.starts_with("compression-method") => {
+                let method_fmt = CompressionMethodFormat::parse(&s["compression-method".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::CompressionMethod(method_fmt))
+            }
+            s if s.starts_with("crc") => {
+                let num_fmt = BinaryNumericValueFormat::parse(&s["crc".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::CrcValue(num_fmt))
+            }
+            s if s.starts_with("timestamp") => {
+                let ts_fmt = TimestampFormat::parse(&s["timestamp".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::Timestamp(ts_fmt))
+            }
+            _ => Err(DirectiveParseError::Unrecognized(s.to_string())),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum EntryFormatComponent {
     Directive(EntryFormatDirective),
+    EscapedPercent,
     Literal(String),
 }
 
 #[derive(Debug)]
 pub struct EntryFormatSpec {
-    components: Vec<EntryFormatComponent>,
+    pub components: Vec<EntryFormatComponent>,
 }
 
-impl EntryFormatSpec {
-    pub fn parse(s: &str) -> Result<Self, ArgParseError> {
-        todo!()
+impl ParseableFormat for EntryFormatSpec {
+    type Component = EntryFormatComponent;
+    const ESCAPED: Self::Component = EntryFormatComponent::EscapedPercent;
+    fn make_literal(s: &str) -> Self::Component {
+        EntryFormatComponent::Literal(s.to_string())
+    }
+    fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError> {
+        Ok(EntryFormatComponent::Directive(
+            EntryFormatDirective::parse(s)?,
+        ))
+    }
+    fn from_components(components: Vec<Self::Component>) -> Self {
+        Self { components }
     }
 }
 
@@ -320,8 +462,11 @@ impl FormatSpec {
                 "failed to parse archive format string {archive_format:?}: {e}"
             ))
         })?;
-        dbg!(&overview);
-        let entry = EntryFormatSpec::parse(&entry_format)?;
+        let entry = EntryFormatSpec::parse_format(&entry_format).map_err(|e| {
+            Info::exit_arg_invalid(&format!(
+                "failed to parse entry format string {entry_format:?}: {e}"
+            ))
+        })?;
         Ok(Self::Custom { overview, entry })
     }
 }
