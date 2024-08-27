@@ -1276,7 +1276,7 @@ impl CommandFormat for Extract {
     const COMMAND_NAME: &'static str = "extract";
     const COMMAND_TABS: &'static str = "\t";
     const COMMAND_DESCRIPTION: &'static str =
-        "Extract individual entries or an entire archive into a stream or the filesystem.";
+        "Decompress and transform matching entries into a stream or directory.";
 
     const USAGE_LINE: &'static str =
         "[-h|--help] [OUTPUT-SPEC]... [ENTRY-SPEC]... [--stdin] [--] [ZIP-PATH]...";

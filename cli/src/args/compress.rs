@@ -73,7 +73,8 @@ impl Compress {
 impl CommandFormat for Compress {
     const COMMAND_NAME: &'static str = "compress";
     const COMMAND_TABS: &'static str = "\t";
-    const COMMAND_DESCRIPTION: &'static str = "Generate a zip archive from files, directories, and symlinks provided as arguments or read from filesystem paths.";
+    const COMMAND_DESCRIPTION: &'static str =
+        "Generate an archive from data in argument strings or read from the filesystem.";
 
     const USAGE_LINE: &'static str = "[-h|--help] [OUTPUT-FLAGS] [ENTRY]... [--] [PATH]...";
 
