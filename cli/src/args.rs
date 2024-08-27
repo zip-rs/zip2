@@ -50,7 +50,7 @@ impl ZipCli {
 
 Commands:
   {}{}{}
-  {}		{}
+  {}{}{}
   {}{}{}
 
 Options:
@@ -64,6 +64,7 @@ Options:
             compress::Compress::COMMAND_TABS,
             compress::Compress::COMMAND_DESCRIPTION,
             info::Info::COMMAND_NAME,
+            info::Info::COMMAND_TABS,
             info::Info::COMMAND_DESCRIPTION,
             extract::Extract::COMMAND_NAME,
             extract::Extract::COMMAND_TABS,
@@ -135,7 +136,7 @@ For more information, try '--help'.
             .expect("exe name already written");
         let (verbose, subcommand_name) = Self::parse_up_to_subcommand_name(&mut argv)?;
         let command = match subcommand_name {
-            SubcommandName::Info => ZipCommand::Info,
+            SubcommandName::Info => ZipCommand::Info(info::Info::parse_argv(argv)?),
             SubcommandName::Extract => ZipCommand::Extract(extract::Extract::parse_argv(argv)?),
             SubcommandName::Compress => ZipCommand::Compress(compress::Compress::parse_argv(argv)?),
         };
@@ -146,7 +147,7 @@ For more information, try '--help'.
 #[derive(Debug)]
 pub enum ZipCommand {
     Compress(compress::Compress),
-    Info,
+    Info(info::Info),
     Extract(extract::Extract),
 }
 
@@ -203,17 +204,5 @@ error: {context}
 }
 
 pub mod compress;
-
-pub mod info {
-    #[derive(Debug)]
-    pub struct Info {}
-
-    impl Info {
-        pub const COMMAND_NAME: &'static str = "info";
-        pub const COMMAND_DESCRIPTION: &'static str =
-            "(TODO) Print info about archive contents and individual entries.";
-        pub const COMMAND_TABS: &'static str = "\t\t";
-    }
-}
-
 pub mod extract;
+pub mod info;

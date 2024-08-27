@@ -160,7 +160,7 @@ pub mod driver {
         };
 
         match command {
-            ZipCommand::Info => todo!("info command not implemented"),
+            ZipCommand::Info(info) => info.do_main(err),
             ZipCommand::Extract(extract) => extract.do_main(err),
             ZipCommand::Compress(compress) => compress.do_main(err),
         }
