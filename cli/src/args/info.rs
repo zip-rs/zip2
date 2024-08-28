@@ -158,6 +158,7 @@ trait ParseableFormat: Sized {
     type Component: Sized;
     const ESCAPED_PERCENT: Self::Component;
     const ESCAPED_NEWLINE: Self::Component;
+    const ESCAPED_TAB: Self::Component;
     fn make_literal(s: &str) -> Self::Component;
     fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError>;
     fn from_components(components: Vec<Self::Component>) -> Self;
@@ -190,6 +191,9 @@ trait ParseableFormat: Sized {
                 "%!%" => {
                     components.push(Self::ESCAPED_NEWLINE);
                 }
+                "%,%" => {
+                    components.push(Self::ESCAPED_TAB);
+                }
                 /* Otherwise, parse the space between percents. */
                 d => {
                     let directive = Self::parse_directive(&d[1..(d.len() - 1)])
@@ -211,6 +215,7 @@ pub enum ArchiveOverviewFormatComponent {
     Directive(ArchiveOverviewFormatDirective),
     EscapedPercent,
     EscapedNewline,
+    EscapedTab,
     Literal(String),
 }
 
@@ -223,6 +228,7 @@ impl ParseableFormat for ArchiveOverviewFormatSpec {
     type Component = ArchiveOverviewFormatComponent;
     const ESCAPED_PERCENT: Self::Component = ArchiveOverviewFormatComponent::EscapedPercent;
     const ESCAPED_NEWLINE: Self::Component = ArchiveOverviewFormatComponent::EscapedNewline;
+    const ESCAPED_TAB: Self::Component = ArchiveOverviewFormatComponent::EscapedTab;
     fn make_literal(s: &str) -> Self::Component {
         ArchiveOverviewFormatComponent::Literal(s.to_string())
     }
@@ -425,6 +431,7 @@ pub enum EntryFormatComponent {
     Directive(EntryFormatDirective),
     EscapedPercent,
     EscapedNewline,
+    EscapedTab,
     Literal(String),
 }
 
@@ -437,6 +444,7 @@ impl ParseableFormat for EntryFormatSpec {
     type Component = EntryFormatComponent;
     const ESCAPED_PERCENT: Self::Component = EntryFormatComponent::EscapedPercent;
     const ESCAPED_NEWLINE: Self::Component = EntryFormatComponent::EscapedNewline;
+    const ESCAPED_TAB: Self::Component = EntryFormatComponent::EscapedTab;
     fn make_literal(s: &str) -> Self::Component {
         EntryFormatComponent::Literal(s.to_string())
     }

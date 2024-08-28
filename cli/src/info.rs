@@ -397,6 +397,7 @@ enum CompiledEntryFormatComponent {
     Directive(Box<dyn EntryComponentFormatter>),
     EscapedPercent,
     EscapedNewline,
+    EscapedTab,
     Literal(String),
 }
 
@@ -425,6 +426,7 @@ impl CompiledEntryFormatComponent {
             }
             EntryFormatComponent::EscapedPercent => Ok(Self::EscapedPercent),
             EntryFormatComponent::EscapedNewline => Ok(Self::EscapedNewline),
+            EntryFormatComponent::EscapedTab => Ok(Self::EscapedTab),
             EntryFormatComponent::Literal(lit) => Ok(Self::Literal(lit)),
         }
     }
@@ -442,6 +444,9 @@ impl CompiledEntryFormatComponent {
             Self::EscapedNewline => out
                 .write_all(b"\n")
                 .wrap_err("failed to write escaped newline to output"),
+            Self::EscapedTab => out
+                .write_all(b"\t")
+                .wrap_err("failed to write escaped tab to output"),
             Self::Literal(lit) => out
                 .write_all(lit.as_bytes())
                 .wrap_err_with(|| format!("failed to write literal {lit:?} to output")),
