@@ -156,7 +156,8 @@ impl ArchiveOverviewFormatDirective {
 
 trait ParseableFormat: Sized {
     type Component: Sized;
-    const ESCAPED: Self::Component;
+    const ESCAPED_PERCENT: Self::Component;
+    const ESCAPED_NEWLINE: Self::Component;
     fn make_literal(s: &str) -> Self::Component;
     fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError>;
     fn from_components(components: Vec<Self::Component>) -> Self;
@@ -183,7 +184,11 @@ trait ParseableFormat: Sized {
             match directive_contents {
                 /* An empty directive is a literal percent. */
                 "%%" => {
-                    components.push(Self::ESCAPED);
+                    components.push(Self::ESCAPED_PERCENT);
+                }
+                /* A single '!' directive is a literal newline. */
+                "%!%" => {
+                    components.push(Self::ESCAPED_NEWLINE);
                 }
                 /* Otherwise, parse the space between percents. */
                 d => {
@@ -205,6 +210,7 @@ trait ParseableFormat: Sized {
 pub enum ArchiveOverviewFormatComponent {
     Directive(ArchiveOverviewFormatDirective),
     EscapedPercent,
+    EscapedNewline,
     Literal(String),
 }
 
@@ -215,7 +221,8 @@ pub struct ArchiveOverviewFormatSpec {
 
 impl ParseableFormat for ArchiveOverviewFormatSpec {
     type Component = ArchiveOverviewFormatComponent;
-    const ESCAPED: Self::Component = ArchiveOverviewFormatComponent::EscapedPercent;
+    const ESCAPED_PERCENT: Self::Component = ArchiveOverviewFormatComponent::EscapedPercent;
+    const ESCAPED_NEWLINE: Self::Component = ArchiveOverviewFormatComponent::EscapedNewline;
     fn make_literal(s: &str) -> Self::Component {
         ArchiveOverviewFormatComponent::Literal(s.to_string())
     }
@@ -417,6 +424,7 @@ impl EntryFormatDirective {
 pub enum EntryFormatComponent {
     Directive(EntryFormatDirective),
     EscapedPercent,
+    EscapedNewline,
     Literal(String),
 }
 
@@ -427,7 +435,8 @@ pub struct EntryFormatSpec {
 
 impl ParseableFormat for EntryFormatSpec {
     type Component = EntryFormatComponent;
-    const ESCAPED: Self::Component = EntryFormatComponent::EscapedPercent;
+    const ESCAPED_PERCENT: Self::Component = EntryFormatComponent::EscapedPercent;
+    const ESCAPED_NEWLINE: Self::Component = EntryFormatComponent::EscapedNewline;
     fn make_literal(s: &str) -> Self::Component {
         EntryFormatComponent::Literal(s.to_string())
     }
@@ -462,6 +471,7 @@ impl FormatSpec {
                 "failed to parse archive format string {archive_format:?}: {e}"
             ))
         })?;
+        dbg!(&entry_format);
         let entry = EntryFormatSpec::parse_format(&entry_format).map_err(|e| {
             Info::exit_arg_invalid(&format!(
                 "failed to parse entry format string {entry_format:?}: {e}"
@@ -529,6 +539,13 @@ format strings which only use a single '%'. A doubled '%%' produces a literal
 entry format strings are different, but certain directives are parsed with
 modifier strings which are shared across both format types. These modifiers are
 discussed in the section on <mod-fmt>.
+
+## Escape characters:
+%%
+    Prints a literal percent '%'.
+
+%!%
+    Prints a single literal newline '\n'.
 
 ## Archive format directives:
 This is printed at the bottom of the output, after all entries are formatted.

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::VecDeque, ops, path::Path, slice, str};
+use std::{borrow::Cow, collections::VecDeque, ops, path::Path, str};
 
 #[cfg(feature = "rx")]
 use regex;

@@ -75,6 +75,7 @@ impl io::Seek for OutputHandle {
 #[derive(Debug)]
 pub enum CommandError {
     InvalidArg(String),
+    InvalidData(String),
     Io(String, io::Error),
     Zip(String, zip::result::ZipError),
 }
@@ -119,6 +120,11 @@ pub mod driver {
                 Err(e) => match e {
                     CommandError::InvalidArg(msg) => {
                         let msg = Self::generate_brief_help_text(&msg);
+                        let _ = io::stderr().write_all(msg.as_bytes());
+                        process::exit(ZipCli::ARGV_PARSE_FAILED_EXIT_CODE);
+                    }
+                    CommandError::InvalidData(msg) => {
+                        let msg = format!("error processing zip data: {msg}\n");
                         let _ = io::stderr().write_all(msg.as_bytes());
                         process::exit(ZipCli::ARGV_PARSE_FAILED_EXIT_CODE);
                     }

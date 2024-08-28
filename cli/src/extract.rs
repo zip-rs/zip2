@@ -7,10 +7,10 @@ use std::{
 
 use crate::{args::extract::*, CommandError, WrapCommandErr};
 
-mod entries;
-mod matcher;
-mod receiver;
-mod transform;
+pub mod entries;
+pub mod matcher;
+pub mod receiver;
+pub mod transform;
 use entries::IterateEntries;
 use matcher::EntryMatcher;
 use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryKind, EntryReceiver, ExtractEntry};
