@@ -340,17 +340,17 @@ impl FormatDirective for UncompressedSizeField {
     }
 }
 
-trait ComponentFormatter {
+trait DirectiveFormatter {
     type Data<'a>;
 
-    fn write_component<'a>(
+    fn write_directive<'a>(
         &self,
         data: Self::Data<'a>,
         out: &mut dyn Write,
     ) -> Result<(), CommandError>;
 }
 
-impl<FD> ComponentFormatter for FD
+impl<FD> DirectiveFormatter for FD
 where
     FD: FormatDirective,
     for<'a> <<FD as FormatDirective>::FieldType as FormatValue>::Output<'a>: Writeable + fmt::Debug,
@@ -358,7 +358,7 @@ where
 {
     type Data<'a> = <FD as FormatDirective>::Data<'a>;
 
-    fn write_component<'a>(
+    fn write_directive<'a>(
         &self,
         data: Self::Data<'a>,
         out: &mut dyn Write,
@@ -372,29 +372,29 @@ where
     }
 }
 
-trait EntryComponentFormatter {
-    fn write_entry_component<'a>(
+trait EntryDirectiveFormatter {
+    fn write_entry_directive<'a>(
         &self,
         data: EntryData<'a>,
         out: &mut dyn Write,
     ) -> Result<(), CommandError>;
 }
 
-impl<CF> EntryComponentFormatter for CF
+impl<CF> EntryDirectiveFormatter for CF
 where
-    CF: for<'a> ComponentFormatter<Data<'a> = EntryData<'a>>,
+    CF: for<'a> DirectiveFormatter<Data<'a> = EntryData<'a>>,
 {
-    fn write_entry_component<'a>(
+    fn write_entry_directive<'a>(
         &self,
         data: EntryData<'a>,
         out: &mut dyn Write,
     ) -> Result<(), CommandError> {
-        self.write_component(data, out)
+        self.write_directive(data, out)
     }
 }
 
 enum CompiledEntryFormatComponent {
-    Directive(Box<dyn EntryComponentFormatter>),
+    Directive(Box<dyn EntryDirectiveFormatter>),
     EscapedPercent,
     EscapedNewline,
     EscapedTab,
@@ -404,7 +404,7 @@ enum CompiledEntryFormatComponent {
 impl CompiledEntryFormatComponent {
     fn compile_directive(
         spec: EntryFormatDirective,
-    ) -> Result<Box<dyn EntryComponentFormatter>, CommandError> {
+    ) -> Result<Box<dyn EntryDirectiveFormatter>, CommandError> {
         Ok(match spec {
             EntryFormatDirective::Name => Box::new(EntryNameField(NameString)),
             EntryFormatDirective::FileType(f) => Box::new(FileTypeField(FileTypeValue(f))),
@@ -437,7 +437,7 @@ impl CompiledEntryFormatComponent {
         mut out: impl Write,
     ) -> Result<(), CommandError> {
         match self {
-            Self::Directive(directive) => directive.write_entry_component(data, &mut out),
+            Self::Directive(directive) => directive.write_entry_directive(data, &mut out),
             Self::EscapedPercent => out
                 .write_all(b"%")
                 .wrap_err("failed to write escaped % to output"),
