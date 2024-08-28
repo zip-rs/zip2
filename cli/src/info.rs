@@ -46,11 +46,34 @@ where
     }
 }
 
+/* enum CompiledFormatComponent<F> { */
+/*     Directive(F), */
+/*     EscapedPercent, */
+/*     EscapedNewline, */
+/*     EscapedTab, */
+/*     Literal(String), */
+/* } */
+
+/* trait CompiledFormat { */
+/*     type DirectiveSpec; */
+/*     type CompiledDirective; */
+/*     fn compile_directive( */
+/*         spec: Self::DirectiveSpec, */
+/*     ) -> Result<Self::CompiledDirective, CommandError>; */
+
+/*     type FormatSpec: ParseableFormat; */
+/*     fn compile_format(spec: Self::FormatSpec) -> Result<(), CommandError>; */
+
+/*     fn compile_component( */
+/*         spec: <Self::FormatSpec as ParseableFormat>::Component, */
+/*     ) -> Result<(), CommandError>; */
+
+/*     type Data<'a>; */
+/* } */
+
 enum CompiledEntryFormatComponent {
     Directive(Box<dyn EntryDirectiveFormatter>),
-    EscapedPercent,
-    EscapedNewline,
-    EscapedTab,
+    Escaped(&'static str),
     Literal(String),
 }
 
@@ -72,15 +95,15 @@ impl CompiledEntryFormatComponent {
         })
     }
 
-    pub fn from_spec(spec: EntryFormatComponent) -> Result<Self, CommandError> {
+    pub fn from_spec(
+        spec: ParseableFormatComponent<EntryFormatDirective>,
+    ) -> Result<Self, CommandError> {
         match spec {
-            EntryFormatComponent::Directive(directive) => {
+            ParseableFormatComponent::Directive(directive) => {
                 Ok(Self::Directive(Self::compile_directive(directive)?))
             }
-            EntryFormatComponent::EscapedPercent => Ok(Self::EscapedPercent),
-            EntryFormatComponent::EscapedNewline => Ok(Self::EscapedNewline),
-            EntryFormatComponent::EscapedTab => Ok(Self::EscapedTab),
-            EntryFormatComponent::Literal(lit) => Ok(Self::Literal(lit)),
+            ParseableFormatComponent::Escaped(s) => Ok(Self::Escaped(s)),
+            ParseableFormatComponent::Literal(lit) => Ok(Self::Literal(lit)),
         }
     }
 
@@ -91,15 +114,9 @@ impl CompiledEntryFormatComponent {
     ) -> Result<(), CommandError> {
         match self {
             Self::Directive(directive) => directive.write_entry_directive(data, &mut out),
-            Self::EscapedPercent => out
-                .write_all(b"%")
-                .wrap_err("failed to write escaped % to output"),
-            Self::EscapedNewline => out
-                .write_all(b"\n")
-                .wrap_err("failed to write escaped newline to output"),
-            Self::EscapedTab => out
-                .write_all(b"\t")
-                .wrap_err("failed to write escaped tab to output"),
+            Self::Escaped(s) => out
+                .write_all(s.as_bytes())
+                .wrap_err_with(|| format!("failed to write escaped string {s:?} to output")),
             Self::Literal(lit) => out
                 .write_all(lit.as_bytes())
                 .wrap_err_with(|| format!("failed to write literal {lit:?} to output")),
@@ -112,8 +129,10 @@ struct CompiledEntryFormatter {
 }
 
 impl CompiledEntryFormatter {
-    pub fn from_spec(spec: EntryFormatSpec) -> Result<Self, CommandError> {
-        let EntryFormatSpec { components } = spec;
+    pub fn from_spec(
+        spec: ParseableFormatSpec<EntryFormatDirective>,
+    ) -> Result<Self, CommandError> {
+        let ParseableFormatSpec { components } = spec;
         let components: Vec<_> = components
             .into_iter()
             .map(CompiledEntryFormatComponent::from_spec)
@@ -183,6 +202,9 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
                 .wrap_err("error reading zip entry from stdin")?
             {
                 let data = EntryData::from_entry(&entry);
+                if matcher.as_ref().is_some_and(|m| !m.matches(&data)) {
+                    continue;
+                }
                 entry_formatter.write_entry(data, &mut output_stream)?;
             }
         }
@@ -207,6 +229,9 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
                     .by_index(i)
                     .wrap_err_with(|| format!("failed to read entry {i} from zip at {p:?}"))?;
                 let data = EntryData::from_entry(&entry);
+                if matcher.as_ref().is_some_and(|m| !m.matches(&data)) {
+                    continue;
+                }
                 entry_formatter.write_entry(data, &mut output_stream)?;
             }
         }

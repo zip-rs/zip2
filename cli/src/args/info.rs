@@ -6,7 +6,7 @@ use super::{
 use std::{collections::VecDeque, ffi::OsString, fmt, path::PathBuf};
 
 #[derive(Debug)]
-struct ModifierParseError(pub String);
+pub struct ModifierParseError(pub String);
 
 impl fmt::Display for ModifierParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -15,7 +15,7 @@ impl fmt::Display for ModifierParseError {
 }
 
 #[derive(Debug)]
-enum DirectiveParseError {
+pub enum DirectiveParseError {
     Modifier(String, ModifierParseError),
     Unrecognized(String),
 }
@@ -34,7 +34,7 @@ impl fmt::Display for DirectiveParseError {
 }
 
 #[derive(Debug)]
-enum FormatParseError {
+pub enum FormatParseError {
     Directive(DirectiveParseError),
     Search(String),
 }
@@ -124,8 +124,8 @@ pub enum ArchiveOverviewFormatDirective {
     CentralDirectoryStart(OffsetFormat),
 }
 
-impl ArchiveOverviewFormatDirective {
-    pub fn parse(s: &str) -> Result<Self, DirectiveParseError> {
+impl ParseableDirective for ArchiveOverviewFormatDirective {
+    fn parse_directive(s: &str) -> Result<Self, DirectiveParseError> {
         match s {
             "name" => Ok(Self::ArchiveName),
             s if s.starts_with("size") => {
@@ -154,17 +154,28 @@ impl ArchiveOverviewFormatDirective {
     }
 }
 
-trait ParseableFormat: Sized {
-    type Component: Sized;
-    const ESCAPED_PERCENT: Self::Component;
-    const ESCAPED_NEWLINE: Self::Component;
-    const ESCAPED_TAB: Self::Component;
-    fn make_literal(s: &str) -> Self::Component;
-    fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError>;
-    fn from_components(components: Vec<Self::Component>) -> Self;
+#[derive(Debug)]
+pub enum ParseableFormatComponent<D> {
+    Directive(D),
+    Escaped(&'static str),
+    Literal(String),
+}
 
-    fn parse_format(s: &str) -> Result<Self, FormatParseError> {
-        let mut components: Vec<Self::Component> = Vec::new();
+#[derive(Debug)]
+pub struct ParseableFormatSpec<D> {
+    pub components: Vec<ParseableFormatComponent<D>>,
+}
+
+pub trait ParseableDirective: Sized {
+    fn parse_directive(s: &str) -> Result<Self, DirectiveParseError>;
+}
+
+impl<D> ParseableFormatSpec<D>
+where
+    D: ParseableDirective,
+{
+    pub fn parse_format(s: &str) -> Result<Self, FormatParseError> {
+        let mut components: Vec<ParseableFormatComponent<D>> = Vec::new();
         let mut last_source_position: usize = 0;
         while let Some(pcnt_pos) = s[last_source_position..]
             .find('%')
@@ -172,7 +183,9 @@ trait ParseableFormat: Sized {
         {
             /* Anything in between directives is a literal string. */
             if pcnt_pos > last_source_position {
-                components.push(Self::make_literal(&s[last_source_position..pcnt_pos]));
+                components.push(ParseableFormatComponent::Literal(
+                    s[last_source_position..pcnt_pos].to_string(),
+                ));
                 last_source_position = pcnt_pos;
             }
             let next_pcnt = s[(pcnt_pos + 1)..]
@@ -185,60 +198,30 @@ trait ParseableFormat: Sized {
             match directive_contents {
                 /* An empty directive is a literal percent. */
                 "%%" => {
-                    components.push(Self::ESCAPED_PERCENT);
+                    components.push(ParseableFormatComponent::Escaped("%"));
                 }
                 /* A single '!' directive is a literal newline. */
                 "%!%" => {
-                    components.push(Self::ESCAPED_NEWLINE);
+                    components.push(ParseableFormatComponent::Escaped("\n"));
                 }
                 "%,%" => {
-                    components.push(Self::ESCAPED_TAB);
+                    components.push(ParseableFormatComponent::Escaped("\t"));
                 }
                 /* Otherwise, parse the space between percents. */
                 d => {
-                    let directive = Self::parse_directive(&d[1..(d.len() - 1)])
+                    let directive = D::parse_directive(&d[1..(d.len() - 1)])
                         .map_err(FormatParseError::Directive)?;
-                    components.push(directive);
+                    components.push(ParseableFormatComponent::Directive(directive));
                 }
             }
             last_source_position += directive_contents.len();
         }
         if s.len() > last_source_position {
-            components.push(Self::make_literal(&s[last_source_position..]));
+            components.push(ParseableFormatComponent::Literal(
+                s[last_source_position..].to_string(),
+            ));
         }
-        Ok(Self::from_components(components))
-    }
-}
-
-#[derive(Debug)]
-pub enum ArchiveOverviewFormatComponent {
-    Directive(ArchiveOverviewFormatDirective),
-    EscapedPercent,
-    EscapedNewline,
-    EscapedTab,
-    Literal(String),
-}
-
-#[derive(Debug)]
-pub struct ArchiveOverviewFormatSpec {
-    pub components: Vec<ArchiveOverviewFormatComponent>,
-}
-
-impl ParseableFormat for ArchiveOverviewFormatSpec {
-    type Component = ArchiveOverviewFormatComponent;
-    const ESCAPED_PERCENT: Self::Component = ArchiveOverviewFormatComponent::EscapedPercent;
-    const ESCAPED_NEWLINE: Self::Component = ArchiveOverviewFormatComponent::EscapedNewline;
-    const ESCAPED_TAB: Self::Component = ArchiveOverviewFormatComponent::EscapedTab;
-    fn make_literal(s: &str) -> Self::Component {
-        ArchiveOverviewFormatComponent::Literal(s.to_string())
-    }
-    fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError> {
-        Ok(ArchiveOverviewFormatComponent::Directive(
-            ArchiveOverviewFormatDirective::parse(s)?,
-        ))
-    }
-    fn from_components(components: Vec<Self::Component>) -> Self {
-        Self { components }
+        Ok(Self { components })
     }
 }
 
@@ -362,8 +345,8 @@ pub enum EntryFormatDirective {
     Timestamp(TimestampFormat),
 }
 
-impl EntryFormatDirective {
-    pub fn parse(s: &str) -> Result<Self, DirectiveParseError> {
+impl ParseableDirective for EntryFormatDirective {
+    fn parse_directive(s: &str) -> Result<Self, DirectiveParseError> {
         match s {
             "name" => Ok(Self::Name),
             s if s.starts_with("type") => {
@@ -426,46 +409,14 @@ impl EntryFormatDirective {
     }
 }
 
-#[derive(Debug)]
-pub enum EntryFormatComponent {
-    Directive(EntryFormatDirective),
-    EscapedPercent,
-    EscapedNewline,
-    EscapedTab,
-    Literal(String),
-}
-
-#[derive(Debug)]
-pub struct EntryFormatSpec {
-    pub components: Vec<EntryFormatComponent>,
-}
-
-impl ParseableFormat for EntryFormatSpec {
-    type Component = EntryFormatComponent;
-    const ESCAPED_PERCENT: Self::Component = EntryFormatComponent::EscapedPercent;
-    const ESCAPED_NEWLINE: Self::Component = EntryFormatComponent::EscapedNewline;
-    const ESCAPED_TAB: Self::Component = EntryFormatComponent::EscapedTab;
-    fn make_literal(s: &str) -> Self::Component {
-        EntryFormatComponent::Literal(s.to_string())
-    }
-    fn parse_directive(s: &str) -> Result<Self::Component, DirectiveParseError> {
-        Ok(EntryFormatComponent::Directive(
-            EntryFormatDirective::parse(s)?,
-        ))
-    }
-    fn from_components(components: Vec<Self::Component>) -> Self {
-        Self { components }
-    }
-}
-
 #[derive(Debug, Default)]
 pub enum FormatSpec {
     #[default]
     Compact,
     Extended,
     Custom {
-        overview: ArchiveOverviewFormatSpec,
-        entry: EntryFormatSpec,
+        overview: ParseableFormatSpec<ArchiveOverviewFormatDirective>,
+        entry: ParseableFormatSpec<EntryFormatDirective>,
     },
 }
 
@@ -474,17 +425,20 @@ impl FormatSpec {
         archive_format: String,
         entry_format: String,
     ) -> Result<Self, ArgParseError> {
-        let overview = ArchiveOverviewFormatSpec::parse_format(&archive_format).map_err(|e| {
-            Info::exit_arg_invalid(&format!(
-                "failed to parse archive format string {archive_format:?}: {e}"
-            ))
-        })?;
+        let overview =
+            ParseableFormatSpec::<ArchiveOverviewFormatDirective>::parse_format(&archive_format)
+                .map_err(|e| {
+                    Info::exit_arg_invalid(&format!(
+                        "failed to parse archive format string {archive_format:?}: {e}"
+                    ))
+                })?;
         dbg!(&entry_format);
-        let entry = EntryFormatSpec::parse_format(&entry_format).map_err(|e| {
-            Info::exit_arg_invalid(&format!(
-                "failed to parse entry format string {entry_format:?}: {e}"
-            ))
-        })?;
+        let entry = ParseableFormatSpec::<EntryFormatDirective>::parse_format(&entry_format)
+            .map_err(|e| {
+                Info::exit_arg_invalid(&format!(
+                    "failed to parse entry format string {entry_format:?}: {e}"
+                ))
+            })?;
         Ok(Self::Custom { overview, entry })
     }
 }
@@ -554,6 +508,9 @@ discussed in the section on <mod-fmt>.
 
 %!%
     Prints a single literal newline '\n'.
+
+%,%
+    Prints a single literal tab character '\t'.
 
 ## Archive format directives:
 This is printed at the bottom of the output, after all entries are formatted.
