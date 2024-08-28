@@ -263,7 +263,7 @@ trait FormatDirective {
 struct EntryNameField(NameString);
 
 impl FormatDirective for EntryNameField {
-    type Data<'a> = EntryData<'a>;
+    type Data<'a> = &'a EntryData<'a>;
     type FieldType = NameString;
     fn extract_field<'a>(
         &self,
@@ -279,7 +279,7 @@ impl FormatDirective for EntryNameField {
 struct FileTypeField(FileTypeValue);
 
 impl FormatDirective for FileTypeField {
-    type Data<'a> = EntryData<'a>;
+    type Data<'a> = &'a EntryData<'a>;
     type FieldType = FileTypeValue;
     fn extract_field<'a>(
         &self,
@@ -295,7 +295,7 @@ impl FormatDirective for FileTypeField {
 struct CompressionMethodField(CompressionMethodValue);
 
 impl FormatDirective for CompressionMethodField {
-    type Data<'a> = EntryData<'a>;
+    type Data<'a> = &'a EntryData<'a>;
     type FieldType = CompressionMethodValue;
     fn extract_field<'a>(
         &self,
@@ -311,7 +311,7 @@ impl FormatDirective for CompressionMethodField {
 struct UnixModeField(UnixModeValue);
 
 impl FormatDirective for UnixModeField {
-    type Data<'a> = EntryData<'a>;
+    type Data<'a> = &'a EntryData<'a>;
     type FieldType = UnixModeValue;
     fn extract_field<'a>(
         &self,
@@ -327,7 +327,7 @@ impl FormatDirective for UnixModeField {
 struct UncompressedSizeField(ByteSizeValue);
 
 impl FormatDirective for UncompressedSizeField {
-    type Data<'a> = EntryData<'a>;
+    type Data<'a> = &'a EntryData<'a>;
     type FieldType = ByteSizeValue;
     fn extract_field<'a>(
         &self,
@@ -375,18 +375,18 @@ where
 trait EntryDirectiveFormatter {
     fn write_entry_directive<'a>(
         &self,
-        data: EntryData<'a>,
+        data: &EntryData<'a>,
         out: &mut dyn Write,
     ) -> Result<(), CommandError>;
 }
 
 impl<CF> EntryDirectiveFormatter for CF
 where
-    CF: for<'a> DirectiveFormatter<Data<'a> = EntryData<'a>>,
+    CF: for<'a> DirectiveFormatter<Data<'a> = &'a EntryData<'a>>,
 {
     fn write_entry_directive<'a>(
         &self,
-        data: EntryData<'a>,
+        data: &EntryData<'a>,
         out: &mut dyn Write,
     ) -> Result<(), CommandError> {
         self.write_directive(data, out)
@@ -433,7 +433,7 @@ impl CompiledEntryFormatComponent {
 
     pub fn write_component<'a>(
         &self,
-        data: EntryData<'a>,
+        data: &EntryData<'a>,
         mut out: impl Write,
     ) -> Result<(), CommandError> {
         match self {
@@ -474,7 +474,7 @@ impl CompiledEntryFormatter {
         mut out: impl Write,
     ) -> Result<(), CommandError> {
         for c in self.components.iter() {
-            c.write_component(data, &mut out)?;
+            c.write_component(&data, &mut out)?;
         }
         Ok(())
     }
