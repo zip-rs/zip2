@@ -1,16 +1,12 @@
 use std::{
-    borrow::Cow,
-    collections::HashMap,
     convert::Infallible,
     fmt, fs,
     io::{self, Write},
-    marker::PhantomData,
     path::PathBuf,
-    sync::{Arc, LazyLock, Mutex},
 };
 
 use zip::{
-    read::{read_zipfile_from_stream, ZipArchive, ZipFile},
+    read::{read_zipfile_from_stream, ZipArchive},
     CompressionMethod,
 };
 
@@ -23,10 +19,23 @@ use crate::{
     CommandError, WrapCommandErr,
 };
 
+trait Writeable {
+    fn write_to(&self, out: &mut dyn Write) -> Result<(), io::Error>;
+}
+
+impl<S> Writeable for S
+where
+    S: fmt::Display,
+{
+    fn write_to(&self, out: &mut dyn Write) -> Result<(), io::Error> {
+        write!(out, "{}", self)
+    }
+}
+
 trait FormatValue {
     type Input<'a>;
-    type Output<'a>: AsRef<str>;
-    type E: fmt::Display;
+    type Output<'a>;
+    type E;
     fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E>;
 }
 
@@ -108,9 +117,6 @@ impl FormatValue for CompressionMethodValue {
     }
 }
 
-static GENERATED_MODE_STRINGS: LazyLock<Mutex<HashMap<(Option<u32>, UnixModeFormat), Arc<str>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-
 #[derive(Copy, Clone)]
 struct UnixModeValue(UnixModeFormat);
 
@@ -164,46 +170,59 @@ impl UnixModeValue {
     }
 }
 
+#[derive(Debug)]
+enum ModeValueWriter {
+    Octal(u32),
+    Pretty([u8; 9]),
+}
+
+impl Writeable for ModeValueWriter {
+    fn write_to(&self, out: &mut dyn Write) -> Result<(), io::Error> {
+        match self {
+            Self::Octal(mode) => write!(out, "{:o}", mode),
+            Self::Pretty(bits) => out.write_all(bits.as_ref()),
+        }
+    }
+}
+
 impl FormatValue for UnixModeValue {
     type Input<'a> = Option<u32>;
-    type Output<'a> = Arc<str>;
+    type Output<'a> = ModeValueWriter;
     type E = Infallible;
     fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
-        Ok(Arc::clone(
-            GENERATED_MODE_STRINGS
-                .lock()
-                .unwrap()
-                .entry((input, self.0))
-                .or_insert_with(|| {
-                    let x = input.unwrap_or(0);
-                    Arc::from(match self.0 {
-                        UnixModeFormat::Octal => format!("{x:o}"),
-                        UnixModeFormat::Pretty => {
-                            String::from_utf8(Self::pretty_format_mode_bits(x).to_vec()).unwrap()
-                        }
-                    })
-                }),
-        ))
+        let x = input.unwrap_or(0);
+        Ok(match self.0 {
+            UnixModeFormat::Octal => ModeValueWriter::Octal(x),
+            UnixModeFormat::Pretty => ModeValueWriter::Pretty(Self::pretty_format_mode_bits(x)),
+        })
     }
 }
 
 #[derive(Copy, Clone)]
 struct ByteSizeValue(ByteSizeFormat);
 
-static ZERO_SIZE: &'static str = "0";
+#[derive(Debug)]
+enum ByteSizeWriter {
+    FullDecimal(u64),
+}
+
+impl fmt::Display for ByteSizeWriter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::FullDecimal(n) => write!(f, "{}", n),
+        }
+    }
+}
 
 impl FormatValue for ByteSizeValue {
     type Input<'a> = u64;
-    type Output<'a> = Cow<'static, str>;
+    type Output<'a> = ByteSizeWriter;
     type E = Infallible;
     fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
-        if input == 0 {
-            return Ok(Cow::Borrowed(ZERO_SIZE));
-        }
-        Ok(Cow::Owned(match self.0 {
-            ByteSizeFormat::FullDecimal => format!("{}", input),
+        Ok(match self.0 {
+            ByteSizeFormat::FullDecimal => ByteSizeWriter::FullDecimal(input),
             ByteSizeFormat::HumanAbbreviated => todo!("human abbreviated byte sizes"),
-        }))
+        })
     }
 }
 
@@ -328,12 +347,14 @@ trait ComponentFormatter {
         &self,
         data: Self::Data<'a>,
         out: &mut dyn Write,
-    ) -> Result<usize, CommandError>;
+    ) -> Result<(), CommandError>;
 }
 
 impl<FD> ComponentFormatter for FD
 where
     FD: FormatDirective,
+    for<'a> <<FD as FormatDirective>::FieldType as FormatValue>::Output<'a>: Writeable + fmt::Debug,
+    <<FD as FormatDirective>::FieldType as FormatValue>::E: fmt::Display,
 {
     type Data<'a> = <FD as FormatDirective>::Data<'a>;
 
@@ -341,15 +362,13 @@ where
         &self,
         data: Self::Data<'a>,
         out: &mut dyn Write,
-    ) -> Result<usize, CommandError> {
+    ) -> Result<(), CommandError> {
         let output = self
             .format_field(data)
             .map_err(|e| CommandError::InvalidData(format!("error formatting field: {e}")))?;
-        let output: &str = output.as_ref();
-        let n = output.len();
-        out.write_all(output.as_bytes())
-            .wrap_err_with(|| format!("failed to write output to stream: {output:?}"))?;
-        Ok(n)
+        output
+            .write_to(out)
+            .wrap_err_with(|| format!("failed to write output to stream: {output:?}"))
     }
 }
 
@@ -358,7 +377,7 @@ trait EntryComponentFormatter {
         &self,
         data: EntryData<'a>,
         out: &mut dyn Write,
-    ) -> Result<usize, CommandError>;
+    ) -> Result<(), CommandError>;
 }
 
 impl<CF> EntryComponentFormatter for CF
@@ -369,7 +388,7 @@ where
         &self,
         data: EntryData<'a>,
         out: &mut dyn Write,
-    ) -> Result<usize, CommandError> {
+    ) -> Result<(), CommandError> {
         self.write_component(data, out)
     }
 }
@@ -414,21 +433,18 @@ impl CompiledEntryFormatComponent {
         &self,
         data: EntryData<'a>,
         mut out: impl Write,
-    ) -> Result<usize, CommandError> {
+    ) -> Result<(), CommandError> {
         match self {
             Self::Directive(directive) => directive.write_entry_component(data, &mut out),
             Self::EscapedPercent => out
                 .write_all(b"%")
-                .wrap_err("failed to write escaped % to output")
-                .map(|()| 1),
+                .wrap_err("failed to write escaped % to output"),
             Self::EscapedNewline => out
                 .write_all(b"\n")
-                .wrap_err("failed to write escaped newline to output")
-                .map(|()| 1),
+                .wrap_err("failed to write escaped newline to output"),
             Self::Literal(lit) => out
                 .write_all(lit.as_bytes())
-                .wrap_err_with(|| format!("failed to write literal {lit:?} to output"))
-                .map(|()| lit.len()),
+                .wrap_err_with(|| format!("failed to write literal {lit:?} to output")),
         }
     }
 }
@@ -451,12 +467,11 @@ impl CompiledEntryFormatter {
         &self,
         data: EntryData<'a>,
         mut out: impl Write,
-    ) -> Result<usize, CommandError> {
-        let mut written: usize = 0;
+    ) -> Result<(), CommandError> {
         for c in self.components.iter() {
-            written += c.write_component(data, &mut out)?;
+            c.write_component(data, &mut out)?;
         }
-        Ok(written)
+        Ok(())
     }
 }
 
