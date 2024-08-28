@@ -66,9 +66,9 @@ impl FormatValue for FileTypeValue {
                 EntryKind::Symlink => "symlink",
             },
             FileTypeFormat::Abbreviated => match input {
-                EntryKind::File => "f",
+                EntryKind::File => "-",
                 EntryKind::Dir => "d",
-                EntryKind::Symlink => "s",
+                EntryKind::Symlink => "l",
             },
         })
     }
@@ -133,6 +133,8 @@ impl UnixModeValue {
     const S_IWOTH: u32 = 2;
     const S_IXOTH: u32 = 1;
 
+    const UNKNOWN_MODE_BITS: [u8; 9] = [b'?'; 9];
+
     fn pretty_format_mode_bits(mode: u32) -> [u8; 9] {
         let mut ret = [b'-'; 9];
 
@@ -172,14 +174,17 @@ impl UnixModeValue {
 
 #[derive(Debug)]
 enum ModeValueWriter {
-    Octal(u32),
+    Octal(Option<u32>),
     Pretty([u8; 9]),
 }
 
 impl Writeable for ModeValueWriter {
     fn write_to(&self, out: &mut dyn Write) -> Result<(), io::Error> {
         match self {
-            Self::Octal(mode) => write!(out, "{:o}", mode),
+            Self::Octal(mode) => match mode {
+                Some(bits) => write!(out, "{:o}", bits),
+                None => write!(out, "?"),
+            },
             Self::Pretty(bits) => out.write_all(bits.as_ref()),
         }
     }
@@ -190,10 +195,12 @@ impl FormatValue for UnixModeValue {
     type Output<'a> = ModeValueWriter;
     type E = Infallible;
     fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
-        let x = input.unwrap_or(0);
         Ok(match self.0 {
-            UnixModeFormat::Octal => ModeValueWriter::Octal(x),
-            UnixModeFormat::Pretty => ModeValueWriter::Pretty(Self::pretty_format_mode_bits(x)),
+            UnixModeFormat::Octal => ModeValueWriter::Octal(input),
+            UnixModeFormat::Pretty => ModeValueWriter::Pretty(match input {
+                Some(bits) => Self::pretty_format_mode_bits(bits),
+                None => Self::UNKNOWN_MODE_BITS,
+            }),
         })
     }
 }
