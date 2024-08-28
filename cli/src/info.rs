@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::{self, Write},
+    marker::PhantomData,
     path::PathBuf,
 };
 
@@ -46,42 +47,128 @@ where
     }
 }
 
-/* enum CompiledFormatComponent<F> { */
-/*     Directive(F), */
-/*     EscapedPercent, */
-/*     EscapedNewline, */
-/*     EscapedTab, */
-/*     Literal(String), */
-/* } */
-
-/* trait CompiledFormat { */
-/*     type DirectiveSpec; */
-/*     type CompiledDirective; */
-/*     fn compile_directive( */
-/*         spec: Self::DirectiveSpec, */
-/*     ) -> Result<Self::CompiledDirective, CommandError>; */
-
-/*     type FormatSpec: ParseableFormat; */
-/*     fn compile_format(spec: Self::FormatSpec) -> Result<(), CommandError>; */
-
-/*     fn compile_component( */
-/*         spec: <Self::FormatSpec as ParseableFormat>::Component, */
-/*     ) -> Result<(), CommandError>; */
-
-/*     type Data<'a>; */
-/* } */
-
-enum CompiledEntryFormatComponent {
-    Directive(Box<dyn EntryDirectiveFormatter>),
-    Escaped(&'static str),
-    Literal(String),
+enum CompiledFormatComponent<F> {
+    Directive(F),
+    ContiguousLiteral(String),
 }
 
-impl CompiledEntryFormatComponent {
-    fn compile_directive(
+impl<F> CompiledFormatComponent<F>
+where
+    F: DirectiveFormatter,
+{
+    pub fn write_component<'a>(
+        &self,
+        data: <F as DirectiveFormatter>::Data<'a>,
+        mut out: impl Write,
+    ) -> Result<(), CommandError> {
+        match self {
+            Self::Directive(d) => d.write_directive(data, &mut out),
+            Self::ContiguousLiteral(lit) => out
+                .write_all(lit.as_bytes())
+                .wrap_err_with(|| format!("failed to write literal {lit:?} to output")),
+        }
+    }
+}
+
+struct CompiledFormatSpec<F> {
+    pub components: Vec<CompiledFormatComponent<F>>,
+}
+
+impl<F> CompiledFormatSpec<F> {
+    pub fn is_empty(&self) -> bool {
+        self.components.is_empty()
+    }
+}
+
+impl<F> CompiledFormatSpec<F>
+where
+    F: DirectiveFormatter,
+{
+    pub fn from_spec<CF>(
+        spec: ParseableFormatSpec<<CF as CompiledFormat>::Spec>,
+    ) -> Result<Self, CommandError>
+    where
+        CF: CompiledFormat<Fmt = F>,
+    {
+        let ParseableFormatSpec {
+            components: spec_components,
+        } = spec;
+
+        let mut components: Vec<CompiledFormatComponent<F>> = Vec::new();
+        for c in spec_components.into_iter() {
+            match c {
+                ParseableFormatComponent::Directive(d) => {
+                    let d = CF::from_directive_spec(d)?;
+                    components.push(CompiledFormatComponent::Directive(d));
+                }
+                ParseableFormatComponent::Escaped(s) => match components.last_mut() {
+                    Some(CompiledFormatComponent::ContiguousLiteral(ref mut last_lit)) => {
+                        last_lit.push_str(s);
+                    }
+                    _ => {
+                        components.push(CompiledFormatComponent::ContiguousLiteral(s.to_string()));
+                    }
+                },
+                ParseableFormatComponent::Literal(new_lit) => match components.last_mut() {
+                    Some(CompiledFormatComponent::ContiguousLiteral(ref mut last_lit)) => {
+                        last_lit.push_str(new_lit.as_str());
+                    }
+                    _ => {
+                        components.push(CompiledFormatComponent::ContiguousLiteral(new_lit));
+                    }
+                },
+            }
+        }
+
+        Ok(Self { components })
+    }
+
+    pub fn execute_format<'a>(
+        &self,
+        data: <F as DirectiveFormatter>::Data<'a>,
+        mut out: impl Write,
+    ) -> Result<(), CommandError>
+    where
+        <F as DirectiveFormatter>::Data<'a>: Clone,
+    {
+        for c in self.components.iter() {
+            c.write_component(data.clone(), &mut out)?
+        }
+        Ok(())
+    }
+}
+
+struct CompiledEntryDirective(Box<dyn EntryDirectiveFormatter>);
+
+impl DirectiveFormatter for CompiledEntryDirective {
+    type Data<'a> = EntryData<'a>;
+
+    fn write_directive<'a>(
+        &self,
+        data: Self::Data<'a>,
+        out: &mut dyn Write,
+    ) -> Result<(), CommandError> {
+        self.0.write_entry_directive(&data, out)
+    }
+}
+
+trait CompiledFormat {
+    type Spec: ParseableDirective;
+    type Fmt: DirectiveFormatter;
+
+    fn from_directive_spec(spec: Self::Spec) -> Result<Self::Fmt, CommandError>;
+}
+
+struct CompiledEntryFormat;
+
+impl CompiledFormat for CompiledEntryFormat {
+    type Spec = EntryFormatDirective;
+    type Fmt = CompiledEntryDirective;
+
+    fn from_directive_spec(
         spec: EntryFormatDirective,
-    ) -> Result<Box<dyn EntryDirectiveFormatter>, CommandError> {
-        Ok(match spec {
+    ) -> Result<CompiledEntryDirective, CommandError> {
+        Ok(CompiledEntryDirective(match spec {
             EntryFormatDirective::Name => Box::new(EntryNameField(NameString)),
             EntryFormatDirective::FileType(f) => Box::new(FileTypeField(FileTypeValue(f))),
             EntryFormatDirective::UncompressedSize(f) => {
@@ -92,67 +179,7 @@ impl CompiledEntryFormatComponent {
                 Box::new(CompressionMethodField(CompressionMethodValue(f)))
             }
             _ => todo!(),
-        })
-    }
-
-    pub fn from_spec(
-        spec: ParseableFormatComponent<EntryFormatDirective>,
-    ) -> Result<Self, CommandError> {
-        match spec {
-            ParseableFormatComponent::Directive(directive) => {
-                Ok(Self::Directive(Self::compile_directive(directive)?))
-            }
-            ParseableFormatComponent::Escaped(s) => Ok(Self::Escaped(s)),
-            ParseableFormatComponent::Literal(lit) => Ok(Self::Literal(lit)),
-        }
-    }
-
-    pub fn write_component<'a>(
-        &self,
-        data: &EntryData<'a>,
-        mut out: impl Write,
-    ) -> Result<(), CommandError> {
-        match self {
-            Self::Directive(directive) => directive.write_entry_directive(data, &mut out),
-            Self::Escaped(s) => out
-                .write_all(s.as_bytes())
-                .wrap_err_with(|| format!("failed to write escaped string {s:?} to output")),
-            Self::Literal(lit) => out
-                .write_all(lit.as_bytes())
-                .wrap_err_with(|| format!("failed to write literal {lit:?} to output")),
-        }
-    }
-}
-
-struct CompiledEntryFormatter {
-    components: Vec<CompiledEntryFormatComponent>,
-}
-
-impl CompiledEntryFormatter {
-    pub fn from_spec(
-        spec: ParseableFormatSpec<EntryFormatDirective>,
-    ) -> Result<Self, CommandError> {
-        let ParseableFormatSpec { components } = spec;
-        let components: Vec<_> = components
-            .into_iter()
-            .map(CompiledEntryFormatComponent::from_spec)
-            .collect::<Result<_, _>>()?;
-        Ok(Self { components })
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.components.is_empty()
-    }
-
-    pub fn write_entry<'a>(
-        &self,
-        data: EntryData<'a>,
-        mut out: impl Write,
-    ) -> Result<(), CommandError> {
-        for c in self.components.iter() {
-            c.write_component(&data, &mut out)?;
-        }
-        Ok(())
+        }))
     }
 }
 
@@ -189,7 +216,10 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
     let (archive_formatter, entry_formatter) = match format_spec {
         FormatSpec::Compact => todo!(),
         FormatSpec::Extended => todo!(),
-        FormatSpec::Custom { overview, entry } => ((), CompiledEntryFormatter::from_spec(entry)?),
+        FormatSpec::Custom { overview, entry } => (
+            (),
+            CompiledFormatSpec::from_spec::<CompiledEntryFormat>(entry)?,
+        ),
     };
     let mut output_stream = io::stdout().lock();
 
@@ -205,7 +235,7 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
                 if matcher.as_ref().is_some_and(|m| !m.matches(&data)) {
                     continue;
                 }
-                entry_formatter.write_entry(data, &mut output_stream)?;
+                entry_formatter.execute_format(data, &mut output_stream)?;
             }
         }
         writeln!(
@@ -232,7 +262,7 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
                 if matcher.as_ref().is_some_and(|m| !m.matches(&data)) {
                     continue;
                 }
-                entry_formatter.write_entry(data, &mut output_stream)?;
+                entry_formatter.execute_format(data, &mut output_stream)?;
             }
         }
     }
