@@ -2,6 +2,7 @@ use std::{
     convert::Infallible,
     fmt,
     io::{self, Write},
+    path,
 };
 
 use zip::CompressionMethod;
@@ -25,6 +26,18 @@ impl FormatValue for NameString {
     type E = Infallible;
     fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
         Ok(input)
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct PathString;
+
+impl FormatValue for PathString {
+    type Input<'a> = &'a path::Path;
+    type Output<'a> = path::Display<'a>;
+    type E = Infallible;
+    fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
+        Ok(input.display())
     }
 }
 
@@ -206,6 +219,48 @@ impl FormatValue for ByteSizeValue {
         Ok(match self.0 {
             ByteSizeFormat::FullDecimal => ByteSizeWriter::FullDecimal(input),
             ByteSizeFormat::HumanAbbreviated => todo!("human abbreviated byte sizes"),
+        })
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct DecimalNumberValue;
+
+impl FormatValue for DecimalNumberValue {
+    type Input<'a> = u64;
+    type Output<'a> = u64;
+    type E = Infallible;
+    fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
+        Ok(input)
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct OffsetValue(pub OffsetFormat);
+
+#[derive(Debug)]
+pub enum OffsetWriter {
+    Decimal(u64),
+    Hexadecimal(u64),
+}
+
+impl fmt::Display for OffsetWriter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Decimal(x) => write!(f, "{}", x),
+            Self::Hexadecimal(x) => write!(f, "{:x}", x),
+        }
+    }
+}
+
+impl FormatValue for OffsetValue {
+    type Input<'a> = u64;
+    type Output<'a> = OffsetWriter;
+    type E = Infallible;
+    fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
+        Ok(match self.0 {
+            OffsetFormat::Decimal => OffsetWriter::Decimal(input),
+            OffsetFormat::Hexadecimal => OffsetWriter::Hexadecimal(input),
         })
     }
 }

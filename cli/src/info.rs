@@ -17,11 +17,14 @@ use crate::{
 
 mod directives;
 mod formats;
-use directives::{compiled::CompiledFormatSpec, entry::compiled::CompiledEntryFormat};
+use directives::{
+    archive::compiled::CompiledArchiveFormat, compiled::CompiledFormatSpec,
+    entry::compiled::CompiledEntryFormat,
+};
 
-struct ArchiveWithPath {
+pub struct ArchiveWithPath {
     pub path: PathBuf,
-    /* TODO: Debug impl for ZipArchive? what about ZipFile? */
+    pub len: u64,
     pub archive: ZipArchive<fs::File>,
 }
 
@@ -29,9 +32,13 @@ impl ArchiveWithPath {
     pub fn open(path: PathBuf) -> Result<Self, CommandError> {
         let f = fs::File::open(&path)
             .wrap_err_with(|| format!("failed to open zip input file path {:?}", &path))?;
+        let len = f
+            .metadata()
+            .wrap_err("failed to extract file metadata")?
+            .len();
         let archive = ZipArchive::new(f)
             .wrap_err_with(|| format!("failed to create zip archive from file {:?}", &path))?;
-        Ok(Self { path, archive })
+        Ok(Self { path, len, archive })
     }
 }
 
@@ -53,7 +60,7 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
         FormatSpec::Compact => todo!(),
         FormatSpec::Extended => todo!(),
         FormatSpec::Custom { overview, entry } => (
-            (),
+            CompiledFormatSpec::from_spec::<CompiledArchiveFormat>(overview)?,
             CompiledFormatSpec::from_spec::<CompiledEntryFormat>(entry)?,
         ),
     };
@@ -100,6 +107,15 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
                 }
                 entry_formatter.execute_format(data, &mut output_stream)?;
             }
+        }
+        if archive_formatter.is_empty() {
+            writeln!(
+                &mut err,
+                "empty archive format, skipping archive overview for file {p:?}"
+            )
+            .unwrap();
+        } else {
+            archive_formatter.execute_format(&zip, &mut output_stream)?;
         }
     }
 

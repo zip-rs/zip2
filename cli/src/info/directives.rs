@@ -184,7 +184,7 @@ pub mod entry {
             ByteSizeValue, CompressionMethodValue, FileTypeValue, FormatValue, NameString,
             UnixModeValue,
         },
-        DirectiveFormatter, FormatDirective,
+        FormatDirective,
     };
     use crate::extract::receiver::EntryData;
 
@@ -269,7 +269,10 @@ pub mod entry {
     }
 
     pub mod compiled {
-        use super::{super::compiled::CompiledFormat, *};
+        use super::{
+            super::{compiled::CompiledFormat, DirectiveFormatter},
+            *,
+        };
         use crate::{args::info::EntryFormatDirective, CommandError};
 
         use std::io::Write;
@@ -331,6 +334,173 @@ pub mod entry {
                         Box::new(CompressionMethodField(CompressionMethodValue(f)))
                     }
                     _ => todo!(),
+                }))
+            }
+        }
+    }
+}
+
+pub mod archive {
+    use super::{
+        super::{
+            formats::{ByteSizeValue, DecimalNumberValue, FormatValue, OffsetValue, PathString},
+            ArchiveWithPath,
+        },
+        FormatDirective,
+    };
+
+    pub struct ArchiveNameField(pub PathString);
+
+    impl FormatDirective for ArchiveNameField {
+        type Data<'a> = &'a ArchiveWithPath;
+        type FieldType = PathString;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.path.as_path()
+        }
+        fn value_formatter(&self) -> PathString {
+            self.0
+        }
+    }
+
+    pub struct ArchiveSizeField(pub ByteSizeValue);
+
+    impl FormatDirective for ArchiveSizeField {
+        type Data<'a> = &'a ArchiveWithPath;
+        type FieldType = ByteSizeValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.len
+        }
+        fn value_formatter(&self) -> ByteSizeValue {
+            self.0
+        }
+    }
+
+    pub struct NumEntriesField(pub DecimalNumberValue);
+
+    impl FormatDirective for NumEntriesField {
+        type Data<'a> = &'a ArchiveWithPath;
+        type FieldType = DecimalNumberValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.archive.len().try_into().unwrap()
+        }
+        fn value_formatter(&self) -> DecimalNumberValue {
+            self.0
+        }
+    }
+
+    pub struct FirstEntryStartField(pub OffsetValue);
+
+    impl FormatDirective for FirstEntryStartField {
+        type Data<'a> = &'a ArchiveWithPath;
+        type FieldType = OffsetValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.archive.offset()
+        }
+        fn value_formatter(&self) -> OffsetValue {
+            self.0
+        }
+    }
+
+    pub struct CentralDirectoryStartField(pub OffsetValue);
+
+    impl FormatDirective for CentralDirectoryStartField {
+        type Data<'a> = &'a ArchiveWithPath;
+        type FieldType = OffsetValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.archive.central_directory_start()
+        }
+        fn value_formatter(&self) -> OffsetValue {
+            self.0
+        }
+    }
+
+    pub mod compiled {
+        use super::{
+            super::{compiled::CompiledFormat, DirectiveFormatter},
+            *,
+        };
+        use crate::{args::info::ArchiveOverviewFormatDirective, CommandError};
+
+        use std::io::Write;
+
+        trait ArchiveDirectiveFormatter {
+            fn write_archive_directive<'a>(
+                &self,
+                data: &'a ArchiveWithPath,
+                out: &mut dyn Write,
+            ) -> Result<(), CommandError>;
+        }
+
+        impl<CF> ArchiveDirectiveFormatter for CF
+        where
+            CF: for<'a> DirectiveFormatter<Data<'a> = &'a ArchiveWithPath>,
+        {
+            fn write_archive_directive<'a>(
+                &self,
+                data: &'a ArchiveWithPath,
+                out: &mut dyn Write,
+            ) -> Result<(), CommandError> {
+                self.write_directive(data, out)
+            }
+        }
+
+        pub struct CompiledArchiveDirective(Box<dyn ArchiveDirectiveFormatter>);
+
+        impl DirectiveFormatter for CompiledArchiveDirective {
+            type Data<'a> = &'a ArchiveWithPath;
+
+            fn write_directive<'a>(
+                &self,
+                data: Self::Data<'a>,
+                out: &mut dyn Write,
+            ) -> Result<(), CommandError> {
+                self.0.write_archive_directive(data, out)
+            }
+        }
+
+        pub struct CompiledArchiveFormat;
+
+        impl CompiledFormat for CompiledArchiveFormat {
+            type Spec = ArchiveOverviewFormatDirective;
+            type Fmt = CompiledArchiveDirective;
+
+            fn from_directive_spec(
+                spec: ArchiveOverviewFormatDirective,
+            ) -> Result<CompiledArchiveDirective, CommandError> {
+                Ok(CompiledArchiveDirective(match spec {
+                    ArchiveOverviewFormatDirective::ArchiveName => {
+                        Box::new(ArchiveNameField(PathString))
+                    }
+                    ArchiveOverviewFormatDirective::TotalSize(f) => {
+                        Box::new(ArchiveSizeField(ByteSizeValue(f)))
+                    }
+                    ArchiveOverviewFormatDirective::NumEntries => {
+                        Box::new(NumEntriesField(DecimalNumberValue))
+                    }
+                    ArchiveOverviewFormatDirective::ArchiveComment(x) => {
+                        todo!("comment not supported yet: {:?}", x)
+                    }
+                    ArchiveOverviewFormatDirective::FirstEntryStart(f) => {
+                        Box::new(FirstEntryStartField(OffsetValue(f)))
+                    }
+                    ArchiveOverviewFormatDirective::CentralDirectoryStart(f) => {
+                        Box::new(CentralDirectoryStartField(OffsetValue(f)))
+                    }
                 }))
             }
         }
