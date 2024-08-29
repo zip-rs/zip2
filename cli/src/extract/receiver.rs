@@ -204,11 +204,11 @@ impl<'a, 'c, 'w> MatchingEntrySpec<'a, 'c, 'w> {
                     .iter_mut()
                     .find(|(p, _)| Rc::ptr_eq(p, &extract_receiver))
                 {
-                    if !names.iter().any(|n| n.as_ref() == name.as_ref()) {
+                    if names.iter().any(|n| n.as_ref() == name.as_ref()) {
+                        true
+                    } else {
                         names.push(name);
                         false
-                    } else {
-                        true
                     }
                 } else {
                     deduped_matching_extracts.push((extract_receiver, vec![name]));

@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
-    fmt, fs,
+    fs,
     io::{self, Read, Write},
     rc::Rc,
 };
@@ -53,7 +53,7 @@ fn maybe_process_symlink<'a, 't>(
 fn process_entry<'a, 'w, 'c, 'it>(
     mut entry: ZipFile<'a>,
     err: &Rc<RefCell<impl Write>>,
-    compiled_specs: impl Iterator<Item = &'it CompiledEntrySpec<'w>> + fmt::Debug,
+    compiled_specs: impl Iterator<Item = &'it CompiledEntrySpec<'w>>,
     copy_buf: &mut [u8],
     symlink_target: &mut Vec<u8>,
     deduped_concat_writers: &mut Vec<&'c Rc<RefCell<dyn Write + 'w>>>,
@@ -70,7 +70,7 @@ where
     /* We dropped any mutable handles to the entry, so now we can access its metadata again. */
     let data = EntryData::from_entry(&entry);
 
-    let mut deduped_matching_extracts: Vec<(&'c Rc<dyn EntryReceiver>, Vec<Cow<'_, str>>)> =
+    let mut deduped_matching_extracts: Vec<(&'c Rc<dyn EntryReceiver + 'w>, Vec<Cow<'_, str>>)> =
         Vec::new();
     for matching_spec in compiled_specs.filter_map(|spec| spec.try_match_and_transform(&data)) {
         if matching_spec.is_nested_duplicate(deduped_concat_writers, &mut deduped_matching_extracts)
@@ -83,18 +83,12 @@ where
         deduped_matching_extracts
             .into_iter()
             .flat_map(|(recv, names)| names.into_iter().map(move |n| (recv, n)))
-            .map(|(recv, name)| {
-                recv.generate_entry_handle(data, symlink_target.as_ref().map(|t| t.as_ref()), name)
-            })
+            .map(|(recv, name)| recv.generate_entry_handle(data, symlink_target.as_deref(), name))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten(),
     );
 
-    /* let mut derefed_concat_writers: Vec<RefMut<'_, dyn Write>> = deduped_concat_writers */
-    /*     .drain(..) */
-    /*     .map(|w| w.borrow_mut()) */
-    /*     .collect(); */
     let mut read_len: usize;
     loop {
         read_len = entry.read(copy_buf).wrap_err("read of entry failed")?;
