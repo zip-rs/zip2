@@ -382,11 +382,18 @@ pub trait EntryReceiver {
     fn finalize_entries(&self) -> Result<(), CommandError>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg(unix)]
+struct PermsEntry {
+    path: PathBuf,
+    mode: u32,
+}
+
 struct FilesystemReceiver<W> {
     err: Rc<RefCell<W>>,
     output_dir: PathBuf,
     #[cfg(unix)]
-    perms_to_set: RefCell<Vec<(PathBuf, u32)>>,
+    perms_to_set: RefCell<Vec<PermsEntry>>,
 }
 
 impl<W> FilesystemReceiver<W> {
@@ -419,18 +426,6 @@ where
         )
         .unwrap();
 
-        #[cfg(unix)]
-        if let Some(mode) = data.unix_mode {
-            writeln!(
-                err,
-                "storing unix mode {mode} for path {full_output_path:?}"
-            )
-            .unwrap();
-            self.perms_to_set
-                .borrow_mut()
-                .push((full_output_path.clone(), mode));
-        }
-
         match data.kind {
             EntryKind::Dir => {
                 writeln!(err, "entry is directory, creating").unwrap();
@@ -451,15 +446,36 @@ where
                     };
                     let target = OsString::from_vec(target);
                     writeln!(err, "entry is symlink to {target:?}, creating").unwrap();
-                    symlink(&target, &full_output_path).wrap_err_with(|| {
-                        format!(
-                        "failed to create symlink at {full_output_path:?} with target {target:?}"
-                    )
-                    })?;
+                    /* The stdlib symlink function has no functionality like OpenOptions to
+                     * truncate a symlink if it already exists, so we have to do that ourselves
+                     * here. */
+                    if let Err(e) = symlink(&target, &full_output_path) {
+                        let e = match e.kind() {
+                            io::ErrorKind::AlreadyExists => {
+                                writeln!(err, "a file already existed at the symlink target {full_output_path:?}, removing")
+                                    .unwrap();
+                                fs::remove_file(&full_output_path)
+                                    .wrap_err_with(|| format!("failed to remove file at symlink target {full_output_path:?}"))?;
+                                writeln!(
+                                    err,
+                                    "successfully removed file entry, creating symlink again"
+                                )
+                                .unwrap();
+                                symlink(&target, &full_output_path).err()
+                            }
+                            _ => Some(e),
+                        };
+                        if let Some(e) = e {
+                            return Err(e).wrap_err_with(|| {
+                                format!(
+                                    "failed to create symlink at {full_output_path:?} with target {target:?}"
+                                )
+                            });
+                        }
+                    }
                 }
                 #[cfg(not(unix))]
                 {
-                    /* FIXME: non-unix symlink extraction not yet supported! */
                     todo!("TODO: cannot create symlink for entry {name} on non-unix yet!");
                 }
             }
@@ -477,17 +493,36 @@ where
                 return Ok(Some(Box::new(outfile)));
             }
         }
+
+        #[cfg(unix)]
+        if let Some(mode) = data.unix_mode {
+            writeln!(
+                err,
+                "storing unix mode {mode} for path {full_output_path:?}"
+            )
+            .unwrap();
+            self.perms_to_set.borrow_mut().push(PermsEntry {
+                path: full_output_path,
+                mode,
+            });
+        }
+
         Ok(None)
     }
 
     fn finalize_entries(&self) -> Result<(), CommandError> {
         #[cfg(unix)]
         {
-            use std::{cmp::Reverse, os::unix::fs::PermissionsExt};
+            use std::os::unix::fs::PermissionsExt;
 
             let mut perms_to_set = mem::take(&mut *self.perms_to_set.borrow_mut());
-            perms_to_set.sort_unstable_by_key(|(path, _)| Reverse(path.clone()));
-            for (path, mode) in perms_to_set.into_iter() {
+            perms_to_set.sort_unstable();
+            writeln!(
+                &mut self.err.borrow_mut(),
+                "perms to set (these are done in reverse order): {perms_to_set:?}"
+            )
+            .unwrap();
+            for PermsEntry { path, mode } in perms_to_set.into_iter().rev() {
                 let perms = fs::Permissions::from_mode(mode);
                 fs::set_permissions(&path, perms.clone())
                     .wrap_err_with(|| format!("error setting perms {perms:?} for path {path:?}"))?;
