@@ -781,6 +781,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     }
 }
 
+/* TODO: consider a ZipWriter which works with just a Write bound to support streaming output? This
+ * would require some work, but is possible in the protocol. */
 impl<W: Write + Seek> ZipWriter<W> {
     /// Initializes the archive.
     ///
