@@ -19,6 +19,39 @@ use matcher::EntryMatcher;
 use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryKind, EntryReceiver, ExtractEntry};
 use transform::NameTransformer;
 
+fn maybe_process_symlink<'a, 't>(
+    entry: &mut ZipFile<'a>,
+    err: &Rc<RefCell<impl Write>>,
+    symlink_target: &'t mut Vec<u8>,
+) -> Result<Option<&'t mut [u8]>, CommandError> {
+    let (kind, size) = {
+        /* FIXME: the ZipFile<'a> struct contains a *mutable* reference to the parent archive,
+         *        and this actually imposes a mutable reference upon any references to the
+         *        immutable ZipFileData contents. This means we cannot have any immutable
+         *        references to the ZipFileData contents at the same time as a mutable
+         *        reference. What this means here is that we have to create a temporary EntryData
+         *        struct and then immediately throw it away in order to be able to read the entry
+         *        contents with io::Read. ZipEntry<'a, R> from
+         *        https://github.com/zip-rs/zip2/pull/233 avoids this issue!!! */
+        let data = EntryData::from_entry(&entry);
+        (data.kind, data.size)
+    };
+    if !matches!(kind, EntryKind::Symlink) {
+        return Ok(None);
+    }
+
+    /* We can't read the entry name from EntryData because we can't have any immutable
+     * references to ZipFileData like the name at the same time we use the entry as
+     * a reader! That means our log message here is very unclear! */
+    writeln!(&mut err.borrow_mut(), "reading symlink target").unwrap();
+    symlink_target.clear();
+    entry
+        .read_to_end(symlink_target)
+        .wrap_err("failed to read symlink target from zip archive entry")?;
+    debug_assert_eq!(symlink_target.len(), size.try_into().unwrap());
+    Ok(Some(symlink_target))
+}
+
 fn process_entry<'a, 'w, 'it>(
     mut entry: ZipFile<'a>,
     err: &Rc<RefCell<impl Write>>,
@@ -35,23 +68,8 @@ where
     deduped_concat_writers.clear();
     matching_handles.clear();
 
-    let symlink_target: Option<&mut Vec<u8>> = {
-        let (kind, size) = {
-            let data = EntryData::from_entry(&entry);
-            (data.kind, data.size)
-        };
-        match kind {
-            EntryKind::Symlink => {
-                symlink_target.clear();
-                entry
-                    .read_to_end(symlink_target)
-                    .wrap_err("failed to read symlink target from zip archive entry")?;
-                debug_assert_eq!(symlink_target.len(), size.try_into().unwrap());
-                Some(symlink_target)
-            }
-            _ => None,
-        }
-    };
+    let symlink_target = maybe_process_symlink(&mut entry, err, symlink_target)?;
+    /* We dropped any mutable handles to the entry, so now we can access its metadata again. */
     let data = EntryData::from_entry(&entry);
 
     let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
