@@ -12,6 +12,7 @@ use crate::{args::extract::*, CommandError, WrapCommandErr};
 
 pub mod entries;
 pub mod matcher;
+pub mod named_outputs;
 pub mod receiver;
 pub mod transform;
 use entries::{IterateEntries, StreamInput, ZipFileInput};
@@ -127,7 +128,7 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
 
     writeln!(&mut err.borrow_mut(), "entry specs: {entry_specs:?}").unwrap();
     let compiled_specs =
-        receiver::process_entry_and_output_specs(err.clone(), entry_specs, output_specs)?;
+        named_outputs::process_entry_and_output_specs(err.clone(), entry_specs, output_specs)?;
     writeln!(&mut err.borrow_mut(), "compiled specs: {compiled_specs:?}").unwrap();
 
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
