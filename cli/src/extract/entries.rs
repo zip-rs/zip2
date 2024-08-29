@@ -3,6 +3,7 @@ use std::{
     collections::VecDeque,
     fs,
     io::{self},
+    ops,
     path::Path,
 };
 
@@ -17,13 +18,17 @@ pub trait IterateEntries {
     fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError>;
 }
 
-struct StdinInput {
+pub struct StdinInput {
     inner: io::Stdin,
 }
 
 impl StdinInput {
     pub fn new() -> Self {
         Self { inner: io::stdin() }
+    }
+
+    pub fn into_inner(self) -> io::Stdin {
+        self.inner
     }
 }
 
@@ -34,19 +39,24 @@ impl IterateEntries for StdinInput {
 }
 
 #[derive(Debug)]
-struct ZipFileInput {
-    inner: ZipArchive<fs::File>,
+pub struct ZipFileInput<A> {
+    inner: A,
     file_counter: usize,
 }
 
-impl ZipFileInput {
-    pub fn new(inner: ZipArchive<fs::File>) -> Self {
+impl<A> ZipFileInput<A> {
+    pub fn new(inner: A) -> Self {
         Self {
-            inner: inner,
+            inner,
             file_counter: 0,
         }
     }
+}
 
+impl<A> ZipFileInput<A>
+where
+    A: ops::Deref<Target = ZipArchive<fs::File>>,
+{
     pub fn remaining(&self) -> usize {
         self.inner.len() - self.file_counter
     }
@@ -56,7 +66,10 @@ impl ZipFileInput {
     }
 }
 
-impl IterateEntries for ZipFileInput {
+impl<A> IterateEntries for ZipFileInput<A>
+where
+    A: ops::DerefMut<Target = ZipArchive<fs::File>>,
+{
     fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError> {
         if self.none_left() {
             return Ok(None);
@@ -70,9 +83,9 @@ impl IterateEntries for ZipFileInput {
     }
 }
 
-struct AllInputZips {
-    zips_todo: VecDeque<ZipFileInput>,
-    cur_zip: UnsafeCell<ZipFileInput>,
+pub struct AllInputZips {
+    zips_todo: VecDeque<ZipFileInput<Box<ZipArchive<fs::File>>>>,
+    cur_zip: UnsafeCell<ZipFileInput<Box<ZipArchive<fs::File>>>>,
 }
 
 impl AllInputZips {
@@ -91,7 +104,7 @@ impl AllInputZips {
                             format!("failed to create zip archive for file {:?}", p.as_ref())
                         })
                     })
-                    .map(ZipFileInput::new)
+                    .map(|zip| ZipFileInput::new(Box::new(zip)))
             })
             .collect::<Result<VecDeque<_>, CommandError>>()?;
         debug_assert!(!zips_todo.is_empty());

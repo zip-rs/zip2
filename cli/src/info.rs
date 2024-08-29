@@ -1,14 +1,16 @@
 use std::{
     fs,
     io::{self, Write},
+    ops,
     path::PathBuf,
 };
 
-use zip::read::{read_zipfile_from_stream, ZipArchive};
+use zip::read::{read_zipfile_from_stream, ZipArchive, ZipFile};
 
 use crate::{
     args::{extract::InputSpec, info::*},
     extract::{
+        entries::{IterateEntries, StdinInput, ZipFileInput},
         matcher::{CompiledMatcher, EntryMatcher},
         receiver::EntryData,
     },
@@ -18,8 +20,9 @@ use crate::{
 mod directives;
 mod formats;
 use directives::{
-    archive::compiled::CompiledArchiveFormat, compiled::CompiledFormatSpec,
-    entry::compiled::CompiledEntryFormat,
+    archive::compiled::{CompiledArchiveDirective, CompiledArchiveFormat},
+    compiled::CompiledFormatSpec,
+    entry::compiled::{CompiledEntryDirective, CompiledEntryFormat},
 };
 
 pub struct ArchiveWithPath {
@@ -40,6 +43,48 @@ impl ArchiveWithPath {
             .wrap_err_with(|| format!("failed to create zip archive from file {:?}", &path))?;
         Ok(Self { path, len, archive })
     }
+}
+
+fn format_entry_info(
+    mut err: impl Write,
+    entry_formatter: &CompiledFormatSpec<CompiledEntryDirective>,
+    matcher: Option<&CompiledMatcher>,
+    mut output_stream: impl Write,
+    source: &mut impl IterateEntries,
+) -> Result<(), CommandError> {
+    if entry_formatter.is_empty() {
+        writeln!(
+            &mut err,
+            "empty entry format, skipping reading from any entries"
+        )
+        .unwrap();
+        return Ok(());
+    }
+
+    while let Some(entry) = source.next_entry()? {
+        let data = EntryData::from_entry(&entry);
+        if matcher.as_ref().is_some_and(|m| !m.matches(&data)) {
+            writeln!(&mut err, "matcher ignored entry: {:?}", data.name).unwrap();
+            continue;
+        }
+        entry_formatter.execute_format(data, &mut output_stream)?;
+    }
+    Ok(())
+}
+
+fn format_archive_info(
+    mut err: impl Write,
+    archive_formatter: &CompiledFormatSpec<CompiledArchiveDirective>,
+    mut output_stream: impl Write,
+    zip: &ArchiveWithPath,
+) -> Result<(), CommandError> {
+    if archive_formatter.is_empty() {
+        writeln!(&mut err, "empty archive format, skipping archive overview").unwrap();
+        return Ok(());
+    }
+
+    archive_formatter.execute_format(&zip, &mut output_stream)?;
+    Ok(())
 }
 
 pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError> {
@@ -67,56 +112,40 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
     let mut output_stream = io::stdout().lock();
 
     if stdin_stream {
-        let mut stdin = io::stdin().lock();
-        if entry_formatter.is_empty() {
-            writeln!(&mut err, "empty entry format, skipping stdin entries").unwrap();
-        } else {
-            while let Some(entry) = read_zipfile_from_stream(&mut stdin)
-                .wrap_err("error reading zip entry from stdin")?
-            {
-                let data = EntryData::from_entry(&entry);
-                if matcher.as_ref().is_some_and(|m| !m.matches(&data)) {
-                    continue;
-                }
-                entry_formatter.execute_format(data, &mut output_stream)?;
-            }
-        }
-        writeln!(
+        let mut stdin = StdinInput::new();
+
+        format_entry_info(
             &mut err,
-            "stdin currently cannot provide archive format info"
-        )
-        .unwrap();
+            &entry_formatter,
+            matcher.as_ref(),
+            &mut output_stream,
+            &mut stdin,
+        )?;
+
+        if !archive_formatter.is_empty() {
+            writeln!(
+                &mut err,
+                "archive format was provided but stdin currently cannot provide archive format info"
+            )
+            .unwrap();
+        }
     }
+
     for p in zip_paths.into_iter() {
         let mut zip = ArchiveWithPath::open(p.clone())?;
-        if entry_formatter.is_empty() {
-            writeln!(
+
+        {
+            let mut zip_entry_counter = ZipFileInput::new(&mut zip.archive);
+            format_entry_info(
                 &mut err,
-                "empty entry format, skipping entries for file {p:?}"
-            )
-            .unwrap();
-        } else {
-            for i in 0..zip.archive.len() {
-                let entry = zip
-                    .archive
-                    .by_index(i)
-                    .wrap_err_with(|| format!("failed to read entry {i} from zip at {p:?}"))?;
-                let data = EntryData::from_entry(&entry);
-                if matcher.as_ref().is_some_and(|m| !m.matches(&data)) {
-                    continue;
-                }
-                entry_formatter.execute_format(data, &mut output_stream)?;
-            }
+                &entry_formatter,
+                matcher.as_ref(),
+                &mut output_stream,
+                &mut zip_entry_counter,
+            )?;
         }
-        if archive_formatter.is_empty() {
-            writeln!(
-                &mut err,
-                "empty archive format, skipping archive overview for file {p:?}"
-            )
-            .unwrap();
-        } else {
-            archive_formatter.execute_format(&zip, &mut output_stream)?;
-        }
+
+        format_archive_info(&mut err, &archive_formatter, &mut output_stream, &zip)?;
     }
 
     Ok(())
