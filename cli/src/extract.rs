@@ -16,14 +16,16 @@ use matcher::EntryMatcher;
 use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryKind, EntryReceiver, ExtractEntry};
 use transform::NameTransformer;
 
-pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), CommandError> {
+pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandError> {
     let Extract {
         output_specs,
         entry_specs,
         input_spec,
     } = extract;
+    let err = Rc::new(RefCell::new(err));
 
-    let compiled_specs = receiver::process_entry_and_output_specs(entry_specs, output_specs)?;
+    let compiled_specs =
+        receiver::process_entry_and_output_specs(err.clone(), entry_specs, output_specs)?;
     let mut entry_iterator = entries::MergedInput::from_spec(input_spec)?;
 
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
@@ -66,8 +68,8 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
                             .as_ref()
                             .map(|t| t.transform_name(&data.name))
                             .unwrap_or_else(|| Cow::Borrowed(&data.name));
-                        writeln!(&mut err, "{data:?}").unwrap();
-                        writeln!(&mut err, "{new_name:?}").unwrap();
+                        writeln!(&mut err.borrow_mut(), "{data:?}").unwrap();
+                        writeln!(&mut err.borrow_mut(), "{new_name:?}").unwrap();
                         matching_extracts.push((new_name, recv.clone()));
                     }
                 }
@@ -85,7 +87,7 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
                 .iter()
                 .any(|p| Rc::ptr_eq(p, &concat_p))
             {
-                writeln!(&mut err, "skipping repeated concat").unwrap();
+                writeln!(&mut err.borrow_mut(), "skipping repeated concat").unwrap();
             } else {
                 deduped_concat_writers.push(concat_p);
             }
@@ -96,7 +98,7 @@ pub fn execute_extract(mut err: impl Write, extract: Extract) -> Result<(), Comm
                 .iter()
                 .any(|(n, p)| Rc::ptr_eq(p, &extract_p) && name.as_ref() == n.as_ref())
             {
-                writeln!(&mut err, "skipping repeated extract").unwrap();
+                writeln!(&mut err.borrow_mut(), "skipping repeated extract").unwrap();
             } else {
                 deduped_matching_extracts.push((name, extract_p));
             }

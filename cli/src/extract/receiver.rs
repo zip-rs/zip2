@@ -94,31 +94,32 @@ impl ParsedEntrySpecArg {
     }
 }
 
-pub struct ConcatEntry {
+pub struct ConcatEntry<'w> {
     pub matcher: Option<CompiledMatcher>,
-    pub stream: Rc<RefCell<dyn Write>>,
+    pub stream: Rc<RefCell<dyn Write + 'w>>,
 }
 
-pub struct ExtractEntry {
+pub struct ExtractEntry<'w> {
     pub matcher: Option<CompiledMatcher>,
     pub transforms: Option<CompiledTransformer>,
-    pub recv: Rc<dyn EntryReceiver>,
+    pub recv: Rc<dyn EntryReceiver + 'w>,
 }
 
-pub enum CompiledEntrySpec {
-    Concat(ConcatEntry),
-    Extract(ExtractEntry),
+pub enum CompiledEntrySpec<'w> {
+    Concat(ConcatEntry<'w>),
+    Extract(ExtractEntry<'w>),
 }
 
-pub struct ParsedNamedOutputs {
-    concats: HashMap<OutputName, Rc<RefCell<dyn Write>>>,
-    extracts: HashMap<OutputName, Rc<dyn EntryReceiver>>,
+pub struct ParsedNamedOutputs<'w> {
+    concats: HashMap<OutputName, Rc<RefCell<dyn Write + 'w>>>,
+    extracts: HashMap<OutputName, Rc<dyn EntryReceiver + 'w>>,
 }
 
-pub fn process_entry_and_output_specs(
+pub fn process_entry_and_output_specs<'w>(
+    err: Rc<RefCell<impl Write + 'w>>,
     entry_specs: impl IntoIterator<Item = EntrySpec>,
     output_specs: OutputSpecs,
-) -> Result<Vec<CompiledEntrySpec>, CommandError> {
+) -> Result<Vec<CompiledEntrySpec<'w>>, CommandError> {
     let mut entry_specs: Vec<ParsedEntrySpecArg> = entry_specs
         .into_iter()
         .map(ParsedEntrySpecArg::from_entry_spec)
@@ -130,15 +131,15 @@ pub fn process_entry_and_output_specs(
             output_name: OutputName::default_name(),
         });
     }
-    let parsed_outputs = ParsedNamedOutputs::from_output_specs(output_specs)?;
+    let parsed_outputs = ParsedNamedOutputs::from_output_specs(err, output_specs)?;
     parsed_outputs.process_entry_specs_for_outputs(entry_specs)
 }
 
-impl ParsedNamedOutputs {
+impl<'w> ParsedNamedOutputs<'w> {
     pub fn process_entry_specs_for_outputs(
         self,
         args: impl IntoIterator<Item = ParsedEntrySpecArg>,
-    ) -> Result<Vec<CompiledEntrySpec>, CommandError> {
+    ) -> Result<Vec<CompiledEntrySpec<'w>>, CommandError> {
         args.into_iter()
             .map(|arg| self.lookup_entry_spec_arg(arg))
             .collect()
@@ -147,7 +148,7 @@ impl ParsedNamedOutputs {
     fn lookup_entry_spec_arg(
         &self,
         arg: ParsedEntrySpecArg,
-    ) -> Result<CompiledEntrySpec, CommandError> {
+    ) -> Result<CompiledEntrySpec<'w>, CommandError> {
         let ParsedEntrySpecArg {
             matcher,
             transforms,
@@ -180,7 +181,7 @@ impl ParsedNamedOutputs {
         seen_stdout: &mut bool,
         name: OutputName,
         seen_names: &mut HashSet<OutputName>,
-        concats: &mut HashMap<OutputName, Rc<RefCell<dyn Write>>>,
+        concats: &mut HashMap<OutputName, Rc<RefCell<dyn Write + 'w>>>,
     ) -> Result<(), CommandError> {
         if *seen_stdout {
             return Err(CommandError::InvalidArg(
@@ -194,7 +195,7 @@ impl ParsedNamedOutputs {
         }
         assert!(!concats.contains_key(&name));
 
-        let handle: Rc<RefCell<dyn Write>> = Rc::new(RefCell::new(io::stdout()));
+        let handle: Rc<RefCell<dyn Write + 'w>> = Rc::new(RefCell::new(io::stdout()));
 
         *seen_stdout = true;
         assert!(seen_names.insert(name.clone()));
@@ -208,7 +209,7 @@ impl ParsedNamedOutputs {
         name: OutputName,
         seen_files: &mut HashSet<PathBuf>,
         seen_names: &mut HashSet<OutputName>,
-        concats: &mut HashMap<OutputName, Rc<RefCell<dyn Write>>>,
+        concats: &mut HashMap<OutputName, Rc<RefCell<dyn Write + 'w>>>,
     ) -> Result<(), CommandError> {
         if seen_names.contains(&name) {
             return Err(CommandError::InvalidArg(format!(
@@ -217,7 +218,7 @@ impl ParsedNamedOutputs {
         }
         assert!(!concats.contains_key(&name));
 
-        let handle: Rc<RefCell<dyn Write>> = {
+        let handle: Rc<RefCell<dyn Write + 'w>> = {
             let mut f: fs::File = if append {
                 fs::OpenOptions::new()
                     .write(true)
@@ -249,12 +250,13 @@ impl ParsedNamedOutputs {
     }
 
     fn add_dir(
+        err: Rc<RefCell<impl Write + 'w>>,
         output_dir: PathBuf,
         mkdir: bool,
         name: OutputName,
         seen_dirs: &mut HashSet<PathBuf>,
         seen_names: &mut HashSet<OutputName>,
-        extracts: &mut HashMap<OutputName, Rc<dyn EntryReceiver>>,
+        extracts: &mut HashMap<OutputName, Rc<dyn EntryReceiver + 'w>>,
     ) -> Result<(), CommandError> {
         if seen_names.contains(&name) {
             return Err(CommandError::InvalidArg(format!(
@@ -277,8 +279,8 @@ impl ParsedNamedOutputs {
             )));
         }
 
-        let handle: Rc<dyn EntryReceiver> = {
-            let d = FilesystemReceiver::new(output_dir);
+        let handle: Rc<dyn EntryReceiver + 'w> = {
+            let d = FilesystemReceiver::new(err, output_dir);
             Rc::new(d)
         };
 
@@ -288,11 +290,14 @@ impl ParsedNamedOutputs {
         Ok(())
     }
 
-    pub fn from_output_specs(spec: OutputSpecs) -> Result<Self, CommandError> {
+    pub fn from_output_specs(
+        err: Rc<RefCell<impl Write + 'w>>,
+        spec: OutputSpecs,
+    ) -> Result<Self, CommandError> {
         let OutputSpecs { default, named } = spec;
 
-        let mut concats: HashMap<OutputName, Rc<RefCell<dyn Write>>> = HashMap::new();
-        let mut extracts: HashMap<OutputName, Rc<dyn EntryReceiver>> = HashMap::new();
+        let mut concats: HashMap<OutputName, Rc<RefCell<dyn Write + 'w>>> = HashMap::new();
+        let mut extracts: HashMap<OutputName, Rc<dyn EntryReceiver + 'w>> = HashMap::new();
 
         let mut seen_stdout: bool = false;
         let mut seen_files: HashSet<PathBuf> = HashSet::new();
@@ -321,6 +326,7 @@ impl ParsedNamedOutputs {
                 }
                 OutputCollation::Filesystem { output_dir, mkdir } => {
                     Self::add_dir(
+                        err.clone(),
                         output_dir,
                         mkdir,
                         OutputName::default_name(),
@@ -349,6 +355,7 @@ impl ParsedNamedOutputs {
                 }
                 OutputCollation::Filesystem { output_dir, mkdir } => {
                     Self::add_dir(
+                        err.clone(),
                         output_dir,
                         mkdir,
                         name,
@@ -375,15 +382,17 @@ pub trait EntryReceiver {
     fn finalize_entries(&self) -> Result<(), CommandError>;
 }
 
-struct FilesystemReceiver {
+struct FilesystemReceiver<W> {
+    err: Rc<RefCell<W>>,
     output_dir: PathBuf,
     #[cfg(unix)]
     perms_to_set: RefCell<Vec<(PathBuf, u32)>>,
 }
 
-impl FilesystemReceiver {
-    pub fn new(output_dir: PathBuf) -> Self {
+impl<W> FilesystemReceiver<W> {
+    pub fn new(err: Rc<RefCell<W>>, output_dir: PathBuf) -> Self {
         Self {
+            err,
             output_dir,
             #[cfg(unix)]
             perms_to_set: RefCell::new(Vec::new()),
@@ -391,29 +400,32 @@ impl FilesystemReceiver {
     }
 }
 
-impl EntryReceiver for FilesystemReceiver {
+impl<W> EntryReceiver for FilesystemReceiver<W>
+where
+    W: Write,
+{
     fn generate_entry_handle<'s>(
         &self,
         data: EntryData<'s>,
         symlink_target: Option<&[u8]>,
         name: Cow<'s, str>,
     ) -> Result<Option<Box<dyn Write>>, CommandError> {
-        /* let mut err = self.err.borrow_mut(); */
+        let mut err = self.err.borrow_mut();
         let full_output_path = self.output_dir.join(name.as_ref());
-        /* writeln!( */
-        /*     err, */
-        /*     "receiving entry {} with name {name} and writing to path {full_output_path:?}", */
-        /*     entry.name() */
-        /* ) */
-        /* .unwrap(); */
+        writeln!(
+            err,
+            "receiving entry {} with name {name} and writing to path {full_output_path:?}",
+            data.name
+        )
+        .unwrap();
 
         #[cfg(unix)]
         if let Some(mode) = data.unix_mode {
-            /* writeln!( */
-            /*     err, */
-            /*     "storing unix mode {mode} for path {full_output_path:?}" */
-            /* ) */
-            /* .unwrap(); */
+            writeln!(
+                err,
+                "storing unix mode {mode} for path {full_output_path:?}"
+            )
+            .unwrap();
             self.perms_to_set
                 .borrow_mut()
                 .push((full_output_path.clone(), mode));
@@ -421,7 +433,7 @@ impl EntryReceiver for FilesystemReceiver {
 
         match data.kind {
             EntryKind::Dir => {
-                /* writeln!(err, "entry is directory, creating").unwrap(); */
+                writeln!(err, "entry is directory, creating").unwrap();
                 fs::create_dir_all(&full_output_path).wrap_err_with(|| {
                     format!("failed to create directory entry at {full_output_path:?}")
                 })?;
@@ -438,7 +450,7 @@ impl EntryReceiver for FilesystemReceiver {
                         os::unix::{ffi::OsStringExt, fs::symlink},
                     };
                     let target = OsString::from_vec(target);
-                    /* writeln!(err, "entry is symlink to {target:?}, creating").unwrap(); */
+                    writeln!(err, "entry is symlink to {target:?}, creating").unwrap();
                     symlink(&target, &full_output_path).wrap_err_with(|| {
                         format!(
                         "failed to create symlink at {full_output_path:?} with target {target:?}"
@@ -452,13 +464,13 @@ impl EntryReceiver for FilesystemReceiver {
                 }
             }
             EntryKind::File => {
-                /* writeln!(err, "entry is file, creating").unwrap(); */
+                writeln!(err, "entry is file, creating").unwrap();
                 if let Some(containing_dir) = full_output_path.parent() {
                     fs::create_dir_all(containing_dir).wrap_err_with(|| {
                         format!("failed to create parent dirs for file at {full_output_path:?}")
                     })?;
                 } else {
-                    /* writeln!(err, "entry had no parent dir (in root dir?)").unwrap(); */
+                    writeln!(err, "entry had no parent dir (in root dir?)").unwrap();
                 }
                 let outfile = fs::File::create(&full_output_path)
                     .wrap_err_with(|| format!("failed to create file at {full_output_path:?}"))?;
