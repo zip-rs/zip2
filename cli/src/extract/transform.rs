@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::VecDeque, ops, path::Path, str};
+use std::{borrow::Cow, collections::VecDeque, fmt, ops, path::Path, str};
 
 #[cfg(feature = "rx")]
 use regex;
@@ -6,7 +6,7 @@ use regex;
 use super::matcher::{CaseSensitivity, SearchAnchoring};
 use crate::{args::extract::*, CommandError};
 
-pub trait NameTransformer {
+pub trait NameTransformer: fmt::Debug {
     type Arg
     where
         Self: Sized;
@@ -16,7 +16,7 @@ pub trait NameTransformer {
     fn transform_name<'s>(&self, name: &'s str) -> Cow<'s, str>;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum Trivial {
     Identity,
 }
@@ -38,6 +38,7 @@ impl NameTransformer for Trivial {
     }
 }
 
+#[derive(Debug)]
 struct StripComponents {
     num_components_to_strip: usize,
 }
@@ -79,6 +80,7 @@ impl NameTransformer for StripComponents {
     }
 }
 
+#[derive(Debug)]
 struct AddPrefix {
     prefix_to_add: String,
 }
@@ -142,7 +144,7 @@ impl ReplaceModifiers {
     }
 }
 
-trait PatternTransformer {
+trait PatternTransformer: fmt::Debug {
     type Replacement
     where
         Self: Sized;
@@ -157,6 +159,7 @@ trait PatternTransformer {
     fn replace<'s>(&self, input: &'s str) -> Cow<'s, str>;
 }
 
+#[derive(Debug)]
 struct LiteralTransformer {
     lit: String,
     case: CaseSensitivity,
@@ -354,6 +357,7 @@ impl PatternTransformer for LiteralTransformer {
     }
 }
 
+#[derive(Debug)]
 #[cfg(feature = "rx")]
 struct RegexpTransformer {
     pat: regex::Regex,
@@ -555,6 +559,7 @@ impl SubstringAnchoring {
     }
 }
 
+#[derive(Debug)]
 struct ComponentTransformer {
     pattern_trans: Box<dyn PatternTransformer>,
     comp_sel: ComponentSelector,
@@ -612,6 +617,7 @@ impl NameTransformer for ComponentTransformer {
     }
 }
 
+#[derive(Debug)]
 pub struct CompiledTransformer {
     transformers: Vec<Box<dyn NameTransformer>>,
 }

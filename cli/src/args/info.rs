@@ -432,7 +432,6 @@ impl FormatSpec {
                         "failed to parse archive format string {archive_format:?}: {e}"
                     ))
                 })?;
-        dbg!(&entry_format);
         let entry = ParseableFormatSpec::<EntryFormatDirective>::parse_format(&entry_format)
             .map_err(|e| {
                 Info::exit_arg_invalid(&format!(

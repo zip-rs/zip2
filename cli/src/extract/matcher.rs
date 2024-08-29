@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 
 #[cfg(feature = "glob")]
 use glob;
@@ -97,13 +97,14 @@ impl MatchModifiers {
     }
 }
 
-trait NameMatcher {
+trait NameMatcher: fmt::Debug {
     fn create(pattern: String, opts: MatchModifiers) -> Result<Self, CommandError>
     where
         Self: Sized;
     fn matches(&self, input: &str) -> bool;
 }
 
+#[derive(Debug)]
 struct LiteralMatcher {
     lit: String,
     case: CaseSensitivity,
@@ -148,6 +149,7 @@ impl NameMatcher for LiteralMatcher {
     }
 }
 
+#[derive(Debug)]
 #[cfg(feature = "glob")]
 struct GlobMatcher {
     pat: glob::Pattern,
@@ -186,6 +188,7 @@ impl NameMatcher for GlobMatcher {
     }
 }
 
+#[derive(Debug)]
 #[cfg(feature = "rx")]
 struct RegexMatcher {
     pat: regex::Regex,
@@ -220,7 +223,7 @@ impl NameMatcher for RegexMatcher {
     }
 }
 
-pub trait EntryMatcher {
+pub trait EntryMatcher: fmt::Debug {
     type Arg
     where
         Self: Sized;
@@ -230,7 +233,7 @@ pub trait EntryMatcher {
     fn matches(&self, entry: &EntryData) -> bool;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum TrivialMatcher {
     True,
     False,
@@ -257,7 +260,7 @@ impl EntryMatcher for TrivialMatcher {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum EntryTypeMatcher {
     File,
     Dir,
@@ -288,7 +291,7 @@ impl EntryMatcher for EntryTypeMatcher {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum NonSpecificMethods {
     Any,
     Known,
@@ -317,6 +320,7 @@ impl EntryMatcher for NonSpecificMethods {
     }
 }
 
+#[derive(Debug)]
 struct SpecificMethods {
     specific_method: CompressionMethod,
 }
@@ -338,7 +342,7 @@ impl EntryMatcher for SpecificMethods {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum DepthLimit {
     Max(usize),
     Min(usize),
@@ -366,7 +370,7 @@ impl EntryMatcher for DepthLimit {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum Size {
     Max(u64),
     Min(u64),
@@ -393,6 +397,7 @@ impl EntryMatcher for Size {
     }
 }
 
+#[derive(Debug)]
 struct PatternMatcher {
     matcher: Box<dyn NameMatcher>,
     comp_sel: ComponentSelector,
@@ -452,6 +457,7 @@ impl EntryMatcher for PatternMatcher {
     }
 }
 
+#[derive(Debug)]
 pub enum CompiledMatcher {
     Primitive(Box<dyn EntryMatcher>),
     Negated(Box<dyn EntryMatcher>),

@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     collections::{HashMap, HashSet},
-    fs,
+    fmt, fs,
     io::{self, Seek, Write},
     mem,
     path::PathBuf,
@@ -99,15 +99,124 @@ pub struct ConcatEntry<'w> {
     pub stream: Rc<RefCell<dyn Write + 'w>>,
 }
 
+impl<'w> fmt::Debug for ConcatEntry<'w> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "ConcatEntry {{ matcher: {:?}, stream: {:p} }}",
+            &self.matcher, &self.stream
+        )
+    }
+}
+
+impl<'w> ConcatEntry<'w> {
+    pub fn do_match<'a>(&self, data: &EntryData<'a>) -> Option<&Rc<RefCell<dyn Write + 'w>>> {
+        if self
+            .matcher
+            .as_ref()
+            .map(|m| m.matches(data))
+            .unwrap_or(true)
+        {
+            Some(&self.stream)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct ExtractEntry<'w> {
     pub matcher: Option<CompiledMatcher>,
     pub transforms: Option<CompiledTransformer>,
     pub recv: Rc<dyn EntryReceiver + 'w>,
 }
 
+impl<'w> ExtractEntry<'w> {
+    pub fn do_match_and_transform<'a>(
+        &self,
+        data: &EntryData<'a>,
+    ) -> Option<(Cow<'a, str>, &Rc<dyn EntryReceiver + 'w>)> {
+        if self
+            .matcher
+            .as_ref()
+            .map(|m| m.matches(data))
+            .unwrap_or(true)
+        {
+            let new_name = self
+                .transforms
+                .as_ref()
+                .map(|t| t.transform_name(data.name))
+                .unwrap_or_else(|| Cow::Borrowed(data.name));
+            Some((new_name, &self.recv))
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum CompiledEntrySpec<'w> {
     Concat(ConcatEntry<'w>),
     Extract(ExtractEntry<'w>),
+}
+
+impl<'w> CompiledEntrySpec<'w> {
+    pub fn try_match_and_transform<'a>(
+        &self,
+        data: &EntryData<'a>,
+    ) -> Option<MatchingEntrySpec<'a, '_, 'w>> {
+        match self {
+            Self::Concat(c) => c.do_match(data).map(MatchingEntrySpec::Concat),
+            Self::Extract(e) => e
+                .do_match_and_transform(data)
+                .map(|(n, p)| MatchingEntrySpec::Extract(n, p)),
+        }
+    }
+}
+
+pub enum MatchingEntrySpec<'a, 'c, 'w> {
+    Concat(&'c Rc<RefCell<dyn Write + 'w>>),
+    Extract(Cow<'a, str>, &'c Rc<dyn EntryReceiver + 'w>),
+}
+
+impl<'a, 'c, 'w> MatchingEntrySpec<'a, 'c, 'w> {
+    /* Split output handles for concat, and split generated handles by extract source and
+     * name. use ptr::eq() to split, and Cow::<'s, str>::eq() with str AsRef. */
+    pub fn is_nested_duplicate(
+        self,
+        deduped_concat_writers: &mut Vec<&'c Rc<RefCell<dyn Write + 'w>>>,
+        deduped_matching_extracts: &mut Vec<(&'c Rc<dyn EntryReceiver + 'w>, Vec<Cow<'a, str>>)>,
+    ) -> bool {
+        match self {
+            MatchingEntrySpec::Concat(concat_writer) => {
+                if deduped_concat_writers
+                    .iter()
+                    .any(|p| Rc::ptr_eq(p, &concat_writer))
+                {
+                    true
+                } else {
+                    deduped_concat_writers.push(concat_writer);
+                    false
+                }
+            }
+            MatchingEntrySpec::Extract(name, extract_receiver) => {
+                if let Some((_, names)) = deduped_matching_extracts
+                    .iter_mut()
+                    .find(|(p, _)| Rc::ptr_eq(p, &extract_receiver))
+                {
+                    if !names.iter().any(|n| n.as_ref() == name.as_ref()) {
+                        names.push(name);
+                        false
+                    } else {
+                        true
+                    }
+                } else {
+                    deduped_matching_extracts.push((extract_receiver, vec![name]));
+                    false
+                }
+            }
+        }
+    }
 }
 
 struct ParsedNamedOutputs<'w> {
@@ -371,7 +480,7 @@ impl<'w> ParsedNamedOutputs<'w> {
     }
 }
 
-pub trait EntryReceiver {
+pub trait EntryReceiver: fmt::Debug {
     fn generate_entry_handle<'s>(
         &self,
         data: EntryData<'s>,
@@ -404,6 +513,16 @@ impl<W> FilesystemReceiver<W> {
             #[cfg(unix)]
             perms_to_set: RefCell::new(Vec::new()),
         }
+    }
+}
+
+impl<W> fmt::Debug for FilesystemReceiver<W> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "FilesystemReceiver {{ output_dir: {:?} }}",
+            &self.output_dir
+        )
     }
 }
 

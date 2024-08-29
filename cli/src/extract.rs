@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
-    fs,
+    fmt, fs,
     io::{self, Read, Write},
     rc::Rc,
 };
@@ -15,9 +15,7 @@ pub mod matcher;
 pub mod receiver;
 pub mod transform;
 use entries::{IterateEntries, StreamInput, ZipFileInput};
-use matcher::EntryMatcher;
-use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryKind, EntryReceiver, ExtractEntry};
-use transform::NameTransformer;
+use receiver::{CompiledEntrySpec, EntryData, EntryKind, EntryReceiver, ExtractEntry};
 
 fn maybe_process_symlink<'a, 't>(
     entry: &mut ZipFile<'a>,
@@ -52,18 +50,18 @@ fn maybe_process_symlink<'a, 't>(
     Ok(Some(symlink_target))
 }
 
-fn process_entry<'a, 'w, 'it>(
+fn process_entry<'a, 'w, 'c, 'it>(
     mut entry: ZipFile<'a>,
     err: &Rc<RefCell<impl Write>>,
-    compiled_specs: impl Iterator<Item = &'it CompiledEntrySpec<'w>>,
+    compiled_specs: impl Iterator<Item = &'it CompiledEntrySpec<'w>> + fmt::Debug,
     copy_buf: &mut [u8],
     symlink_target: &mut Vec<u8>,
-    matching_concats: &mut Vec<Rc<RefCell<dyn Write + 'w>>>,
-    deduped_concat_writers: &mut Vec<Rc<RefCell<dyn Write + 'w>>>,
+    deduped_concat_writers: &mut Vec<&'c Rc<RefCell<dyn Write + 'w>>>,
     matching_handles: &mut Vec<Box<dyn Write>>,
 ) -> Result<(), CommandError>
 where
     'w: 'it,
+    'it: 'c,
 {
     deduped_concat_writers.clear();
     matching_handles.clear();
@@ -72,63 +70,20 @@ where
     /* We dropped any mutable handles to the entry, so now we can access its metadata again. */
     let data = EntryData::from_entry(&entry);
 
-    let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
-    for spec in compiled_specs {
-        match spec {
-            CompiledEntrySpec::Concat(ConcatEntry { matcher, stream }) => {
-                if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
-                    matching_concats.push(stream.clone());
-                }
-            }
-            CompiledEntrySpec::Extract(ExtractEntry {
-                matcher,
-                transforms,
-                recv,
-            }) => {
-                if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
-                    let new_name = transforms
-                        .as_ref()
-                        .map(|t| t.transform_name(&data.name))
-                        .unwrap_or_else(|| Cow::Borrowed(&data.name));
-                    writeln!(&mut err.borrow_mut(), "{data:?}").unwrap();
-                    writeln!(&mut err.borrow_mut(), "{new_name:?}").unwrap();
-                    matching_extracts.push((new_name, recv.clone()));
-                }
-            }
-        }
-    }
-    if matching_concats.is_empty() && matching_extracts.is_empty() {
-        return Ok(());
-    }
-
-    /* Split output handles for concat, and split generated handles by extract source and
-     * name. use Rc::ptr_eq() to split, and Cow::<'s, str>::eq() with str AsRef. */
-    for concat_p in matching_concats.drain(..) {
-        if deduped_concat_writers
-            .iter()
-            .any(|p| Rc::ptr_eq(p, &concat_p))
+    let mut deduped_matching_extracts: Vec<(&'c Rc<dyn EntryReceiver>, Vec<Cow<'_, str>>)> =
+        Vec::new();
+    for matching_spec in compiled_specs.filter_map(|spec| spec.try_match_and_transform(&data)) {
+        if matching_spec.is_nested_duplicate(deduped_concat_writers, &mut deduped_matching_extracts)
         {
-            writeln!(&mut err.borrow_mut(), "skipping repeated concat").unwrap();
-        } else {
-            deduped_concat_writers.push(concat_p);
-        }
-    }
-    let mut deduped_matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
-    for (name, extract_p) in matching_extracts.into_iter() {
-        if deduped_matching_extracts
-            .iter()
-            .any(|(n, p)| Rc::ptr_eq(p, &extract_p) && name.as_ref() == n.as_ref())
-        {
-            writeln!(&mut err.borrow_mut(), "skipping repeated extract").unwrap();
-        } else {
-            deduped_matching_extracts.push((name, extract_p));
+            writeln!(&mut err.borrow_mut(), "skipping repeated output").unwrap();
         }
     }
 
     matching_handles.extend(
         deduped_matching_extracts
             .into_iter()
-            .map(|(name, recv)| {
+            .flat_map(|(recv, names)| names.into_iter().map(move |n| (recv, n)))
+            .map(|(recv, name)| {
                 recv.generate_entry_handle(data, symlink_target.as_ref().map(|t| t.as_ref()), name)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -174,16 +129,15 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
     } = extract;
     let err = Rc::new(RefCell::new(err));
 
+    writeln!(&mut err.borrow_mut(), "entry specs: {entry_specs:?}").unwrap();
     let compiled_specs =
         receiver::process_entry_and_output_specs(err.clone(), entry_specs, output_specs)?;
+    writeln!(&mut err.borrow_mut(), "compiled specs: {compiled_specs:?}").unwrap();
 
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
     let mut symlink_target: Vec<u8> = Vec::new();
 
-    let mut matching_concats: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
-    /* let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new(); */
-    let mut deduped_concat_writers: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
-    /* let mut deduped_matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new(); */
+    let mut deduped_concat_writers: Vec<&Rc<RefCell<dyn Write>>> = Vec::new();
     let mut matching_handles: Vec<Box<dyn Write>> = Vec::new();
 
     if stdin_stream {
@@ -197,7 +151,6 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
                 compiled_specs.iter(),
                 &mut copy_buf,
                 &mut symlink_target,
-                &mut matching_concats,
                 &mut deduped_concat_writers,
                 &mut matching_handles,
             )?;
@@ -225,7 +178,6 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
                 compiled_specs.iter(),
                 &mut copy_buf,
                 &mut symlink_target,
-                &mut matching_concats,
                 &mut deduped_concat_writers,
                 &mut matching_handles,
             )?;
