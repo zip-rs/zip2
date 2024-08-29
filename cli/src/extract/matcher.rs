@@ -391,8 +391,8 @@ impl EntryMatcher for Size {
 
     fn matches(&self, entry: &EntryData) -> bool {
         match self {
-            Self::Max(max) => entry.size <= *max,
-            Self::Min(min) => entry.size >= *min,
+            Self::Max(max) => entry.uncompressed_size <= *max,
+            Self::Min(min) => entry.uncompressed_size >= *min,
         }
     }
 }

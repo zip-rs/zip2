@@ -8,7 +8,11 @@ use std::{
     rc::Rc,
 };
 
-use zip::{read::ZipFile, CompressionMethod};
+use zip::{
+    extra_fields::{ExtendedTimestamp, ExtraField},
+    read::ZipFile,
+    CompressionMethod, DateTime,
+};
 
 use super::matcher::{CompiledMatcher, EntryMatcher};
 use super::transform::{CompiledTransformer, NameTransformer};
@@ -21,13 +25,21 @@ pub enum EntryKind {
     Symlink,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EntryData<'a> {
     pub name: &'a str,
     pub kind: EntryKind,
     pub compression: CompressionMethod,
     pub unix_mode: Option<u32>,
-    pub size: u64,
+    pub comment: &'a str,
+    pub uncompressed_size: u64,
+    pub compressed_size: u64,
+    pub local_header_start: u64,
+    pub content_start: u64,
+    pub central_header_start: u64,
+    pub crc32: u32,
+    pub last_modified_time: Option<DateTime>,
+    pub extended_timestamp: Option<ExtendedTimestamp>,
 }
 
 impl<'a> EntryData<'a> {
@@ -44,8 +56,26 @@ impl<'a> EntryData<'a> {
             },
             compression: entry.compression(),
             unix_mode: entry.unix_mode(),
-            size: entry.size(),
+            comment: entry.comment(),
+            uncompressed_size: entry.size(),
+            compressed_size: entry.compressed_size(),
+            local_header_start: entry.header_start(),
+            content_start: entry.data_start(),
+            central_header_start: entry.central_header_start(),
+            crc32: entry.crc32(),
+            last_modified_time: entry.last_modified(),
+            extended_timestamp: entry
+                .extra_data_fields()
+                .find_map(|f| match f {
+                    ExtraField::ExtendedTimestamp(ts) => Some(ts),
+                })
+                .cloned(),
         }
+    }
+
+    #[inline(always)]
+    pub const fn content_end(&self) -> u64 {
+        self.content_start + self.compressed_size
     }
 }
 
@@ -136,7 +166,7 @@ pub enum MatchingEntrySpec<'a, 'c, 'w> {
 
 impl<'a, 'c, 'w> MatchingEntrySpec<'a, 'c, 'w> {
     /* Split output handles for concat, and split generated handles by extract source and
-     * name. use ptr::eq() to split, and Cow::<'s, str>::eq() with str AsRef. */
+     * name. use Rc::ptr_eq() to split, and Cow::<'s, str>::eq() with str AsRef. */
     pub fn is_nested_duplicate(
         self,
         deduped_concat_writers: &mut Vec<&'c Rc<RefCell<dyn Write + 'w>>>,
@@ -177,7 +207,7 @@ impl<'a, 'c, 'w> MatchingEntrySpec<'a, 'c, 'w> {
 pub trait EntryReceiver: fmt::Debug {
     fn generate_entry_handle<'s>(
         &self,
-        data: EntryData<'s>,
+        data: &EntryData<'s>,
         symlink_target: Option<&[u8]>,
         name: Cow<'s, str>,
     ) -> Result<Option<Box<dyn Write>>, CommandError>;
@@ -274,7 +304,7 @@ where
 {
     fn generate_entry_handle<'s>(
         &self,
-        data: EntryData<'s>,
+        data: &EntryData<'s>,
         symlink_target: Option<&[u8]>,
         name: Cow<'s, str>,
     ) -> Result<Option<Box<dyn Write>>, CommandError> {

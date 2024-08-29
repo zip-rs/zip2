@@ -33,7 +33,7 @@ fn maybe_process_symlink<'a, 't>(
          *        contents with io::Read. ZipEntry<'a, R> from
          *        https://github.com/zip-rs/zip2/pull/233 avoids this issue!!! */
         let data = EntryData::from_entry(&entry);
-        (data.kind, data.size)
+        (data.kind, data.uncompressed_size)
     };
     if !matches!(kind, EntryKind::Symlink) {
         return Ok(None);
@@ -86,7 +86,7 @@ where
         deduped_matching_extracts
             .into_iter()
             .flat_map(|(recv, names)| names.into_iter().map(move |n| (recv, n)))
-            .map(|(recv, name)| recv.generate_entry_handle(data, symlink_target.as_deref(), name))
+            .map(|(recv, name)| recv.generate_entry_handle(&data, symlink_target.as_deref(), name))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten(),

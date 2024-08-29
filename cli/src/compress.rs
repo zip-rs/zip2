@@ -418,6 +418,7 @@ pub fn execute_compress(mut err: impl Write, args: Compress) -> Result<(), Comma
             "name {last_name} remaining after all entry flags processed"
         )));
     }
+
     for pos_arg in positional_paths.into_iter() {
         let file_type = fs::symlink_metadata(&pos_arg)
             .wrap_err_with(|| format!("failed to read metadata from path {}", pos_arg.display()))?

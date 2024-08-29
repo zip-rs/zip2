@@ -5,7 +5,7 @@ use std::{
     path,
 };
 
-use zip::CompressionMethod;
+use zip::{CompressionMethod, DateTime};
 
 use super::directives::Writeable;
 use crate::{args::info::*, extract::receiver::EntryKind};
@@ -290,6 +290,36 @@ impl FormatValue for OffsetValue {
 }
 
 #[derive(Copy, Clone)]
+pub struct BinaryNumericValue(pub BinaryNumericValueFormat);
+
+#[derive(Debug)]
+pub enum BinaryNumericValueWriter {
+    Decimal(u32),
+    Hexadecimal(u32),
+}
+
+impl fmt::Display for BinaryNumericValueWriter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Decimal(x) => write!(f, "{}", x),
+            Self::Hexadecimal(x) => write!(f, "{:x}", x),
+        }
+    }
+}
+
+impl FormatValue for BinaryNumericValue {
+    type Input<'a> = u32;
+    type Output<'a> = BinaryNumericValueWriter;
+    type E = Infallible;
+    fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
+        Ok(match self.0 {
+            BinaryNumericValueFormat::Decimal => BinaryNumericValueWriter::Decimal(input),
+            BinaryNumericValueFormat::Hexadecimal => BinaryNumericValueWriter::Hexadecimal(input),
+        })
+    }
+}
+
+#[derive(Copy, Clone)]
 pub struct BinaryStringValue(pub BinaryStringFormat);
 
 #[derive(Debug)]
@@ -340,6 +370,56 @@ impl FormatValue for BinaryStringValue {
             BinaryStringFormat::PrintAsString => BinaryStringWriter::ReplaceNonUnicode(input),
             BinaryStringFormat::EscapeAscii => BinaryStringWriter::EscapeAscii(input),
             BinaryStringFormat::WriteBinaryContents => BinaryStringWriter::WriteExactly(input),
+        })
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct TimestampValue(pub TimestampFormat);
+
+#[derive(Debug)]
+pub enum TimestampValueWriter {
+    None,
+    DateOnly(DateTime),
+    TimeOnly(DateTime),
+    DateAndTime(DateTime),
+}
+
+impl fmt::Display for TimestampValueWriter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::None => write!(f, "?"),
+            Self::DateOnly(d) => write!(f, "{}-{}-{}", d.year(), d.month(), d.day()),
+            Self::TimeOnly(t) => write!(f, "{}:{}:{}", t.hour(), t.minute(), t.second()),
+            Self::DateAndTime(dt) => {
+                write!(
+                    f,
+                    "{}-{}-{} {}:{}:{}",
+                    dt.year(),
+                    dt.month(),
+                    dt.day(),
+                    dt.hour(),
+                    dt.minute(),
+                    dt.second()
+                )
+            }
+        }
+    }
+}
+
+impl FormatValue for TimestampValue {
+    type Input<'a> = Option<DateTime>;
+    type Output<'a> = TimestampValueWriter;
+    type E = Infallible;
+    fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
+        let input = match input {
+            None => return Ok(TimestampValueWriter::None),
+            Some(input) => input,
+        };
+        Ok(match self.0 {
+            TimestampFormat::DateOnly => TimestampValueWriter::DateOnly(input),
+            TimestampFormat::TimeOnly => TimestampValueWriter::TimeOnly(input),
+            TimestampFormat::DateAndTime => TimestampValueWriter::DateAndTime(input),
         })
     }
 }

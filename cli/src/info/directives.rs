@@ -181,8 +181,8 @@ pub mod compiled {
 pub mod entry {
     use super::{
         super::formats::{
-            ByteSizeValue, CompressionMethodValue, FileTypeValue, FormatValue, NameString,
-            UnixModeValue,
+            BinaryNumericValue, BinaryStringValue, ByteSizeValue, CompressionMethodValue,
+            FileTypeValue, FormatValue, NameString, OffsetValue, TimestampValue, UnixModeValue,
         },
         FormatDirective,
     };
@@ -220,6 +220,118 @@ pub mod entry {
         }
     }
 
+    pub struct EntryCommentField(pub BinaryStringValue);
+
+    impl FormatDirective for EntryCommentField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = BinaryStringValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            Some(data.comment.as_bytes())
+        }
+        fn value_formatter(&self) -> BinaryStringValue {
+            self.0
+        }
+    }
+
+    pub struct LocalHeaderStartField(pub OffsetValue);
+
+    impl FormatDirective for LocalHeaderStartField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = OffsetValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            Some(data.local_header_start)
+        }
+        fn value_formatter(&self) -> OffsetValue {
+            self.0
+        }
+    }
+
+    pub struct ContentStartField(pub OffsetValue);
+
+    impl FormatDirective for ContentStartField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = OffsetValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            Some(data.content_start)
+        }
+        fn value_formatter(&self) -> OffsetValue {
+            self.0
+        }
+    }
+
+    pub struct UncompressedSizeField(pub ByteSizeValue);
+
+    impl FormatDirective for UncompressedSizeField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = ByteSizeValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.uncompressed_size
+        }
+        fn value_formatter(&self) -> ByteSizeValue {
+            self.0
+        }
+    }
+
+    pub struct CompressedSizeField(pub ByteSizeValue);
+
+    impl FormatDirective for CompressedSizeField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = ByteSizeValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.compressed_size
+        }
+        fn value_formatter(&self) -> ByteSizeValue {
+            self.0
+        }
+    }
+
+    pub struct ContentEndField(pub OffsetValue);
+
+    impl FormatDirective for ContentEndField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = OffsetValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            Some(data.content_end())
+        }
+        fn value_formatter(&self) -> OffsetValue {
+            self.0
+        }
+    }
+
+    pub struct CentralHeaderStartField(pub OffsetValue);
+
+    impl FormatDirective for CentralHeaderStartField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = OffsetValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            Some(data.central_header_start)
+        }
+        fn value_formatter(&self) -> OffsetValue {
+            self.0
+        }
+    }
+
     pub struct CompressionMethodField(pub CompressionMethodValue);
 
     impl FormatDirective for CompressionMethodField {
@@ -252,18 +364,34 @@ pub mod entry {
         }
     }
 
-    pub struct UncompressedSizeField(pub ByteSizeValue);
+    pub struct Crc32Field(pub BinaryNumericValue);
 
-    impl FormatDirective for UncompressedSizeField {
+    impl FormatDirective for Crc32Field {
         type Data<'a> = &'a EntryData<'a>;
-        type FieldType = ByteSizeValue;
+        type FieldType = BinaryNumericValue;
         fn extract_field<'a>(
             &self,
             data: Self::Data<'a>,
         ) -> <Self::FieldType as FormatValue>::Input<'a> {
-            data.size
+            data.crc32
         }
-        fn value_formatter(&self) -> ByteSizeValue {
+        fn value_formatter(&self) -> BinaryNumericValue {
+            self.0
+        }
+    }
+
+    pub struct TimestampField(pub TimestampValue);
+
+    impl FormatDirective for TimestampField {
+        type Data<'a> = &'a EntryData<'a>;
+        type FieldType = TimestampValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.last_modified_time
+        }
+        fn value_formatter(&self) -> TimestampValue {
             self.0
         }
     }
@@ -326,6 +454,9 @@ pub mod entry {
                 Ok(CompiledEntryDirective(match spec {
                     EntryFormatDirective::Name => Box::new(EntryNameField(NameString)),
                     EntryFormatDirective::FileType(f) => Box::new(FileTypeField(FileTypeValue(f))),
+                    EntryFormatDirective::CompressedSize(f) => {
+                        Box::new(CompressedSizeField(ByteSizeValue(f)))
+                    }
                     EntryFormatDirective::UncompressedSize(f) => {
                         Box::new(UncompressedSizeField(ByteSizeValue(f)))
                     }
@@ -333,7 +464,27 @@ pub mod entry {
                     EntryFormatDirective::CompressionMethod(f) => {
                         Box::new(CompressionMethodField(CompressionMethodValue(f)))
                     }
-                    _ => todo!(),
+                    EntryFormatDirective::Comment(f) => {
+                        Box::new(EntryCommentField(BinaryStringValue(f)))
+                    }
+                    EntryFormatDirective::LocalHeaderStart(f) => {
+                        Box::new(LocalHeaderStartField(OffsetValue(f)))
+                    }
+                    EntryFormatDirective::ContentStart(f) => {
+                        Box::new(ContentStartField(OffsetValue(f)))
+                    }
+                    EntryFormatDirective::ContentEnd(f) => {
+                        Box::new(ContentEndField(OffsetValue(f)))
+                    }
+                    EntryFormatDirective::CentralHeaderStart(f) => {
+                        Box::new(CentralHeaderStartField(OffsetValue(f)))
+                    }
+                    EntryFormatDirective::CrcValue(f) => {
+                        Box::new(Crc32Field(BinaryNumericValue(f)))
+                    }
+                    EntryFormatDirective::Timestamp(f) => {
+                        Box::new(TimestampField(TimestampValue(f)))
+                    }
                 }))
             }
         }
@@ -354,7 +505,7 @@ pub mod archive {
 
     use std::path::Path;
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct ArchiveData<'a> {
         pub path: Option<&'a Path>,
         pub stream_length: u64,
@@ -366,19 +517,13 @@ pub mod archive {
 
     impl<'a> ArchiveData<'a> {
         pub fn from_archive_with_path(zip: &'a ArchiveWithPath) -> Self {
-            let path = zip.path.as_path();
-            let stream_length = zip.len;
-            let num_entries = zip.archive.len();
-            let comment = zip.archive.comment();
-            let first_entry_start = zip.archive.offset();
-            let central_directory_start = zip.archive.central_directory_start();
             Self {
-                path: Some(path),
-                stream_length,
-                num_entries,
-                comment: Some(comment),
-                first_entry_start: Some(first_entry_start),
-                central_directory_start: Some(central_directory_start),
+                path: Some(zip.path.as_path()),
+                stream_length: zip.len,
+                num_entries: zip.archive.len(),
+                comment: Some(zip.archive.comment()),
+                first_entry_start: Some(zip.archive.offset()),
+                central_directory_start: Some(zip.archive.central_directory_start()),
             }
         }
     }

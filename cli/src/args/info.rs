@@ -247,7 +247,6 @@ impl UnixModeFormat {
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TimestampFormat {
-    UnixEpochMilliseconds,
     DateOnly,
     TimeOnly,
     #[default]
@@ -258,7 +257,6 @@ impl TimestampFormat {
     pub fn parse(s: &str) -> Result<Self, ModifierParseError> {
         match s {
             "" => Ok(Self::default()),
-            ":epoch" => Ok(Self::UnixEpochMilliseconds),
             ":date" => Ok(Self::DateOnly),
             ":time" => Ok(Self::TimeOnly),
             ":date-time" => Ok(Self::DateAndTime),
@@ -337,6 +335,7 @@ pub enum EntryFormatDirective {
     LocalHeaderStart(OffsetFormat),
     ContentStart(OffsetFormat),
     ContentEnd(OffsetFormat),
+    CentralHeaderStart(OffsetFormat),
     CompressedSize(ByteSizeFormat),
     UncompressedSize(ByteSizeFormat),
     UnixMode(UnixModeFormat),
@@ -373,6 +372,11 @@ impl ParseableDirective for EntryFormatDirective {
                 let offset_fmt = OffsetFormat::parse(&s["content-end".len()..])
                     .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
                 Ok(Self::ContentEnd(offset_fmt))
+            }
+            s if s.starts_with("central-header-start") => {
+                let offset_fmt = OffsetFormat::parse(&s["central-header-start".len()..])
+                    .map_err(|e| DirectiveParseError::Modifier(s.to_string(), e))?;
+                Ok(Self::CentralHeaderStart(offset_fmt))
             }
             s if s.starts_with("compressed-size") => {
                 let size_fmt = ByteSizeFormat::parse(&s["compressed-size".len()..])
@@ -563,6 +567,10 @@ all the output to a single line.
     The offset of the end of the entry's possibly-compressed content. The next
     entry's local header begins immediately after.
 
+%central-header-start<offset>%
+    The offset of the entry's central directory header, at the end of the
+    zip file.
+
 %compressed-size<byte-size>%
     The size of the entry's possibly-compressed content as stored in
     the archive.
@@ -584,7 +592,7 @@ all the output to a single line.
 %timestamp<timestamp>%
     The timestamp for the entry.
 
-    Note that zip timestamps only have precision down to the minute.
+    Note that zip timestamps only have precision down to 2 seconds.
 
 ## Entry format directives:
 
@@ -608,9 +616,8 @@ unix-mode = ''		[DEFAULT => octal]
           = ':pretty'	(`ls`-like permissions string)
 
 timestamp = ''		[DEFAULT => date-time]
-          = ':epoch'	(milliseconds since unix epoch as a decimal number)
           = ':date'	(ISO 8601 string representation of date)
-          = ':time'	(HH:MM string representation of time)
+          = ':time'	(HH:MM:SS string representation of time)
           = ':date-time'
                         (ISO 8601 date then HH:MM time joined by a space)
 
