@@ -49,6 +49,7 @@ pub enum OutputType {
 #[derive(Debug)]
 pub struct Compress {
     pub output: OutputType,
+    pub archive_comment: Option<OsString>,
     pub args: Vec<CompressionArg>,
     pub positional_paths: Vec<PathBuf>,
 }
@@ -77,7 +78,8 @@ impl CommandFormat for Compress {
     const COMMAND_DESCRIPTION: &'static str =
         "Generate an archive from data in argument strings or read from the filesystem.";
 
-    const USAGE_LINE: &'static str = "[-h|--help] [OUTPUT-FLAGS] [ENTRY]... [--] [PATH]...";
+    const USAGE_LINE: &'static str =
+        "[-h|--help] [OUTPUT-FLAGS] [--archive-comment <comment>] [ENTRY]... [--] [PATH]...";
 
     fn generate_help() -> String {
         format!(
@@ -99,6 +101,13 @@ Where and how to write the generated zip archive.
 
       --stdout
           Allow writing output to stdout even if stdout is a tty.
+
+Global flags:
+These flags describe information set for the entire produced archive.
+
+      --archive-comment <comment>
+          If provided, this will set the archive's comment field to the
+          specified bytes. This does not need to be valid unicode.
 
 Entries:
 After output flags are provided, the rest of the command line is
@@ -206,6 +215,7 @@ Positional entries:
         let mut allow_stdout: bool = false;
         let mut append_to_output_path: bool = false;
         let mut output_path: Option<PathBuf> = None;
+        let mut archive_comment: Option<OsString> = None;
         let mut args: Vec<CompressionArg> = Vec::new();
         let mut positional_paths: Vec<PathBuf> = Vec::new();
 
@@ -265,6 +275,24 @@ Positional entries:
                         ));
                     } else {
                         output_path = Some(new_path);
+                    }
+                }
+
+                /* Global flags */
+                b"--archive-comment" => {
+                    let new_comment = argv.pop_front().ok_or_else(|| {
+                        Self::exit_arg_invalid("no argument provided for --archive-comment")
+                    })?;
+                    if let Some(prev_comment) = archive_comment.take() {
+                        return Err(Self::exit_arg_invalid(&format!(
+                            "--archive-comment provided twice: {prev_comment:?} and {new_comment:?}"
+                        )));
+                    } else if !args.is_empty() || !positional_paths.is_empty() {
+                        return Err(Self::exit_arg_invalid(
+                            "--archive-comment provided after entries",
+                        ));
+                    } else {
+                        archive_comment = Some(new_comment);
                     }
                 }
 
@@ -437,6 +465,7 @@ Positional entries:
 
         Ok(Self {
             output,
+            archive_comment,
             args,
             positional_paths,
         })

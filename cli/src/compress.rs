@@ -130,6 +130,7 @@ fn enter_recursive_dir_entries(
 pub fn execute_compress(mut err: impl Write, args: Compress) -> Result<(), CommandError> {
     let Compress {
         output,
+        archive_comment,
         args,
         positional_paths,
     } = args;
@@ -202,6 +203,12 @@ pub fn execute_compress(mut err: impl Write, args: Compress) -> Result<(), Comma
     } else {
         ZipWriter::new(out)
     };
+
+    if let Some(comment) = archive_comment {
+        writeln!(err, "comment was provided: {comment:?}").unwrap();
+        let comment = comment.into_encoded_bytes();
+        writer.set_raw_comment(comment.into());
+    }
 
     let mut options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
