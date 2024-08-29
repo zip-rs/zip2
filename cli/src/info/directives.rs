@@ -109,7 +109,7 @@ pub mod compiled {
     }
 
     pub struct CompiledFormatSpec<F> {
-        pub components: Vec<CompiledFormatComponent<F>>,
+        components: Vec<CompiledFormatComponent<F>>,
     }
 
     impl<F> CompiledFormatSpec<F> {
@@ -343,22 +343,56 @@ pub mod entry {
 pub mod archive {
     use super::{
         super::{
-            formats::{ByteSizeValue, DecimalNumberValue, FormatValue, OffsetValue, PathString},
+            formats::{
+                BinaryStringValue, ByteSizeValue, DecimalNumberValue, FormatValue, OffsetValue,
+                PathString,
+            },
             ArchiveWithPath,
         },
         FormatDirective,
     };
 
+    use std::path::Path;
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    pub struct ArchiveData<'a> {
+        pub path: Option<&'a Path>,
+        pub stream_length: u64,
+        pub num_entries: usize,
+        pub comment: Option<&'a [u8]>,
+        pub first_entry_start: Option<u64>,
+        pub central_directory_start: Option<u64>,
+    }
+
+    impl<'a> ArchiveData<'a> {
+        pub fn from_archive_with_path(zip: &'a ArchiveWithPath) -> Self {
+            let path = zip.path.as_path();
+            let stream_length = zip.len;
+            let num_entries = zip.archive.len();
+            let comment = zip.archive.comment();
+            let first_entry_start = zip.archive.offset();
+            let central_directory_start = zip.archive.central_directory_start();
+            Self {
+                path: Some(path),
+                stream_length,
+                num_entries,
+                comment: Some(comment),
+                first_entry_start: Some(first_entry_start),
+                central_directory_start: Some(central_directory_start),
+            }
+        }
+    }
+
     pub struct ArchiveNameField(pub PathString);
 
     impl FormatDirective for ArchiveNameField {
-        type Data<'a> = &'a ArchiveWithPath;
+        type Data<'a> = ArchiveData<'a>;
         type FieldType = PathString;
         fn extract_field<'a>(
             &self,
             data: Self::Data<'a>,
         ) -> <Self::FieldType as FormatValue>::Input<'a> {
-            data.path.as_path()
+            data.path
         }
         fn value_formatter(&self) -> PathString {
             self.0
@@ -368,13 +402,13 @@ pub mod archive {
     pub struct ArchiveSizeField(pub ByteSizeValue);
 
     impl FormatDirective for ArchiveSizeField {
-        type Data<'a> = &'a ArchiveWithPath;
+        type Data<'a> = ArchiveData<'a>;
         type FieldType = ByteSizeValue;
         fn extract_field<'a>(
             &self,
             data: Self::Data<'a>,
         ) -> <Self::FieldType as FormatValue>::Input<'a> {
-            data.len
+            data.stream_length
         }
         fn value_formatter(&self) -> ByteSizeValue {
             self.0
@@ -384,15 +418,31 @@ pub mod archive {
     pub struct NumEntriesField(pub DecimalNumberValue);
 
     impl FormatDirective for NumEntriesField {
-        type Data<'a> = &'a ArchiveWithPath;
+        type Data<'a> = ArchiveData<'a>;
         type FieldType = DecimalNumberValue;
         fn extract_field<'a>(
             &self,
             data: Self::Data<'a>,
         ) -> <Self::FieldType as FormatValue>::Input<'a> {
-            data.archive.len().try_into().unwrap()
+            data.num_entries.try_into().unwrap()
         }
         fn value_formatter(&self) -> DecimalNumberValue {
+            self.0
+        }
+    }
+
+    pub struct ArchiveCommentField(pub BinaryStringValue);
+
+    impl FormatDirective for ArchiveCommentField {
+        type Data<'a> = ArchiveData<'a>;
+        type FieldType = BinaryStringValue;
+        fn extract_field<'a>(
+            &self,
+            data: Self::Data<'a>,
+        ) -> <Self::FieldType as FormatValue>::Input<'a> {
+            data.comment
+        }
+        fn value_formatter(&self) -> BinaryStringValue {
             self.0
         }
     }
@@ -400,13 +450,13 @@ pub mod archive {
     pub struct FirstEntryStartField(pub OffsetValue);
 
     impl FormatDirective for FirstEntryStartField {
-        type Data<'a> = &'a ArchiveWithPath;
+        type Data<'a> = ArchiveData<'a>;
         type FieldType = OffsetValue;
         fn extract_field<'a>(
             &self,
             data: Self::Data<'a>,
         ) -> <Self::FieldType as FormatValue>::Input<'a> {
-            data.archive.offset()
+            data.first_entry_start
         }
         fn value_formatter(&self) -> OffsetValue {
             self.0
@@ -416,13 +466,13 @@ pub mod archive {
     pub struct CentralDirectoryStartField(pub OffsetValue);
 
     impl FormatDirective for CentralDirectoryStartField {
-        type Data<'a> = &'a ArchiveWithPath;
+        type Data<'a> = ArchiveData<'a>;
         type FieldType = OffsetValue;
         fn extract_field<'a>(
             &self,
             data: Self::Data<'a>,
         ) -> <Self::FieldType as FormatValue>::Input<'a> {
-            data.archive.central_directory_start()
+            data.central_directory_start
         }
         fn value_formatter(&self) -> OffsetValue {
             self.0
@@ -441,18 +491,18 @@ pub mod archive {
         trait ArchiveDirectiveFormatter {
             fn write_archive_directive<'a>(
                 &self,
-                data: &'a ArchiveWithPath,
+                data: ArchiveData<'a>,
                 out: &mut dyn Write,
             ) -> Result<(), CommandError>;
         }
 
         impl<CF> ArchiveDirectiveFormatter for CF
         where
-            CF: for<'a> DirectiveFormatter<Data<'a> = &'a ArchiveWithPath>,
+            CF: for<'a> DirectiveFormatter<Data<'a> = ArchiveData<'a>>,
         {
             fn write_archive_directive<'a>(
                 &self,
-                data: &'a ArchiveWithPath,
+                data: ArchiveData<'a>,
                 out: &mut dyn Write,
             ) -> Result<(), CommandError> {
                 self.write_directive(data, out)
@@ -462,7 +512,7 @@ pub mod archive {
         pub struct CompiledArchiveDirective(Box<dyn ArchiveDirectiveFormatter>);
 
         impl DirectiveFormatter for CompiledArchiveDirective {
-            type Data<'a> = &'a ArchiveWithPath;
+            type Data<'a> = ArchiveData<'a>;
 
             fn write_directive<'a>(
                 &self,
@@ -492,8 +542,8 @@ pub mod archive {
                     ArchiveOverviewFormatDirective::NumEntries => {
                         Box::new(NumEntriesField(DecimalNumberValue))
                     }
-                    ArchiveOverviewFormatDirective::ArchiveComment(x) => {
-                        todo!("comment not supported yet: {:?}", x)
+                    ArchiveOverviewFormatDirective::ArchiveComment(f) => {
+                        Box::new(ArchiveCommentField(BinaryStringValue(f)))
                     }
                     ArchiveOverviewFormatDirective::FirstEntryStart(f) => {
                         Box::new(FirstEntryStartField(OffsetValue(f)))

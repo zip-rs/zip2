@@ -96,7 +96,7 @@ impl OffsetFormat {
 pub enum BinaryStringFormat {
     #[default]
     PrintAsString,
-    EscapeBinary,
+    EscapeAscii,
     WriteBinaryContents,
 }
 
@@ -105,7 +105,7 @@ impl BinaryStringFormat {
         match s {
             "" => Ok(Self::default()),
             ":print" => Ok(Self::PrintAsString),
-            ":escape" => Ok(Self::EscapeBinary),
+            ":escape" => Ok(Self::EscapeAscii),
             ":write" => Ok(Self::WriteBinaryContents),
             _ => Err(ModifierParseError(format!(
                 "unrecognized string format: {s:?}"
@@ -599,8 +599,9 @@ offset    = ''		[DEFAULT => hex]
           = ':hex'	(hexadecimal numeric representation)
 
 bin-str   = ''		[DEFAULT => print]
-          = ':print'	(print string, erroring upon invalid unicode)
-          = ':escape'	(surround with "" and escape non-unicode characters)
+          = ':print'	(non-unicode chunks are replaced with
+                         the unicode replacement character '�')
+          = ':escape'	(surround with "" and escape each byte as ascii)
           = ':write'	(write string to output without checking for unicode)
 
 unix-mode = ''		[DEFAULT => octal]

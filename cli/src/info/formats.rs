@@ -32,12 +32,30 @@ impl FormatValue for NameString {
 #[derive(Copy, Clone)]
 pub struct PathString;
 
+#[derive(Debug)]
+pub enum PathWriter<'a> {
+    Path(path::Display<'a>),
+    None,
+}
+
+impl<'a> fmt::Display for PathWriter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Path(p) => path::Display::fmt(p, f),
+            Self::None => write!(f, "<no file path>"),
+        }
+    }
+}
+
 impl FormatValue for PathString {
-    type Input<'a> = &'a path::Path;
-    type Output<'a> = path::Display<'a>;
+    type Input<'a> = Option<&'a path::Path>;
+    type Output<'a> = PathWriter<'a>;
     type E = Infallible;
     fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
-        Ok(input.display())
+        Ok(match input {
+            Some(p) => PathWriter::Path(p.display()),
+            None => PathWriter::None,
+        })
     }
 }
 
@@ -240,6 +258,7 @@ pub struct OffsetValue(pub OffsetFormat);
 
 #[derive(Debug)]
 pub enum OffsetWriter {
+    Unknown,
     Decimal(u64),
     Hexadecimal(u64),
 }
@@ -247,6 +266,7 @@ pub enum OffsetWriter {
 impl fmt::Display for OffsetWriter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::Unknown => write!(f, "?"),
             Self::Decimal(x) => write!(f, "{}", x),
             Self::Hexadecimal(x) => write!(f, "{:x}", x),
         }
@@ -254,13 +274,72 @@ impl fmt::Display for OffsetWriter {
 }
 
 impl FormatValue for OffsetValue {
-    type Input<'a> = u64;
+    type Input<'a> = Option<u64>;
     type Output<'a> = OffsetWriter;
     type E = Infallible;
     fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
+        let input = match input {
+            None => return Ok(OffsetWriter::Unknown),
+            Some(input) => input,
+        };
         Ok(match self.0 {
             OffsetFormat::Decimal => OffsetWriter::Decimal(input),
             OffsetFormat::Hexadecimal => OffsetWriter::Hexadecimal(input),
+        })
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct BinaryStringValue(pub BinaryStringFormat);
+
+#[derive(Debug)]
+pub enum BinaryStringWriter<'a> {
+    ReplaceNonUnicode(&'a [u8]),
+    EscapeAscii(&'a [u8]),
+    WriteExactly(&'a [u8]),
+}
+
+impl<'a> BinaryStringWriter<'a> {
+    const INVALID_CHUNK_BUFS: [&'static str; 4] = ["", "�", "��", "���"];
+}
+
+impl<'a> Writeable for BinaryStringWriter<'a> {
+    fn write_to(&self, out: &mut dyn Write) -> Result<(), io::Error> {
+        match self {
+            Self::ReplaceNonUnicode(s) => {
+                for chunk in s.utf8_chunks() {
+                    write!(out, "{}", chunk.valid())?;
+                    /* The length of invalid bytes is never longer than 3. */
+                    write!(out, "{}", Self::INVALID_CHUNK_BUFS[chunk.invalid().len()])?;
+                }
+                Ok(())
+            }
+            Self::EscapeAscii(s) => {
+                if s.is_empty() {
+                    return write!(out, "\"\"");
+                }
+                write!(out, "\" ")?;
+                for b in s.iter().copied() {
+                    write!(out, "{} ", b.escape_ascii())?;
+                }
+                write!(out, "\"")?;
+                Ok(())
+            }
+            Self::WriteExactly(s) => out.write_all(s),
+        }
+    }
+}
+
+impl FormatValue for BinaryStringValue {
+    type Input<'a> = Option<&'a [u8]>;
+    type Output<'a> = BinaryStringWriter<'a>;
+    type E = Infallible;
+    fn format_value<'a>(&self, input: Self::Input<'a>) -> Result<Self::Output<'a>, Self::E> {
+        let input = input.unwrap_or(&[]);
+        Ok(match self.0 {
+            BinaryStringFormat::PrintAsString => BinaryStringWriter::ReplaceNonUnicode(input),
+            BinaryStringFormat::EscapeAscii => BinaryStringWriter::EscapeAscii(input),
+            BinaryStringFormat::WriteBinaryContents => BinaryStringWriter::WriteExactly(input),
         })
     }
 }

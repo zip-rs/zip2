@@ -1,11 +1,10 @@
 use std::{
     fs,
     io::{self, Write},
-    ops,
     path::PathBuf,
 };
 
-use zip::read::{read_zipfile_from_stream, ZipArchive, ZipFile};
+use zip::read::ZipArchive;
 
 use crate::{
     args::{extract::InputSpec, info::*},
@@ -20,7 +19,10 @@ use crate::{
 mod directives;
 mod formats;
 use directives::{
-    archive::compiled::{CompiledArchiveDirective, CompiledArchiveFormat},
+    archive::{
+        compiled::{CompiledArchiveDirective, CompiledArchiveFormat},
+        ArchiveData,
+    },
     compiled::CompiledFormatSpec,
     entry::compiled::{CompiledEntryDirective, CompiledEntryFormat},
 };
@@ -76,14 +78,14 @@ fn format_archive_info(
     mut err: impl Write,
     archive_formatter: &CompiledFormatSpec<CompiledArchiveDirective>,
     mut output_stream: impl Write,
-    zip: &ArchiveWithPath,
+    zip: ArchiveData,
 ) -> Result<(), CommandError> {
     if archive_formatter.is_empty() {
         writeln!(&mut err, "empty archive format, skipping archive overview").unwrap();
         return Ok(());
     }
 
-    archive_formatter.execute_format(&zip, &mut output_stream)?;
+    archive_formatter.execute_format(zip, &mut output_stream)?;
     Ok(())
 }
 
@@ -145,7 +147,8 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
             )?;
         }
 
-        format_archive_info(&mut err, &archive_formatter, &mut output_stream, &zip)?;
+        let data = ArchiveData::from_archive_with_path(&zip);
+        format_archive_info(&mut err, &archive_formatter, &mut output_stream, data)?;
     }
 
     Ok(())
