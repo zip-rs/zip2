@@ -42,6 +42,8 @@ fn maybe_process_symlink<'a, 't>(
      * references to ZipFileData like the name at the same time we use the entry as
      * a reader! That means our log message here is very unclear! */
     writeln!(&mut err.borrow_mut(), "reading symlink target").unwrap();
+    /* Re-use the vector allocation, but make sure to avoid re-using the symlink data from
+     * a previous iteration. */
     symlink_target.clear();
     entry
         .read_to_end(symlink_target)
@@ -57,7 +59,7 @@ fn process_entry<'a, 'w, 'c, 'it>(
     copy_buf: &mut [u8],
     symlink_target: &mut Vec<u8>,
     deduped_concat_writers: &mut Vec<&'c Rc<RefCell<dyn Write + 'w>>>,
-    matching_handles: &mut Vec<Box<dyn Write>>,
+    matching_handles: &mut Vec<Box<dyn Write + '_>>,
 ) -> Result<(), CommandError>
 where
     'w: 'it,
@@ -131,8 +133,8 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
     let mut symlink_target: Vec<u8> = Vec::new();
 
-    let mut deduped_concat_writers: Vec<&Rc<RefCell<dyn Write>>> = Vec::new();
-    let mut matching_handles: Vec<Box<dyn Write>> = Vec::new();
+    let mut deduped_concat_writers: Vec<&Rc<RefCell<dyn Write + '_>>> = Vec::new();
+    let mut matching_handles: Vec<Box<dyn Write + '_>> = Vec::new();
 
     if stdin_stream {
         writeln!(&mut err.borrow_mut(), "extracting from stdin").unwrap();

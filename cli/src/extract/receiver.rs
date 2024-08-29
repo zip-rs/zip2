@@ -5,7 +5,7 @@ use std::{
     fmt, fs,
     io::{self, Seek, Write},
     mem,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
 };
 
@@ -526,6 +526,54 @@ impl<W> fmt::Debug for FilesystemReceiver<W> {
     }
 }
 
+impl<W> FilesystemReceiver<W>
+where
+    W: Write,
+{
+    #[cfg(unix)]
+    fn create_or_overwrite_symlink(
+        err: &mut impl Write,
+        target: &[u8],
+        full_output_path: &Path,
+    ) -> Result<(), CommandError> {
+        use std::{
+            ffi::OsStr,
+            os::unix::{ffi::OsStrExt, fs::symlink},
+        };
+        let target = OsStr::from_bytes(target);
+        writeln!(err, "entry is symlink to {target:?}, creating").unwrap();
+        /* The stdlib symlink function has no functionality like OpenOptions to
+         * truncate a symlink if it already exists, so we have to do that ourselves
+         * here. */
+        if let Err(e) = symlink(target, full_output_path) {
+            let e = match e.kind() {
+                io::ErrorKind::AlreadyExists => {
+                    writeln!(err, "a file already existed at the symlink target {full_output_path:?}, removing")
+                                    .unwrap();
+                    fs::remove_file(full_output_path).wrap_err_with(|| {
+                        format!("failed to remove file at symlink target {full_output_path:?}")
+                    })?;
+                    writeln!(
+                        err,
+                        "successfully removed file entry, creating symlink again"
+                    )
+                    .unwrap();
+                    symlink(target, full_output_path).err()
+                }
+                _ => Some(e),
+            };
+            if let Some(e) = e {
+                return Err(e).wrap_err_with(|| {
+                    format!(
+                        "failed to create symlink at {full_output_path:?} with target {target:?}"
+                    )
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<W> EntryReceiver for FilesystemReceiver<W>
 where
     W: Write,
@@ -553,50 +601,12 @@ where
                 })?;
             }
             EntryKind::Symlink => {
-                let target: Vec<u8> = symlink_target
-                    .expect("we should have generated this")
-                    .to_vec();
+                let target = symlink_target.expect("we should have generated this");
 
                 #[cfg(unix)]
-                {
-                    use std::{
-                        ffi::OsString,
-                        os::unix::{ffi::OsStringExt, fs::symlink},
-                    };
-                    let target = OsString::from_vec(target);
-                    writeln!(err, "entry is symlink to {target:?}, creating").unwrap();
-                    /* The stdlib symlink function has no functionality like OpenOptions to
-                     * truncate a symlink if it already exists, so we have to do that ourselves
-                     * here. */
-                    if let Err(e) = symlink(&target, &full_output_path) {
-                        let e = match e.kind() {
-                            io::ErrorKind::AlreadyExists => {
-                                writeln!(err, "a file already existed at the symlink target {full_output_path:?}, removing")
-                                    .unwrap();
-                                fs::remove_file(&full_output_path)
-                                    .wrap_err_with(|| format!("failed to remove file at symlink target {full_output_path:?}"))?;
-                                writeln!(
-                                    err,
-                                    "successfully removed file entry, creating symlink again"
-                                )
-                                .unwrap();
-                                symlink(&target, &full_output_path).err()
-                            }
-                            _ => Some(e),
-                        };
-                        if let Some(e) = e {
-                            return Err(e).wrap_err_with(|| {
-                                format!(
-                                    "failed to create symlink at {full_output_path:?} with target {target:?}"
-                                )
-                            });
-                        }
-                    }
-                }
+                Self::create_or_overwrite_symlink(&mut *err, target, &full_output_path)?;
                 #[cfg(not(unix))]
-                {
-                    todo!("TODO: cannot create symlink for entry {name} on non-unix yet!");
-                }
+                todo!("TODO: cannot create symlink for entry {name} on non-unix yet!");
             }
             EntryKind::File => {
                 writeln!(err, "entry is file, creating").unwrap();
