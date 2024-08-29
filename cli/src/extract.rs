@@ -1,11 +1,12 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
-    io::{Read, Write},
+    fs,
+    io::{self, Read, Write},
     rc::Rc,
 };
 
-use zip::read::ZipFile;
+use zip::read::{ZipArchive, ZipFile};
 
 use crate::{args::extract::*, CommandError, WrapCommandErr};
 
@@ -13,7 +14,7 @@ pub mod entries;
 pub mod matcher;
 pub mod receiver;
 pub mod transform;
-use entries::IterateEntries;
+use entries::{IterateEntries, StreamInput, ZipFileInput};
 use matcher::EntryMatcher;
 use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryKind, EntryReceiver, ExtractEntry};
 use transform::NameTransformer;
@@ -149,13 +150,15 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
     let Extract {
         output_specs,
         entry_specs,
-        input_spec,
+        input_spec: InputSpec {
+            stdin_stream,
+            zip_paths,
+        },
     } = extract;
     let err = Rc::new(RefCell::new(err));
 
     let compiled_specs =
         receiver::process_entry_and_output_specs(err.clone(), entry_specs, output_specs)?;
-    let mut entry_iterator = entries::MergedInput::from_spec(input_spec)?;
 
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
 
@@ -165,16 +168,48 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
     /* let mut deduped_matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new(); */
     let mut matching_handles: Vec<Box<dyn Write>> = Vec::new();
 
-    while let Some(entry) = entry_iterator.next_entry()? {
-        process_entry(
-            entry,
-            &err,
-            compiled_specs.iter(),
-            &mut copy_buf,
-            &mut matching_concats,
-            &mut deduped_concat_writers,
-            &mut matching_handles,
-        )?;
+    if stdin_stream {
+        writeln!(&mut err.borrow_mut(), "extracting from stdin").unwrap();
+        let mut stdin = StreamInput::new(io::stdin().lock());
+
+        while let Some(entry) = stdin.next_entry()? {
+            process_entry(
+                entry,
+                &err,
+                compiled_specs.iter(),
+                &mut copy_buf,
+                &mut matching_concats,
+                &mut deduped_concat_writers,
+                &mut matching_handles,
+            )?;
+        }
+    }
+
+    for p in zip_paths.into_iter() {
+        writeln!(
+            &mut err.borrow_mut(),
+            "extracting from zip input file {p:?}",
+        )
+        .unwrap();
+        let zip = fs::File::open(&p)
+            .wrap_err_with(|| format!("failed to open zip input file path {p:?}"))
+            .and_then(|f| {
+                ZipArchive::new(f)
+                    .wrap_err_with(|| format!("failed to create zip archive for file {p:?}"))
+            })?;
+        let mut zip_entries = ZipFileInput::new(Box::new(zip));
+
+        while let Some(entry) = zip_entries.next_entry()? {
+            process_entry(
+                entry,
+                &err,
+                compiled_specs.iter(),
+                &mut copy_buf,
+                &mut matching_concats,
+                &mut deduped_concat_writers,
+                &mut matching_handles,
+            )?;
+        }
     }
 
     /* Finalize all extract entries. */
