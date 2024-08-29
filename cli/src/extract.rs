@@ -24,6 +24,7 @@ fn process_entry<'a, 'w, 'it>(
     err: &Rc<RefCell<impl Write>>,
     compiled_specs: impl Iterator<Item = &'it CompiledEntrySpec<'w>>,
     copy_buf: &mut [u8],
+    symlink_target: &mut Vec<u8>,
     matching_concats: &mut Vec<Rc<RefCell<dyn Write + 'w>>>,
     deduped_concat_writers: &mut Vec<Rc<RefCell<dyn Write + 'w>>>,
     matching_handles: &mut Vec<Box<dyn Write>>,
@@ -31,18 +32,22 @@ fn process_entry<'a, 'w, 'it>(
 where
     'w: 'it,
 {
-    let symlink_target: Option<Vec<u8>> = {
+    deduped_concat_writers.clear();
+    matching_handles.clear();
+
+    let symlink_target: Option<&mut Vec<u8>> = {
         let (kind, size) = {
             let data = EntryData::from_entry(&entry);
             (data.kind, data.size)
         };
         match kind {
             EntryKind::Symlink => {
-                let mut target: Vec<u8> = Vec::with_capacity(size.try_into().unwrap());
+                symlink_target.clear();
                 entry
-                    .read_to_end(&mut target)
+                    .read_to_end(symlink_target)
                     .wrap_err("failed to read symlink target from zip archive entry")?;
-                Some(target)
+                debug_assert_eq!(symlink_target.len(), size.try_into().unwrap());
+                Some(symlink_target)
             }
             _ => None,
         }
@@ -137,12 +142,6 @@ where
         }
     }
 
-    /* matching_concats.clear(); */
-    /* matching_extracts.clear(); */
-    deduped_concat_writers.clear();
-    /* deduped_matching_extracts.clear(); */
-    matching_handles.clear();
-
     Ok(())
 }
 
@@ -161,6 +160,7 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
         receiver::process_entry_and_output_specs(err.clone(), entry_specs, output_specs)?;
 
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
+    let mut symlink_target: Vec<u8> = Vec::new();
 
     let mut matching_concats: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
     /* let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new(); */
@@ -178,6 +178,7 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
                 &err,
                 compiled_specs.iter(),
                 &mut copy_buf,
+                &mut symlink_target,
                 &mut matching_concats,
                 &mut deduped_concat_writers,
                 &mut matching_handles,
@@ -205,6 +206,7 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
                 &err,
                 compiled_specs.iter(),
                 &mut copy_buf,
+                &mut symlink_target,
                 &mut matching_concats,
                 &mut deduped_concat_writers,
                 &mut matching_handles,
