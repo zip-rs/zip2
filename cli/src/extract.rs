@@ -5,6 +5,8 @@ use std::{
     rc::Rc,
 };
 
+use zip::read::ZipFile;
+
 use crate::{args::extract::*, CommandError, WrapCommandErr};
 
 pub mod entries;
@@ -15,6 +17,133 @@ use entries::IterateEntries;
 use matcher::EntryMatcher;
 use receiver::{CompiledEntrySpec, ConcatEntry, EntryData, EntryKind, EntryReceiver, ExtractEntry};
 use transform::NameTransformer;
+
+fn process_entry<'a, 'w, 'it>(
+    mut entry: ZipFile<'a>,
+    err: &Rc<RefCell<impl Write>>,
+    compiled_specs: impl Iterator<Item = &'it CompiledEntrySpec<'w>>,
+    copy_buf: &mut [u8],
+    matching_concats: &mut Vec<Rc<RefCell<dyn Write + 'w>>>,
+    deduped_concat_writers: &mut Vec<Rc<RefCell<dyn Write + 'w>>>,
+    matching_handles: &mut Vec<Box<dyn Write>>,
+) -> Result<(), CommandError>
+where
+    'w: 'it,
+{
+    let symlink_target: Option<Vec<u8>> = {
+        let (kind, size) = {
+            let data = EntryData::from_entry(&entry);
+            (data.kind, data.size)
+        };
+        match kind {
+            EntryKind::Symlink => {
+                let mut target: Vec<u8> = Vec::with_capacity(size.try_into().unwrap());
+                entry
+                    .read_to_end(&mut target)
+                    .wrap_err("failed to read symlink target from zip archive entry")?;
+                Some(target)
+            }
+            _ => None,
+        }
+    };
+    let data = EntryData::from_entry(&entry);
+
+    let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
+    for spec in compiled_specs {
+        match spec {
+            CompiledEntrySpec::Concat(ConcatEntry { matcher, stream }) => {
+                if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
+                    matching_concats.push(stream.clone());
+                }
+            }
+            CompiledEntrySpec::Extract(ExtractEntry {
+                matcher,
+                transforms,
+                recv,
+            }) => {
+                if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
+                    let new_name = transforms
+                        .as_ref()
+                        .map(|t| t.transform_name(&data.name))
+                        .unwrap_or_else(|| Cow::Borrowed(&data.name));
+                    writeln!(&mut err.borrow_mut(), "{data:?}").unwrap();
+                    writeln!(&mut err.borrow_mut(), "{new_name:?}").unwrap();
+                    matching_extracts.push((new_name, recv.clone()));
+                }
+            }
+        }
+    }
+    if matching_concats.is_empty() && matching_extracts.is_empty() {
+        return Ok(());
+    }
+
+    /* Split output handles for concat, and split generated handles by extract source and
+     * name. use Rc::ptr_eq() to split, and Cow::<'s, str>::eq() with str AsRef. */
+    for concat_p in matching_concats.drain(..) {
+        if deduped_concat_writers
+            .iter()
+            .any(|p| Rc::ptr_eq(p, &concat_p))
+        {
+            writeln!(&mut err.borrow_mut(), "skipping repeated concat").unwrap();
+        } else {
+            deduped_concat_writers.push(concat_p);
+        }
+    }
+    let mut deduped_matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
+    for (name, extract_p) in matching_extracts.into_iter() {
+        if deduped_matching_extracts
+            .iter()
+            .any(|(n, p)| Rc::ptr_eq(p, &extract_p) && name.as_ref() == n.as_ref())
+        {
+            writeln!(&mut err.borrow_mut(), "skipping repeated extract").unwrap();
+        } else {
+            deduped_matching_extracts.push((name, extract_p));
+        }
+    }
+
+    matching_handles.extend(
+        deduped_matching_extracts
+            .into_iter()
+            .map(|(name, recv)| {
+                recv.generate_entry_handle(data, symlink_target.as_ref().map(|t| t.as_ref()), name)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten(),
+    );
+
+    /* let mut derefed_concat_writers: Vec<RefMut<'_, dyn Write>> = deduped_concat_writers */
+    /*     .drain(..) */
+    /*     .map(|w| w.borrow_mut()) */
+    /*     .collect(); */
+    let mut read_len: usize;
+    loop {
+        read_len = entry.read(copy_buf).wrap_err("read of entry failed")?;
+        if read_len == 0 {
+            break;
+        }
+        let cur_data: &[u8] = &copy_buf[..read_len];
+        for concat_writer in deduped_concat_writers.iter() {
+            concat_writer
+                .borrow_mut()
+                .write_all(cur_data)
+                .wrap_err("failed to write data to concat output")?;
+        }
+        for extract_writer in matching_handles.iter_mut() {
+            extract_writer
+                .write_all(cur_data)
+                .wrap_err("failed to write data to extract output")?;
+        }
+    }
+
+    /* matching_concats.clear(); */
+    /* matching_extracts.clear(); */
+    deduped_concat_writers.clear();
+    /* deduped_matching_extracts.clear(); */
+    matching_handles.clear();
+
+    Ok(())
+}
 
 pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandError> {
     let Extract {
@@ -36,123 +165,18 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
     /* let mut deduped_matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new(); */
     let mut matching_handles: Vec<Box<dyn Write>> = Vec::new();
 
-    while let Some(mut entry) = entry_iterator.next_entry()? {
-        let symlink_target: Option<Vec<u8>> = {
-            let (kind, size) = {
-                let data = EntryData::from_entry(&entry);
-                (data.kind, data.size)
-            };
-            match kind {
-                EntryKind::Symlink => {
-                    let mut target: Vec<u8> = Vec::with_capacity(size.try_into().unwrap());
-                    entry
-                        .read_to_end(&mut target)
-                        .wrap_err("failed to read symlink target from zip archive entry")?;
-                    Some(target)
-                }
-                _ => None,
-            }
-        };
-        let data = EntryData::from_entry(&entry);
-
-        let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
-        for spec in compiled_specs.iter() {
-            match spec {
-                CompiledEntrySpec::Concat(ConcatEntry { matcher, stream }) => {
-                    if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
-                        matching_concats.push(stream.clone());
-                    }
-                }
-                CompiledEntrySpec::Extract(ExtractEntry {
-                    matcher,
-                    transforms,
-                    recv,
-                }) => {
-                    if matcher.as_ref().map(|m| m.matches(&data)).unwrap_or(true) {
-                        let new_name = transforms
-                            .as_ref()
-                            .map(|t| t.transform_name(&data.name))
-                            .unwrap_or_else(|| Cow::Borrowed(&data.name));
-                        writeln!(&mut err.borrow_mut(), "{data:?}").unwrap();
-                        writeln!(&mut err.borrow_mut(), "{new_name:?}").unwrap();
-                        matching_extracts.push((new_name, recv.clone()));
-                    }
-                }
-            }
-        }
-        if matching_concats.is_empty() && matching_extracts.is_empty() {
-            continue;
-        }
-
-        /* Split output handles for concat, and split generated handles by extract source and
-         * name. use Rc::ptr_eq() to split, and Cow::<'s, str>::eq() with str AsRef. */
-        for concat_p in matching_concats.drain(..) {
-            if deduped_concat_writers
-                .iter()
-                .any(|p| Rc::ptr_eq(p, &concat_p))
-            {
-                writeln!(&mut err.borrow_mut(), "skipping repeated concat").unwrap();
-            } else {
-                deduped_concat_writers.push(concat_p);
-            }
-        }
-        let mut deduped_matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
-        for (name, extract_p) in matching_extracts.into_iter() {
-            if deduped_matching_extracts
-                .iter()
-                .any(|(n, p)| Rc::ptr_eq(p, &extract_p) && name.as_ref() == n.as_ref())
-            {
-                writeln!(&mut err.borrow_mut(), "skipping repeated extract").unwrap();
-            } else {
-                deduped_matching_extracts.push((name, extract_p));
-            }
-        }
-
-        matching_handles.extend(
-            deduped_matching_extracts
-                .into_iter()
-                .map(|(name, recv)| {
-                    recv.generate_entry_handle(
-                        data,
-                        symlink_target.as_ref().map(|t| t.as_ref()),
-                        name,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .flatten(),
-        );
-
-        /* let mut derefed_concat_writers: Vec<RefMut<'_, dyn Write>> = deduped_concat_writers */
-        /*     .drain(..) */
-        /*     .map(|w| w.borrow_mut()) */
-        /*     .collect(); */
-        let mut read_len: usize;
-        loop {
-            read_len = entry.read(&mut copy_buf).wrap_err("read of entry failed")?;
-            if read_len == 0 {
-                break;
-            }
-            let cur_data: &[u8] = &copy_buf[..read_len];
-            for concat_writer in deduped_concat_writers.iter() {
-                concat_writer
-                    .borrow_mut()
-                    .write_all(cur_data)
-                    .wrap_err("failed to write data to concat output")?;
-            }
-            for extract_writer in matching_handles.iter_mut() {
-                extract_writer
-                    .write_all(cur_data)
-                    .wrap_err("failed to write data to extract output")?;
-            }
-        }
-
-        /* matching_concats.clear(); */
-        /* matching_extracts.clear(); */
-        deduped_concat_writers.clear();
-        /* deduped_matching_extracts.clear(); */
-        matching_handles.clear();
+    while let Some(entry) = entry_iterator.next_entry()? {
+        process_entry(
+            entry,
+            &err,
+            compiled_specs.iter(),
+            &mut copy_buf,
+            &mut matching_concats,
+            &mut deduped_concat_writers,
+            &mut matching_handles,
+        )?;
     }
+
     /* Finalize all extract entries. */
     for spec in compiled_specs.into_iter() {
         match spec {
