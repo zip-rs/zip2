@@ -9,7 +9,7 @@ use zip::read::ZipArchive;
 use crate::{
     args::{extract::InputSpec, info::*},
     extract::{
-        entries::{IterateEntries, StdinInput, ZipFileInput},
+        entries::{IterateEntries, StreamInput, ZipFileInput},
         matcher::{CompiledMatcher, EntryMatcher},
         receiver::EntryData,
     },
@@ -114,7 +114,7 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
     let mut output_stream = io::stdout().lock();
 
     if stdin_stream {
-        let mut stdin = StdinInput::new();
+        let mut stdin = StreamInput::new(io::stdin().lock());
 
         format_entry_info(
             &mut err,
@@ -124,13 +124,25 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
             &mut stdin,
         )?;
 
-        if !archive_formatter.is_empty() {
-            writeln!(
-                &mut err,
-                "archive format was provided but stdin currently cannot provide archive format info"
-            )
-            .unwrap();
-        }
+        let (stdin, num_entries) = stdin.into_inner();
+        /* NB: The read_zipfile_from_stream() method overruns the size of a single local header into
+         * the CDE after reading the last input. There are unstable APIs to address this, but for
+         * now just rely on that internal knowledge. See e.g. zip::read::stream on master or
+         * zip::unstable::read in https://github.com/zip-rs/zip2/pull/233. */
+        let cde_start = stdin.current_bytes_read() - 30;
+        let (_stdin, stream_length) = stdin
+            .exhaust()
+            .wrap_err("failed to exhaust all of stdin after reading all zip entries")?;
+
+        let data = ArchiveData {
+            path: None,
+            stream_length,
+            num_entries,
+            comment: None,
+            first_entry_start: Some(0),
+            central_directory_start: Some(cde_start),
+        };
+        format_archive_info(&mut err, &archive_formatter, &mut output_stream, data)?;
     }
 
     for p in zip_paths.into_iter() {

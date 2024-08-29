@@ -1,11 +1,4 @@
-use std::{
-    cell::UnsafeCell,
-    collections::VecDeque,
-    fs,
-    io::{self},
-    ops,
-    path::Path,
-};
+use std::{cell::UnsafeCell, collections::VecDeque, fs, io, ops, path::Path};
 
 use zip::{
     read::{read_zipfile_from_stream, ZipFile},
@@ -18,23 +11,84 @@ pub trait IterateEntries {
     fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError>;
 }
 
-pub struct StdinInput {
-    inner: io::Stdin,
+pub struct ReadChecker<R> {
+    inner: R,
+    bytes_read: u64,
 }
 
-impl StdinInput {
-    pub fn new() -> Self {
-        Self { inner: io::stdin() }
-    }
-
-    pub fn into_inner(self) -> io::Stdin {
-        self.inner
+impl<R> ReadChecker<R> {
+    pub const fn current_bytes_read(&self) -> u64 {
+        self.bytes_read
     }
 }
 
-impl IterateEntries for StdinInput {
+impl<R> ReadChecker<R>
+where
+    R: io::Read,
+{
+    pub fn exhaust(mut self) -> io::Result<(R, u64)> {
+        io::copy(&mut self, &mut io::sink())?;
+        let Self { inner, bytes_read } = self;
+        Ok((inner, bytes_read))
+    }
+}
+
+impl<R> io::Read for ReadChecker<R>
+where
+    R: io::Read,
+{
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        let num_read: u64 = n.try_into().unwrap();
+        self.bytes_read += num_read;
+        Ok(n)
+    }
+}
+
+pub struct StreamInput<R> {
+    inner: ReadChecker<R>,
+    entries_read: usize,
+}
+
+impl StreamInput<io::Stdin> {
+    pub fn stdin() -> Self {
+        Self::new(io::stdin())
+    }
+}
+
+impl<R> StreamInput<R> {
+    pub fn new(inner: R) -> Self {
+        Self {
+            inner: ReadChecker {
+                inner,
+                bytes_read: 0,
+            },
+            entries_read: 0,
+        }
+    }
+
+    pub fn into_inner(self) -> (ReadChecker<R>, usize) {
+        let Self {
+            inner,
+            entries_read,
+        } = self;
+        (inner, entries_read)
+    }
+}
+
+impl<R> IterateEntries for StreamInput<R>
+where
+    R: io::Read,
+{
     fn next_entry(&mut self) -> Result<Option<ZipFile>, CommandError> {
-        read_zipfile_from_stream(&mut self.inner).wrap_err("failed to read zip entries from stdin")
+        if let Some(entry) = read_zipfile_from_stream(&mut self.inner)
+            .wrap_err("failed to read zip entries from stdin")?
+        {
+            self.entries_read += 1;
+            Ok(Some(entry))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -135,7 +189,7 @@ impl IterateEntries for AllInputZips {
 }
 
 pub struct MergedInput {
-    stdin_stream: Option<UnsafeCell<StdinInput>>,
+    stdin_stream: Option<UnsafeCell<StreamInput<io::Stdin>>>,
     zips: Option<AllInputZips>,
 }
 
@@ -147,7 +201,7 @@ impl MergedInput {
         } = spec;
         Ok(Self {
             stdin_stream: if stdin_stream {
-                Some(UnsafeCell::new(StdinInput::new()))
+                Some(UnsafeCell::new(StreamInput::stdin()))
             } else {
                 None
             },
