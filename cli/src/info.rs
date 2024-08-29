@@ -146,7 +146,7 @@ pub fn execute_info(mut err: impl Write, args: Info) -> Result<(), CommandError>
     }
 
     for p in zip_paths.into_iter() {
-        let mut zip = ArchiveWithPath::open(p.clone())?;
+        let mut zip = ArchiveWithPath::open(p)?;
 
         {
             let mut zip_entry_counter = ZipFileInput::new(&mut zip.archive);

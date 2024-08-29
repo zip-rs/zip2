@@ -51,7 +51,7 @@ impl<'a> EntryData<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct OutputName(pub String);
+struct OutputName(pub String);
 
 impl OutputName {
     pub fn default_name() -> Self {
@@ -59,7 +59,7 @@ impl OutputName {
     }
 }
 
-pub struct ParsedEntrySpecArg {
+struct ParsedEntrySpecArg {
     pub matcher: Option<CompiledMatcher>,
     pub transforms: Option<CompiledTransformer>,
     pub output_name: OutputName,
@@ -110,7 +110,7 @@ pub enum CompiledEntrySpec<'w> {
     Extract(ExtractEntry<'w>),
 }
 
-pub struct ParsedNamedOutputs<'w> {
+struct ParsedNamedOutputs<'w> {
     concats: HashMap<OutputName, Rc<RefCell<dyn Write + 'w>>>,
     extracts: HashMap<OutputName, Rc<dyn EntryReceiver + 'w>>,
 }

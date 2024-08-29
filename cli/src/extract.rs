@@ -30,6 +30,12 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
 
     let mut copy_buf: Vec<u8> = vec![0u8; 1024 * 16];
 
+    let mut matching_concats: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
+    /* let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new(); */
+    let mut deduped_concat_writers: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
+    /* let mut deduped_matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new(); */
+    let mut matching_handles: Vec<Box<dyn Write>> = Vec::new();
+
     while let Some(mut entry) = entry_iterator.next_entry()? {
         let symlink_target: Option<Vec<u8>> = {
             let (kind, size) = {
@@ -49,7 +55,6 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
         };
         let data = EntryData::from_entry(&entry);
 
-        let mut matching_concats: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
         let mut matching_extracts: Vec<(Cow<'_, str>, Rc<dyn EntryReceiver>)> = Vec::new();
         for spec in compiled_specs.iter() {
             match spec {
@@ -81,8 +86,7 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
 
         /* Split output handles for concat, and split generated handles by extract source and
          * name. use Rc::ptr_eq() to split, and Cow::<'s, str>::eq() with str AsRef. */
-        let mut deduped_concat_writers: Vec<Rc<RefCell<dyn Write>>> = Vec::new();
-        for concat_p in matching_concats.into_iter() {
+        for concat_p in matching_concats.drain(..) {
             if deduped_concat_writers
                 .iter()
                 .any(|p| Rc::ptr_eq(p, &concat_p))
@@ -104,16 +108,25 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
             }
         }
 
-        let mut matching_handles: Vec<Box<dyn Write>> = deduped_matching_extracts
-            .into_iter()
-            .map(|(name, recv)| {
-                recv.generate_entry_handle(data, symlink_target.as_ref().map(|t| t.as_ref()), name)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .collect();
+        matching_handles.extend(
+            deduped_matching_extracts
+                .into_iter()
+                .map(|(name, recv)| {
+                    recv.generate_entry_handle(
+                        data,
+                        symlink_target.as_ref().map(|t| t.as_ref()),
+                        name,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten(),
+        );
 
+        /* let mut derefed_concat_writers: Vec<RefMut<'_, dyn Write>> = deduped_concat_writers */
+        /*     .drain(..) */
+        /*     .map(|w| w.borrow_mut()) */
+        /*     .collect(); */
         let mut read_len: usize;
         loop {
             read_len = entry.read(&mut copy_buf).wrap_err("read of entry failed")?;
@@ -133,6 +146,12 @@ pub fn execute_extract(err: impl Write, extract: Extract) -> Result<(), CommandE
                     .wrap_err("failed to write data to extract output")?;
             }
         }
+
+        /* matching_concats.clear(); */
+        /* matching_extracts.clear(); */
+        deduped_concat_writers.clear();
+        /* deduped_matching_extracts.clear(); */
+        matching_handles.clear();
     }
     /* Finalize all extract entries. */
     for spec in compiled_specs.into_iter() {
