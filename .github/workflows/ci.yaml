@@ -108,35 +108,48 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: install
-          args: cargo-fuzz
+          args: cargo-afl
+      - run: cd fuzz_read
+      - run: cargo-afl afl system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: build --all-features fuzz_read
+          command: afl
+          args: build --all-features
       - name: run fuzz
-        timeout-minutes: 350
+        timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: run --all-features fuzz_read -- fuzz/corpus/fuzz_read -timeout=10s -rss_limit_mb=8192 -fork=2 -runs=25000000 -max_len=1000 -max_total_time=20700 -dict=fuzz/fuzz.dict
+          command: afl
+          args: fuzz -i in -o out -V 3600 -a binary -- ../target/debug/fuzz_read
+      - name: Minimize corpus
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ../target/debug/fuzz_read
+      - name: Upload updated corpus
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_read_corpus
+          path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_bad_inputs
-          path: fuzz/artifacts/fuzz_read/crash-*
+          path: out/default/crashes/*
           if-no-files-found: ignore
-      - name: Minimize seed corpus
-        if: always()
-        run: ./recursive-fuzz-cmin.sh read 70000
-        shell: bash
-      - name: Upload updated seed corpus
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ../target/debug/fuzz_read
+      - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz_read_corpus
-          path: fuzz/corpus/fuzz_read/*
+          name: fuzz_read_coverage
+          path: map
 
   fuzz_read_with_no_features:
     runs-on: ubuntu-latest
@@ -154,25 +167,38 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: install
-          args: cargo-fuzz
+          args: cargo-afl
+      - run: cd fuzz_read
+      - run: cargo-afl afl system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: build --no-default-features fuzz_read
+          command: afl
+          args: build
       - name: run fuzz
-        timeout-minutes: 350
+        timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: run --no-default-features fuzz_read fuzz/corpus/fuzz_read -- -rss_limit_mb=8192 -timeout=10s -fork=2 -runs=40000000 -max_total_time=20700 -max_len=70000 -dict=fuzz/fuzz.dict
+          command: afl
+          args: fuzz -i in -o out -V 3600 -a binary -- ../target/debug/fuzz_read
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz_read_no_features_bad_inputs
-          path: fuzz/artifacts/fuzz_read/crash-*
+          name: fuzz_read_bad_inputs_no_features
+          path: out/default/crashes/*
           if-no-files-found: ignore
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ../target/debug/fuzz_read
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_read_coverage_no_features
+          path: map
 
   fuzz_write:
     runs-on: ubuntu-latest
@@ -190,38 +216,48 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: install
-          args: cargo-fuzz
+          args: cargo-afl
+      - run: cd fuzz_write
+      - run: cargo-afl afl system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: build --all-features fuzz_write
+          command: afl
+          args: build --all-features
       - name: run fuzz
-        timeout-minutes: 350
+        timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: run --all-features fuzz_write fuzz/corpus/fuzz_write -- -rss_limit_mb=8192 -timeout=2s -fork=2 -runs=5000000 -max_len=160 -max_total_time=20700 -dict=fuzz/fuzz.dict
+          command: afl
+          args: fuzz -i in -o out -V 3600 -a binary -x fuzz.dict -- ../target/debug/fuzz_write
+      - name: Minimize corpus
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ../target/debug/fuzz_write
+      - name: Upload updated corpus
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_write_corpus
+          path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_bad_inputs
-          path: |
-            fuzz/artifacts/fuzz_write/crash-*
-            fuzz/artifacts/fuzz_write/leak-*
-            fuzz/artifacts/fuzz_write/timeout-*
+          path: out/default/crashes/*
           if-no-files-found: ignore
-      - name: Minimize seed corpus
-        if: always()
-        run: ./recursive-fuzz-cmin.sh write 500
-        shell: bash
-      - name: Upload updated seed corpus
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ../target/debug/fuzz_write
+      - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz_write_corpus
-          path: fuzz/corpus/fuzz_write/*
+          name: fuzz_write_coverage
+          path: map
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
@@ -239,22 +275,35 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: install
-          args: cargo-fuzz
+          args: cargo-afl
+      - run: cd fuzz_write
+      - run: cargo-afl afl system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: build --no-default-features fuzz_write
+          command: afl
+          args: build --all-features
       - name: run fuzz
-        timeout-minutes: 350
+        timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
-          command: fuzz
-          args: run --no-default-features fuzz_write fuzz/corpus/fuzz_write -- -rss_limit_mb=8192 -timeout=10s -fork=2 -runs=40000000 -max_len=256 -max_total_time=20700 -dict=fuzz/fuzz.dict
+          command: afl
+          args: fuzz -i in -o out -V 3600 -a binary -x fuzz.dict -- ../target/debug/fuzz_write
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz_write_no_features_bad_inputs
-          path: fuzz/artifacts/fuzz_write/crash-*
+          name: fuzz_write_bad_inputs_no_features
+          path: out/default/crashes/*
           if-no-files-found: ignore
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ../target/debug/fuzz_write
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_write_coverage_no_features
+          path: map

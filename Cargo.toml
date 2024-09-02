@@ -22,6 +22,9 @@ build = "src/build.rs"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[workspace]
+members = ["fuzz_read", "fuzz_write"]
+
 [workspace.dependencies]
 time = { version = "0.3.36", default-features = false }
 
