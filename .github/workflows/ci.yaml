@@ -108,11 +108,13 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-      - uses: actions-rs/cargo@v1
+      - name: Install afl
+        uses: actions-rs/cargo@v1
         with:
           command: install
           args: cargo-afl
-      - uses: actions-rs/cargo@v1
+      - name: cargo afl system-config
+        uses: actions-rs/cargo@v1
         with:
           command: afl
           args: system-config
@@ -169,11 +171,13 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-      - uses: actions-rs/cargo@v1
+      - name: Install afl
+        uses: actions-rs/cargo@v1
         with:
           command: install
           args: cargo-afl
-      - uses: actions-rs/cargo@v1
+      - name: cargo afl system-config
+        uses: actions-rs/cargo@v1
         with:
           command: afl
           args: system-config
@@ -220,11 +224,13 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-      - uses: actions-rs/cargo@v1
+      - name: Install afl
+        uses: actions-rs/cargo@v1
         with:
           command: install
           args: cargo-afl
-      - uses: actions-rs/cargo@v1
+      - name: cargo afl system-config
+        uses: actions-rs/cargo@v1
         with:
           command: afl
           args: system-config
@@ -281,11 +287,13 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-      - uses: actions-rs/cargo@v1
+      - name: Install afl
+        uses: actions-rs/cargo@v1
         with:
           command: install
           args: cargo-afl
-      - uses: actions-rs/cargo@v1
+      - name: cargo afl system-config
+        uses: actions-rs/cargo@v1
         with:
           command: afl
           args: system-config
@@ -293,7 +301,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: build --all-features
+          args: build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
         uses: actions-rs/cargo@v1
