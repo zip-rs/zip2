@@ -133,7 +133,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+          args: cmin -i out/default/queue -o out_cmin -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -249,7 +249,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+          args: cmin -i out/default/queue -o out_cmin -a binary -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
