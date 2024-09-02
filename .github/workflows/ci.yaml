@@ -120,18 +120,18 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: build --all-features --manifest-path ${{ github.workspace }}/zip2/fuzz_read/Cargo.toml
+          args: build --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i ${{ github.workspace }}/zip2/fuzz_read/in -o out -V 3600 -a binary -- ${{ github.workspace }}/zip2/fuzz_read/target/debug/fuzz_read
+          args: fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 3600 -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Minimize corpus
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ${{ github.workspace }}/zip2/fuzz_read/target/debug/fuzz_read
+          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -148,7 +148,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/zip2/fuzz_read/target/debug/fuzz_read
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -181,13 +181,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: build --manifest-path ${{ github.workspace }}/zip2/fuzz_read/Cargo.toml
+          args: build --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i ${{ github.workspace }}/zip2/fuzz_read/in -o out -V 3600 -a binary -- ${{ github.workspace }}/zip2/fuzz_read/target/debug/fuzz_read
+          args: fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 3600 -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -199,7 +199,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/zip2/fuzz_read/target/debug/fuzz_read
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -232,18 +232,18 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: build --all-features --manifest-path ${{ github.workspace }}/zip2/fuzz_write/Cargo.toml
+          args: build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i ${{ github.workspace }}/zip2/fuzz_write/in -o out -V 3600 -a binary -x ${{ github.workspace }}/zip2/fuzz_write/fuzz.dict -- ${{ github.workspace }}/zip2/fuzz_write/target/debug/fuzz_write
+          args: fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 3600 -a binary -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Minimize corpus
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ${{ github.workspace }}/zip2/fuzz_write/target/debug/fuzz_write
+          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -260,7 +260,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/zip2/fuzz_write/target/debug/fuzz_write
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -299,7 +299,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i ${{ github.workspace }}/zip2/fuzz_write/in -o out -V 3600 -a binary -x ${{ github.workspace }}/zip2/fuzz_write/fuzz.dict -- ${{ github.workspace }}/zip2/fuzz_write/target/debug/fuzz_write
+          args: fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 3600 -a binary -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -311,7 +311,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/zip2/fuzz_write/target/debug/fuzz_write
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
