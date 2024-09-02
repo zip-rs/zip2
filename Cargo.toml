@@ -15,15 +15,12 @@ description = """
 Library to support the reading and writing of zip files.
 """
 edition = "2021"
-exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**"]
+exclude = ["tests/**", "examples/**", ".github/**", "fuzz_read/**", "fuzz_write/**"]
 build = "src/build.rs"
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
-
-[workspace]
-members = ["fuzz_read", "fuzz_write"]
 
 [workspace.dependencies]
 time = { version = "0.3.36", default-features = false }
