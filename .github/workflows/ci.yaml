@@ -112,24 +112,23 @@ jobs:
         with:
           command: install
           args: cargo-afl
-      - run: cd fuzz_read
       - run: cargo-afl afl system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: build --all-features
+          args: build --all-features --manifest-path fuzz_read/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i in -o out -V 3600 -a binary -- ../target/debug/fuzz_read
+          args: fuzz -i fuzz_read/in -o out -V 3600 -a binary -- target/debug/fuzz_read
       - name: Minimize corpus
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ../target/debug/fuzz_read
+          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- target/debug/fuzz_read
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -146,7 +145,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: showmap -C -i out -o map -- ../target/debug/fuzz_read
+          args: showmap -C -i out -o map -- target/debug/fuzz_read
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -171,19 +170,18 @@ jobs:
         with:
           command: install
           args: cargo-afl
-      - run: cd fuzz_read
       - run: cargo-afl afl system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: build
+          args: build --manifest-path fuzz_read/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i in -o out -V 3600 -a binary -- ../target/debug/fuzz_read
+          args: fuzz -i fuzz_read/in -o out -V 3600 -a binary -- target/debug/fuzz_read
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -195,7 +193,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: showmap -C -i out -o map -- ../target/debug/fuzz_read
+          args: showmap -C -i out -o map -- target/debug/fuzz_read
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -226,18 +224,18 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: build --all-features
+          args: build --all-features --manifest-path fuzz_write/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i in -o out -V 3600 -a binary -x fuzz.dict -- ../target/debug/fuzz_write
+          args: fuzz -i fuzz_write/in -o out -V 3600 -a binary -x fuzz_write/fuzz.dict -- target/debug/fuzz_write
       - name: Minimize corpus
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- ../target/debug/fuzz_write
+          args: cmin -i out/default/queue -o out_cmin -V 3600 -a binary -- target/debug/fuzz_write
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -291,7 +289,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: fuzz -i in -o out -V 3600 -a binary -x fuzz.dict -- ../target/debug/fuzz_write
+          args: fuzz -i fuzz_write/in -o out -V 3600 -a binary -x fuzz_write/fuzz.dict -- target/debug/fuzz_write
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -303,7 +301,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: afl
-          args: showmap -C -i out -o map -- ../target/debug/fuzz_write
+          args: showmap -C -i out -o map -- target/debug/fuzz_write
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
