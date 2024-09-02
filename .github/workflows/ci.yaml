@@ -112,7 +112,10 @@ jobs:
         with:
           command: install
           args: cargo-afl
-      - run: cargo-afl afl system-config
+      - uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
@@ -170,7 +173,10 @@ jobs:
         with:
           command: install
           args: cargo-afl
-      - run: cargo-afl afl system-config
+      - uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
@@ -218,8 +224,10 @@ jobs:
         with:
           command: install
           args: cargo-afl
-      - run: cd fuzz_write
-      - run: cargo-afl afl system-config
+      - uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
@@ -277,8 +285,10 @@ jobs:
         with:
           command: install
           args: cargo-afl
-      - run: cd fuzz_write
-      - run: cargo-afl afl system-config
+      - uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: system-config
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
