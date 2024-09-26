@@ -5,7 +5,6 @@ use core::mem;
 use memchr::memmem::FinderRev;
 use std::io;
 use std::io::prelude::*;
-use std::rc::Rc;
 use std::slice;
 
 /// "Magic" header values used in the zip spec to locate metadata records.
@@ -342,91 +341,17 @@ impl Zip32CentralDirectoryEnd {
         })
     }
 
-    #[allow(clippy::type_complexity)]
-    pub fn find_and_parse<T: Read + Seek>(
-        reader: &mut T,
-    ) -> ZipResult<Box<[(Rc<Zip32CentralDirectoryEnd>, u64)]>> {
-        let mut results = vec![];
-        let file_length = reader.seek(io::SeekFrom::End(0))?;
-
-        if file_length < mem::size_of::<Zip32CDEBlock>() as u64 {
-            return Err(ZipError::InvalidArchive("Invalid zip header"));
-        }
-
-        let search_lower_bound = 0;
-
-        const END_WINDOW_SIZE: usize = 512;
-        /* TODO: use static_assertions!() */
-        debug_assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
-
-        const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
-            Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-        let finder = FinderRev::new(&SIG_BYTES);
-
-        let mut window_start: u64 = file_length.saturating_sub(END_WINDOW_SIZE as u64);
-        let mut window = [0u8; END_WINDOW_SIZE];
-        while window_start >= search_lower_bound {
-            /* Go to the start of the window in the file. */
-            reader.seek(io::SeekFrom::Start(window_start))?;
-
-            /* Identify how many bytes to read (this may be less than the window size for files
-             * smaller than END_WINDOW_SIZE). */
-            let end = (window_start + END_WINDOW_SIZE as u64).min(file_length);
-            let cur_len = (end - window_start) as usize;
-            debug_assert!(cur_len > 0);
-            debug_assert!(cur_len <= END_WINDOW_SIZE);
-            let cur_window: &mut [u8] = &mut window[..cur_len];
-            /* Read the window into the bytes! */
-            reader.read_exact(cur_window)?;
-
-            /* Find instances of the magic signature. */
-            for offset in finder.rfind_iter(cur_window) {
-                let cde_start_pos = window_start + offset as u64;
-                reader.seek(io::SeekFrom::Start(cde_start_pos))?;
-                /* Drop any headers that don't parse. */
-                if let Ok(cde) = Self::parse(reader) {
-                    results.push((Rc::new(cde), cde_start_pos));
-                }
-            }
-
-            /* We always want to make sure we go allllll the way back to the start of the file if
-             * we can't find it elsewhere. However, our `while` condition doesn't check that. So we
-             * avoid infinite looping by checking at the end of the loop. */
-            if window_start == search_lower_bound {
-                break;
-            }
-            /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
-             * overlap our nice neat window boundaries! */
-            window_start = (window_start
-                /* NB: To catch matches across window boundaries, we need to make our blocks overlap
-                 * by the width of the pattern to match. */
-                + mem::size_of::<Magic>() as u64)
-                /* This should never happen, but make sure we don't go past the end of the file. */
-                .min(file_length);
-            window_start = window_start
-                .saturating_sub(
-                    /* Shift the window upon each iteration so we search END_WINDOW_SIZE bytes at
-                     * once (unless limited by file_length). */
-                    END_WINDOW_SIZE as u64,
-                )
-                /* This will never go below the value of `search_lower_bound`, so we have a special
-                 * `if window_start == search_lower_bound` check above. */
-                .max(search_lower_bound);
-        }
-        if results.is_empty() {
-            Err(ZipError::InvalidArchive(
-                "Could not find central directory end",
-            ))
-        } else {
-            Ok(results.into_boxed_slice())
-        }
-    }
-
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         let (block, comment) = self.block_and_comment()?;
         block.write(writer)?;
         writer.write_all(&comment)?;
         Ok(())
+    }
+
+    pub fn is_zip64(&self) -> bool {
+        self.disk_number == u16::MAX
+            && self.number_of_files == u16::MAX
+            && self.number_of_files_on_this_disk == u16::MAX
     }
 }
 
@@ -544,6 +469,7 @@ impl FixedSizeBlock for Zip64CDEBlock {
 }
 
 pub(crate) struct Zip64CentralDirectoryEnd {
+    pub record_size: u64,
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
     pub disk_number: u32,
@@ -552,13 +478,13 @@ pub(crate) struct Zip64CentralDirectoryEnd {
     pub number_of_files: u64,
     pub central_directory_size: u64,
     pub central_directory_offset: u64,
-    //pub extensible_data_sector: Vec<u8>, <-- We don't do anything with this at the moment.
+    pub extensible_data_sector: Box<[u8]>,
 }
 
 impl Zip64CentralDirectoryEnd {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEnd> {
         let Zip64CDEBlock {
-            // record_size,
+            record_size,
             version_made_by,
             version_needed_to_extract,
             disk_number,
@@ -569,7 +495,12 @@ impl Zip64CentralDirectoryEnd {
             central_directory_offset,
             ..
         } = Zip64CDEBlock::parse(reader)?;
+
+        let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
+        reader.read_exact(&mut zip_file_comment)?;
+
         Ok(Self {
+            record_size,
             version_made_by,
             version_needed_to_extract,
             disk_number,
@@ -578,94 +509,13 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
+            extensible_data_sector: zip_file_comment,
         })
-    }
-
-    pub fn find_and_parse<T: Read + Seek>(
-        reader: &mut T,
-        search_lower_bound: u64,
-        search_upper_bound: u64,
-    ) -> ZipResult<Vec<(Zip64CentralDirectoryEnd, u64)>> {
-        let mut results = Vec::new();
-
-        const END_WINDOW_SIZE: usize = 2048;
-        /* TODO: use static_assertions!() */
-        debug_assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
-
-        const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
-            Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-        let finder = FinderRev::new(&SIG_BYTES);
-
-        let mut window_start: u64 = search_upper_bound
-            .saturating_sub(END_WINDOW_SIZE as u64)
-            .max(search_lower_bound);
-        let mut window = [0u8; END_WINDOW_SIZE];
-        while window_start >= search_lower_bound {
-            reader.seek(io::SeekFrom::Start(window_start))?;
-
-            /* Identify how many bytes to read (this may be less than the window size for files
-             * smaller than END_WINDOW_SIZE). */
-            let end = (window_start + END_WINDOW_SIZE as u64).min(search_upper_bound);
-
-            debug_assert!(end >= window_start);
-            let cur_len = (end - window_start) as usize;
-            if cur_len == 0 {
-                break;
-            }
-            debug_assert!(cur_len <= END_WINDOW_SIZE);
-            let cur_window: &mut [u8] = &mut window[..cur_len];
-            /* Read the window into the bytes! */
-            reader.read_exact(cur_window)?;
-
-            /* Find instances of the magic signature. */
-            for offset in finder.rfind_iter(cur_window) {
-                let cde_start_pos = window_start + offset as u64;
-                reader.seek(io::SeekFrom::Start(cde_start_pos))?;
-
-                debug_assert!(cde_start_pos >= search_lower_bound);
-                let archive_offset = cde_start_pos - search_lower_bound;
-                let cde = Self::parse(reader)?;
-
-                results.push((cde, archive_offset));
-            }
-
-            /* We always want to make sure we go allllll the way back to the start of the file if
-             * we can't find it elsewhere. However, our `while` condition doesn't check that. So we
-             * avoid infinite looping by checking at the end of the loop. */
-            if window_start == search_lower_bound {
-                break;
-            }
-            /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
-             * overlap our nice neat window boundaries! */
-            window_start = (window_start
-                /* NB: To catch matches across window boundaries, we need to make our blocks overlap
-                 * by the width of the pattern to match. */
-                + mem::size_of::<Magic>() as u64)
-                /* This may never happen, but make sure we don't go past the end of the specified
-                 * range. */
-                .min(search_upper_bound);
-            window_start = window_start
-                .saturating_sub(
-                    /* Shift the window upon each iteration so we search END_WINDOW_SIZE bytes at
-                     * once (unless limited by search_upper_bound). */
-                    END_WINDOW_SIZE as u64,
-                )
-                /* This will never go below the value of `search_lower_bound`, so we have a special
-                 * `if window_start == search_lower_bound` check above. */
-                .max(search_lower_bound);
-        }
-
-        if results.is_empty() {
-            Err(ZipError::InvalidArchive(
-                "Could not find ZIP64 central directory end",
-            ))
-        } else {
-            Ok(results)
-        }
     }
 
     pub fn block(self) -> Zip64CDEBlock {
         let Self {
+            record_size,
             version_made_by,
             version_needed_to_extract,
             disk_number,
@@ -674,11 +524,11 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
+            ..
         } = self;
         Zip64CDEBlock {
             magic: Zip64CDEBlock::MAGIC,
-            /* currently unused */
-            record_size: 44,
+            record_size,
             version_made_by,
             version_needed_to_extract,
             disk_number,
@@ -693,6 +543,125 @@ impl Zip64CentralDirectoryEnd {
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         self.block().write(writer)
     }
+}
+
+pub fn find_cde<R: Read + Seek>(
+    reader: &mut R,
+) -> ZipResult<(
+    either::Either<Zip32CentralDirectoryEnd, Zip64CentralDirectoryEnd>,
+    u64,
+)> {
+    const CHUNK_SIZE: usize = 2048;
+    debug_assert!(CHUNK_SIZE > mem::size_of::<Magic>());
+
+    const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+        Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+
+    reader.seek(io::SeekFrom::End(0))?;
+
+    let file_length = reader.stream_position()?;
+    let mut window_start: u64 = file_length.saturating_sub(CHUNK_SIZE as u64);
+    let mut window = [0u8; CHUNK_SIZE];
+
+    let finder = FinderRev::new(&SIG_BYTES);
+
+    /* The CDE must be within the max comment length + CDE size */
+    let lower_bound = file_length.saturating_sub(65_535 + 22);
+
+    let zip_cde = 'outer: loop {
+        if (window_start + CHUNK_SIZE as u64) < lower_bound {
+            break None;
+        };
+
+        /* Identify how many bytes to read (this may be less than the window size for files
+         * smaller than END_WINDOW_SIZE). */
+        let start = window_start.max(lower_bound);
+        let end = (window_start + CHUNK_SIZE as u64).min(file_length);
+
+        debug_assert!(end >= window_start);
+        let cur_len = (end - start) as usize;
+        if cur_len == 0 {
+            break None;
+        }
+        debug_assert!(cur_len <= CHUNK_SIZE);
+        let cur_window: &mut [u8] = &mut window[..cur_len];
+
+        /* If we are not mid-window, read next window */
+        reader.seek(io::SeekFrom::Start(window_start))?;
+
+        /* Read the window into the bytes! */
+        reader.read_exact(cur_window)?;
+
+        /* Find instances of the magic signature. */
+        for offset in finder.rfind_iter(cur_window) {
+            let cde_start_pos = window_start + offset as u64;
+            reader.seek(io::SeekFrom::Start(cde_start_pos))?;
+
+            let Ok(cde) = Zip32CentralDirectoryEnd::parse(reader) else {
+                continue;
+            };
+
+            if (cde.zip_file_comment.len() + offset) as u64 + 22 != file_length {
+                continue;
+            }
+
+            break 'outer Some((cde, cde_start_pos));
+        }
+
+        /* We always want to make sure we go allllll the way back to the start of the file if
+         * we can't find it elsewhere. However, our `while` condition doesn't check that. So we
+         * avoid infinite looping by checking at the end of the loop. */
+        if window_start == lower_bound {
+            break None;
+        }
+
+        /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
+         * overlap our nice neat window boundaries! */
+        window_start = (window_start
+        /* NB: To catch matches across window boundaries, we need to make our blocks overlap
+            * by the width of the pattern to match. */
+        + mem::size_of::<Magic>() as u64)
+            /* This may never happen, but make sure we don't go past the end of the specified
+             * range. */
+            .min(file_length);
+        window_start = window_start
+            .saturating_sub(
+                /* Shift the window upon each iteration so we search END_WINDOW_SIZE bytes at
+                 * once (unless limited by search_upper_bound). */
+                CHUNK_SIZE as u64,
+            )
+            /* This will never go below the value of `search_lower_bound`, so we have a special
+             * `if window_start == search_lower_bound` check above. */
+            .max(lower_bound);
+    };
+
+    let Some((zip_cde, cde_offset)) = zip_cde else {
+        return Err(ZipError::InvalidArchive(
+            "Could not find central directory end",
+        ));
+    };
+
+    if !zip_cde.is_zip64() {
+        return Ok((either::Left(zip_cde), cde_offset));
+    }
+
+    reader.seek(io::SeekFrom::Start(cde_offset - 20))?;
+    let locator64 = Zip64CentralDirectoryEndLocator::parse(reader)?;
+
+    if locator64.number_of_disks > 1 {
+        return Err(ZipError::InvalidArchive(
+            "Multi-disk ZIP files are not supported",
+        ));
+    }
+
+    reader.seek(io::SeekFrom::Start(
+        locator64.end_of_central_directory_offset,
+    ))?;
+
+    Ok((
+        either::Right(Zip64CentralDirectoryEnd::parse(reader)?),
+        locator64.end_of_central_directory_offset,
+    ))
 }
 
 pub(crate) fn is_dir(filename: &str) -> bool {

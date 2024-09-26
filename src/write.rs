@@ -628,13 +628,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
+        if let Ok(shared) = ZipArchive::get_metadata(config, &mut readwriter) {
             Ok(ZipWriter {
                 inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
                 files: shared.files,
                 stats: Default::default(),
                 writing_to_file: false,
-                comment: footer.zip_file_comment,
+                comment: shared.comment,
                 writing_raw: true, // avoid recomputing the last file's header
                 flush_on_finish_file: false,
             })
@@ -1471,10 +1471,10 @@ impl<W: Write + Seek> ZipWriter<W> {
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
+        let is64 = self.files.len() > spec::ZIP64_ENTRY_THR
+            || central_size.max(central_start) > spec::ZIP64_BYTES_THR;
 
-        if self.files.len() > spec::ZIP64_ENTRY_THR
-            || central_size.max(central_start) > spec::ZIP64_BYTES_THR
-        {
+        if is64 {
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
                 version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
@@ -1484,6 +1484,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u64,
                 central_directory_size: central_size,
                 central_directory_offset: central_start,
+                record_size: self.comment.len() as u64 + 44,
+                extensible_data_sector: self.comment.clone(),
             };
 
             zip64_footer.write(writer)?;
@@ -1501,7 +1503,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         let footer = spec::Zip32CentralDirectoryEnd {
             disk_number: 0,
             disk_with_central_directory: 0,
-            zip_file_comment: self.comment.clone(),
+            zip_file_comment: match is64 {
+                true => Box::new([]),
+                false => self.comment.clone(),
+            },
             number_of_files_on_this_disk: number_of_files,
             number_of_files,
             central_directory_size: central_size.min(spec::ZIP64_BYTES_THR) as u32,
