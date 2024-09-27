@@ -628,19 +628,18 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        if let Ok(shared) = ZipArchive::get_metadata(config, &mut readwriter) {
-            Ok(ZipWriter {
-                inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-                files: shared.files,
-                stats: Default::default(),
-                writing_to_file: false,
-                comment: shared.comment,
-                writing_raw: true, // avoid recomputing the last file's header
-                flush_on_finish_file: false,
-            })
-        } else {
-            Err(InvalidArchive("No central-directory end header found"))
-        }
+
+        let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
+
+        Ok(ZipWriter {
+            inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
+            files: shared.files,
+            stats: Default::default(),
+            writing_to_file: false,
+            comment: shared.comment,
+            writing_raw: true, // avoid recomputing the last file's header
+            flush_on_finish_file: false,
+        })
     }
 
     /// `flush_on_finish_file` is designed to support a streaming `inner` that may unload flushed
@@ -1476,6 +1475,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         if is64 {
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
+                record_size: self.comment.len() as u64 + 44,
                 version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
                 disk_number: 0,
@@ -1484,7 +1484,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u64,
                 central_directory_size: central_size,
                 central_directory_offset: central_start,
-                record_size: self.comment.len() as u64 + 44,
                 extensible_data_sector: self.comment.clone(),
             };
 
