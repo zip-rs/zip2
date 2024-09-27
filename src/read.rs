@@ -349,8 +349,11 @@ fn find_data_start(
     // Go to start of data.
     reader.seek(SeekFrom::Start(data.header_start))?;
 
+    println!("A");
     // Parse static-sized fields and check the magic value.
     let block = ZipLocalEntryBlock::parse(reader)?;
+
+    println!("B");
 
     // Calculate the end of the local header from the fields we just parsed.
     let variable_fields_len =
@@ -368,6 +371,8 @@ fn find_data_start(
             debug_assert_eq!(*data.data_start.get().unwrap(), data_start);
         }
     }
+
+    println!("C");
     Ok(data_start)
 }
 
@@ -617,9 +622,11 @@ impl<R: Read + Seek> ZipArchive<R> {
         } else {
             dir_info.number_of_files
         };
+
         if dir_info.disk_number != dir_info.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
+
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
@@ -683,8 +690,6 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        reader.seek(SeekFrom::Start(0))?;
-
         let shared = Self::get_metadata(config, &mut reader)?;
 
         Ok(ZipArchive {
@@ -1020,11 +1025,15 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
+    println!("{central_header_start}");
     let block = ZipCentralEntryBlock::parse(reader)?;
+    println!("block read");
     let file =
         central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
+    println!("file read");
     let central_header_end = reader.stream_position()?;
     let data_start = find_data_start(&file, reader)?;
+    println!("data found");
     if data_start > central_header_start {
         return Err(InvalidArchive(
             "A file can't start after its central-directory header",
