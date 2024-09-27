@@ -8,7 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, CdeLookupResult, FixedSizeBlock, Pod};
+use crate::spec::{self, CentralDirectoryEndInfo, FixedSizeBlock, Pod};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -349,11 +349,8 @@ fn find_data_start(
     // Go to start of data.
     reader.seek(SeekFrom::Start(data.header_start))?;
 
-    println!("A");
     // Parse static-sized fields and check the magic value.
     let block = ZipLocalEntryBlock::parse(reader)?;
-
-    println!("B");
 
     // Calculate the end of the local header from the fields we just parsed.
     let variable_fields_len =
@@ -362,6 +359,7 @@ fn find_data_start(
         block.file_name_length as u64 + block.extra_field_length as u64;
     let data_start =
         data.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+
     // Set the value so we don't have to read it again.
     match data.data_start.set(data_start) {
         Ok(()) => (),
@@ -372,7 +370,6 @@ fn find_data_start(
         }
     }
 
-    println!("C");
     Ok(data_start)
 }
 
@@ -443,10 +440,10 @@ pub(crate) struct CentralDirectoryInfo {
     pub(crate) disk_with_central_directory: u32,
 }
 
-impl<'a> TryFrom<&'a CdeLookupResult> for CentralDirectoryInfo {
+impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
     type Error = ZipError;
 
-    fn try_from(value: &'a CdeLookupResult) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a CentralDirectoryEndInfo) -> Result<Self, Self::Error> {
         use ZipError::InvalidArchive;
 
         let (relative_cd_offset, number_of_files, disk_number, disk_with_central_directory) =
@@ -599,8 +596,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
     pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
-        let cde = spec::find_cde(reader, config.archive_offset)?;
+        // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
+        let cde = spec::find_central_directory(reader, config.archive_offset)?;
 
+        // Turn EOCD into internal representation.
         let info = CentralDirectoryInfo::try_from(&cde)?;
         let shared = Self::read_central_header(info, config, reader)?;
 
@@ -630,7 +629,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
-            let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
+            let file = central_header_to_zip_file(reader, &dir_info)?;
             files.push(file);
         }
 
@@ -1020,25 +1019,36 @@ const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
 /// Parse a central directory entry to collect the information for the file.
 pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     reader: &mut R,
-    archive_offset: u64,
+    central_directory: &CentralDirectoryInfo,
 ) -> ZipResult<ZipFileData> {
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
-    println!("{central_header_start}");
     let block = ZipCentralEntryBlock::parse(reader)?;
-    println!("block read");
-    let file =
-        central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
-    println!("file read");
+
+    let file = central_header_to_zip_file_inner(
+        reader,
+        central_directory.archive_offset,
+        central_header_start,
+        block,
+    )?;
+
     let central_header_end = reader.stream_position()?;
-    let data_start = find_data_start(&file, reader)?;
-    println!("data found");
-    if data_start > central_header_start {
+
+    if file.header_start >= central_directory.directory_start {
         return Err(InvalidArchive(
-            "A file can't start after its central-directory header",
+            "A local file entry can't start after the central directory",
         ));
     }
+
+    let data_start = find_data_start(&file, reader)?;
+
+    if data_start > central_directory.directory_start {
+        return Err(InvalidArchive(
+            "File data can't start after the central directory",
+        ));
+    }
+
     reader.seek(SeekFrom::Start(central_header_end))?;
     Ok(file)
 }
