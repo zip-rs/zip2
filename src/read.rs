@@ -55,6 +55,7 @@ pub(crate) mod zip_archive {
         #[allow(dead_code)]
         pub(super) config: super::Config,
         pub(crate) comment: Box<[u8]>,
+        pub(crate) zip64_comment: Option<Box<[u8]>>,
     }
 
     #[derive(Debug)]
@@ -68,7 +69,7 @@ pub(crate) mod zip_archive {
     }
 
     impl SharedBuilder {
-        pub fn build(self, comment: Box<[u8]>) -> Shared {
+        pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> Shared {
             let mut index_map = IndexMap::with_capacity(self.files.len());
             self.files.into_iter().for_each(|file| {
                 index_map.insert(file.file_name.clone(), file);
@@ -79,6 +80,7 @@ pub(crate) mod zip_archive {
                 dir_start: self.dir_start,
                 config: self.config,
                 comment,
+                zip64_comment,
             }
         }
     }
@@ -492,6 +494,7 @@ impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
         comment: Box<[u8]>,
+        zip64_comment: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> ZipResult<Self> {
@@ -507,6 +510,7 @@ impl<R> ZipArchive<R> {
                 archive_offset: ArchiveOffset::Known(initial_offset),
             },
             comment,
+            zip64_comment,
         });
         Ok(Self { reader, shared })
     }
@@ -603,10 +607,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         let info = CentralDirectoryInfo::try_from(&cde)?;
         let shared = Self::read_central_header(info, config, reader)?;
 
-        Ok(shared.build(match cde.eocd64 {
-            Some((eocd64, _)) => eocd64.extensible_data_sector,
-            _ => cde.eocd.0.zip_file_comment,
-        }))
+        Ok(shared.build(
+            cde.eocd.0.zip_file_comment,
+            cde.eocd64.map(|(v, _)| v.extensible_data_sector),
+        ))
     }
 
     fn read_central_header(
@@ -835,6 +839,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the comment of the zip archive.
     pub fn comment(&self) -> &[u8] {
         &self.shared.comment
+    }
+
+    /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
+    pub fn zip64_comment(&self) -> Option<&[u8]> {
+        self.shared.zip64_comment.as_deref()
     }
 
     /// Returns an iterator over all the file and directory names in this archive.
