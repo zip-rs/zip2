@@ -3,7 +3,6 @@
 use crate::read::magic_finder::{MagicFinder, OptimisticMagicFinder};
 use crate::read::ArchiveOffset;
 use crate::result::{ZipError, ZipResult};
-use crate::types::ZipCentralEntryBlock;
 use core::mem;
 use std::io;
 use std::io::prelude::*;
@@ -352,8 +351,6 @@ impl Zip32CentralDirectoryEnd {
 
     pub fn is_zip64(&self) -> bool {
         self.number_of_files == u16::MAX
-            && self.central_directory_size == u32::MAX
-            && self.central_directory_offset == u32::MAX
     }
 }
 
@@ -577,7 +574,7 @@ pub fn find_cde<R: Read + Seek>(
     let file_length = reader.seek(io::SeekFrom::End(0))?;
 
     /* The CDE must be within the max comment length + CDE size */
-    let lower_bound = file_length.saturating_sub(65_535 + 22);
+    let lower_bound = file_length.saturating_sub(u16::MAX as u64 + 22);
 
     let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, (lower_bound, file_length));
     let mut subfinder: Option<OptimisticMagicFinder<'static>> = None;
@@ -585,6 +582,8 @@ pub fn find_cde<R: Read + Seek>(
     let mut parsing_error = None;
 
     while let Some(eocd_offset) = eocd_finder.next_back(reader)? {
+        println!("eocd candidate {eocd_offset}");
+
         let eocd = match Zip32CentralDirectoryEnd::parse(reader) {
             Ok(eocd) => eocd,
             Err(e) => {
@@ -595,40 +594,62 @@ pub fn find_cde<R: Read + Seek>(
             }
         };
 
+        println!("parsed successfully");
+
         /* Consistency check A: the EOCD comment must terminate at the end of file */
         if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 != file_length {
-            parsing_error = Some(ZipError::InvalidArchive(
-                "Invalid Central Directory End comment length",
-            ));
+            parsing_error = Some(ZipError::InvalidArchive("Invalid EOCD comment length"));
             continue;
         }
 
+        println!("internally consistent");
+
         if !eocd.is_zip64() {
-            let suggested_cd_offset = eocd.central_directory_offset as u64;
+            let relative_cd_offset = eocd.central_directory_offset as u64;
+
+            if eocd.number_of_files == 0 {
+                return Ok(CdeLookupResult {
+                    eocd: (eocd, eocd_offset),
+                    eocd64: None,
+                    archive_offset: eocd_offset - relative_cd_offset,
+                });
+            } else if relative_cd_offset >= eocd_offset {
+                parsing_error = Some(ZipError::InvalidArchive("Invalid CD offset in EOCD"));
+                continue;
+            }
+
+            println!(
+                "not zip64, relative_cd_offset {relative_cd_offset}, {} files",
+                eocd.number_of_files
+            );
 
             let subfinder = subfinder
                 .get_or_insert_with(OptimisticMagicFinder::new_empty)
                 .repurpose(
                     &CD_SIG_BYTES,
-                    (suggested_cd_offset, eocd_offset),
+                    (relative_cd_offset, eocd_offset),
                     match archive_offset {
                         ArchiveOffset::Known(n) => {
-                            Some((suggested_cd_offset.saturating_add(n).min(eocd_offset), true))
+                            Some((relative_cd_offset.saturating_add(n).min(eocd_offset), true))
                         }
-                        _ => Some((suggested_cd_offset, false)),
+                        _ => Some((relative_cd_offset, false)),
                     },
                 );
 
             /* Consistency check B1: find the CD */
             if let Some(cd_offset) = subfinder.next_back(reader)? {
+                println!("cd offset {cd_offset}");
+
                 return Ok(CdeLookupResult {
                     eocd: (eocd, eocd_offset),
                     eocd64: None,
-                    archive_offset: cd_offset - suggested_cd_offset,
+                    archive_offset: cd_offset - relative_cd_offset,
                 });
             }
 
-            parsing_error = Some(ZipError::InvalidArchive("Central Directory not present"));
+            println!("cd not found");
+
+            parsing_error = Some(ZipError::InvalidArchive("CD not found"));
             continue;
         }
 
@@ -700,7 +721,10 @@ pub fn find_cde<R: Read + Seek>(
             );
 
         /* Find the EOCD64 */
+        let mut local_error = None;
         while let Some(eocd64_offset) = subfinder.next_back(reader)? {
+            let archive_offset = eocd64_offset - locator64.end_of_central_directory_offset;
+
             match try_read_eocd64(
                 reader,
                 &locator64,
@@ -710,14 +734,16 @@ pub fn find_cde<R: Read + Seek>(
                     return Ok(CdeLookupResult {
                         eocd: (eocd, eocd_offset),
                         eocd64: Some((eocd64, eocd64_offset)),
-                        archive_offset: eocd64_offset - locator64_offset,
+                        archive_offset,
                     })
                 }
-                _ => continue,
+                Err(e) => {
+                    local_error = Some(e);
+                }
             }
         }
 
-        parsing_error = Some(ZipError::InvalidArchive("Could not find EOCD64"));
+        parsing_error = local_error.or(Some(ZipError::InvalidArchive("Could not find EOCD64")));
     }
 
     Err(parsing_error.unwrap_or_else(|| ZipError::InvalidArchive("Could not find EOCD")))

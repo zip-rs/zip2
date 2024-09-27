@@ -12,26 +12,30 @@ pub struct MagicFinder<'a> {
     bounds: (u64, u64),
 }
 
-const BUFFER_SIZE: usize = 2048;
-
 impl<'a> MagicFinder<'a> {
     pub fn new(magic_bytes: &'a [u8], bounds: (u64, u64)) -> Self {
+        const BUFFER_SIZE: usize = 2048;
+
         debug_assert!(BUFFER_SIZE > magic_bytes.len());
 
         Self {
             buffer: vec![0; BUFFER_SIZE].into_boxed_slice(),
             finder: FinderRev::new(magic_bytes),
-            cursor: bounds.1.saturating_sub(BUFFER_SIZE as u64).max(bounds.0),
+            cursor: bounds
+                .1
+                .saturating_sub(BUFFER_SIZE as u64)
+                .clamp(bounds.0, bounds.1),
             mid_buffer_offset: None,
             bounds,
         }
     }
 
     pub fn repurpose(&mut self, magic_bytes: &'a [u8], bounds: (u64, u64)) -> &mut Self {
-        debug_assert!(BUFFER_SIZE > magic_bytes.len());
-
         self.finder = FinderRev::new(magic_bytes);
-        self.cursor = bounds.1.saturating_sub(BUFFER_SIZE as u64).max(bounds.0);
+        self.cursor = bounds
+            .1
+            .saturating_sub(self.buffer.len() as u64)
+            .clamp(bounds.0, bounds.1);
         self.mid_buffer_offset = None;
         self.bounds = bounds;
 
@@ -49,7 +53,7 @@ impl<'a> MagicFinder<'a> {
             let window_start = self.cursor;
             let window_end = self
                 .cursor
-                .saturating_add(BUFFER_SIZE as u64)
+                .saturating_add(self.buffer.len() as u64)
                 .min(self.bounds.1);
 
             if window_end <= window_start {
@@ -128,7 +132,10 @@ impl<'a> OptimisticMagicFinder<'a> {
 
             /* FIXME: remove the heap allocation */
             let mut buffer = vec![0u8; self.inner.finder.needle().len()];
-            reader.read_exact(&mut buffer)?;
+
+            if v.saturating_sub(buffer.len() as u64) <= self.inner.bounds.1 {
+                reader.read_exact(&mut buffer)?;
+            }
 
             /* If matches, rewind and return */
             if self.inner.finder.rfind(&buffer).is_some() {
