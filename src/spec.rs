@@ -350,7 +350,7 @@ impl Zip32CentralDirectoryEnd {
     }
 
     pub fn is_zip64(&self) -> bool {
-        self.number_of_files == u16::MAX
+        self.number_of_files == u16::MAX || self.central_directory_offset == u32::MAX
     }
 }
 
@@ -551,39 +551,42 @@ impl Zip64CentralDirectoryEnd {
     }
 }
 
-pub(crate) struct CdeLookupResult {
+pub(crate) struct CentralDirectoryEndInfo {
     pub eocd: (Zip32CentralDirectoryEnd, u64),
     pub eocd64: Option<(Zip64CentralDirectoryEnd, u64)>,
 
     pub archive_offset: u64,
 }
 
-pub fn find_cde<R: Read + Seek>(
+/// Finds the EOCD and possibly the EOCD64 block and determines the archive offset.
+///
+/// In the best case scenario (no prepended junk), this function will not backtrack
+/// in the reader.
+pub fn find_central_directory<R: Read + Seek>(
     reader: &mut R,
     archive_offset: ArchiveOffset,
-) -> ZipResult<CdeLookupResult> {
+) -> ZipResult<CentralDirectoryEndInfo> {
     const EOCD_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
 
     const EOCD64_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
 
-    const CD_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+    const CDFH_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
+    // Probe the file size
     let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-    /* The CDE must be within the max comment length + CDE size */
-    let lower_bound = file_length.saturating_sub(u16::MAX as u64 + 22);
-
-    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, (lower_bound, file_length));
+    // Instantiate the mandatory finder
+    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, (0, file_length));
     let mut subfinder: Option<OptimisticMagicFinder<'static>> = None;
 
+    // Keep the last errors for cases of improper EOCD instances.
     let mut parsing_error = None;
 
     while let Some(eocd_offset) = eocd_finder.next_back(reader)? {
-        println!("eocd candidate {eocd_offset}");
-
+        // Attempt to parse the EOCD block
         let eocd = match Zip32CentralDirectoryEnd::parse(reader) {
             Ok(eocd) => eocd,
             Err(e) => {
@@ -594,39 +597,39 @@ pub fn find_cde<R: Read + Seek>(
             }
         };
 
-        println!("parsed successfully");
-
-        /* Consistency check A: the EOCD comment must terminate at the end of file */
-        if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 != file_length {
+        // ! Relaxed (inequality) due to garbage-after-comment Python files
+        // Consistency check: the EOCD comment must terminate before the end of file
+        if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 > file_length {
             parsing_error = Some(ZipError::InvalidArchive("Invalid EOCD comment length"));
             continue;
         }
 
-        println!("internally consistent");
-
+        // Branch out for zip32
         if !eocd.is_zip64() {
             let relative_cd_offset = eocd.central_directory_offset as u64;
 
+            // If the archive is empty, there is nothing more to be checked, the archive is correct.
             if eocd.number_of_files == 0 {
-                return Ok(CdeLookupResult {
+                return Ok(CentralDirectoryEndInfo {
                     eocd: (eocd, eocd_offset),
                     eocd64: None,
                     archive_offset: eocd_offset - relative_cd_offset,
                 });
-            } else if relative_cd_offset >= eocd_offset {
-                parsing_error = Some(ZipError::InvalidArchive("Invalid CD offset in EOCD"));
+            }
+
+            // Consistency check: the CD relative offset cannot be after the EOCD
+            if relative_cd_offset >= eocd_offset {
+                parsing_error = Some(ZipError::InvalidArchive("Invalid CDFH offset in EOCD"));
                 continue;
             }
 
-            println!(
-                "not zip64, relative_cd_offset {relative_cd_offset}, {} files",
-                eocd.number_of_files
-            );
-
+            // Attempt to find the first CDFH
             let subfinder = subfinder
                 .get_or_insert_with(OptimisticMagicFinder::new_empty)
                 .repurpose(
-                    &CD_SIG_BYTES,
+                    &CDFH_SIG_BYTES,
+                    // The CDFH must be before the EOCD and after the relative offset,
+                    // because prepended junk can only move it forward.
                     (relative_cd_offset, eocd_offset),
                     match archive_offset {
                         ArchiveOffset::Known(n) => {
@@ -636,26 +639,25 @@ pub fn find_cde<R: Read + Seek>(
                     },
                 );
 
-            /* Consistency check B1: find the CD */
+            // Consistency check: find the first CDFH
             if let Some(cd_offset) = subfinder.next_back(reader)? {
-                println!("cd offset {cd_offset}");
+                // The first CDFH will define the archive offset
+                let archive_offset = cd_offset - relative_cd_offset;
 
-                return Ok(CdeLookupResult {
+                return Ok(CentralDirectoryEndInfo {
                     eocd: (eocd, eocd_offset),
                     eocd64: None,
-                    archive_offset: cd_offset - relative_cd_offset,
+                    archive_offset,
                 });
             }
 
-            println!("cd not found");
-
-            parsing_error = Some(ZipError::InvalidArchive("CD not found"));
+            parsing_error = Some(ZipError::InvalidArchive("No CDFH found"));
             continue;
         }
 
-        let locator64_offset = eocd_offset - 20;
+        let locator64_offset = eocd_offset - mem::size_of::<Zip64CDELocatorBlock>() as u64;
 
-        /* Consistency check B2: the EOCD64 locator must be present directly before the EOCD */
+        // Consistency check: the EOCD64 locator must be present at the specific offset
         reader.seek(io::SeekFrom::Start(locator64_offset))?;
         let locator64 = match Zip64CentralDirectoryEndLocator::parse(reader) {
             Ok(locator64) => locator64,
@@ -665,9 +667,9 @@ pub fn find_cde<R: Read + Seek>(
             }
         };
 
-        /* Consistency check C: the EOCD64 offset must be before EOCD64 Locator offset */
+        // Consistency check: the EOCD64 offset must be before EOCD64 Locator offset */
         if locator64.end_of_central_directory_offset >= locator64_offset {
-            parsing_error = Some(ZipError::InvalidArchive("Invalid ZIP64 EOCD64 locator"));
+            parsing_error = Some(ZipError::InvalidArchive("Invalid EOCD64 Locator CD offset"));
             continue;
         }
 
@@ -678,6 +680,8 @@ pub fn find_cde<R: Read + Seek>(
             continue;
         }
 
+        // This was hidden inside a function to collect errors in a single place.
+        // Once try blocks are stabilized, this can go away.
         fn try_read_eocd64<R: Read + Seek>(
             reader: &mut R,
             locator64: &Zip64CentralDirectoryEndLocator,
@@ -685,14 +689,14 @@ pub fn find_cde<R: Read + Seek>(
         ) -> ZipResult<Zip64CentralDirectoryEnd> {
             let z64 = Zip64CentralDirectoryEnd::parse(reader)?;
 
-            /* Consistency check D: locator agrees with the EOCD64 */
+            // Consistency check: EOCD64 locator should agree with the EOCD64
             if z64.disk_with_central_directory != locator64.disk_with_central_directory {
                 return Err(ZipError::InvalidArchive(
                     "Invalid EOCD64: inconsistency with Locator data",
                 ));
             }
 
-            /* Consistency check E: the EOCD64 must have the expected length */
+            // Consistency check: the EOCD64 must have the expected length
             if z64.record_size + 12 != expected_length {
                 return Err(ZipError::InvalidArchive(
                     "Invalid EOCD64: inconsistent length",
@@ -702,7 +706,7 @@ pub fn find_cde<R: Read + Seek>(
             Ok(z64)
         }
 
-        /* Optimistic resolution: assume zero or known junk */
+        // Attempt to find the EOCD64 with an initial guess
         let subfinder = subfinder
             .get_or_insert_with(OptimisticMagicFinder::new_empty)
             .repurpose(
@@ -720,7 +724,7 @@ pub fn find_cde<R: Read + Seek>(
                 },
             );
 
-        /* Find the EOCD64 */
+        // Consistency check: Find the EOCD64
         let mut local_error = None;
         while let Some(eocd64_offset) = subfinder.next_back(reader)? {
             let archive_offset = eocd64_offset - locator64.end_of_central_directory_offset;
@@ -731,7 +735,7 @@ pub fn find_cde<R: Read + Seek>(
                 locator64_offset.saturating_sub(eocd64_offset),
             ) {
                 Ok(eocd64) => {
-                    return Ok(CdeLookupResult {
+                    return Ok(CentralDirectoryEndInfo {
                         eocd: (eocd, eocd_offset),
                         eocd64: Some((eocd64, eocd64_offset)),
                         archive_offset,
