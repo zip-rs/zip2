@@ -837,6 +837,35 @@ impl<W: Write + Seek> ZipWriter<W> {
         &self.comment
     }
 
+    /// Set ZIP64 archive comment.
+    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>)
+    where
+        S: Into<Box<str>>,
+    {
+        self.set_raw_zip64_comment(comment.map(|v| v.into().into_boxed_bytes()))
+    }
+
+    /// Set ZIP64 archive comment.
+    ///
+    /// This sets the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8.
+    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) {
+        self.zip64_comment = comment;
+    }
+
+    /// Get ZIP64 archive comment.
+    pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
+        self.get_raw_zip64_comment().map(from_utf8)
+    }
+
+    /// Get ZIP archive comment.
+    ///
+    /// This returns the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8.
+    pub fn get_raw_zip64_comment(&self) -> Option<&[u8]> {
+        self.zip64_comment.as_deref()
+    }
+
     /// Set the file length and crc32 manually.
     ///
     /// # Safety
