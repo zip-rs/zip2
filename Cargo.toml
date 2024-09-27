@@ -48,8 +48,6 @@ zstd = { version = "0.13.2", optional = true, default-features = false }
 zopfli = { version = "0.8.1", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
 lzma-rs = { version = "0.3.0", default-features = false, optional = true }
-itertools = "0.13.0"
-either = "1.13.0"
 
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
 crossbeam-utils = "0.8.20"

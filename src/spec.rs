@@ -22,6 +22,7 @@ impl Magic {
     }
 
     #[inline(always)]
+    #[allow(dead_code)]
     pub const fn from_le_bytes(bytes: [u8; 4]) -> Self {
         Self(u32::from_le_bytes(bytes))
     }
