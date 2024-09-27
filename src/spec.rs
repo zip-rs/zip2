@@ -1,8 +1,10 @@
 #![macro_use]
 
+use crate::read::magic_finder::{MagicFinder, OptimisticMagicFinder};
+use crate::read::ArchiveOffset;
 use crate::result::{ZipError, ZipResult};
+use crate::types::ZipCentralEntryBlock;
 use core::mem;
-use memchr::memmem::FinderRev;
 use std::io;
 use std::io::prelude::*;
 use std::slice;
@@ -552,209 +554,173 @@ impl Zip64CentralDirectoryEnd {
     }
 }
 
-// fn find_magic<'a, R: Read + Seek>(
-//     reader: &'a mut R,
-//     file_length: u64,
-//     magic: &'static [u8; mem::size_of::<Magic>()],
-// ) -> impl Iterator<Item = (u64, &'a mut &'a mut R)> + 'a {
-//     const CHUNK_SIZE: usize = 2048;
-//     debug_assert!(CHUNK_SIZE > mem::size_of::<Magic>());
+pub(crate) struct CdeLookupResult {
+    pub eocd: (Zip32CentralDirectoryEnd, u64),
+    pub eocd64: Option<(Zip64CentralDirectoryEnd, u64)>,
 
-//     let mut window_start: u64 = file_length.saturating_sub(CHUNK_SIZE as u64);
-//     let mut window = [0u8; CHUNK_SIZE];
-
-//     let finder = FinderRev::new(magic);
-
-//     /* The CDE must be within the max comment length + CDE size */
-//     let lower_bound = file_length.saturating_sub(65_535 + 22);
-
-//     std::iter::from_fn(move || {
-//         while (window_start + CHUNK_SIZE as u64) >= lower_bound {
-//             /* Identify how many bytes to read (this may be less than the window size for files
-//              * smaller than END_WINDOW_SIZE). */
-//             let start = window_start.max(lower_bound);
-//             let end = (window_start + CHUNK_SIZE as u64).min(file_length);
-
-//             debug_assert!(end >= window_start);
-//             let cur_len = (end - start) as usize;
-//             if cur_len == 0 {
-//                 break;
-//             }
-//             debug_assert!(cur_len <= CHUNK_SIZE);
-//             let cur_window: &mut [u8] = &mut window[..cur_len];
-
-//             /* If we are not mid-window, read next window */
-//             if reader.seek(io::SeekFrom::Start(window_start)).is_err() {
-//                 break;
-//             }
-
-//             /* Read the window into the bytes! */
-//             if reader.read_exact(cur_window).is_err() {
-//                 break;
-//             }
-
-//             /* Find instances of the magic signature. */
-//             for offset in finder.rfind_iter(cur_window) {
-//                 let cde_start_pos = window_start + offset as u64;
-//                 if reader.seek(io::SeekFrom::Start(cde_start_pos)).is_err() {
-//                     break;
-//                 }
-
-//                 return Some((cde_start_pos, &mut reader));
-//             }
-
-//             /* We always want to make sure we go allllll the way back to the start of the file if
-//              * we can't find it elsewhere. However, our `while` condition doesn't check that. So we
-//              * avoid infinite looping by checking at the end of the loop. */
-//             if window_start == lower_bound {
-//                 break;
-//             }
-
-//             /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
-//              * overlap our nice neat window boundaries! */
-//             window_start = (window_start
-//         /* NB: To catch matches across window boundaries, we need to make our blocks overlap
-//             * by the width of the pattern to match. */
-//         + mem::size_of::<Magic>() as u64)
-//                 /* This may never happen, but make sure we don't go past the end of the specified
-//                  * range. */
-//                 .min(file_length);
-//             window_start = window_start
-//                 .saturating_sub(
-//                     /* Shift the window upon each iteration so we search END_WINDOW_SIZE bytes at
-//                      * once (unless limited by search_upper_bound). */
-//                     CHUNK_SIZE as u64,
-//                 )
-//                 /* This will never go below the value of `search_lower_bound`, so we have a special
-//                  * `if window_start == search_lower_bound` check above. */
-//                 .max(lower_bound);
-//         }
-
-//         None
-//     })
-// }
+    pub archive_offset: u64,
+}
 
 pub fn find_cde<R: Read + Seek>(
     reader: &mut R,
-) -> ZipResult<(
-    either::Either<Zip32CentralDirectoryEnd, Zip64CentralDirectoryEnd>,
-    u64,
-)> {
-    const CHUNK_SIZE: usize = 2048;
-    debug_assert!(CHUNK_SIZE > mem::size_of::<Magic>());
-
-    const SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+    archive_offset: ArchiveOffset,
+) -> ZipResult<CdeLookupResult> {
+    const EOCD_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
 
-    reader.seek(io::SeekFrom::End(0))?;
+    const EOCD64_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+        Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
 
-    let file_length = reader.stream_position()?;
-    let mut window_start: u64 = file_length.saturating_sub(CHUNK_SIZE as u64);
-    let mut window = [0u8; CHUNK_SIZE];
+    const CD_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
-    let finder = FinderRev::new(&SIG_BYTES);
+    let file_length = reader.seek(io::SeekFrom::End(0))?;
 
     /* The CDE must be within the max comment length + CDE size */
     let lower_bound = file_length.saturating_sub(65_535 + 22);
 
-    let mut zip_cde = None;
+    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, (lower_bound, file_length));
+    let mut subfinder: Option<OptimisticMagicFinder<'static>> = None;
 
-    while (window_start + CHUNK_SIZE as u64) >= lower_bound {
-        /* Identify how many bytes to read (this may be less than the window size for files
-         * smaller than END_WINDOW_SIZE). */
-        let start = window_start.max(lower_bound);
-        let end = (window_start + CHUNK_SIZE as u64).min(file_length);
+    let mut parsing_error = None;
 
-        debug_assert!(end >= window_start);
-        let cur_len = (end - start) as usize;
-        if cur_len == 0 {
-            break;
-        }
-        debug_assert!(cur_len <= CHUNK_SIZE);
-        let cur_window: &mut [u8] = &mut window[..cur_len];
-
-        /* If we are not mid-window, read next window */
-        reader.seek(io::SeekFrom::Start(window_start))?;
-
-        /* Read the window into the bytes! */
-        reader.read_exact(cur_window)?;
-
-        /* Find instances of the magic signature. */
-        for offset in finder.rfind_iter(cur_window) {
-            let cde_start_pos = window_start + offset as u64;
-            reader.seek(io::SeekFrom::Start(cde_start_pos))?;
-
-            let Ok(cde) = Zip32CentralDirectoryEnd::parse(reader) else {
-                continue;
-            };
-
-            if (cde.zip_file_comment.len() + offset) as u64 + 22 != file_length - window_start {
+    while let Some(eocd_offset) = eocd_finder.next_back(reader)? {
+        let eocd = match Zip32CentralDirectoryEnd::parse(reader) {
+            Ok(eocd) => eocd,
+            Err(e) => {
+                if parsing_error.is_none() {
+                    parsing_error = Some(e);
+                }
                 continue;
             }
-
-            zip_cde = Some((cde, cde_start_pos));
-        }
-
-        /* We always want to make sure we go allllll the way back to the start of the file if
-         * we can't find it elsewhere. However, our `while` condition doesn't check that. So we
-         * avoid infinite looping by checking at the end of the loop. */
-        if window_start == lower_bound {
-            break;
-        }
-
-        /* Shift the window by END_WINDOW_SIZE bytes, but make sure to cover matches that
-         * overlap our nice neat window boundaries! */
-        window_start = (window_start
-        /* NB: To catch matches across window boundaries, we need to make our blocks overlap
-            * by the width of the pattern to match. */
-        + mem::size_of::<Magic>() as u64)
-            /* This may never happen, but make sure we don't go past the end of the specified
-             * range. */
-            .min(file_length);
-        window_start = window_start
-            .saturating_sub(
-                /* Shift the window upon each iteration so we search END_WINDOW_SIZE bytes at
-                 * once (unless limited by search_upper_bound). */
-                CHUNK_SIZE as u64,
-            )
-            /* This will never go below the value of `search_lower_bound`, so we have a special
-             * `if window_start == search_lower_bound` check above. */
-            .max(lower_bound);
-    }
-
-    let Some((zip_cde, cde_offset)) = zip_cde else {
-        return Err(ZipError::InvalidArchive(
-            "Could not find Central Directory end",
-        ));
-    };
-
-    if !zip_cde.is_zip64() {
-        return Ok((either::Left(zip_cde), cde_offset));
-    }
-
-    reader.seek(io::SeekFrom::Start(cde_offset - 20))?;
-    let locator64 = Zip64CentralDirectoryEndLocator::parse(reader)?;
-
-    if locator64.number_of_disks > 1 {
-        return Err(ZipError::InvalidArchive(
-            "Multi-disk ZIP files are not supported",
-        ));
-    }
-
-    // TODO: fallback heuristic
-    for offset in std::iter::once(locator64.end_of_central_directory_offset) {
-        reader.seek(io::SeekFrom::Start(offset))?;
-
-        let Ok(z64) = Zip64CentralDirectoryEnd::parse(reader) else {
-            continue;
         };
 
-        return Ok((either::Right(z64), offset));
+        /* Consistency check A: the EOCD comment must terminate at the end of file */
+        if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 != file_length {
+            parsing_error = Some(ZipError::InvalidArchive(
+                "Invalid Central Directory End comment length",
+            ));
+            continue;
+        }
+
+        if !eocd.is_zip64() {
+            let suggested_cd_offset = eocd.central_directory_offset as u64;
+
+            let subfinder = subfinder
+                .get_or_insert_with(OptimisticMagicFinder::new_empty)
+                .repurpose(
+                    &CD_SIG_BYTES,
+                    (suggested_cd_offset, eocd_offset),
+                    match archive_offset {
+                        ArchiveOffset::Known(n) => {
+                            Some((suggested_cd_offset.saturating_add(n).min(eocd_offset), true))
+                        }
+                        _ => Some((suggested_cd_offset, false)),
+                    },
+                );
+
+            /* Consistency check B1: find the CD */
+            if let Some(cd_offset) = subfinder.next_back(reader)? {
+                return Ok(CdeLookupResult {
+                    eocd: (eocd, eocd_offset),
+                    eocd64: None,
+                    archive_offset: cd_offset - suggested_cd_offset,
+                });
+            }
+
+            parsing_error = Some(ZipError::InvalidArchive("Central Directory not present"));
+            continue;
+        }
+
+        let locator64_offset = eocd_offset - 20;
+
+        /* Consistency check B2: the EOCD64 locator must be present directly before the EOCD */
+        reader.seek(io::SeekFrom::Start(locator64_offset))?;
+        let locator64 = match Zip64CentralDirectoryEndLocator::parse(reader) {
+            Ok(locator64) => locator64,
+            Err(e) => {
+                parsing_error = Some(e);
+                continue;
+            }
+        };
+
+        /* Consistency check C: the EOCD64 offset must be before EOCD64 Locator offset */
+        if locator64.end_of_central_directory_offset >= locator64_offset {
+            parsing_error = Some(ZipError::InvalidArchive("Invalid ZIP64 EOCD64 locator"));
+            continue;
+        }
+
+        if locator64.number_of_disks > 1 {
+            parsing_error = Some(ZipError::InvalidArchive(
+                "Multi-disk ZIP files are not supported",
+            ));
+            continue;
+        }
+
+        fn try_read_eocd64<R: Read + Seek>(
+            reader: &mut R,
+            locator64: &Zip64CentralDirectoryEndLocator,
+            expected_length: u64,
+        ) -> ZipResult<Zip64CentralDirectoryEnd> {
+            let z64 = Zip64CentralDirectoryEnd::parse(reader)?;
+
+            /* Consistency check D: locator agrees with the EOCD64 */
+            if z64.disk_with_central_directory != locator64.disk_with_central_directory {
+                return Err(ZipError::InvalidArchive(
+                    "Invalid EOCD64: inconsistency with Locator data",
+                ));
+            }
+
+            /* Consistency check E: the EOCD64 must have the expected length */
+            if z64.record_size + 12 != expected_length {
+                return Err(ZipError::InvalidArchive(
+                    "Invalid EOCD64: inconsistent length",
+                ));
+            }
+
+            Ok(z64)
+        }
+
+        /* Optimistic resolution: assume zero or known junk */
+        let subfinder = subfinder
+            .get_or_insert_with(OptimisticMagicFinder::new_empty)
+            .repurpose(
+                &EOCD64_SIG_BYTES,
+                (locator64.end_of_central_directory_offset, locator64_offset),
+                match archive_offset {
+                    ArchiveOffset::Known(n) => Some((
+                        locator64
+                            .end_of_central_directory_offset
+                            .saturating_add(n)
+                            .min(locator64_offset),
+                        true,
+                    )),
+                    _ => Some((locator64.end_of_central_directory_offset, false)),
+                },
+            );
+
+        /* Find the EOCD64 */
+        while let Some(eocd64_offset) = subfinder.next_back(reader)? {
+            match try_read_eocd64(
+                reader,
+                &locator64,
+                locator64_offset.saturating_sub(eocd64_offset),
+            ) {
+                Ok(eocd64) => {
+                    return Ok(CdeLookupResult {
+                        eocd: (eocd, eocd_offset),
+                        eocd64: Some((eocd64, eocd64_offset)),
+                        archive_offset: eocd64_offset - locator64_offset,
+                    })
+                }
+                _ => continue,
+            }
+        }
+
+        parsing_error = Some(ZipError::InvalidArchive("Could not find EOCD64"));
     }
 
-    Err(ZipError::InvalidArchive(
-        "Could not find Central Directory end 64",
-    ))
+    Err(parsing_error.unwrap_or_else(|| ZipError::InvalidArchive("Could not find EOCD")))
 }
 
 pub(crate) fn is_dir(filename: &str) -> bool {
