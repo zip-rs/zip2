@@ -30,10 +30,10 @@ impl Debug for ZipCryptoKeys {
             return f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()));
         }
         #[cfg(any(test, fuzzing))]
-        return f.write_fmt(format_args!(
+        f.write_fmt(format_args!(
             "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
             self.key_0, self.key_1, self.key_2
-        ));
+        ))
     }
 }
 
