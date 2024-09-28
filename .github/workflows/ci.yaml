@@ -151,6 +151,8 @@ jobs:
         with:
           command: afl
           args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - name: Rename files
+        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -204,6 +206,8 @@ jobs:
         with:
           command: afl
           args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - name: Rename files
+        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -267,6 +271,8 @@ jobs:
         with:
           command: afl
           args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+      - name: Rename files
+        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
