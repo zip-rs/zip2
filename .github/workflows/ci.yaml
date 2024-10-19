@@ -134,6 +134,16 @@ jobs:
         with:
           command: afl
           args: cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - name: Rename files
+        run: |
+            rename 's/:/-/' map/*
+            rename 's/:/-/' out_cmin/*
+            rename 's/:/-/' out/default/crashes/*
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -146,13 +156,6 @@ jobs:
           name: fuzz_read_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
-      - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
-      - name: Rename files
-        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -194,6 +197,15 @@ jobs:
         with:
           command: afl
           args: fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 3600 -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - name: Rename files
+        run: |
+            rename 's/:/-/' map/*
+            rename 's/:/-/' out/default/crashes/*
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -201,13 +213,6 @@ jobs:
           name: fuzz_read_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
-      - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
-      - name: Rename files
-        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -254,6 +259,16 @@ jobs:
         with:
           command: afl
           args: cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+      - name: Rename files
+        run: |
+            rename 's/:/-/' map/*
+            rename 's/:/-/' out_cmin/*
+            rename 's/:/-/' out/default/crashes/*
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -266,13 +281,6 @@ jobs:
           name: fuzz_write_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
-      - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
-      - name: Rename files
-        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -314,6 +322,15 @@ jobs:
         with:
           command: afl
           args: fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 3600 -a binary -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+      - name: Rename files
+        run: |
+            rename 's/:/-/' map/*
+            rename 's/:/-/' out/default/crashes/*
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -321,13 +338,6 @@ jobs:
           name: fuzz_write_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
-      - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
-      - name: Rename files
-        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
