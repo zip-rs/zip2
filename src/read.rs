@@ -1734,7 +1734,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
+pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'a>>> {
     // We can't use the typical ::parse() method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).

@@ -1235,7 +1235,6 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Add a new file using the already compressed data from a ZIP file being read and renames it, this
     /// allows faster copies of the `ZipFile` since there is no need to decompress and compress it again.
     /// Any `ZipFile` metadata is copied and not checked, for example the file CRC.
-
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
