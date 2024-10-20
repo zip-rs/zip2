@@ -581,6 +581,7 @@ pub(crate) struct CentralDirectoryEndInfo {
 pub fn find_central_directory<R: Read + Seek>(
     reader: &mut R,
     archive_offset: ArchiveOffset,
+    end_exclusive: u64,
 ) -> ZipResult<CentralDirectoryEndInfo> {
     const EOCD_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
@@ -591,11 +592,8 @@ pub fn find_central_directory<R: Read + Seek>(
     const CDFH_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
-    // Probe the file size
-    let file_length = reader.seek(io::SeekFrom::End(0))?;
-
     // Instantiate the mandatory finder
-    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, 0, file_length);
+    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, 0, end_exclusive);
     let mut subfinder: Option<OptimisticMagicFinder<'static>> = None;
 
     // Keep the last errors for cases of improper EOCD instances.
@@ -615,7 +613,7 @@ pub fn find_central_directory<R: Read + Seek>(
 
         // ! Relaxed (inequality) due to garbage-after-comment Python files
         // Consistency check: the EOCD comment must terminate before the end of file
-        if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 > file_length {
+        if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 > end_exclusive {
             parsing_error = Some(ZipError::InvalidArchive("Invalid EOCD comment length"));
             continue;
         }

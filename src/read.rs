@@ -600,17 +600,27 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
     pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
-        // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
-        let cde = spec::find_central_directory(reader, config.archive_offset)?;
+        // End of the probed region, initially set to the end of the file
+        let mut end_exclusive = reader.seek(io::SeekFrom::End(0))?;
 
-        // Turn EOCD into internal representation.
-        let info = CentralDirectoryInfo::try_from(&cde)?;
-        let shared = Self::read_central_header(info, config, reader)?;
+        loop {
+            // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
+            let cde = spec::find_central_directory(reader, config.archive_offset, end_exclusive)?;
 
-        Ok(shared.build(
-            cde.eocd.data.zip_file_comment,
-            cde.eocd64.map(|v| v.data.extensible_data_sector),
-        ))
+            // Turn EOCD into internal representation.
+            let Ok(shared) = CentralDirectoryInfo::try_from(&cde)
+                .and_then(|info| Self::read_central_header(info, config, reader))
+            else {
+                // The next EOCD candidate should start before the current one.
+                end_exclusive = cde.eocd.position;
+                continue;
+            };
+
+            return Ok(shared.build(
+                cde.eocd.data.zip_file_comment,
+                cde.eocd64.map(|v| v.data.extensible_data_sector),
+            ));
+        }
     }
 
     fn read_central_header(
