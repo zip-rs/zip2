@@ -578,7 +578,7 @@ pub(crate) struct CentralDirectoryEndInfo {
 ///
 /// In the best case scenario (no prepended junk), this function will not backtrack
 /// in the reader.
-pub fn find_central_directory<R: Read + Seek>(
+pub(crate) fn find_central_directory<R: Read + Seek>(
     reader: &mut R,
     archive_offset: ArchiveOffset,
     end_exclusive: u64,

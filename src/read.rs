@@ -446,8 +446,6 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
     type Error = ZipError;
 
     fn try_from(value: &'a CentralDirectoryEndInfo) -> Result<Self, Self::Error> {
-        use ZipError::InvalidArchive;
-
         let (relative_cd_offset, number_of_files, disk_number, disk_with_central_directory) =
             match &value.eocd64 {
                 Some(DataAndPosition { data: eocd64, .. }) => {
