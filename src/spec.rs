@@ -290,7 +290,7 @@ pub(crate) struct Zip32CentralDirectoryEnd {
 }
 
 impl Zip32CentralDirectoryEnd {
-    fn try_into_block_and_comment(self) -> ZipResult<(Zip32CDEBlock, Box<[u8]>)> {
+    fn into_block_and_comment(self) -> (Zip32CDEBlock, Box<[u8]>) {
         let Self {
             disk_number,
             disk_with_central_directory,
@@ -308,12 +308,10 @@ impl Zip32CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            zip_file_comment_length: zip_file_comment
-                .len()
-                .try_into()
-                .map_err(|_| ZipError::InvalidArchive("File comment must be less than 64 KiB"))?,
+            zip_file_comment_length: zip_file_comment.len() as u16,
         };
-        Ok((block, zip_file_comment))
+
+        (block, zip_file_comment)
     }
 
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
@@ -330,7 +328,15 @@ impl Zip32CentralDirectoryEnd {
         } = Zip32CDEBlock::parse(reader)?;
 
         let mut zip_file_comment = vec![0u8; zip_file_comment_length as usize].into_boxed_slice();
-        reader.read_exact(&mut zip_file_comment)?;
+        if let Err(e) = reader.read_exact(&mut zip_file_comment) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return Err(ZipError::InvalidArchive(
+                    "EOCD comment exceeds file boundary",
+                ));
+            }
+
+            return Err(e.into());
+        }
 
         Ok(Zip32CentralDirectoryEnd {
             disk_number,
@@ -344,7 +350,14 @@ impl Zip32CentralDirectoryEnd {
     }
 
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        let (block, comment) = self.try_into_block_and_comment()?;
+        let (block, comment) = self.into_block_and_comment();
+
+        if comment.len() > u16::MAX as usize {
+            return Err(ZipError::InvalidArchive(
+                "EOCD comment length exceeds u16::MAX",
+            ));
+        }
+
         block.write(writer)?;
         writer.write_all(&comment)?;
         Ok(())
@@ -482,7 +495,7 @@ pub(crate) struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEnd> {
+    pub fn parse<T: Read>(reader: &mut T, max_size: u64) -> ZipResult<Zip64CentralDirectoryEnd> {
         let Zip64CDEBlock {
             record_size,
             version_made_by,
@@ -495,6 +508,14 @@ impl Zip64CentralDirectoryEnd {
             central_directory_offset,
             ..
         } = Zip64CDEBlock::parse(reader)?;
+
+        if record_size < 44 {
+            return Err(ZipError::InvalidArchive("Low EOCD64 record size"));
+        } else if 12 + record_size > max_size {
+            return Err(ZipError::InvalidArchive(
+                "EOCD64 extends beyond EOCD64 locator",
+            ));
+        }
 
         let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
         reader.read_exact(&mut zip_file_comment)?;
@@ -708,7 +729,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
             locator64: &Zip64CentralDirectoryEndLocator,
             expected_length: u64,
         ) -> ZipResult<Zip64CentralDirectoryEnd> {
-            let z64 = Zip64CentralDirectoryEnd::parse(reader)?;
+            let z64 = Zip64CentralDirectoryEnd::parse(reader, expected_length)?;
 
             // Consistency check: EOCD64 locator should agree with the EOCD64
             if z64.disk_with_central_directory != locator64.disk_with_central_directory {
