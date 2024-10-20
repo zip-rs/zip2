@@ -59,7 +59,7 @@ struct BufWriter<'a> {
     rest: &'a mut VecDeque<u8>,
 }
 
-impl<'a> Write for BufWriter<'a> {
+impl Write for BufWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         if self.inner.len() > *self.written {
             let len = std::cmp::min(buf.len(), self.inner.len() - *self.written);
