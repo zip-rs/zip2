@@ -764,7 +764,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
         parsing_error = local_error.or(Some(ZipError::InvalidArchive("Could not find EOCD64")));
     }
 
-    Err(parsing_error.unwrap_or_else(|| ZipError::InvalidArchive("Could not find EOCD")))
+    Err(parsing_error.unwrap_or(ZipError::InvalidArchive("Could not find EOCD")))
 }
 
 pub(crate) fn is_dir(filename: &str) -> bool {
