@@ -17,22 +17,21 @@ pub struct MagicFinder<'a> {
 
 impl<'a> MagicFinder<'a> {
     /// Create a new magic bytes finder to look within specific bounds.
-    pub fn new(magic_bytes: &'a [u8], bounds: (u64, u64)) -> Self {
+    pub fn new(magic_bytes: &'a [u8], start_inclusive: u64, end_exclusive: u64) -> Self {
         const BUFFER_SIZE: usize = 2048;
 
         // Smaller buffer size would be unable to locate bytes.
         // Equal buffer size would stall (the window could not be moved).
-        debug_assert!(BUFFER_SIZE > magic_bytes.len());
+        debug_assert!(BUFFER_SIZE >= magic_bytes.len());
 
         Self {
             buffer: vec![0; BUFFER_SIZE].into_boxed_slice(),
             finder: FinderRev::new(magic_bytes),
-            cursor: bounds
-                .1
+            cursor: end_exclusive
                 .saturating_sub(BUFFER_SIZE as u64)
-                .clamp(bounds.0, bounds.1),
+                .clamp(start_inclusive, end_exclusive),
             mid_buffer_offset: None,
-            bounds,
+            bounds: (start_inclusive, end_exclusive),
         }
     }
 
@@ -109,7 +108,7 @@ impl<'a> MagicFinder<'a> {
             /* Move cursor to the next chunk, cover magic at boundary by shifting by needle length. */
             self.cursor = self
                 .cursor
-                .saturating_add(self.finder.needle().len() as u64)
+                .saturating_add(self.finder.needle().len() as u64 - 1)
                 .saturating_sub(self.buffer.len() as u64)
                 .clamp(self.bounds.0, self.bounds.1);
         }
@@ -139,7 +138,7 @@ impl<'a> OptimisticMagicFinder<'a> {
     /// Create a new empty optimistic magic bytes finder.
     pub fn new_empty() -> Self {
         Self {
-            inner: MagicFinder::new(&[], (0, 0)),
+            inner: MagicFinder::new(&[], 0, 0),
             initial_guess: None,
         }
     }
@@ -183,6 +182,9 @@ impl<'a> OptimisticMagicFinder<'a> {
             // If a match is not found, but the initial guess was mandatory, return an error.
             if mandatory {
                 return Ok(None);
+            } else {
+                // If the initial guess was not mandatory, remove it, as it was not found.
+                self.initial_guess.take();
             }
         }
 

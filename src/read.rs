@@ -8,7 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, CentralDirectoryEndInfo, FixedSizeBlock, Pod};
+use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -450,7 +450,7 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 
         let (relative_cd_offset, number_of_files, disk_number, disk_with_central_directory) =
             match &value.eocd64 {
-                Some((eocd64, _)) => {
+                Some(DataAndPosition { data: eocd64, .. }) => {
                     if eocd64.number_of_files_on_this_disk > eocd64.number_of_files {
                         return Err(InvalidArchive(
                         "ZIP64 footer indicates more files on this disk than in the whole archive",
@@ -469,10 +469,10 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
                     )
                 }
                 _ => (
-                    value.eocd.0.central_directory_offset as u64,
-                    value.eocd.0.number_of_files_on_this_disk as usize,
-                    value.eocd.0.disk_number as u32,
-                    value.eocd.0.disk_with_central_directory as u32,
+                    value.eocd.data.central_directory_offset as u64,
+                    value.eocd.data.number_of_files_on_this_disk as usize,
+                    value.eocd.data.disk_number as u32,
+                    value.eocd.data.disk_with_central_directory as u32,
                 ),
             };
 
@@ -608,8 +608,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         let shared = Self::read_central_header(info, config, reader)?;
 
         Ok(shared.build(
-            cde.eocd.0.zip_file_comment,
-            cde.eocd64.map(|(v, _)| v.extensible_data_sector),
+            cde.eocd.data.zip_file_comment,
+            cde.eocd64.map(|v| v.data.extensible_data_sector),
         ))
     }
 

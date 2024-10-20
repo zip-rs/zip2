@@ -290,7 +290,7 @@ pub(crate) struct Zip32CentralDirectoryEnd {
 }
 
 impl Zip32CentralDirectoryEnd {
-    fn block_and_comment(self) -> ZipResult<(Zip32CDEBlock, Box<[u8]>)> {
+    fn try_into_block_and_comment(self) -> ZipResult<(Zip32CDEBlock, Box<[u8]>)> {
         let Self {
             disk_number,
             disk_with_central_directory,
@@ -344,7 +344,7 @@ impl Zip32CentralDirectoryEnd {
     }
 
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        let (block, comment) = self.block_and_comment()?;
+        let (block, comment) = self.try_into_block_and_comment()?;
         block.write(writer)?;
         writer.write_all(&comment)?;
         Ok(())
@@ -513,7 +513,7 @@ impl Zip64CentralDirectoryEnd {
         })
     }
 
-    pub fn block_and_comment(self) -> (Zip64CDEBlock, Box<[u8]>) {
+    pub fn into_block_and_comment(self) -> (Zip64CDEBlock, Box<[u8]>) {
         let Self {
             record_size,
             version_made_by,
@@ -545,16 +545,31 @@ impl Zip64CentralDirectoryEnd {
     }
 
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        let (block, comment) = self.block_and_comment();
+        let (block, comment) = self.into_block_and_comment();
         block.write(writer)?;
         writer.write_all(&comment)?;
         Ok(())
     }
 }
 
+pub(crate) struct DataAndPosition<T> {
+    pub data: T,
+    #[allow(dead_code)]
+    pub position: u64,
+}
+
+impl<T> From<(T, u64)> for DataAndPosition<T> {
+    fn from(value: (T, u64)) -> Self {
+        Self {
+            data: value.0,
+            position: value.1,
+        }
+    }
+}
+
 pub(crate) struct CentralDirectoryEndInfo {
-    pub eocd: (Zip32CentralDirectoryEnd, u64),
-    pub eocd64: Option<(Zip64CentralDirectoryEnd, u64)>,
+    pub eocd: DataAndPosition<Zip32CentralDirectoryEnd>,
+    pub eocd64: Option<DataAndPosition<Zip64CentralDirectoryEnd>>,
 
     pub archive_offset: u64,
 }
@@ -580,7 +595,7 @@ pub fn find_central_directory<R: Read + Seek>(
     let file_length = reader.seek(io::SeekFrom::End(0))?;
 
     // Instantiate the mandatory finder
-    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, (0, file_length));
+    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, 0, file_length);
     let mut subfinder: Option<OptimisticMagicFinder<'static>> = None;
 
     // Keep the last errors for cases of improper EOCD instances.
@@ -612,7 +627,7 @@ pub fn find_central_directory<R: Read + Seek>(
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
             if eocd.number_of_files == 0 {
                 return Ok(CentralDirectoryEndInfo {
-                    eocd: (eocd, eocd_offset),
+                    eocd: (eocd, eocd_offset).into(),
                     eocd64: None,
                     archive_offset: eocd_offset - relative_cd_offset,
                 });
@@ -646,7 +661,7 @@ pub fn find_central_directory<R: Read + Seek>(
                 let archive_offset = cd_offset - relative_cd_offset;
 
                 return Ok(CentralDirectoryEndInfo {
-                    eocd: (eocd, eocd_offset),
+                    eocd: (eocd, eocd_offset).into(),
                     eocd64: None,
                     archive_offset,
                 });
@@ -737,8 +752,8 @@ pub fn find_central_directory<R: Read + Seek>(
             ) {
                 Ok(eocd64) => {
                     return Ok(CentralDirectoryEndInfo {
-                        eocd: (eocd, eocd_offset),
-                        eocd64: Some((eocd64, eocd64_offset)),
+                        eocd: (eocd, eocd_offset).into(),
+                        eocd64: Some((eocd64, eocd64_offset).into()),
                         archive_offset,
                     })
                 }
