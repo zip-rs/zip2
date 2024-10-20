@@ -1,6 +1,6 @@
 #![macro_use]
 
-use crate::read::magic_finder::{MagicFinder, OptimisticMagicFinder};
+use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::read::ArchiveOffset;
 use crate::result::{ZipError, ZipResult};
 use core::mem;
@@ -350,7 +350,7 @@ impl Zip32CentralDirectoryEnd {
         Ok(())
     }
 
-    pub fn is_zip64(&self) -> bool {
+    pub fn may_be_zip64(&self) -> bool {
         self.number_of_files == u16::MAX || self.central_directory_offset == u32::MAX
     }
 }
@@ -593,13 +593,13 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
     // Instantiate the mandatory finder
-    let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, 0, end_exclusive);
-    let mut subfinder: Option<OptimisticMagicFinder<'static>> = None;
+    let mut eocd_finder = MagicFinder::<Backwards<'static>>::new(&EOCD_SIG_BYTES, 0, end_exclusive);
+    let mut subfinder: Option<OptimisticMagicFinder<Forward<'static>>> = None;
 
     // Keep the last errors for cases of improper EOCD instances.
     let mut parsing_error = None;
 
-    while let Some(eocd_offset) = eocd_finder.next_back(reader)? {
+    while let Some(eocd_offset) = eocd_finder.next(reader)? {
         // Attempt to parse the EOCD block
         let eocd = match Zip32CentralDirectoryEnd::parse(reader) {
             Ok(eocd) => eocd,
@@ -619,7 +619,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
         }
 
         // Branch out for zip32
-        if !eocd.is_zip64() {
+        if !eocd.may_be_zip64() {
             let relative_cd_offset = eocd.central_directory_offset as u64;
 
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
@@ -627,7 +627,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
                 return Ok(CentralDirectoryEndInfo {
                     eocd: (eocd, eocd_offset).into(),
                     eocd64: None,
-                    archive_offset: eocd_offset - relative_cd_offset,
+                    archive_offset: eocd_offset.saturating_sub(relative_cd_offset),
                 });
             }
 
@@ -654,7 +654,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
                 );
 
             // Consistency check: find the first CDFH
-            if let Some(cd_offset) = subfinder.next_back(reader)? {
+            if let Some(cd_offset) = subfinder.next(reader)? {
                 // The first CDFH will define the archive offset
                 let archive_offset = cd_offset - relative_cd_offset;
 
@@ -666,6 +666,13 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
             }
 
             parsing_error = Some(ZipError::InvalidArchive("No CDFH found"));
+            continue;
+        }
+
+        if eocd_offset < mem::size_of::<Zip64CDELocatorBlock>() as u64 {
+            parsing_error = Some(ZipError::InvalidArchive(
+                "EOCD64 Locator does not fit in file",
+            ));
             continue;
         }
 
@@ -740,7 +747,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
         // Consistency check: Find the EOCD64
         let mut local_error = None;
-        while let Some(eocd64_offset) = subfinder.next_back(reader)? {
+        while let Some(eocd64_offset) = subfinder.next(reader)? {
             let archive_offset = eocd64_offset - locator64.end_of_central_directory_offset;
 
             match try_read_eocd64(
