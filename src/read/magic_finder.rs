@@ -7,7 +7,7 @@ use crate::result::ZipResult;
 pub trait FinderDirection<'a> {
     fn new(needle: &'a [u8]) -> Self;
     fn reset_cursor(bounds: (u64, u64), window_size: usize) -> u64;
-    fn scope_window(window: &[u8], mid_window_offset: usize) -> &[u8];
+    fn scope_window(window: &[u8], mid_window_offset: usize) -> (&[u8], usize);
 
     fn needle(&self) -> &[u8];
     fn find(&self, haystack: &[u8]) -> Option<usize>;
@@ -25,8 +25,8 @@ impl<'a> FinderDirection<'a> for Forward<'a> {
         start_inclusive
     }
 
-    fn scope_window(window: &[u8], mid_window_offset: usize) -> &[u8] {
-        &window[mid_window_offset..]
+    fn scope_window(window: &[u8], mid_window_offset: usize) -> (&[u8], usize) {
+        (&window[mid_window_offset..], mid_window_offset)
     }
 
     fn find(&self, haystack: &[u8]) -> Option<usize> {
@@ -66,8 +66,8 @@ impl<'a> FinderDirection<'a> for Backwards<'a> {
             .clamp(bounds.0, bounds.1)
     }
 
-    fn scope_window(window: &[u8], mid_window_offset: usize) -> &[u8] {
-        &window[..mid_window_offset]
+    fn scope_window(window: &[u8], mid_window_offset: usize) -> (&[u8], usize) {
+        (&window[..mid_window_offset], 0)
     }
 
     fn find(&self, haystack: &[u8]) -> Option<usize> {
@@ -168,16 +168,16 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
                 reader.read_exact(window)?;
             }
 
-            let window = match self.mid_buffer_offset {
+            let (window, window_start_offset) = match self.mid_buffer_offset {
                 Some(mid_buffer_offset) => T::scope_window(window, mid_buffer_offset),
-                None => window,
+                None => (&*window, 0usize),
             };
 
             if let Some(offset) = self.finder.find(window) {
-                let magic_pos = window_start + offset as u64;
+                let magic_pos = window_start + window_start_offset as u64 + offset as u64;
                 reader.seek(SeekFrom::Start(magic_pos))?;
 
-                self.mid_buffer_offset = Some(self.finder.move_scope(offset));
+                self.mid_buffer_offset = Some(self.finder.move_scope(window_start_offset + offset));
 
                 return Ok(Some(magic_pos));
             }

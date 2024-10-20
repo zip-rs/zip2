@@ -1,4 +1,4 @@
-use std::io;
+use std::io::Cursor;
 use zip::ZipArchive;
 
 #[test]
@@ -6,7 +6,7 @@ fn test_prepended_garbage() {
     let mut v = vec![0, 1, 2, 3];
     v.extend_from_slice(include_bytes!("../tests/data/extended_timestamp.zip"));
 
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(Cursor::new(v)).expect("couldn't open test zip file");
 
     assert_eq!(2, archive.len());
 
