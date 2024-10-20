@@ -511,7 +511,7 @@ impl Zip64CentralDirectoryEnd {
 
         if record_size < 44 {
             return Err(ZipError::InvalidArchive("Low EOCD64 record size"));
-        } else if 12 + record_size > max_size {
+        } else if record_size.saturating_add(12) > max_size {
             return Err(ZipError::InvalidArchive(
                 "EOCD64 extends beyond EOCD64 locator",
             ));
