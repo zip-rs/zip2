@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.1](https://github.com/zip-rs/zip2/compare/v2.2.0...v2.2.1) - 2024-10-21
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- resolve clippy warning in nightly ([#252](https://github.com/zip-rs/zip2/pull/252))
+
 ## [2.2.0](https://github.com/zip-rs/zip2/compare/v2.1.6...v2.2.0) - 2024-08-11
 
 ### <!-- 0 -->🚀 Features
