@@ -132,7 +132,7 @@ pub(crate) enum CryptoReader<'a> {
     },
 }
 
-impl<'a> Read for CryptoReader<'a> {
+impl Read for CryptoReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             CryptoReader::Plaintext(r) => r.read(buf),
@@ -201,7 +201,7 @@ pub(crate) enum ZipFileReader<'a> {
     Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a>>>>>),
 }
 
-impl<'a> Read for ZipFileReader<'a> {
+impl Read for ZipFileReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
@@ -282,7 +282,7 @@ impl<'a, R: Seek> SeekableTake<'a, R> {
     }
 }
 
-impl<'a, R: Seek> Seek for SeekableTake<'a, R> {
+impl<R: Seek> Seek for SeekableTake<'_, R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let offset = match pos {
             SeekFrom::Start(offset) => Some(offset),
@@ -306,7 +306,7 @@ impl<'a, R: Seek> Seek for SeekableTake<'a, R> {
     }
 }
 
-impl<'a, R: Read> Read for SeekableTake<'a, R> {
+impl<R: Read> Read for SeekableTake<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let written = self
             .inner
@@ -1652,20 +1652,20 @@ impl<'a> ZipFile<'a> {
 }
 
 /// Methods for retrieving information on zip files
-impl<'a> ZipFile<'a> {
+impl ZipFile<'_> {
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
         self.data.extra_fields.iter()
     }
 }
 
-impl<'a> HasZipMetadata for ZipFile<'a> {
+impl HasZipMetadata for ZipFile<'_> {
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
     }
 }
 
-impl<'a> Read for ZipFile<'a> {
+impl Read for ZipFile<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.reader.read(buf)
     }
@@ -1683,7 +1683,7 @@ impl<'a> Read for ZipFile<'a> {
     }
 }
 
-impl<'a, R: Read> Read for ZipFileSeek<'a, R> {
+impl<R: Read> Read for ZipFileSeek<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.reader {
             ZipFileSeekReader::Raw(r) => r.read(buf),
@@ -1691,7 +1691,7 @@ impl<'a, R: Read> Read for ZipFileSeek<'a, R> {
     }
 }
 
-impl<'a, R: Seek> Seek for ZipFileSeek<'a, R> {
+impl<R: Seek> Seek for ZipFileSeek<'_, R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match &mut self.reader {
             ZipFileSeekReader::Raw(r) => r.seek(pos),
@@ -1699,13 +1699,13 @@ impl<'a, R: Seek> Seek for ZipFileSeek<'a, R> {
     }
 }
 
-impl<'a, R> HasZipMetadata for ZipFileSeek<'a, R> {
+impl<R> HasZipMetadata for ZipFileSeek<'_, R> {
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
     }
 }
 
-impl<'a> Drop for ZipFile<'a> {
+impl Drop for ZipFile<'_> {
     fn drop(&mut self) {
         // self.data is Owned, this reader is constructed by a streaming reader.
         // In this case, we want to exhaust the reader so that the next file is accessible.
@@ -1734,7 +1734,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'a>>> {
+pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_>>> {
     // We can't use the typical ::parse() method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
@@ -1758,7 +1758,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         Err(e) => return Err(e),
     }
 
-    let limit_reader = (reader as &'a mut dyn Read).take(result.compressed_size);
+    let limit_reader = (reader as &mut dyn Read).take(result.compressed_size);
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
