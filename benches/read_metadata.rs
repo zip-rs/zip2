@@ -5,7 +5,7 @@ use std::io::{self, prelude::*, Cursor};
 
 use bencher::Bencher;
 use getrandom::getrandom;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
 use zip::{result::ZipResult, CompressionMethod, ZipArchive, ZipWriter};
 
@@ -102,7 +102,7 @@ fn parse_stream_archive(bench: &mut Bencher) {
     let bytes = generate_random_archive(STREAM_ZIP_ENTRIES, STREAM_FILE_SIZE).unwrap();
 
     /* Write to a temporary file path to incur some filesystem overhead from repeated reads */
-    let dir = TempDir::new("stream-bench").unwrap();
+    let dir = TempDir::with_prefix("stream-bench").unwrap();
     let out = dir.path().join("bench-out.zip");
     fs::write(&out, &bytes).unwrap();
 
