@@ -353,7 +353,14 @@ impl Zip32CentralDirectoryEnd {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
         }
 
-        let search_lower_bound = 0;
+        // The End Of Central Directory Record should be the last thing in
+        // the file and so searching the last 65557 bytes of the file should
+        // be enough. However, not all zips are well-formed and other
+        // programs may consume zips with extra junk at the end without
+        // error, so we go back 128K to be compatible with them. 128K is
+        // arbitrary, but it matches what Info-Zip does.
+        const EOCDR_SEARCH_SIZE: u64 = 128 * 1024;
+        let search_lower_bound = file_length.saturating_sub(EOCDR_SEARCH_SIZE);
 
         const END_WINDOW_SIZE: usize = 8192;
         /* TODO: use static_assertions!() */
