@@ -355,7 +355,7 @@ impl Zip32CentralDirectoryEnd {
 
         let search_lower_bound = 0;
 
-        const END_WINDOW_SIZE: usize = 512;
+        const END_WINDOW_SIZE: usize = 8192;
         /* TODO: use static_assertions!() */
         debug_assert!(END_WINDOW_SIZE > mem::size_of::<Magic>());
 
