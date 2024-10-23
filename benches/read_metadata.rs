@@ -5,7 +5,7 @@ use std::io::{self, prelude::*, Cursor};
 
 use bencher::Bencher;
 use getrandom::getrandom;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
 use zip::{result::ZipResult, CompressionMethod, ZipArchive, ZipWriter};
 
@@ -102,7 +102,7 @@ fn parse_stream_archive(bench: &mut Bencher) {
     let bytes = generate_random_archive(STREAM_ZIP_ENTRIES, STREAM_FILE_SIZE).unwrap();
 
     /* Write to a temporary file path to incur some filesystem overhead from repeated reads */
-    let dir = TempDir::new("stream-bench").unwrap();
+    let dir = TempDir::with_prefix("stream-bench").unwrap();
     let out = dir.path().join("bench-out.zip");
     fs::write(&out, &bytes).unwrap();
 
@@ -116,11 +116,27 @@ fn parse_stream_archive(bench: &mut Bencher) {
     bench.bytes = bytes.len() as u64;
 }
 
+fn parse_large_non_zip(bench: &mut Bencher) {
+    const FILE_SIZE: usize = 17_000_000;
+
+    // Create a large file that doesn't have a zip header (generating random data _might_ make a zip magic
+    // number somewhere which is _not_ what we're trying to test).
+    let dir = TempDir::with_prefix("large-non-zip-bench").unwrap();
+    let file = dir.path().join("zeros");
+    let buf = vec![0u8; FILE_SIZE];
+    fs::write(&file, &buf).unwrap();
+
+    bench.iter(|| {
+        assert!(zip::ZipArchive::new(std::fs::File::open(&file).unwrap()).is_err());
+    })
+}
+
 benchmark_group!(
     benches,
     read_metadata,
     parse_archive_with_comment,
     parse_zip64_archive_with_comment,
     parse_stream_archive,
+    parse_large_non_zip,
 );
 benchmark_main!(benches);
