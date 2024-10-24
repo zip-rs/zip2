@@ -9,6 +9,7 @@ use std::io::{Cursor, Seek, SeekFrom};
 use std::io::Write as IoWrite;
 use std::path::PathBuf;
 use tikv_jemallocator::Jemalloc;
+use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
@@ -63,6 +64,19 @@ impl<'k> FileOperation<'k> {
             _ => Some(self.path.to_owned()),
         }
     }
+
+    fn is_streamable(&self) -> bool {
+        match &self.basic {
+            BasicFileOperation::WriteNormalFile {options, ..} => !options.has_encryption(),
+            BasicFileOperation::WriteDirectory(options) => !options.has_encryption(),
+            BasicFileOperation::WriteSymlinkWithTarget {options, ..} => !options.has_encryption(),
+            BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
+            BasicFileOperation::DeepCopy(base) => base.is_streamable(),
+            BasicFileOperation::MergeWithOtherFile {operations, initial_junk} =>
+                initial_junk.is_empty() && operations.iter().all(|(op, _)| op.is_streamable()),
+            _ => true
+        }
+    }
 }
 
 #[derive(Arbitrary, Clone)]
@@ -92,9 +106,9 @@ fn do_operation<'k>(
     abort: bool,
     flush_on_finish_file: bool,
     files_added: &mut usize,
-    stringifier: &mut impl Write,
-    panic_on_error: bool
+    stringifier: &mut impl Write
 ) -> Result<(), Box<dyn std::error::Error>> {
+    writeln!(stringifier, "writer.set_flush_on_finish_file({});", flush_on_finish_file)?;
     writer.set_flush_on_finish_file(flush_on_finish_file);
     let FileOperation { basic, mut path, reopen} = operation;
     match basic {
@@ -132,7 +146,7 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier, panic_on_error)?;
+            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier)?;
             writeln!(stringifier, "writer.shallow_copy_file_from_path({:?}, {:?});", base_path, path)?;
             writer.shallow_copy_file_from_path(&*base_path, &*path)?;
             *files_added += 1;
@@ -142,7 +156,7 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier, panic_on_error)?;
+            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier)?;
             writeln!(stringifier, "writer.deep_copy_file_from_path({:?}, {:?});", base_path, path)?;
             writer.deep_copy_file_from_path(&*base_path, path)?;
             *files_added += 1;
@@ -169,8 +183,7 @@ fn do_operation<'k>(
                     abort,
                     false,
                     &mut inner_files_added,
-                    stringifier,
-                    panic_on_error
+                    stringifier
                 );
             });
             writeln!(stringifier, "writer\n}};\nwriter.merge_archive(sub_writer.finish_into_readable()?)?;")?;
@@ -187,6 +200,7 @@ fn do_operation<'k>(
         writer.abort_file()?;
         *files_added -= 1;
     }
+    let mut abort = false;
     // If a comment is set, we finish the archive, reopen it for append and then set a shorter
     // comment, then there will be junk after the new comment that we can't get rid of. Thus, we
     // can only check that the expected is a prefix of the actual
@@ -196,20 +210,20 @@ fn do_operation<'k>(
             return Ok(())
         },
         ReopenOption::ViaFinish => {
+            writeln!(stringifier, "let old_comment = writer.get_raw_comment().to_owned();")?;
             let old_comment = writer.get_raw_comment().to_owned();
             writeln!(stringifier, "let mut writer = ZipWriter::new_append(writer.finish()?)?;")?;
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
                 (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
                     zip::ZipWriter::new_append(old_writer.finish()?)
                 })().unwrap_or_else(|_| {
-                    if panic_on_error {
-                        panic!("Failed to create new ZipWriter")
-                    }
+                    abort = true;
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
             });
-            if panic_on_error {
-                assert!(writer.get_raw_comment().starts_with(&old_comment));
+            writeln!(stringifier, "assert!(writer.get_raw_comment().starts_with(&old_comment));")?;
+            if !writer.get_raw_comment().starts_with(&old_comment) {
+                return Err("Comment mismatch".into());
             }
         }
         ReopenOption::ViaFinishIntoReadable => {
@@ -219,20 +233,27 @@ fn do_operation<'k>(
                 (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
                     zip::ZipWriter::new_append(old_writer.finish()?)
                 })().unwrap_or_else(|_| {
-                    if panic_on_error {
-                        panic!("Failed to create new ZipWriter")
-                    }
+                    abort = true;
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
             });
-            assert!(writer.get_raw_comment().starts_with(&old_comment));
+            writeln!(stringifier, "assert!(writer.get_raw_comment().starts_with(&old_comment));")?;
+            if !writer.get_raw_comment().starts_with(&old_comment) {
+                return Err("Comment mismatch".into());
+            }
         }
     }
-    Ok(())
+    if abort {
+        Err("Failed to reopen writer".into())
+    } else {
+        Ok(())
+    }
 }
 
 impl <'k> FuzzTestCase<'k> {
-    fn execute(self, stringifier: &mut impl Write, panic_on_error: bool) -> ZipResult<()> {
+    fn execute(self, stringifier: &mut impl Write) -> ZipResult<()> {
+        let junk_len = self.initial_junk.len();
+        let mut streamable = true;
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
         let mut writer = zip::ZipWriter::new(initial_junk);
@@ -246,19 +267,29 @@ impl <'k> FuzzTestCase<'k> {
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
         for (operation, abort) in self.operations.into_vec().into_iter() {
+            if streamable {
+                streamable = operation.is_streamable();
+            }
             let _ = do_operation(
                 &mut writer,
                 operation,
                 abort,
                 self.flush_on_finish_file,
                 &mut files_added,
-                stringifier,
-                panic_on_error
+                stringifier
             );
         }
-        if final_reopen {
+        if streamable {
+            writeln!(stringifier, "let mut stream = writer.finish()?;\n\
+                    stream.rewind()?;\n\
+                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}")
+                .map_err(|_| ZipError::InvalidArchive("Failed to read from stream"))?;
+            let mut stream = writer.finish()?;
+            stream.seek(SeekFrom::Start(junk_len as u64))?;
+            while read_zipfile_from_stream(&mut stream)?.is_some() {}
+        } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
-                .map_err(|_| ZipError::InvalidArchive(""))?;
+                .map_err(|_| ZipError::InvalidArchive("Failed to finish_into_readable"))?;
             let _ = writer.finish_into_readable()?;
         }
         Ok(())
@@ -274,7 +305,7 @@ impl <'k> Debug for FuzzTestCase<'k> {
                          initial_junk.seek(SeekFrom::End(0))?;\n\
                          let mut writer = ZipWriter::new(initial_junk);", &self.initial_junk)?;
         }
-        let _ = self.clone().execute(f, false);
+        let _ = self.clone().execute(f);
         Ok(())
     }
 }
@@ -297,5 +328,5 @@ impl Write for NoopWrite {
 }
 
 fuzz_target!(|test_case: FuzzTestCase| {
-    test_case.execute(&mut NoopWrite::default(), true).unwrap()
+    test_case.execute(&mut NoopWrite::default()).unwrap()
 });
