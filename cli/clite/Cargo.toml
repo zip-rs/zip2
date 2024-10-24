@@ -1,0 +1,35 @@
+[package]
+name = "zip-clite"
+version = "0.0.1"
+authors = [
+    "Danny McClanahan <dmcC2@hypnicjerk.ai>",
+]
+license = "MIT"
+repository = "https://github.com/zip-rs/zip2.git"
+keywords = ["zip", "archive", "compression", "cli"]
+categories = ["command-line-utilities", "compression", "filesystem", "development-tools::build-utils"]
+rust-version = "1.74.0"
+description = """
+Binary for creation and manipulation of zip files.
+"""
+edition = "2021"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "zip-clite"
+
+[dependencies]
+
+[dependencies.zip-cli]
+path = ".."
+default-features = false
+features = ["deflate-flate2", "deflate-zlib"]
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "s"
+codegen-units = 1
