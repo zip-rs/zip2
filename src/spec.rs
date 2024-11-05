@@ -787,7 +787,10 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
                     if eocd64_offset
                         < eocd64
                             .number_of_files
-                            .saturating_mul(size_of::<crate::types::ZipCentralEntryBlock>() as u64)
+                            .saturating_mul(
+                                mem::size_of::<crate::types::ZipCentralEntryBlock>() as u64
+                            )
+                            .saturating_add(eocd64.central_directory_offset)
                     {
                         local_error = Some(ZipError::InvalidArchive(
                             "Invalid EOCD64: inconsistent number of files",
