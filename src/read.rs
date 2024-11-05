@@ -599,11 +599,17 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// separate function to ease the control flow design.
     pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
         // End of the probed region, initially set to the end of the file
-        let mut end_exclusive = reader.seek(io::SeekFrom::End(0))?;
+        let file_len = reader.seek(io::SeekFrom::End(0))?;
+        let mut end_exclusive = file_len;
 
         loop {
             // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
-            let cde = spec::find_central_directory(reader, config.archive_offset, end_exclusive)?;
+            let cde = spec::find_central_directory(
+                reader,
+                config.archive_offset,
+                end_exclusive,
+                file_len,
+            )?;
 
             // Turn EOCD into internal representation.
             let Ok(shared) = CentralDirectoryInfo::try_from(&cde)
