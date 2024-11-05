@@ -640,8 +640,33 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
             continue;
         }
 
+        let zip64_metadata = if eocd.may_be_zip64() {
+            fn try_read_eocd64_locator(
+                reader: &mut (impl Read + Seek),
+                eocd_offset: u64,
+            ) -> ZipResult<(u64, Zip64CentralDirectoryEndLocator)> {
+                if eocd_offset < mem::size_of::<Zip64CDELocatorBlock>() as u64 {
+                    return Err(ZipError::InvalidArchive(
+                        "EOCD64 Locator does not fit in file",
+                    ));
+                }
+
+                let locator64_offset = eocd_offset - mem::size_of::<Zip64CDELocatorBlock>() as u64;
+
+                reader.seek(io::SeekFrom::Start(locator64_offset))?;
+                Ok((
+                    locator64_offset,
+                    Zip64CentralDirectoryEndLocator::parse(reader)?,
+                ))
+            }
+
+            try_read_eocd64_locator(reader, eocd_offset).ok()
+        } else {
+            None
+        };
+
         // Branch out for zip32
-        if !eocd.may_be_zip64() {
+        let Some((locator64_offset, locator64)) = zip64_metadata else {
             let relative_cd_offset = eocd.central_directory_offset as u64;
 
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
@@ -689,25 +714,6 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
             parsing_error = Some(ZipError::InvalidArchive("No CDFH found"));
             continue;
-        }
-
-        if eocd_offset < mem::size_of::<Zip64CDELocatorBlock>() as u64 {
-            parsing_error = Some(ZipError::InvalidArchive(
-                "EOCD64 Locator does not fit in file",
-            ));
-            continue;
-        }
-
-        let locator64_offset = eocd_offset - mem::size_of::<Zip64CDELocatorBlock>() as u64;
-
-        // Consistency check: the EOCD64 locator must be present at the specific offset
-        reader.seek(io::SeekFrom::Start(locator64_offset))?;
-        let locator64 = match Zip64CentralDirectoryEndLocator::parse(reader) {
-            Ok(locator64) => locator64,
-            Err(e) => {
-                parsing_error = Some(e);
-                continue;
-            }
         };
 
         // Consistency check: the EOCD64 offset must be before EOCD64 Locator offset */
