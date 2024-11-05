@@ -644,6 +644,10 @@ impl<R: Read + Seek> ZipArchive<R> {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
 
+        if file_capacity.saturating_mul(size_of::<ZipFileData>()) > isize::MAX as usize {
+            return unsupported_zip_error("Oversized central directory");
+        }
+
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {

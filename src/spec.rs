@@ -665,8 +665,8 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
             None
         };
 
-        // Branch out for zip32
         let Some((locator64_offset, locator64)) = zip64_metadata else {
+            // Branch out for zip32
             let relative_cd_offset = eocd.central_directory_offset as u64;
 
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
@@ -784,11 +784,22 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
                 locator64_offset.saturating_sub(eocd64_offset),
             ) {
                 Ok(eocd64) => {
+                    if eocd64_offset
+                        < eocd64
+                            .number_of_files
+                            .saturating_mul(size_of::<crate::types::ZipCentralEntryBlock>() as u64)
+                    {
+                        local_error = Some(ZipError::InvalidArchive(
+                            "Invalid EOCD64: inconsistent number of files",
+                        ));
+                        continue;
+                    }
+
                     return Ok(CentralDirectoryEndInfo {
                         eocd: (eocd, eocd_offset).into(),
                         eocd64: Some((eocd64, eocd64_offset).into()),
                         archive_offset,
-                    })
+                    });
                 }
                 Err(e) => {
                     local_error = Some(e);
