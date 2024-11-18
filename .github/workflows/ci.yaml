@@ -156,6 +156,14 @@ jobs:
           name: fuzz_read_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - run: sudo apt install rename
+      - name: Rename files
+        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -213,6 +221,14 @@ jobs:
           name: fuzz_read_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+      - run: sudo apt install rename
+      - name: Rename files
+        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -281,6 +297,14 @@ jobs:
           name: fuzz_write_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+      - run: sudo apt install rename
+      - name: Rename files
+        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -338,6 +362,14 @@ jobs:
           name: fuzz_write_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
+      - name: Report coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+      - run: sudo apt install rename
+      - name: Rename files
+        run: rename 's/:/-/' map/*
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
