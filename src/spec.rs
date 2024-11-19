@@ -820,7 +820,7 @@ pub(crate) fn is_dir(filename: &str) -> bool {
     filename
         .chars()
         .next_back()
-        .map_or(false, |c| c == '/' || c == '\\')
+        .is_some_and(|c| c == '/' || c == '\\')
 }
 
 #[cfg(test)]
