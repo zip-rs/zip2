@@ -911,9 +911,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             ),
             _ => (options.compression_method, None),
         };
-        let header_end = header_start
-            + size_of::<ZipLocalEntryBlock>() as u64
-            + name.to_string().as_bytes().len() as u64;
+        let header_end =
+            header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
+
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
             let align = options.alignment as u64;
