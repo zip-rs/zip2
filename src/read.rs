@@ -1777,7 +1777,7 @@ mod test {
     use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Read, Write};
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     #[test]
     fn invalid_offset() {
@@ -1979,7 +1979,7 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
         let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
         assert!(reader.by_index(0).unwrap().is_symlink());
-        let tempdir = TempDir::new("test_is_symlink")?;
+        let tempdir = TempDir::with_prefix("test_is_symlink")?;
         reader.extract(&tempdir).unwrap();
         assert!(tempdir.path().join("bar").is_symlink());
         Ok(())
