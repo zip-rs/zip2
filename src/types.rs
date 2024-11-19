@@ -844,7 +844,7 @@ impl ZipFileData {
             extra_field_length: extra_field_len.checked_add(central_extra_field_len).ok_or(
                 ZipError::InvalidArchive("Extra field length in central directory exceeds 64KiB"),
             )?,
-            file_comment_length: self.file_comment.as_bytes().len().try_into().unwrap(),
+            file_comment_length: self.file_comment.len().try_into().unwrap(),
             disk_number: 0,
             internal_file_attributes: 0,
             external_file_attributes: self.external_attributes,

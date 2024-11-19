@@ -415,7 +415,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     }
 }
 
-impl<'k, T: FileOptionExtension> FileOptions<'k, T> {
+impl<T: FileOptionExtension> FileOptions<'_, T> {
     /// Set the compression method for the new file
     ///
     /// The default is `CompressionMethod::Deflated` if it is enabled. If not,
@@ -521,7 +521,7 @@ impl<'k, T: FileOptionExtension> FileOptions<'k, T> {
         self
     }
 }
-impl<'k> FileOptions<'k, ExtendedFileOptions> {
+impl FileOptions<'_, ExtendedFileOptions> {
     /// Adds an extra data field.
     pub fn add_extra_data(
         &mut self,
@@ -545,7 +545,7 @@ impl<'k> FileOptions<'k, ExtendedFileOptions> {
         self
     }
 }
-impl<'k, T: FileOptionExtension> Default for FileOptions<'k, T> {
+impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
     /// Construct a new FileOptions object
     fn default() -> Self {
         Self {
@@ -914,9 +914,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             ),
             _ => (options.compression_method, None),
         };
-        let header_end = header_start
-            + size_of::<ZipLocalEntryBlock>() as u64
-            + name.to_string().as_bytes().len() as u64;
+        let header_end =
+            header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
+
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
             let align = options.alignment as u64;
@@ -1243,7 +1243,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Add a new file using the already compressed data from a ZIP file being read and renames it, this
     /// allows faster copies of the `ZipFile` since there is no need to decompress and compress it again.
     /// Any `ZipFile` metadata is copied and not checked, for example the file CRC.
-
+    ///
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
