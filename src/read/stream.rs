@@ -182,7 +182,7 @@ impl ZipStreamFileMetadata {
         self.name()
             .chars()
             .next_back()
-            .map_or(false, |c| c == '/' || c == '\\')
+            .is_some_and(|c| c == '/' || c == '\\')
     }
 
     /// Returns whether the file is a regular file
