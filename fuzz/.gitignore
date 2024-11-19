@@ -1,5 +1,0 @@
-target
-artifacts
-corpus/*
-!corpus/fuzz_read/
-!corpus/fuzz_write/
