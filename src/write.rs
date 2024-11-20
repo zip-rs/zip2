@@ -1873,12 +1873,21 @@ fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData
     Ok(())
 }
 
-fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
+fn update_local_file_header<T: Write + Seek>(
+    writer: &mut T,
+    file: &mut ZipFileData,
+) -> ZipResult<()> {
     const CRC32_OFFSET: u64 = 14;
     writer.seek(SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
     writer.write_u32_le(file.crc32)?;
     if file.large_file {
+        writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
+        writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
+
         update_local_zip64_extra_field(writer, file)?;
+
+        file.compressed_size = spec::ZIP64_BYTES_THR;
+        file.uncompressed_size = spec::ZIP64_BYTES_THR;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
@@ -1914,7 +1923,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
 
 fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
-    file: &ZipFileData,
+    file: &mut ZipFileData,
 ) -> ZipResult<()> {
     let block = file.zip64_extra_field_block().ok_or(InvalidArchive(
         "Attempted to update a nonexistent ZIP64 extra field",
@@ -1927,6 +1936,10 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
     let block = block.serialize();
     writer.write_all(&block)?;
+
+    let extra_field = Arc::get_mut(file.extra_field.as_mut().unwrap()).unwrap();
+    extra_field[..block.len()].copy_from_slice(&block);
+
     Ok(())
 }
 
