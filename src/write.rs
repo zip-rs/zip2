@@ -1292,11 +1292,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///     Ok(())
     /// }
     /// ```
-    pub fn raw_copy_file_rename<S: ToString>(
-        &mut self,
-        mut file: ZipFile,
-        name: S,
-    ) -> ZipResult<()> {
+    pub fn raw_copy_file_rename<S: ToString>(&mut self, file: ZipFile, name: S) -> ZipResult<()> {
         let mut options = SimpleFileOptions::default()
             .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
             .last_modified_time(
@@ -1308,7 +1304,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             options = options.unix_permissions(perms);
         }
         Self::normalize_options(&mut options);
+        self.raw_copy_file_rename_internal(file, name, options)
+    }
 
+    fn raw_copy_file_rename_internal<S: ToString>(
+        &mut self,
+        mut file: ZipFile,
+        name: S,
+        options: SimpleFileOptions,
+    ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
             compressed_size: file.compressed_size(),
@@ -1362,6 +1366,47 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn raw_copy_file(&mut self, file: ZipFile) -> ZipResult<()> {
         let name = file.name().to_owned();
         self.raw_copy_file_rename(file, name)
+    }
+
+    /// Add a new file using the already compressed data from a ZIP file being read and set the last
+    /// modified date and unix mode. This allows faster copies of the `ZipFile` since there is no need
+    /// to decompress and compress it again. Any `ZipFile` metadata other than the last modified date
+    /// and the unix mode is copied and not checked, for example the file CRC.
+    ///
+    /// ```no_run
+    /// use std::io::{Read, Seek, Write};
+    /// use zip::{DateTime, ZipArchive, ZipWriter};
+    ///
+    /// fn copy<R, W>(src: &mut ZipArchive<R>, dst: &mut ZipWriter<W>) -> zip::result::ZipResult<()>
+    /// where
+    ///     R: Read + Seek,
+    ///     W: Write + Seek,
+    /// {
+    ///     // Retrieve file entry by name
+    ///     let file = src.by_name("src_file.txt")?;
+    ///
+    ///     // Copy the previously obtained file entry to the destination zip archive
+    ///     dst.raw_copy_file_touch(file, DateTime::default(), Some(0o644))?;
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn raw_copy_file_touch(
+        &mut self,
+        file: ZipFile,
+        last_modified_time: DateTime,
+        unix_mode: Option<u32>,
+    ) -> ZipResult<()> {
+        let name = file.name().to_owned();
+        let mut options = SimpleFileOptions::default()
+            .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
+            .last_modified_time(last_modified_time)
+            .compression_method(file.compression());
+        if let Some(perms) = unix_mode {
+            options = options.unix_permissions(perms);
+        }
+        Self::normalize_options(&mut options);
+        self.raw_copy_file_rename_internal(file, name, options)
     }
 
     /// Add a directory entry.
