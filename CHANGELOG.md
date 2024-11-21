@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.2.1](https://github.com/zip-rs/zip2/compare/v2.2.0...v2.2.1) - 2024-11-20
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- remove executable bit ([#238](https://github.com/zip-rs/zip2/pull/238))
+- *(lzma)* fixed panic in case of invalid lzma stream ([#259](https://github.com/zip-rs/zip2/pull/259))
+- resolve new clippy warnings on nightly ([#262](https://github.com/zip-rs/zip2/pull/262))
+- resolve clippy warning in nightly ([#252](https://github.com/zip-rs/zip2/pull/252))
+
+### <!-- 4 -->⚡ Performance
+
+- Faster cde rejection ([#255](https://github.com/zip-rs/zip2/pull/255))
+
 ## [2.2.0](https://github.com/zip-rs/zip2/compare/v2.1.6...v2.2.0) - 2024-08-11
 
 ### <!-- 0 -->🚀 Features
