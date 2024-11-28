@@ -26,6 +26,10 @@ impl<R: BufRead> XzDecoder<R> {
             flags: [0, 0],
         }
     }
+
+    pub(crate) fn as_ref(&self) -> &R {
+        self.compressed_reader.get_ref()
+    }
 }
 
 struct CountReader<'a, R: BufRead> {

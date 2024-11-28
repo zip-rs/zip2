@@ -25,6 +25,10 @@ impl<R: Read> LzmaDecoder<R> {
     pub fn into_inner(self) -> R {
         self.compressed_reader
     }
+
+    pub fn get_ref(&self) -> &R {
+        &self.compressed_reader
+    }
 }
 
 impl<R: BufRead> Read for LzmaDecoder<R> {

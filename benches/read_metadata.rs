@@ -108,10 +108,7 @@ fn parse_stream_archive(bench: &mut Bencher) {
 
     bench.iter(|| {
         let mut f = fs::File::open(&out).unwrap();
-        while zip::read::read_zipfile_from_stream(&mut f)
-            .unwrap()
-            .is_some()
-        {}
+        while zip::read::read_zipfile_from_stream(&mut f).unwrap().is_ok() {}
     });
     bench.bytes = bytes.len() as u64;
 }
