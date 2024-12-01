@@ -10,6 +10,7 @@ authors = [
 license = "MIT"
 repository = "https://github.com/zip-rs/zip2.git"
 keywords = ["zip", "archive", "compression"]
+categories = ["compression", "filesystem", "parser-implementations"]
 rust-version = "1.73.0"
 description = """
 Library to support the reading and writing of zip files.
@@ -23,7 +24,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace.dependencies]
-time = { version = "0.3.1", default-features = false }
+arbitrary = { version = "1.3.2", features = ["derive"] }
+time = { version = "0.3.36", default-features = false }
+zip = { path = ".", default-features = false }
 
 [dependencies]
 aes = { version = "0.8", optional = true }
@@ -53,7 +56,7 @@ lzma-rs = { version = "0.3", default-features = false, optional = true }
 crossbeam-utils = "0.8.20"
 
 [target.'cfg(fuzzing)'.dependencies]
-arbitrary = { version = "1.3.2", features = ["derive"] }
+arbitrary.workspace = true
 
 [dev-dependencies]
 bencher = "0.1.5"
