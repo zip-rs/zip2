@@ -2,6 +2,7 @@
 use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
+use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::mem;
@@ -79,14 +80,10 @@ impl From<System> for u8 {
 ///
 /// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
 /// for details.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct DateTime {
-    year: u16,
-    month: u8,
-    day: u8,
-    hour: u8,
-    minute: u8,
-    second: u8,
+    datepart: u16,
+    timepart: u16,
 }
 
 impl Debug for DateTime {
@@ -96,8 +93,40 @@ impl Debug for DateTime {
         }
         f.write_fmt(format_args!(
             "DateTime::from_date_and_time({}, {}, {}, {}, {}, {})?",
-            self.year, self.month, self.day, self.hour, self.minute, self.second
+            self.year(),
+            self.month(),
+            self.day(),
+            self.hour(),
+            self.minute(),
+            self.second()
         ))
+    }
+}
+
+impl Ord for DateTime {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if let ord @ (Ordering::Less | Ordering::Greater) = self.year().cmp(&other.year()) {
+            return ord;
+        }
+        if let ord @ (Ordering::Less | Ordering::Greater) = self.month().cmp(&other.month()) {
+            return ord;
+        }
+        if let ord @ (Ordering::Less | Ordering::Greater) = self.day().cmp(&other.day()) {
+            return ord;
+        }
+        if let ord @ (Ordering::Less | Ordering::Greater) = self.hour().cmp(&other.hour()) {
+            return ord;
+        }
+        if let ord @ (Ordering::Less | Ordering::Greater) = self.minute().cmp(&other.minute()) {
+            return ord;
+        }
+        self.second().cmp(&other.second())
+    }
+}
+
+impl PartialOrd for DateTime {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -120,14 +149,15 @@ impl DateTime {
 #[cfg(fuzzing)]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
-        Ok(DateTime {
-            year: u.int_in_range(1980..=2107)?,
-            month: u.int_in_range(1..=12)?,
-            day: u.int_in_range(1..=31)?,
-            hour: u.int_in_range(0..=23)?,
-            minute: u.int_in_range(0..=59)?,
-            second: u.int_in_range(0..=58)?,
-        })
+        let year: u16 = u.int_in_range(1980..=2107)?;
+        let month: u16 = u.int_in_range(1..=12)?;
+        let day: u16 = u.int_in_range(1..=31)?;
+        let datepart = day | (month << 5) | ((year - 1980) << 9);
+        let hour: u16 = u.int_in_range(0..=23)?;
+        let minute: u16 = u.int_in_range(0..=59)?;
+        let second: u16 = u.int_in_range(0..=58)?;
+        let timepart = (second >> 1) | (minute << 5) | (hour << 11);
+        Ok(DateTime { datepart, timepart })
     }
 }
 
@@ -152,11 +182,18 @@ impl TryFrom<DateTime> for NaiveDateTime {
     type Error = DateTimeRangeError;
 
     fn try_from(value: DateTime) -> Result<Self, Self::Error> {
-        let date = NaiveDate::from_ymd_opt(value.year.into(), value.month.into(), value.day.into())
-            .ok_or(DateTimeRangeError)?;
-        let time =
-            NaiveTime::from_hms_opt(value.hour.into(), value.minute.into(), value.second.into())
-                .ok_or(DateTimeRangeError)?;
+        let date = NaiveDate::from_ymd_opt(
+            value.year().into(),
+            value.month().into(),
+            value.day().into(),
+        )
+        .ok_or(DateTimeRangeError)?;
+        let time = NaiveTime::from_hms_opt(
+            value.hour().into(),
+            value.minute().into(),
+            value.second().into(),
+        )
+        .ok_or(DateTimeRangeError)?;
         Ok(NaiveDateTime::new(date, time))
     }
 }
@@ -181,12 +218,8 @@ impl Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
         DateTime {
-            year: 1980,
-            month: 1,
-            day: 1,
-            hour: 0,
-            minute: 0,
-            second: 0,
+            datepart: 0b0000000000100001,
+            timepart: 0,
         }
     }
 }
@@ -197,7 +230,12 @@ impl fmt::Display for DateTime {
         write!(
             f,
             "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-            self.year, self.month, self.day, self.hour, self.minute, self.second
+            self.year(),
+            self.month(),
+            self.day(),
+            self.hour(),
+            self.minute(),
+            self.second()
         )
     }
 }
@@ -208,21 +246,7 @@ impl DateTime {
     /// # Safety
     /// The caller must ensure the date and time are valid.
     pub const unsafe fn from_msdos_unchecked(datepart: u16, timepart: u16) -> DateTime {
-        let seconds = (timepart & 0b0000000000011111) << 1;
-        let minutes = (timepart & 0b0000011111100000) >> 5;
-        let hours = (timepart & 0b1111100000000000) >> 11;
-        let days = datepart & 0b0000000000011111;
-        let months = (datepart & 0b0000000111100000) >> 5;
-        let years = (datepart & 0b1111111000000000) >> 9;
-
-        DateTime {
-            year: years + 1980,
-            month: months as u8,
-            day: days as u8,
-            hour: hours as u8,
-            minute: minutes as u8,
-            second: seconds as u8,
-        }
+        DateTime { datepart, timepart }
     }
 
     /// Converts an msdos (u16, u16) pair to a DateTime object if it represents a valid date and
@@ -283,14 +307,9 @@ impl DateTime {
             if day > max_day {
                 return Err(DateTimeRangeError);
             }
-            Ok(DateTime {
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-            })
+            let datepart = (day as u16) | ((month as u16) << 5) | ((year - 1980) << 9);
+            let timepart = ((second as u16) >> 1) | ((minute as u16) << 5) | ((hour as u16) << 11);
+            Ok(DateTime { datepart, timepart })
         } else {
             Err(DateTimeRangeError)
         }
@@ -298,15 +317,7 @@ impl DateTime {
 
     /// Indicates whether this date and time can be written to a zip archive.
     pub fn is_valid(&self) -> bool {
-        DateTime::from_date_and_time(
-            self.year,
-            self.month,
-            self.day,
-            self.hour,
-            self.minute,
-            self.second,
-        )
-        .is_ok()
+        Self::try_from_msdos(self.datepart, self.timepart).is_ok()
     }
 
     #[cfg(feature = "time")]
@@ -320,12 +331,12 @@ impl DateTime {
 
     /// Gets the time portion of this datetime in the msdos representation
     pub const fn timepart(&self) -> u16 {
-        ((self.second as u16) >> 1) | ((self.minute as u16) << 5) | ((self.hour as u16) << 11)
+        self.timepart
     }
 
     /// Gets the date portion of this datetime in the msdos representation
     pub const fn datepart(&self) -> u16 {
-        (self.day as u16) | ((self.month as u16) << 5) | ((self.year - 1980) << 9)
+        self.datepart
     }
 
     #[cfg(feature = "time")]
@@ -337,7 +348,7 @@ impl DateTime {
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
     pub const fn year(&self) -> u16 {
-        self.year
+        (self.datepart >> 9) + 1980
     }
 
     /// Get the month, where 1 = january and 12 = december
@@ -346,7 +357,7 @@ impl DateTime {
     ///
     /// When read from a zip file, this may not be a reasonable value
     pub const fn month(&self) -> u8 {
-        self.month
+        ((self.datepart & 0b0000000111100000) >> 5) as u8
     }
 
     /// Get the day
@@ -355,7 +366,7 @@ impl DateTime {
     ///
     /// When read from a zip file, this may not be a reasonable value
     pub const fn day(&self) -> u8 {
-        self.day
+        (self.datepart & 0b0000000000011111) as u8
     }
 
     /// Get the hour
@@ -364,7 +375,7 @@ impl DateTime {
     ///
     /// When read from a zip file, this may not be a reasonable value
     pub const fn hour(&self) -> u8 {
-        self.hour
+        (self.timepart >> 11) as u8
     }
 
     /// Get the minute
@@ -373,7 +384,7 @@ impl DateTime {
     ///
     /// When read from a zip file, this may not be a reasonable value
     pub const fn minute(&self) -> u8 {
-        self.minute
+        ((self.timepart & 0b0000011111100000) >> 5) as u8
     }
 
     /// Get the second
@@ -382,7 +393,7 @@ impl DateTime {
     ///
     /// When read from a zip file, this may not be a reasonable value
     pub const fn second(&self) -> u8 {
-        self.second
+        ((self.timepart & 0b0000000000011111) << 1) as u8
     }
 }
 
@@ -391,18 +402,14 @@ impl TryFrom<OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
-        if dt.year() >= 1980 && dt.year() <= 2107 {
-            Ok(DateTime {
-                year: dt.year().try_into()?,
-                month: dt.month().into(),
-                day: dt.day(),
-                hour: dt.hour(),
-                minute: dt.minute(),
-                second: dt.second(),
-            })
-        } else {
-            Err(DateTimeRangeError)
-        }
+        Self::from_date_and_time(
+            dt.year().try_into()?,
+            dt.month().into(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second(),
+        )
     }
 }
 
@@ -411,8 +418,9 @@ impl TryFrom<DateTime> for OffsetDateTime {
     type Error = ComponentRange;
 
     fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
-        let date = Date::from_calendar_date(dt.year as i32, Month::try_from(dt.month)?, dt.day)?;
-        let time = Time::from_hms(dt.hour, dt.minute, dt.second)?;
+        let date =
+            Date::from_calendar_date(dt.year() as i32, Month::try_from(dt.month())?, dt.day())?;
+        let time = Time::from_hms(dt.hour(), dt.minute(), dt.second())?;
         Ok(PrimitiveDateTime::new(date, time).assume_utc())
     }
 }
@@ -1186,8 +1194,13 @@ mod test {
         assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 39, 30).unwrap());
         assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 37, 30).unwrap());
         // second
-        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 38, 31).unwrap());
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 38, 32).unwrap());
+        assert_eq!(
+            dt.cmp(&DateTime::from_date_and_time(2018, 11, 17, 10, 38, 31).unwrap()),
+            Ordering::Equal
+        );
         assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 38, 29).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 38, 28).unwrap());
     }
 
     #[test]
