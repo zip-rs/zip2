@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.2](https://github.com/zip-rs/zip2/compare/v2.2.1...v2.2.2) - 2024-12-16
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- rewrite the EOCD/EOCD64 detection to fix extreme performance regression (#247)
+
 ## [2.2.1](https://github.com/zip-rs/zip2/compare/v2.2.0...v2.2.1) - 2024-11-20
 
 ### <!-- 1 -->🐛 Bug Fixes
