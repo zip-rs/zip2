@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.2.2](https://github.com/zip-rs/zip2/compare/v2.2.1...v2.2.2) - 2024-12-16
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- rewrite the EOCD/EOCD64 detection to fix extreme performance regression (#247)
+
+## [2.2.1](https://github.com/zip-rs/zip2/compare/v2.2.0...v2.2.1) - 2024-11-20
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- remove executable bit ([#238](https://github.com/zip-rs/zip2/pull/238))
+- *(lzma)* fixed panic in case of invalid lzma stream ([#259](https://github.com/zip-rs/zip2/pull/259))
+- resolve new clippy warnings on nightly ([#262](https://github.com/zip-rs/zip2/pull/262))
+- resolve clippy warning in nightly ([#252](https://github.com/zip-rs/zip2/pull/252))
+
+### <!-- 4 -->⚡ Performance
+
+- Faster cde rejection ([#255](https://github.com/zip-rs/zip2/pull/255))
+
+## [2.2.0](https://github.com/zip-rs/zip2/compare/v2.1.6...v2.2.0) - 2024-08-11
+
+### <!-- 0 -->🚀 Features
+- Expose `ZipArchive::central_directory_start` ([#232](https://github.com/zip-rs/zip2/pull/232))
+
+## [2.1.6](https://github.com/zip-rs/zip2/compare/v2.1.5...v2.1.6) - 2024-07-29
+
+### <!-- 1 -->🐛 Bug Fixes
+- ([#33](https://github.com/zip-rs/zip2/pull/33)) Rare combination of settings could lead to writing a corrupt archive with overlength extra data, and data_start locations when reading the archive back were also wrong ([#221](https://github.com/zip-rs/zip2/pull/221))
+
+### <!-- 2 -->🚜 Refactor
+- Eliminate some magic numbers and unnecessary path prefixes ([#225](https://github.com/zip-rs/zip2/pull/225))
+
 ## [2.1.5](https://github.com/zip-rs/zip2/compare/v2.1.4...v2.1.5) - 2024-07-20
 
 ### <!-- 2 -->🚜 Refactor

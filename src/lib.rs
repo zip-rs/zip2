@@ -17,9 +17,11 @@
 //!
 //! |         | Reading | Writing |
 //! | ------- | ------  | ------- |
+//! | Stored | ✅ | ✅ |
 //! | Deflate | ✅ [->](`crate::ZipArchive::by_name`)      | ✅ [->](`crate::write::FileOptions::compression_method`) |
 //! | Deflate64 | ✅ | |
 //! | Bzip2 | ✅ | ✅ |
+//! | ZStandard | ✅ | ✅ |
 //! | LZMA | ✅ | |
 //! | XZ | ✅ | |
 //! | AES encryption | ✅ | ✅ |
