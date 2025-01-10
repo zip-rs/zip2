@@ -70,6 +70,24 @@ jobs:
           command: fmt
           args: --all -- --check
 
+  check_minimal_versions:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - name: resolve minimal versions
+        run: cargo -Z minimal-versions update
+      - name: check
+        run: cargo check --all-features
+      - name: test
+        run: cargo test --all-features
+
   style_and_docs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:

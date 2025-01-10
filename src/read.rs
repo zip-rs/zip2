@@ -8,10 +8,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{
-    self, FixedSizeBlock, Pod, Zip32CentralDirectoryEnd, Zip64CDELocatorBlock,
-    Zip64CentralDirectoryEnd, ZIP64_ENTRY_THR,
-};
+use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
@@ -26,7 +23,6 @@ use std::mem;
 use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 mod config;
@@ -42,6 +38,8 @@ pub(crate) mod lzma;
 #[cfg(feature = "xz")]
 pub(crate) mod xz;
 
+pub(crate) mod magic_finder;
+
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
     use indexmap::IndexMap;
@@ -56,6 +54,8 @@ pub(crate) mod zip_archive {
         // This isn't yet used anywhere, but it is here for use cases in the future.
         #[allow(dead_code)]
         pub(super) config: super::Config,
+        pub(crate) comment: Box<[u8]>,
+        pub(crate) zip64_comment: Option<Box<[u8]>>,
     }
 
     #[derive(Debug)]
@@ -69,7 +69,7 @@ pub(crate) mod zip_archive {
     }
 
     impl SharedBuilder {
-        pub fn build(self) -> Shared {
+        pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> Shared {
             let mut index_map = IndexMap::with_capacity(self.files.len());
             self.files.into_iter().for_each(|file| {
                 index_map.insert(file.file_name.clone(), file);
@@ -79,6 +79,8 @@ pub(crate) mod zip_archive {
                 offset: self.offset,
                 dir_start: self.dir_start,
                 config: self.config,
+                comment,
+                zip64_comment,
             }
         }
     }
@@ -108,7 +110,6 @@ pub(crate) mod zip_archive {
     pub struct ZipArchive<R> {
         pub(super) reader: R,
         pub(super) shared: Arc<Shared>,
-        pub(super) comment: Arc<[u8]>,
     }
 }
 
@@ -360,6 +361,7 @@ fn find_data_start(
         block.file_name_length as u64 + block.extra_field_length as u64;
     let data_start =
         data.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+
     // Set the value so we don't have to read it again.
     match data.data_start.set(data_start) {
         Ok(()) => (),
@@ -369,6 +371,7 @@ fn find_data_start(
             debug_assert_eq!(*data.data_start.get().unwrap(), data_start);
         }
     }
+
     Ok(data_start)
 }
 
@@ -434,17 +437,62 @@ pub(crate) fn make_reader(
 pub(crate) struct CentralDirectoryInfo {
     pub(crate) archive_offset: u64,
     pub(crate) directory_start: u64,
-    pub(crate) cde_position: u64,
     pub(crate) number_of_files: usize,
     pub(crate) disk_number: u32,
     pub(crate) disk_with_central_directory: u32,
-    pub(crate) is_zip64: bool,
+}
+
+impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
+    type Error = ZipError;
+
+    fn try_from(value: &'a CentralDirectoryEndInfo) -> Result<Self, Self::Error> {
+        let (relative_cd_offset, number_of_files, disk_number, disk_with_central_directory) =
+            match &value.eocd64 {
+                Some(DataAndPosition { data: eocd64, .. }) => {
+                    if eocd64.number_of_files_on_this_disk > eocd64.number_of_files {
+                        return Err(InvalidArchive(
+                        "ZIP64 footer indicates more files on this disk than in the whole archive",
+                    ));
+                    } else if eocd64.version_needed_to_extract > eocd64.version_made_by {
+                        return Err(InvalidArchive(
+                        "ZIP64 footer indicates a new version is needed to extract this archive than the \
+                                 version that wrote it",
+                    ));
+                    }
+                    (
+                        eocd64.central_directory_offset,
+                        eocd64.number_of_files as usize,
+                        eocd64.disk_number,
+                        eocd64.disk_with_central_directory,
+                    )
+                }
+                _ => (
+                    value.eocd.data.central_directory_offset as u64,
+                    value.eocd.data.number_of_files_on_this_disk as usize,
+                    value.eocd.data.disk_number as u32,
+                    value.eocd.data.disk_with_central_directory as u32,
+                ),
+            };
+
+        let directory_start = relative_cd_offset
+            .checked_add(value.archive_offset)
+            .ok_or(InvalidArchive("Invalid central directory size or offset"))?;
+
+        Ok(Self {
+            archive_offset: value.archive_offset,
+            directory_start,
+            number_of_files,
+            disk_number,
+            disk_with_central_directory,
+        })
+    }
 }
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
         comment: Box<[u8]>,
+        zip64_comment: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> ZipResult<Self> {
@@ -459,12 +507,10 @@ impl<R> ZipArchive<R> {
             config: Config {
                 archive_offset: ArchiveOffset::Known(initial_offset),
             },
+            comment,
+            zip64_comment,
         });
-        Ok(Self {
-            reader,
-            shared,
-            comment: comment.into(),
-        })
+        Ok(Self { reader, shared })
     }
 
     /// Total size of the files in the archive, if it can be known. Doesn't include directories or
@@ -549,264 +595,36 @@ impl<R: Read + Seek> ZipArchive<R> {
         Ok(new_files)
     }
 
-    fn get_directory_info_zip32(
-        config: &Config,
-        reader: &mut R,
-        footer: &Zip32CentralDirectoryEnd,
-        cde_start_pos: u64,
-    ) -> ZipResult<CentralDirectoryInfo> {
-        let archive_offset = match config.archive_offset {
-            ArchiveOffset::Known(n) => n,
-            ArchiveOffset::FromCentralDirectory | ArchiveOffset::Detect => {
-                // Some zip files have data prepended to them, resulting in the
-                // offsets all being too small. Get the amount of error by comparing
-                // the actual file position we found the CDE at with the offset
-                // recorded in the CDE.
-                let mut offset = cde_start_pos
-                    .checked_sub(footer.central_directory_size as u64)
-                    .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
-                    .ok_or(InvalidArchive("Invalid central directory size or offset"))?;
-
-                if config.archive_offset == ArchiveOffset::Detect {
-                    // Check whether the archive offset makes sense by peeking at the directory start. If it
-                    // doesn't, fall back to using no archive offset. This supports zips with the central
-                    // directory entries somewhere other than directly preceding the end of central directory.
-                    reader.seek(SeekFrom::Start(
-                        offset + footer.central_directory_offset as u64,
-                    ))?;
-                    let mut buf = [0; 4];
-                    reader.read_exact(&mut buf)?;
-                    if spec::Magic::from_le_bytes(buf)
-                        != spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE
-                    {
-                        offset = 0;
-                    }
-                }
-
-                offset
-            }
-        };
-
-        let directory_start = footer.central_directory_offset as u64 + archive_offset;
-        let number_of_files = footer.number_of_files_on_this_disk as usize;
-        Ok(CentralDirectoryInfo {
-            archive_offset,
-            directory_start,
-            number_of_files,
-            disk_number: footer.disk_number as u32,
-            disk_with_central_directory: footer.disk_with_central_directory as u32,
-            cde_position: cde_start_pos,
-            is_zip64: false,
-        })
-    }
-
-    const fn order_lower_upper_bounds(a: u64, b: u64) -> (u64, u64) {
-        if a > b {
-            (b, a)
-        } else {
-            (a, b)
-        }
-    }
-
-    fn get_directory_info_zip64(
-        config: &Config,
-        reader: &mut R,
-        cde_start_pos: u64,
-    ) -> ZipResult<Vec<ZipResult<CentralDirectoryInfo>>> {
-        // See if there's a ZIP64 footer. The ZIP64 locator if present will
-        // have its signature 20 bytes in front of the standard footer. The
-        // standard footer, in turn, is 22+N bytes large, where N is the
-        // comment length. Therefore:
-        reader.seek(SeekFrom::Start(
-            cde_start_pos
-                .checked_sub(size_of::<Zip64CDELocatorBlock>() as u64)
-                .ok_or(InvalidArchive(
-                    "No room for ZIP64 locator before central directory end",
-                ))?,
-        ))?;
-        let locator64 = spec::Zip64CentralDirectoryEndLocator::parse(reader)?;
-
-        // We need to reassess `archive_offset`. We know where the ZIP64
-        // central-directory-end structure *should* be, but unfortunately we
-        // don't know how to precisely relate that location to our current
-        // actual offset in the file, since there may be junk at its
-        // beginning. Therefore we need to perform another search, as in
-        // read::Zip32CentralDirectoryEnd::find_and_parse, except now we search
-        // forward. There may be multiple results because of Zip64 central-directory signatures in
-        // ZIP comment data.
-
-        let search_upper_bound = cde_start_pos
-            .checked_sub(
-                (size_of::<Zip64CentralDirectoryEnd>()
-                    + size_of::<spec::Zip64CentralDirectoryEndLocator>()) as u64,
-            )
-            .ok_or(InvalidArchive(
-                "File cannot contain ZIP64 central directory end",
-            ))?;
-
-        let (lower, upper) = Self::order_lower_upper_bounds(
-            locator64.end_of_central_directory_offset,
-            search_upper_bound,
-        );
-
-        let search_results = Zip64CentralDirectoryEnd::find_and_parse(reader, lower, upper)?;
-        let results: Vec<ZipResult<CentralDirectoryInfo>> =
-            search_results.into_iter().map(|(footer64, archive_offset)| {
-                let archive_offset = match config.archive_offset {
-                    ArchiveOffset::Known(n) => n,
-                    ArchiveOffset::FromCentralDirectory => archive_offset,
-                    ArchiveOffset::Detect => {
-                        archive_offset.checked_add(footer64.central_directory_offset)
-                            .and_then(|start| {
-                                // Check whether the archive offset makes sense by peeking at the directory start.
-                                //
-                                // If any errors occur or no header signature is found, fall back to no offset to see if that works.
-                                reader.seek(SeekFrom::Start(start)).ok()?;
-                                let mut buf = [0; 4];
-                                reader.read_exact(&mut buf).ok()?;
-                                if spec::Magic::from_le_bytes(buf) != spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-                                    None
-                                } else {
-                                    Some(archive_offset)
-                                }
-                            })
-                        .unwrap_or(0)
-                    }
-                };
-                let directory_start = footer64
-                    .central_directory_offset
-                    .checked_add(archive_offset)
-                    .ok_or(InvalidArchive(
-                        "Invalid central directory size or offset",
-                    ))?;
-                if directory_start > search_upper_bound {
-                    Err(InvalidArchive(
-                        "Invalid central directory size or offset",
-                    ))
-                } else if footer64.number_of_files_on_this_disk > footer64.number_of_files {
-                    Err(InvalidArchive(
-                        "ZIP64 footer indicates more files on this disk than in the whole archive",
-                    ))
-                } else if footer64.version_needed_to_extract > footer64.version_made_by {
-                    Err(InvalidArchive(
-                        "ZIP64 footer indicates a new version is needed to extract this archive than the \
-                         version that wrote it",
-                    ))
-                } else {
-                    Ok(CentralDirectoryInfo {
-                        archive_offset,
-                        directory_start,
-                        number_of_files: footer64.number_of_files as usize,
-                        disk_number: footer64.disk_number,
-                        disk_with_central_directory: footer64.disk_with_central_directory,
-                        cde_position: cde_start_pos,
-                        is_zip64: true,
-                    })
-                }
-            }).collect();
-        Ok(results)
-    }
-
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    pub(crate) fn get_metadata(
-        config: Config,
-        reader: &mut R,
-    ) -> ZipResult<(Zip32CentralDirectoryEnd, Shared)> {
-        let mut invalid_errors_32 = Vec::new();
-        let mut unsupported_errors_32 = Vec::new();
-        let mut invalid_errors_64 = Vec::new();
-        let mut unsupported_errors_64 = Vec::new();
-        let mut ok_results = Vec::new();
-        let cde_locations = Zip32CentralDirectoryEnd::find_and_parse(reader)?;
-        cde_locations
-            .into_vec()
-            .into_iter()
-            .for_each(|(footer, cde_start_pos)| {
-                let zip32_result =
-                    Self::get_directory_info_zip32(&config, reader, &footer, cde_start_pos);
-                Self::sort_result(
-                    zip32_result,
-                    &mut invalid_errors_32,
-                    &mut unsupported_errors_32,
-                    &mut ok_results,
-                    &footer,
-                );
-                let mut inner_results = Vec::with_capacity(1);
-                // Check if file has a zip64 footer
-                let zip64_vec_result =
-                    Self::get_directory_info_zip64(&config, reader, cde_start_pos);
-                Self::sort_result(
-                    zip64_vec_result,
-                    &mut invalid_errors_64,
-                    &mut unsupported_errors_64,
-                    &mut inner_results,
-                    &(),
-                );
-                inner_results.into_iter().for_each(|(_, results)| {
-                    results.into_iter().for_each(|result| {
-                        Self::sort_result(
-                            result,
-                            &mut invalid_errors_64,
-                            &mut unsupported_errors_64,
-                            &mut ok_results,
-                            &footer,
-                        );
-                    });
-                });
-            });
-        ok_results.sort_by_key(|(_, result)| {
-            (
-                u64::MAX - result.cde_position, // try the last one first
-                !result.is_zip64,               // try ZIP64 first
-            )
-        });
-        let mut best_result = None;
-        for (footer, result) in ok_results {
-            let mut inner_result = Vec::with_capacity(1);
-            let is_zip64 = result.is_zip64;
-            Self::sort_result(
-                Self::read_central_header(result, config, reader),
-                if is_zip64 {
-                    &mut invalid_errors_64
-                } else {
-                    &mut invalid_errors_32
-                },
-                if is_zip64 {
-                    &mut unsupported_errors_64
-                } else {
-                    &mut unsupported_errors_32
-                },
-                &mut inner_result,
-                &(),
-            );
-            if let Some((_, shared)) = inner_result.into_iter().next() {
-                if shared.files.len() == footer.number_of_files as usize
-                    || (is_zip64 && footer.number_of_files == ZIP64_ENTRY_THR as u16)
-                {
-                    best_result = Some((footer, shared));
-                    break;
-                } else {
-                    if is_zip64 {
-                        &mut invalid_errors_64
-                    } else {
-                        &mut invalid_errors_32
-                    }
-                    .push(InvalidArchive("wrong number of files"))
-                }
-            }
+    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
+        // End of the probed region, initially set to the end of the file
+        let file_len = reader.seek(io::SeekFrom::End(0))?;
+        let mut end_exclusive = file_len;
+
+        loop {
+            // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
+            let cde = spec::find_central_directory(
+                reader,
+                config.archive_offset,
+                end_exclusive,
+                file_len,
+            )?;
+
+            // Turn EOCD into internal representation.
+            let Ok(shared) = CentralDirectoryInfo::try_from(&cde)
+                .and_then(|info| Self::read_central_header(info, config, reader))
+            else {
+                // The next EOCD candidate should start before the current one.
+                end_exclusive = cde.eocd.position;
+                continue;
+            };
+
+            return Ok(shared.build(
+                cde.eocd.data.zip_file_comment,
+                cde.eocd64.map(|v| v.data.extensible_data_sector),
+            ));
         }
-        let Some((footer, shared)) = best_result else {
-            return Err(unsupported_errors_32
-                .into_iter()
-                .chain(unsupported_errors_64)
-                .chain(invalid_errors_32)
-                .chain(invalid_errors_64)
-                .next()
-                .unwrap());
-        };
-        reader.seek(SeekFrom::Start(shared.dir_start))?;
-        Ok((Rc::try_unwrap(footer).unwrap(), shared.build()))
     }
 
     fn read_central_header(
@@ -821,37 +639,28 @@ impl<R: Read + Seek> ZipArchive<R> {
         } else {
             dir_info.number_of_files
         };
+
         if dir_info.disk_number != dir_info.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
+
+        if file_capacity.saturating_mul(size_of::<ZipFileData>()) > isize::MAX as usize {
+            return unsupported_zip_error("Oversized central directory");
+        }
+
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
-            let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
+            let file = central_header_to_zip_file(reader, &dir_info)?;
             files.push(file);
         }
+
         Ok(SharedBuilder {
             files,
             offset: dir_info.archive_offset,
             dir_start: dir_info.directory_start,
             config,
         })
-    }
-
-    fn sort_result<T, U: Clone>(
-        result: ZipResult<T>,
-        invalid_errors: &mut Vec<ZipError>,
-        unsupported_errors: &mut Vec<ZipError>,
-        ok_results: &mut Vec<(U, T)>,
-        footer: &U,
-    ) {
-        match result {
-            Err(ZipError::UnsupportedArchive(e)) => {
-                unsupported_errors.push(ZipError::UnsupportedArchive(e))
-            }
-            Err(e) => invalid_errors.push(e),
-            Ok(o) => ok_results.push((footer.clone(), o)),
-        }
     }
 
     /// Returns the verification value and salt for the AES encryption of the file
@@ -902,15 +711,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        reader.seek(SeekFrom::Start(0))?;
-        if let Ok((footer, shared)) = Self::get_metadata(config, &mut reader) {
-            return Ok(ZipArchive {
-                reader,
-                shared: shared.into(),
-                comment: footer.zip_file_comment.into(),
-            });
-        }
-        Err(InvalidArchive("No valid central directory found"))
+        let shared = Self::get_metadata(config, &mut reader)?;
+
+        Ok(ZipArchive {
+            reader,
+            shared: shared.into(),
+        })
     }
 
     /// Extract a Zip archive into a directory, overwriting files if they
@@ -1050,7 +856,12 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the comment of the zip archive.
     pub fn comment(&self) -> &[u8] {
-        &self.comment
+        &self.shared.comment
+    }
+
+    /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
+    pub fn zip64_comment(&self) -> Option<&[u8]> {
+        self.shared.zip64_comment.as_deref()
     }
 
     /// Returns an iterator over all the file and directory names in this archive.
@@ -1235,21 +1046,36 @@ const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
 /// Parse a central directory entry to collect the information for the file.
 pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     reader: &mut R,
-    archive_offset: u64,
+    central_directory: &CentralDirectoryInfo,
 ) -> ZipResult<ZipFileData> {
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
     let block = ZipCentralEntryBlock::parse(reader)?;
-    let file =
-        central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
+
+    let file = central_header_to_zip_file_inner(
+        reader,
+        central_directory.archive_offset,
+        central_header_start,
+        block,
+    )?;
+
     let central_header_end = reader.stream_position()?;
-    let data_start = find_data_start(&file, reader)?;
-    if data_start > central_header_start {
+
+    if file.header_start >= central_directory.directory_start {
         return Err(InvalidArchive(
-            "A file can't start after its central-directory header",
+            "A local file entry can't start after the central directory",
         ));
     }
+
+    let data_start = find_data_start(&file, reader)?;
+
+    if data_start > central_directory.directory_start {
+        return Err(InvalidArchive(
+            "File data can't start after the central directory",
+        ));
+    }
+
     reader.seek(SeekFrom::Start(central_header_end))?;
     Ok(file)
 }

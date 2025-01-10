@@ -160,6 +160,7 @@ pub(crate) mod zip_writer {
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
         pub(super) comment: Box<[u8]>,
+        pub(super) zip64_comment: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
     }
 
@@ -628,19 +629,19 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
-            Ok(ZipWriter {
-                inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-                files: shared.files,
-                stats: Default::default(),
-                writing_to_file: false,
-                comment: footer.zip_file_comment,
-                writing_raw: true, // avoid recomputing the last file's header
-                flush_on_finish_file: false,
-            })
-        } else {
-            Err(InvalidArchive("No central-directory end header found"))
-        }
+
+        let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
+
+        Ok(ZipWriter {
+            inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
+            files: shared.files,
+            stats: Default::default(),
+            writing_to_file: false,
+            comment: shared.comment,
+            zip64_comment: shared.zip64_comment,
+            writing_raw: true, // avoid recomputing the last file's header
+            flush_on_finish_file: false,
+        })
     }
 
     /// `flush_on_finish_file` is designed to support a streaming `inner` that may unload flushed
@@ -774,8 +775,11 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let central_start = self.finalize()?;
         let inner = mem::replace(&mut self.inner, Closed).unwrap();
         let comment = mem::take(&mut self.comment);
+        let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
-        let archive = ZipArchive::from_finalized_writer(files, comment, inner, central_start)?;
+
+        let archive =
+            ZipArchive::from_finalized_writer(files, comment, zip64_comment, inner, central_start)?;
         Ok(archive)
     }
 }
@@ -794,6 +798,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
+            zip64_comment: None,
             flush_on_finish_file: false,
         }
     }
@@ -830,6 +835,35 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// is typically expected to be encoded in UTF-8.
     pub const fn get_raw_comment(&self) -> &[u8] {
         &self.comment
+    }
+
+    /// Set ZIP64 archive comment.
+    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>)
+    where
+        S: Into<Box<str>>,
+    {
+        self.set_raw_zip64_comment(comment.map(|v| v.into().into_boxed_bytes()))
+    }
+
+    /// Set ZIP64 archive comment.
+    ///
+    /// This sets the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8.
+    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) {
+        self.zip64_comment = comment;
+    }
+
+    /// Get ZIP64 archive comment.
+    pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
+        self.get_raw_zip64_comment().map(from_utf8)
+    }
+
+    /// Get ZIP archive comment.
+    ///
+    /// This returns the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8.
+    pub fn get_raw_zip64_comment(&self) -> Option<&[u8]> {
+        self.zip64_comment.as_deref()
     }
 
     /// Set the file length and crc32 manually.
@@ -1516,11 +1550,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
-
-        if self.files.len() > spec::ZIP64_ENTRY_THR
+        let is64 = self.files.len() > spec::ZIP64_ENTRY_THR
             || central_size.max(central_start) > spec::ZIP64_BYTES_THR
-        {
+            || self.zip64_comment.is_some();
+
+        if is64 {
+            let comment = self.zip64_comment.clone().unwrap_or_default();
+
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
+                record_size: comment.len() as u64 + 44,
                 version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
                 disk_number: 0,
@@ -1529,6 +1567,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u64,
                 central_directory_size: central_size,
                 central_directory_offset: central_start,
+                extensible_data_sector: comment,
             };
 
             zip64_footer.write(writer)?;
