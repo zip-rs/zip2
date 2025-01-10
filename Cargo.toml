@@ -27,7 +27,7 @@ time = { version = "0.3.1", default-features = false }
 
 [dependencies]
 aes = { version = "0.8", optional = true }
-bzip2 = { version = "0.4.3", optional = true }
+bzip2 = { version = "0.5.0", optional = true }
 chrono = { version = "0.4", optional = true }
 constant_time_eq = { version = "0.3", optional = true }
 crc32fast = "1.4"
