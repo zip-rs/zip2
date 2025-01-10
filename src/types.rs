@@ -809,11 +809,12 @@ impl ZipFileData {
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
+        let version_to_extract = self.version_needed();
+        let version_made_by = (self.version_made_by as u16).max(version_to_extract);
         Ok(ZipCentralEntryBlock {
             magic: ZipCentralEntryBlock::MAGIC,
-            version_made_by: (self.system as u16) << 8
-                | (self.version_made_by as u16).max(self.version_needed()),
-            version_to_extract: self.version_needed(),
+            version_made_by: ((self.system as u16) << 8) | version_made_by,
+            version_to_extract,
             flags: self.flags(),
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
