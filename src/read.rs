@@ -7,6 +7,7 @@ use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::read::zip_archive::{Shared, SharedBuilder};
+use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
 use crate::types::{
@@ -116,7 +117,7 @@ pub(crate) mod zip_archive {
 #[cfg(feature = "aes-crypto")]
 use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
-use crate::result::ZipError::{InvalidArchive, InvalidPassword};
+use crate::result::ZipError::InvalidPassword;
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFLNK;
 use crate::unstable::{path_to_string, LittleEndianReadExt};
@@ -450,14 +451,10 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
             match &value.eocd64 {
                 Some(DataAndPosition { data: eocd64, .. }) => {
                     if eocd64.number_of_files_on_this_disk > eocd64.number_of_files {
-                        return Err(InvalidArchive(
-                        "ZIP64 footer indicates more files on this disk than in the whole archive",
-                    ));
+                        return Err(invalid!("ZIP64 footer indicates more files on this disk than in the whole archive"));
                     } else if eocd64.version_needed_to_extract > eocd64.version_made_by {
-                        return Err(InvalidArchive(
-                        "ZIP64 footer indicates a new version is needed to extract this archive than the \
-                                 version that wrote it",
-                    ));
+                        return Err(invalid!("ZIP64 footer indicates a new version is needed to extract this archive than the \
+                                                         version that wrote it"));
                     }
                     (
                         eocd64.central_directory_offset,
@@ -476,7 +473,7 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 
         let directory_start = relative_cd_offset
             .checked_add(value.archive_offset)
-            .ok_or(InvalidArchive("Invalid central directory size or offset"))?;
+            .ok_or(invalid!("Invalid central directory size or offset"))?;
 
         Ok(Self {
             archive_offset: value.archive_offset,
@@ -551,8 +548,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             f.header_start = f
                 .header_start
                 .checked_add(first_new_file_header_start)
-                .ok_or(InvalidArchive(
-                    "new header start from merge would have been too large",
+                .ok_or(invalid!(
+                    "new header start from merge would have been too large"
                 ))?;
             /* This is only ever used internally to cache metadata lookups (it's not part of the
              * zip spec), and 0 is the sentinel value. */
@@ -562,8 +559,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             if let Some(old_data_start) = f.data_start.take() {
                 let new_data_start = old_data_start
                     .checked_add(first_new_file_header_start)
-                    .ok_or(InvalidArchive(
-                        "new data start from merge would have been too large",
+                    .ok_or(invalid!(
+                        "new data start from merge would have been too large"
                     ))?;
                 f.data_start.get_or_init(|| new_data_start);
             }
@@ -736,9 +733,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files_by_unix_mode = Vec::new();
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
-            let filepath = file
-                .enclosed_name()
-                .ok_or(InvalidArchive("Invalid file path"))?;
+            let filepath = file.enclosed_name().ok_or(invalid!("Invalid file path"))?;
 
             let outpath = directory.as_ref().join(filepath);
 
@@ -767,7 +762,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 #[cfg(windows)]
                 {
                     let Ok(target) = String::from_utf8(target) else {
-                        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
+                        return Err(invalid!("Invalid UTF-8 as symlink target"));
                     };
                     let target = target.into_boxed_str();
                     let target_is_dir_from_archive =
@@ -1063,16 +1058,16 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_end = reader.stream_position()?;
 
     if file.header_start >= central_directory.directory_start {
-        return Err(InvalidArchive(
-            "A local file entry can't start after the central directory",
+        return Err(invalid!(
+            "A local file entry can't start after the central directory"
         ));
     }
 
     let data_start = find_data_start(&file, reader)?;
 
     if data_start > central_directory.directory_start {
-        return Err(InvalidArchive(
-            "File data can't start after the central directory",
+        return Err(invalid!(
+            "File data can't start after the central directory"
         ));
     }
 
@@ -1170,16 +1165,14 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
-        return Err(InvalidArchive(
-            "AES encryption without AES extra data field",
-        ));
+        return Err(invalid!("AES encryption without AES extra data field"));
     }
 
     // Account for shifted zip offsets.
     result.header_start = result
         .header_start
         .checked_add(archive_offset)
-        .ok_or(InvalidArchive("Archive header is too large"))?;
+        .ok_or(invalid!("Archive header is too large"))?;
 
     Ok(result)
 }
@@ -1225,9 +1218,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         // Zip64 extended information extra field
         0x0001 => {
             if disallow_zip64 {
-                return Err(InvalidArchive(
-                    "Can't write a custom field using the ZIP64 ID",
-                ));
+                return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
             }
             file.large_file = true;
             let mut consumed_len = 0;
@@ -1244,7 +1235,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 consumed_len += size_of::<u64>();
             }
             let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
-                return Err(InvalidArchive("ZIP64 extra-data field is the wrong length"));
+                return Err(invalid!("ZIP64 extra-data field is the wrong length"));
             };
             reader.read_exact(&mut vec![0u8; leftover_len])?;
             return Ok(true);
@@ -1264,18 +1255,18 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             let compression_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
 
             if vendor_id != 0x4541 {
-                return Err(InvalidArchive("Invalid AES vendor"));
+                return Err(invalid!("Invalid AES vendor"));
             }
             let vendor_version = match vendor_version {
                 0x0001 => AesVendorVersion::Ae1,
                 0x0002 => AesVendorVersion::Ae2,
-                _ => return Err(InvalidArchive("Invalid AES vendor version")),
+                _ => return Err(invalid!("Invalid AES vendor version")),
             };
             match aes_mode {
                 0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version, compression_method)),
                 0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version, compression_method)),
                 0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method)),
-                _ => return Err(InvalidArchive("Invalid AES encryption strength")),
+                _ => return Err(invalid!("Invalid AES encryption strength")),
             };
             file.compression_method = compression_method;
             file.aes_extra_data_start = bytes_already_read;
