@@ -94,7 +94,7 @@ impl<R: Read> ZipStreamReader<R> {
                     use super::ZipError;
                     let filepath = metadata
                         .enclosed_name()
-                        .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+                        .ok_or(crate::result::invalid!("Invalid file path"))?;
 
                     let outpath = self.0.join(filepath);
 
