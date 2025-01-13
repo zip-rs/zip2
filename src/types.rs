@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
-use crate::result::{ZipError, ZipResult};
+use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Pod};
 
 pub(crate) mod ffi {
@@ -789,7 +789,7 @@ impl ZipFileData {
         let extra_field_length: u16 = self
             .extra_field_len()
             .try_into()
-            .map_err(|_| ZipError::InvalidArchive("Extra data field is too large"))?;
+            .map_err(|_| invalid!("Extra data field is too large"))?;
 
         let last_modified_time = self
             .last_modified_time
@@ -838,7 +838,7 @@ impl ZipFileData {
                 .unwrap(),
             file_name_length: self.file_name_raw.len().try_into().unwrap(),
             extra_field_length: extra_field_len.checked_add(central_extra_field_len).ok_or(
-                ZipError::InvalidArchive("Extra field length in central directory exceeds 64KiB"),
+                invalid!("Extra field length in central directory exceeds 64KiB"),
             )?,
             file_comment_length: self.file_comment.len().try_into().unwrap(),
             disk_number: 0,
@@ -894,8 +894,7 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
         self.magic
     }
 
-    const WRONG_MAGIC_ERROR: ZipError =
-        ZipError::InvalidArchive("Invalid Central Directory header");
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid Central Directory header");
 
     to_and_from_le![
         (magic, spec::Magic),
@@ -944,7 +943,7 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
         self.magic
     }
 
-    const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive("Invalid local file header");
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid local file header");
 
     to_and_from_le![
         (magic, spec::Magic),
