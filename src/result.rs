@@ -98,6 +98,10 @@ impl fmt::Display for DateTimeRangeError {
 
 impl Error for DateTimeRangeError {}
 
+pub(crate) fn invalid_archive<M: Into<Cow<'static, str>>>(message: M) -> ZipError {
+    ZipError::InvalidArchive(message.into())
+}
+
 pub(crate) const fn invalid_archive_const(message: &'static str) -> ZipError {
     ZipError::InvalidArchive(Cow::Borrowed(message))
 }
@@ -105,6 +109,9 @@ pub(crate) const fn invalid_archive_const(message: &'static str) -> ZipError {
 macro_rules! invalid {
     ($message:literal) => {
         crate::result::invalid_archive_const($message)
+    };
+    ($($arg:tt)*) => {
+        crate::result::invalid_archive(format!($($arg)*))
     };
 }
 pub(crate) use invalid;
