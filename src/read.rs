@@ -323,10 +323,7 @@ pub(crate) fn find_content<'a>(
     reader: &'a mut (impl Read + Seek),
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
     // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
-    let data_start = match data.data_start.get() {
-        Some(data_start) => *data_start,
-        None => find_data_start(data, reader)?,
-    };
+    let data_start = data.data_start(reader)?;
 
     reader.seek(SeekFrom::Start(data_start))?;
     Ok((reader as &mut dyn Read).take(data.compressed_size))
@@ -337,14 +334,14 @@ fn find_content_seek<'a, R: Read + Seek>(
     reader: &'a mut R,
 ) -> ZipResult<SeekableTake<'a, R>> {
     // Parse local header
-    let data_start = find_data_start(data, reader)?;
+    let data_start = data.data_start(reader)?;
     reader.seek(SeekFrom::Start(data_start))?;
 
     // Explicit Ok and ? are needed to convert io::Error to ZipError
     Ok(SeekableTake::new(reader, data.compressed_size)?)
 }
 
-fn find_data_start(
+pub(crate) fn find_data_start(
     data: &ZipFileData,
     reader: &mut (impl Read + Seek + Sized),
 ) -> Result<u64, ZipError> {
@@ -1065,14 +1062,6 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     if file.header_start >= central_directory.directory_start {
         return Err(InvalidArchive(
             "A local file entry can't start after the central directory",
-        ));
-    }
-
-    let data_start = find_data_start(&file, reader)?;
-
-    if data_start > central_directory.directory_start {
-        return Err(InvalidArchive(
-            "File data can't start after the central directory",
         ));
     }
 
