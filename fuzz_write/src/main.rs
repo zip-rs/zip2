@@ -1,10 +1,10 @@
 use afl::fuzz;
 use arbitrary::{Arbitrary, Unstructured};
-use core::fmt::{Debug};
+use core::fmt::Debug;
 use replace_with::replace_with_or_abort;
 use std::fmt::{Arguments, Formatter, Write};
-use std::io::{Cursor, Seek, SeekFrom};
 use std::io::Write as IoWrite;
+use std::io::{Cursor, Seek, SeekFrom};
 use std::path::PathBuf;
 use tikv_jemallocator::Jemalloc;
 use zip::result::{ZipError, ZipResult};
@@ -91,22 +91,36 @@ fn do_operation<'k>(
     flush_on_finish_file: bool,
     files_added: &mut usize,
     stringifier: &mut impl Write,
-    panic_on_error: bool
+    panic_on_error: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     writer.set_flush_on_finish_file(flush_on_finish_file);
-    let FileOperation { basic, mut path, reopen} = operation;
+    let FileOperation {
+        basic,
+        mut path,
+        reopen,
+    } = operation;
     match basic {
         BasicFileOperation::WriteNormalFile {
-            contents, mut options, ..
+            contents,
+            mut options,
+            ..
         } => {
             let uncompressed_size = contents.iter().map(|chunk| chunk.len()).sum::<usize>();
             if uncompressed_size >= u32::MAX as usize {
                 options = options.large_file(true);
             }
             if options == FullFileOptions::default() {
-                writeln!(stringifier, "writer.start_file_from_path({:?}, Default::default())?;", path)?;
+                writeln!(
+                    stringifier,
+                    "writer.start_file_from_path({:?}, Default::default())?;",
+                    path
+                )?;
             } else {
-                writeln!(stringifier, "writer.start_file_from_path({:?}, {:?})?;", path, options)?;
+                writeln!(
+                    stringifier,
+                    "writer.start_file_from_path({:?}, {:?})?;",
+                    path, options
+                )?;
             }
             writer.start_file_from_path(&*path, options)?;
             for chunk in contents.iter() {
@@ -116,12 +130,20 @@ fn do_operation<'k>(
             *files_added += 1;
         }
         BasicFileOperation::WriteDirectory(options) => {
-            writeln!(stringifier, "writer.add_directory_from_path(&{:?}, {:?})?;", path, options)?;
+            writeln!(
+                stringifier,
+                "writer.add_directory_from_path(&{:?}, {:?})?;",
+                path, options
+            )?;
             writer.add_directory_from_path(&*path, options.to_owned())?;
             *files_added += 1;
         }
         BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
-            writeln!(stringifier, "writer.add_symlink_from_path(&{:?}, {:?}, {:?});", path, target, options)?;
+            writeln!(
+                stringifier,
+                "writer.add_symlink_from_path(&{:?}, {:?}, {:?});",
+                path, target, options
+            )?;
             writer.add_symlink_from_path(&*path, target, options.to_owned())?;
             *files_added += 1;
         }
@@ -130,8 +152,20 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier, panic_on_error)?;
-            writeln!(stringifier, "writer.shallow_copy_file_from_path({:?}, {:?});", base_path, path)?;
+            do_operation(
+                writer,
+                *base,
+                false,
+                flush_on_finish_file,
+                files_added,
+                stringifier,
+                panic_on_error,
+            )?;
+            writeln!(
+                stringifier,
+                "writer.shallow_copy_file_from_path({:?}, {:?});",
+                base_path, path
+            )?;
             writer.shallow_copy_file_from_path(&*base_path, &*path)?;
             *files_added += 1;
         }
@@ -140,38 +174,65 @@ fn do_operation<'k>(
                 return Ok(());
             };
             deduplicate_paths(&mut path, &base_path);
-            do_operation(writer, *base, false, flush_on_finish_file, files_added, stringifier, panic_on_error)?;
-            writeln!(stringifier, "writer.deep_copy_file_from_path({:?}, {:?});", base_path, path)?;
+            do_operation(
+                writer,
+                *base,
+                false,
+                flush_on_finish_file,
+                files_added,
+                stringifier,
+                panic_on_error,
+            )?;
+            writeln!(
+                stringifier,
+                "writer.deep_copy_file_from_path({:?}, {:?});",
+                base_path, path
+            )?;
             writer.deep_copy_file_from_path(&*base_path, path)?;
             *files_added += 1;
         }
-        BasicFileOperation::MergeWithOtherFile { operations, initial_junk } => {
+        BasicFileOperation::MergeWithOtherFile {
+            operations,
+            initial_junk,
+        } => {
             if initial_junk.is_empty() {
-                writeln!(stringifier, "let sub_writer = {{\n\
-                     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));")?;
+                writeln!(
+                    stringifier,
+                    "let sub_writer = {{\n\
+                     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));"
+                )?;
             } else {
-                writeln!(stringifier,
-                         "let sub_writer = {{\n\
+                writeln!(
+                    stringifier,
+                    "let sub_writer = {{\n\
                           let mut initial_junk = Cursor::new(vec!{:?});\n\
                           initial_junk.seek(SeekFrom::End(0))?;
-                          let mut writer = ZipWriter::new(initial_junk);", initial_junk)?;
+                          let mut writer = ZipWriter::new(initial_junk);",
+                    initial_junk
+                )?;
             }
             let mut initial_junk = Cursor::new(initial_junk.into_vec());
             initial_junk.seek(SeekFrom::End(0))?;
             let mut other_writer = zip::ZipWriter::new(initial_junk);
             let mut inner_files_added = 0;
-            operations.into_vec().into_iter().for_each(|(operation, abort)| {
-                let _ = do_operation(
-                    &mut other_writer,
-                    operation,
-                    abort,
-                    false,
-                    &mut inner_files_added,
-                    stringifier,
-                    panic_on_error
-                );
-            });
-            writeln!(stringifier, "writer\n}};\nwriter.merge_archive(sub_writer.finish_into_readable()?)?;")?;
+            operations
+                .into_vec()
+                .into_iter()
+                .for_each(|(operation, abort)| {
+                    let _ = do_operation(
+                        &mut other_writer,
+                        operation,
+                        abort,
+                        false,
+                        &mut inner_files_added,
+                        stringifier,
+                        panic_on_error,
+                    );
+                });
+            writeln!(
+                stringifier,
+                "writer\n}};\nwriter.merge_archive(sub_writer.finish_into_readable()?)?;"
+            )?;
             writer.merge_archive(other_writer.finish_into_readable()?)?;
             *files_added += inner_files_added;
         }
@@ -191,15 +252,19 @@ fn do_operation<'k>(
     match reopen {
         ReopenOption::DoNotReopen => {
             writeln!(stringifier, "writer")?;
-            return Ok(())
-        },
+            return Ok(());
+        }
         ReopenOption::ViaFinish => {
             let old_comment = writer.get_raw_comment().to_owned();
-            writeln!(stringifier, "let mut writer = ZipWriter::new_append(writer.finish()?)?;")?;
+            writeln!(
+                stringifier,
+                "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
+            )?;
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
                 (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
                     zip::ZipWriter::new_append(old_writer.finish()?)
-                })().unwrap_or_else(|_| {
+                })()
+                .unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
@@ -212,11 +277,15 @@ fn do_operation<'k>(
         }
         ReopenOption::ViaFinishIntoReadable => {
             let old_comment = writer.get_raw_comment().to_owned();
-            writeln!(stringifier, "let mut writer = ZipWriter::new_append(writer.finish()?)?;")?;
+            writeln!(
+                stringifier,
+                "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
+            )?;
             replace_with_or_abort(writer, |old_writer| {
                 (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
                     zip::ZipWriter::new_append(old_writer.finish()?)
-                })().unwrap_or_else(|_| {
+                })()
+                .unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
@@ -229,7 +298,7 @@ fn do_operation<'k>(
     Ok(())
 }
 
-impl <'k> FuzzTestCase<'k> {
+impl<'k> FuzzTestCase<'k> {
     fn execute(self, stringifier: &mut impl Write, panic_on_error: bool) -> ZipResult<()> {
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
@@ -251,7 +320,7 @@ impl <'k> FuzzTestCase<'k> {
                 self.flush_on_finish_file,
                 &mut files_added,
                 stringifier,
-                panic_on_error
+                panic_on_error,
             );
         }
         if final_reopen {
@@ -263,14 +332,21 @@ impl <'k> FuzzTestCase<'k> {
     }
 }
 
-impl <'k> Debug for FuzzTestCase<'k> {
+impl<'k> Debug for FuzzTestCase<'k> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.initial_junk.is_empty() {
-            writeln!(f, "let mut writer = ZipWriter::new(Cursor::new(Vec::new()));")?;
+            writeln!(
+                f,
+                "let mut writer = ZipWriter::new(Cursor::new(Vec::new()));"
+            )?;
         } else {
-            writeln!(f, "let mut initial_junk = Cursor::new(vec!{:?});\n\
+            writeln!(
+                f,
+                "let mut initial_junk = Cursor::new(vec!{:?});\n\
                          initial_junk.seek(SeekFrom::End(0))?;\n\
-                         let mut writer = ZipWriter::new(initial_junk);", &self.initial_junk)?;
+                         let mut writer = ZipWriter::new(initial_junk);",
+                &self.initial_junk
+            )?;
         }
         let _ = self.clone().execute(f, false);
         Ok(())
