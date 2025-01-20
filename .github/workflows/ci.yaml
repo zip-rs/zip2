@@ -45,8 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
-
-      - run: cargo fmt --all -- --check
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: fmt fuzz_read
+        run: cargo fmt --manifest-path fuzz_read/Cargo.toml -- --check
+      - name: fmt fuzz_write
+        run: cargo fmt --manifest-path fuzz_write/Cargo.toml -- --check
 
   check_minimal_versions:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
