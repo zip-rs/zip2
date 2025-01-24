@@ -88,12 +88,14 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain add nightly && rustup default nightly
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl
 
       - name: cargo afl system-config
         run: cargo afl system-config
+      - name: clippy
+        run: cargo afl clippy --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml -- -D warnings
       - name: compile fuzz
         run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
@@ -136,12 +138,14 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain add nightly && rustup default nightly
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl
 
       - name: cargo afl system-config
         run: cargo afl system-config
+      - name: clippy
+        run: cargo afl clippy --no-default-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml -- -D warnings
       - name: compile fuzz
         run: cargo afl build --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
@@ -176,12 +180,14 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain add nightly && rustup default nightly
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl
 
       - name: cargo afl system-config
         run: cargo afl system-config
+      - name: clippy
+        run: cargo afl clippy --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml -- -D warnings
       - name: compile fuzz
         run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
@@ -224,12 +230,14 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain add nightly && rustup default nightly
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl
 
       - name: cargo afl system-config
         run: cargo afl system-config
+      - name: clippy
+        run: cargo afl clippy --no-default-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml -- -D warnings
       - name: compile fuzz
         run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
