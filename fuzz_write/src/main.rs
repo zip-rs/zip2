@@ -49,11 +49,11 @@ pub struct FileOperation<'k> {
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
-impl<'k> FileOperation<'k> {
+impl FileOperation<'_> {
     fn get_path(&self) -> Option<PathBuf> {
         match &self.basic {
             BasicFileOperation::SetArchiveComment(_) => None,
-            BasicFileOperation::WriteDirectory(_) => Some(self.path.join("/")),
+            BasicFileOperation::WriteDirectory(_) => Some(self.path.join("")),
             BasicFileOperation::MergeWithOtherFile { operations, .. } => operations
                 .iter()
                 .flat_map(|(op, abort)| if !abort { op.get_path() } else { None })
@@ -84,9 +84,9 @@ fn deduplicate_paths(copy: &mut PathBuf, original: &PathBuf) {
     }
 }
 
-fn do_operation<'k>(
+fn do_operation(
     writer: &mut zip::ZipWriter<Cursor<Vec<u8>>>,
-    operation: FileOperation<'k>,
+    operation: FileOperation<'_>,
     abort: bool,
     flush_on_finish_file: bool,
     files_added: &mut usize,
@@ -125,7 +125,7 @@ fn do_operation<'k>(
             writer.start_file_from_path(&*path, options)?;
             for chunk in contents.iter() {
                 writeln!(stringifier, "writer.write_all(&{:?})?;", chunk)?;
-                writer.write_all(&chunk)?;
+                writer.write_all(chunk)?;
             }
             *files_added += 1;
         }
@@ -298,7 +298,7 @@ fn do_operation<'k>(
     Ok(())
 }
 
-impl<'k> FuzzTestCase<'k> {
+impl FuzzTestCase<'_> {
     fn execute(self, stringifier: &mut impl Write, panic_on_error: bool) -> ZipResult<()> {
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
@@ -332,7 +332,7 @@ impl<'k> FuzzTestCase<'k> {
     }
 }
 
-impl<'k> Debug for FuzzTestCase<'k> {
+impl Debug for FuzzTestCase<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.initial_junk.is_empty() {
             writeln!(
