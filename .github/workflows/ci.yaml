@@ -136,6 +136,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
+          components: clippy
       - name: Install afl
         uses: actions-rs/cargo@v1
         with:
@@ -146,6 +147,11 @@ jobs:
         with:
           command: afl
           args: system-config
+      - name: clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: clippy --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml -- -D warnings
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
@@ -205,6 +211,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
+          components: clippy
       - name: Install afl
         uses: actions-rs/cargo@v1
         with:
@@ -215,6 +222,11 @@ jobs:
         with:
           command: afl
           args: system-config
+      - name: clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: clippy --no-default-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml -- -D warnings
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
@@ -263,6 +275,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
+          components: clippy
       - name: Install afl
         uses: actions-rs/cargo@v1
         with:
@@ -273,6 +286,11 @@ jobs:
         with:
           command: afl
           args: system-config
+      - name: clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: clippy --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml -- -D warnings
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
@@ -332,6 +350,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
+          components: clippy
       - name: Install afl
         uses: actions-rs/cargo@v1
         with:
@@ -342,6 +361,11 @@ jobs:
         with:
           command: afl
           args: system-config
+      - name: clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: clippy --no-default-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml -- -D warnings
       - name: compile fuzz
         uses: actions-rs/cargo@v1
         with:
