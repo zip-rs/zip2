@@ -13,7 +13,7 @@ on:
 
 env:
   RUSTFLAGS: -Dwarnings
-  MACOSX_DEPLOYMENT_TARGET: "11.0"
+  MACOSX_DEPLOYMENT_TARGET: "14.5"
 
 jobs:
   build_and_test:
