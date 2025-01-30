@@ -237,7 +237,7 @@ impl<W: Write> AesWriter<W> {
         let mut encrypted_file_header = Vec::with_capacity(salt_length + 2);
 
         let mut salt = vec![0; salt_length];
-        rand::thread_rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut salt);
         encrypted_file_header.write_all(&salt)?;
 
         // Derive a key from the password and salt.  The length depends on the aes key length
