@@ -12,6 +12,9 @@ use zip::ZipArchive;
 #[cfg(all(feature = "parallelism", feature = "bzip2", unix))]
 use zip::read::{split_extract, ExtractionParameters};
 
+#[cfg(feature = "parallelism")]
+use num_cpus;
+
 /* This archive has a set of entries repeated 20x:
  * - 200K random data, stored uncompressed (CompressionMethod::Stored)
  * - 246K text data (the project gutenberg html version of king lear)
@@ -48,9 +51,6 @@ fn extract_basic(bench: &mut Bencher) {
 }
 
 #[cfg(all(feature = "parallelism", feature = "bzip2", unix))]
-const DECOMPRESSION_THREADS: usize = 8;
-
-#[cfg(all(feature = "parallelism", feature = "bzip2", unix))]
 fn extract_split(bench: &mut Bencher) {
     let readable_archive = get_test_archive().unwrap();
     let total_size: u64 = readable_archive
@@ -60,7 +60,7 @@ fn extract_split(bench: &mut Bencher) {
         .unwrap();
 
     let params = ExtractionParameters {
-        decompression_threads: DECOMPRESSION_THREADS,
+        decompression_threads: num_cpus::get(),
         ..Default::default()
     };
 

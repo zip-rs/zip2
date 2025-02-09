@@ -601,6 +601,7 @@ pub mod handle_creation {
 #[cfg(unix)]
 pub mod split_extraction {
     use displaydoc::Display;
+    use num_cpus;
     use thiserror::Error;
 
     use std::fs;
@@ -710,7 +711,7 @@ pub mod split_extraction {
     pub struct ExtractionParameters {
         /// Number of threads used for decompression.
         ///
-        /// Default value: 4.
+        /// Default value: number of available cpus via [`num_cpus::get()`].
         ///
         /// Note that multiple times this many threads will be spawned by [`split_extract()`] as
         /// part of the pipelined process. Only this many threads will be used to perform
@@ -748,7 +749,10 @@ pub mod split_extraction {
     impl Default for ExtractionParameters {
         fn default() -> Self {
             Self {
-                decompression_threads: 4,
+                /* NB: this will perform a syscall. We still probably want to call this dynamically
+                 * instead of globally caching the call, in order to respect the dynamic value of
+                 * e.g. sched affinity. */
+                decompression_threads: num_cpus::get(),
                 decompression_copy_buffer_length: 1024 * 1024,
                 file_range_copy_buffer_length: 1024 * 1024,
                 #[cfg(not(target_os = "linux"))]
