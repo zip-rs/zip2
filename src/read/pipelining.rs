@@ -752,7 +752,7 @@ pub mod split_extraction {
                 /* NB: this will perform a syscall. We still probably want to call this dynamically
                  * instead of globally caching the call, in order to respect the dynamic value of
                  * e.g. sched affinity. */
-                decompression_threads: num_cpus::get(),
+                decompression_threads: num_cpus::get() / 3,
                 decompression_copy_buffer_length: 1024 * 1024,
                 file_range_copy_buffer_length: 1024 * 1024,
                 #[cfg(not(target_os = "linux"))]

@@ -60,7 +60,7 @@ fn extract_split(bench: &mut Bencher) {
         .unwrap();
 
     let params = ExtractionParameters {
-        decompression_threads: num_cpus::get(),
+        decompression_threads: num_cpus::get() / 3,
         ..Default::default()
     };
 
