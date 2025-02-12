@@ -1,6 +1,5 @@
 //! Traits for splitting and teeing file contents into multiple parallel streams.
 
-#![allow(clippy::needless_lifetimes)]
 #![cfg_attr(not(unix), allow(dead_code))]
 
 macro_rules! interruptible_buffered_io_op {
@@ -230,13 +229,13 @@ pub mod file {
             }
         }
 
-        impl<'fd> FixedFile for FileInput<'fd> {
+        impl FixedFile for FileInput<'_> {
             fn extent(&self) -> u64 {
                 self.extent
             }
         }
 
-        impl<'fd> InputFile for FileInput<'fd> {
+        impl InputFile for FileInput<'_> {
             fn pread(&self, start: u64, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
                 let count = self.range_len(start, buf.len())?;
 
@@ -300,7 +299,7 @@ pub mod file {
             _ph: PhantomData<&'infd u8>,
         }
 
-        impl<'infd, 'buf> FileBufferCopy<'infd, 'buf> {
+        impl<'buf> FileBufferCopy<'_, 'buf> {
             pub fn new(buf: &'buf mut [u8]) -> Self {
                 assert!(!buf.is_empty());
                 Self {
@@ -369,7 +368,6 @@ pub mod file {
                 Ok(i)
             }
 
-            #[allow(clippy::missing_transmute_annotations)]
             #[test]
             fn pread() {
                 let i = readable_file(b"asdf").unwrap();
@@ -379,12 +377,12 @@ pub mod file {
                 let mut buf: [MaybeUninit<u8>; 10] = unsafe { mem::transmute(buf) };
                 assert_eq!(2, ii.pread(0, &mut buf[..2]).unwrap());
                 assert_eq!(
-                    unsafe { mem::transmute::<_, &[u8]>(&buf[..2]) },
+                    unsafe { mem::transmute::<&[mem::MaybeUninit<u8>], &[u8]>(&buf[..2]) },
                     b"as".as_ref()
                 );
                 assert_eq!(3, ii.pread(1, &mut buf[4..]).unwrap());
                 assert_eq!(
-                    unsafe { mem::transmute::<_, &[u8]>(&buf[..]) },
+                    unsafe { mem::transmute::<&[mem::MaybeUninit<u8>], &[u8]>(&buf[..]) },
                     &[b'a', b's', 0, 0, b's', b'd', b'f', 0, 0, 0]
                 );
             }
@@ -445,7 +443,7 @@ pub mod file {
 
         pub struct FileCopy<'infd>(PhantomData<&'infd u8>);
 
-        impl<'infd> FileCopy<'infd> {
+        impl FileCopy<'_> {
             pub const fn new() -> Self {
                 Self(PhantomData)
             }
@@ -729,7 +727,7 @@ pub mod pipe {
             _ph: PhantomData<&'infd u8>,
         }
 
-        impl<'infd, 'buf> PipeWriteBufferSplicer<'infd, 'buf> {
+        impl<'buf> PipeWriteBufferSplicer<'_, 'buf> {
             #[allow(dead_code)]
             pub fn new(buf: &'buf mut [u8]) -> Self {
                 assert!(!buf.is_empty());
@@ -931,7 +929,7 @@ pub mod pipe {
 
         pub struct PipeWriteSplicer<'infd>(PhantomData<&'infd u8>);
 
-        impl<'infd> PipeWriteSplicer<'infd> {
+        impl PipeWriteSplicer<'_> {
             pub const fn new() -> Self {
                 Self(PhantomData)
             }

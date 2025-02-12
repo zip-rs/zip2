@@ -1,8 +1,5 @@
 //! Pipelined extraction into a filesystem directory.
 
-#![allow(clippy::needless_lifetimes)]
-#![allow(unknown_lints)]
-#![allow(non_local_definitions)]
 #![cfg_attr(not(unix), allow(dead_code))]
 
 pub mod path_splitting {
@@ -83,7 +80,7 @@ pub mod path_splitting {
         pub children: BTreeMap<&'a str, Box<FSEntry<'a, Data>>>,
     }
 
-    impl<'a, Data> Default for DirEntry<'a, Data> {
+    impl<Data> Default for DirEntry<'_, Data> {
         fn default() -> Self {
             Self {
                 properties: None,
@@ -404,16 +401,16 @@ pub mod handle_creation {
         }
     }
 
-    impl<'a> cmp::PartialEq for ZipDataHandle<'a> {
+    impl cmp::PartialEq for ZipDataHandle<'_> {
         #[inline(always)]
         fn eq(&self, other: &Self) -> bool {
             self.ptr() == other.ptr()
         }
     }
 
-    impl<'a> cmp::Eq for ZipDataHandle<'a> {}
+    impl cmp::Eq for ZipDataHandle<'_> {}
 
-    impl<'a> hash::Hash for ZipDataHandle<'a> {
+    impl hash::Hash for ZipDataHandle<'_> {
         #[inline(always)]
         fn hash<H: hash::Hasher>(&self, state: &mut H) {
             self.ptr().hash(state);
@@ -1159,12 +1156,9 @@ pub mod split_extraction {
             zip.add_directory("a/b", opts.unix_permissions(0o500))
                 .unwrap();
 
-            zip.start_file(
-                "d/e",
-                opts.compression_method(CompressionMethod::Deflated)
-                    .unix_permissions(0o755),
-            )
-            .unwrap();
+            #[cfg(feature = "_deflate-any")]
+            let opts = opts.compression_method(CompressionMethod::Deflated);
+            zip.start_file("d/e", opts.unix_permissions(0o755)).unwrap();
             zip.write_all(b"ffasedfasjkef").unwrap();
 
             /* Create readable archive and extraction dir. */
