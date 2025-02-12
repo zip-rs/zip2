@@ -80,14 +80,19 @@ pub mod path_splitting {
     #[derive(PartialEq, Eq, Debug, Clone)]
     pub(crate) struct DirEntry<'a, Data> {
         pub properties: Option<Data>,
-        pub children: BTreeMap<&'a str, Box<FSEntry<'a, Data>>>,
+        /* This is a mutually recursive data structure (trie), so we need to box it up somewhere.
+         * Boxing at this level allows b-tree values to be allocated within the b-tree allocation.
+         * Note that this data structure only ever exists temporarily, and is consumed by
+         * transform_entries_to_allocated_handles(). */
+        #[allow(clippy::box_collection)]
+        pub children: Box<BTreeMap<&'a str, FSEntry<'a, Data>>>,
     }
 
     impl<Data> Default for DirEntry<'_, Data> {
         fn default() -> Self {
             Self {
                 properties: None,
-                children: BTreeMap::new(),
+                children: Box::new(BTreeMap::new()),
             }
         }
     }
@@ -112,7 +117,7 @@ pub mod path_splitting {
      * any other data for the top-level extraction directory. */
     pub(crate) fn lexicographic_entry_trie<'a, Data>(
         all_entries: impl IntoIterator<Item = (&'a str, Data)>,
-    ) -> Result<BTreeMap<&'a str, Box<FSEntry<'a, Data>>>, PathSplitError<'a>>
+    ) -> Result<BTreeMap<&'a str, FSEntry<'a, Data>>, PathSplitError<'a>>
     where
         Data: DirByMode,
     {
@@ -142,8 +147,8 @@ pub mod path_splitting {
                 let next_subdir = cur_dir
                     .children
                     .entry(component)
-                    .or_insert_with(|| Box::new(FSEntry::Dir(DirEntry::default())));
-                cur_dir = match next_subdir.as_mut() {
+                    .or_insert_with(|| FSEntry::Dir(DirEntry::default()));
+                cur_dir = match next_subdir {
                     FSEntry::File(_) => {
                         return Err(PathSplitError::DuplicatePath(
                             entry_path,
@@ -163,9 +168,7 @@ pub mod path_splitting {
                             "an entry was already registered at the same path as this file entry",
                         ));
                     }
-                    cur_dir
-                        .children
-                        .insert(filename, Box::new(FSEntry::File(data)));
+                    cur_dir.children.insert(filename, FSEntry::File(data));
                 }
                 None => {
                     /* We can't handle duplicate directory entries for the exact same normalized
@@ -186,7 +189,7 @@ pub mod path_splitting {
             children,
         } = base_dir;
         debug_assert!(properties.is_none(), "setting metadata on the top-level extraction dir is not allowed and should have been filtered out");
-        Ok(children)
+        Ok(*children)
     }
 
     /* TODO: use proptest for all of this! */
@@ -248,42 +251,44 @@ pub mod path_splitting {
                         "a",
                         FSEntry::Dir(DirEntry {
                             properties: Some(2),
-                            children: [(
-                                "b",
-                                FSEntry::Dir(DirEntry {
-                                    properties: Some(1),
-                                    children: [
-                                        ("c", FSEntry::File(3).into()),
-                                        (
-                                            "f",
-                                            FSEntry::Dir(DirEntry {
-                                                properties: None,
-                                                children: [("g", FSEntry::File(6).into())]
-                                                    .into_iter()
-                                                    .collect(),
-                                            })
-                                            .into()
+                            children: Box::new(
+                                [(
+                                    "b",
+                                    FSEntry::Dir(DirEntry {
+                                        properties: Some(1),
+                                        children: Box::new(
+                                            [
+                                                ("c", FSEntry::File(3)),
+                                                (
+                                                    "f",
+                                                    FSEntry::Dir(DirEntry {
+                                                        properties: None,
+                                                        children: Box::new(
+                                                            [("g", FSEntry::File(6))]
+                                                                .into_iter()
+                                                                .collect()
+                                                        ),
+                                                    })
+                                                ),
+                                            ]
+                                            .into_iter()
+                                            .collect()
                                         ),
-                                    ]
-                                    .into_iter()
-                                    .collect(),
-                                })
-                                .into()
-                            )]
-                            .into_iter()
-                            .collect(),
+                                    })
+                                )]
+                                .into_iter()
+                                .collect()
+                            ),
                         })
-                        .into()
                     ),
                     (
                         "d",
                         FSEntry::Dir(DirEntry {
                             properties: Some(4),
-                            children: BTreeMap::new(),
+                            children: Box::new(BTreeMap::new()),
                         })
-                        .into()
                     ),
-                    ("e", FSEntry::File(5).into())
+                    ("e", FSEntry::File(5))
                 ]
                 .into_iter()
                 .collect()
@@ -316,45 +321,44 @@ pub mod path_splitting {
                         "a",
                         FSEntry::Dir(DirEntry {
                             properties: Some(Mode(2, false)),
-                            children: [(
-                                "b",
-                                FSEntry::Dir(DirEntry {
-                                    properties: Some(Mode(1, true)),
-                                    children: [
-                                        ("c", FSEntry::File(Mode(3, false)).into()),
-                                        (
-                                            "f",
-                                            FSEntry::Dir(DirEntry {
-                                                properties: None,
-                                                children: [(
-                                                    "g",
-                                                    FSEntry::File(Mode(6, false)).into()
-                                                )]
-                                                .into_iter()
-                                                .collect(),
-                                            })
-                                            .into()
+                            children: Box::new(
+                                [(
+                                    "b",
+                                    FSEntry::Dir(DirEntry {
+                                        properties: Some(Mode(1, true)),
+                                        children: Box::new(
+                                            [
+                                                ("c", FSEntry::File(Mode(3, false))),
+                                                (
+                                                    "f",
+                                                    FSEntry::Dir(DirEntry {
+                                                        properties: None,
+                                                        children: Box::new(
+                                                            [("g", FSEntry::File(Mode(6, false)))]
+                                                                .into_iter()
+                                                                .collect()
+                                                        ),
+                                                    })
+                                                ),
+                                            ]
+                                            .into_iter()
+                                            .collect()
                                         ),
-                                    ]
-                                    .into_iter()
-                                    .collect(),
-                                })
-                                .into()
-                            )]
-                            .into_iter()
-                            .collect(),
+                                    })
+                                )]
+                                .into_iter()
+                                .collect()
+                            ),
                         })
-                        .into()
                     ),
                     (
                         "d",
                         FSEntry::Dir(DirEntry {
                             properties: Some(Mode(4, true)),
-                            children: BTreeMap::new(),
+                            children: Box::new(BTreeMap::new()),
                         })
-                        .into()
                     ),
-                    ("e", FSEntry::File(Mode(5, false)).into())
+                    ("e", FSEntry::File(Mode(5, false)))
                 ]
                 .into_iter()
                 .collect()
@@ -438,7 +442,7 @@ pub mod handle_creation {
 
     pub(crate) fn transform_entries_to_allocated_handles<'a>(
         top_level_extraction_dir: &Path,
-        lex_entry_trie: impl IntoIterator<Item = (&'a str, Box<FSEntry<'a, &'a ZipFileData>>)>,
+        lex_entry_trie: impl IntoIterator<Item = (&'a str, FSEntry<'a, &'a ZipFileData>)>,
     ) -> Result<AllocatedHandles<'a>, HandleCreationError> {
         #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
@@ -453,17 +457,14 @@ pub mod handle_creation {
 
         #[allow(clippy::mutable_key_type)]
         let mut file_handle_mapping: HashMap<ZipDataHandle<'a>, fs::File> = HashMap::new();
-        let mut entry_queue: VecDeque<(PathBuf, Box<FSEntry<'a, &'a ZipFileData>>)> =
-            lex_entry_trie
-                .into_iter()
-                .map(|(entry_name, entry_data)| {
-                    (top_level_extraction_dir.join(entry_name), entry_data)
-                })
-                .collect();
+        let mut entry_queue: VecDeque<(PathBuf, FSEntry<'a, &'a ZipFileData>)> = lex_entry_trie
+            .into_iter()
+            .map(|(entry_name, entry_data)| (top_level_extraction_dir.join(entry_name), entry_data))
+            .collect();
         let mut perms_todo: Vec<(PathBuf, fs::Permissions)> = Vec::new();
 
         while let Some((path, entry)) = entry_queue.pop_front() {
-            match *entry {
+            match entry {
                 FSEntry::File(data) => {
                     let key = ZipDataHandle::wrap(data);
 
