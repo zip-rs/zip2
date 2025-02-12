@@ -31,7 +31,7 @@ bzip2 = { version = "0.5.0", optional = true }
 chrono = { version = "0.4", optional = true }
 constant_time_eq = { version = "0.3", optional = true }
 crc32fast = "1.4"
-displaydoc = { version = "0.2", default-features = false }
+displaydoc = "0.2.5"
 flate2 = { version = "1.0", default-features = false, optional = true }
 indexmap = "2"
 hmac = { version = "0.12", optional = true, features = ["reset"] }
