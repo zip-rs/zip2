@@ -29,6 +29,9 @@ pub mod path_splitting {
          * filesystems treat a backslash as a normal character. Thus they should be allowed on Unix
          * and replaced with \u{fffd} on Windows. */
         if entry_path.starts_with('/') {
+            /* FIXME: we need to be able to accept absolute paths which resolve to somewhere under
+             * the specified extraction directory (e.g. when an OS installer is unzipping the
+             * contents of the root filesystem). These can be translated into unrooted paths. */
             return Err(PathSplitError::ExtractionPathEscapesDirectory(
                 entry_path,
                 "path began with '/' and is absolute",
