@@ -525,15 +525,12 @@ pub mod split_extraction {
         err_sender: mpsc::Sender<SplitExtractionError>,
         f: impl FnOnce() -> Result<(), SplitExtractionError> + Send + 'scope,
     ) -> impl FnOnce() + Send + 'scope {
-        move || match f() {
-            Ok(()) => (),
-            #[allow(clippy::single_match)]
-            Err(e) => match err_sender.send(e) {
-                Ok(()) => (),
+        move || {
+            if let Err(e) = f() {
                 /* We use an async sender, so this should only error if the receiver has hung
                  * up, which occurs when we return a previous error from the main thread. */
-                Err(mpsc::SendError(_)) => (),
-            },
+                let _ = err_sender.send(e);
+            }
         }
     }
 
