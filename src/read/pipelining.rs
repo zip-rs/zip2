@@ -103,6 +103,12 @@ pub mod path_splitting {
         File(Data),
     }
 
+    impl<'a, Data> From<DirEntry<'a, Data>> for FSEntry<'a, Data> {
+        fn from(x: DirEntry<'a, Data>) -> Self {
+            Self::Dir(x)
+        }
+    }
+
     pub(crate) trait DirByMode {
         fn is_dir_by_mode(&self) -> bool;
     }
@@ -147,7 +153,7 @@ pub mod path_splitting {
                 let next_subdir = cur_dir
                     .children
                     .entry(component)
-                    .or_insert_with(|| FSEntry::Dir(DirEntry::default()));
+                    .or_insert_with(|| DirEntry::default().into());
                 cur_dir = match next_subdir {
                     FSEntry::File(_) => {
                         return Err(PathSplitError::DuplicatePath(
