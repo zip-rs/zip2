@@ -41,6 +41,8 @@ pub(crate) mod xz;
 pub(crate) mod magic_finder;
 
 #[cfg(feature = "parallelism")]
+pub(crate) mod handle_creation;
+#[cfg(feature = "parallelism")]
 pub(crate) mod pipelining;
 #[cfg(all(unix, feature = "parallelism"))]
 pub use pipelining::split_extraction::{split_extract, ExtractionParameters, SplitExtractionError};
