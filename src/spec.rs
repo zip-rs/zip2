@@ -162,6 +162,11 @@ pub(crate) unsafe trait Pod: Copy + 'static {
     fn as_bytes_mut(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self as *mut Self as *mut u8, mem::size_of::<Self>()) }
     }
+
+    #[inline]
+    fn as_uninit_bytes_mut(&mut self) -> &mut [mem::MaybeUninit<u8>] {
+        unsafe { mem::transmute(self.as_bytes_mut()) }
+    }
 }
 
 pub(crate) trait FixedSizeBlock: Pod {
@@ -174,27 +179,22 @@ pub(crate) trait FixedSizeBlock: Pod {
     #[allow(clippy::wrong_self_convention)]
     fn from_le(self) -> Self;
 
-    #[allow(dead_code)]
-    fn interpret(input_block: &[u8]) -> ZipResult<Self> {
-        let mut block = Self::zeroed();
-        block.as_bytes_mut().copy_from_slice(input_block);
-        let block = Self::from_le(block);
+    /// Convert endianness and check the magic value.
+    #[allow(clippy::wrong_self_convention)]
+    fn validate(self) -> ZipResult<Self> {
+        let block = Self::from_le(self);
 
         if block.magic() != Self::MAGIC {
             return Err(Self::WRONG_MAGIC_ERROR);
         }
+
         Ok(block)
     }
 
     fn parse<R: Read>(reader: &mut R) -> ZipResult<Self> {
         let mut block = Self::zeroed();
         reader.read_exact(block.as_bytes_mut())?;
-        let block = Self::from_le(block);
-
-        if block.magic() != Self::MAGIC {
-            return Err(Self::WRONG_MAGIC_ERROR);
-        }
-        Ok(block)
+        Self::validate(block)
     }
 
     fn to_le(self) -> Self;

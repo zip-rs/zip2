@@ -371,7 +371,7 @@ pub mod split_extraction {
 
     use std::fs;
     use std::io;
-    use std::mem::{self, MaybeUninit};
+    use std::mem;
     use std::path::Path;
     use std::pin::Pin;
     use std::sync::mpsc;
@@ -381,7 +381,7 @@ pub mod split_extraction {
     use crate::read::ZipArchive;
     use crate::read::{make_crypto_reader, make_reader};
     use crate::result::ZipError;
-    use crate::spec::FixedSizeBlock;
+    use crate::spec::{FixedSizeBlock, Pod};
     use crate::types::{ZipFileData, ZipLocalEntryBlock};
 
     #[cfg(not(target_os = "linux"))]
@@ -435,20 +435,15 @@ pub mod split_extraction {
             return Ok(*data_start);
         }
 
+        // Essentially the same logic as FixedSizeBlock::parse(), but adapted for pread().
         let block = {
-            let block: MaybeUninit<[u8; mem::size_of::<ZipLocalEntryBlock>()]> =
-                MaybeUninit::uninit();
-            let mut block: [MaybeUninit<u8>; mem::size_of::<ZipLocalEntryBlock>()] =
-                unsafe { mem::transmute(block) };
+            let mut block = ZipLocalEntryBlock::zeroed();
 
-            input_file.pread_all(data.header_start, &mut block[..])?;
+            input_file.pread_all(data.header_start, block.as_uninit_bytes_mut())?;
 
-            let block: MaybeUninit<[u8; mem::size_of::<ZipLocalEntryBlock>()]> =
-                unsafe { mem::transmute(block) };
-            unsafe { block.assume_init() }
+            // Convert endianness and check the magic value.
+            ZipLocalEntryBlock::validate(block)?
         };
-        // Parse static-sized fields and check the magic value.
-        let block = ZipLocalEntryBlock::interpret(block.as_ref())?;
 
         // Calculate the end of the local header from the fields we just parsed.
         let variable_fields_len: u64 =
