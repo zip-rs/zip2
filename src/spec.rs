@@ -163,6 +163,7 @@ pub(crate) unsafe trait Pod: Copy + 'static {
         unsafe { slice::from_raw_parts_mut(self as *mut Self as *mut u8, mem::size_of::<Self>()) }
     }
 
+    #[cfg_attr(not(feature = "parallelism"), allow(dead_code))]
     #[inline]
     fn as_uninit_bytes_mut(&mut self) -> &mut [mem::MaybeUninit<u8>] {
         unsafe { mem::transmute(self.as_bytes_mut()) }
