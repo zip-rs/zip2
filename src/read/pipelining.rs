@@ -459,7 +459,7 @@ pub mod split_extraction {
             Ok(()) => (),
             // If the value was already set in the meantime, ensure it matches.
             Err(_) => {
-                assert_eq!(*data.data_start.get().unwrap(), data_start);
+                debug_assert_eq!(*data.data_start.get().unwrap(), data_start);
             }
         }
         Ok(data_start)
