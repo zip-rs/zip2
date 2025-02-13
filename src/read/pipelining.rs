@@ -267,20 +267,16 @@ pub mod path_splitting {
                                                     FSEntry::Dir(DirEntry {
                                                         properties: None,
                                                         children: Box::new(
-                                                            [("g", FSEntry::File(6))]
-                                                                .into_iter()
-                                                                .collect()
+                                                            [("g", FSEntry::File(6))].into()
                                                         ),
                                                     })
                                                 ),
                                             ]
-                                            .into_iter()
-                                            .collect()
+                                            .into()
                                         ),
                                     })
                                 )]
-                                .into_iter()
-                                .collect()
+                                .into()
                             ),
                         })
                     ),
@@ -293,8 +289,7 @@ pub mod path_splitting {
                     ),
                     ("e", FSEntry::File(5))
                 ]
-                .into_iter()
-                .collect()
+                .into()
             );
             Ok(())
         }
@@ -338,19 +333,16 @@ pub mod path_splitting {
                                                         properties: None,
                                                         children: Box::new(
                                                             [("g", FSEntry::File(Mode(6, false)))]
-                                                                .into_iter()
-                                                                .collect()
+                                                                .into()
                                                         ),
                                                     })
                                                 ),
                                             ]
-                                            .into_iter()
-                                            .collect()
+                                            .into()
                                         ),
                                     })
                                 )]
-                                .into_iter()
-                                .collect()
+                                .into()
                             ),
                         })
                     ),
@@ -363,8 +355,7 @@ pub mod path_splitting {
                     ),
                     ("e", FSEntry::File(Mode(5, false)))
                 ]
-                .into_iter()
-                .collect()
+                .into()
             );
             Ok(())
         }
