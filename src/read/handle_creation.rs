@@ -27,6 +27,7 @@ pub(crate) struct AllocatedHandles<'a> {
     pub perms_todo: Vec<(PathBuf, fs::Permissions)>,
 }
 
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) fn transform_entries_to_allocated_handles<'a>(
     top_level_extraction_dir: &Path,
     lex_entry_trie: impl IntoIterator<Item = (&'a str, FSEntry<'a, &'a ZipFileData>)>,
