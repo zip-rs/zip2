@@ -22,6 +22,7 @@ use crate::types::ZipFileData;
  * symlink. This is less of a problem with the synchronous in-order extraction because it
  * creates any symlinks immediately (it imposes a total ordering dependency over all entries).
  */
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct AllocatedHandles<'a> {
     pub file_handle_mapping: HashMap<ByAddress<Pin<&'a ZipFileData>>, fs::File>,
     pub perms_todo: Vec<(PathBuf, fs::Permissions)>,
