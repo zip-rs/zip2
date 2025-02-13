@@ -406,8 +406,6 @@ pub mod split_extraction {
     /// Errors encountered during the split pipelined extraction process.
     #[derive(Debug, Display, Error)]
     pub enum SplitExtractionError {
-        /// i/o error: {0}
-        Io(#[from] io::Error),
         /// zip error: {0}
         Zip(#[from] ZipError),
         /// path split error: {0}
@@ -418,6 +416,12 @@ pub mod split_extraction {
         fn from(e: PathSplitError<'a>) -> Self {
             let msg = format!("{}", e);
             Self::PathSplit(msg)
+        }
+    }
+
+    impl From<io::Error> for SplitExtractionError {
+        fn from(x: io::Error) -> Self {
+            Self::Zip(x.into())
         }
     }
 
