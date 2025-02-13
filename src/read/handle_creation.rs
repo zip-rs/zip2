@@ -21,6 +21,9 @@ use crate::types::ZipFileData;
  * before we create any directories or allocate any output file handles that dereference that
  * symlink. This is less of a problem with the synchronous in-order extraction because it
  * creates any symlinks immediately (it imposes a total ordering dependency over all entries).
+ *
+ * Note: futures::future::Shared is ideal for a dependency DAG of shared tasks like this:
+ *       https://docs.rs/futures/latest/futures/future/struct.Shared.html
  */
 #[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct AllocatedHandles<'a> {
