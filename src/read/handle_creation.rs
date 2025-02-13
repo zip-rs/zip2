@@ -1,8 +1,5 @@
 //! Prepare the output directory structure for extraction and pre-allocate file handles.
 
-use displaydoc::Display;
-use thiserror::Error;
-
 use std::cmp;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
@@ -12,13 +9,6 @@ use std::path::{Path, PathBuf};
 
 use crate::read::pipelining::path_splitting::{DirEntry, FSEntry};
 use crate::types::ZipFileData;
-
-/// Errors encountered when creating output handles for extracting entries to.
-#[derive(Debug, Display, Error)]
-pub enum HandleCreationError {
-    /// i/o error: {0}
-    Io(#[from] io::Error),
-}
 
 /// Wrapper for memory location of the ZipFileData in Shared.
 ///
@@ -74,7 +64,7 @@ pub(crate) struct AllocatedHandles<'a> {
 pub(crate) fn transform_entries_to_allocated_handles<'a>(
     top_level_extraction_dir: &Path,
     lex_entry_trie: impl IntoIterator<Item = (&'a str, FSEntry<'a, &'a ZipFileData>)>,
-) -> Result<AllocatedHandles<'a>, HandleCreationError> {
+) -> Result<AllocatedHandles<'a>, io::Error> {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
@@ -126,7 +116,7 @@ pub(crate) fn transform_entries_to_allocated_handles<'a>(
                  * perms_todo! */
                 match fs::create_dir(&path) {
                     Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
-                    Err(e) => return Err(e.into()),
+                    Err(e) => return Err(e),
                     Ok(()) => (),
                 }
 

@@ -400,8 +400,7 @@ pub mod split_extraction {
 
     use super::path_splitting::{lexicographic_entry_trie, PathSplitError};
     use crate::read::handle_creation::{
-        transform_entries_to_allocated_handles, AllocatedHandles, HandleCreationError,
-        ZipDataHandle,
+        transform_entries_to_allocated_handles, AllocatedHandles, ZipDataHandle,
     };
 
     /// Errors encountered during the split pipelined extraction process.
@@ -413,8 +412,6 @@ pub mod split_extraction {
         Zip(#[from] ZipError),
         /// path split error: {0}
         PathSplit(String),
-        /// handle creation error: {0}
-        HandleCreation(#[from] HandleCreationError),
     }
 
     impl<'a> From<PathSplitError<'a>> for SplitExtractionError {
