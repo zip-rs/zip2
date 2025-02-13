@@ -1,49 +1,15 @@
 //! Prepare the output directory structure for extraction and pre-allocate file handles.
 
-use std::cmp;
+use by_address::ByAddress;
+
 use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::hash;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use crate::read::pipelining::path_splitting::{DirEntry, FSEntry};
 use crate::types::ZipFileData;
-
-/// Wrapper for memory location of the ZipFileData in Shared.
-///
-/// Enables quick comparison and hash table lookup without needing to implement Hash/Eq for
-/// ZipFileData more generally.
-#[derive(Debug)]
-pub(crate) struct ZipDataHandle<'a>(&'a ZipFileData);
-
-impl<'a> ZipDataHandle<'a> {
-    #[inline(always)]
-    const fn ptr(&self) -> *const ZipFileData {
-        self.0
-    }
-
-    #[inline(always)]
-    pub const fn wrap(data: &'a ZipFileData) -> Self {
-        Self(data)
-    }
-}
-
-impl cmp::PartialEq for ZipDataHandle<'_> {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.ptr() == other.ptr()
-    }
-}
-
-impl cmp::Eq for ZipDataHandle<'_> {}
-
-impl hash::Hash for ZipDataHandle<'_> {
-    #[inline(always)]
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.ptr().hash(state);
-    }
-}
 
 /* TODO: figure out how to handle symlinks! These are especially difficult because:
  * (1) windows symlinks files and directories differently, and only on newer windows versions,
@@ -57,7 +23,7 @@ impl hash::Hash for ZipDataHandle<'_> {
  * creates any symlinks immediately (it imposes a total ordering dependency over all entries).
  */
 pub(crate) struct AllocatedHandles<'a> {
-    pub file_handle_mapping: HashMap<ZipDataHandle<'a>, fs::File>,
+    pub file_handle_mapping: HashMap<ByAddress<Pin<&'a ZipFileData>>, fs::File>,
     pub perms_todo: Vec<(PathBuf, fs::Permissions)>,
 }
 
@@ -77,7 +43,8 @@ pub(crate) fn transform_entries_to_allocated_handles<'a>(
     fs::create_dir_all(top_level_extraction_dir)?;
 
     #[allow(clippy::mutable_key_type)]
-    let mut file_handle_mapping: HashMap<ZipDataHandle<'a>, fs::File> = HashMap::new();
+    let mut file_handle_mapping: HashMap<ByAddress<Pin<&'a ZipFileData>>, fs::File> =
+        HashMap::new();
     let mut entry_queue: VecDeque<(PathBuf, FSEntry<'a, &'a ZipFileData>)> = lex_entry_trie
         .into_iter()
         .map(|(entry_name, entry_data)| (top_level_extraction_dir.join(entry_name), entry_data))
@@ -87,7 +54,7 @@ pub(crate) fn transform_entries_to_allocated_handles<'a>(
     while let Some((path, entry)) = entry_queue.pop_front() {
         match entry {
             FSEntry::File(data) => {
-                let key = ZipDataHandle::wrap(data);
+                let key = ByAddress(Pin::new(data));
 
                 #[cfg_attr(not(unix), allow(unused_variables))]
                 if let Some(mode) = data.unix_mode() {
@@ -196,7 +163,7 @@ mod test {
         let (file_data, mut file) = files.pop().unwrap();
         assert_eq!(
             file_data,
-            ZipDataHandle::wrap(zip.shared.files.get_index(0).unwrap().1)
+            ByAddress(Pin::new(zip.shared.files.get_index(0).unwrap().1))
         );
         /* We didn't write anything to the file, so it's still empty at this point. */
         assert_eq!(b"", &fs::read(td.path().join("a/b/c")).unwrap()[..]);

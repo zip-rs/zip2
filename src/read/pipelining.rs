@@ -364,6 +364,7 @@ pub mod path_splitting {
 
 #[cfg(unix)]
 pub mod split_extraction {
+    use by_address::ByAddress;
     use displaydoc::Display;
     use num_cpus;
     use thiserror::Error;
@@ -372,6 +373,7 @@ pub mod split_extraction {
     use std::io;
     use std::mem::{self, MaybeUninit};
     use std::path::Path;
+    use std::pin::Pin;
     use std::sync::mpsc;
     use std::thread;
 
@@ -399,9 +401,7 @@ pub mod split_extraction {
     };
 
     use super::path_splitting::{lexicographic_entry_trie, PathSplitError};
-    use crate::read::handle_creation::{
-        transform_entries_to_allocated_handles, AllocatedHandles, ZipDataHandle,
-    };
+    use crate::read::handle_creation::{transform_entries_to_allocated_handles, AllocatedHandles};
 
     /// Errors encountered during the split pipelined extraction process.
     #[derive(Debug, Display, Error)]
@@ -847,7 +847,7 @@ pub mod split_extraction {
                              * us to quickly test membership without hashing any
                              * arbitrary-length strings/etc, and avoids the need to impl Hash/Eq
                              * on ZipFileData more generally. */
-                            let handle = ZipDataHandle::wrap(entry);
+                            let handle = ByAddress(Pin::new(entry));
                             /* Wrap the preallocated output handle for this entry in our
                              * linux-specific wrapper. */
                             let output_file = file_handle_mapping.remove(&handle).unwrap();
