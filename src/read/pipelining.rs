@@ -204,22 +204,20 @@ pub mod path_splitting {
         use super::*;
 
         #[test]
-        fn path_normalization() {
+        fn path_normalization() -> Result<(), PathSplitError<'static>> {
             assert_eq!(
-                normalize_parent_dirs("a/b/c").unwrap(),
+                normalize_parent_dirs("a/b/c")?,
                 (vec!["a", "b", "c"], false)
             );
-            assert_eq!(normalize_parent_dirs("./a").unwrap(), (vec!["a"], false));
-            assert_eq!(normalize_parent_dirs("a/../b/").unwrap(), (vec!["b"], true));
-            assert_eq!(normalize_parent_dirs("a/").unwrap(), (vec!["a"], true));
+            assert_eq!(normalize_parent_dirs("./a")?, (vec!["a"], false));
+            assert_eq!(normalize_parent_dirs("a/../b/")?, (vec!["b"], true));
+            assert_eq!(normalize_parent_dirs("a/")?, (vec!["a"], true));
             assert!(normalize_parent_dirs("/a").is_err());
-            assert_eq!(normalize_parent_dirs("\\a").unwrap(), (vec!["\\a"], false));
-            assert_eq!(
-                normalize_parent_dirs("a\\b/").unwrap(),
-                (vec!["a\\b"], true)
-            );
+            assert_eq!(normalize_parent_dirs("\\a")?, (vec!["\\a"], false));
+            assert_eq!(normalize_parent_dirs("a\\b/")?, (vec!["a\\b"], true));
             assert!(normalize_parent_dirs("a/../../b").is_err());
-            assert_eq!(normalize_parent_dirs("./").unwrap(), (vec![], true));
+            assert_eq!(normalize_parent_dirs("./")?, (vec![], true));
+            Ok(())
         }
 
         #[test]
@@ -241,7 +239,7 @@ pub mod path_splitting {
         }
 
         #[test]
-        fn lex_trie() {
+        fn lex_trie() -> Result<(), PathSplitError<'static>> {
             assert_eq!(
                 lexicographic_entry_trie([
                     ("a/b/", 1usize),
@@ -250,8 +248,7 @@ pub mod path_splitting {
                     ("d/", 4),
                     ("e", 5),
                     ("a/b/f/g", 6),
-                ])
-                .unwrap(),
+                ])?,
                 [
                     (
                         "a",
@@ -299,10 +296,11 @@ pub mod path_splitting {
                 .into_iter()
                 .collect()
             );
+            Ok(())
         }
 
         #[test]
-        fn lex_trie_dir_by_mode() {
+        fn lex_trie_dir_by_mode() -> Result<(), PathSplitError<'static>> {
             #[derive(PartialEq, Eq, Debug)]
             struct Mode(usize, bool);
 
@@ -320,8 +318,7 @@ pub mod path_splitting {
                     ("d", Mode(4, true)),
                     ("e", Mode(5, false)),
                     ("a/b/f/g", Mode(6, false)),
-                ])
-                .unwrap(),
+                ])?,
                 [
                     (
                         "a",
@@ -369,6 +366,7 @@ pub mod path_splitting {
                 .into_iter()
                 .collect()
             );
+            Ok(())
         }
     }
 }
