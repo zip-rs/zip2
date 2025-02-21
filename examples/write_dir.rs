@@ -27,6 +27,7 @@ enum CompressionMethod {
     Deflated,
     DeflatedZlib,
     DeflatedZlibNg,
+    DeflatedZlibRs,
     Bzip2,
     Zstd,
 }
@@ -66,6 +67,15 @@ fn real_main() -> i32 {
                 return 1;
             }
             #[cfg(feature = "deflate-zlib-ng")]
+            zip::CompressionMethod::Deflated
+        }
+        CompressionMethod::DeflatedZlibRs => {
+            #[cfg(not(feature = "deflate-zlib-rs"))]
+            {
+                println!("The `deflate-zlib-rs` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "deflate-zlib-rs")]
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::Bzip2 => {
