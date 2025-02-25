@@ -1480,7 +1480,7 @@ impl<'a> ZipFile<'a> {
 /// Methods for retrieving information on zip files
 impl ZipFile<'_> {
     /// iterate through all extra fields
-    pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
+    pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> + use<'_> {
         self.data.extra_fields.iter()
     }
 }

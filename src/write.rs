@@ -536,10 +536,10 @@ impl FileOptions<'_, ExtendedFileOptions> {
     /// Removes the extra data fields.
     #[must_use]
     pub fn clear_extra_data(mut self) -> Self {
-        if self.extended_options.extra_data.len() > 0 {
+        if !self.extended_options.extra_data.is_empty() {
             self.extended_options.extra_data = Arc::new(vec![]);
         }
-        if self.extended_options.central_extra_data.len() > 0 {
+        if !self.extended_options.central_extra_data.is_empty() {
             self.extended_options.central_extra_data = Arc::new(vec![]);
         }
         self
@@ -1805,17 +1805,17 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
     fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match self {
-            Storer(ref mut w) => Some(w as &mut dyn Write),
+            &mut Storer(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
+            &mut GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::BufferedZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
+            &mut GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
-            GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
+            &mut GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
             Closed => None,
         }
     }
