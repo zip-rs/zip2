@@ -131,6 +131,17 @@ jobs:
         with:
           command: install
           args: cargo-afl
+      - name: Install llvm
+        run: |
+          LLVM_VERSION="$(rustc --version -v | grep '^LLVM version:' | grep -o '[0-9]\+' | head -n 1)"
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+      - name: cargo afl config
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: config --build --plugins
       - name: cargo afl system-config
         uses: actions-rs/cargo@v1
         with:
@@ -200,6 +211,17 @@ jobs:
         with:
           command: install
           args: cargo-afl
+      - name: Install llvm
+        run: |
+          LLVM_VERSION="$(rustc --version -v | grep '^LLVM version:' | grep -o '[0-9]\+' | head -n 1)"
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+      - name: cargo afl config
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: config --build --plugins
       - name: cargo afl system-config
         uses: actions-rs/cargo@v1
         with:
@@ -258,6 +280,17 @@ jobs:
         with:
           command: install
           args: cargo-afl
+      - name: Install llvm
+        run: |
+          LLVM_VERSION="$(rustc --version -v | grep '^LLVM version:' | grep -o '[0-9]\+' | head -n 1)"
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+      - name: cargo afl config
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: config --build --plugins
       - name: cargo afl system-config
         uses: actions-rs/cargo@v1
         with:
@@ -327,6 +360,17 @@ jobs:
         with:
           command: install
           args: cargo-afl
+      - name: Install llvm
+        run: |
+          LLVM_VERSION="$(rustc --version -v | grep '^LLVM version:' | grep -o '[0-9]\+' | head -n 1)"
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+      - name: cargo afl config
+        uses: actions-rs/cargo@v1
+        with:
+          command: afl
+          args: config --build --plugins
       - name: cargo afl system-config
         uses: actions-rs/cargo@v1
         with:
