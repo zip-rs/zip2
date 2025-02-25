@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.2.3](https://github.com/zip-rs/zip2/compare/v2.2.2...v2.2.3) - 2025-02-25
+
+### <!-- 2 -->🚜 Refactor
+
+- Change the inner structure of `DateTime` (#267)
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- cargo fix --edition
+
 ## [2.2.2](https://github.com/zip-rs/zip2/compare/v2.2.1...v2.2.2) - 2024-12-16
 
 ### <!-- 1 -->🐛 Bug Fixes
