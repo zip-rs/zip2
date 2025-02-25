@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 afl = "0.15"
-replace_with = "0.1.7"
 tikv-jemallocator = "0.6.0"
 
 [dependencies.zip]
