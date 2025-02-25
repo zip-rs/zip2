@@ -1805,17 +1805,17 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
     fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match self {
-            Storer(ref mut w) => Some(w as &mut dyn Write),
+            &mut Storer(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
+            &mut GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::BufferedZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
+            &mut GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
-            GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
+            &mut GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
             Closed => None,
         }
     }
