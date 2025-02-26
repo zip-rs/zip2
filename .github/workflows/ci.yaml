@@ -32,25 +32,11 @@ jobs:
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
+    - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        override: true
-
-    - name: Check
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --all ${{ matrix.feature_flag }} --bins --examples
-
-    - name: Tests
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --all ${{ matrix.feature_flag }}
+    - run: cargo check --all ${{ matrix.feature_flag }} --bins --examples
+    - run: cargo test --all ${{ matrix.feature_flag }}
 
   cargo_fmt:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
@@ -58,17 +44,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-          components: rustfmt
-      - name: fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
+
+      - run: cargo fmt --all -- --check
 
   check_minimal_versions:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
@@ -76,11 +54,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
+      - run: rustup toolchain add nightly && rustup default nightly
+
       - name: resolve minimal versions
         run: cargo -Z minimal-versions update
       - name: check
@@ -96,22 +71,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
-        components: clippy
-    - name: clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --all-targets ${{ matrix.feature_flag }} -- -D warnings
-    - name: docs
-      uses: actions-rs/cargo@v1
-      with:
-        command: doc
-        args: --no-deps ${{ matrix.feature_flag }}
+    - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+
+    - run: cargo clippy --all-targets ${{ matrix.feature_flag }} -- -D warnings
+    - run: cargo doc --no-deps ${{ matrix.feature_flag }}
 
   fuzz_read:
     runs-on: ubuntu-latest
@@ -121,42 +84,21 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      - name: Install afl
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-afl
+      - run: rustup toolchain add nightly && rustup default nightly
+
+      - run: cargo install cargo-afl
+
       - name: cargo afl system-config
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: system-config
+        run: cargo afl system-config
       - name: compile fuzz
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: build --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
+        run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 3600 -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 3600 -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Minimize corpus
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - run: sudo apt install rename
       - name: Rename files
         run: |
@@ -190,37 +132,19 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      - name: Install afl
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-afl
+      - run: rustup toolchain add nightly && rustup default nightly
+
+      - run: cargo install cargo-afl
+
       - name: cargo afl system-config
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: system-config
+        run: cargo afl system-config
       - name: compile fuzz
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: build --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
+        run: cargo afl build --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 3600 -a binary -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 3600 -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - run: sudo apt install rename
       - name: Rename files
         run: |
@@ -248,42 +172,21 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      - name: Install afl
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-afl
+      - run: rustup toolchain add nightly && rustup default nightly
+
+      - run: cargo install cargo-afl
+
       - name: cargo afl system-config
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: system-config
+        run: cargo afl system-config
       - name: compile fuzz
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
+        run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 3600 -a binary -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 3600 -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Minimize corpus
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - run: sudo apt install rename
       - name: Rename files
         run: |
@@ -317,37 +220,19 @@ jobs:
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      - name: Install afl
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-afl
+      - run: rustup toolchain add nightly && rustup default nightly
+
+      - run: cargo install cargo-afl
+
       - name: cargo afl system-config
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: system-config
+        run: cargo afl system-config
       - name: compile fuzz
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
+        run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
         timeout-minutes: 70
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 3600 -a binary -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 3600 -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Report coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: afl
-          args: showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - run: sudo apt install rename
       - name: Rename files
         run: |
