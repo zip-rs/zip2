@@ -5,7 +5,7 @@ use crate::aes::{AesReader, AesReaderValid};
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
-use crate::extra_fields::{ExtendedTimestamp, ExtraField};
+use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
@@ -1248,6 +1248,11 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             };
             reader.read_exact(&mut vec![0u8; leftover_len])?;
             return Ok(true);
+        }
+        0x000a => {
+            // NTFS extra field
+            file.extra_fields
+                .push(ExtraField::Ntfs(Ntfs::try_from_reader(reader, len)?));
         }
         0x9901 => {
             // AES

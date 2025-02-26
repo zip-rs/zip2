@@ -36,6 +36,7 @@ flate2 = { version = "1.0", default-features = false, optional = true }
 indexmap = "2"
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 memchr = "2.7"
+nt-time = { version = "0.10.6", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 rand = { version = "0.8", optional = true }
 sha1 = { version = "0.10", optional = true }
@@ -76,6 +77,7 @@ deflate-miniz = ["deflate", "deflate-flate2"]
 deflate-zlib = ["flate2/zlib", "deflate-flate2"]
 deflate-zlib-ng = ["flate2/zlib-ng", "deflate-flate2"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
+nt-time = ["dep:nt-time"]
 lzma = ["lzma-rs/stream"]
 unreserved = []
 xz = ["lzma-rs/raw_decoder"]
