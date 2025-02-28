@@ -433,6 +433,51 @@ pub(crate) fn make_reader(
     ))))
 }
 
+pub(crate) fn make_symlink<P: AsRef<Path>>(directory: P, outpath: &PathBuf, target: Vec<u8>) -> ZipResult<()> {
+    #[cfg(not(any(unix, windows)))]
+    {
+        let output = File::create(outpath.as_path());
+        output.write_all(target)?;
+        continue;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let target = OsString::from_vec(target);
+        let target_path = outpath.parent().unwrap().join(&target).canonicalize()?;
+        if !target_path.starts_with(directory.as_ref()) {
+            return Err(InvalidArchive("Symlink target would escape destination"));
+        }
+        std::os::unix::fs::symlink(&target, outpath.as_path())?;
+    }
+    #[cfg(windows)]
+    {
+        let Ok(target) = String::from_utf8(target) else {
+            return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
+        };
+        let target = target.into_boxed_str();
+        let target_path = outpath.parent().unwrap().join(&target).canonicalize()?;
+        if !target_path.canonicalize().starts_with(directory) {
+            return Err(ZipError::InvalidArchive("Symlink target would escape destination"));
+        }
+        let target_is_dir_from_archive =
+            self.shared.files.contains_key(&target) && is_dir(&target);
+        let target_is_dir = if target_is_dir_from_archive {
+            true
+        } else if let Ok(meta) = std::fs::metadata(&target_path) {
+            meta.is_dir()
+        } else {
+            false
+        };
+        if target_is_dir {
+            std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
+        } else {
+            std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub(crate) struct CentralDirectoryInfo {
     pub(crate) archive_offset: u64,
@@ -764,47 +809,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 Self::make_writable_dir_all(p)?;
             }
             if let Some(target) = symlink_target {
-                #[cfg(not(any(unix, windows)))]
-                {
-                    let output = File::create(outpath.as_path());
-                    output.write_all(target)?;
-                    continue;
-                }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::ffi::OsStringExt;
-                    let target = OsString::from_vec(target);
-                    let target_path = (&directory).join(&target).canonicalize()?;
-                    if !target_path.starts_with(&directory) {
-                        return Err(InvalidArchive("Symlink target would escape destination"));
-                    }
-                    std::os::unix::fs::symlink(&target, outpath.as_path())?;
-                }
-                #[cfg(windows)]
-                {
-                    let Ok(target) = String::from_utf8(target) else {
-                        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
-                    };
-                    let target = target.into_boxed_str();
-                    let target_path = directory.as_ref().join(OsString::from(target.to_string()));
-                    if !target_path.canonicalize().starts_with(directory) {
-                        return Err(ZipError::InvalidArchive("Symlink target would escape destination"));
-                    }
-                    let target_is_dir_from_archive =
-                        self.shared.files.contains_key(&target) && is_dir(&target);
-                    let target_is_dir = if target_is_dir_from_archive {
-                        true
-                    } else if let Ok(meta) = std::fs::metadata(&target_path) {
-                        meta.is_dir()
-                    } else {
-                        false
-                    };
-                    if target_is_dir {
-                        std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
-                    } else {
-                        std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
-                    }
-                }
+                make_symlink(&directory, &outpath, target)?;
                 continue;
             }
             let mut file = self.by_index(i)?;

@@ -2,10 +2,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use super::{
-    central_header_to_zip_file_inner, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError,
-    ZipFile, ZipFileData, ZipResult,
-};
+use super::{central_header_to_zip_file_inner, make_symlink, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError, ZipFile, ZipFileData, ZipResult};
 use crate::spec::FixedSizeBlock;
 
 /// Stream decoder for zip.
@@ -71,6 +68,11 @@ impl<R: Read> ZipStreamReader<R> {
                 } else {
                     if let Some(p) = outpath.parent() {
                         fs::create_dir_all(p)?;
+                    }
+                    if file.is_symlink() {
+                        let mut target = Vec::with_capacity(file.size() as usize);
+                        file.read_to_end(&mut target)?;
+                        make_symlink(self.0, &outpath, target)?;
                     }
                     let mut outfile = fs::File::create(&outpath)?;
                     io::copy(file, &mut outfile)?;
@@ -205,6 +207,9 @@ impl ZipStreamFileMetadata {
 mod test {
     use super::*;
     use std::collections::BTreeSet;
+    use std::io::Cursor;
+    use crate::write::SimpleFileOptions;
+    use crate::ZipWriter;
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {
@@ -359,5 +364,45 @@ mod test {
         )))
         .visit(&mut DummyVisitor)
         .unwrap_err();
+    }
+
+    /// Symlinks being extracted shouldn't be followed out of the destination directory.
+    #[test]
+    fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
+        use std::env::temp_dir;
+        use std::fs::create_dir;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
+        writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
+        let reader = ZipStreamReader::new(writer.finish()?);
+        let dest_parent = temp_dir();
+        let dest_sibling = dest_parent.join("dest-sibling");
+        create_dir(&dest_sibling)?;
+        let dest = dest_parent.join("dest");
+        create_dir(&dest)?;
+        assert!(reader.extract(dest).is_err());
+        assert!(!dest_sibling.join("dest-file").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn test_cannot_create_symlink_loop() -> ZipResult<()> {
+        use std::env::temp_dir;
+        use std::fs::create_dir;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_symlink("a/", "b/x/", SimpleFileOptions::default())?;
+        writer.add_symlink("b/", "a/x/", SimpleFileOptions::default())?;
+        let zipfile = writer.finish()?.into_inner();
+        let temp_dir = temp_dir();
+        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
+        assert!(reader.extract(&temp_dir).is_err());
+        create_dir(temp_dir.join("a"))?;
+        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
+        assert!(reader.extract(&temp_dir).is_err());
+        create_dir(temp_dir.join("b"))?;
+        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
+        assert!(reader.extract(&temp_dir).is_err());
+        Ok(())
     }
 }
