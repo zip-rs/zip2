@@ -732,15 +732,21 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// containing the target path in UTF-8.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
+
         #[cfg(unix)]
         let mut files_by_unix_mode = Vec::new();
+
+        let directory = directory.as_ref().canonicalize()?;
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
                 .enclosed_name()
                 .ok_or(InvalidArchive("Invalid file path"))?;
 
-            let outpath = directory.as_ref().join(filepath);
+            let outpath = directory.join(filepath).canonicalize()?;
+            if !outpath.starts_with(&directory) {
+                return Err(InvalidArchive("File path is outside destination directory"))
+            }
 
             if file.is_dir() {
                 Self::make_writable_dir_all(&outpath)?;
@@ -758,10 +764,20 @@ impl<R: Read + Seek> ZipArchive<R> {
                 Self::make_writable_dir_all(p)?;
             }
             if let Some(target) = symlink_target {
+                #[cfg(not(any(unix, windows)))]
+                {
+                    let output = File::create(outpath.as_path());
+                    output.write_all(target)?;
+                    continue;
+                }
                 #[cfg(unix)]
                 {
                     use std::os::unix::ffi::OsStringExt;
                     let target = OsString::from_vec(target);
+                    let target_path = (&directory).join(&target).canonicalize()?;
+                    if !target_path.starts_with(&directory) {
+                        return Err(InvalidArchive("Symlink target would escape destination"));
+                    }
                     std::os::unix::fs::symlink(&target, outpath.as_path())?;
                 }
                 #[cfg(windows)]
@@ -770,9 +786,12 @@ impl<R: Read + Seek> ZipArchive<R> {
                         return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
                     };
                     let target = target.into_boxed_str();
+                    let target_path = directory.as_ref().join(OsString::from(target.to_string()));
+                    if !target_path.canonicalize().starts_with(directory) {
+                        return Err(ZipError::InvalidArchive("Symlink target would escape destination"));
+                    }
                     let target_is_dir_from_archive =
                         self.shared.files.contains_key(&target) && is_dir(&target);
-                    let target_path = directory.as_ref().join(OsString::from(target.to_string()));
                     let target_is_dir = if target_is_dir_from_archive {
                         true
                     } else if let Ok(meta) = std::fs::metadata(&target_path) {
@@ -1869,6 +1888,43 @@ mod test {
             file.read_to_end(&mut contents)?;
             assert_eq!(contents, expected_contents);
         }
+        Ok(())
+    }
+
+    /// Symlinks being extracted shouldn't be followed out of the destination directory.
+    #[test]
+    fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
+        use std::env::temp_dir;
+        use std::fs::create_dir;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
+        writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
+        let mut reader = writer.finish_into_readable()?;
+        let dest_parent = temp_dir();
+        let dest_sibling = dest_parent.join("dest-sibling");
+        create_dir(&dest_sibling)?;
+        let dest = dest_parent.join("dest");
+        create_dir(&dest)?;
+        assert!(reader.extract(dest).is_err());
+        assert!(!dest_sibling.join("dest-file").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn test_cannot_create_symlink_loop() -> ZipResult<()> {
+        use std::env::temp_dir;
+        use std::fs::create_dir;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_symlink("a/", "b/x/", SimpleFileOptions::default())?;
+        writer.add_symlink("b/", "a/x/", SimpleFileOptions::default())?;
+        let mut reader = writer.finish_into_readable()?;
+        let temp_dir = temp_dir();
+        assert!(reader.extract(&temp_dir).is_err());
+        create_dir(temp_dir.join("a"))?;
+        assert!(reader.extract(&temp_dir).is_err());
+        create_dir(temp_dir.join("b"))?;
+        assert!(reader.extract(&temp_dir).is_err());
         Ok(())
     }
 }
