@@ -104,7 +104,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
 
-        self.visit(&mut Extractor(directory.as_ref()))
+        self.visit(&mut Extractor(Box::new(directory.as_ref().canonicalize()?).as_path()))
     }
 }
 
