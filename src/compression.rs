@@ -10,7 +10,7 @@ use std::{fmt, io};
 ///
 /// When creating ZIP files, you may choose the method to use with
 /// [`crate::write::FileOptions::compression_method`]
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub enum CompressionMethod {

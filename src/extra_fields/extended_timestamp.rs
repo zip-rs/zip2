@@ -4,7 +4,7 @@ use std::io::Read;
 
 /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExtendedTimestamp {
     mod_time: Option<u32>,
     ac_time: Option<u32>,
