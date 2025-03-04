@@ -1,3 +1,4 @@
 tests/data/** binary=true
 tests/data/**/LICENSE.*.txt binary=false
+tests/data/legacy/** binary=true
 fuzz/corpus/** binary=true

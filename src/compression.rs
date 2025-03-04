@@ -38,6 +38,15 @@ pub enum CompressionMethod {
     /// Compress the file using LZMA
     #[cfg(feature = "lzma")]
     Lzma,
+    /// Legacy format
+    #[cfg(feature = "legacy-zip")]
+    Shrink,
+    /// Reduce (Method 2-5)
+    #[cfg(feature = "legacy-zip")]
+    Reduce(u8),
+    /// Method 6 Implode/explode
+    #[cfg(feature = "legacy-zip")]
+    Implode,
     /// Compress the file using XZ
     #[cfg(feature = "xz")]
     Xz,
@@ -55,12 +64,18 @@ pub enum CompressionMethod {
 /// All compression methods defined for the ZIP format
 impl CompressionMethod {
     pub const STORE: Self = CompressionMethod::Stored;
-    pub const SHRINK: Self = CompressionMethod::Unsupported(1);
-    pub const REDUCE_1: Self = CompressionMethod::Unsupported(2);
-    pub const REDUCE_2: Self = CompressionMethod::Unsupported(3);
-    pub const REDUCE_3: Self = CompressionMethod::Unsupported(4);
-    pub const REDUCE_4: Self = CompressionMethod::Unsupported(5);
-    pub const IMPLODE: Self = CompressionMethod::Unsupported(6);
+    #[cfg(feature = "legacy-zip")]
+    pub const SHRINK: Self = CompressionMethod::Shrink;
+    #[cfg(feature = "legacy-zip")]
+    pub const REDUCE_1: Self = CompressionMethod::Reduce(1);
+    #[cfg(feature = "legacy-zip")]
+    pub const REDUCE_2: Self = CompressionMethod::Reduce(2);
+    #[cfg(feature = "legacy-zip")]
+    pub const REDUCE_3: Self = CompressionMethod::Reduce(3);
+    #[cfg(feature = "legacy-zip")]
+    pub const REDUCE_4: Self = CompressionMethod::Reduce(4);
+    #[cfg(feature = "legacy-zip")]
+    pub const IMPLODE: Self = CompressionMethod::Implode;
     #[cfg(feature = "_deflate-any")]
     pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(feature = "_deflate-any"))]
@@ -105,6 +120,18 @@ impl CompressionMethod {
     pub(crate) const fn parse_from_u16(val: u16) -> Self {
         match val {
             0 => CompressionMethod::Stored,
+            #[cfg(feature = "legacy-zip")]
+            1 => CompressionMethod::Shrink,
+            #[cfg(feature = "legacy-zip")]
+            2 => CompressionMethod::Reduce(1),
+            #[cfg(feature = "legacy-zip")]
+            3 => CompressionMethod::Reduce(2),
+            #[cfg(feature = "legacy-zip")]
+            4 => CompressionMethod::Reduce(3),
+            #[cfg(feature = "legacy-zip")]
+            5 => CompressionMethod::Reduce(4),
+            #[cfg(feature = "legacy-zip")]
+            6 => CompressionMethod::Implode,
             #[cfg(feature = "_deflate-any")]
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "deflate64")]
@@ -138,6 +165,13 @@ impl CompressionMethod {
     pub(crate) const fn serialize_to_u16(self) -> u16 {
         match self {
             CompressionMethod::Stored => 0,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Shrink => 1,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Reduce(n) => 1 + n as u16,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Implode => 6,
+
             #[cfg(feature = "_deflate-any")]
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "deflate64")]
@@ -215,6 +249,12 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
     Lzma(Lzma<R>),
+    #[cfg(feature = "legacy-zip")]
+    Shrink(crate::legacy::shrink::ShrinkDecoder<R>),
+    #[cfg(feature = "legacy-zip")]
+    Reduce(crate::legacy::reduce::ReduceDecoder<R>),
+    #[cfg(feature = "legacy-zip")]
+    Implode(crate::legacy::implode::ImplodeDecoder<R>),
     #[cfg(feature = "xz")]
     Xz(Box<lzma_rust2::XzReader<R>>),
     #[cfg(feature = "ppmd")]
@@ -338,6 +378,12 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                 }
                 Ppmd::Initialized(decompressor) => decompressor.read(buf),
             },
+            #[cfg(feature = "legacy-zip")]
+            Decompressor::Shrink(r) => r.read(buf),
+            #[cfg(feature = "legacy-zip")]
+            Decompressor::Reduce(r) => r.read(buf),
+            #[cfg(feature = "legacy-zip")]
+            Decompressor::Implode(r) => r.read(buf),
         }
     }
 }
@@ -346,8 +392,10 @@ impl<R: io::BufRead> Decompressor<R> {
     pub fn new(
         reader: R,
         compression_method: CompressionMethod,
-        #[cfg(feature = "lzma")] uncompressed_size: u64,
-        #[cfg(not(feature = "lzma"))] _uncompressed_size: u64,
+        #[cfg(any(feature = "lzma", feature = "legacy-zip"))] uncompressed_size: u64,
+        #[cfg(not(any(feature = "lzma", feature = "legacy-zip")))] _uncompressed_size: u64,
+        #[cfg(feature = "legacy-zip")] flags: u16,
+        #[cfg(not(feature = "legacy-zip"))] _flags: u16,
     ) -> crate::result::ZipResult<Self> {
         Ok(match compression_method {
             CompressionMethod::Stored => Decompressor::Stored(reader),
@@ -374,6 +422,18 @@ impl<R: io::BufRead> Decompressor<R> {
             }
             #[cfg(feature = "ppmd")]
             CompressionMethod::Ppmd => Decompressor::Ppmd(Ppmd::Uninitialized(Some(reader))),
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Shrink => Decompressor::Shrink(
+                crate::legacy::shrink::ShrinkDecoder::new(reader, uncompressed_size),
+            ),
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Reduce(n) => Decompressor::Reduce(
+                crate::legacy::reduce::ReduceDecoder::new(reader, uncompressed_size, n),
+            ),
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Implode => Decompressor::Implode(
+                crate::legacy::implode::ImplodeDecoder::new(reader, uncompressed_size, flags),
+            ),
             _ => {
                 return Err(crate::result::ZipError::UnsupportedArchive(
                     "Compression method not supported",
@@ -402,6 +462,12 @@ impl<R: io::BufRead> Decompressor<R> {
                     .ok_or_else(|| io::Error::other("Reader was not set"))?,
                 Lzma::Initialized(decoder) => decoder.into_inner(),
             },
+            #[cfg(feature = "legacy-zip")]
+            Decompressor::Shrink(r) => r.into_inner(),
+            #[cfg(feature = "legacy-zip")]
+            Decompressor::Reduce(r) => r.into_inner(),
+            #[cfg(feature = "legacy-zip")]
+            Decompressor::Implode(r) => r.into_inner(),
             #[cfg(feature = "xz")]
             Decompressor::Xz(r) => r.into_inner(),
             #[cfg(feature = "ppmd")]

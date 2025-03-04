@@ -50,6 +50,7 @@ zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
 lzma-rust2 = { version = "0.13", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+bitstream-io =  { version = "4.5.0", optional = true }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
@@ -84,6 +85,7 @@ ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:lzma-rust2"]
 xz-static = ["lzma"]
+legacy-zip = ["bitstream-io"]
 default = [
     "aes-crypto",
     "bzip2",
