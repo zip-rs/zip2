@@ -1629,6 +1629,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 #[cfg(test)]
 mod test {
+    use std::fs::remove_dir;
     use crate::result::ZipResult;
     use crate::write::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
@@ -1926,10 +1927,20 @@ mod test {
         writer.add_symlink("a/", "b/x/", SimpleFileOptions::default())?;
         writer.add_symlink("b/", "a/x/", SimpleFileOptions::default())?;
         let mut reader = writer.finish_into_readable()?;
-        let temp_dir = temp_dir();
+        let temp_dir = temp_dir().join("read_symlink_loop");
+        create_dir(&temp_dir)?;
         assert!(reader.extract(&temp_dir).is_err());
+        let _ = remove_dir(temp_dir.join("a"));
+        let _ = remove_dir(temp_dir.join("b"));
         create_dir(temp_dir.join("a"))?;
         assert!(reader.extract(&temp_dir).is_err());
+        let _ = remove_dir(temp_dir.join("a"));
+        let _ = remove_dir(temp_dir.join("b"));
+        create_dir(temp_dir.join("b"))?;
+        assert!(reader.extract(&temp_dir).is_err());
+        let _ = remove_dir(temp_dir.join("a"));
+        let _ = remove_dir(temp_dir.join("b"));
+        create_dir(temp_dir.join("a"))?;
         create_dir(temp_dir.join("b"))?;
         assert!(reader.extract(&temp_dir).is_err());
         Ok(())

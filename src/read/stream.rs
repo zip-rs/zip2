@@ -207,6 +207,7 @@ impl ZipStreamFileMetadata {
 mod test {
     use super::*;
     use std::collections::BTreeSet;
+    use std::fs::remove_dir;
     use std::io::Cursor;
     use crate::write::SimpleFileOptions;
     use crate::ZipWriter;
@@ -394,12 +395,23 @@ mod test {
         writer.add_symlink("a/", "b/x/", SimpleFileOptions::default())?;
         writer.add_symlink("b/", "a/x/", SimpleFileOptions::default())?;
         let zipfile = writer.finish()?.into_inner();
-        let temp_dir = temp_dir();
+        let temp_dir = temp_dir().join("stream_symlink_loop");
+        create_dir(&temp_dir)?;
         let reader = ZipStreamReader::new(Cursor::new(&zipfile));
         assert!(reader.extract(&temp_dir).is_err());
+        let _ = remove_dir(temp_dir.join("a"));
+        let _ = remove_dir(temp_dir.join("b"));
         create_dir(temp_dir.join("a"))?;
         let reader = ZipStreamReader::new(Cursor::new(&zipfile));
         assert!(reader.extract(&temp_dir).is_err());
+        let _ = remove_dir(temp_dir.join("a"));
+        let _ = remove_dir(temp_dir.join("b"));
+        create_dir(temp_dir.join("b"))?;
+        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
+        assert!(reader.extract(&temp_dir).is_err());
+        let _ = remove_dir(temp_dir.join("a"));
+        let _ = remove_dir(temp_dir.join("b"));
+        create_dir(temp_dir.join("a"))?;
         create_dir(temp_dir.join("b"))?;
         let reader = ZipStreamReader::new(Cursor::new(&zipfile));
         assert!(reader.extract(&temp_dir).is_err());
