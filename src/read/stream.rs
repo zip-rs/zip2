@@ -54,8 +54,8 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        struct Extractor<'a>(&'a Path);
-        impl ZipStreamVisitor for Extractor<'_> {
+        struct Extractor(PathBuf);
+        impl ZipStreamVisitor for Extractor {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 let filepath = file
                     .enclosed_name()
@@ -72,7 +72,7 @@ impl<R: Read> ZipStreamReader<R> {
                     if file.is_symlink() {
                         let mut target = Vec::with_capacity(file.size() as usize);
                         file.read_to_end(&mut target)?;
-                        make_symlink(self.0, &outpath, target)?;
+                        make_symlink(&self.0, &outpath, target)?;
                     }
                     let mut outfile = fs::File::create(&outpath)?;
                     io::copy(file, &mut outfile)?;
@@ -104,7 +104,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
 
-        self.visit(&mut Extractor(Box::new(directory.as_ref().canonicalize()?).as_path()))
+        self.visit(&mut Extractor(directory.as_ref().canonicalize()?))
     }
 }
 

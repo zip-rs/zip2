@@ -765,7 +765,9 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Extract a Zip archive into a directory, overwriting files if they
-    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`]. Symbolic links are only
+    /// created and followed if the target is within the destination directory (this is checked
+    /// conservatively using [`std::fs::canonicalize`]).
     ///
     /// Extraction is not atomic. If an error is encountered, some of the files
     /// may be left on disk. However, on Unix targets, no newly-created directories with part but
