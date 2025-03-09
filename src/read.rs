@@ -16,7 +16,7 @@ use crate::types::{
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
@@ -731,16 +731,129 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
     /// containing the target path in UTF-8.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
+        self.extract_internal(directory, None::<fn(&Path) -> bool>)
+    }
+
+    /// Extracts a Zip archive into a directory in the same fashion as
+    /// [`ZipArchive::extract`], but detects a "root" directory in the archive
+    /// (a single top-level directory that contains the rest of the archive's
+    /// entries) and extracts its contents directly.
+    ///
+    /// For a sensible default `filter`, you can use [`root_dir_common_filter`].
+    /// For a custom `filter`, see [`RootDirFilter`].
+    ///
+    /// See [`ZipArchive::root_dir`] for more information on how the root
+    /// directory is detected and the meaning of the `filter` parameter.
+    ///
+    /// ## Example
+    ///
+    /// Imagine a Zip archive with the following structure:
+    ///
+    /// ```text
+    /// root/file1.txt
+    /// root/file2.txt
+    /// root/sub/file3.txt
+    /// root/sub/subsub/file4.txt
+    /// ```
+    ///
+    /// If the archive is extracted to `foo` using [`ZipArchive::extract`],
+    /// the resulting directory structure will be:
+    ///
+    /// ```text
+    /// foo/root/file1.txt
+    /// foo/root/file2.txt
+    /// foo/root/sub/file3.txt
+    /// foo/root/sub/subsub/file4.txt
+    /// ```
+    ///
+    /// If the archive is extracted to `foo` using
+    /// [`ZipArchive::extract_without_root_dir`], the resulting directory
+    /// structure will be:
+    ///
+    /// ```text
+    /// foo/file1.txt
+    /// foo/file2.txt
+    /// foo/sub/file3.txt
+    /// foo/sub/subsub/file4.txt
+    /// ```
+    ///
+    /// ## Example - No Root Directory
+    ///
+    /// Imagine a Zip archive with the following structure:
+    ///
+    /// ```text
+    /// root/file1.txt
+    /// root/file2.txt
+    /// root/sub/file3.txt
+    /// root/sub/subsub/file4.txt
+    /// other/file5.txt
+    /// ```
+    ///
+    /// Due to the presence of the `other` directory,
+    /// [`ZipArchive::extract_without_root_dir`] will extract this in the same
+    /// fashion as [`ZipArchive::extract`] as there is now no "root directory."
+    pub fn extract_without_root_dir<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        root_dir_filter: impl RootDirFilter,
+    ) -> ZipResult<()> {
+        self.extract_internal(directory, Some(root_dir_filter))
+    }
+
+    fn extract_internal<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        root_dir_filter: Option<impl RootDirFilter>,
+    ) -> ZipResult<()> {
         use std::fs;
+
+        let directory = directory.as_ref();
+
+        let root_dir = match root_dir_filter {
+            Some(filter) => self.root_dir(&filter)?.map(|root_dir| (root_dir, filter)),
+            None => None,
+        };
+
         #[cfg(unix)]
         let mut files_by_unix_mode = Vec::new();
+
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
                 .enclosed_name()
                 .ok_or(InvalidArchive("Invalid file path"))?;
 
-            let outpath = directory.as_ref().join(filepath);
+            let filepath = match root_dir.as_ref() {
+                // If we're extracting and unwrapping the root directory, strip
+                // the root directory from the file path.
+                Some((root_dir, filter)) => match filepath.strip_prefix(root_dir) {
+                    Ok(filepath) => Cow::Borrowed(filepath),
+
+                    // In this case, we expect that the file was not in the root
+                    // directory, but was filtered out when searching for the
+                    // root directory.
+                    Err(_) => {
+                        // We could technically find ourselves at this code
+                        // path if the user provides an unstable or
+                        // non-deterministic `filter` function.
+                        //
+                        // If debug assertions are on, we should panic here.
+                        // Otherwise, the safest thing to do here is to just
+                        // extract as-is.
+                        debug_assert!(
+                            !filter(&filepath),
+                            "Root directory filter should not match at this point"
+                        );
+
+                        // Extract as-is.
+                        Cow::Owned(filepath)
+                    }
+                },
+
+                _ => Cow::Owned(filepath),
+            };
+
+            let outpath = directory.join(filepath);
 
             if file.is_dir() {
                 Self::make_writable_dir_all(&outpath)?;
@@ -772,7 +885,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     let target = target.into_boxed_str();
                     let target_is_dir_from_archive =
                         self.shared.files.contains_key(&target) && is_dir(&target);
-                    let target_path = directory.as_ref().join(OsString::from(target.to_string()));
+                    let target_path = directory.join(OsString::from(target.to_string()));
                     let target_is_dir = if target_is_dir_from_archive {
                         true
                     } else if let Ok(meta) = std::fs::metadata(&target_path) {
@@ -1017,6 +1130,80 @@ impl<R: Read + Seek> ZipArchive<R> {
             data: Cow::Borrowed(data),
             reader: make_reader(data.compression_method, data.crc32, crypto_reader)?,
         })
+    }
+
+    /// Find the "root directory" of an archive if it exists, filtering out
+    /// irrelevant entries when searching.
+    ///
+    /// Our definition of a "root directory" is a single top-level directory
+    /// that contains the rest of the archive's entries. This is useful for
+    /// extracting archives that contain a single top-level directory that
+    /// you want to "unwrap" and extract directly.
+    ///
+    /// For a sensible default filter, you can use [`root_dir_common_filter`].
+    /// For a custom filter, see [`RootDirFilter`].
+    pub fn root_dir(&self, filter: impl RootDirFilter) -> ZipResult<Option<PathBuf>> {
+        let mut root_dir: Option<PathBuf> = None;
+
+        for i in 0..self.len() {
+            let (_, file) = self
+                .shared
+                .files
+                .get_index(i)
+                .ok_or(ZipError::FileNotFound)?;
+
+            let path = match file.enclosed_name() {
+                Some(path) => path,
+                None => return Ok(None),
+            };
+
+            if !filter(&path) {
+                continue;
+            }
+
+            macro_rules! replace_root_dir {
+                ($path:ident) => {
+                    match &mut root_dir {
+                        Some(root_dir) => {
+                            if *root_dir != $path {
+                                // We've found multiple root directories,
+                                // abort.
+                                return Ok(None);
+                            } else {
+                                continue;
+                            }
+                        }
+
+                        None => {
+                            root_dir = Some($path.into());
+                            continue;
+                        }
+                    }
+                };
+            }
+
+            // If this entry is located at the root of the archive...
+            if path.components().count() == 1 {
+                if file.is_dir() {
+                    // If it's a directory, it could be the root directory.
+                    replace_root_dir!(path);
+                } else {
+                    // If it's anything else, this archive does not have a
+                    // root directory.
+                    return Ok(None);
+                }
+            }
+
+            // Find the root directory for this entry.
+            let mut path = path.as_path();
+            while let Some(parent) = path.parent().filter(|path| *path != Path::new("")) {
+                path = parent;
+            }
+
+            replace_root_dir!(path);
+        }
+
+        Ok(root_dir)
     }
 
     /// Unwrap and return the inner reader object
@@ -1599,6 +1786,48 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
         data: Cow::Owned(result),
         reader: make_reader(result_compression_method, result_crc32, crypto_reader)?,
     }))
+}
+
+/// A filter that determines whether an entry should be ignored when searching
+/// for the root directory of a Zip archive.
+///
+/// Returns `true` if the entry should be considered, and `false` if it should
+/// be ignored.
+///
+/// See [`root_dir_common_filter`] for a sensible default filter.
+pub trait RootDirFilter: Fn(&Path) -> bool {}
+impl<F: Fn(&Path) -> bool> RootDirFilter for F {}
+
+/// Common filters when finding the root directory of a Zip archive.
+///
+/// This filter is a sensible default for most use cases and filters out common
+/// system files that are usually irrelevant to the contents of the archive.
+///
+/// Currently, the filter ignores:
+/// - `/__MACOSX/`
+/// - `/.DS_Store`
+/// - `/Thumbs.db`
+///
+/// **This function is not guaranteed to be stable and may change in future versions.**
+pub fn root_dir_common_filter(path: &Path) -> bool {
+    const COMMON_FILTER_ROOT_FILES: &[&str] = &[".DS_Store", "Thumbs.db"];
+
+    if path.starts_with("__MACOSX") {
+        return false;
+    }
+
+    if path.components().count() == 1
+        && path.file_name().is_some_and(|file_name| {
+            COMMON_FILTER_ROOT_FILES
+                .iter()
+                .map(OsStr::new)
+                .any(|cmp| cmp == file_name)
+        })
+    {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]
