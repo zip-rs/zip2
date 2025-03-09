@@ -767,7 +767,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// ```
     ///
     /// If the archive is extracted to `foo` using
-    /// [`ZipArchive::extract_without_root_dir`], the resulting directory
+    /// [`ZipArchive::extract_unwrapped_root_dir`], the resulting directory
     /// structure will be:
     ///
     /// ```text
@@ -790,9 +790,9 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// ```
     ///
     /// Due to the presence of the `other` directory,
-    /// [`ZipArchive::extract_without_root_dir`] will extract this in the same
+    /// [`ZipArchive::extract_unwrapped_root_dir`] will extract this in the same
     /// fashion as [`ZipArchive::extract`] as there is now no "root directory."
-    pub fn extract_without_root_dir<P: AsRef<Path>>(
+    pub fn extract_unwrapped_root_dir<P: AsRef<Path>>(
         &mut self,
         directory: P,
         root_dir_filter: impl RootDirFilter,

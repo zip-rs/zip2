@@ -159,7 +159,7 @@ fn test_extract_without_root_dir() {
 
     let temp_dir = TempDir::new().unwrap();
     archive
-        .extract_without_root_dir(temp_dir.path(), root_dir_common_filter)
+        .extract_unwrapped_root_dir(temp_dir.path(), root_dir_common_filter)
         .unwrap();
 
     // Files should be extracted directly without the root directory
@@ -186,7 +186,7 @@ fn test_extract_without_root_dir_but_no_root_found() {
 
     let temp_dir = TempDir::new().unwrap();
     archive
-        .extract_without_root_dir(temp_dir.path(), root_dir_common_filter)
+        .extract_unwrapped_root_dir(temp_dir.path(), root_dir_common_filter)
         .unwrap();
 
     // All files should be extracted normally since there's no single root directory
@@ -203,7 +203,7 @@ fn test_extract_without_root_dir_with_ds_store() {
 
     let temp_dir = TempDir::new().unwrap();
     archive
-        .extract_without_root_dir(temp_dir.path(), root_dir_common_filter)
+        .extract_unwrapped_root_dir(temp_dir.path(), root_dir_common_filter)
         .unwrap();
 
     // .DS_Store should be ignored when finding the root dir
@@ -235,7 +235,7 @@ fn test_custom_root_dir_filter() {
     // Extract with our custom filter
     let temp_dir = TempDir::new().unwrap();
     archive
-        .extract_without_root_dir(temp_dir.path(), custom_filter)
+        .extract_unwrapped_root_dir(temp_dir.path(), custom_filter)
         .unwrap();
 
     // file1.txt should be skipped during root directory detection
