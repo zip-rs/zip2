@@ -13,7 +13,9 @@ use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
 };
+use crate::write::SimpleFileOptions;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
+use crate::ZIP64_BYTES_THR;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsString;
@@ -118,7 +120,7 @@ use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
 use crate::result::ZipError::{InvalidArchive, InvalidPassword};
 use crate::spec::is_dir;
-use crate::types::ffi::S_IFLNK;
+use crate::types::ffi::{S_IFLNK, S_IFREG};
 use crate::unstable::{path_to_string, LittleEndianReadExt};
 pub use zip_archive::ZipArchive;
 
@@ -1479,6 +1481,23 @@ impl<'a> ZipFile<'a> {
     /// Get the starting offset of the zip header in the central directory for this file
     pub fn central_header_start(&self) -> u64 {
         self.get_metadata().central_header_start
+    }
+
+    /// Get the [`SimpleFileOptions`] that would be used to write this file to
+    /// a new zip archive.
+    pub fn options(&self) -> SimpleFileOptions {
+        let mut options = SimpleFileOptions::default()
+            .large_file(self.compressed_size().max(self.size()) > ZIP64_BYTES_THR)
+            .compression_method(self.compression())
+            .unix_permissions(self.unix_mode().unwrap_or(0o644) | S_IFREG)
+            .last_modified_time(
+                self.last_modified()
+                    .filter(|m| m.is_valid())
+                    .unwrap_or_else(DateTime::default_for_write),
+            );
+
+        options.normalize();
+        options
     }
 }
 
