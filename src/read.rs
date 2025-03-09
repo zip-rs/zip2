@@ -1809,6 +1809,17 @@ impl<F: Fn(&Path) -> bool> RootDirFilter for F {}
 /// - `/Thumbs.db`
 ///
 /// **This function is not guaranteed to be stable and may change in future versions.**
+///
+/// # Example
+///
+/// ```rust
+/// # use std::path::Path;
+/// assert!(zip::read::root_dir_common_filter(Path::new("foo.txt")));
+/// assert!(!zip::read::root_dir_common_filter(Path::new(".DS_Store")));
+/// assert!(!zip::read::root_dir_common_filter(Path::new("Thumbs.db")));
+/// assert!(!zip::read::root_dir_common_filter(Path::new("__MACOSX")));
+/// assert!(!zip::read::root_dir_common_filter(Path::new("__MACOSX/foo.txt")));
+/// ```
 pub fn root_dir_common_filter(path: &Path) -> bool {
     const COMMON_FILTER_ROOT_FILES: &[&str] = &[".DS_Store", "Thumbs.db"];
 
