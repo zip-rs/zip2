@@ -187,6 +187,8 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     CompressionMethod::Bzip2,
     #[cfg(feature = "zstd")]
     CompressionMethod::Zstd,
+    #[cfg(feature = "xz")]
+    CompressionMethod::Xz,
 ];
 
 pub(crate) enum Decompressor<R: io::BufRead> {
