@@ -449,7 +449,7 @@ pub(crate) fn make_reader(
     ))))
 }
 
-pub(crate) fn make_symlink(outpath: &PathBuf, target: Vec<u8>) -> ZipResult<()> {
+pub(crate) fn make_symlink(outpath: &Path, target: Vec<u8>) -> ZipResult<()> {
     #[cfg(not(any(unix, windows)))]
     {
         let output = File::create(outpath.as_path());
@@ -464,7 +464,7 @@ pub(crate) fn make_symlink(outpath: &PathBuf, target: Vec<u8>) -> ZipResult<()> 
 
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(target, outpath.as_path())?;
+        std::os::unix::fs::symlink(target, outpath)?;
     }
     #[cfg(windows)]
     {
