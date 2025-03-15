@@ -471,20 +471,18 @@ pub(crate) fn make_symlink(outpath: &Path, target: Vec<u8>) -> ZipResult<()> {
         let Ok(target) = String::from_utf8(target) else {
             return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
         };
-        let target = target.into_boxed_str();
-        let target_is_dir_from_archive = self.shared.files.contains_key(&target) && is_dir(&target);
+        let target_is_dir_from_archive = self.shared.files.contains_key(target.as_str()) && is_dir(target.as_str());
         let target_is_dir = if target_is_dir_from_archive {
             true
-        } else if let Ok(meta) = std::fs::metadata(&target) {
+        } else if let Ok(meta) = std::fs::metadata(target) {
             meta.is_dir()
         } else {
             false
         };
-        let target = Path::new(OsStr::new(&target));
         if target_is_dir {
-            std::os::windows::fs::symlink_dir(target, outpath.as_path())?;
+            std::os::windows::fs::symlink_dir(target, outpath)?;
         } else {
-            std::os::windows::fs::symlink_file(target, outpath.as_path())?;
+            std::os::windows::fs::symlink_file(target, outpath)?;
         }
     }
     Ok(())
