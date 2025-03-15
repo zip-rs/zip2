@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-
+use indexmap::IndexMap;
 use super::{
     central_header_to_zip_file_inner, make_symlink, read_zipfile_from_stream, ZipCentralEntryBlock,
     ZipError, ZipFile, ZipFileData, ZipResult,
@@ -57,16 +57,17 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        struct Extractor(PathBuf);
+        struct Extractor(PathBuf, IndexMap<Box<str>, ()>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
+                self.1.insert(file.name().into(), ());
                 let mut outpath = self.0.clone();
                 file.safe_prepare_path(&self.0, &mut outpath)?;
 
                 if file.is_symlink() {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(&outpath, &target)?;
+                    make_symlink(&outpath, &target, &self.1)?;
                     return Ok(());
                 }
 
@@ -103,7 +104,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
 
-        self.visit(&mut Extractor(directory.as_ref().canonicalize()?))
+        self.visit(&mut Extractor(directory.as_ref().canonicalize()?, IndexMap::new()))
     }
 }
 

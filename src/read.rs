@@ -449,7 +449,7 @@ pub(crate) fn make_reader(
     ))))
 }
 
-pub(crate) fn make_symlink(outpath: &Path, target: &[u8]) -> ZipResult<()> {
+pub(crate) fn make_symlink<T>(outpath: &Path, target: &[u8], #[allow(unused)] existing_files: &IndexMap<Box<str>, T>) -> ZipResult<()> {
     #[cfg(not(any(unix, windows)))]
     {
         let output = File::create(outpath);
@@ -469,7 +469,7 @@ pub(crate) fn make_symlink(outpath: &Path, target: &[u8]) -> ZipResult<()> {
     {
         let target = Path::new(OsStr::new(&target_str));
         let target_is_dir_from_archive =
-            self.shared.files.contains_key(target_str) && is_dir(target_str);
+            existing_files.contains_key(target_str) && is_dir(target_str);
         let target_is_dir = if target_is_dir_from_archive {
             true
         } else if let Ok(meta) = std::fs::metadata(target) {
@@ -813,7 +813,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             drop(file);
 
             if let Some(target) = symlink_target {
-                make_symlink(&outpath, &target)?;
+                make_symlink(&outpath, &target, &self.shared.files)?;
                 continue;
             }
             let mut file = self.by_index(i)?;
