@@ -449,29 +449,25 @@ pub(crate) fn make_reader(
     ))))
 }
 
-pub(crate) fn make_symlink(outpath: &Path, target: Vec<u8>) -> ZipResult<()> {
+pub(crate) fn make_symlink(outpath: &Path, target: &[u8]) -> ZipResult<()> {
     #[cfg(not(any(unix, windows)))]
     {
-        let output = File::create(outpath.as_path());
+        let output = File::create(outpath);
         output.write_all(target)?;
         continue;
     }
 
-    let Ok(target) = String::from_utf8(target) else {
+    let Ok(target_str) = str::from_utf8(&target) else {
         return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
     };
-    let target = Path::new(&target);
 
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(target, outpath)?;
+        std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
     }
     #[cfg(windows)]
     {
-        let Ok(target) = String::from_utf8(target) else {
-            return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
-        };
-        let target_str = target.as_str();
+        let target = Path::new(OsStr::new(&target_str));
         let target_is_dir_from_archive =
             self.shared.files.contains_key(target_str) && is_dir(target_str);
         let target_is_dir = if target_is_dir_from_archive {
@@ -817,7 +813,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             drop(file);
 
             if let Some(target) = symlink_target {
-                make_symlink(&outpath, target)?;
+                make_symlink(&outpath, &target)?;
                 continue;
             }
             let mut file = self.by_index(i)?;
