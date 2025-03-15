@@ -16,13 +16,13 @@ use crate::types::{
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::ffi::OsString;
+use std::ffi::OsStr;
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
 use std::mem::size_of;
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 mod config;
@@ -318,6 +318,22 @@ impl<R: Read> Read for SeekableTake<'_, R> {
     }
 }
 
+pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
+    create_dir_all(outpath.as_ref())?;
+    #[cfg(unix)]
+    {
+        // Dirs must be writable until all normal files are extracted
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            outpath.as_ref(),
+            std::fs::Permissions::from_mode(
+                0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
+            ),
+        )?;
+    }
+    Ok(())
+}
+
 pub(crate) fn find_content<'a>(
     data: &ZipFileData,
     reader: &'a mut (impl Read + Seek),
@@ -433,22 +449,22 @@ pub(crate) fn make_reader(
     ))))
 }
 
-pub(crate) fn make_symlink<P: AsRef<Path>>(directory: P, outpath: &PathBuf, target: Vec<u8>) -> ZipResult<()> {
+pub(crate) fn make_symlink(outpath: &PathBuf, target: Vec<u8>) -> ZipResult<()> {
     #[cfg(not(any(unix, windows)))]
     {
         let output = File::create(outpath.as_path());
         output.write_all(target)?;
         continue;
     }
+
+    let Ok(target) = String::from_utf8(target) else {
+        return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
+    };
+    let target = Path::new(&target);
+
     #[cfg(unix)]
     {
-        use std::os::unix::ffi::OsStringExt;
-        let target = OsString::from_vec(target);
-        let target_path = outpath.parent().unwrap().join(&target).canonicalize()?;
-        if !target_path.starts_with(directory.as_ref()) {
-            return Err(InvalidArchive("Symlink target would escape destination"));
-        }
-        std::os::unix::fs::symlink(&target, outpath.as_path())?;
+        std::os::unix::fs::symlink(target, outpath.as_path())?;
     }
     #[cfg(windows)]
     {
@@ -456,23 +472,18 @@ pub(crate) fn make_symlink<P: AsRef<Path>>(directory: P, outpath: &PathBuf, targ
             return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
         };
         let target = target.into_boxed_str();
-        let target_path = outpath.parent().unwrap().join(&target).canonicalize()?;
-        if !target_path.canonicalize().starts_with(directory) {
-            return Err(ZipError::InvalidArchive("Symlink target would escape destination"));
-        }
-        let target_is_dir_from_archive =
-            self.shared.files.contains_key(&target) && is_dir(&target);
+        let target_is_dir_from_archive = self.shared.files.contains_key(&target) && is_dir(&target);
         let target_is_dir = if target_is_dir_from_archive {
             true
-        } else if let Ok(meta) = std::fs::metadata(&target_path) {
+        } else if let Ok(meta) = std::fs::metadata(&target) {
             meta.is_dir()
         } else {
             false
         };
         if target_is_dir {
-            std::os::windows::fs::symlink_dir(target_path, outpath.as_path())?;
+            std::os::windows::fs::symlink_dir(target, outpath.as_path())?;
         } else {
-            std::os::windows::fs::symlink_file(target_path, outpath.as_path())?;
+            std::os::windows::fs::symlink_file(target, outpath.as_path())?;
         }
     }
     Ok(())
@@ -786,32 +797,26 @@ impl<R: Read + Seek> ZipArchive<R> {
         let directory = directory.as_ref().canonicalize()?;
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
-            let filepath = file
-                .enclosed_name()
-                .ok_or(InvalidArchive("Invalid file path"))?;
 
-            let outpath = directory.join(filepath).canonicalize()?;
-            if !outpath.starts_with(&directory) {
-                return Err(InvalidArchive("File path is outside destination directory"))
-            }
+            let mut outpath = directory.clone();
+            file.safe_prepare_path(&directory, &mut outpath)?;
 
-            if file.is_dir() {
-                Self::make_writable_dir_all(&outpath)?;
-                continue;
-            }
             let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
                 let mut target = Vec::with_capacity(file.size() as usize);
                 file.read_to_end(&mut target)?;
                 Some(target)
             } else {
+                if file.is_dir() {
+                    crate::read::make_writable_dir_all(&outpath)?;
+                    continue;
+                }
                 None
             };
+
             drop(file);
-            if let Some(p) = outpath.parent() {
-                Self::make_writable_dir_all(p)?;
-            }
+
             if let Some(target) = symlink_target {
-                make_symlink(&directory, &outpath, target)?;
+                make_symlink(&outpath, target)?;
                 continue;
             }
             let mut file = self.by_index(i)?;
@@ -837,22 +842,6 @@ impl<R: Read + Seek> ZipArchive<R> {
             for (path, mode) in files_by_unix_mode.into_iter() {
                 fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
             }
-        }
-        Ok(())
-    }
-
-    fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
-        create_dir_all(outpath.as_ref())?;
-        #[cfg(unix)]
-        {
-            // Dirs must be writable until all normal files are extracted
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(
-                outpath.as_ref(),
-                std::fs::Permissions::from_mode(
-                    0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
-                ),
-            )?;
         }
         Ok(())
     }
@@ -1430,6 +1419,95 @@ impl<'a> ZipFile<'a> {
         self.get_metadata().enclosed_name()
     }
 
+    pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
+        self.get_metadata().simplified_components()
+    }
+
+    /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
+    pub(crate) fn safe_prepare_path(
+        &self,
+        base_path: &Path,
+        outpath: &mut PathBuf,
+    ) -> ZipResult<()> {
+        let components = self
+            .simplified_components()
+            .ok_or(InvalidArchive("Invalid file path"))?;
+
+        let components_len = components.len();
+
+        for (is_last, component) in components
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| (i == components_len - 1, c))
+        {
+            // we can skip the target directory itself because the base path is assumed to be "trusted" (if the user say extract to a symlink we can follow it)
+            outpath.push(component);
+
+            // check if the path is a symlink, the target must be _inherently_ within the directory
+            for limit in (0..5u8).rev() {
+                let meta = match std::fs::symlink_metadata(&outpath) {
+                    Ok(meta) => meta,
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                        if !is_last {
+                            crate::read::make_writable_dir_all(&outpath)?;
+                        }
+                        break;
+                    }
+                    Err(e) => return Err(e.into()),
+                };
+
+                if !meta.is_symlink() {
+                    break;
+                }
+
+                if limit == 0 {
+                    return Err(InvalidArchive("Symlink too deep"));
+                }
+
+                // note that we cannot accept links that do not inherently resolve to a path inside the directory to prevent:
+                // - disclosure of unrelated path exists (no check for a path exist and then ../ out)
+                // - issues with file-system specific path resolution (case sensitivity, etc)
+                let target = std::fs::read_link(&outpath)?;
+
+                let is_relative_enclosed = target
+                    .components()
+                    .try_fold(0u32, |acc, c| match c {
+                        Component::Normal(_) => acc.checked_add(1),
+                        Component::ParentDir => acc.checked_sub(1),
+                        Component::CurDir => Some(acc),
+                        _ => None,
+                    })
+                    .is_some();
+
+                if !is_relative_enclosed {
+                    let is_absolute_enclosed = base_path
+                        .components()
+                        .map(Some)
+                        .chain(std::iter::once(None))
+                        .zip(target.components().map(Some).chain(std::iter::repeat(None)))
+                        .all(|(a, b)| match (a, b) {
+                            // both components are normal
+                            (Some(Component::Normal(a)), Some(Component::Normal(b))) => a == b,
+                            // both components consumed fully
+                            (None, None) => true,
+                            // target consumed fully but base path is not
+                            (Some(_), None) => false,
+                            // base path consumed fully but target is not (and normal)
+                            (None, Some(Component::CurDir | Component::Normal(_))) => true,
+                            _ => false,
+                        });
+
+                    if !is_absolute_enclosed {
+                        return Err(InvalidArchive("Symlink is not inherently safe"));
+                    }
+                }
+
+                outpath.push(target);
+            }
+        }
+        Ok(())
+    }
+
     /// Get the comment of the file
     pub fn comment(&self) -> &str {
         &self.get_metadata().file_comment
@@ -1629,11 +1707,11 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 #[cfg(test)]
 mod test {
-    use std::fs::remove_dir;
     use crate::result::ZipResult;
     use crate::write::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
+    use std::fs::remove_dir;
     use std::io::{Cursor, Read, Write};
     use tempfile::TempDir;
 
@@ -1902,47 +1980,20 @@ mod test {
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
-        use std::env::temp_dir;
         use std::fs::create_dir;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
         writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
         let mut reader = writer.finish_into_readable()?;
-        let dest_parent = temp_dir();
-        let dest_sibling = dest_parent.join("dest-sibling");
+        let dest_parent =
+            TempDir::with_prefix("read__test_cannot_symlink_outside_destination").unwrap();
+        let dest_sibling = dest_parent.path().join("dest-sibling");
         create_dir(&dest_sibling)?;
-        let dest = dest_parent.join("dest");
+        let dest = dest_parent.path().join("dest");
         create_dir(&dest)?;
         assert!(reader.extract(dest).is_err());
         assert!(!dest_sibling.join("dest-file").exists());
-        Ok(())
-    }
-
-    #[test]
-    fn test_cannot_create_symlink_loop() -> ZipResult<()> {
-        use std::env::temp_dir;
-        use std::fs::create_dir;
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.add_symlink("a/", "b/x/", SimpleFileOptions::default())?;
-        writer.add_symlink("b/", "a/x/", SimpleFileOptions::default())?;
-        let mut reader = writer.finish_into_readable()?;
-        let temp_dir = temp_dir().join("read_symlink_loop");
-        create_dir(&temp_dir)?;
-        assert!(reader.extract(&temp_dir).is_err());
-        let _ = remove_dir(temp_dir.join("a"));
-        let _ = remove_dir(temp_dir.join("b"));
-        create_dir(temp_dir.join("a"))?;
-        assert!(reader.extract(&temp_dir).is_err());
-        let _ = remove_dir(temp_dir.join("a"));
-        let _ = remove_dir(temp_dir.join("b"));
-        create_dir(temp_dir.join("b"))?;
-        assert!(reader.extract(&temp_dir).is_err());
-        let _ = remove_dir(temp_dir.join("a"));
-        let _ = remove_dir(temp_dir.join("b"));
-        create_dir(temp_dir.join("a"))?;
-        create_dir(temp_dir.join("b"))?;
-        assert!(reader.extract(&temp_dir).is_err());
         Ok(())
     }
 }

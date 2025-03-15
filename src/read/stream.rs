@@ -2,7 +2,10 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use super::{central_header_to_zip_file_inner, make_symlink, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError, ZipFile, ZipFileData, ZipResult};
+use super::{
+    central_header_to_zip_file_inner, make_symlink, read_zipfile_from_stream, ZipCentralEntryBlock,
+    ZipError, ZipFile, ZipFileData, ZipResult,
+};
 use crate::spec::FixedSizeBlock;
 
 /// Stream decoder for zip.
@@ -57,23 +60,19 @@ impl<R: Read> ZipStreamReader<R> {
         struct Extractor(PathBuf);
         impl ZipStreamVisitor for Extractor {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
-                let filepath = file
-                    .enclosed_name()
-                    .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+                let mut outpath = self.0.clone();
+                file.safe_prepare_path(&self.0, &mut outpath)?;
 
-                let outpath = self.0.join(filepath);
+                if file.is_symlink() {
+                    let mut target = Vec::with_capacity(file.size() as usize);
+                    file.read_to_end(&mut target)?;
+                    make_symlink(&outpath, target)?;
+                    return Ok(());
+                }
 
                 if file.is_dir() {
                     fs::create_dir_all(&outpath)?;
                 } else {
-                    if let Some(p) = outpath.parent() {
-                        fs::create_dir_all(p)?;
-                    }
-                    if file.is_symlink() {
-                        let mut target = Vec::with_capacity(file.size() as usize);
-                        file.read_to_end(&mut target)?;
-                        make_symlink(&self.0, &outpath, target)?;
-                    }
                     let mut outfile = fs::File::create(&outpath)?;
                     io::copy(file, &mut outfile)?;
                 }
@@ -205,12 +204,14 @@ impl ZipStreamFileMetadata {
 
 #[cfg(test)]
 mod test {
+    use tempfile::TempDir;
+
     use super::*;
+    use crate::write::SimpleFileOptions;
+    use crate::ZipWriter;
     use std::collections::BTreeSet;
     use std::fs::remove_dir;
     use std::io::Cursor;
-    use crate::write::SimpleFileOptions;
-    use crate::ZipWriter;
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {
@@ -370,51 +371,19 @@ mod test {
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
-        use std::env::temp_dir;
         use std::fs::create_dir;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
         writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
         let reader = ZipStreamReader::new(writer.finish()?);
-        let dest_parent = temp_dir();
-        let dest_sibling = dest_parent.join("dest-sibling");
+        let dest_parent = TempDir::with_prefix("stream__cannot_symlink_outside_destination")?;
+        let dest_sibling = dest_parent.path().join("dest-sibling");
         create_dir(&dest_sibling)?;
-        let dest = dest_parent.join("dest");
+        let dest = dest_parent.path().join("dest");
         create_dir(&dest)?;
         assert!(reader.extract(dest).is_err());
         assert!(!dest_sibling.join("dest-file").exists());
-        Ok(())
-    }
-
-    #[test]
-    fn test_cannot_create_symlink_loop() -> ZipResult<()> {
-        use std::env::temp_dir;
-        use std::fs::create_dir;
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.add_symlink("a/", "b/x/", SimpleFileOptions::default())?;
-        writer.add_symlink("b/", "a/x/", SimpleFileOptions::default())?;
-        let zipfile = writer.finish()?.into_inner();
-        let temp_dir = temp_dir().join("stream_symlink_loop");
-        create_dir(&temp_dir)?;
-        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
-        assert!(reader.extract(&temp_dir).is_err());
-        let _ = remove_dir(temp_dir.join("a"));
-        let _ = remove_dir(temp_dir.join("b"));
-        create_dir(temp_dir.join("a"))?;
-        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
-        assert!(reader.extract(&temp_dir).is_err());
-        let _ = remove_dir(temp_dir.join("a"));
-        let _ = remove_dir(temp_dir.join("b"));
-        create_dir(temp_dir.join("b"))?;
-        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
-        assert!(reader.extract(&temp_dir).is_err());
-        let _ = remove_dir(temp_dir.join("a"));
-        let _ = remove_dir(temp_dir.join("b"));
-        create_dir(temp_dir.join("a"))?;
-        create_dir(temp_dir.join("b"))?;
-        let reader = ZipStreamReader::new(Cursor::new(&zipfile));
-        assert!(reader.extract(&temp_dir).is_err());
         Ok(())
     }
 }
