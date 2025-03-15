@@ -457,7 +457,7 @@ pub(crate) fn make_symlink(outpath: &Path, target: &[u8]) -> ZipResult<()> {
         continue;
     }
 
-    let Ok(target_str) = str::from_utf8(&target) else {
+    let Ok(target_str) = std::str::from_utf8(&target) else {
         return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
     };
 
