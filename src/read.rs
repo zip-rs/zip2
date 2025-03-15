@@ -452,19 +452,17 @@ pub(crate) fn make_reader(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[allow(unused)] existing_files: &IndexMap<Box<str>, T>
+    #[allow(unused)] existing_files: &IndexMap<Box<str>, T>,
 ) -> ZipResult<()> {
-    #[cfg(not(any(unix, windows)))]
-    {
-        let output = File::create(outpath);
-        output.write_all(target)?;
-        continue;
-    }
-
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
     };
 
+    #[cfg(not(any(unix, windows)))]
+    {
+        let output = File::create(outpath);
+        output.write_all(target)?;
+    }
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
