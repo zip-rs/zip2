@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use super::{
     central_header_to_zip_file_inner, make_symlink, read_zipfile_from_stream, ZipCentralEntryBlock,
-    ZipError, ZipFile, ZipFileData, ZipResult,
+    ZipFile, ZipFileData, ZipResult,
 };
 use crate::spec::FixedSizeBlock;
 
@@ -88,6 +88,7 @@ impl<R: Read> ZipStreamReader<R> {
             ) -> ZipResult<()> {
                 #[cfg(unix)]
                 {
+                    use super::ZipError;
                     let filepath = metadata
                         .enclosed_name()
                         .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
