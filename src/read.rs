@@ -480,7 +480,7 @@ pub(crate) fn make_symlink(outpath: &PathBuf, target: Vec<u8>) -> ZipResult<()> 
         } else {
             false
         };
-        let target = Path::new(&target);
+        let target = Path::new(OsStr::new(&target));
         if target_is_dir {
             std::os::windows::fs::symlink_dir(target, outpath.as_path())?;
         } else {
