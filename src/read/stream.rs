@@ -66,7 +66,7 @@ impl<R: Read> ZipStreamReader<R> {
                 if file.is_symlink() {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(&outpath, target)?;
+                    make_symlink(&outpath, &target)?;
                     return Ok(());
                 }
 
