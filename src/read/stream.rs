@@ -210,7 +210,6 @@ mod test {
     use crate::write::SimpleFileOptions;
     use crate::ZipWriter;
     use std::collections::BTreeSet;
-    use std::fs::remove_dir;
     use std::io::Cursor;
 
     struct DummyVisitor;

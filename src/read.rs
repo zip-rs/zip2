@@ -1424,6 +1424,8 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
+    ///
+    /// `base_path` parameter is assumed to be canonicalized.
     pub(crate) fn safe_prepare_path(
         &self,
         base_path: &Path,
@@ -1461,7 +1463,7 @@ impl<'a> ZipFile<'a> {
                 }
 
                 if limit == 0 {
-                    return Err(InvalidArchive("Symlink too deep"));
+                    return Err(InvalidArchive("Extraction followed a symlink too deep"));
                 }
 
                 // note that we cannot accept links that do not inherently resolve to a path inside the directory to prevent:
@@ -1469,17 +1471,13 @@ impl<'a> ZipFile<'a> {
                 // - issues with file-system specific path resolution (case sensitivity, etc)
                 let target = std::fs::read_link(&outpath)?;
 
-                let is_relative_enclosed = target
-                    .components()
-                    .try_fold(0u32, |acc, c| match c {
-                        Component::Normal(_) => acc.checked_add(1),
-                        Component::ParentDir => acc.checked_sub(1),
-                        Component::CurDir => Some(acc),
-                        _ => None,
-                    })
-                    .is_some();
-
-                if !is_relative_enclosed {
+                if !crate::path::simplified_components(&target)
+                    .ok_or(InvalidArchive("Invalid symlink target path"))?
+                    .starts_with(
+                        &crate::path::simplified_components(base_path)
+                            .ok_or(InvalidArchive("Invalid base path"))?,
+                    )
+                {
                     let is_absolute_enclosed = base_path
                         .components()
                         .map(Some)
@@ -1711,7 +1709,6 @@ mod test {
     use crate::write::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
-    use std::fs::remove_dir;
     use std::io::{Cursor, Read, Write};
     use tempfile::TempDir;
 

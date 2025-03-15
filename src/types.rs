@@ -525,26 +525,13 @@ impl ZipFileData {
             })
     }
 
-    /// Get a PathBuf that represent only normal components of the file name.
+    /// Simplify the file name by removing the prefix and parent directories and only return normal components
     pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
         if self.file_name.contains('\0') {
             return None;
         }
         let input = Path::new(OsStr::new(&*self.file_name));
-        let mut out = Vec::new();
-        for component in input.components() {
-            match component {
-                Component::Prefix(_) | Component::RootDir => return None,
-                Component::ParentDir => {
-                    if out.pop().is_none() {
-                        return None;
-                    }
-                }
-                Component::Normal(_) => out.push(component.as_os_str()),
-                Component::CurDir => (),
-            }
-        }
-        Some(out)
+        crate::path::simplified_components(input)
     }
 
     pub(crate) fn enclosed_name(&self) -> Option<PathBuf> {
