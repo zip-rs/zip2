@@ -347,8 +347,7 @@ impl ExtendedFileOptions {
             {
                 use crate::unstable::LittleEndianReadExt;
                 let header_id = data.read_u16_le()?;
-                if EXTRA_FIELD_MAPPING.contains(&header_id)
-                {
+                if EXTRA_FIELD_MAPPING.contains(&header_id) {
                     return Err(ZipError::Io(io::Error::new(
                         io::ErrorKind::Other,
                         format!(
