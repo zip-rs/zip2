@@ -35,9 +35,6 @@ pub(crate) mod stream;
 #[cfg(feature = "lzma")]
 pub(crate) mod lzma;
 
-#[cfg(feature = "xz")]
-pub(crate) mod xz;
-
 pub(crate) mod magic_finder;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
