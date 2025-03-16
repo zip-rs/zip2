@@ -12,9 +12,7 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
         match component {
             Component::Prefix(_) | Component::RootDir => return None,
             Component::ParentDir => {
-                if out.pop().is_none() {
-                    return None;
-                }
+                out.pop()?;
             }
             Component::Normal(_) => out.push(component.as_os_str()),
             Component::CurDir => (),

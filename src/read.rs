@@ -449,41 +449,40 @@ pub(crate) fn make_reader(
     ))))
 }
 
-pub(crate) fn make_symlink(outpath: &PathBuf, target: Vec<u8>) -> ZipResult<()> {
-    #[cfg(not(any(unix, windows)))]
-    {
-        let output = File::create(outpath.as_path());
-        output.write_all(target)?;
-        continue;
-    }
-
-    let Ok(target) = String::from_utf8(target) else {
+pub(crate) fn make_symlink<T>(
+    outpath: &Path,
+    target: &[u8],
+    #[allow(unused)] existing_files: &IndexMap<Box<str>, T>,
+) -> ZipResult<()> {
+    let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
     };
-    let target = Path::new(&target);
 
+    #[cfg(not(any(unix, windows)))]
+    {
+        let output = File::create(outpath);
+        output.write_all(target)?;
+    }
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(target, outpath.as_path())?;
+        std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
     }
     #[cfg(windows)]
     {
-        let Ok(target) = String::from_utf8(target) else {
-            return Err(ZipError::InvalidArchive("Invalid UTF-8 as symlink target"));
-        };
-        let target = target.into_boxed_str();
-        let target_is_dir_from_archive = self.shared.files.contains_key(&target) && is_dir(&target);
+        let target = Path::new(OsStr::new(&target_str));
+        let target_is_dir_from_archive =
+            existing_files.contains_key(target_str) && is_dir(target_str);
         let target_is_dir = if target_is_dir_from_archive {
             true
-        } else if let Ok(meta) = std::fs::metadata(&target) {
+        } else if let Ok(meta) = std::fs::metadata(target) {
             meta.is_dir()
         } else {
             false
         };
         if target_is_dir {
-            std::os::windows::fs::symlink_dir(target, outpath.as_path())?;
+            std::os::windows::fs::symlink_dir(target, outpath)?;
         } else {
-            std::os::windows::fs::symlink_file(target, outpath.as_path())?;
+            std::os::windows::fs::symlink_file(target, outpath)?;
         }
     }
     Ok(())
@@ -816,7 +815,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             drop(file);
 
             if let Some(target) = symlink_target {
-                make_symlink(&outpath, target)?;
+                make_symlink(&outpath, &target, &self.shared.files)?;
                 continue;
             }
             let mut file = self.by_index(i)?;
