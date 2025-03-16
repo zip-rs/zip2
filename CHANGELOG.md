@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.3.0](https://github.com/zip-rs/zip2/compare/v2.2.3...v2.3.0) - 2025-03-16
+
+### <!-- 0 -->🚀 Features
+
+- Add support for NTFS extra field ([#279](https://github.com/zip-rs/zip2/pull/279))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(test)* Conditionalize a zip64 doctest ([#308](https://github.com/zip-rs/zip2/pull/308))
+- fix failing tests, remove symlink loop check
+- Canonicalize output path to avoid false negatives
+- Symlink handling in stream extraction
+- Canonicalize output paths and symlink targets, and ensure they descend from the destination
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Fix clippy and cargo fmt warnings ([#310](https://github.com/zip-rs/zip2/pull/310))
+
 ## [2.2.3](https://github.com/zip-rs/zip2/compare/v2.2.2...v2.2.3) - 2025-02-26
 
 ### <!-- 2 -->🚜 Refactor
