@@ -99,6 +99,8 @@ enum GenericZipWriter<W: Write + Seek> {
     Bzip2(BzEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
+    #[cfg(feature = "xz")]
+    Xz(xz2::write::XzEncoder<MaybeEncrypted<W>>),
 }
 
 impl<W: Write + Seek> Debug for GenericZipWriter<W> {
@@ -118,6 +120,8 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             GenericZipWriter::Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.get_ref())),
         }
     }
 }
@@ -347,10 +351,7 @@ impl ExtendedFileOptions {
             {
                 use crate::unstable::LittleEndianReadExt;
                 let header_id = data.read_u16_le()?;
-                if EXTRA_FIELD_MAPPING
-                    .iter()
-                    .any(|&mapped| mapped == header_id)
-                {
+                if EXTRA_FIELD_MAPPING.contains(&header_id) {
                     return Err(ZipError::Io(io::Error::new(
                         io::ErrorKind::Other,
                         format!(
@@ -1757,7 +1758,12 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "xz")]
                 CompressionMethod::Xz => {
-                    Err(UnsupportedArchive("XZ isn't supported for compression"))
+                    let level = clamp_opt(compression_level.unwrap_or(6), 0..=9)
+                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                        as u32;
+                    Ok(Box::new(move |bare| {
+                        GenericZipWriter::Xz(xz2::write::XzEncoder::new(bare, level))
+                    }))
                 }
                 CompressionMethod::Unsupported(..) => {
                     Err(UnsupportedArchive("Unsupported compression"))
@@ -1782,6 +1788,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => w.finish()?,
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(w) => w.finish()?,
             Closed => {
                 return Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
@@ -1807,6 +1815,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(ref mut w) => Some(w as &mut dyn Write),
             Closed => None,
         }
     }
