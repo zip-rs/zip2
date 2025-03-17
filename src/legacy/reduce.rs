@@ -47,9 +47,14 @@ fn read_follower_sets<T: std::io::Read, E: Endianness>(
     Ok(fsets)
 }
 
+
 /// Read the next byte from is, decoded based on prev_byte and the follower sets.
-/// The byte is returned in *out_byte. The function returns true on success,
-/// and false on bad data or end of input.
+/// The byte is returned in *out_byte. 
+/// 
+/// # Returns
+/// 
+/// * `Ok(())` if the byte was successfully read.
+/// * `Err(io::Error)` on bad data or end of input.
 fn read_next_byte<T: std::io::Read, E: Endianness>(
     is: &mut BitReader<T, E>,
     prev_byte: u8,
@@ -215,7 +220,7 @@ mod tests {
     use super::hwexpand;
     use crate::legacy::reduce::{follower_idx_bw, lsb, max_dist};
     use std::collections::VecDeque;
-    const HAMLET_2048: &[u8; 1285] = include_bytes!("../../tests/reduce_hamlet_2048.bin");
+    const HAMLET_2048: &[u8; 1285] = include_bytes!("../../tests/data/legacy/reduce_hamlet_2048.bin");
 
     #[test]
     fn test_lsb() {
@@ -243,7 +248,7 @@ mod tests {
       $ dosbox -c "mount c ." -c "c:" -c "pkzip -ea4 a.zip a" -c "exit"
       $ xxd -i -s 31 -l $(expr $(find A.ZIP -printf %s) - 100) A.ZIP
     */
-    const ZEROS_REDUCED: &[u8; 1297] = include_bytes!("../../tests/reduce_zero_reduced.bin");
+    const ZEROS_REDUCED: &[u8; 1297] = include_bytes!("../../tests/data/legacy/reduce_zero_reduced.bin");
 
     #[test]
     fn test_expand_zeros() {

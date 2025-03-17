@@ -6,7 +6,7 @@ use zip::ZipArchive;
 #[test]
 fn decompress_shrink() {
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/shrink.zip"));
+    v.extend_from_slice(include_bytes!("data/legacy/shrink.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive
@@ -23,7 +23,7 @@ fn decompress_shrink() {
 #[test]
 fn decompress_reduce() {
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/reduce.zip"));
+    v.extend_from_slice(include_bytes!("data/legacy/reduce.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive
@@ -40,7 +40,7 @@ fn decompress_reduce() {
 #[test]
 fn decompress_implode() {
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/implode.zip"));
+    v.extend_from_slice(include_bytes!("data/legacy/implode.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive

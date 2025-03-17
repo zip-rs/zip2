@@ -9,7 +9,7 @@ use std::io::{self, Cursor, Error, Read, Result};
 fn read_huffman_code<T: std::io::Read, E: Endianness>(
     is: &mut BitReader<T, E>,
     num_lens: usize,
-) -> std::io::Result<HuffmanDecoder> {
+) -> std::io::Result<Box<HuffmanDecoder>> {
     let mut lens = [0; 1 << 8];
     let mut len_count = [0; 17];
     // debug_assert!(num_lens <= sizeof(lens) / sizeof(lens[0]));
@@ -71,7 +71,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
         ));
     }
 
-    let mut d = HuffmanDecoder::default();
+    let mut d = Box::new(HuffmanDecoder::default());
     d.init(&lens, num_lens)?;
     Ok(d)
 }
@@ -205,7 +205,7 @@ impl<R: Read> Read for ImplodeDecoder<R> {
 mod tests {
     use super::hwexplode;
     use std::collections::VecDeque;
-    const HAMLET_256: &[u8; 249] = include_bytes!("../../tests/implode_hamlet_256.bin");
+    const HAMLET_256: &[u8; 249] = include_bytes!("../../tests/data/legacy/implode_hamlet_256.bin");
 
     #[test]
     fn test_explode_hamlet_256() {
