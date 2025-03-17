@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.1](https://github.com/zip-rs/zip2/compare/v2.4.0...v2.4.1) - 2025-03-17
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- type issue in test
+- double as_ref().canonicalize()?
+- CI failures
+- Create directory for extraction if necessary ([#314](https://github.com/zip-rs/zip2/pull/314))
+
 ## [2.4.0](https://github.com/zip-rs/zip2/compare/v2.3.0...v2.4.0) - 2025-03-17
 
 ### <!-- 0 -->🚀 Features
