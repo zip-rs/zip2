@@ -99,6 +99,8 @@ enum GenericZipWriter<W: Write + Seek> {
     Bzip2(BzEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
+    #[cfg(feature = "xz")]
+    Xz(xz2::write::XzEncoder<MaybeEncrypted<W>>),
 }
 
 impl<W: Write + Seek> Debug for GenericZipWriter<W> {
@@ -118,6 +120,8 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             GenericZipWriter::Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.get_ref())),
         }
     }
 }
@@ -347,10 +351,7 @@ impl ExtendedFileOptions {
             {
                 use crate::unstable::LittleEndianReadExt;
                 let header_id = data.read_u16_le()?;
-                if EXTRA_FIELD_MAPPING
-                    .iter()
-                    .any(|&mapped| mapped == header_id)
-                {
+                if EXTRA_FIELD_MAPPING.contains(&header_id) {
                     return Err(ZipError::Io(io::Error::new(
                         io::ErrorKind::Other,
                         format!(
@@ -416,6 +417,14 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
 }
 
 impl<T: FileOptionExtension> FileOptions<'_, T> {
+    pub(crate) fn normalize(&mut self) {
+        if !self.last_modified_time.is_valid() {
+            self.last_modified_time = FileOptions::<T>::default().last_modified_time;
+        }
+
+        *self.permissions.get_or_insert(0o644) |= ffi::S_IFREG;
+    }
+
     /// Set the compression method for the new file
     ///
     /// The default is `CompressionMethod::Deflated` if it is enabled. If not,
@@ -536,10 +545,10 @@ impl FileOptions<'_, ExtendedFileOptions> {
     /// Removes the extra data fields.
     #[must_use]
     pub fn clear_extra_data(mut self) -> Self {
-        if self.extended_options.extra_data.len() > 0 {
+        if !self.extended_options.extra_data.is_empty() {
             self.extended_options.extra_data = Arc::new(vec![]);
         }
-        if self.extended_options.central_extra_data.len() > 0 {
+        if !self.extended_options.central_extra_data.is_empty() {
             self.extended_options.central_extra_data = Arc::new(vec![]);
         }
         self
@@ -1167,7 +1176,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         name: S,
         mut options: FileOptions<T>,
     ) -> ZipResult<()> {
-        Self::normalize_options(&mut options);
+        options.normalize();
         let make_new_self = self.inner.prepare_next_writer(
             options.compression_method,
             options.compression_level,
@@ -1243,16 +1252,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn normalize_options<T: FileOptionExtension>(options: &mut FileOptions<T>) {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o644);
-        }
-        if !options.last_modified_time.is_valid() {
-            options.last_modified_time = FileOptions::<T>::default().last_modified_time;
-        }
-        *options.permissions.as_mut().unwrap() |= ffi::S_IFREG;
-    }
-
     /// Starts a file, taking a Path as argument.
     ///
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
@@ -1293,17 +1292,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// }
     /// ```
     pub fn raw_copy_file_rename<S: ToString>(&mut self, file: ZipFile, name: S) -> ZipResult<()> {
-        let mut options = SimpleFileOptions::default()
-            .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
-            .last_modified_time(
-                file.last_modified()
-                    .unwrap_or_else(DateTime::default_for_write),
-            )
-            .compression_method(file.compression());
-        if let Some(perms) = file.unix_mode() {
-            options = options.unix_permissions(perms);
-        }
-        Self::normalize_options(&mut options);
+        let options = file.options();
         self.raw_copy_file_rename_internal(file, name, options)
     }
 
@@ -1398,14 +1387,17 @@ impl<W: Write + Seek> ZipWriter<W> {
         unix_mode: Option<u32>,
     ) -> ZipResult<()> {
         let name = file.name().to_owned();
-        let mut options = SimpleFileOptions::default()
-            .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
-            .last_modified_time(last_modified_time)
-            .compression_method(file.compression());
+
+        let mut options = file.options();
+
+        options = options.last_modified_time(last_modified_time);
+
         if let Some(perms) = unix_mode {
             options = options.unix_permissions(perms);
         }
-        Self::normalize_options(&mut options);
+
+        options.normalize();
+
         self.raw_copy_file_rename_internal(file, name, options)
     }
 
@@ -1766,7 +1758,12 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "xz")]
                 CompressionMethod::Xz => {
-                    Err(UnsupportedArchive("XZ isn't supported for compression"))
+                    let level = clamp_opt(compression_level.unwrap_or(6), 0..=9)
+                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                        as u32;
+                    Ok(Box::new(move |bare| {
+                        GenericZipWriter::Xz(xz2::write::XzEncoder::new(bare, level))
+                    }))
                 }
                 CompressionMethod::Unsupported(..) => {
                     Err(UnsupportedArchive("Unsupported compression"))
@@ -1791,6 +1788,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => w.finish()?,
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(w) => w.finish()?,
             Closed => {
                 return Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
@@ -1816,6 +1815,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(ref mut w) => Some(w as &mut dyn Write),
             Closed => None,
         }
     }

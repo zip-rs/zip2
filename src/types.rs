@@ -3,6 +3,7 @@ use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
 use std::cmp::Ordering;
+use std::ffi::OsStr;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::mem;
@@ -522,6 +523,15 @@ impl ZipFileData {
                 path.push(cur.as_os_str());
                 path
             })
+    }
+
+    /// Simplify the file name by removing the prefix and parent directories and only return normal components
+    pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
+        if self.file_name.contains('\0') {
+            return None;
+        }
+        let input = Path::new(OsStr::new(&*self.file_name));
+        crate::path::simplified_components(input)
     }
 
     pub(crate) fn enclosed_name(&self) -> Option<PathBuf> {
