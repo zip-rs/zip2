@@ -362,9 +362,7 @@ impl<R: Read> Read for ShrinkDecoder<R> {
         if !self.stream_read {
             self.stream_read = true;
             let mut compressed_bytes = Vec::new();
-            if let Err(err) = self.compressed_reader.read_to_end(&mut compressed_bytes) {
-                return Err(err.into());
-            }
+            self.compressed_reader.read_to_end(&mut compressed_bytes)?;
             hwunshrink(
                 &compressed_bytes,
                 self.uncompressed_size as usize,
