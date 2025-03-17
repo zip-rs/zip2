@@ -459,8 +459,9 @@ pub(crate) fn make_symlink<T>(
 
     #[cfg(not(any(unix, windows)))]
     {
+        use std::fs::File;
         let output = File::create(outpath);
-        output.write_all(target)?;
+        output?.write_all(target)?;
     }
     #[cfg(unix)]
     {
