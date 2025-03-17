@@ -99,6 +99,8 @@ enum GenericZipWriter<W: Write + Seek> {
     Bzip2(BzEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
+    #[cfg(feature = "xz")]
+    Xz(xz2::write::XzEncoder<MaybeEncrypted<W>>),
 }
 
 impl<W: Write + Seek> Debug for GenericZipWriter<W> {
@@ -118,6 +120,8 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             GenericZipWriter::Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.get_ref())),
         }
     }
 }
@@ -160,6 +164,7 @@ pub(crate) mod zip_writer {
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
         pub(super) comment: Box<[u8]>,
+        pub(super) zip64_comment: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
     }
@@ -347,10 +352,7 @@ impl ExtendedFileOptions {
             {
                 use crate::unstable::LittleEndianReadExt;
                 let header_id = data.read_u16_le()?;
-                if EXTRA_FIELD_MAPPING
-                    .iter()
-                    .any(|&mapped| mapped == header_id)
-                {
+                if EXTRA_FIELD_MAPPING.contains(&header_id) {
                     return Err(ZipError::Io(io::Error::new(
                         io::ErrorKind::Other,
                         format!(
@@ -416,6 +418,14 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
 }
 
 impl<T: FileOptionExtension> FileOptions<'_, T> {
+    pub(crate) fn normalize(&mut self) {
+        if !self.last_modified_time.is_valid() {
+            self.last_modified_time = FileOptions::<T>::default().last_modified_time;
+        }
+
+        *self.permissions.get_or_insert(0o644) |= ffi::S_IFREG;
+    }
+
     /// Set the compression method for the new file
     ///
     /// The default is `CompressionMethod::Deflated` if it is enabled. If not,
@@ -536,10 +546,10 @@ impl FileOptions<'_, ExtendedFileOptions> {
     /// Removes the extra data fields.
     #[must_use]
     pub fn clear_extra_data(mut self) -> Self {
-        if self.extended_options.extra_data.len() > 0 {
+        if !self.extended_options.extra_data.is_empty() {
             self.extended_options.extra_data = Arc::new(vec![]);
         }
-        if self.extended_options.central_extra_data.len() > 0 {
+        if !self.extended_options.central_extra_data.is_empty() {
             self.extended_options.central_extra_data = Arc::new(vec![]);
         }
         self
@@ -629,20 +639,19 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        if let Ok((footer, shared)) = ZipArchive::get_metadata(config, &mut readwriter) {
-            Ok(ZipWriter {
-                inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-                files: shared.files,
-                stats: Default::default(),
-                writing_to_file: false,
-                comment: footer.zip_file_comment,
-                writing_raw: true, // avoid recomputing the last file's header
-                flush_on_finish_file: false,
-                seek_possible: true,
-            })
-        } else {
-            Err(InvalidArchive("No central-directory end header found"))
-        }
+        let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
+
+        Ok(ZipWriter {
+            inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
+            files: shared.files,
+            stats: Default::default(),
+            writing_to_file: false,
+            comment: shared.comment,
+            zip64_comment: shared.zip64_comment,
+            writing_raw: true, // avoid recomputing the last file's header
+            flush_on_finish_file: false,
+            seek_possible: true,
+        })
     }
 
     /// `flush_on_finish_file` is designed to support a streaming `inner` that may unload flushed
@@ -776,8 +785,11 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let central_start = self.finalize()?;
         let inner = mem::replace(&mut self.inner, Closed).unwrap();
         let comment = mem::take(&mut self.comment);
+        let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
-        let archive = ZipArchive::from_finalized_writer(files, comment, inner, central_start)?;
+
+        let archive =
+            ZipArchive::from_finalized_writer(files, comment, zip64_comment, inner, central_start)?;
         Ok(archive)
     }
 }
@@ -796,6 +808,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
+            zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: true,
         }
@@ -833,6 +846,35 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// is typically expected to be encoded in UTF-8.
     pub const fn get_raw_comment(&self) -> &[u8] {
         &self.comment
+    }
+
+    /// Set ZIP64 archive comment.
+    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>)
+    where
+        S: Into<Box<str>>,
+    {
+        self.set_raw_zip64_comment(comment.map(|v| v.into().into_boxed_bytes()))
+    }
+
+    /// Set ZIP64 archive comment.
+    ///
+    /// This sets the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8.
+    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) {
+        self.zip64_comment = comment;
+    }
+
+    /// Get ZIP64 archive comment.
+    pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
+        self.get_raw_zip64_comment().map(from_utf8)
+    }
+
+    /// Get ZIP archive comment.
+    ///
+    /// This returns the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8.
+    pub fn get_raw_zip64_comment(&self) -> Option<&[u8]> {
+        self.zip64_comment.as_deref()
     }
 
     /// Set the file length and crc32 manually.
@@ -1141,7 +1183,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         name: S,
         mut options: FileOptions<T>,
     ) -> ZipResult<()> {
-        Self::normalize_options(&mut options);
+        options.normalize();
         let make_new_self = self.inner.prepare_next_writer(
             options.compression_method,
             options.compression_level,
@@ -1217,16 +1259,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn normalize_options<T: FileOptionExtension>(options: &mut FileOptions<T>) {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o644);
-        }
-        if !options.last_modified_time.is_valid() {
-            options.last_modified_time = FileOptions::<T>::default().last_modified_time;
-        }
-        *options.permissions.as_mut().unwrap() |= ffi::S_IFREG;
-    }
-
     /// Starts a file, taking a Path as argument.
     ///
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
@@ -1266,23 +1298,17 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///     Ok(())
     /// }
     /// ```
-    pub fn raw_copy_file_rename<S: ToString>(
+    pub fn raw_copy_file_rename<S: ToString>(&mut self, file: ZipFile, name: S) -> ZipResult<()> {
+        let options = file.options();
+        self.raw_copy_file_rename_internal(file, name, options)
+    }
+
+    fn raw_copy_file_rename_internal<S: ToString>(
         &mut self,
         mut file: ZipFile,
         name: S,
+        options: SimpleFileOptions,
     ) -> ZipResult<()> {
-        let mut options = SimpleFileOptions::default()
-            .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
-            .last_modified_time(
-                file.last_modified()
-                    .unwrap_or_else(DateTime::default_for_write),
-            )
-            .compression_method(file.compression());
-        if let Some(perms) = file.unix_mode() {
-            options = options.unix_permissions(perms);
-        }
-        Self::normalize_options(&mut options);
-
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
             compressed_size: file.compressed_size(),
@@ -1336,6 +1362,50 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn raw_copy_file(&mut self, file: ZipFile) -> ZipResult<()> {
         let name = file.name().to_owned();
         self.raw_copy_file_rename(file, name)
+    }
+
+    /// Add a new file using the already compressed data from a ZIP file being read and set the last
+    /// modified date and unix mode. This allows faster copies of the `ZipFile` since there is no need
+    /// to decompress and compress it again. Any `ZipFile` metadata other than the last modified date
+    /// and the unix mode is copied and not checked, for example the file CRC.
+    ///
+    /// ```no_run
+    /// use std::io::{Read, Seek, Write};
+    /// use zip::{DateTime, ZipArchive, ZipWriter};
+    ///
+    /// fn copy<R, W>(src: &mut ZipArchive<R>, dst: &mut ZipWriter<W>) -> zip::result::ZipResult<()>
+    /// where
+    ///     R: Read + Seek,
+    ///     W: Write + Seek,
+    /// {
+    ///     // Retrieve file entry by name
+    ///     let file = src.by_name("src_file.txt")?;
+    ///
+    ///     // Copy the previously obtained file entry to the destination zip archive
+    ///     dst.raw_copy_file_touch(file, DateTime::default(), Some(0o644))?;
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn raw_copy_file_touch(
+        &mut self,
+        file: ZipFile,
+        last_modified_time: DateTime,
+        unix_mode: Option<u32>,
+    ) -> ZipResult<()> {
+        let name = file.name().to_owned();
+
+        let mut options = file.options();
+
+        options = options.last_modified_time(last_modified_time);
+
+        if let Some(perms) = unix_mode {
+            options = options.unix_permissions(perms);
+        }
+
+        options.normalize();
+
+        self.raw_copy_file_rename_internal(file, name, options)
     }
 
     /// Add a directory entry.
@@ -1479,11 +1549,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
-
-        if self.files.len() > spec::ZIP64_ENTRY_THR
+        let is64 = self.files.len() > spec::ZIP64_ENTRY_THR
             || central_size.max(central_start) > spec::ZIP64_BYTES_THR
-        {
+            || self.zip64_comment.is_some();
+
+        if is64 {
+            let comment = self.zip64_comment.clone().unwrap_or_default();
+
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
+                record_size: comment.len() as u64 + 44,
                 version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
                 disk_number: 0,
@@ -1492,6 +1566,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u64,
                 central_directory_size: central_size,
                 central_directory_offset: central_start,
+                extensible_data_sector: comment,
             };
 
             zip64_footer.write(writer)?;
@@ -1705,7 +1780,12 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "xz")]
                 CompressionMethod::Xz => {
-                    Err(UnsupportedArchive("XZ isn't supported for compression"))
+                    let level = clamp_opt(compression_level.unwrap_or(6), 0..=9)
+                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                        as u32;
+                    Ok(Box::new(move |bare| {
+                        GenericZipWriter::Xz(xz2::write::XzEncoder::new(bare, level))
+                    }))
                 }
                 CompressionMethod::Unsupported(..) => {
                     Err(UnsupportedArchive("Unsupported compression"))
@@ -1730,6 +1810,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => w.finish()?,
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(w) => w.finish()?,
             Closed => {
                 return Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
@@ -1755,6 +1837,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
+            #[cfg(feature = "xz")]
+            GenericZipWriter::Xz(ref mut w) => Some(w as &mut dyn Write),
             Closed => None,
         }
     }

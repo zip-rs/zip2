@@ -1,6 +1,6 @@
 use lzma_rs::decompress::{Options, Stream, UnpackedSize};
 use std::collections::VecDeque;
-use std::io::{BufRead, Read, Result, Write};
+use std::io::{BufRead, Error, ErrorKind, Read, Result, Write};
 
 const OPTIONS: Options = Options {
     unpacked_size: UnpackedSize::ReadFromHeader,
@@ -29,7 +29,11 @@ impl<R: Read> LzmaDecoder<R> {
 
 impl<R: BufRead> Read for LzmaDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let mut bytes_read = self.stream.get_output_mut().unwrap().read(buf)?;
+        let mut bytes_read = self
+            .stream
+            .get_output_mut()
+            .ok_or(Error::new(ErrorKind::InvalidData, "Invalid LZMA stream"))?
+            .read(buf)?;
         while bytes_read < buf.len() {
             let compressed_bytes = self.compressed_reader.fill_buf()?;
             if compressed_bytes.is_empty() {
