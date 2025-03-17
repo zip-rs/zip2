@@ -109,7 +109,7 @@ impl<R: Read> ZipStreamReader<R> {
         }
 
         self.visit(&mut Extractor(
-            directory.as_ref().canonicalize()?,
+            directory,
             IndexMap::new(),
         ))
     }
