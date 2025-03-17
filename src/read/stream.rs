@@ -108,10 +108,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
 
-        self.visit(&mut Extractor(
-            directory,
-            IndexMap::new(),
-        ))
+        self.visit(&mut Extractor(directory, IndexMap::new()))
     }
 }
 
@@ -398,7 +395,7 @@ mod test {
     fn test_can_create_destination() -> ZipResult<()> {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../../tests/data/mimetype.zip"));
-        let mut reader = ZipStreamReader::new(v);
+        let reader = ZipStreamReader::new(v.as_slice());
         let dest = TempDir::with_prefix("stream_test_can_create_destination").unwrap();
         reader.extract(&dest)?;
         assert!(dest.path().join("mimetype").exists());
