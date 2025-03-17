@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "2.2.3"
+version = "2.3.0"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -37,7 +37,7 @@ getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true}
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 memchr = "2.7"
-nt-time = { version = "0.10.6", optional = true }
+nt-time = { version = "0.10.6", default-features = false, optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
 thiserror = "2"

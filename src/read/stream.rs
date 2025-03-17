@@ -62,7 +62,7 @@ impl<R: Read> ZipStreamReader<R> {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 self.1.insert(file.name().into(), ());
                 let mut outpath = self.0.clone();
-                file.safe_prepare_path(&self.0, &mut outpath)?;
+                file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
 
                 if file.is_symlink() {
                     let mut target = Vec::with_capacity(file.size() as usize);
