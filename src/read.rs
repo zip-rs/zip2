@@ -19,7 +19,7 @@ use crate::ZIP64_BYTES_THR;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::fs::create_dir_all;
+use std::fs::{create_dir_all, File};
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
 use std::mem::size_of;
@@ -460,7 +460,7 @@ pub(crate) fn make_symlink<T>(
     #[cfg(not(any(unix, windows)))]
     {
         let output = File::create(outpath);
-        output.write_all(target)?;
+        output?.write_all(target)?;
     }
     #[cfg(unix)]
     {
