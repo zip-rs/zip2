@@ -17,12 +17,12 @@ const UNKNOWN_LEN: u16 = u16::MAX;
 
 struct CodeQueue {
     next_idx: usize,
-    codes: Vec<Option<u16>>,
+    codes: [Option<u16>; MAX_CODE - CONTROL_CODE + 1]
 }
 
 impl CodeQueue {
     fn new() -> Self {
-        let mut codes = vec![None; MAX_CODE as usize - CONTROL_CODE + 1];
+        let mut codes = [None; MAX_CODE as usize - CONTROL_CODE + 1];
         for (i, code) in (CONTROL_CODE as u16 + 1..=MAX_CODE as u16).enumerate() {
             codes[i] = Some(code);
         }
@@ -151,25 +151,23 @@ fn read_code<T: std::io::Read, E: Endianness>(
     Ok(None)
 }
 
-/// Output the string represented by a code into dst at dst_pos. Returns
-/// HWUNSHRINK_OK on success, and also updates *first_byte and *len with the
-/// first byte and length of the output string, respectively.
+/// Output the string represented by a code into dst at dst_pos. 
+/// 
+/// # Returns
+/// new first byte of the string, or io::Error InvalidData on invalid prefix code.
 fn output_code(
-    code: u16,
     dst: &mut VecDeque<u8>,
+    code: u16,
     prev_code: u16,
     codetab: &mut [Codetab],
-    queue: &mut CodeQueue,
-    first_byte: &mut u8,
-    len: &mut usize,
-) -> io::Result<()> {
+    queue: &CodeQueue,
+    first_byte: u8,
+) -> io::Result<u8> {
     debug_assert!(code <= MAX_CODE as u16 && code != CONTROL_CODE as u16);
     if code <= u8::MAX as u16 {
         // Output literal byte.
-        *first_byte = code as u8;
-        *len = 1;
         dst.push_back(code as u8);
-        return Ok(());
+        return Ok(code as u8);
     }
 
     if codetab[code as usize].prefix_code.is_none()
@@ -186,9 +184,7 @@ fn output_code(
         for i in ct.last_dst_pos..ct.last_dst_pos + ct.len as usize {
             dst.push_back(dst[i]);
         }
-        *first_byte = dst[ct.last_dst_pos];
-        *len = ct.len as usize;
-        return Ok(());
+        return Ok(dst[ct.last_dst_pos]);
     }
 
     // Output a string of unknown length. This happens when the prefix
@@ -208,11 +204,11 @@ fn output_code(
         with its first byte. */
         codetab[prefix_code as usize] = Codetab {
             prefix_code: Some(prev_code),
-            ext_byte: *first_byte,
+            ext_byte: first_byte,
             len: codetab[prev_code as usize].len + 1,
             last_dst_pos: codetab[prev_code as usize].last_dst_pos,
         };
-        dst.push_back(*first_byte);
+        dst.push_back(first_byte);
     } else if codetab[prefix_code as usize].prefix_code.is_none() {
         // The prefix code is still invalid.
         return Err(io::Error::new(
@@ -222,26 +218,26 @@ fn output_code(
     }
 
     // Output the prefix string, then the extension byte.
-    *len = codetab[prefix_code as usize].len as usize + 1;
+    let len = codetab[prefix_code as usize].len as usize + 1;
     let last_dst_pos = dst.len();
     let ct = &codetab[prefix_code as usize];
     for i in ct.last_dst_pos..ct.last_dst_pos + ct.len as usize {
         dst.push_back(dst[i]);
     }
     dst.push_back(codetab[code as usize].ext_byte);
-    *first_byte = dst[ct.last_dst_pos];
+    let res = dst[ct.last_dst_pos];
 
     // Update the code table now that the string has a length and pos.
     debug_assert!(prev_code != code);
-    codetab[code as usize].len = *len as u16;
+    codetab[code as usize].len = len as u16;
     codetab[code as usize].last_dst_pos = last_dst_pos;
 
-    Ok(())
+    Ok(res)
 }
 
 fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> io::Result<()> {
     let mut codetab = Codetab::create_new();
-    let mut queue = CodeQueue::new();
+    let mut queue = Box::new(CodeQueue::new());
     let mut is = BitReader::endian(src, LittleEndian);
 
     let mut code_size = MIN_CODE_SIZE;
@@ -258,7 +254,7 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
             "the first code must be a literal",
         ));
     }
-    let mut first_byte = curr_code as u8;
+    let first_byte = curr_code as u8;
     codetab[curr_code as usize].last_dst_pos = dst.len();
     dst.push_back(curr_code as u8);
 
@@ -293,15 +289,13 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut VecDeque<u8>) -> i
         }
 
         // Output the string represented by the current code.
-        let mut len = 0;
-        output_code(
-            curr_code,
+        let first_byte = output_code(
             dst,
+            curr_code,
             prev_code,
             &mut codetab,
             &mut queue,
-            &mut first_byte,
-            &mut len,
+            first_byte,
         )?;
 
         // Add a new code to the string table if there's room.
