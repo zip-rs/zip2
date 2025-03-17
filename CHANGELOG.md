@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.0](https://github.com/zip-rs/zip2/compare/v2.3.0...v2.4.0) - 2025-03-17
+
+### <!-- 0 -->🚀 Features
+
+- `ZipArchive::root_dir` and `ZipArchive::extract_unwrapped_root_dir` ([#304](https://github.com/zip-rs/zip2/pull/304))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- wasm build failure due to a missing use statement  ([#313](https://github.com/zip-rs/zip2/pull/313))
+
 ## [2.3.0](https://github.com/zip-rs/zip2/compare/v2.2.3...v2.3.0) - 2025-03-16
 
 ### <!-- 0 -->🚀 Features
