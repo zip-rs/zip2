@@ -4,7 +4,7 @@
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- `deep_copy_file` produced a mangled file header on big-endian platforms
+- `deep_copy_file` produced a mangled file header on big-endian platforms (#309)
 
 ## [2.4.1](https://github.com/zip-rs/zip2/compare/v2.4.0...v2.4.1) - 2025-03-17
 
