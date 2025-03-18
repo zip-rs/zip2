@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.2](https://github.com/zip-rs/zip2/compare/v2.4.1...v2.4.2) - 2025-03-18
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- `deep_copy_file` produced a mangled file header on big-endian platforms
+
 ## [2.4.1](https://github.com/zip-rs/zip2/compare/v2.4.0...v2.4.1) - 2025-03-17
 
 ### <!-- 1 -->🐛 Bug Fixes
