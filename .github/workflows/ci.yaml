@@ -100,7 +100,7 @@ jobs:
       - name: compile fuzz
         run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
-        timeout-minutes: 70
+        timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Minimize corpus
         run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
@@ -150,7 +150,7 @@ jobs:
       - name: compile fuzz
         run: cargo afl build --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
       - name: run fuzz
-        timeout-minutes: 70
+        timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
@@ -192,7 +192,7 @@ jobs:
       - name: compile fuzz
         run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
-        timeout-minutes: 70
+        timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Minimize corpus
         run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
@@ -242,7 +242,7 @@ jobs:
       - name: compile fuzz
         run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
       - name: run fuzz
-        timeout-minutes: 70
+        timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
