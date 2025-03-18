@@ -3,11 +3,9 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
-use crate::read::{
-    find_content, parse_single_extra_field, Config, ZipArchive, ZipFile, ZipFileReader,
-};
+use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock};
+use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
@@ -689,13 +687,10 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             compressed_size = write_position - src_data_start;
             src_data.compressed_size = compressed_size;
         }
-        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(
-            src_data,
-            self.inner.get_plain(),
-        )?));
-        let mut copy = Vec::with_capacity(compressed_size as usize);
-        reader.read_to_end(&mut copy)?;
-        drop(reader);
+        let mut reader = BufReader::new(self.inner.get_plain());
+        reader.seek(SeekFrom::Start(src_data_start))?;
+        let mut copy = vec![0; compressed_size as usize];
+        reader.take(compressed_size).read_exact(&mut copy)?;
         self.inner
             .get_plain()
             .seek(SeekFrom::Start(write_position))?;
@@ -718,25 +713,23 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.central_header_start = 0;
         let block = new_data.local_block()?;
         let index = self.insert_file_data(new_data)?;
-        let result = (|| {
+        let new_data = &self.files[index];
+        let result: io::Result<()> = (|| {
             let plain_writer = self.inner.get_plain();
-            plain_writer.write_all(block.as_bytes())?;
-            plain_writer.write_all(dest_name_raw)?;
-            let new_data = &self.files[index];
+            block.write(plain_writer)?;
+            plain_writer.write_all(&new_data.file_name_raw)?;
             if let Some(data) = &new_data.extra_field {
                 plain_writer.write_all(data)?;
             }
             debug_assert_eq!(data_start, plain_writer.stream_position()?);
             self.writing_to_file = true;
-            plain_writer.write_all(&copy)
+            plain_writer.write_all(&copy)?;
+            if self.flush_on_finish_file {
+                plain_writer.flush()?;
+            }
+            Ok(())
         })();
         self.ok_or_abort_file(result)?;
-
-        // Copying will overwrite the central header
-        self.files
-            .values_mut()
-            .for_each(|file| file.central_header_start = 0);
-
         self.writing_to_file = false;
         Ok(())
     }
@@ -1527,6 +1520,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let central_and_footer_size = footer_end - central_start;
             writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
             central_start = self.write_central_and_footer()?;
+            debug_assert!(self.inner.get_plain().stream_position()? == archive_end);
         }
 
         Ok(central_start)
@@ -2292,8 +2286,10 @@ mod test {
         writer
             .deep_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
             .unwrap();
-        let zip = writer.finish().unwrap();
-        let mut writer = ZipWriter::new_append(zip).unwrap();
+        let zip = writer.finish().unwrap().into_inner();
+        zip.iter().copied().for_each(|x| print!("{:02x}", x));
+        println!();
+        let mut writer = ZipWriter::new_append(Cursor::new(zip)).unwrap();
         writer
             .deep_copy_file(RT_TEST_FILENAME, THIRD_FILENAME)
             .unwrap();
@@ -2599,7 +2595,7 @@ mod test {
         Ok(())
     }
 
-    #[cfg(feature = "bzip2")]
+    #[cfg(all(feature = "bzip2", not(miri)))]
     #[test]
     fn test_fuzz_failure_2024_06_08() -> ZipResult<()> {
         use crate::write::ExtendedFileOptions;
@@ -3230,7 +3226,7 @@ mod test {
 
     #[test]
     #[allow(clippy::octal_escapes)]
-    #[cfg(feature = "bzip2")]
+    #[cfg(all(feature = "bzip2", not(miri)))]
     fn test_fuzz_crash_2024_06_17b() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3421,7 +3417,7 @@ mod test {
         Ok(())
     }
 
-    #[cfg(all(feature = "bzip2", feature = "aes-crypto"))]
+    #[cfg(all(feature = "bzip2", feature = "aes-crypto", not(miri)))]
     #[test]
     fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -3548,7 +3544,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "bzip2")]
+    #[cfg(all(feature = "bzip2", not(miri)))]
     fn fuzz_crash_2024_07_17() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
