@@ -434,15 +434,18 @@ pub(crate) fn make_crypto_reader<'a>(
     Ok(reader)
 }
 
+#[allow(unused_variables)]
 pub(crate) fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
     reader: CryptoReader,
+    uncompressed_size: u64,
+    flags: u16
 ) -> ZipResult<ZipFileReader> {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
     Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
-        Decompressor::new(io::BufReader::new(reader), compression_method)?,
+        Decompressor::new(io::BufReader::new(reader), compression_method, uncompressed_size, flags)?,
         crc32,
         ae2_encrypted,
     ))))
@@ -1124,12 +1127,12 @@ impl<R: Read + Seek> ZipArchive<R> {
             _ => {}
         }
         let limit_reader = find_content(data, &mut self.reader)?;
-
+        
         let crypto_reader = make_crypto_reader(data, limit_reader, password, data.aes_mode)?;
 
         Ok(ZipFile {
             data: Cow::Borrowed(data),
-            reader: make_reader(data.compression_method, data.crc32, crypto_reader)?,
+            reader: make_reader(data.compression_method, data.crc32, crypto_reader, data.uncompressed_size, data.flags)?,
         })
     }
 
@@ -1333,6 +1336,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         crc32,
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
+        flags,
         file_name,
         file_name_raw,
         extra_field: Some(Arc::new(extra_field.to_vec())),
@@ -1915,11 +1919,13 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
+    let result_uncompressed_size = result.uncompressed_size;
+    let result_flags = result.flags;
     let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
 
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: make_reader(result_compression_method, result_crc32, crypto_reader)?,
+        reader: make_reader(result_compression_method, result_crc32, crypto_reader, result_uncompressed_size, result_flags)?,
     }))
 }
 
