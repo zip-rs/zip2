@@ -459,8 +459,9 @@ pub(crate) fn make_symlink<T>(
 
     #[cfg(not(any(unix, windows)))]
     {
+        use std::fs::File;
         let output = File::create(outpath);
-        output.write_all(target)?;
+        output?.write_all(target)?;
     }
     #[cfg(unix)]
     {
@@ -863,6 +864,9 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<()> {
         use std::fs;
 
+        create_dir_all(&directory)?;
+        let directory = directory.as_ref().canonicalize()?;
+
         let root_dir = root_dir_filter
             .and_then(|filter| {
                 self.root_dir(&filter)
@@ -889,8 +893,6 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         #[cfg(unix)]
         let mut files_by_unix_mode = Vec::new();
-
-        let directory = directory.as_ref().canonicalize()?;
 
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
@@ -2262,6 +2264,17 @@ mod test {
         create_dir(&dest)?;
         assert!(reader.extract(dest).is_err());
         assert!(!dest_sibling.join("dest-file").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn test_can_create_destination() -> ZipResult<()> {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v))?;
+        let dest = TempDir::with_prefix("read__test_can_create_destination").unwrap();
+        reader.extract(&dest)?;
+        assert!(dest.path().join("mimetype").exists());
         Ok(())
     }
 }

@@ -5,6 +5,7 @@ use super::{
 use crate::spec::FixedSizeBlock;
 use indexmap::IndexMap;
 use std::fs;
+use std::fs::create_dir_all;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
@@ -57,6 +58,8 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
+        create_dir_all(&directory)?;
+        let directory = directory.as_ref().canonicalize()?;
         struct Extractor(PathBuf, IndexMap<Box<str>, ()>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
@@ -105,10 +108,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
 
-        self.visit(&mut Extractor(
-            directory.as_ref().canonicalize()?,
-            IndexMap::new(),
-        ))
+        self.visit(&mut Extractor(directory, IndexMap::new()))
     }
 }
 
@@ -388,6 +388,17 @@ mod test {
         create_dir(&dest)?;
         assert!(reader.extract(dest).is_err());
         assert!(!dest_sibling.join("dest-file").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn test_can_create_destination() -> ZipResult<()> {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../../tests/data/mimetype.zip"));
+        let reader = ZipStreamReader::new(v.as_slice());
+        let dest = TempDir::with_prefix("stream_test_can_create_destination").unwrap();
+        reader.extract(&dest)?;
+        assert!(dest.path().join("mimetype").exists());
         Ok(())
     }
 }
