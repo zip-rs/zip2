@@ -44,6 +44,7 @@ The features available are:
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
 * `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.
+* `jiff`: Enables converting last-modified `zip::DateTime` to and from `jiff::civil::DateTime`.
 * `nt-time`: Enables returning timestamps stored in the NTFS extra field as `nt_time::FileTime`.
 * `zstd`: Enables the Zstandard compression algorithm.
 

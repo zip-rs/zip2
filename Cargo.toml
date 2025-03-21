@@ -36,6 +36,7 @@ flate2 = { version = "1.0", default-features = false, optional = true }
 getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true}
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
+jiff = { version = "0.2.4", optional = true }
 memchr = "2.7"
 nt-time = { version = "0.10.6", default-features = false, optional = true }
 pbkdf2 = { version = "0.12", optional = true }
@@ -78,6 +79,7 @@ deflate-miniz = ["deflate", "deflate-flate2"]
 deflate-zlib = ["flate2/zlib", "deflate-flate2"]
 deflate-zlib-ng = ["flate2/zlib-ng", "deflate-flate2"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
+jiff = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["lzma-rs/stream"]
 unreserved = []

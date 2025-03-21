@@ -12,6 +12,8 @@ use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+#[cfg(feature = "jiff")]
+use jiff::civil;
 
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Pod};
@@ -196,6 +198,39 @@ impl TryFrom<DateTime> for NaiveDateTime {
         )
         .ok_or(DateTimeRangeError)?;
         Ok(NaiveDateTime::new(date, time))
+    }
+}
+
+#[cfg(feature = "jiff")]
+impl TryFrom<civil::DateTime> for DateTime {
+    type Error = DateTimeRangeError;
+
+    fn try_from(value: civil::DateTime) -> Result<Self, Self::Error> {
+        Self::from_date_and_time(
+            value.year().try_into()?,
+            value.month() as u8,
+            value.day() as u8,
+            value.hour() as u8,
+            value.minute() as u8,
+            value.second() as u8,
+        )
+    }
+}
+
+#[cfg(feature = "jiff")]
+impl TryFrom<DateTime> for civil::DateTime {
+    type Error = jiff::Error;
+
+    fn try_from(value: DateTime) -> Result<Self, Self::Error> {
+        Self::new(
+            value.year() as i16,
+            value.month() as i8,
+            value.day() as i8,
+            value.hour() as i8,
+            value.minute() as i8,
+            value.second() as i8,
+            0,
+        )
     }
 }
 
@@ -1344,6 +1379,76 @@ mod test {
 
         // 2107-15-31 31:63:62
         assert!(OffsetDateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
+        })
+        .is_err());
+    }
+
+    #[cfg(feature = "jiff")]
+    #[test]
+    fn datetime_try_from_civil_datetime() {
+        use jiff::civil;
+
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30
+        let dt = DateTime::try_from(civil::datetime(2018, 11, 17, 10, 38, 30, 0)).unwrap();
+        assert_eq!(dt.year(), 2018);
+        assert_eq!(dt.month(), 11);
+        assert_eq!(dt.day(), 17);
+        assert_eq!(dt.hour(), 10);
+        assert_eq!(dt.minute(), 38);
+        assert_eq!(dt.second(), 30);
+    }
+
+    #[cfg(feature = "jiff")]
+    #[test]
+    fn datetime_try_from_civil_datetime_bounds() {
+        use jiff::civil;
+
+        use super::DateTime;
+
+        // 1979-12-31 23:59:59
+        assert!(DateTime::try_from(civil::datetime(1979, 12, 31, 23, 59, 59, 0)).is_err());
+
+        // 1980-01-01 00:00:00
+        assert!(DateTime::try_from(civil::datetime(1980, 1, 1, 0, 0, 0, 0)).is_ok());
+
+        // 2107-12-31 23:59:59
+        assert!(DateTime::try_from(civil::datetime(2107, 12, 31, 23, 59, 59, 0)).is_ok());
+
+        // 2108-01-01 00:00:00
+        assert!(DateTime::try_from(civil::datetime(2108, 1, 1, 0, 0, 0, 0)).is_err());
+    }
+
+    #[cfg(feature = "jiff")]
+    #[test]
+    fn civil_datetime_try_from_datetime() {
+        use jiff::civil;
+
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30 UTC
+        let dt =
+            civil::DateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
+        assert_eq!(dt, civil::datetime(2018, 11, 17, 10, 38, 30, 0));
+    }
+
+    #[cfg(feature = "jiff")]
+    #[test]
+    fn civil_datetime_try_from_datetime_bounds() {
+        use jiff::civil;
+
+        use super::DateTime;
+
+        // 1980-00-00 00:00:00
+        assert!(civil::DateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0x0000, 0x0000)
+        })
+        .is_err());
+
+        // 2107-15-31 31:63:62
+        assert!(civil::DateTime::try_from(unsafe {
             DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
         })
         .is_err());
