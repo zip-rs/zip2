@@ -5,6 +5,7 @@
 use displaydoc::Display;
 use thiserror::Error;
 
+use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -22,7 +23,7 @@ pub enum ZipError {
     Io(#[from] io::Error),
 
     /// invalid Zip archive: {0}
-    InvalidArchive(&'static str),
+    InvalidArchive(Cow<'static, str>),
 
     /// unsupported Zip archive: {0}
     UnsupportedArchive(&'static str),
@@ -65,13 +66,13 @@ impl From<ZipError> for io::Error {
 
 impl From<DateTimeRangeError> for ZipError {
     fn from(_: DateTimeRangeError) -> Self {
-        ZipError::InvalidArchive("Invalid date or time")
+        invalid!("Invalid date or time")
     }
 }
 
 impl From<FromUtf8Error> for ZipError {
     fn from(_: FromUtf8Error) -> Self {
-        ZipError::InvalidArchive("Invalid UTF-8")
+        invalid!("Invalid UTF-8")
     }
 }
 
@@ -96,3 +97,21 @@ impl fmt::Display for DateTimeRangeError {
 }
 
 impl Error for DateTimeRangeError {}
+
+pub(crate) fn invalid_archive<M: Into<Cow<'static, str>>>(message: M) -> ZipError {
+    ZipError::InvalidArchive(message.into())
+}
+
+pub(crate) const fn invalid_archive_const(message: &'static str) -> ZipError {
+    ZipError::InvalidArchive(Cow::Borrowed(message))
+}
+
+macro_rules! invalid {
+    ($message:literal) => {
+        crate::result::invalid_archive_const($message)
+    };
+    ($($arg:tt)*) => {
+        crate::result::invalid_archive(format!($($arg)*))
+    };
+}
+pub(crate) use invalid;

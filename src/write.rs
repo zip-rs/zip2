@@ -4,7 +4,7 @@
 use crate::aes::AesWriter;
 use crate::compression::CompressionMethod;
 use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
-use crate::result::{ZipError, ZipResult};
+use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
@@ -177,7 +177,7 @@ pub(crate) mod zip_writer {
 }
 #[doc(inline)]
 pub use self::sealed::FileOptionExtension;
-use crate::result::ZipError::{InvalidArchive, UnsupportedArchive};
+use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
@@ -290,9 +290,7 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let len = data.len() + 4;
         if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
-            Err(InvalidArchive(
-                "Extra data field would be longer than allowed",
-            ))
+            Err(invalid!("Extra data field would be longer than allowed"))
         } else {
             let field = if central_only {
                 &mut self.central_extra_data
@@ -675,7 +673,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         if src_name == dest_name || self.files.contains_key(dest_name) {
-            return Err(InvalidArchive("That file already exists"));
+            return Err(invalid!("That file already exists"));
         }
         let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
@@ -974,8 +972,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         let extra_data_len = extra_data.len();
         if let Some(data) = central_extra_data {
             if extra_data_len + data.len() > u16::MAX as usize {
-                return Err(InvalidArchive(
-                    "Extra data and central extra data must be less than 64KiB when combined",
+                return Err(invalid!(
+                    "Extra data and central extra data must be less than 64KiB when combined"
                 ));
             }
             ExtendedFileOptions::validate_extra_data(data, true)?;
@@ -1047,7 +1045,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
         if self.files.contains_key(&file.file_name) {
-            return Err(InvalidArchive("Duplicate filename"));
+            return Err(invalid!("Duplicate filename: {}", file.file_name));
         }
         let name = file.file_name.to_owned();
         self.files.insert(name.clone(), file);
@@ -1594,7 +1592,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn shallow_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         if src_name == dest_name {
-            return Err(InvalidArchive("Trying to copy a file to itself"));
+            return Err(invalid!("Trying to copy a file to itself"));
         }
         let src_index = self.index_by_name(src_name)?;
         let mut dest_data = self.files[src_index].to_owned();
@@ -1959,8 +1957,8 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    let block = file.zip64_extra_field_block().ok_or(InvalidArchive(
-        "Attempted to update a nonexistent ZIP64 extra field",
+    let block = file.zip64_extra_field_block().ok_or(invalid!(
+        "Attempted to update a nonexistent ZIP64 extra field"
     ))?;
 
     let zip64_extra_field_start = file.header_start
