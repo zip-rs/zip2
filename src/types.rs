@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-#[cfg(feature = "jiff")]
+#[cfg(feature = "jiff-02")]
 use jiff::civil;
 
 use crate::result::{ZipError, ZipResult};
@@ -201,7 +201,7 @@ impl TryFrom<DateTime> for NaiveDateTime {
     }
 }
 
-#[cfg(feature = "jiff")]
+#[cfg(feature = "jiff-02")]
 impl TryFrom<civil::DateTime> for DateTime {
     type Error = DateTimeRangeError;
 
@@ -217,7 +217,7 @@ impl TryFrom<civil::DateTime> for DateTime {
     }
 }
 
-#[cfg(feature = "jiff")]
+#[cfg(feature = "jiff-02")]
 impl TryFrom<DateTime> for civil::DateTime {
     type Error = jiff::Error;
 
@@ -1384,7 +1384,7 @@ mod test {
         .is_err());
     }
 
-    #[cfg(feature = "jiff")]
+    #[cfg(feature = "jiff-02")]
     #[test]
     fn datetime_try_from_civil_datetime() {
         use jiff::civil;
@@ -1401,7 +1401,7 @@ mod test {
         assert_eq!(dt.second(), 30);
     }
 
-    #[cfg(feature = "jiff")]
+    #[cfg(feature = "jiff-02")]
     #[test]
     fn datetime_try_from_civil_datetime_bounds() {
         use jiff::civil;
@@ -1421,7 +1421,7 @@ mod test {
         assert!(DateTime::try_from(civil::datetime(2108, 1, 1, 0, 0, 0, 0)).is_err());
     }
 
-    #[cfg(feature = "jiff")]
+    #[cfg(feature = "jiff-02")]
     #[test]
     fn civil_datetime_try_from_datetime() {
         use jiff::civil;
@@ -1434,7 +1434,7 @@ mod test {
         assert_eq!(dt, civil::datetime(2018, 11, 17, 10, 38, 30, 0));
     }
 
-    #[cfg(feature = "jiff")]
+    #[cfg(feature = "jiff-02")]
     #[test]
     fn civil_datetime_try_from_datetime_bounds() {
         use jiff::civil;
