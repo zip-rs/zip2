@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.5.0](https://github.com/zip-rs/zip2/compare/v2.4.2...v2.5.0) - 2025-03-23
+
+### <!-- 0 -->🚀 Features
+
+- Add support for `time::PrimitiveDateTime` ([#322](https://github.com/zip-rs/zip2/pull/322))
+- Add `jiff` integration ([#323](https://github.com/zip-rs/zip2/pull/323))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- improve error message for duplicated file ([#277](https://github.com/zip-rs/zip2/pull/277))
+
 ## [2.4.2](https://github.com/zip-rs/zip2/compare/v2.4.1...v2.4.2) - 2025-03-18
 
 ### <!-- 1 -->🐛 Bug Fixes
