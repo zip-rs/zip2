@@ -164,6 +164,7 @@ pub(crate) mod zip_writer {
         pub(super) comment: Box<[u8]>,
         pub(super) zip64_comment: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
+        pub(super) seek_possible: bool,
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
@@ -634,7 +635,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-
         let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
 
         Ok(ZipWriter {
@@ -646,6 +646,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             zip64_comment: shared.zip64_comment,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
+            seek_possible: true,
         })
     }
 
@@ -800,6 +801,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             comment: Box::new([]),
             zip64_comment: None,
             flush_on_finish_file: false,
+            seek_possible: true,
         }
     }
 
@@ -989,6 +991,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_mode,
             &extra_data,
         );
+        file.using_data_descriptor = !self.seek_possible;
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file)?;
@@ -1097,8 +1100,12 @@ impl<W: Write + Seek> ZipWriter<W> {
                 0
             };
             update_aes_extra_data(writer, file)?;
-            update_local_file_header(writer, file)?;
-            writer.seek(SeekFrom::Start(file_end))?;
+            if file.using_data_descriptor {
+                write_data_descriptor(writer, file)?;
+            } else {
+                update_local_file_header(writer, file)?;
+                writer.seek(SeekFrom::Start(file_end))?;
+            }
         }
         if self.flush_on_finish_file {
             let result = writer.flush();
@@ -1618,6 +1625,21 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 }
 
+impl<W: Write> ZipWriter<StreamWriter<W>> {
+    pub fn new_stream(inner: W) -> ZipWriter<StreamWriter<W>> {
+        ZipWriter {
+            inner: Storer(MaybeEncrypted::Unencrypted(StreamWriter::new(inner))),
+            files: IndexMap::new(),
+            stats: Default::default(),
+            writing_to_file: false,
+            writing_raw: false,
+            comment: Box::new([]),
+            flush_on_finish_file: false,
+            seek_possible: false,
+        }
+    }
+}
+
 impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
@@ -1905,6 +1927,26 @@ fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData
     Ok(())
 }
 
+fn write_data_descriptor<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
+    writer.write_u32_le(file.crc32)?;
+    if file.large_file {
+        writer.write_u64_le(file.compressed_size)?;
+        writer.write_u64_le(file.uncompressed_size)?;
+    } else {
+        // check compressed size as well as it can also be slightly larger than uncompressed size
+        if file.compressed_size > spec::ZIP64_BYTES_THR {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Large file option has not been set",
+            )));
+        }
+
+        writer.write_u32_le(file.compressed_size as u32)?;
+        writer.write_u32_le(file.uncompressed_size as u32)?;
+    }
+    Ok(())
+}
+
 fn update_local_file_header<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
@@ -1973,6 +2015,41 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     extra_field[..block.len()].copy_from_slice(&block);
 
     Ok(())
+}
+
+pub struct StreamWriter<W: Write> {
+    inner: W,
+    bytes_written: u64,
+}
+
+impl<W: Write> StreamWriter<W> {
+    pub fn new(inner: W) -> StreamWriter<W> {
+        Self {
+            inner,
+            bytes_written: 0,
+        }
+    }
+}
+
+impl<W: Write> Write for StreamWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let bytes_written = self.inner.write(buf)?;
+        self.bytes_written += bytes_written as u64;
+        Ok(bytes_written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<W: Write> Seek for StreamWriter<W> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match pos {
+            SeekFrom::Current(0) | SeekFrom::End(0) => Ok(self.bytes_written),
+            _ => panic!("Seek is not supported, trying to seek to {:?}", pos),
+        }
+    }
 }
 
 #[cfg(not(feature = "unreserved"))]
