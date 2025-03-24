@@ -418,12 +418,10 @@ pub(crate) fn make_crypto_reader<'a>(
             vendor_version,
         },
         (Some(password), None) => {
-            let mut last_modified_time = data.last_modified_time;
-            if !data.using_data_descriptor {
-                last_modified_time = None;
-            }
-            let validator = if let Some(last_modified_time) = last_modified_time {
-                ZipCryptoValidator::InfoZipMsdosTime(last_modified_time.timepart())
+            let validator = if data.using_data_descriptor {
+                ZipCryptoValidator::InfoZipMsdosTime(
+                    data.last_modified_time.map_or(0, |x| x.timepart()),
+                )
             } else {
                 ZipCryptoValidator::PkzipCrc32(data.crc32)
             };
