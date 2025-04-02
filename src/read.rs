@@ -123,17 +123,17 @@ use crate::unstable::{path_to_string, LittleEndianReadExt};
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum CryptoReader<'a> {
-    Plaintext(io::Take<&'a mut dyn Read>),
-    ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut dyn Read>>),
+pub(crate) enum CryptoReader<'a, R: Read> {
+    Plaintext(io::Take<&'a mut R>),
+    ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut R>>),
     #[cfg(feature = "aes-crypto")]
     Aes {
-        reader: AesReaderValid<io::Take<&'a mut dyn Read>>,
+        reader: AesReaderValid<io::Take<&'a mut R>>,
         vendor_version: AesVendorVersion,
     },
 }
 
-impl Read for CryptoReader<'_> {
+impl<R: Read> Read for CryptoReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             CryptoReader::Plaintext(r) => r.read(buf),
@@ -162,9 +162,9 @@ impl Read for CryptoReader<'_> {
     }
 }
 
-impl<'a> CryptoReader<'a> {
+impl<'a, R: Read> CryptoReader<'a, R> {
     /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> io::Take<&'a mut dyn Read> {
+    pub fn into_inner(self) -> io::Take<&'a mut R> {
         match self {
             CryptoReader::Plaintext(r) => r,
             CryptoReader::ZipCrypto(r) => r.into_inner(),
@@ -196,13 +196,13 @@ fn invalid_state<T>() -> io::Result<T> {
     ))
 }
 
-pub(crate) enum ZipFileReader<'a> {
+pub(crate) enum ZipFileReader<'a, R: Read> {
     NoReader,
-    Raw(io::Take<&'a mut dyn Read>),
-    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a>>>>>),
+    Raw(io::Take<&'a mut R>),
+    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
 }
 
-impl Read for ZipFileReader<'_> {
+impl<R: Read> Read for ZipFileReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
@@ -236,8 +236,8 @@ impl Read for ZipFileReader<'_> {
     }
 }
 
-impl<'a> ZipFileReader<'a> {
-    fn into_inner(self) -> io::Result<io::Take<&'a mut dyn Read>> {
+impl<'a, R: Read> ZipFileReader<'a, R> {
+    fn into_inner(self) -> io::Result<io::Take<&'a mut R>> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => Ok(r),
@@ -249,9 +249,9 @@ impl<'a> ZipFileReader<'a> {
 }
 
 /// A struct for reading a zip file
-pub struct ZipFile<'a> {
+pub struct ZipFile<'a, R: Read> {
     pub(crate) data: Cow<'a, ZipFileData>,
-    pub(crate) reader: ZipFileReader<'a>,
+    pub(crate) reader: ZipFileReader<'a, R>,
 }
 
 /// A struct for reading and seeking a zip file
@@ -334,10 +334,10 @@ pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), Zi
     Ok(())
 }
 
-pub(crate) fn find_content<'a>(
+pub(crate) fn find_content<'a, R: Read + Seek>(
     data: &ZipFileData,
-    reader: &'a mut (impl Read + Seek),
-) -> ZipResult<io::Take<&'a mut dyn Read>> {
+    reader: &'a mut R,
+) -> ZipResult<io::Take<&'a mut R>> {
     // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
     let data_start = match data.data_start.get() {
         Some(data_start) => *data_start,
@@ -345,7 +345,7 @@ pub(crate) fn find_content<'a>(
     };
 
     reader.seek(SeekFrom::Start(data_start))?;
-    Ok((reader as &mut dyn Read).take(data.compressed_size))
+    Ok(reader.take(data.compressed_size))
 }
 
 fn find_content_seek<'a, R: Read + Seek>(
@@ -392,12 +392,12 @@ fn find_data_start(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn make_crypto_reader<'a>(
+pub(crate) fn make_crypto_reader<'a, R: Read>(
     data: &ZipFileData,
-    reader: io::Take<&'a mut dyn Read>,
+    reader: io::Take<&'a mut R>,
     password: Option<&[u8]>,
     aes_info: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-) -> ZipResult<CryptoReader<'a>> {
+) -> ZipResult<CryptoReader<'a, R>> {
     #[allow(deprecated)]
     {
         if let CompressionMethod::Unsupported(_) = data.compression_method {
@@ -433,11 +433,11 @@ pub(crate) fn make_crypto_reader<'a>(
     Ok(reader)
 }
 
-pub(crate) fn make_reader(
+pub(crate) fn make_reader<R: Read>(
     compression_method: CompressionMethod,
     crc32: u32,
-    reader: CryptoReader,
-) -> ZipResult<ZipFileReader> {
+    reader: CryptoReader<R>,
+) -> ZipResult<ZipFileReader<R>> {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
     Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
@@ -991,12 +991,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// There are many passwords out there that will also pass the validity checks
     /// we are able to perform. This is a weakness of the ZipCrypto algorithm,
     /// due to its fairly primitive approach to cryptography.
-    pub fn by_name_decrypt(&mut self, name: &str, password: &[u8]) -> ZipResult<ZipFile> {
+    pub fn by_name_decrypt(&mut self, name: &str, password: &[u8]) -> ZipResult<ZipFile<R>> {
         self.by_name_with_optional_password(name, Some(password))
     }
 
     /// Search for a file entry by name
-    pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile> {
+    pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile<R>> {
         self.by_name_with_optional_password(name, None)
     }
 
@@ -1055,7 +1055,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         &'a mut self,
         name: &str,
         password: Option<&[u8]>,
-    ) -> ZipResult<ZipFile<'a>> {
+    ) -> ZipResult<ZipFile<'a, R>> {
         let Some(index) = self.shared.files.get_index_of(name) else {
             return Err(ZipError::FileNotFound);
         };
@@ -1079,17 +1079,17 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         file_number: usize,
         password: &[u8],
-    ) -> ZipResult<ZipFile<'_>> {
+    ) -> ZipResult<ZipFile<'_, R>> {
         self.by_index_with_optional_password(file_number, Some(password))
     }
 
     /// Get a contained file by index
-    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
+    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
         self.by_index_with_optional_password(file_number, None)
     }
 
     /// Get a contained file by index without decompressing it
-    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
+    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
         let reader = &mut self.reader;
         let (_, data) = self
             .shared
@@ -1106,7 +1106,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         file_number: usize,
         mut password: Option<&[u8]>,
-    ) -> ZipResult<ZipFile<'_>> {
+    ) -> ZipResult<ZipFile<'_, R>> {
         let (_, data) = self
             .shared
             .files
@@ -1506,8 +1506,8 @@ pub trait HasZipMetadata {
 }
 
 /// Methods for retrieving information on zip files
-impl<'a> ZipFile<'a> {
-    pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut dyn Read>> {
+impl<'a, R: Read> ZipFile<'a, R> {
+    pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
         mem::replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
     }
 
@@ -1796,20 +1796,20 @@ impl<'a> ZipFile<'a> {
 }
 
 /// Methods for retrieving information on zip files
-impl ZipFile<'_> {
+impl<R: Read> ZipFile<'_, R> {
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
         self.data.extra_fields.iter()
     }
 }
 
-impl HasZipMetadata for ZipFile<'_> {
+impl<R: Read> HasZipMetadata for ZipFile<'_, R> {
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
     }
 }
 
-impl Read for ZipFile<'_> {
+impl<R: Read> Read for ZipFile<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.reader.read(buf)
     }
@@ -1849,7 +1849,7 @@ impl<R> HasZipMetadata for ZipFileSeek<'_, R> {
     }
 }
 
-impl Drop for ZipFile<'_> {
+impl<R: Read> Drop for ZipFile<'_, R> {
     fn drop(&mut self) {
         // self.data is Owned, this reader is constructed by a streaming reader.
         // In this case, we want to exhaust the reader so that the next file is accessible.
@@ -1878,7 +1878,7 @@ impl Drop for ZipFile<'_> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_>>> {
+pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
     // We can't use the typical ::parse() method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
@@ -1902,7 +1902,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
         Err(e) => return Err(e),
     }
 
-    let limit_reader = (reader as &mut dyn Read).take(result.compressed_size);
+    let limit_reader = reader.take(result.compressed_size);
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
