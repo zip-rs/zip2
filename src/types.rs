@@ -25,10 +25,12 @@ pub(crate) mod ffi {
 }
 
 use crate::extra_fields::ExtraField;
+use crate::read::find_data_start;
 use crate::result::DateTimeRangeError;
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
 use crate::{CompressionMethod, ZIP64_BYTES_THR};
+use std::io::{Read, Seek};
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
@@ -553,8 +555,11 @@ pub struct ZipFileData {
 
 impl ZipFileData {
     /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self) -> u64 {
-        *self.data_start.get().unwrap()
+    pub fn data_start(&self, reader: &mut (impl Read + Seek + Sized)) -> ZipResult<u64> {
+        match self.data_start.get() {
+            Some(data_start) => Ok(*data_start),
+            None => Ok(find_data_start(self, reader)?),
+        }
     }
 
     #[allow(dead_code)]
