@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.6.1](https://github.com/zip-rs/zip2/compare/v2.6.0...v2.6.1) - 2025-04-03
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- avoid scanning through all local file headers while opening an archive ([#281](https://github.com/zip-rs/zip2/pull/281))
+
 ## [2.5.0](https://github.com/zip-rs/zip2/compare/v2.4.2...v2.5.0) - 2025-03-23
 
 ### <!-- 0 -->🚀 Features
