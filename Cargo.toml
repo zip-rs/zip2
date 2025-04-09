@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "2.5.0"
+version = "2.6.1"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -10,6 +10,8 @@ authors = [
 license = "MIT"
 repository = "https://github.com/zip-rs/zip2.git"
 keywords = ["zip", "archive", "compression"]
+# Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
+# The MSRV policy is documented in `README.md`.
 rust-version = "1.83.0"
 description = """
 Library to support the reading and writing of zip files.
