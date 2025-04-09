@@ -325,7 +325,7 @@ impl FuzzTestCase<'_> {
         }
         if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
-                .map_err(|_| ZipError::InvalidArchive(""))?;
+                .map_err(|_| ZipError::InvalidArchive("".into()))?;
             let _ = writer.finish_into_readable()?;
         }
         Ok(())
