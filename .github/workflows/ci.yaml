@@ -68,11 +68,11 @@ jobs:
         include:
           - rustalias: stable
             rust: stable
-          - rustalias: msrv
-            rust: '1.73'
+          - rustalias: cargo-semver-msrv
+            rust: '1.83'
           - rustalias: nightly
             rust: nightly
-    name: 'Miri ${{ matrix.feature_flag }}: ${{ matrix.rustalias }}'
+    name: 'Semver checks ${{ matrix.feature_group }}: ${{ matrix.rustalias }}'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
