@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - run: rustup toolchain add --target s390x-unknown-linux-gnu ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+    - run: rustup toolchain add --target s390x-unknown-linux-gnu ${{ matrix.rust }} && rustup default ${{ matrix.rust }}-s390x-unknown-linux-gnu
     - run: rustup component add --target s390x-unknown-linux-gnu miri
     - run: sudo apt install gcc-s390x-linux-gnu
     - run: cargo miri test --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
