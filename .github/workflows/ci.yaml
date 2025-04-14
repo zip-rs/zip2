@@ -38,7 +38,48 @@ jobs:
 
     - run: cargo check --all ${{ matrix.feature_flag }} --bins --examples
     - run: cargo test --all ${{ matrix.feature_flag }}
-
+  miri:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    strategy:
+      matrix:
+        rustalias: [stable, nightly, msrv]
+        feature_flag: ["--all-features", "--no-default-features", ""]
+        include:
+        - rustalias: stable
+          rust: stable
+        - rustalias: msrv
+          rust: '1.73'
+        - rustalias: nightly
+          rust: nightly
+    name: 'Miri ${{ matrix.feature_flag }}: ${{ matrix.rustalias }}'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+    - run: rustup component add miri
+    - run: sudo apt install gcc-s390x-linux-gnu
+    - run: cargo miri test --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
+  cargo_semver:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    strategy:
+      matrix:
+        rustalias: [stable, nightly, msrv]
+        feature_group: ["all-features", "default-features", "only-explicit-features"]
+        include:
+          - rustalias: stable
+            rust: stable
+          - rustalias: msrv
+            rust: '1.73'
+          - rustalias: nightly
+            rust: nightly
+    name: 'Miri ${{ matrix.feature_flag }}: ${{ matrix.rustalias }}'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          rust-toolchain: ${{ matrix.rust }}
+          feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
