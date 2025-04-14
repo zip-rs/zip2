@@ -127,6 +127,9 @@ jobs:
       - build_and_test
       - cargo_fmt
       - style_and_docs
+      - miri
+      - cargo_semver
+      - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -177,6 +180,9 @@ jobs:
       - build_and_test
       - cargo_fmt
       - style_and_docs
+      - miri
+      - cargo_semver
+      - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -219,6 +225,9 @@ jobs:
       - build_and_test
       - cargo_fmt
       - style_and_docs
+      - miri
+      - cargo_semver
+      - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -269,6 +278,9 @@ jobs:
       - build_and_test
       - cargo_fmt
       - style_and_docs
+      - miri
+      - cargo_semver
+      - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
