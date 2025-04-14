@@ -70,8 +70,6 @@ jobs:
             rust: stable
           - rustalias: cargo-semver-msrv
             rust: '1.83'
-          - rustalias: nightly
-            rust: nightly
     name: 'Semver checks ${{ matrix.feature_group }}: ${{ matrix.rustalias }}'
     runs-on: ubuntu-latest
     steps:
