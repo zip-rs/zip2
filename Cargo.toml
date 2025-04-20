@@ -53,9 +53,6 @@ lzma-rs = { version = "0.3", default-features = false, optional = true }
 xz2 = { version = "0.1.7", optional = true }
 proc-macro2 = { version = ">=1.0.60", optional = true } # Override transitive dep on 1.0.59 due to https://github.com/rust-lang/rust/issues/113152
 
-[target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
-crossbeam-utils = "0.8.21"
-
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
 
