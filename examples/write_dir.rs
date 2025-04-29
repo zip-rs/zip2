@@ -88,7 +88,7 @@ fn real_main() -> i32 {
         }
     };
     match doit(src_dir, dst_file, method) {
-        Ok(_) => println!("done: {:?} written to {:?}", src_dir, dst_file),
+        Ok(_) => println!("done: {src_dir:?} written to {dst_file:?}"),
         Err(e) => eprintln!("Error: {e:?}"),
     }
 

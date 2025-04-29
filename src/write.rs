@@ -105,7 +105,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Closed => f.write_str("Closed"),
-            Storer(w) => f.write_fmt(format_args!("Storer({:?})", w)),
+            Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
             #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(w) => {
                 f.write_fmt(format_args!("Deflater({:?})", w.get_ref()))
@@ -1626,7 +1626,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
-                let _ = write!(io::stderr(), "ZipWriter drop failed: {:?}", e);
+                let _ = write!(io::stderr(), "ZipWriter drop failed: {e:?}");
             }
         }
     }
@@ -2289,7 +2289,7 @@ mod test {
             .deep_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
             .unwrap();
         let zip = writer.finish().unwrap().into_inner();
-        zip.iter().copied().for_each(|x| print!("{:02x}", x));
+        zip.iter().copied().for_each(|x| print!("{x:02x}"));
         println!();
         let mut writer = ZipWriter::new_append(Cursor::new(zip)).unwrap();
         writer

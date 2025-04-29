@@ -15,7 +15,7 @@ fn generate_random_archive(
 
     let mut bytes = vec![0u8; entry_size];
     for i in 0..num_entries {
-        let name = format!("random{}.dat", i);
+        let name = format!("random{i}.dat");
         zip.start_file(name, options)?;
         getrandom::fill(&mut bytes).unwrap();
         zip.write_all(&bytes)?;
