@@ -57,7 +57,7 @@ jobs:
     - uses: actions/checkout@v4
     - run: sudo apt install gcc-s390x-linux-gnu
     - run: rustup target add s390x-unknown-linux-gnu
-    - run: rustup toolchain add ${{ matrix.rust }}-s390x-unknown-linux-gnu && rustup default ${{ matrix.rust }}-s390x-unknown-linux-gnu
+    - run: rustup toolchain add --force-non-host ${{ matrix.rust }}-s390x-unknown-linux-gnu && rustup default ${{ matrix.rust }}-s390x-unknown-linux-gnu
     - run: rustup component add --target s390x-unknown-linux-gnu --toolchain ${{ matrix.rust }}-s390x-unknown-linux-gnu miri
     - run: cargo miri test --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
   cargo_semver:
