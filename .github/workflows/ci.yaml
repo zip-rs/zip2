@@ -66,18 +66,12 @@ jobs:
       matrix:
         rustalias: [stable, nightly, msrv]
         feature_group: ["all-features", "default-features", "only-explicit-features"]
-        include:
-          - rustalias: stable
-            rust: stable
-          - rustalias: cargo-semver-msrv
-            rust: '1.83'
-    name: 'Semver checks ${{ matrix.feature_group }}: ${{ matrix.rustalias }}'
+    name: 'Semver checks: ${{ matrix.feature_group }}'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          rust-toolchain: ${{ matrix.rust }}
           feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
