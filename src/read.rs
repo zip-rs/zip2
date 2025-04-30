@@ -301,7 +301,7 @@ impl<R: Seek> Seek for SeekableTake<'_, R> {
                     .inner
                     .seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
                 self.current_offset = new_inner_offset - self.inner_starting_offset;
-                Ok(new_inner_offset)
+                Ok(self.current_offset)
             }
         }
     }
