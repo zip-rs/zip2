@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.6.2](https://github.com/zip-rs/zip2/compare/v2.6.1...v2.6.2) - 2025-05-10
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Specify `flate2` dependency of the `deflate-flate2` feature. ([#345](https://github.com/zip-rs/zip2/pull/345))
+
 ## [2.6.1](https://github.com/zip-rs/zip2/compare/v2.6.0...v2.6.1) - 2025-04-03
 
 ### <!-- 1 -->🐛 Bug Fixes
