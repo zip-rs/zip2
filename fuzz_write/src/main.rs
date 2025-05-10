@@ -112,19 +112,17 @@ fn do_operation(
             if options == FullFileOptions::default() {
                 writeln!(
                     stringifier,
-                    "writer.start_file_from_path({:?}, Default::default())?;",
-                    path
+                    "writer.start_file_from_path({path:?}, Default::default())?;",
                 )?;
             } else {
                 writeln!(
                     stringifier,
-                    "writer.start_file_from_path({:?}, {:?})?;",
-                    path, options
+                    "writer.start_file_from_path({path:?}, {options:?})?;",
                 )?;
             }
             writer.start_file_from_path(&*path, options)?;
             for chunk in contents.iter() {
-                writeln!(stringifier, "writer.write_all(&{:?})?;", chunk)?;
+                writeln!(stringifier, "writer.write_all(&{chunk:?})?;")?;
                 writer.write_all(chunk)?;
             }
             *files_added += 1;
@@ -132,8 +130,7 @@ fn do_operation(
         BasicFileOperation::WriteDirectory(options) => {
             writeln!(
                 stringifier,
-                "writer.add_directory_from_path(&{:?}, {:?})?;",
-                path, options
+                "writer.add_directory_from_path(&{path:?}, {options:?})?;",
             )?;
             writer.add_directory_from_path(&*path, options.to_owned())?;
             *files_added += 1;
@@ -141,8 +138,7 @@ fn do_operation(
         BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
             writeln!(
                 stringifier,
-                "writer.add_symlink_from_path(&{:?}, {:?}, {:?});",
-                path, target, options
+                "writer.add_symlink_from_path(&{path:?}, {target:?}, {options:?});",
             )?;
             writer.add_symlink_from_path(&*path, target, options.to_owned())?;
             *files_added += 1;
@@ -163,8 +159,7 @@ fn do_operation(
             )?;
             writeln!(
                 stringifier,
-                "writer.shallow_copy_file_from_path({:?}, {:?});",
-                base_path, path
+                "writer.shallow_copy_file_from_path({base_path:?}, {path:?});",
             )?;
             writer.shallow_copy_file_from_path(&*base_path, &*path)?;
             *files_added += 1;
@@ -185,8 +180,7 @@ fn do_operation(
             )?;
             writeln!(
                 stringifier,
-                "writer.deep_copy_file_from_path({:?}, {:?});",
-                base_path, path
+                "writer.deep_copy_file_from_path({base_path:?}, {path:?});",
             )?;
             writer.deep_copy_file_from_path(&*base_path, path)?;
             *files_added += 1;
@@ -205,10 +199,9 @@ fn do_operation(
                 writeln!(
                     stringifier,
                     "let sub_writer = {{\n\
-                          let mut initial_junk = Cursor::new(vec!{:?});\n\
+                          let mut initial_junk = Cursor::new(vec!{initial_junk:?});\n\
                           initial_junk.seek(SeekFrom::End(0))?;
                           let mut writer = ZipWriter::new(initial_junk);",
-                    initial_junk
                 )?;
             }
             let mut initial_junk = Cursor::new(initial_junk.into_vec());
@@ -237,7 +230,7 @@ fn do_operation(
             *files_added += inner_files_added;
         }
         BasicFileOperation::SetArchiveComment(comment) => {
-            writeln!(stringifier, "writer.set_raw_comment({:?})?;", comment)?;
+            writeln!(stringifier, "writer.set_raw_comment({comment:?})?;")?;
             writer.set_raw_comment(comment.clone());
         }
     }
