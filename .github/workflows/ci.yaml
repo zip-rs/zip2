@@ -22,7 +22,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
-        feature_flag: ["--all-features", "--no-default-features", ""]
+        feature_flag:
+        - "--all-features"
+        - "--no-default-features"
+        - "--no-default-features --features deflate-flate2"
+        - "--no-default-features --features deflate-zopfli"
+        - ""
         include:
         - rustalias: stable
           rust: stable
@@ -42,7 +47,12 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        feature_flag: ["--all-features", "--no-default-features", ""]
+        feature_flag:
+        - "--all-features"
+        - "--no-default-features"
+        - "--no-default-features --features deflate-flate2"
+        - "--no-default-features --features deflate-zopfli"
+        - ""
     name: 'Miri ${{ matrix.feature_flag }}'
     runs-on: ubuntu-latest
     steps:
