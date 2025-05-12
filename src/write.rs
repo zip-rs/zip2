@@ -13,7 +13,7 @@ use crate::types::{
     ZipRawValues, MIN_VERSION,
 };
 use crate::write::ffi::S_IFLNK;
-#[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
+#[cfg(feature = "deflate-zopfli")]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
 use indexmap::IndexMap;
@@ -754,6 +754,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// [`Self::finish()`].
     ///
     ///```
+    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))] {
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -769,6 +770,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// zip.by_name("a.txt")?.read_to_string(&mut s)?;
     /// assert_eq!(s, "hello\n");
     /// # Ok(())
+    /// # }
     /// # }
     ///```
     pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
@@ -1191,6 +1193,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
     ///
     ///```
+    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))] {
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -1208,6 +1211,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// let src2 = ZipArchive::new(zip.finish()?)?;
     ///
     /// let buf = Cursor::new(Vec::new());
+    ///
     /// let mut zip = ZipWriter::new(buf);
     /// zip.merge_archive(src)?;
     /// zip.merge_archive(src2)?;
@@ -1220,6 +1224,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// result.by_name("b.txt")?.read_to_string(&mut s)?;
     /// assert_eq!(s, "hey\n");
     /// # Ok(())
+    /// # }
     /// # }
     ///```
     pub fn merge_archive<R>(&mut self, mut source: ZipArchive<R>) -> ZipResult<()>
@@ -1660,14 +1665,11 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "_deflate-any")]
                 CompressionMethod::Deflated => {
-                    let default = if cfg!(all(
-                        feature = "deflate-zopfli",
-                        not(feature = "deflate-flate2")
-                    )) {
-                        24
-                    } else {
-                        Compression::default().level() as i64
-                    };
+                    #[cfg(feature = "deflate-flate2")]
+                    let default = Compression::default().level() as i64;
+
+                    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+                    let default = 24;
 
                     let level = clamp_opt(
                         compression_level.unwrap_or(default),
@@ -1677,12 +1679,11 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         as u32;
 
                     #[cfg(feature = "deflate-zopfli")]
-                    {
-                        let best_non_zopfli = Compression::best().level();
-                        if level > best_non_zopfli {
+                    macro_rules! deflate_zopfli_and_return {
+                        ($bare:expr, $best_non_zopfli:expr) => {
                             let options = Options {
                                 iteration_count: NonZeroU64::try_from(
-                                    (level - best_non_zopfli) as u64,
+                                    (level - $best_non_zopfli) as u64,
                                 )
                                 .unwrap(),
                                 ..Default::default()
@@ -1702,7 +1703,21 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                     zopfli::DeflateEncoder::new(options, Default::default(), bare),
                                 ),
                             }));
+                        };
+                    }
+
+                    #[cfg(all(feature = "deflate-zopfli", feature = "deflate-flate2"))]
+                    {
+                        let best_non_zopfli = Compression::best().level();
+                        if level > best_non_zopfli {
+                            deflate_zopfli_and_return!(bare, best_non_zopfli);
                         }
+                    }
+
+                    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+                    {
+                        let best_non_zopfli = 9;
+                        deflate_zopfli_and_return!(bare, best_non_zopfli);
                     }
 
                     #[cfg(feature = "deflate-flate2")]
@@ -1838,18 +1853,15 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
 #[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    let min = if cfg!(feature = "deflate-flate2") {
-        Compression::fast().level() as i64
-    } else {
-        Compression::best().level() as i64 + 1
-    };
+    #[cfg(feature = "deflate-flate2")]
+    let min = Compression::fast().level() as i64;
+    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    let min = 1;
 
-    let max = Compression::best().level() as i64
-        + if cfg!(feature = "deflate-zopfli") {
-            u8::MAX as i64
-        } else {
-            0
-        };
+    #[cfg(feature = "deflate-zopfli")]
+    let max = 264;
+    #[cfg(all(feature = "deflate-flate2", not(feature = "deflate-zopfli")))]
+    let max = Compression::best().level() as i64;
 
     min..=max
 }
@@ -2001,7 +2013,9 @@ mod test {
     use crate::zipcrypto::ZipCryptoKeys;
     use crate::CompressionMethod::Stored;
     use crate::ZipArchive;
-    use std::io::{Cursor, Read, Write};
+    #[cfg(feature = "deflate-flate2")]
+    use std::io::Read;
+    use std::io::{Cursor, Write};
     use std::marker::PhantomData;
     use std::path::PathBuf;
 
@@ -2156,14 +2170,18 @@ mod test {
         assert_eq!(result.get_ref(), &v);
     }
 
+    #[cfg(feature = "deflate-flate2")]
     const RT_TEST_TEXT: &str = "And I can't stop thinking about the moments that I lost to you\
                             And I can't stop thinking of things I used to do\
                             And I can't stop making bad decisions\
                             And I can't stop eating stuff you make me chew\
                             I put on a smile like you wanna see\
                             Another day goes by that I long to be like you";
+    #[cfg(feature = "deflate-flate2")]
     const RT_TEST_FILENAME: &str = "subfolder/sub-subfolder/can't_stop.txt";
+    #[cfg(feature = "deflate-flate2")]
     const SECOND_FILENAME: &str = "different_name.xyz";
+    #[cfg(feature = "deflate-flate2")]
     const THIRD_FILENAME: &str = "third_name.xyz";
 
     #[test]
@@ -2219,6 +2237,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "deflate-flate2")]
     fn test_shallow_copy() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
@@ -2269,6 +2288,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "deflate-flate2")]
     fn test_deep_copy() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
@@ -2440,6 +2460,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "deflate-flate2")]
     fn remove_shallow_copy_keeps_original() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer

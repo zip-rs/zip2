@@ -2146,7 +2146,7 @@ mod test {
         ZipArchive::new(Cursor::new(v)).expect_err("Invalid file");
     }
 
-    #[cfg(feature = "_deflate-any")]
+    #[cfg(feature = "deflate-flate2")]
     #[test]
     fn test_read_with_data_descriptor() {
         use std::io::Read;
@@ -2172,7 +2172,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "_deflate-any")]
+    #[cfg(feature = "deflate-flate2")]
     fn test_utf8_extra_field() {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/chinese.zip"));
