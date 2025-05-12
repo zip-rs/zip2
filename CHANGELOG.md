@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/zip-rs/zip2/compare/v2.6.1...v3.0.0) - 2025-05-12
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- When only zopfli is available, decompression of deflate should not be possible ([#348](https://github.com/zip-rs/zip2/pull/348))
+- Specify `flate2` dependency of the `deflate-flate2` feature. ([#345](https://github.com/zip-rs/zip2/pull/345))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- [**breaking**] Drop deprecated `deflate-miniz` feature flag
+
 ## [2.6.1](https://github.com/zip-rs/zip2/compare/v2.6.0...v2.6.1) - 2025-04-03
 
 ### <!-- 1 -->🐛 Bug Fixes
