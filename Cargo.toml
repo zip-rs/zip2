@@ -73,6 +73,7 @@ _deflate-any = []
 _all-features = [] # Detect when --all-features is used
 deflate = ["deflate-zopfli", "deflate-flate2"]
 deflate-flate2 = ["_deflate-any", "flate2/rust_backend"]
+deflate-miniz = ["deflate", "deflate-flate2"]
 deflate-zlib = ["flate2/zlib", "deflate-flate2"]
 deflate-zlib-ng = ["flate2/zlib-ng", "deflate-flate2"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
