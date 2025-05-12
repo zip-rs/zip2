@@ -70,8 +70,8 @@ aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1", "getrandom", 
 chrono = ["chrono/default"]
 _deflate-any = []
 _all-features = [] # Detect when --all-features is used
-deflate = ["flate2/rust_backend", "deflate-zopfli", "deflate-flate2"]
-deflate-flate2 = ["_deflate-any"]
+deflate = ["deflate-zopfli", "deflate-flate2"]
+deflate-flate2 = ["_deflate-any", "flate2/rust_backend"]
 # DEPRECATED: previously enabled `flate2/miniz_oxide` which is equivalent to `flate2/rust_backend`
 deflate-miniz = ["deflate", "deflate-flate2"]
 deflate-zlib = ["flate2/zlib", "deflate-flate2"]

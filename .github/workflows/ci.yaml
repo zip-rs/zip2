@@ -42,24 +42,17 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        rustalias: [stable, nightly, msrv]
         feature_flag: ["--all-features", "--no-default-features", ""]
-        include:
-        - rustalias: stable
-          rust: stable
-        - rustalias: msrv
-          rust: '1.73'
-        - rustalias: nightly
-          rust: nightly
-    name: 'Miri ${{ matrix.feature_flag }}: ${{ matrix.rustalias }}'
+    name: 'Miri ${{ matrix.feature_flag }}'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - run: sudo apt install gcc-s390x-linux-gnu
-    - run: rustup target add s390x-unknown-linux-gnu
-    - run: rustup toolchain add --force-non-host ${{ matrix.rust }}-s390x-unknown-linux-gnu && rustup default ${{ matrix.rust }}-s390x-unknown-linux-gnu
-    - run: rustup component add --target s390x-unknown-linux-gnu --toolchain ${{ matrix.rust }}-s390x-unknown-linux-gnu miri
-    - run: cargo miri test --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
+    - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
+    - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
+    - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
+    - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
+    - run: cargo +nightly miri test --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
   cargo_semver:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
