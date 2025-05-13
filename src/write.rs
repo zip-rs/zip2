@@ -568,9 +568,7 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
 impl<W: Write + Seek> Write for ZipWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if !self.writing_to_file {
-            return Err(io::Error::other(
-                "No file has been started",
-            ));
+            return Err(io::Error::other("No file has been started"));
         }
         if buf.is_empty() {
             return Ok(0);
@@ -584,9 +582,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                         && !self.files.last_mut().unwrap().1.large_file
                     {
                         let _ = self.abort_file();
-                        return Err(io::Error::other(
-                            "Large file option has not been set",
-                        ));
+                        return Err(io::Error::other("Large file option has not been set"));
                     }
                 }
                 write_result
@@ -749,7 +745,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// [`Self::finish()`].
     ///
     ///```
-    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    /// # #[cfg(any(feature = "deflate-flate2"), not(feature = "_deflate-any"))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -870,9 +866,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// the underlying [Write] is written independently and you need to adjust the zip metadata.
     pub unsafe fn set_file_metadata(&mut self, length: u64, crc32: u32) -> ZipResult<()> {
         if !self.writing_to_file {
-            return Err(ZipError::Io(io::Error::other(
-                "No file has been started",
-            )));
+            return Err(ZipError::Io(io::Error::other("No file has been started")));
         }
         self.stats.hasher = Hasher::new_with_initial_len(crc32, length);
         self.stats.bytes_written = length;
@@ -1186,7 +1180,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
     ///
     ///```
-    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
