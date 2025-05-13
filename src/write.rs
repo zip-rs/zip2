@@ -745,7 +745,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// [`Self::finish()`].
     ///
     ///```
-    /// # #[cfg(any(feature = "deflate-flate2"), not(feature = "_deflate-any"))]
+    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
