@@ -190,10 +190,7 @@ impl<'a, R: Read> CryptoReader<'a, R> {
 
 #[cold]
 fn invalid_state<T>() -> io::Result<T> {
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        "ZipFileReader was in an invalid state",
-    ))
+    Err(io::Error::other("ZipFileReader was in an invalid state"))
 }
 
 pub(crate) enum ZipFileReader<'a, R: Read> {
