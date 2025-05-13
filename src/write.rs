@@ -329,8 +329,7 @@ impl ExtendedFileOptions {
             return Ok(());
         }
         if len > u16::MAX as u64 {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(ZipError::Io(io::Error::other(
                 "Extra-data field can't exceed u16::MAX bytes",
             )));
         }
@@ -338,8 +337,7 @@ impl ExtendedFileOptions {
         let mut pos = data.position();
         while pos < len {
             if len - data.position() < 4 {
-                return Err(ZipError::Io(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(ZipError::Io(io::Error::other(
                     "Extra-data field doesn't have room for ID and length",
                 )));
             }
@@ -348,8 +346,7 @@ impl ExtendedFileOptions {
                 use crate::unstable::LittleEndianReadExt;
                 let header_id = data.read_u16_le()?;
                 if EXTRA_FIELD_MAPPING.contains(&header_id) {
-                    return Err(ZipError::Io(io::Error::new(
-                        io::ErrorKind::Other,
+                    return Err(ZipError::Io(io::Error::other(
                         format!(
                             "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
                         ),
@@ -571,8 +568,7 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
 impl<W: Write + Seek> Write for ZipWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if !self.writing_to_file {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "No file has been started",
             ));
         }
@@ -588,8 +584,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                         && !self.files.last_mut().unwrap().1.large_file
                     {
                         let _ = self.abort_file();
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
+                        return Err(io::Error::other(
                             "Large file option has not been set",
                         ));
                     }
@@ -754,7 +749,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// [`Self::finish()`].
     ///
     ///```
-    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))] {
+    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -770,7 +765,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// zip.by_name("a.txt")?.read_to_string(&mut s)?;
     /// assert_eq!(s, "hello\n");
     /// # Ok(())
-    /// # }
     /// # }
     ///```
     pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
@@ -876,8 +870,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// the underlying [Write] is written independently and you need to adjust the zip metadata.
     pub unsafe fn set_file_metadata(&mut self, length: u64, crc32: u32) -> ZipResult<()> {
         if !self.writing_to_file {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(ZipError::Io(io::Error::other(
                 "No file has been started",
             )));
         }
@@ -1193,7 +1186,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
     ///
     ///```
-    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))] {
+    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -1224,7 +1217,6 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// result.by_name("b.txt")?.read_to_string(&mut s)?;
     /// assert_eq!(s, "hey\n");
     /// # Ok(())
-    /// # }
     /// # }
     ///```
     pub fn merge_archive<R>(&mut self, mut source: ZipArchive<R>) -> ZipResult<()>
@@ -1939,8 +1931,7 @@ fn update_local_file_header<T: Write + Seek>(
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(ZipError::Io(io::Error::other(
                 "Large file option has not been set",
             )));
         }

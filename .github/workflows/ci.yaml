@@ -32,7 +32,7 @@ jobs:
         - rustalias: stable
           rust: stable
         - rustalias: msrv
-          rust: '1.73'
+          rust: '1.74'
         - rustalias: nightly
           rust: nightly
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
@@ -125,7 +125,6 @@ jobs:
       - cargo_fmt
       - style_and_docs
       - miri
-      - cargo_semver
       - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
@@ -178,7 +177,6 @@ jobs:
       - cargo_fmt
       - style_and_docs
       - miri
-      - cargo_semver
       - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
@@ -223,7 +221,6 @@ jobs:
       - cargo_fmt
       - style_and_docs
       - miri
-      - cargo_semver
       - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
@@ -276,7 +273,6 @@ jobs:
       - cargo_fmt
       - style_and_docs
       - miri
-      - cargo_semver
       - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
