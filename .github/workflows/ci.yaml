@@ -25,14 +25,14 @@ jobs:
         feature_flag:
         - "--all-features"
         - "--no-default-features"
-        - "--no-default-features --features deflate-flate2"
+        - "--no-default-features --features deflate-flate2-zlib-rs"
         - "--no-default-features --features deflate-zopfli"
         - ""
         include:
         - rustalias: stable
           rust: stable
         - rustalias: msrv
-          rust: '1.73'
+          rust: '1.75'
         - rustalias: nightly
           rust: nightly
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
@@ -50,7 +50,7 @@ jobs:
         feature_flag:
         - "--all-features"
         - "--no-default-features"
-        - "--no-default-features --features deflate-flate2"
+        - "--no-default-features --features deflate-flate2-zlib-rs"
         - "--no-default-features --features deflate-zopfli"
         - ""
     name: 'Miri ${{ matrix.feature_flag }}'
