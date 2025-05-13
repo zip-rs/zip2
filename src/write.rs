@@ -1180,7 +1180,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
     ///
     ///```
-    /// # #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
