@@ -125,7 +125,6 @@ jobs:
       - cargo_fmt
       - style_and_docs
       - miri
-      - cargo_semver
       - check_minimal_versions
     steps:
       - uses: actions/checkout@v4
