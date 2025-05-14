@@ -745,8 +745,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// [`Self::finish()`].
     ///
     ///```
-    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
+    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
+    /// # {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
@@ -760,6 +761,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// let mut s: String = String::new();
     /// zip.by_name("a.txt")?.read_to_string(&mut s)?;
     /// assert_eq!(s, "hello\n");
+    /// # }
     /// # Ok(())
     /// # }
     ///```
@@ -1180,8 +1182,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
     ///
     ///```
-    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # fn main() -> Result<(), zip::result::ZipError> {
+    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
+    /// # {
     /// use std::io::{Cursor, prelude::*};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
@@ -1210,6 +1213,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// s.clear();
     /// result.by_name("b.txt")?.read_to_string(&mut s)?;
     /// assert_eq!(s, "hey\n");
+    /// # }
     /// # Ok(())
     /// # }
     ///```
