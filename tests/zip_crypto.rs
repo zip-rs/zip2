@@ -36,6 +36,7 @@ use std::io::Cursor;
 use zip::result::ZipError;
 
 #[test]
+#[cfg(feature = "deflate-flate2")]
 fn encrypting_file() {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;

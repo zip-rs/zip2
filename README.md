@@ -50,18 +50,13 @@ The features available are:
 
 By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `time` and `zstd` are enabled.
 
-The following feature flags are deprecated:
-
-* `deflate-miniz`: Use `flate2`'s default backend for compression. Currently the same as `deflate`.
-
 MSRV
 ----
 
-Our current Minimum Supported Rust Version is **1.73**. When adding features,
+Our current Minimum Supported Rust Version is **1.75**. When adding features,
 we will follow these guidelines:
 
-- We will always support the latest four minor Rust versions. This gives you a 6
-  month window to upgrade your compiler.
+- We will always support a minor Rust version that has been stable for at least 6 months.
 - Any change to the MSRV will be accompanied with a **minor** version bump.
 
 Examples

@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "2.5.0"
+version = "2.6.1"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -10,13 +10,14 @@ authors = [
 license = "MIT"
 repository = "https://github.com/zip-rs/zip2.git"
 keywords = ["zip", "archive", "compression"]
-rust-version = "1.73.0"
+# Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
+# The MSRV policy is documented in `README.md`.
+rust-version = "1.75.0"
 description = """
 Library to support the reading and writing of zip files.
 """
 edition = "2021"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz_read/**", "fuzz_write/**"]
-build = "src/build.rs"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -31,7 +32,7 @@ bzip2 = { version = "0.5.0", default-features = false, optional = true }
 chrono = { version = "0.4", optional = true }
 constant_time_eq = { version = "0.3", optional = true }
 crc32fast = "1.4"
-flate2 = { version = "1.0", default-features = false, optional = true }
+flate2 = { version = "1.1.1", default-features = false, optional = true }
 getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true}
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
@@ -49,10 +50,6 @@ zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
 lzma-rs = { version = "0.3", default-features = false, optional = true }
 xz2 = { version = "0.1.7", optional = true }
-proc-macro2 = { version = ">=1.0.60", optional = true } # Override transitive dep on 1.0.59 due to https://github.com/rust-lang/rust/issues/113152
-
-[target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
-crossbeam-utils = "0.8.21"
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
@@ -71,12 +68,13 @@ aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1", "getrandom", 
 chrono = ["chrono/default"]
 _deflate-any = []
 _all-features = [] # Detect when --all-features is used
-deflate = ["flate2/rust_backend", "deflate-zopfli", "deflate-flate2"]
-deflate-flate2 = ["_deflate-any"]
-# DEPRECATED: previously enabled `flate2/miniz_oxide` which is equivalent to `flate2/rust_backend`
-deflate-miniz = ["deflate", "deflate-flate2"]
-deflate-zlib = ["flate2/zlib", "deflate-flate2"]
-deflate-zlib-ng = ["flate2/zlib-ng", "deflate-flate2"]
+deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
+# Pull in flate2, but don't choose a backend; useful if you want to choose your own flate2 backend
+deflate-flate2 = ["_deflate-any", "dep:flate2"]
+# Pull in flate2 and the fast zlib-rs backend; this is what most users will want
+deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
+# Pull in flate2 and the zlib backend; only use this if you need a dynamically linked system zlib
+deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
