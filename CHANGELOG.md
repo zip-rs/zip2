@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.0.0](https://github.com/zip-rs/zip2/compare/v2.6.1...v3.0.0) - 2025-05-14
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- return correct offset in SeekableTake::seek ([#342](https://github.com/zip-rs/zip2/pull/342))
+- When only zopfli is available, decompression of deflate should not be possible ([#348](https://github.com/zip-rs/zip2/pull/348))
+- Specify `flate2` dependency of the `deflate-flate2` feature. ([#345](https://github.com/zip-rs/zip2/pull/345))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- fix typo
+- remove `deflate-flate2` dependency on specific backend
+- [**breaking**] Drop deprecated `deflate-miniz` feature flag ([#351](https://github.com/zip-rs/zip2/pull/351))
+
 ## [2.6.1](https://github.com/zip-rs/zip2/compare/v2.6.0...v2.6.1) - 2025-04-03
 
 ### <!-- 1 -->🐛 Bug Fixes
