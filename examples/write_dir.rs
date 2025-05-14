@@ -25,8 +25,6 @@ struct Args {
 enum CompressionMethod {
     Stored,
     Deflated,
-    DeflatedZlib,
-    DeflatedZlibNg,
     Bzip2,
     Zstd,
 }
@@ -48,24 +46,6 @@ fn real_main() -> i32 {
                 return 1;
             }
             #[cfg(feature = "deflate-flate2")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::DeflatedZlib => {
-            #[cfg(not(feature = "deflate-zlib"))]
-            {
-                println!("The `deflate-zlib` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-zlib")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::DeflatedZlibNg => {
-            #[cfg(not(feature = "deflate-zlib-ng"))]
-            {
-                println!("The `deflate-zlib-ng` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-zlib-ng")]
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::Bzip2 => {
