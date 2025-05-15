@@ -204,7 +204,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "lzma")]
     Lzma(Box<crate::read::lzma::LzmaDecoder<R>>),
     #[cfg(feature = "xz")]
-    Xz(xz2::bufread::XzDecoder<R>),
+    Xz(liblzma::bufread::XzDecoder<R>),
 }
 
 impl<R: io::BufRead> io::Read for Decompressor<R> {
@@ -248,7 +248,7 @@ impl<R: io::BufRead> Decompressor<R> {
                 Decompressor::Lzma(Box::new(crate::read::lzma::LzmaDecoder::new(reader)))
             }
             #[cfg(feature = "xz")]
-            CompressionMethod::Xz => Decompressor::Xz(xz2::bufread::XzDecoder::new(reader)),
+            CompressionMethod::Xz => Decompressor::Xz(liblzma::bufread::XzDecoder::new(reader)),
             _ => {
                 return Err(crate::result::ZipError::UnsupportedArchive(
                     "Compression method not supported",
