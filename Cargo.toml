@@ -49,7 +49,12 @@ zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
 lzma-rs = { version = "0.3", default-features = false, optional = true }
+num_cpus = { version = "1.16", optional = true }
+by_address = { version = "1.2.1", optional = true }
 xz2 = { version = "0.1.7", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2.155", optional = true }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
@@ -61,7 +66,10 @@ walkdir = "2.5"
 time = { workspace = true, features = ["formatting", "macros"] }
 anyhow = "1.0.95"
 clap = { version = "=4.4.18", features = ["derive"] }
+tempdir = "0.3.7"
 tempfile = "3.15"
+lazy_static = "1.5"
+num_cpus = "1.16"
 
 [features]
 aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1", "getrandom", "zeroize"]
@@ -81,6 +89,7 @@ nt-time = ["dep:nt-time"]
 lzma = ["lzma-rs/stream"]
 unreserved = []
 xz = ["dep:xz2"]
+parallelism = ["libc", "num_cpus", "by_address"]
 default = [
     "aes-crypto",
     "bzip2",
@@ -102,4 +111,8 @@ harness = false
 
 [[bench]]
 name = "merge_archive"
+harness = false
+
+[[bench]]
+name = "extract"
 harness = false
