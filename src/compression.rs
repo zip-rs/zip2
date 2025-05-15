@@ -244,10 +244,10 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
             #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => {
-                Decompressor::Lzma(liblzma::bufread::XzDecoder::new_stream(reader,
-                        liblzma::stream::Stream::new_lzma_decoder(0).unwrap()))
-            }
+            CompressionMethod::Lzma => Decompressor::Lzma(liblzma::bufread::XzDecoder::new_stream(
+                reader,
+                liblzma::stream::Stream::new_lzma_decoder(0).unwrap(),
+            )),
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => Decompressor::Xz(liblzma::bufread::XzDecoder::new(reader)),
             _ => {

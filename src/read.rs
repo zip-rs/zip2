@@ -2230,8 +2230,7 @@ mod test {
         writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
         writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
         let mut reader = writer.finish_into_readable()?;
-        let dest_parent =
-            TempDir::with_prefix("read__test_cannot_symlink_outside_destination")?;
+        let dest_parent = TempDir::with_prefix("read__test_cannot_symlink_outside_destination")?;
         let dest_sibling = dest_parent.path().join("dest-sibling");
         create_dir(&dest_sibling)?;
         let dest = dest_parent.path().join("dest");
