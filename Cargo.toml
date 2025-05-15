@@ -12,7 +12,7 @@ repository = "https://github.com/zip-rs/zip2.git"
 keywords = ["zip", "archive", "compression"]
 # Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
 # The MSRV policy is documented in `README.md`.
-rust-version = "1.75.0"
+rust-version = "1.83.0"
 description = """
 Library to support the reading and writing of zip files.
 """
@@ -49,6 +49,7 @@ zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
 lzma-rs = { version = "0.3", default-features = false, optional = true }
+bitstream-io =  { version = "2.6.0", optional = true }
 xz2 = { version = "0.1.7", optional = true }
 
 [target.'cfg(fuzzing)'.dependencies]
@@ -80,6 +81,7 @@ jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["lzma-rs/stream"]
 unreserved = []
+legacy-zip = ["bitstream-io"]
 xz = ["dep:xz2"]
 default = [
     "aes-crypto",
