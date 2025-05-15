@@ -49,7 +49,7 @@ zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
 lzma-rs = { version = "0.3", default-features = false, optional = true }
-xz2 = { version = "0.1.7", optional = true }
+liblzma = { version = "0.4.1", optional = true }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
@@ -80,7 +80,7 @@ jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["lzma-rs/stream"]
 unreserved = []
-xz = ["dep:xz2"]
+xz = ["dep:liblzma"]
 default = [
     "aes-crypto",
     "bzip2",
