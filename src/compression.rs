@@ -227,7 +227,7 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
 
 pub(crate) enum Decompressor<R: io::BufRead> {
     Stored(R),
-    #[cfg(feature = "_deflate-any")]
+    #[cfg(feature = "deflate-flate2")]
     Deflated(flate2::bufread::DeflateDecoder<R>),
     #[cfg(feature = "deflate64")]
     Deflate64(deflate64::Deflate64Decoder<R>),
@@ -257,7 +257,7 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             Decompressor::Reduce(r) => r.read(buf),
             #[cfg(feature = "legacy-zip")]
             Decompressor::Implode(r) => r.read(buf),
-            #[cfg(feature = "_deflate-any")]
+            #[cfg(feature = "deflate-flate2")]
             Decompressor::Deflated(r) => r.read(buf),
             #[cfg(feature = "deflate64")]
             Decompressor::Deflate64(r) => r.read(buf),
@@ -289,7 +289,7 @@ impl<R: io::BufRead> Decompressor<R> {
             CompressionMethod::Implode => {
                 Decompressor::Implode(crate::legacy::implode::ImplodeDecoder::new(reader, _uncompressed_size, _flags))
             }
-            #[cfg(feature = "_deflate-any")]
+            #[cfg(feature = "deflate-flate2")]
             CompressionMethod::Deflated => {
                 Decompressor::Deflated(flate2::bufread::DeflateDecoder::new(reader))
             }
@@ -319,7 +319,7 @@ impl<R: io::BufRead> Decompressor<R> {
     pub fn into_inner(self) -> R {
         match self {
             Decompressor::Stored(r) => r,
-            #[cfg(feature = "_deflate-any")]
+            #[cfg(feature = "deflate-flate2")]
             Decompressor::Deflated(r) => r.into_inner(),
             #[cfg(feature = "deflate64")]
             Decompressor::Deflate64(r) => r.into_inner(),

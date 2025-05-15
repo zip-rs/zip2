@@ -1,5 +1,5 @@
 #[test]
-#[cfg(all(unix, feature = "_deflate-any"))]
+#[cfg(all(unix, feature = "deflate-flate2"))]
 fn extract_should_respect_links() {
     use std::{fs, io, path::PathBuf, str::FromStr};
     use tempfile::TempDir;

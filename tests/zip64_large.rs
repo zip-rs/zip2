@@ -144,14 +144,14 @@ impl Seek for Zip64File {
             }
             SeekFrom::End(offset) => {
                 if offset > 0 || offset < -(TOTAL_LENGTH as i64) {
-                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid seek offset"));
+                    return Err(io::Error::other("Invalid seek offset"));
                 }
                 self.pointer = (TOTAL_LENGTH as i64 + offset) as u64;
             }
             SeekFrom::Current(offset) => {
                 let seekpos = self.pointer as i64 + offset;
                 if seekpos < 0 || seekpos as u64 > TOTAL_LENGTH {
-                    return Err(io::Error::new(io::ErrorKind::Other, "Invalid seek offset"));
+                    return Err(io::Error::other("Invalid seek offset"));
                 }
                 self.pointer = seekpos as u64;
             }

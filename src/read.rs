@@ -190,10 +190,7 @@ impl<'a, R: Read> CryptoReader<'a, R> {
 
 #[cold]
 fn invalid_state<T>() -> io::Result<T> {
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        "ZipFileReader was in an invalid state",
-    ))
+    Err(io::Error::other("ZipFileReader was in an invalid state"))
 }
 
 pub(crate) enum ZipFileReader<'a, R: Read> {
@@ -301,7 +298,7 @@ impl<R: Seek> Seek for SeekableTake<'_, R> {
                     .inner
                     .seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
                 self.current_offset = new_inner_offset - self.inner_starting_offset;
-                Ok(new_inner_offset)
+                Ok(self.current_offset)
             }
         }
     }
@@ -2151,7 +2148,7 @@ mod test {
         ZipArchive::new(Cursor::new(v)).expect_err("Invalid file");
     }
 
-    #[cfg(feature = "_deflate-any")]
+    #[cfg(feature = "deflate-flate2")]
     #[test]
     fn test_read_with_data_descriptor() {
         use std::io::Read;
@@ -2177,7 +2174,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "_deflate-any")]
+    #[cfg(feature = "deflate-flate2")]
     fn test_utf8_extra_field() {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/chinese.zip"));
