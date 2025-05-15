@@ -202,7 +202,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "zstd")]
     Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
-    Lzma(Box<crate::read::lzma::LzmaDecoder<R>>),
+    Lzma(liblzma::bufread::XzDecoder<R>),
     #[cfg(feature = "xz")]
     Xz(liblzma::bufread::XzDecoder<R>),
 }
@@ -245,7 +245,8 @@ impl<R: io::BufRead> Decompressor<R> {
             CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
             #[cfg(feature = "lzma")]
             CompressionMethod::Lzma => {
-                Decompressor::Lzma(Box::new(crate::read::lzma::LzmaDecoder::new(reader)))
+                Decompressor::Lzma(liblzma::bufread::XzDecoder::new_stream(reader,
+                        liblzma::stream::Stream::new_lzma_decoder(0).unwrap()))
             }
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => Decompressor::Xz(liblzma::bufread::XzDecoder::new(reader)),
