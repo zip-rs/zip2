@@ -35,9 +35,6 @@ pub use config::*;
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
 
-#[cfg(feature = "lzma")]
-pub(crate) mod lzma;
-
 pub(crate) mod magic_finder;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
@@ -2160,10 +2157,10 @@ mod test {
     fn test_is_symlink() -> std::io::Result<()> {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/symlink.zip"));
-        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
-        assert!(reader.by_index(0).unwrap().is_symlink());
+        let mut reader = ZipArchive::new(Cursor::new(v))?;
+        assert!(reader.by_index(0)?.is_symlink());
         let tempdir = TempDir::with_prefix("test_is_symlink")?;
-        reader.extract(&tempdir).unwrap();
+        reader.extract(&tempdir)?;
         assert!(tempdir.path().join("bar").is_symlink());
         Ok(())
     }
@@ -2233,8 +2230,7 @@ mod test {
         writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
         writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
         let mut reader = writer.finish_into_readable()?;
-        let dest_parent =
-            TempDir::with_prefix("read__test_cannot_symlink_outside_destination").unwrap();
+        let dest_parent = TempDir::with_prefix("read__test_cannot_symlink_outside_destination")?;
         let dest_sibling = dest_parent.path().join("dest-sibling");
         create_dir(&dest_sibling)?;
         let dest = dest_parent.path().join("dest");
@@ -2249,7 +2245,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let mut reader = ZipArchive::new(Cursor::new(v))?;
-        let dest = TempDir::with_prefix("read__test_can_create_destination").unwrap();
+        let dest = TempDir::with_prefix("read__test_can_create_destination")?;
         reader.extract(&dest)?;
         assert!(dest.path().join("mimetype").exists());
         Ok(())
