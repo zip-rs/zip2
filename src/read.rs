@@ -496,9 +496,6 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
                 Some(DataAndPosition { data: eocd64, .. }) => {
                     if eocd64.number_of_files_on_this_disk > eocd64.number_of_files {
                         return Err(invalid!("ZIP64 footer indicates more files on this disk than in the whole archive"));
-                    } else if eocd64.version_needed_to_extract > eocd64.version_made_by {
-                        return Err(invalid!("ZIP64 footer indicates a new version is needed to extract this archive than the \
-                                                         version that wrote it"));
                     }
                     (
                         eocd64.central_directory_offset,
