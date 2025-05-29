@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### 🐛 Bug Fixes
+
+- Fix issue with appending to zip files close to the 4GB boundary by automatically enabling ZIP64 format when needed
+
 ## [4.0.0](https://github.com/zip-rs/zip2/compare/v3.0.0...v4.0.0) - 2025-05-21
 
 ### <!-- 1 -->🐛 Bug Fixes
