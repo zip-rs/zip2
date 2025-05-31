@@ -16,47 +16,99 @@ fn write_data(w: &mut dyn Write, size: usize) {
 #[test]
 fn test_append_near_4gb() {
     let dir = tempdir().unwrap();
-    let path = dir.path().join("large.zip");
-    
+    let path = dir.path().join("large-then-small.zip");
+
     // Create a new zip file with a large file close to 4GB
     {
         let file = File::create(&path).unwrap();
         let mut writer = ZipWriter::new(file);
-        
+
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        
+
         writer.start_file_from_path("close_to_4gb", opts).unwrap();
-        
+
         // Write a file that's just under 4GB (4GB - 32KB)
         let size = (4u64 << 30) - (1 << 15);
         write_data(&mut writer, size as usize);
-        
+
         // Add a small file
         writer.start_file_from_path("small_file", opts).unwrap();
         write_data(&mut writer, 1024);
-        
+
         writer.finish().unwrap();
     }
-    
+
     // Now append to the zip file
     {
         let file = File::options().read(true).write(true).open(&path).unwrap();
         let mut writer = ZipWriter::new_append(file).unwrap();
-        
+
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        
+
         // Add another small file
         writer.start_file_from_path("appended_file", opts).unwrap();
         write_data(&mut writer, 1024);
-        
+
         writer.finish().unwrap();
     }
-    
+
     // Verify the zip file is valid by reading it
     {
         let file = File::open(&path).unwrap();
         let mut archive = zip::ZipArchive::new(file).unwrap();
-        
+
+        assert_eq!(archive.len(), 3);
+        assert!(archive.file_names().any(|name| name == "close_to_4gb"));
+        assert!(archive.file_names().any(|name| name == "small_file"));
+        assert!(archive.file_names().any(|name| name == "appended_file"));
+    }
+}
+
+/// Same as above, except that the small file is written first
+#[test]
+fn test_append_that_crosses_4gb_barrier() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("small-then-large.zip");
+
+    // Create a new zip file with a large file close to 4GB
+    {
+        let file = File::create(&path).unwrap();
+        let mut writer = ZipWriter::new(file);
+
+        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+        writer.start_file_from_path("close_to_4gb", opts).unwrap();
+
+        // Add a small file
+        writer.start_file_from_path("small_file", opts).unwrap();
+        write_data(&mut writer, 1024);
+
+        writer.finish().unwrap();
+    }
+
+    // Now append to the zip file
+    {
+        let file = File::options().read(true).write(true).open(&path).unwrap();
+        let mut writer = ZipWriter::new_append(file).unwrap();
+
+        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+        // Write a file that's just under 4GB (4GB - 32KB)
+        let size = (4u64 << 30) - (1 << 15);
+        write_data(&mut writer, size as usize);
+
+        // Add another small file
+        writer.start_file_from_path("appended_file", opts).unwrap();
+        write_data(&mut writer, 1024);
+
+        writer.finish().unwrap();
+    }
+
+    // Verify the zip file is valid by reading it
+    {
+        let file = File::open(&path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+
         assert_eq!(archive.len(), 3);
         assert!(archive.file_names().any(|name| name == "close_to_4gb"));
         assert!(archive.file_names().any(|name| name == "small_file"));
@@ -69,41 +121,41 @@ fn test_append_near_4gb() {
 fn test_append_with_large_file_flag() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("test.zip");
-    
+
     // Create a new zip file
     {
         let file = File::create(&path).unwrap();
         let mut writer = ZipWriter::new(file);
-        
+
         let opts = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored)
             .large_file(true); // Force ZIP64 format
-        
+
         writer.start_file_from_path("file1", opts).unwrap();
         write_data(&mut writer, 1024);
-        
+
         writer.finish().unwrap();
     }
-    
+
     // Now append to the zip file
     {
         let file = File::options().read(true).write(true).open(&path).unwrap();
         let mut writer = ZipWriter::new_append(file).unwrap();
-        
+
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        
+
         // Add another file
         writer.start_file_from_path("file2", opts).unwrap();
         write_data(&mut writer, 1024);
-        
+
         writer.finish().unwrap();
     }
-    
+
     // Verify the zip file is valid by reading it
     {
         let file = File::open(&path).unwrap();
         let mut archive = zip::ZipArchive::new(file).unwrap();
-        
+
         assert_eq!(archive.len(), 2);
         assert!(archive.file_names().any(|name| name == "file1"));
         assert!(archive.file_names().any(|name| name == "file2"));
