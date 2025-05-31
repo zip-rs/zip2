@@ -14,7 +14,6 @@ fn write_data(w: &mut dyn Write, size: usize) {
 }
 
 #[test]
-#[ignore] // This test creates a large file, so we mark it as ignored by default
 fn test_append_near_4gb() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("large.zip");
