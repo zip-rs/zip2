@@ -904,7 +904,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         // Check if we're close to the 4GB boundary and force ZIP64 if needed
         // This ensures we properly handle appending to files close to 4GB
         let mut large_file = options.large_file;
-        if header_start > spec::ZIP64_BYTES_THR - (1 << 20) { // Within 1MB of the 4GB boundary
+        if header_start > spec::ZIP64_BYTES_THR - (1 << 20) {
+            // Within 1MB of the 4GB boundary
             large_file = true;
         }
 
@@ -913,9 +914,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-        if let Some(zip64_block) =
-            Zip64ExtraFieldBlock::maybe_new(large_file, 0, 0, header_start)
-        {
+        if let Some(zip64_block) = Zip64ExtraFieldBlock::maybe_new(large_file, 0, 0, header_start) {
             let mut new_extra_data = zip64_block.serialize().into_vec();
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
@@ -981,7 +980,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             large_file,
             ..options
         };
-        
+
         let mut file = ZipFileData::initialize_local_block(
             name,
             &modified_options,
