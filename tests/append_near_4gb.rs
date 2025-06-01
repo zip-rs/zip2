@@ -77,7 +77,9 @@ fn test_append_near_4gb_with_1gb_files() {
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         for i in 0..=3 {
-            writer.start_file_from_path(format!("close_to_4gb_{}", i), opts).unwrap();
+            writer
+                .start_file_from_path(format!("close_to_4gb_{i}"), opts)
+                .unwrap();
 
             // Write a file that's just under 1GB (1GB - 32KB)
             let size = (1u64 << 30) - (1 << 15);
