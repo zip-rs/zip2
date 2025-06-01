@@ -904,8 +904,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         // Check if we're close to the 4GB boundary and force ZIP64 if needed
         // This ensures we properly handle appending to files close to 4GB
         let mut large_file = options.large_file;
-        if header_start > spec::ZIP64_BYTES_THR - (1 << 20) {
-            // Within 1MB of the 4GB boundary
+
+        if header_start > spec::ZIP64_BYTES_THR {
+            // Files that start on or past the 4GiB boundary are always ZIP64
             large_file = true;
         }
 
