@@ -926,7 +926,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn start_entry<S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
-        options: FileOptions<T>,
+        mut options: FileOptions<T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()> {
         self.finish_file()?;
@@ -937,6 +937,13 @@ impl<W: Write + Seek> ZipWriter<W> {
             compressed_size: 0,
             uncompressed_size: 0,
         });
+
+        // Check if we're close to the 4GB boundary and force ZIP64 if needed
+        // This ensures we properly handle appending to files close to 4GB
+        if header_start > spec::ZIP64_BYTES_THR {
+            // Files that start on or past the 4GiB boundary are always ZIP64
+            options.large_file = true;
+        }
 
         let mut extra_data = match options.extended_options.extra_data() {
             Some(data) => data.to_vec(),
@@ -2117,6 +2124,9 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name
     writer.write_all(&file.file_name_raw)?;
     // extra field
+    if let Some(zip64_extra_field) = &file.zip64_extra_field_block() {
+        writer.write_all(&zip64_extra_field.serialize())?;
+    }
     if let Some(extra_field) = &file.extra_field {
         writer.write_all(extra_field)?;
     }

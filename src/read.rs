@@ -1469,13 +1469,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
-    match parse_extra_field(&mut result) {
-        Ok(stripped_extra_field) => {
-            result.extra_field = stripped_extra_field;
-        }
-        Err(ZipError::Io(..)) => {}
-        Err(e) => return Err(e),
-    }
+    parse_extra_field(&mut result)?;
 
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
@@ -1491,33 +1485,42 @@ fn central_header_to_zip_file_inner<R: Read>(
     Ok(result)
 }
 
-pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<Option<Arc<Vec<u8>>>> {
-    let Some(ref extra_field) = file.extra_field else {
-        return Ok(None);
-    };
-    let extra_field = extra_field.clone();
-    let mut processed_extra_field = extra_field.clone();
-    let len = extra_field.len();
-    let mut reader = io::Cursor::new(&**extra_field);
+pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+    let mut extra_field = file.extra_field.clone();
+    let mut central_extra_field = file.central_extra_field.clone();
+    for field_group in [&mut extra_field, &mut central_extra_field] {
+        let Some(extra_field) = field_group else {
+            continue;
+        };
+        let mut modified = false;
+        let mut processed_extra_field = vec![];
+        let len = extra_field.len();
+        let mut reader = io::Cursor::new(&**extra_field);
 
-    /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
-    let mut position = reader.position() as usize;
-    while (position) < len {
-        let old_position = position;
-        let remove = parse_single_extra_field(file, &mut reader, position as u64, false)?;
-        position = reader.position() as usize;
-        if remove {
-            let remaining = len - (position - old_position);
-            if remaining == 0 {
-                return Ok(None);
+        let mut position = reader.position();
+        while position < len as u64 {
+            let old_position = position;
+            let remove = parse_single_extra_field(file, &mut reader, position, false)?;
+            position = reader.position();
+            if remove {
+                modified = true;
+            } else {
+                let field_len = (position - old_position) as usize;
+                let write_start = processed_extra_field.len();
+                reader.seek(SeekFrom::Start(old_position))?;
+                processed_extra_field.extend_from_slice(&vec![0u8; field_len]);
+                reader.read_exact(
+                    &mut processed_extra_field[write_start..(write_start + field_len)],
+                )?;
             }
-            let mut new_extra_field = Vec::with_capacity(remaining);
-            new_extra_field.extend_from_slice(&extra_field[0..old_position]);
-            new_extra_field.extend_from_slice(&extra_field[position..]);
-            processed_extra_field = Arc::new(new_extra_field);
+        }
+        if modified {
+            *field_group = Some(Arc::new(processed_extra_field));
         }
     }
-    Ok(Some(processed_extra_field))
+    file.extra_field = extra_field;
+    file.central_extra_field = central_extra_field;
+    Ok(())
 }
 
 pub(crate) fn parse_single_extra_field<R: Read>(
