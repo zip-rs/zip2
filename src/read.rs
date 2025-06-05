@@ -24,7 +24,7 @@ use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
 use std::mem::size_of;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -964,6 +964,28 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
         self.shared.files.keys().map(|s| s.as_ref())
+    }
+
+    /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
+    /// doesn't make the archive invalid, but some programs will refuse to decompress it because the
+    /// copies would take up space independently in the destination.
+    pub fn has_overlapping_files(&mut self) -> ZipResult<bool> {
+        let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
+        for file in self.shared.files.values() {
+            if file.compressed_size == 0 {
+                continue;
+            }
+            let start = file.data_start(&mut self.reader)?;
+            let end = start + file.compressed_size;
+            if ranges.iter().any(|range| {
+                (range.end <= end && range.start >= start)
+                    || (range.start <= end && range.start >= start)
+            }) {
+                return Ok(true);
+            }
+            ranges.push(start..end);
+        }
+        Ok(false)
     }
 
     /// Search for a file entry by name, decrypt with given password
