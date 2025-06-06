@@ -27,8 +27,8 @@ fn test_append_near_4gb() {
 
         writer.start_file_from_path("close_to_4gb", opts).unwrap();
 
-        // Write a file that's just under 4GB (4GB - 32KB)
-        let size = (4u64 << 30) - (1 << 15);
+        // Write a file that's just under 4GB (4GB - 1 byte)
+        let size = u32::MAX;
         write_data(&mut writer, size as usize);
 
         // Add a small file
@@ -70,7 +70,7 @@ fn test_append_near_4gb_with_1gb_files() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("large-then-small.zip");
 
-    // Create a new zip file with a large file close to 4GB
+    // Create a new zip file with 4 files totaling 1GB
     {
         let file = File::create(&path).unwrap();
         let mut writer = ZipWriter::new(file);
@@ -82,8 +82,8 @@ fn test_append_near_4gb_with_1gb_files() {
                 .start_file_from_path(format!("close_to_4gb_{i}"), opts)
                 .unwrap();
 
-            // Write a file that's just under 1GB (1GB - 32KB)
-            let size = (1u64 << 30) - (1 << 15);
+            // Write a file that's 1 GB
+            let size = 1u64 << 30;
             write_data(&mut writer, size as usize);
         }
 
