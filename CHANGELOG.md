@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.1.0](https://github.com/zip-rs/zip2/compare/v4.0.0...v4.1.0) - 2025-06-14
+
+### <!-- 0 -->🚀 Features
+
+- Add has_overlapping_files method
+
 ## [4.0.0](https://github.com/zip-rs/zip2/compare/v3.0.0...v4.0.0) - 2025-05-21
 
 ### <!-- 1 -->🐛 Bug Fixes
