@@ -193,7 +193,7 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
 
 pub(crate) enum Decompressor<R: io::BufRead> {
     Stored(R),
-    #[cfg(feature = "_deflate-any")]
+    #[cfg(feature = "deflate-flate2")]
     Deflated(flate2::bufread::DeflateDecoder<R>),
     #[cfg(feature = "deflate64")]
     Deflate64(deflate64::Deflate64Decoder<R>),
@@ -202,16 +202,16 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "zstd")]
     Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
-    Lzma(Box<crate::read::lzma::LzmaDecoder<R>>),
+    Lzma(liblzma::bufread::XzDecoder<R>),
     #[cfg(feature = "xz")]
-    Xz(xz2::bufread::XzDecoder<R>),
+    Xz(liblzma::bufread::XzDecoder<R>),
 }
 
 impl<R: io::BufRead> io::Read for Decompressor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Decompressor::Stored(r) => r.read(buf),
-            #[cfg(feature = "_deflate-any")]
+            #[cfg(feature = "deflate-flate2")]
             Decompressor::Deflated(r) => r.read(buf),
             #[cfg(feature = "deflate64")]
             Decompressor::Deflate64(r) => r.read(buf),
@@ -231,7 +231,7 @@ impl<R: io::BufRead> Decompressor<R> {
     pub fn new(reader: R, compression_method: CompressionMethod) -> crate::result::ZipResult<Self> {
         Ok(match compression_method {
             CompressionMethod::Stored => Decompressor::Stored(reader),
-            #[cfg(feature = "_deflate-any")]
+            #[cfg(feature = "deflate-flate2")]
             CompressionMethod::Deflated => {
                 Decompressor::Deflated(flate2::bufread::DeflateDecoder::new(reader))
             }
@@ -244,11 +244,12 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
             #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => {
-                Decompressor::Lzma(Box::new(crate::read::lzma::LzmaDecoder::new(reader)))
-            }
+            CompressionMethod::Lzma => Decompressor::Lzma(liblzma::bufread::XzDecoder::new_stream(
+                reader,
+                liblzma::stream::Stream::new_lzma_decoder(0).unwrap(),
+            )),
             #[cfg(feature = "xz")]
-            CompressionMethod::Xz => Decompressor::Xz(xz2::bufread::XzDecoder::new(reader)),
+            CompressionMethod::Xz => Decompressor::Xz(liblzma::bufread::XzDecoder::new(reader)),
             _ => {
                 return Err(crate::result::ZipError::UnsupportedArchive(
                     "Compression method not supported",
@@ -261,7 +262,7 @@ impl<R: io::BufRead> Decompressor<R> {
     pub fn into_inner(self) -> R {
         match self {
             Decompressor::Stored(r) => r,
-            #[cfg(feature = "_deflate-any")]
+            #[cfg(feature = "deflate-flate2")]
             Decompressor::Deflated(r) => r.into_inner(),
             #[cfg(feature = "deflate64")]
             Decompressor::Deflate64(r) => r.into_inner(),

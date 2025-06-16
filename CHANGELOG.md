@@ -1,5 +1,38 @@
 # Changelog
 
+## [4.1.0](https://github.com/zip-rs/zip2/compare/v4.0.0...v4.1.0) - 2025-06-14
+
+### <!-- 0 -->🚀 Features
+
+- Add has_overlapping_files method
+
+## [4.0.0](https://github.com/zip-rs/zip2/compare/v3.0.0...v4.0.0) - 2025-05-21
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Allow extraction of Zip64 where "Version needed to extract" is higher than "Version made by" ([#356](https://github.com/zip-rs/zip2/pull/356))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Revert nt-time upgrade (would increase MSRV)
+- Revert constant_time_eq update (would increase MSRV)
+- Update fully-qualified names of liblzma imports
+
+## [3.0.0](https://github.com/zip-rs/zip2/compare/v2.6.1...v3.0.0) - 2025-05-14
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- return correct offset in SeekableTake::seek ([#342](https://github.com/zip-rs/zip2/pull/342))
+- When only zopfli is available, decompression of deflate should not be possible ([#348](https://github.com/zip-rs/zip2/pull/348))
+- Specify `flate2` dependency of the `deflate-flate2` feature. ([#345](https://github.com/zip-rs/zip2/pull/345))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- drop unused crossbeam-utils dependency ([#339](https://github.com/zip-rs/zip2/pull/339))
+- fix typo
+- remove `deflate-flate2` dependency on specific backend
+- [**breaking**] Drop deprecated `deflate-miniz` feature flag ([#351](https://github.com/zip-rs/zip2/pull/351))
+
 ## [2.6.1](https://github.com/zip-rs/zip2/compare/v2.6.0...v2.6.1) - 2025-04-03
 
 ### <!-- 1 -->🐛 Bug Fixes
