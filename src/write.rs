@@ -22,7 +22,7 @@ use std::default::Default;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::prelude::*;
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 use std::io::{BufReader, SeekFrom};
 use std::marker::PhantomData;
 use std::mem;
@@ -1625,6 +1625,9 @@ impl<W: Write + Seek> ZipWriter<W> {
 }
 
 impl<W: Write> ZipWriter<StreamWriter<W>> {
+    /// Creates a writer that doesn't require the inner writer to implement [Seek], but where
+    /// operations that would overwrite previously-written bytes or cause subsequent operations to
+    /// do so (such as `abort_file`) will always return an error.
     pub fn new_stream(inner: W) -> ZipWriter<StreamWriter<W>> {
         ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(StreamWriter::new(inner))),
@@ -1942,8 +1945,7 @@ fn write_data_descriptor<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipRes
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(ZipError::Io(io::Error::other(
                 "Large file option has not been set",
             )));
         }
@@ -2023,12 +2025,15 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     Ok(())
 }
 
+/// Wrapper around a [Write] implementation that implements the [Seek] trait, but where seeking
+/// returns an error unless it's a no-op.
 pub struct StreamWriter<W: Write> {
     inner: W,
     bytes_written: u64,
 }
 
 impl<W: Write> StreamWriter<W> {
+    /// Creates an instance wrapping the provided inner writer.
     pub fn new(inner: W) -> StreamWriter<W> {
         Self {
             inner,
@@ -2052,9 +2057,13 @@ impl<W: Write> Write for StreamWriter<W> {
 impl<W: Write> Seek for StreamWriter<W> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
-            SeekFrom::Current(0) | SeekFrom::End(0) => Ok(self.bytes_written),
-            _ => panic!("Seek is not supported, trying to seek to {:?}", pos),
+            SeekFrom::Current(0) | SeekFrom::End(0) => return Ok(self.bytes_written),
+            SeekFrom::Start(x) => if x == self.bytes_written {
+                return Ok(self.bytes_written);
+            },
+            _ => {}
         }
+        Err(io::Error::new(ErrorKind::Unsupported, "seek is not supported"))
     }
 }
 
