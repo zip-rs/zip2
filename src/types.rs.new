@@ -1,0 +1,18 @@
+// This is a temporary file to show the fix
+// The fix is in the flags() method of ZipFileData
+
+fn flags(&self) -> u16 {
+    // Use the stored is_utf8 flag instead of recalculating it
+    // This ensures we preserve the flag when appending to an existing zip file
+    let utf8_bit: u16 = if self.is_utf8 {
+        1u16 << 11
+    } else {
+        0
+    };
+    let encrypted_bit: u16 = if self.encrypted { 1u16 << 0 } else { 0 };
+    
+    // Add data descriptor flag if needed
+    let data_descriptor_bit: u16 = if self.using_data_descriptor { 1u16 << 3 } else { 0 };
+
+    utf8_bit | encrypted_bit | data_descriptor_bit
+}
