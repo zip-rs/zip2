@@ -22,8 +22,8 @@ use std::default::Default;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::prelude::*;
-use std::io::{Cursor, ErrorKind};
 use std::io::{BufReader, SeekFrom};
+use std::io::{Cursor, ErrorKind};
 use std::marker::PhantomData;
 use std::mem;
 use std::str::{from_utf8, Utf8Error};
@@ -2058,12 +2058,17 @@ impl<W: Write> Seek for StreamWriter<W> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
             SeekFrom::Current(0) | SeekFrom::End(0) => return Ok(self.bytes_written),
-            SeekFrom::Start(x) => if x == self.bytes_written {
-                return Ok(self.bytes_written);
-            },
+            SeekFrom::Start(x) => {
+                if x == self.bytes_written {
+                    return Ok(self.bytes_written);
+                }
+            }
             _ => {}
         }
-        Err(io::Error::new(ErrorKind::Unsupported, "seek is not supported"))
+        Err(io::Error::new(
+            ErrorKind::Unsupported,
+            "seek is not supported",
+        ))
     }
 }
 
