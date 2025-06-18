@@ -849,9 +849,16 @@ impl ZipFileData {
         } else {
             0
         };
+
+        let using_data_descriptor_bit = if self.using_data_descriptor {
+            1u16 << 3
+        } else {
+            0
+        };
+
         let encrypted_bit: u16 = if self.encrypted { 1u16 << 0 } else { 0 };
 
-        utf8_bit | encrypted_bit
+        utf8_bit | using_data_descriptor_bit | encrypted_bit
     }
 
     fn clamp_size_field(&self, field: u64) -> u32 {
@@ -863,8 +870,14 @@ impl ZipFileData {
     }
 
     pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
-        let compressed_size: u32 = self.clamp_size_field(self.compressed_size);
-        let uncompressed_size: u32 = self.clamp_size_field(self.uncompressed_size);
+        let (compressed_size, uncompressed_size) = if self.using_data_descriptor {
+            (0, 0)
+        } else {
+            (
+                self.clamp_size_field(self.compressed_size),
+                self.clamp_size_field(self.uncompressed_size),
+            )
+        };
         let extra_field_length: u16 = self
             .extra_field_len()
             .try_into()
