@@ -1633,6 +1633,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
+            zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: false,
         }
