@@ -2040,6 +2040,11 @@ impl<W: Write> StreamWriter<W> {
             bytes_written: 0,
         }
     }
+
+    /// Consumes this wrapper, returning the underlying writer.
+    pub fn into_inner(self) -> W {
+        self.inner
+    }
 }
 
 impl<W: Write> Write for StreamWriter<W> {
