@@ -1938,10 +1938,8 @@ fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData
 }
 
 fn write_data_descriptor<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    writer.write_u32_le(file.crc32)?;
-    if file.large_file {
-        writer.write_u64_le(file.compressed_size)?;
-        writer.write_u64_le(file.uncompressed_size)?;
+    if let Some(block) = file.data_descriptor_block() {
+        block.write(writer)?;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
@@ -1950,9 +1948,9 @@ fn write_data_descriptor<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipRes
             )));
         }
 
-        writer.write_u32_le(file.compressed_size as u32)?;
-        writer.write_u32_le(file.uncompressed_size as u32)?;
+        file.zip64_data_descriptor_block().write(writer)?;
     }
+
     Ok(())
 }
 
