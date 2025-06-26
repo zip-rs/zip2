@@ -53,7 +53,7 @@ By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `time` and `zs
 MSRV
 ----
 
-Our current Minimum Supported Rust Version is **1.75**. When adding features,
+Our current Minimum Supported Rust Version is **1.82**. When adding features,
 we will follow these guidelines:
 
 - We will always support a minor Rust version that has been stable for at least 6 months.
