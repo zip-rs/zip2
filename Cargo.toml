@@ -33,12 +33,13 @@ chrono = { version = "0.4", optional = true }
 constant_time_eq = { version = "0.3.1", optional = true }
 crc32fast = "1.4"
 flate2 = { version = "1.1.1", default-features = false, optional = true }
-getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true}
+getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
 memchr = "2.7"
 nt-time = { version = "0.10.6", default-features = false, optional = true }
+ppmd-rust = { version = "1.2", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
 time = { workspace = true, optional = true, features = [
@@ -78,6 +79,7 @@ deflate-zopfli = ["dep:zopfli", "_deflate-any"]
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:liblzma"]
+ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:liblzma"]
 default = [
@@ -86,6 +88,7 @@ default = [
     "deflate64",
     "deflate",
     "lzma",
+    "ppmd",
     "time",
     "zstd",
     "xz",
