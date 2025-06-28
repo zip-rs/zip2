@@ -99,6 +99,8 @@ enum GenericZipWriter<W: Write + Seek> {
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
     #[cfg(feature = "xz")]
     Xz(liblzma::write::XzEncoder<MaybeEncrypted<W>>),
+    #[cfg(feature = "ppmd")]
+    Ppmd(Box<ppmd_rust::Ppmd8Encoder<MaybeEncrypted<W>>>),
 }
 
 impl<W: Write + Seek> Debug for GenericZipWriter<W> {
@@ -120,6 +122,8 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             GenericZipWriter::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
             #[cfg(feature = "xz")]
             GenericZipWriter::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.get_ref())),
+            #[cfg(feature = "ppmd")]
+            GenericZipWriter::Ppmd(_) => f.write_fmt(format_args!("Ppmd8Encoder")),
         }
     }
 }
@@ -1792,6 +1796,37 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         GenericZipWriter::Xz(liblzma::write::XzEncoder::new(bare, level))
                     }))
                 }
+                #[cfg(feature = "ppmd")]
+                CompressionMethod::Ppmd => {
+                    const ORDERS: [u32; 10] = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+                    let level = clamp_opt(compression_level.unwrap_or(7), 1..=9)
+                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                        as u32;
+
+                    let order = ORDERS[level as usize];
+                    let memory_size = 1 << (level + 19);
+                    let memory_size_mb = memory_size / 1024 / 1024;
+
+                    Ok(Box::new(move |mut bare| {
+                        let parameter: u16 = (order as u16 - 1)
+                            + ((memory_size_mb - 1) << 4) as u16
+                            + ((ppmd_rust::RestoreMethod::Restart as u16) << 12);
+
+                        bare.write_all(&parameter.to_le_bytes())
+                            .expect("Failed to write PPMd parameter");
+
+                        GenericZipWriter::Ppmd(Box::new(
+                            ppmd_rust::Ppmd8Encoder::new(
+                                bare,
+                                order,
+                                memory_size,
+                                ppmd_rust::RestoreMethod::Restart,
+                            )
+                            .unwrap(),
+                        ))
+                    }))
+                }
                 CompressionMethod::Unsupported(..) => {
                     Err(UnsupportedArchive("Unsupported compression"))
                 }
@@ -1817,6 +1852,11 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Zstd(w) => w.finish()?,
             #[cfg(feature = "xz")]
             GenericZipWriter::Xz(w) => w.finish()?,
+            #[cfg(feature = "ppmd")]
+            GenericZipWriter::Ppmd(w) => {
+                // ZIP needs to encode an end marker (7z for example doesn't encode one).
+                w.finish(true)?
+            }
             Closed => {
                 return Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
@@ -1844,6 +1884,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "xz")]
             GenericZipWriter::Xz(ref mut w) => Some(w as &mut dyn Write),
+            #[cfg(feature = "ppmd")]
+            GenericZipWriter::Ppmd(ref mut w) => Some(w as &mut dyn Write),
             Closed => None,
         }
     }
