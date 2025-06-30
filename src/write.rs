@@ -1657,7 +1657,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
     }
 }
 
-type SwitchWriterFunction<W> = Box<dyn FnOnce(MaybeEncrypted<W>) -> GenericZipWriter<W>>;
+type SwitchWriterFunction<W> = Box<dyn FnOnce(MaybeEncrypted<W>) -> ZipResult<GenericZipWriter<W>>>;
 
 impl<W: Write + Seek> GenericZipWriter<W> {
     fn prepare_next_writer(
@@ -1680,7 +1680,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     if compression_level.is_some() {
                         Err(UnsupportedArchive("Unsupported compression level"))
                     } else {
-                        Ok(Box::new(|bare| Storer(bare)))
+                        Ok(Box::new(|bare| Ok(Storer(bare))))
                     }
                 }
                 #[cfg(feature = "_deflate-any")]
@@ -1708,20 +1708,26 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                 .unwrap(),
                                 ..Default::default()
                             };
-                            return Ok(Box::new(move |bare| match zopfli_buffer_size {
-                                Some(size) => GenericZipWriter::BufferedZopfliDeflater(
-                                    BufWriter::with_capacity(
-                                        size,
+                            return Ok(Box::new(move |bare| {
+                                Ok(match zopfli_buffer_size {
+                                    Some(size) => GenericZipWriter::BufferedZopfliDeflater(
+                                        BufWriter::with_capacity(
+                                            size,
+                                            zopfli::DeflateEncoder::new(
+                                                options,
+                                                Default::default(),
+                                                bare,
+                                            ),
+                                        ),
+                                    ),
+                                    None => GenericZipWriter::ZopfliDeflater(
                                         zopfli::DeflateEncoder::new(
                                             options,
                                             Default::default(),
                                             bare,
                                         ),
                                     ),
-                                ),
-                                None => GenericZipWriter::ZopfliDeflater(
-                                    zopfli::DeflateEncoder::new(options, Default::default(), bare),
-                                ),
+                                })
                             }));
                         };
                     }
@@ -1743,10 +1749,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     #[cfg(feature = "deflate-flate2")]
                     {
                         Ok(Box::new(move |bare| {
-                            GenericZipWriter::Deflater(DeflateEncoder::new(
+                            Ok(GenericZipWriter::Deflater(DeflateEncoder::new(
                                 bare,
                                 Compression::new(level),
-                            ))
+                            )))
                         }))
                     }
                 }
@@ -1763,10 +1769,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
-                        GenericZipWriter::Bzip2(BzEncoder::new(
+                        Ok(GenericZipWriter::Bzip2(BzEncoder::new(
                             bare,
                             bzip2::Compression::new(level),
-                        ))
+                        )))
                     }))
                 }
                 CompressionMethod::AES => Err(UnsupportedArchive(
@@ -1780,7 +1786,9 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     )
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                     Ok(Box::new(move |bare| {
-                        GenericZipWriter::Zstd(ZstdEncoder::new(bare, level as i32).unwrap())
+                        Ok(GenericZipWriter::Zstd(
+                            ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
+                        ))
                     }))
                 }
                 #[cfg(feature = "lzma")]
@@ -1793,7 +1801,9 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
-                        GenericZipWriter::Xz(liblzma::write::XzEncoder::new(bare, level))
+                        Ok(GenericZipWriter::Xz(liblzma::write::XzEncoder::new(
+                            bare, level,
+                        )))
                     }))
                 }
                 #[cfg(feature = "ppmd")]
@@ -1814,17 +1824,21 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             + ((ppmd_rust::RestoreMethod::Restart as u16) << 12);
 
                         bare.write_all(&parameter.to_le_bytes())
-                            .expect("Failed to write PPMd parameter");
+                            .map_err(ZipError::Io)?;
 
-                        GenericZipWriter::Ppmd(Box::new(
-                            ppmd_rust::Ppmd8Encoder::new(
-                                bare,
-                                order,
-                                memory_size,
-                                ppmd_rust::RestoreMethod::Restart,
-                            )
-                            .unwrap(),
-                        ))
+                        let encoder = ppmd_rust::Ppmd8Encoder::new(
+                            bare,
+                            order,
+                            memory_size,
+                            ppmd_rust::RestoreMethod::Restart,
+                        )
+                        .map_err(|error| {
+                            ZipError::Io(io::Error::other(format!(
+                                "Could not create PPMd encoder: {error}"
+                            )))
+                        })?;
+
+                        Ok(GenericZipWriter::Ppmd(Box::new(encoder)))
                     }))
                 }
                 CompressionMethod::Unsupported(..) => {
@@ -1865,7 +1879,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 .into());
             }
         };
-        *self = make_new_self(bare);
+        *self = make_new_self(bare)?;
         Ok(())
     }
 

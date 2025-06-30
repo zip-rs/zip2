@@ -246,7 +246,9 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             #[cfg(feature = "ppmd")]
             Decompressor::Ppmd(r) => match r {
                 Ppmd::Uninitialized(reader) => {
-                    let mut reader = reader.take().expect("reader was empty");
+                    let mut reader = reader.take().ok_or_else(|| {
+                        io::Error::other("Reader was not set while reading PPMd data")
+                    })?;
 
                     let mut buffer = [0; 2];
                     reader.read_exact(&mut buffer)?;
@@ -310,8 +312,8 @@ impl<R: io::BufRead> Decompressor<R> {
     }
 
     /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> R {
-        match self {
+    pub fn into_inner(self) -> io::Result<R> {
+        let inner = match self {
             Decompressor::Stored(r) => r,
             #[cfg(feature = "deflate-flate2")]
             Decompressor::Deflated(r) => r.into_inner(),
@@ -327,10 +329,13 @@ impl<R: io::BufRead> Decompressor<R> {
             Decompressor::Xz(r) => r.into_inner(),
             #[cfg(feature = "ppmd")]
             Decompressor::Ppmd(r) => match r {
-                Ppmd::Uninitialized(mut reader) => reader.take().expect("reader was empty"),
+                Ppmd::Uninitialized(mut reader) => reader
+                    .take()
+                    .ok_or_else(|| io::Error::other("Reader was not set"))?,
                 Ppmd::Initialized(decoder) => decoder.into_inner(),
             },
-        }
+        };
+        Ok(inner)
     }
 }
 
