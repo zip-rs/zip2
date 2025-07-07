@@ -33,7 +33,7 @@ chrono = { version = "0.4", optional = true }
 constant_time_eq = { version = "0.3.1", optional = true }
 crc32fast = "1.4"
 flate2 = { version = "1.1.1", default-features = false, optional = true }
-getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true }
+getrandom = { version = "0.3.1", optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
@@ -56,7 +56,7 @@ arbitrary = { version = "1.4.1", features = ["derive"] }
 
 [dev-dependencies]
 bencher = "0.1.5"
-getrandom = { version = "0.3.1", features = ["wasm_js", "std"] }
+getrandom = "0.3.1"
 walkdir = "2.5"
 time = { workspace = true, features = ["formatting", "macros"] }
 anyhow = "1.0.95"
