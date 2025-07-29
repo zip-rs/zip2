@@ -1,5 +1,6 @@
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
+use zip::read::ZipFile;
 use zip::write::SimpleFileOptions;
 use zip::{AesMode, ZipArchive, ZipWriter};
 
@@ -10,39 +11,39 @@ const PASSWORD: &str = "helloworld";
 
 #[test]
 fn by_path() {
-    let mut buf = Vec::new();
-    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    zip.add_directory(DIRECTORY_NAME, options).unwrap();
-    zip.start_file(format!("{DIRECTORY_NAME}/{FILE_NAME}"), options)
-        .unwrap();
-    zip.write_all(LOREM_IPSUM).unwrap();
-    zip.finish().unwrap();
-
-    let mut archive = ZipArchive::new(Cursor::new(&mut buf)).unwrap();
+    let mut archive = create_archive(options);
     let path = Path::new(DIRECTORY_NAME).join(FILE_NAME);
-    let mut file = archive.by_path(path).unwrap();
-    let mut file_buf = Vec::new();
-    file.read_to_end(&mut file_buf).unwrap();
-    assert_eq!(LOREM_IPSUM, file_buf);
+    let file = archive.by_path(path).unwrap();
+    validate_file(file);
 }
 
 #[test]
 fn by_path_decrypt() {
-    let mut buf = Vec::new();
-    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
     let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
         .with_aes_encryption(AesMode::Aes128, PASSWORD);
+    let mut archive = create_archive(options);
+    let path = Path::new(DIRECTORY_NAME).join(FILE_NAME);
+    let file = archive.by_path_decrypt(path, PASSWORD.as_bytes()).unwrap();
+    validate_file(file);
+}
+
+fn create_archive(options: SimpleFileOptions) -> ZipArchive<Cursor<Vec<u8>>> {
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
     zip.add_directory(DIRECTORY_NAME, options).unwrap();
     zip.start_file(format!("{DIRECTORY_NAME}/{FILE_NAME}"), options)
         .unwrap();
     zip.write_all(LOREM_IPSUM).unwrap();
     zip.finish().unwrap();
+    ZipArchive::new(Cursor::new(buf)).unwrap()
+}
 
-    let mut archive = ZipArchive::new(Cursor::new(&mut buf)).unwrap();
-    let path = Path::new(DIRECTORY_NAME).join(FILE_NAME);
-    let mut file = archive.by_path_decrypt(path, PASSWORD.as_bytes()).unwrap();
+fn validate_file<T>(mut file: ZipFile<T>)
+where
+    T: Read,
+{
     let mut file_buf = Vec::new();
     file.read_to_end(&mut file_buf).unwrap();
     assert_eq!(LOREM_IPSUM, file_buf);
