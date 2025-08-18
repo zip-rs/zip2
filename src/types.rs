@@ -437,10 +437,6 @@ impl DateTime {
 }
 
 #[cfg(feature = "time")]
-#[deprecated(
-    since = "2.5.0",
-    note = "use `TryFrom<PrimitiveDateTime> for DateTime` instead"
-)]
 impl TryFrom<OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
@@ -466,10 +462,6 @@ impl TryFrom<PrimitiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "time")]
-#[deprecated(
-    since = "2.5.0",
-    note = "use `TryFrom<DateTime> for PrimitiveDateTime` instead"
-)]
 impl TryFrom<DateTime> for OffsetDateTime {
     type Error = ComponentRange;
 
