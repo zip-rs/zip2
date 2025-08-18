@@ -437,14 +437,13 @@ impl DateTime {
 }
 
 #[cfg(feature = "time")]
+#[deprecated(
+    since = "2.5.0",
+    note = "use `TryFrom<PrimitiveDateTime> for DateTime` instead"
+)]
 impl TryFrom<OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
-    #[allow(useless_deprecated)]
-    #[deprecated(
-        since = "2.5.0",
-        note = "use `TryFrom<PrimitiveDateTime> for DateTime` instead"
-    )]
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         Self::try_from(PrimitiveDateTime::new(dt.date(), dt.time()))
     }
@@ -467,14 +466,13 @@ impl TryFrom<PrimitiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "time")]
+#[deprecated(
+    since = "2.5.0",
+    note = "use `TryFrom<DateTime> for PrimitiveDateTime` instead"
+)]
 impl TryFrom<DateTime> for OffsetDateTime {
     type Error = ComponentRange;
 
-    #[allow(useless_deprecated)]
-    #[deprecated(
-        since = "2.5.0",
-        note = "use `TryFrom<DateTime> for PrimitiveDateTime` instead"
-    )]
     fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
         PrimitiveDateTime::try_from(dt).map(PrimitiveDateTime::assume_utc)
     }
