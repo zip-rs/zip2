@@ -38,7 +38,7 @@ jobs:
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
     - run: cargo check --all ${{ matrix.feature_flag }} --bins --examples
@@ -56,7 +56,7 @@ jobs:
     name: 'Miri ${{ matrix.feature_flag }}'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: sudo apt install gcc-s390x-linux-gnu
     - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
     - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
@@ -71,7 +71,7 @@ jobs:
     name: 'Semver checks: ${{ matrix.feature_group }}'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           feature-group: ${{ matrix.feature_group }}
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly
 
       - name: resolve minimal versions
@@ -111,7 +111,7 @@ jobs:
         feature_flag: ["--all-features", "--no-default-features", ""]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
     - run: cargo clippy --all-targets ${{ matrix.feature_flag }} -- -D warnings
@@ -126,7 +126,7 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -178,7 +178,7 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -222,7 +222,7 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -274,7 +274,7 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
