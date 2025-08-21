@@ -1,5 +1,23 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [4.4.0](https://github.com/zip-rs/zip2/compare/v4.3.0...v4.4.0) - 2025-08-21
+
+### <!-- 0 -->🚀 Features
+
+- Add `lzma-static` and `xz-static` features that enable `liblzma/static` ([#393](https://github.com/zip-rs/zip2/pull/393))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Move deprecated annotations to fix a Clippy warning ([#391](https://github.com/zip-rs/zip2/pull/391))
+# Changelog
+
 ## [4.3.0](https://github.com/zip-rs/zip2/compare/v4.2.0...v4.3.0) - 2025-07-09
 
 ### <!-- 0 -->🚀 Features
