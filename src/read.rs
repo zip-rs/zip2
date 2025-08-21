@@ -2255,7 +2255,17 @@ mod test {
     #[test]
     fn test_central_directory_not_at_end() -> ZipResult<()> {
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/omni.ja")))?;
-        assert!(reader.by_name("chrome.manifest").is_ok());
+        let mut file = reader.by_name("chrome.manifest")?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        assert!(!contents.is_empty(), "chrome.manifest should not be empty");
+        for i in 0..reader.len() {
+            let mut entry = reader.by_index(i)?;
+            // Attempt to read a small portion or all of each file to ensure it's accessible
+            let mut buffer = Vec::new();
+            entry.read_to_end(&mut buffer)?;
+            assert_eq!(buffer.len(), entry.size() as usize, "File size mismatch for {}", entry.name());
+        }
         Ok(())
     }
 }
