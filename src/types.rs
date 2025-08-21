@@ -2,10 +2,11 @@
 use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
+use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::mem;
 use std::path;
 use std::sync::{Arc, OnceLock};
@@ -485,6 +486,46 @@ impl TryFrom<DateTime> for PrimitiveDateTime {
 pub const MIN_VERSION: u8 = 10;
 pub const DEFAULT_VERSION: u8 = 45;
 
+/// String that may be either CP 437 or UTF-8.
+#[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
+pub enum ZipString<'a> {
+    #[default]
+    Utf8(Cow<'a, str>),
+    Cp437(Cow<'a, [u8]>)
+}
+
+impl <T: ToString> From<T> for ZipString {
+    fn from(value: T) -> Self {
+        ZipString::Utf8(value.to_string().into())
+    }
+}
+
+impl Display for ZipString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            ZipString::Utf8(str) => str,
+            ZipString::Cp437(bytes) => &bytes.to_owned().from_cp437()
+        };
+        write!(f, "{}", str)
+    }
+}
+
+impl ZipString {
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            ZipString::Utf8(str) => str.as_bytes(),
+            ZipString::Cp437(bytes) => bytes
+        }
+    }
+
+    pub fn is_ascii(&self) -> bool {
+        match self {
+            ZipString::Utf8(str) => str.is_ascii(),
+            ZipString::Cp437(bytes) => bytes.is_ascii()
+        }
+    }
+}
+
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
 pub struct ZipFileData {
@@ -511,7 +552,7 @@ pub struct ZipFileData {
     /// Size of the file when extracted
     pub uncompressed_size: u64,
     /// Name of the file
-    pub file_name: Box<str>,
+    pub file_name: ZipString,
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
@@ -519,7 +560,7 @@ pub struct ZipFileData {
     /// Extra field only written to central directory
     pub central_extra_field: Option<Arc<Vec<u8>>>,
     /// File comment
-    pub file_comment: Box<str>,
+    pub file_comment: ZipString,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
     /// Specifies where the extra data of the file starts
@@ -558,11 +599,11 @@ impl ZipFileData {
     }
 
     pub fn file_name_sanitized(&self) -> PathBuf {
-        let no_null_filename = match self.file_name.find('\0') {
-            Some(index) => &self.file_name[0..index],
-            None => &self.file_name,
-        }
-        .to_string();
+        let bytes = self.file_name.as_bytes();
+        let no_null_filename = match bytes.iter().copied().position(|x| x == 0u8) {
+            Some(index) => String::from_utf8_lossy(&bytes[0..index]),
+            None => self.file_name.to_string().into(),
+        };
 
         // zip files can contain both / and \ as separators regardless of the OS
         // and as we want to return a sanitized PathBuf that only supports the
@@ -586,15 +627,16 @@ impl ZipFileData {
 
     /// Simplify the file name by removing the prefix and parent directories and only return normal components
     pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
-        if self.file_name.contains('\0') {
+        if self.file_name.as_bytes().contains(&0u8) {
             return None;
         }
-        let input = Path::new(OsStr::new(&*self.file_name));
-        crate::path::simplified_components(input)
+        let name = OsString::from(self.file_name.to_string());
+        let input = PathBuf::from(name);
+        crate::path::simplified_components(&input)
     }
 
     pub(crate) fn enclosed_name(&self) -> Option<PathBuf> {
-        if self.file_name.contains('\0') {
+        if self.file_name.as_bytes().contains(&0u8) {
             return None;
         }
         let path = PathBuf::from(self.file_name.to_string());
@@ -702,11 +744,11 @@ impl ZipFileData {
         extra_field: &[u8],
     ) -> Self
     where
-        S: ToString,
+        S: Into<ZipString<'static>>,
     {
         let permissions = options.permissions.unwrap_or(0o100644);
-        let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let file_name: ZipString = name.into();
+        let file_name_raw: Box<[u8]> = file_name.as_bytes().to_owned().into();
         let mut local_block = ZipFileData {
             system: System::Unix,
             version_made_by: DEFAULT_VERSION,
@@ -723,7 +765,7 @@ impl ZipFileData {
             file_name_raw,
             extra_field: Some(extra_field.to_vec().into()),
             central_extra_field: options.extended_options.central_extra_data().cloned(),
-            file_comment: String::with_capacity(0).into_boxed_str(),
+            file_comment: ZipString::default(),
             header_start,
             data_start: OnceLock::new(),
             central_header_start: 0,
@@ -784,9 +826,9 @@ impl ZipFileData {
         let mut extra_field = vec![0u8; extra_field_length];
         reader.read_exact(&mut extra_field)?;
 
-        let file_name: Box<str> = match is_utf8 {
+        let file_name: ZipString = match is_utf8 {
             true => String::from_utf8_lossy(&file_name_raw).into(),
-            false => file_name_raw.clone().from_cp437().into(),
+            false => ZipString::Cp437(file_name_raw.clone().into()),
         };
 
         let system: u8 = (version_made_by >> 8).try_into().unwrap();
@@ -807,7 +849,7 @@ impl ZipFileData {
             file_name_raw: file_name_raw.into(),
             extra_field: Some(Arc::new(extra_field)),
             central_extra_field: None,
-            file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
+            file_comment: ZipString::default(), // file comment is only available in the central directory
             // header_start and data start are not available, but also don't matter, since seeking is
             // not available.
             header_start: 0,
@@ -922,7 +964,7 @@ impl ZipFileData {
             extra_field_length: extra_field_len.checked_add(central_extra_field_len).ok_or(
                 invalid!("Extra field length in central directory exceeds 64KiB"),
             )?,
-            file_comment_length: self.file_comment.len().try_into().unwrap(),
+            file_comment_length: self.file_comment.as_bytes().len().try_into().unwrap(),
             disk_number: 0,
             internal_file_attributes: 0,
             external_file_attributes: self.external_attributes,
@@ -1281,7 +1323,7 @@ mod test {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.clone().into_boxed_str(),
+            file_name: file_name.clone().into(),
             file_name_raw: file_name.into_bytes().into_boxed_slice(),
             extra_field: None,
             central_extra_field: None,

@@ -3,17 +3,13 @@
 #[cfg(feature = "aes-crypto")]
 use crate::aes::{AesReader, AesReaderValid};
 use crate::compression::{CompressionMethod, Decompressor};
-use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
-use crate::types::{
-    AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
-    ZipLocalEntryBlock,
-};
+use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData, ZipLocalEntryBlock, ZipString};
 use crate::write::SimpleFileOptions;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use crate::ZIP64_BYTES_THR;
@@ -41,11 +37,12 @@ pub(crate) mod magic_finder;
 pub(crate) mod zip_archive {
     use indexmap::IndexMap;
     use std::sync::Arc;
+    use crate::types::ZipString;
 
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
     pub(crate) struct Shared {
-        pub(crate) files: IndexMap<Box<str>, super::ZipFileData>,
+        pub(crate) files: IndexMap<ZipString, super::ZipFileData>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
         // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -1307,13 +1304,13 @@ fn central_header_to_zip_file_inner<R: Read>(
     let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
-    let file_name: Box<str> = match is_utf8 {
+    let file_name: ZipString = match is_utf8 {
         true => String::from_utf8_lossy(&file_name_raw).into(),
-        false => file_name_raw.clone().from_cp437(),
+        false => ZipString::Cp437(file_name_raw.into()),
     };
-    let file_comment: Box<str> = match is_utf8 {
+    let file_comment: ZipString = match is_utf8 {
         true => String::from_utf8_lossy(&file_comment_raw).into(),
-        false => file_comment_raw.from_cp437(),
+        false => ZipString::Cp437((&*file_comment_raw).into()),
     };
 
     // Construct the result
@@ -1490,7 +1487,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             file.file_name_raw = UnicodeExtraField::try_from_reader(reader, len)?
                 .unwrap_valid(&file.file_name_raw)?;
             file.file_name =
-                String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
+                ZipString::Utf8(String::from_utf8_lossy(&file.file_name_raw));
             file.is_utf8 = true;
         }
         _ => {
@@ -1533,7 +1530,7 @@ impl<'a, R: Read> ZipFile<'a, R> {
     ///
     /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &ZipString {
         &self.get_metadata().file_name
     }
 
@@ -1703,7 +1700,7 @@ impl<'a, R: Read> ZipFile<'a, R> {
     }
 
     /// Get the comment of the file
-    pub fn comment(&self) -> &str {
+    pub fn comment(&self) -> &ZipString {
         &self.get_metadata().file_comment
     }
 

@@ -8,6 +8,7 @@ use std::fs;
 use std::fs::create_dir_all;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use crate::types::ZipString;
 
 /// Stream decoder for zip.
 #[derive(Debug)]
@@ -60,7 +61,7 @@ impl<R: Read> ZipStreamReader<R> {
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
-        struct Extractor(PathBuf, IndexMap<Box<str>, ()>);
+        struct Extractor(PathBuf, IndexMap<ZipString<'static>, ()>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
                 self.1.insert(file.name().into(), ());
@@ -197,7 +198,7 @@ impl ZipStreamFileMetadata {
     }
 
     /// Get the comment of the file
-    pub fn comment(&self) -> &str {
+    pub fn comment(&self) -> &ZipString {
         &self.0.file_comment
     }
 

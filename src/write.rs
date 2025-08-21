@@ -130,6 +130,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
+    use crate::types::ZipString;
     use super::*;
     /// ZIP archive generator
     ///
@@ -161,7 +162,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: IndexMap<Box<str>, ZipFileData>,
+        pub(super) files: IndexMap<ZipString<'static>, ZipFileData>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -1042,12 +1043,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
-        if self.files.contains_key(&file.file_name) {
+        let name = file.file_name.to_string();
+        if self.files.contains_key(&*name) {
             return Err(invalid!("Duplicate filename: {}", file.file_name));
         }
-        let name = file.file_name.to_owned();
-        self.files.insert(name.clone(), file);
-        Ok(self.files.get_index_of(&name).unwrap())
+        let (index, _) = self.files.insert_full(name.into_boxed_str(), file);
+        Ok(index)
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {

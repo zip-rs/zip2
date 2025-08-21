@@ -7,6 +7,7 @@ use core::mem;
 use std::io;
 use std::io::prelude::*;
 use std::slice;
+use crate::types::ZipString;
 
 /// "Magic" header values used in the zip spec to locate metadata records.
 ///
@@ -802,11 +803,11 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
     Err(parsing_error.unwrap_or(invalid!("Could not find EOCD")))
 }
 
-pub(crate) fn is_dir(filename: &str) -> bool {
+pub(crate) fn is_dir(filename: &ZipString) -> bool {
     filename
-        .chars()
-        .next_back()
-        .is_some_and(|c| c == '/' || c == '\\')
+        .as_bytes()
+        .last()
+        .is_some_and(|c| *c == b'/' || *c == b'\\')
 }
 
 #[cfg(test)]
