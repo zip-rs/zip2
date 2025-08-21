@@ -2264,7 +2264,12 @@ mod test {
             // Attempt to read a small portion or all of each file to ensure it's accessible
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer)?;
-            assert_eq!(buffer.len(), file.size() as usize, "File size mismatch for {}", file.name());
+            assert_eq!(
+                buffer.len(),
+                file.size() as usize,
+                "File size mismatch for {}",
+                file.name()
+            );
         }
         Ok(())
     }
