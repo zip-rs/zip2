@@ -72,13 +72,14 @@ deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
 # Pull in flate2, but don't choose a backend; useful if you want to choose your own flate2 backend
 deflate-flate2 = ["_deflate-any", "dep:flate2"]
 # Pull in flate2 and the fast zlib-rs backend; this is what most users will want
-deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
+deflate-flate2-zlib-rs = ["deflate-flate2", "dep:flate2/zlib-rs"]
 # Pull in flate2 and the zlib backend; only use this if you need a dynamically linked system zlib
-deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
+deflate-flate2-zlib = ["deflate-flate2", "dep:flate2/zlib"]
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:liblzma"]
+lzma-static = ["lzma", "dep:liblzma/static"]
 ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:liblzma"]
@@ -87,7 +88,7 @@ default = [
     "bzip2",
     "deflate64",
     "deflate",
-    "lzma",
+    "lzma-static",
     "ppmd",
     "time",
     "zstd",
