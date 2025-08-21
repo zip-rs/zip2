@@ -2259,6 +2259,7 @@ mod test {
         let mut contents = String::new();
         file.read_to_string(&mut contents)?; // ensures valid UTF-8
         assert!(!contents.is_empty(), "chrome.manifest should not be empty");
+        drop(file);
         for i in 0..reader.len() {
             let mut file = reader.by_index(i)?;
             // Attempt to read a small portion or all of each file to ensure it's accessible
