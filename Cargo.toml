@@ -83,6 +83,7 @@ lzma-static = ["lzma", "liblzma/static"]
 ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:liblzma"]
+xz-static = ["xz", "liblzma/static"]
 default = [
     "aes-crypto",
     "bzip2",
