@@ -1255,12 +1255,6 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 
     let central_header_end = reader.stream_position()?;
 
-    if file.header_start >= central_directory.directory_start {
-        return Err(invalid!(
-            "A local file entry can't start after the central directory"
-        ));
-    }
-
     reader.seek(SeekFrom::Start(central_header_end))?;
     Ok(file)
 }
@@ -2267,6 +2261,15 @@ mod test {
         let dest = TempDir::with_prefix("read__test_can_create_destination")?;
         reader.extract(&dest)?;
         assert!(dest.path().join("mimetype").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn test_central_directory_not_at_end() -> ZipResult<()> {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/omni.ja"));
+        let mut reader = ZipArchive::new(Cursor::new(v))?;
+        assert!(reader.by_name("chrome.manifest").is_ok());
         Ok(())
     }
 }
