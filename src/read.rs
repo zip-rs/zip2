@@ -2257,14 +2257,14 @@ mod test {
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/omni.ja")))?;
         let mut file = reader.by_name("chrome.manifest")?;
         let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
+        file.read_to_string(&mut contents)?; // ensures valid UTF-8
         assert!(!contents.is_empty(), "chrome.manifest should not be empty");
         for i in 0..reader.len() {
-            let mut entry = reader.by_index(i)?;
+            let mut file = reader.by_index(i)?;
             // Attempt to read a small portion or all of each file to ensure it's accessible
             let mut buffer = Vec::new();
-            entry.read_to_end(&mut buffer)?;
-            assert_eq!(buffer.len(), entry.size() as usize, "File size mismatch for {}", entry.name());
+            file.read_to_end(&mut buffer)?;
+            assert_eq!(buffer.len(), file.size() as usize, "File size mismatch for {}", file.name());
         }
         Ok(())
     }
