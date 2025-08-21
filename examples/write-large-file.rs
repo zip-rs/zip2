@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .large_file(true)
             .unix_permissions(0o755);
         zip.start_file("huge-file-of-zeroes", options)?;
-        let content: Vec<_> = std::iter::repeat(0_u8).take(65 * 1024).collect();
+        let content: Vec<_> = std::iter::repeat_n(0_u8, 65 * 1024).collect();
         let mut bytes_written = 0_u64;
         while bytes_written < u32::MAX as u64 {
             zip.write_all(&content)?;

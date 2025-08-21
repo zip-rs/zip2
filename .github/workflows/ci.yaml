@@ -32,7 +32,7 @@ jobs:
         - rustalias: stable
           rust: stable
         - rustalias: msrv
-          rust: '1.75'
+          rust: '1.82'
         - rustalias: nightly
           rust: nightly
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -225,7 +225,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -277,7 +277,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config

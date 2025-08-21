@@ -440,11 +440,6 @@ impl DateTime {
 impl TryFrom<OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
-    #[allow(useless_deprecated)]
-    #[deprecated(
-        since = "2.5.0",
-        note = "use `TryFrom<PrimitiveDateTime> for DateTime` instead"
-    )]
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         Self::try_from(PrimitiveDateTime::new(dt.date(), dt.time()))
     }
@@ -470,11 +465,6 @@ impl TryFrom<PrimitiveDateTime> for DateTime {
 impl TryFrom<DateTime> for OffsetDateTime {
     type Error = ComponentRange;
 
-    #[allow(useless_deprecated)]
-    #[deprecated(
-        since = "2.5.0",
-        note = "use `TryFrom<DateTime> for PrimitiveDateTime` instead"
-    )]
     fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
         PrimitiveDateTime::try_from(dt).map(PrimitiveDateTime::assume_utc)
     }
@@ -952,6 +942,28 @@ impl ZipFileData {
             self.header_start,
         )
     }
+
+    pub(crate) fn data_descriptor_block(&self) -> Option<ZipDataDescriptorBlock> {
+        if self.large_file {
+            return None;
+        }
+
+        Some(ZipDataDescriptorBlock {
+            magic: ZipDataDescriptorBlock::MAGIC,
+            crc32: self.crc32,
+            compressed_size: self.compressed_size as u32,
+            uncompressed_size: self.uncompressed_size as u32,
+        })
+    }
+
+    pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
+        Zip64DataDescriptorBlock {
+            magic: Zip64DataDescriptorBlock::MAGIC,
+            crc32: self.crc32,
+            compressed_size: self.compressed_size,
+            uncompressed_size: self.uncompressed_size,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1137,6 +1149,64 @@ impl Zip64ExtraFieldBlock {
 
         ret.into_boxed_slice()
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed, C)]
+pub(crate) struct ZipDataDescriptorBlock {
+    magic: spec::Magic,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+}
+
+unsafe impl Pod for ZipDataDescriptorBlock {}
+
+impl FixedSizeBlock for ZipDataDescriptorBlock {
+    const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
+
+    #[inline(always)]
+    fn magic(self) -> spec::Magic {
+        self.magic
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid data descriptor header");
+
+    to_and_from_le![
+        (magic, spec::Magic),
+        (crc32, u32),
+        (compressed_size, u32),
+        (uncompressed_size, u32),
+    ];
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed, C)]
+pub(crate) struct Zip64DataDescriptorBlock {
+    magic: spec::Magic,
+    pub crc32: u32,
+    pub compressed_size: u64,
+    pub uncompressed_size: u64,
+}
+
+unsafe impl Pod for Zip64DataDescriptorBlock {}
+
+impl FixedSizeBlock for Zip64DataDescriptorBlock {
+    const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
+
+    #[inline(always)]
+    fn magic(self) -> spec::Magic {
+        self.magic
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 data descriptor header");
+
+    to_and_from_le![
+        (magic, spec::Magic),
+        (crc32, u32),
+        (compressed_size, u64),
+        (uncompressed_size, u64),
+    ];
 }
 
 /// The encryption specification used to encrypt a file with AES.
