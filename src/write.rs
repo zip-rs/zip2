@@ -2008,7 +2008,7 @@ fn write_data_descriptor<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipRes
         block.write(writer)?;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
-        if file.compressed_size > spec::ZIP64_BYTES_THR {
+        if file.compressed_size > spec::ZIP64_BYTES_THR && !file.large_file {
             return Err(ZipError::Io(io::Error::other(
                 "Large file option has not been set",
             )));
