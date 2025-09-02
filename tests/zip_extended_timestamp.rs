@@ -18,13 +18,13 @@ fn test_extended_timestamp() {
 
 #[test]
 fn test_extended_timestamp_empty_field() {
-    use zip::extra_fields::ExtendedTimestamp;
     use std::io::Cursor;
-    
+    use zip::extra_fields::ExtendedTimestamp;
+
     // Test with empty field (len = 0) - should return error instead of panicking
     let mut cursor = Cursor::new(vec![]);
     let result = ExtendedTimestamp::try_from_reader(&mut cursor, 0);
-    
+
     assert!(result.is_err());
     if let Err(zip::result::ZipError::UnsupportedArchive(msg)) = result {
         assert!(msg.contains("extended timestamp field is too small for flags"));
@@ -35,14 +35,14 @@ fn test_extended_timestamp_empty_field() {
 
 #[test]
 fn test_extended_timestamp_insufficient_bytes() {
-    use zip::extra_fields::ExtendedTimestamp;
     use std::io::Cursor;
-    
+    use zip::extra_fields::ExtendedTimestamp;
+
     // Test with insufficient bytes for modification time
     // Flags indicate mod_time is present (0x01) but only 1 byte total length
     let mut cursor = Cursor::new(vec![0x01]); // flags byte only
     let result = ExtendedTimestamp::try_from_reader(&mut cursor, 1);
-    
+
     assert!(result.is_err());
     if let Err(zip::result::ZipError::UnsupportedArchive(msg)) = result {
         assert!(msg.contains("insufficient bytes for modification time"));
