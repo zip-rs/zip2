@@ -214,11 +214,20 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "zstd")]
     Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
-    Lzma(lzma_rust2::LZMAReader<R>),
+    Lzma(Lzma<R>),
     #[cfg(feature = "xz")]
     Xz(lzma_rust2::XZReader<R>),
     #[cfg(feature = "ppmd")]
     Ppmd(Ppmd<R>),
+}
+
+#[cfg(feature = "lzma")]
+pub(crate) enum Lzma<R: io::BufRead> {
+    Uninitialized {
+        reader: Option<R>,
+        uncompressed_size: u64,
+    },
+    Initialized(Box<lzma_rust2::LZMAReader<R>>),
 }
 
 #[cfg(feature = "ppmd")]
@@ -240,7 +249,65 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => r.read(buf),
             #[cfg(feature = "lzma")]
-            Decompressor::Lzma(r) => r.read(buf),
+            Decompressor::Lzma(r) => match r {
+                Lzma::Uninitialized {
+                    reader,
+                    uncompressed_size,
+                } => {
+                    let mut reader = reader.take().ok_or_else(|| {
+                        io::Error::other("Reader was not set while reading LZMA data")
+                    })?;
+
+                    // 5.8.8.1 LZMA Version Information - this field identifies which version
+                    // of the LZMA SDK was used to compress a file.  The first byte will
+                    // store the major version number of the LZMA SDK and the second
+                    // byte will store the minor number.
+                    let mut buffer = [0; 2];
+                    reader.read_exact(&mut buffer)?;
+                    let _version_information = u16::from_le_bytes(buffer);
+
+                    // 5.8.8.2 LZMA Properties Size - this field defines the size of the
+                    // remaining property data. Typically this size SHOULD be determined by
+                    // the version of the SDK. This size field is included as a convenience
+                    // and to help avoid any ambiguity arising in the future due
+                    // to changes in this compression algorithm.
+                    let mut buffer = [0; 2];
+                    reader.read_exact(&mut buffer)?;
+                    let properties_size = u16::from_le_bytes(buffer);
+
+                    if properties_size != 5 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("unexpected LZMA properties size of {properties_size}"),
+                        ));
+                    }
+
+                    let mut buffer = [0];
+                    reader.read_exact(&mut buffer)?;
+                    let props = buffer[0];
+
+                    let mut buffer = [0; 4];
+                    reader.read_exact(&mut buffer)?;
+                    let dict_size = u32::from_le_bytes(buffer);
+
+                    // We don't need to handle the end-of-stream marker here, since the LZMA reader
+                    // both stops at the end-of-stream marker AND until it has uncompressed_size bytes.
+                    let mut decompressor = lzma_rust2::LZMAReader::new_with_props(
+                        reader,
+                        *uncompressed_size,
+                        props,
+                        dict_size,
+                        None,
+                    )?;
+
+                    let read = decompressor.read(buf)?;
+
+                    *r = Lzma::Initialized(Box::new(decompressor));
+
+                    Ok(read)
+                }
+                Lzma::Initialized(decompressor) => decompressor.read(buf),
+            },
             #[cfg(feature = "xz")]
             Decompressor::Xz(r) => r.read(buf),
             #[cfg(feature = "ppmd")]
@@ -291,7 +358,11 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
 }
 
 impl<R: io::BufRead> Decompressor<R> {
-    pub fn new(reader: R, compression_method: CompressionMethod) -> crate::result::ZipResult<Self> {
+    pub fn new(
+        reader: R,
+        compression_method: CompressionMethod,
+        uncompressed_size: u64,
+    ) -> crate::result::ZipResult<Self> {
         Ok(match compression_method {
             CompressionMethod::Stored => Decompressor::Stored(reader),
             #[cfg(feature = "deflate-flate2")]
@@ -307,11 +378,10 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
             #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => Decompressor::Lzma(lzma_rust2::LZMAReader::new_mem_limit(
-                reader,
-                u32::MAX,
-                None,
-            )?),
+            CompressionMethod::Lzma => Decompressor::Lzma(Lzma::Uninitialized {
+                reader: Some(reader),
+                uncompressed_size,
+            }),
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => Decompressor::Xz(lzma_rust2::XZReader::new(reader, false)),
             #[cfg(feature = "ppmd")]
@@ -338,7 +408,12 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => r.finish(),
             #[cfg(feature = "lzma")]
-            Decompressor::Lzma(r) => r.into_inner(),
+            Decompressor::Lzma(r) => match r {
+                Lzma::Uninitialized { mut reader, .. } => reader
+                    .take()
+                    .ok_or_else(|| io::Error::other("Reader was not set"))?,
+                Lzma::Initialized(decoder) => decoder.into_inner(),
+            },
             #[cfg(feature = "xz")]
             Decompressor::Xz(r) => r.into_inner(),
             #[cfg(feature = "ppmd")]
