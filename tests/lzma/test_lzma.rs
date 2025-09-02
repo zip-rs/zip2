@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing LZMA implementation...");
     
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("tests/data/lzma.zip"));
+    v.extend_from_slice(include_bytes!("../data/lzma.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v))?;
 
     let mut file = archive.by_name("hello.txt")?;

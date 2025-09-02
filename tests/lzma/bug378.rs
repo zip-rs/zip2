@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("=== LZMA Fix Validation ===");
     
-    let data = include_bytes!("tests/data/lzma.zip");
+    let data = include_bytes!("../data/lzma.zip");
     println!("Test file size: {} bytes", data.len());
     
     // Open the archive

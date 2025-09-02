@@ -4,7 +4,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Examining LZMA zip file structure...");
     
-    let data = include_bytes!("tests/data/lzma.zip");
+    let data = include_bytes!("../data/lzma.zip");
     println!("File size: {} bytes", data.len());
     
     // Print first 100 bytes in hex

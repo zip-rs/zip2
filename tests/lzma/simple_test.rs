@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("Testing LZMA decompression...");
     
-    let data = include_bytes!("tests/data/lzma.zip");
+    let data = include_bytes!("../data/lzma.zip");
     let mut archive = ZipArchive::new(io::Cursor::new(data))?;
     
     println!("Archive opened successfully");
