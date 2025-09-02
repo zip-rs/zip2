@@ -51,7 +51,7 @@ The features available are:
 * `xz`: Enables the XZ compression algorithm.
 * `zstd`: Enables the Zstandard compression algorithm.
 
-By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time` , `xz` and `zstd` are enabled.
+By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time`, `xz` and `zstd` are enabled.
 
 MSRV
 ----
