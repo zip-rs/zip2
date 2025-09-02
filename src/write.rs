@@ -98,7 +98,7 @@ enum GenericZipWriter<W: Write + Seek> {
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
     #[cfg(feature = "xz")]
-    Xz(lzma_rust2::XZWriter<MaybeEncrypted<W>>),
+    Xz(Box<lzma_rust2::XZWriter<MaybeEncrypted<W>>>),
     #[cfg(feature = "ppmd")]
     Ppmd(Box<ppmd_rust::Ppmd8Encoder<MaybeEncrypted<W>>>),
 }
@@ -1801,13 +1801,13 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Xz(
+                        Ok(GenericZipWriter::Xz(Box::new(
                             lzma_rust2::XZWriter::new(
                                 bare,
                                 lzma_rust2::XZOptions::with_preset(level),
                             )
                             .map_err(ZipError::Io)?,
-                        ))
+                        )))
                     }))
                 }
                 #[cfg(feature = "ppmd")]

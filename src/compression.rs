@@ -216,7 +216,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "lzma")]
     Lzma(Lzma<R>),
     #[cfg(feature = "xz")]
-    Xz(lzma_rust2::XZReader<R>),
+    Xz(Box<lzma_rust2::XZReader<R>>),
     #[cfg(feature = "ppmd")]
     Ppmd(Ppmd<R>),
 }
@@ -369,7 +369,9 @@ impl<R: io::BufRead> Decompressor<R> {
                 uncompressed_size,
             }),
             #[cfg(feature = "xz")]
-            CompressionMethod::Xz => Decompressor::Xz(lzma_rust2::XZReader::new(reader, false)),
+            CompressionMethod::Xz => {
+                Decompressor::Xz(Box::new(lzma_rust2::XZReader::new(reader, false)))
+            }
             #[cfg(feature = "ppmd")]
             CompressionMethod::Ppmd => Decompressor::Ppmd(Ppmd::Uninitialized(Some(reader))),
             _ => {
