@@ -214,7 +214,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "zstd")]
     Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
-    Lzma(liblzma::bufread::XzDecoder<R>),
+    Lzma(Lzma<R>),
     #[cfg(feature = "xz")]
     Xz(liblzma::bufread::XzDecoder<R>),
     #[cfg(feature = "ppmd")]
@@ -225,6 +225,12 @@ pub(crate) enum Decompressor<R: io::BufRead> {
 pub(crate) enum Ppmd<R: io::BufRead> {
     Uninitialized(Option<R>),
     Initialized(Box<ppmd_rust::Ppmd8Decoder<R>>),
+}
+
+#[cfg(feature = "lzma")]
+pub(crate) enum Lzma<R: io::BufRead> {
+    Uninitialized(Option<R>),
+    Initialized(liblzma::bufread::XzDecoder<R>),
 }
 
 impl<R: io::BufRead> io::Read for Decompressor<R> {
@@ -240,7 +246,62 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => r.read(buf),
             #[cfg(feature = "lzma")]
-            Decompressor::Lzma(r) => r.read(buf),
+            Decompressor::Lzma(r) => match r {
+                Lzma::Uninitialized(reader) => {
+                    let mut reader = reader.take().ok_or_else(|| {
+                        io::Error::other("Reader was not set while reading LZMA data")
+                    })?;
+
+                    // Read LZMA version information (2 bytes)
+                    let mut version_buffer = [0; 2];
+                    reader.read_exact(&mut version_buffer)?;
+                    let _version = u16::from_le_bytes(version_buffer);
+
+                    // Read LZMA properties size (2 bytes)
+                    let mut size_buffer = [0; 2];
+                    reader.read_exact(&mut size_buffer)?;
+                    let properties_size = u16::from_le_bytes(size_buffer);
+
+                    // Read LZMA properties data
+                    let mut properties = vec![0; properties_size as usize];
+                    reader.read_exact(&mut properties)?;
+
+                    // Parse LZMA properties according to specification
+                    let memory_limit = if properties.len() >= 5 {
+                        // LZMA properties structure:
+                        // 1 byte: lc + lp*9 + pb*45 (LZMA parameters)
+                        // 4 bytes: dictionary size (little-endian)
+                        let dict_size_bytes = &properties[1..5];
+                        let dict_size = u32::from_le_bytes([
+                            dict_size_bytes[0],
+                            dict_size_bytes[1], 
+                            dict_size_bytes[2],
+                            dict_size_bytes[3]
+                        ]) as u64;
+                        
+                        // Use dictionary size as memory limit, with a reasonable maximum
+                        std::cmp::min(dict_size, 128 * 1024 * 1024) // Cap at 128MB
+                    } else {
+                        // Fallback to default memory limit if properties are too short
+                        0
+                    };
+
+                    // Create LZMA decoder - try with parsed memory limit first, fallback to default
+                    let stream = liblzma::stream::Stream::new_lzma_decoder(memory_limit)
+                        .or_else(|_| liblzma::stream::Stream::new_lzma_decoder(0))
+                        .map_err(|e| {
+                            io::Error::new(io::ErrorKind::InvalidData, format!("LZMA decoder creation failed: {}", e))
+                        })?;
+
+                    let mut decoder = liblzma::bufread::XzDecoder::new_stream(reader, stream);
+                    let read = decoder.read(buf)?;
+
+                    *r = Lzma::Initialized(decoder);
+
+                    Ok(read)
+                }
+                Lzma::Initialized(decoder) => decoder.read(buf),
+            },
             #[cfg(feature = "xz")]
             Decompressor::Xz(r) => r.read(buf),
             #[cfg(feature = "ppmd")]
@@ -307,10 +368,7 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
             #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => Decompressor::Lzma(liblzma::bufread::XzDecoder::new_stream(
-                reader,
-                liblzma::stream::Stream::new_lzma_decoder(0).unwrap(),
-            )),
+            CompressionMethod::Lzma => Decompressor::Lzma(Lzma::Uninitialized(Some(reader))),
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => Decompressor::Xz(liblzma::bufread::XzDecoder::new(reader)),
             #[cfg(feature = "ppmd")]
@@ -337,7 +395,12 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => r.finish(),
             #[cfg(feature = "lzma")]
-            Decompressor::Lzma(r) => r.into_inner(),
+            Decompressor::Lzma(r) => match r {
+                Lzma::Uninitialized(mut reader) => reader
+                    .take()
+                    .ok_or_else(|| io::Error::other("Reader was not set"))?,
+                Lzma::Initialized(decoder) => decoder.into_inner(),
+            },
             #[cfg(feature = "xz")]
             Decompressor::Xz(r) => r.into_inner(),
             #[cfg(feature = "ppmd")]
