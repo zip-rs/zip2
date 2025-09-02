@@ -258,23 +258,11 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                         io::Error::other("Reader was not set while reading LZMA data")
                     })?;
 
-                    // 5.8.8.1 LZMA Version Information - this field identifies which version
-                    // of the LZMA SDK was used to compress a file.  The first byte will
-                    // store the major version number of the LZMA SDK and the second
-                    // byte will store the minor number.
-                    let mut buffer = [0; 2];
-                    reader.read_exact(&mut buffer)?;
-                    let _version_information = u16::from_le_bytes(buffer);
-
-                    // 5.8.8.2 LZMA Properties Size - this field defines the size of the
-                    // remaining property data. Typically this size SHOULD be determined by
-                    // the version of the SDK. This size field is included as a convenience
-                    // and to help avoid any ambiguity arising in the future due
-                    // to changes in this compression algorithm.
-                    let mut buffer = [0; 2];
-                    reader.read_exact(&mut buffer)?;
-                    let properties_size = u16::from_le_bytes(buffer);
-
+                    // 5.8.8.1 LZMA Version Information & 5.8.8.2 LZMA Properties Size
+                    let mut header = [0; 4];
+                    reader.read_exact(&mut header)?;
+                    let _version_information = u16::from_le_bytes(header[0..2].try_into().unwrap());
+                    let properties_size = u16::from_le_bytes(header[2..4].try_into().unwrap());
                     if properties_size != 5 {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
@@ -282,13 +270,10 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                         ));
                     }
 
-                    let mut buffer = [0];
-                    reader.read_exact(&mut buffer)?;
-                    let props = buffer[0];
-
-                    let mut buffer = [0; 4];
-                    reader.read_exact(&mut buffer)?;
-                    let dict_size = u32::from_le_bytes(buffer);
+                    let mut props_data = [0; 5];
+                    reader.read_exact(&mut props_data)?;
+                    let props = props_data[0];
+                    let dict_size = u32::from_le_bytes(props_data[1..5].try_into().unwrap());
 
                     // We don't need to handle the end-of-stream marker here, since the LZMA reader
                     // both stops at the end-of-stream marker AND until it has uncompressed_size bytes.
