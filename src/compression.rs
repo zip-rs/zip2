@@ -361,7 +361,8 @@ impl<R: io::BufRead> Decompressor<R> {
     pub fn new(
         reader: R,
         compression_method: CompressionMethod,
-        uncompressed_size: u64,
+        #[cfg(feature = "lzma")] uncompressed_size: u64,
+        #[cfg(not(feature = "lzma"))] _uncompressed_size: u64,
     ) -> crate::result::ZipResult<Self> {
         Ok(match compression_method {
             CompressionMethod::Stored => Decompressor::Stored(reader),
