@@ -272,7 +272,8 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                         // 1 byte: lc + lp*9 + pb*45 (LZMA parameters)
                         // 4 bytes: dictionary size (little-endian)
                         let dict_size_bytes = &properties[1..5];
-                        let dict_size = u32::from_le_bytes(dict_size_bytes) as u64;
+                        let dict_size =
+                            u32::from_le_bytes(dict_size_bytes.try_into().unwrap()) as u64;
 
                         // Use dictionary size as memory limit, with a reasonable maximum
                         std::cmp::min(dict_size, 128 * 1024 * 1024) // Cap at 128MB
