@@ -98,7 +98,7 @@ enum GenericZipWriter<W: Write + Seek> {
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
     #[cfg(feature = "xz")]
-    Xz(liblzma::write::XzEncoder<MaybeEncrypted<W>>),
+    Xz(Box<lzma_rust2::XzWriter<MaybeEncrypted<W>>>),
     #[cfg(feature = "ppmd")]
     Ppmd(Box<ppmd_rust::Ppmd8Encoder<MaybeEncrypted<W>>>),
 }
@@ -121,7 +121,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
             #[cfg(feature = "xz")]
-            GenericZipWriter::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.get_ref())),
+            GenericZipWriter::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.inner())),
             #[cfg(feature = "ppmd")]
             GenericZipWriter::Ppmd(_) => f.write_fmt(format_args!("Ppmd8Encoder")),
         }
@@ -1801,8 +1801,12 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Xz(liblzma::write::XzEncoder::new(
-                            bare, level,
+                        Ok(GenericZipWriter::Xz(Box::new(
+                            lzma_rust2::XzWriter::new(
+                                bare,
+                                lzma_rust2::XzOptions::with_preset(level),
+                            )
+                            .map_err(ZipError::Io)?,
                         )))
                     }))
                 }

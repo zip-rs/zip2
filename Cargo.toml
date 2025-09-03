@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "4.6.0"
+version = "4.6.1"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -49,7 +49,7 @@ zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
-liblzma = { version = "0.4.1", optional = true }
+lzma-rust2 = { version = "0.13", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
@@ -78,18 +78,18 @@ deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
-lzma = ["dep:liblzma"]
-lzma-static = ["lzma", "liblzma/static"]
+lzma = ["dep:lzma-rust2"]
+lzma-static = ["lzma"]
 ppmd = ["dep:ppmd-rust"]
 unreserved = []
-xz = ["dep:liblzma"]
-xz-static = ["xz", "liblzma/static"]
+xz = ["dep:lzma-rust2"]
+xz-static = ["lzma"]
 default = [
     "aes-crypto",
     "bzip2",
     "deflate64",
     "deflate",
-    "lzma-static",
+    "lzma",
     "ppmd",
     "time",
     "zstd",
