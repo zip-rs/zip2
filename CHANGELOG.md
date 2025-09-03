@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- Swap to liblzma from lzma-rs introduced issue ([#407](https://github.com/zip-rs/zip2/pull/407))
+- Fixes an issue introduced by the swap from `lzma-rs` to `liblzma` ([#407](https://github.com/zip-rs/zip2/pull/407))
 
 ## [4.6.0](https://github.com/zip-rs/zip2/compare/v4.5.0...v4.6.0) - 2025-08-30
 
