@@ -216,7 +216,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "lzma")]
     Lzma(Lzma<R>),
     #[cfg(feature = "xz")]
-    Xz(Box<lzma_rust2::XZReader<R>>),
+    Xz(Box<lzma_rust2::XzReader<R>>),
     #[cfg(feature = "ppmd")]
     Ppmd(Ppmd<R>),
 }
@@ -227,7 +227,7 @@ pub(crate) enum Lzma<R: io::BufRead> {
         reader: Option<R>,
         uncompressed_size: u64,
     },
-    Initialized(Box<lzma_rust2::LZMAReader<R>>),
+    Initialized(Box<lzma_rust2::LzmaReader<R>>),
 }
 
 #[cfg(feature = "ppmd")]
@@ -277,7 +277,7 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
 
                     // We don't need to handle the end-of-stream marker here, since the LZMA reader
                     // both stops at the end-of-stream marker AND until it has uncompressed_size bytes.
-                    let mut decompressor = lzma_rust2::LZMAReader::new_with_props(
+                    let mut decompressor = lzma_rust2::LzmaReader::new_with_props(
                         reader,
                         *uncompressed_size,
                         props,
@@ -370,7 +370,7 @@ impl<R: io::BufRead> Decompressor<R> {
             }),
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => {
-                Decompressor::Xz(Box::new(lzma_rust2::XZReader::new(reader, false)))
+                Decompressor::Xz(Box::new(lzma_rust2::XzReader::new(reader, false)))
             }
             #[cfg(feature = "ppmd")]
             CompressionMethod::Ppmd => Decompressor::Ppmd(Ppmd::Uninitialized(Some(reader))),
