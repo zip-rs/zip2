@@ -214,9 +214,9 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "zstd")]
     Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
-    Lzma(liblzma::bufread::XzDecoder<R>),
+    Lzma(lzma_rust2::LZMAReader<R>),
     #[cfg(feature = "xz")]
-    Xz(liblzma::bufread::XzDecoder<R>),
+    Xz(lzma_rust2::XZReader<R>),
     #[cfg(feature = "ppmd")]
     Ppmd(Ppmd<R>),
 }
@@ -307,15 +307,13 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
             #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => Decompressor::Lzma(liblzma::bufread::XzDecoder::new_stream(
+            CompressionMethod::Lzma => Decompressor::Lzma(lzma_rust2::LZMAReader::new_mem_limit(
                 reader,
-                // Use u64::MAX for unlimited memory usage, matching the previous behavior
-                // from lzma-rs. Using 0 would set the smallest memory limit, which is
-                // problematic in ancient liblzma versions (5.2.3 and earlier).
-                liblzma::stream::Stream::new_lzma_decoder(u64::MAX).unwrap(),
-            )),
+                u32::MAX,
+                None,
+            )?),
             #[cfg(feature = "xz")]
-            CompressionMethod::Xz => Decompressor::Xz(liblzma::bufread::XzDecoder::new(reader)),
+            CompressionMethod::Xz => Decompressor::Xz(lzma_rust2::XZReader::new(reader, false)),
             #[cfg(feature = "ppmd")]
             CompressionMethod::Ppmd => Decompressor::Ppmd(Ppmd::Uninitialized(Some(reader))),
             _ => {
