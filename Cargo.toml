@@ -79,9 +79,11 @@ deflate-zopfli = ["dep:zopfli", "_deflate-any"]
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
+lzma-static = ["lzma"]
 ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:lzma-rust2"]
+xz-static = ["lzma"]
 default = [
     "aes-crypto",
     "bzip2",

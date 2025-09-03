@@ -1910,19 +1910,17 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
     let limit_reader = reader.take(result.compressed_size);
 
-    let result_crc32 = result.crc32;
-    let result_uncompressed_size = result.uncompressed_size;
-    let result_compression_method = result.compression_method;
     let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
+    let ZipFileData {
+        crc32,
+        uncompressed_size,
+        compression_method,
+        ..
+    } = result;
 
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: make_reader(
-            result_compression_method,
-            result_uncompressed_size,
-            result_crc32,
-            crypto_reader,
-        )?,
+        reader: make_reader(compression_method, uncompressed_size, crc32, crypto_reader)?,
     }))
 }
 
