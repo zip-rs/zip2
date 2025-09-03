@@ -276,7 +276,7 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                     let dict_size = u32::from_le_bytes(props_data[1..5].try_into().unwrap());
 
                     // We don't need to handle the end-of-stream marker here, since the LZMA reader
-                    // both stops at the end-of-stream marker AND until it has uncompressed_size bytes.
+                    // stops at the end-of-stream marker OR when it has decoded uncompressed_size bytes, whichever comes first.
                     let mut decompressor = lzma_rust2::LzmaReader::new_with_props(
                         reader,
                         *uncompressed_size,
