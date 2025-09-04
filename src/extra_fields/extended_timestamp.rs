@@ -1,6 +1,7 @@
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
 use std::io::Read;
+use std::mem::size_of;
 
 /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
 
@@ -21,9 +22,12 @@ impl ExtendedTimestamp {
         R: Read,
     {
         let mut flags = [0u8];
-        let mut bytes_to_read = len as usize;
         reader.read_exact(&mut flags)?;
-        bytes_to_read -= flags.len();
+        let Some(mut bytes_to_read) = (len as usize).checked_sub(flags.len()) else {
+            return Err(ZipError::UnsupportedArchive(
+                "extended timestamp field is too small for flags",
+            ));
+        };
         let flags = flags[0];
 
         // the `flags` field refers to the local headers and might not correspond
@@ -45,21 +49,36 @@ impl ExtendedTimestamp {
         // allow unsupported/undocumented flags
 
         let mod_time = if (flags & 0b00000001u8 == 0b00000001u8) || len == 5 {
-            bytes_to_read -= size_of::<u32>();
+            let Some(remaining) = bytes_to_read.checked_sub(size_of::<u32>()) else {
+                return Err(ZipError::UnsupportedArchive(
+                    "insufficient bytes for modification time in extended timestamp field",
+                ));
+            };
+            bytes_to_read = remaining;
             Some(reader.read_u32_le()?)
         } else {
             None
         };
 
         let ac_time = if flags & 0b00000010u8 == 0b00000010u8 && len > 5 {
-            bytes_to_read -= size_of::<u32>();
+            let Some(remaining) = bytes_to_read.checked_sub(size_of::<u32>()) else {
+                return Err(ZipError::UnsupportedArchive(
+                    "insufficient bytes for access time in extended timestamp field",
+                ));
+            };
+            bytes_to_read = remaining;
             Some(reader.read_u32_le()?)
         } else {
             None
         };
 
         let cr_time = if flags & 0b00000100u8 == 0b00000100u8 && len > 5 {
-            bytes_to_read -= size_of::<u32>();
+            let Some(remaining) = bytes_to_read.checked_sub(size_of::<u32>()) else {
+                return Err(ZipError::UnsupportedArchive(
+                    "insufficient bytes for creation time in extended timestamp field",
+                ));
+            };
+            bytes_to_read = remaining;
             Some(reader.read_u32_le()?)
         } else {
             None
