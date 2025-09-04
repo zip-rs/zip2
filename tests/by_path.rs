@@ -19,6 +19,7 @@ fn by_path() {
 }
 
 #[test]
+#[cfg(feature = "aes-crypto")]
 fn by_path_decrypt() {
     let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
