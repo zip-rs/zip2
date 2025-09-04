@@ -23,7 +23,7 @@
 //! | Bzip2 | ✅ | ✅ |
 //! | ZStandard | ✅ | ✅ |
 //! | LZMA | ✅ | |
-//! | XZ | ✅ | |
+//! | XZ | ✅ | ✅ |
 //! | PPMd | ✅ | ✅ |
 //! | AES encryption | ✅ | ✅ |
 //! | ZipCrypto deprecated encryption | ✅ | ✅ |
