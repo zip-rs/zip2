@@ -2,12 +2,11 @@ use std::io::{Cursor, Read, Write};
 use std::path::Path;
 use zip::read::ZipFile;
 use zip::write::SimpleFileOptions;
-use zip::{AesMode, ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipWriter};
 
 const DIRECTORY_NAME: &str = "test_directory";
 const FILE_NAME: &str = "hello_world.txt";
 const LOREM_IPSUM: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
-const PASSWORD: &str = "helloworld";
 
 #[test]
 fn by_path() {
@@ -21,6 +20,10 @@ fn by_path() {
 #[test]
 #[cfg(feature = "aes-crypto")]
 fn by_path_decrypt() {
+    use zip::AesMode;
+
+    const PASSWORD: &str = "helloworld";
+
     let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
         .with_aes_encryption(AesMode::Aes128, PASSWORD);
