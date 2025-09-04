@@ -36,11 +36,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af #@v1
+      - name: Upload analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          profile: minimal
-          toolchain: stable
+          sarif_file: rust-clippy-results-*.sarif
+          wait-for-processing: true
           components: clippy
           override: true
 
