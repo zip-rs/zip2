@@ -38,14 +38,14 @@ pub enum CompressionMethod {
     /// Compress the file using LZMA
     #[cfg(feature = "lzma")]
     Lzma,
-    // Legacy format
     #[cfg(feature = "legacy-zip")]
+    /// Method 1 Shrink
     Shrink,
+    #[cfg(feature = "legacy-zip")]
     /// Reduce (Method 2-5)
-    #[cfg(feature = "legacy-zip")]
     Reduce(u8),
-    /// Method 6 Implode/explode
     #[cfg(feature = "legacy-zip")]
+    /// Method 6 Implode/explode
     Implode,
     /// Compress the file using XZ
     #[cfg(feature = "xz")]
