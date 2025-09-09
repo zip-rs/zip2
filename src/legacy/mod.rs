@@ -1,4 +1,4 @@
 mod huffman;
-pub mod implode;
-pub mod reduce;
-pub mod shrink;
+pub(crate) mod implode;
+pub(crate) mod reduce;
+pub(crate) mod shrink;
