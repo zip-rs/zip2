@@ -12,7 +12,7 @@ repository = "https://github.com/zip-rs/zip2.git"
 keywords = ["zip", "archive", "compression"]
 # Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
 # The MSRV policy is documented in `README.md`.
-rust-version = "1.82.0"
+rust-version = "1.83.0"
 description = """
 Library to support the reading and writing of zip files.
 """
