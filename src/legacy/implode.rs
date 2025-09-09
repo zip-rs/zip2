@@ -12,8 +12,8 @@ const MAX_HUFFMAN_SYMBOLS: usize = 1 << 8;  // 256
 /// Maximum code length in bits for Huffman codes (per ZIP specification)
 const MAX_CODE_LENGTH: usize = 16;
 
-/// Size of the code length count array (0..=16, where 0 is unused)
-const CODE_LENGTH_COUNT_SIZE: usize = MAX_CODE_LENGTH + 1;
+/// Size of the code length count array (lengths are actually 1..=16)
+const CODE_LENGTH_COUNT_SIZE: usize = MAX_CODE_LENGTH;
 
 /// Initialize the Huffman decoder d with num_lens codeword lengths read from is.
 /// Returns false if the input is invalid.
@@ -36,7 +36,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
         let run_length = (byte >> 4) + 1; /* High four bits plus one. */
 
         debug_assert!(codeword_len >= 1 && codeword_len <= 16);
-        len_count[codeword_len as usize] += run_length;
+        len_count[codeword_len as usize - 1] += run_length;
 
         if (codeword_idx + run_length) as usize > num_lens {
             return Err(Error::new(
@@ -64,7 +64,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
     for i in 1..=16 {
         debug_assert!(avail_codewords >= 0);
         avail_codewords *= 2;
-        avail_codewords -= len_count[i] as i32;
+        avail_codewords -= len_count[i - 1] as i32;
         if avail_codewords < 0 {
             return Err(Error::new(
                 io::ErrorKind::InvalidData,
