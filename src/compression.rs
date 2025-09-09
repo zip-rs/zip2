@@ -38,13 +38,13 @@ pub enum CompressionMethod {
     /// Compress the file using LZMA
     #[cfg(feature = "lzma")]
     Lzma,
-    /// Legacy format
+    // Legacy format
     #[cfg(feature = "legacy-zip")]
     Shrink,
     /// Reduce (Method 2-5)
     #[cfg(feature = "legacy-zip")]
     Reduce(u8),
-    /// Method 6 Implode/explode
+    /// Method 6 Implode/explode
     #[cfg(feature = "legacy-zip")]
     Implode,
     /// Compress the file using XZ
@@ -66,16 +66,28 @@ impl CompressionMethod {
     pub const STORE: Self = CompressionMethod::Stored;
     #[cfg(feature = "legacy-zip")]
     pub const SHRINK: Self = CompressionMethod::Shrink;
+    #[cfg(not(feature = "legacy-zip"))]
+    pub const SHRINK: Self = CompressionMethod::Unsupported(1);
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_1: Self = CompressionMethod::Reduce(1);
+    #[cfg(not(feature = "legacy-zip"))]
+    pub const REDUCE_1: Self = CompressionMethod::Unsupported(2);
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_2: Self = CompressionMethod::Reduce(2);
+    #[cfg(not(feature = "legacy-zip"))]
+    pub const REDUCE_2: Self = CompressionMethod::Unsupported(3);
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_3: Self = CompressionMethod::Reduce(3);
+    #[cfg(not(feature = "legacy-zip"))]
+    pub const REDUCE_3: Self = CompressionMethod::Unsupported(4);
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_4: Self = CompressionMethod::Reduce(4);
+    #[cfg(not(feature = "legacy-zip"))]
+    pub const REDUCE_4: Self = CompressionMethod::Unsupported(5);
     #[cfg(feature = "legacy-zip")]
     pub const IMPLODE: Self = CompressionMethod::Implode;
+    #[cfg(not(feature = "legacy-zip"))]
+    pub const IMPLODE: Self = CompressionMethod::Unsupported(6);
     #[cfg(feature = "_deflate-any")]
     pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(feature = "_deflate-any"))]
