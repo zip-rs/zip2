@@ -1831,6 +1831,12 @@ impl<'a, R: Read> ZipFile<'a, R> {
             );
 
         options.normalize();
+        #[cfg(feature = "aes-crypto")]
+        if let Some(aes) = self.get_metadata().aes_mode {
+            // Preserve AES metadata in options for downstream writers.
+            // This is metadata-only and does not trigger encryption.
+            options.aes_mode = Some(aes);
+        }
         options
     }
 }
