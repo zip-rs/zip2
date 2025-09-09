@@ -3,3 +3,5 @@ tests/data/**/LICENSE.*.txt binary=false
 tests/data/folder/** binary=true
 tests/data/legacy/** binary=true
 fuzz/corpus/** binary=true
+
+tests/data/folder/first.txt text eol=lf
