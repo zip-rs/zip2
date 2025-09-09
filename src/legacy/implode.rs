@@ -105,9 +105,7 @@ fn hwexplode(
     };
     let mut len_decoder = read_huffman_code(&mut is, 64)?;
     let mut dist_decoder = read_huffman_code(&mut is, 64)?;
-    let min_len = if pk101_bug_compat && large_wnd {
-        3
-    } else if !pk101_bug_compat && lit_tree {
+    let min_len = if (pk101_bug_compat && large_wnd) || (!pk101_bug_compat && lit_tree) {
         3
     } else {
         2

@@ -66,8 +66,8 @@ struct Codetab {
 impl Codetab {
     pub fn create_new() -> [Self; MAX_CODE + 1] {
         let mut codetab = [Codetab::default(); MAX_CODE + 1];
-        for i in 0..=u8::MAX as usize {
-            codetab[i] = Codetab {
+        for (i, code) in codetab.iter_mut().enumerate().take(u8::MAX as usize + 1) {
+            code = Codetab {
                 prefix_code: Some(i as u16),
                 ext_byte: i as u8,
                 len: 1,
@@ -82,8 +82,8 @@ fn unshrink_partial_clear(codetab: &mut [Codetab], queue: &mut CodeQueue) {
     let mut is_prefix = [false; MAX_CODE + 1];
 
     // Scan for codes that have been used as a prefix.
-    for i in (CONTROL_CODE + 1)..=MAX_CODE {
-        if let Some(prefix_code) = codetab[i].prefix_code {
+    for code in codetab.iter().take(MAX_CODE + 1).skip((CONTROL_CODE + 1)) {
+        if let Some(prefix_code) = code.prefix_code {
             is_prefix[prefix_code as usize] = true;
         }
     }
