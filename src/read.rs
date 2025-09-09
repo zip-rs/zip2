@@ -1955,7 +1955,13 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: make_reader(compression_method, uncompressed_size, crc32, crypto_reader, result_flags)?,
+        reader: make_reader(
+            compression_method,
+            uncompressed_size,
+            crc32,
+            crypto_reader,
+            result_flags,
+        )?,
     }))
 }
 

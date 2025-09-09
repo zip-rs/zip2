@@ -7,7 +7,7 @@ use std::io::{self, Cursor, Error, Read, Result};
 const MAX_LEN_SYMBOL: u16 = 63;
 
 /// Maximum number of symbols in a Huffman table (256 for literals, 64 for lengths/distances)
-const MAX_HUFFMAN_SYMBOLS: usize = 1 << 8;  // 256
+const MAX_HUFFMAN_SYMBOLS: usize = 1 << 8; // 256
 
 /// Maximum code length in bits for Huffman codes (per ZIP specification)
 const MAX_CODE_LENGTH: usize = 16;
@@ -241,8 +241,9 @@ mod tests {
     use super::hwexplode;
 
     const HAMLET_256: &[u8; 249] = include_bytes!("../../tests/data/legacy/implode_hamlet_256.bin");
-    const HAMLET_256_OUT: &[u8; 256] = include_bytes!("../../tests/data/legacy/implode_hamlet_256.out");
-    
+    const HAMLET_256_OUT: &[u8; 256] =
+        include_bytes!("../../tests/data/legacy/implode_hamlet_256.out");
+
     #[test]
     fn test_explode_hamlet_256() {
         let mut dst = Vec::new();

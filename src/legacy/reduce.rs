@@ -235,7 +235,8 @@ mod tests {
     use crate::legacy::reduce::{follower_idx_bitlen, lsb, max_dist};
     const HAMLET_2048: &[u8; 1285] =
         include_bytes!("../../tests/data/legacy/reduce_hamlet_2048.bin");
-    const HAMLET_2048_OUT: &[u8; 2048] = include_bytes!("../../tests/data/legacy/implode_hamlet_2048.out");
+    const HAMLET_2048_OUT: &[u8; 2048] =
+        include_bytes!("../../tests/data/legacy/implode_hamlet_2048.out");
 
     #[test]
     fn test_lsb() {

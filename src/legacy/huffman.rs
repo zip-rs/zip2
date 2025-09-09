@@ -88,7 +88,7 @@ impl HuffmanDecoder {
 
         // Zero-initialize the lookup table.
         self.table.fill(TableEntry::default());
-        
+
         // Build mapping from index to symbol and populate the lookup table.
         lengths
             .iter()
@@ -152,7 +152,8 @@ impl HuffmanDecoder {
         // Then do canonical decoding with the bits in MSB-first order.
         let read_bits2 = (HUFFMAN_LOOKUP_TABLE_BITS as u64).min(length - is.position_in_bits()?);
         let mut bits = reverse_lsb(
-            (lookup_bits | ((!is.read_var::<u8>(read_bits2 as u32)? as usize) << read_bits1)) as u16,
+            (lookup_bits | ((!is.read_var::<u8>(read_bits2 as u32)? as usize) << read_bits1))
+                as u16,
             MAX_HUFFMAN_BITS,
         );
 
