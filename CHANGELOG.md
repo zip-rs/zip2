@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- aes was not copied correctly in raw copy methods ([#417](https://github.com/zip-rs/zip2/pull/417))
+- AES metadata was not copied correctly in raw copy methods, which could corrupt the copied file. ([#417](https://github.com/zip-rs/zip2/pull/417))
 
 ## [5.0.0](https://github.com/zip-rs/zip2/compare/v4.6.1...v5.0.0) - 2025-09-05
 
