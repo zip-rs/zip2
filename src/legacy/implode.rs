@@ -35,7 +35,7 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
         let codeword_len = (byte & 0xf) + 1; /* Low four bits plus one. */
         let run_length = (byte >> 4) + 1; /* High four bits plus one. */
 
-        debug_assert!(codeword_len >= 1 && codeword_len <= 16);
+        debug_assert!((1..=16).contains(&codeword_len));
         len_count[codeword_len as usize - 1] += run_length;
 
         if (codeword_idx + run_length) as usize > num_lens {
@@ -210,9 +210,7 @@ impl<R: Read> Read for ImplodeDecoder<R> {
         if !self.stream_read {
             self.stream_read = true;
             let mut compressed_bytes = Vec::new();
-            if let Err(err) = self.compressed_reader.read_to_end(&mut compressed_bytes) {
-                return Err(err.into());
-            }
+            self.compressed_reader.read_to_end(&mut compressed_bytes)?;
 
             // Pre-allocate stream buffer
             self.stream.reserve(self.uncompressed_size as usize);

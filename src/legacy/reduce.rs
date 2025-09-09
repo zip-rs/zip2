@@ -61,7 +61,7 @@ fn read_next_byte<T: std::io::Read, E: Endianness>(
             || is.read::<1, u8>()? == 1
     // Indicates next symbol is a literal byte
     {
-        return Ok(is.read::<8, u8>()?);
+        return is.read::<8, u8>();
     }
 
     // The bits represent the index of a follower byte.
@@ -77,14 +77,14 @@ fn read_next_byte<T: std::io::Read, E: Endianness>(
 }
 
 fn max_len(comp_factor: u8) -> usize {
-    debug_assert!(comp_factor >= 1 && comp_factor <= 4);
+    debug_assert!((1..=4).contains(&comp_factor));
     let v_len_bits = (8 - comp_factor) as usize;
     // Bits in V + extra len byte + implicit 3.
     ((1 << v_len_bits) - 1) + u8::MAX as usize + 3
 }
 
 fn max_dist(comp_factor: u8) -> usize {
-    debug_assert!(comp_factor >= 1 && comp_factor <= 4);
+    debug_assert!((1..=4).contains(&comp_factor));
     let v_dist_bits = comp_factor as usize;
     // Bits in V * 256 + W byte + implicit 1. */
     1 << (v_dist_bits + 8)
@@ -101,7 +101,7 @@ fn lsb(x: u8, n: u8) -> u8 {
 }
 
 fn hwexpand(src: &[u8], uncomp_len: usize, comp_factor: u8, dst: &mut Vec<u8>) -> io::Result<()> {
-    debug_assert!(comp_factor >= 1 && comp_factor <= 4);
+    debug_assert!((1..=4).contains(&comp_factor));
 
     // Pre-allocate to avoid reallocations
     dst.reserve(uncomp_len);
@@ -144,10 +144,10 @@ fn hwexpand(src: &[u8], uncomp_len: usize, comp_factor: u8, dst: &mut Vec<u8>) -
         let dist = (((v as usize) >> v_len_bits) << 8) + curr_byte as usize + 1;
 
         debug_assert!(len <= max_len(comp_factor));
-        debug_assert!(dist as usize <= max_dist(comp_factor));
+        debug_assert!(dist <= max_dist(comp_factor));
 
         // Output the back reference.
-        if dist as usize <= dst.len() {
+        if dist <= dst.len() {
             // Optimize for non-overlapping copies
             if dist >= len {
                 // No overlap, can use extend_from_within
@@ -209,9 +209,7 @@ impl<R: Read> Read for ReduceDecoder<R> {
         if !self.stream_read {
             self.stream_read = true;
             let mut compressed_bytes = Vec::new();
-            if let Err(err) = self.compressed_reader.read_to_end(&mut compressed_bytes) {
-                return Err(err.into());
-            }
+            self.compressed_reader.read_to_end(&mut compressed_bytes)?;
             hwexpand(
                 &compressed_bytes,
                 self.uncompressed_size as usize,
@@ -294,7 +292,7 @@ mod tests {
         if n > 0 {
             return 1;
         }
-        return 0;
+        0
     }
 
     #[test]

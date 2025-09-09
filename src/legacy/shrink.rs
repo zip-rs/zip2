@@ -54,6 +54,7 @@ impl CodeQueue {
 }
 
 #[derive(Clone, Debug, Copy)]
+#[derive(Default)]
 struct Codetab {
     last_dst_pos: usize,
     prefix_code: Option<u16>,
@@ -61,16 +62,6 @@ struct Codetab {
     ext_byte: u8,
 }
 
-impl Default for Codetab {
-    fn default() -> Self {
-        Self {
-            prefix_code: None,
-            ext_byte: 0,
-            len: 0,
-            last_dst_pos: 0,
-        }
-    }
-}
 
 impl Codetab {
     pub fn create_new() -> [Self; MAX_CODE + 1] {

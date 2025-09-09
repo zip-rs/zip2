@@ -55,7 +55,7 @@ impl HuffmanDecoder {
     pub fn init(&mut self, lengths: &[u8], n: usize) -> std::io::Result<()> {
         let mut count = [0; MAX_HUFFMAN_BITS + 1];
         let mut code = [0; MAX_HUFFMAN_BITS + 1];
-        let mut sym_idx = [0; MAX_HUFFMAN_BITS + 1];
+        let mut sym_idx = [0u16; MAX_HUFFMAN_BITS + 1];
 
         // Count the number of codewords of each length.
         for i in 0..n {
@@ -68,7 +68,7 @@ impl HuffmanDecoder {
         sym_idx[0] = 0;
         for l in 1..=MAX_HUFFMAN_BITS {
             // First canonical codeword of this length.
-            code[l] = ((code[l - 1] + count[l - 1]) << 1) as u16;
+            code[l] = (code[l - 1] + count[l - 1]) << 1;
 
             if count[l] != 0 && code[l] as u32 + count[l] as u32 - 1 > (1u32 << l) - 1 {
                 // The last codeword is longer than l bits.
@@ -78,7 +78,7 @@ impl HuffmanDecoder {
                 ));
             }
 
-            let s = ((code[l] as u32 + count[l] as u32) << (MAX_HUFFMAN_BITS - l)) as u32;
+            let s = (code[l] as u32 + count[l] as u32) << (MAX_HUFFMAN_BITS - l);
             self.sentinel_bits[l] = s;
             debug_assert!(self.sentinel_bits[l] >= code[l] as u32, "No overflow!");
 
