@@ -64,26 +64,32 @@ pub enum CompressionMethod {
 /// All compression methods defined for the ZIP format
 impl CompressionMethod {
     pub const STORE: Self = CompressionMethod::Stored;
+    /// Legacy compression method
     #[cfg(feature = "legacy-zip")]
     pub const SHRINK: Self = CompressionMethod::Shrink;
     #[cfg(not(feature = "legacy-zip"))]
     pub const SHRINK: Self = CompressionMethod::Unsupported(1);
+    /// Legacy compression method
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_1: Self = CompressionMethod::Reduce(1);
     #[cfg(not(feature = "legacy-zip"))]
     pub const REDUCE_1: Self = CompressionMethod::Unsupported(2);
+    /// Legacy compression method
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_2: Self = CompressionMethod::Reduce(2);
     #[cfg(not(feature = "legacy-zip"))]
     pub const REDUCE_2: Self = CompressionMethod::Unsupported(3);
+    /// Legacy compression method
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_3: Self = CompressionMethod::Reduce(3);
     #[cfg(not(feature = "legacy-zip"))]
     pub const REDUCE_3: Self = CompressionMethod::Unsupported(4);
+    /// Legacy compression method
     #[cfg(feature = "legacy-zip")]
     pub const REDUCE_4: Self = CompressionMethod::Reduce(4);
     #[cfg(not(feature = "legacy-zip"))]
     pub const REDUCE_4: Self = CompressionMethod::Unsupported(5);
+    /// Legacy compression method
     #[cfg(feature = "legacy-zip")]
     pub const IMPLODE: Self = CompressionMethod::Implode;
     #[cfg(not(feature = "legacy-zip"))]
