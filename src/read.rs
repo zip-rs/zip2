@@ -2025,7 +2025,7 @@ fn read_zipfile_from_fileblock<R: Read>(
     block: ZipLocalEntryBlockAndFields,
     reader: &mut R,
     data_descriptor: Option<ZipDataDescriptor>,
-) -> ZipResult<Option<ZipFile<R>>> {
+) -> ZipResult<Option<ZipFile<'_, R>>> {
     let mut result = ZipFileData::from_local_block(block, data_descriptor, reader)?;
 
     match crate::read::parse_extra_field(&mut result) {
@@ -2091,7 +2091,7 @@ fn read_zipfile_from_fileblock<R: Read>(
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
     reader: &mut S,
-) -> ZipResult<Option<ZipFile<S>>> {
+) -> ZipResult<Option<ZipFile<'_, S>>> {
     let local_entry_block = read_local_fileblock(reader)?;
     let local_entry_block = match local_entry_block {
         Some(local_entry_block) => local_entry_block,
