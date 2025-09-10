@@ -71,9 +71,9 @@ impl FileOperation<'_> {
 
     fn is_streamable(&self) -> bool {
         match &self.basic {
-            BasicFileOperation::WriteNormalFile { options, .. } => !options.has_encryption(),
-            BasicFileOperation::WriteDirectory(options) => !options.has_encryption(),
-            BasicFileOperation::WriteSymlinkWithTarget { options, .. } => !options.has_encryption(),
+            BasicFileOperation::WriteNormalFile { options, .. }
+            | BasicFileOperation::WriteDirectory(options)
+            | BasicFileOperation::WriteSymlinkWithTarget { options, .. } => !options.has_encryption(),
             BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
             BasicFileOperation::DeepCopy(base) => base.is_streamable(),
             BasicFileOperation::MergeWithOtherFile {
