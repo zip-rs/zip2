@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.0](https://github.com/zip-rs/zip2/compare/v5.0.1...v5.1.0) - 2025-09-10
+
+### <!-- 0 -->🚀 Features
+
+- Add legacy shrink/reduce/implode compression ([#303](https://github.com/zip-rs/zip2/pull/303))
+
+## [5.0.1](https://github.com/zip-rs/zip2/compare/v5.0.0...v5.0.1) - 2025-09-09
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- AES metadata was not copied correctly in raw copy methods, which could corrupt the copied file. ([#417](https://github.com/zip-rs/zip2/pull/417))
+
+## [5.0.0](https://github.com/zip-rs/zip2/compare/v4.6.1...v5.0.0) - 2025-09-05
+
+### <!-- 0 -->🚀 Features
+
+- Implement by_path*() methods on ZipArchive ([#382](https://github.com/zip-rs/zip2/pull/382))
+
 ## [4.6.1](https://github.com/zip-rs/zip2/compare/v4.6.0...v4.6.1) - 2025-09-03
 
 ### <!-- 1 -->🐛 Bug Fixes
