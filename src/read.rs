@@ -429,6 +429,7 @@ pub(crate) fn make_reader<R: Read>(
     uncompressed_size: u64,
     crc32: u32,
     reader: CryptoReader<R>,
+    flags: u16,
 ) -> ZipResult<ZipFileReader<R>> {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
@@ -437,6 +438,7 @@ pub(crate) fn make_reader<R: Read>(
             io::BufReader::new(reader),
             compression_method,
             uncompressed_size,
+            flags,
         )?,
         crc32,
         ae2_encrypted,
@@ -1174,6 +1176,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.uncompressed_size,
                 data.crc32,
                 crypto_reader,
+                data.flags,
             )?,
         })
     }
@@ -1364,6 +1367,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         crc32,
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
+        flags,
         file_name,
         file_name_raw,
         extra_field: Some(Arc::new(extra_field.to_vec())),
@@ -1946,6 +1950,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
     let limit_reader = reader.take(result.compressed_size);
 
+    let result_flags = result.flags;
     let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
     let ZipFileData {
         crc32,
@@ -1956,7 +1961,13 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: make_reader(compression_method, uncompressed_size, crc32, crypto_reader)?,
+        reader: make_reader(
+            compression_method,
+            uncompressed_size,
+            crc32,
+            crypto_reader,
+            result_flags,
+        )?,
     }))
 }
 

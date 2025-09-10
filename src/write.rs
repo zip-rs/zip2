@@ -1811,6 +1811,18 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         ))
                     }))
                 }
+                #[cfg(feature = "legacy-zip")]
+                CompressionMethod::Shrink => Err(ZipError::UnsupportedArchive(
+                    "Shrink compression unsupported",
+                )),
+                #[cfg(feature = "legacy-zip")]
+                CompressionMethod::Reduce(_) => Err(ZipError::UnsupportedArchive(
+                    "Reduce compression unsupported",
+                )),
+                #[cfg(feature = "legacy-zip")]
+                CompressionMethod::Implode => Err(ZipError::UnsupportedArchive(
+                    "Implode compression unsupported",
+                )),
                 #[cfg(feature = "lzma")]
                 CompressionMethod::Lzma => {
                     Err(UnsupportedArchive("LZMA isn't supported for compression"))
