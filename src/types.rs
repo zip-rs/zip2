@@ -2,6 +2,7 @@
 use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fmt;
@@ -757,9 +758,10 @@ impl ZipFileData {
         local_block
     }
 
-    pub(crate) fn from_local_block(
+    pub(crate) fn from_local_block<R: std::io::Read>(
         block: ZipLocalEntryBlockAndFields,
         data_descriptor: Option<ZipDataDescriptor>,
+        reader: &mut R,
     ) -> ZipResult<Self> {
         let ZipLocalEntryBlock {
             // magic,
@@ -771,6 +773,8 @@ impl ZipFileData {
             mut crc32,
             mut compressed_size,
             mut uncompressed_size,
+            file_name_length,
+            extra_field_length,
             ..
         } = block.block;
 
@@ -802,6 +806,13 @@ impl ZipFileData {
         /* flags & (1 << 1) != 0 */
         let is_utf8: bool = flags & (1 << 11) != 0;
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
+        let file_name_length: usize = file_name_length.into();
+        let extra_field_length: usize = extra_field_length.into();
+
+        let mut file_name_raw = vec![0u8; file_name_length];
+        reader.read_exact(&mut file_name_raw)?;
+        let mut extra_field = vec![0u8; extra_field_length];
+        reader.read_exact(&mut extra_field)?;
 
         let file_name: Box<str> = match is_utf8 {
             true => String::from_utf8_lossy(&block.file_name_raw).into(),
@@ -1085,13 +1096,14 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[repr(packed)]
+#[repr(packed, C)]
 pub(crate) struct ZipDataDescriptor {
     magic: spec::Magic,
     pub crc32: u32,
     pub compressed_size: u32,
     pub uncompressed_size: u32,
 }
+unsafe impl Pod for ZipDataDescriptor {}
 
 impl FixedSizeBlock for crate::types::ZipDataDescriptor {
     const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
@@ -1101,7 +1113,7 @@ impl FixedSizeBlock for crate::types::ZipDataDescriptor {
         self.magic
     }
 
-    const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive("Invalid data descriptor");
+    const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive(Cow::Borrowed("Invalid data descriptor"));
 
     to_and_from_le![
         (magic, spec::Magic),

@@ -9,8 +9,7 @@ use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
 use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, DataAndPosition,
-    FixedSizeBlock, Magic, Zip32CentralDirectoryEnd};
+use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Magic, Pod};
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipDataDescriptor,
     ZipFileData, ZipLocalEntryBlock, ZipLocalEntryBlockAndFields,
@@ -1909,6 +1908,34 @@ impl<R: Read> Drop for ZipFile<'_, R> {
     }
 }
 
+/// Read ZipFile structures from a non-seekable reader.
+///
+/// This is an alternative method to read a zip file. If possible, use the ZipArchive functions
+/// as some information will be missing when reading this manner.
+///
+/// Reads a file header from the start of the stream. Will return `Ok(Some(..))` if a file is
+/// present at the start of the stream. Returns `Ok(None)` if the start of the central directory
+/// is encountered. No more files should be read after this.
+///
+/// The Drop implementation of ZipFile ensures that the reader will be correctly positioned after
+/// the structure is done.
+///
+/// Missing fields are:
+/// * `comment`: set to an empty string
+/// * `data_start`: set to 0
+/// * `external_attributes`: `unix_mode()`: will return None
+pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
+ let block = read_local_fileblock(reader)?;
+    let block = match block {
+        Some(block) => block,
+        None => return Ok(None),
+    };
+
+    // we can't look for a data descriptor since we can't seek back
+    // TODO: provide a method that buffers the read data and allows seeking back
+    read_zipfile_from_fileblock(block, reader, None)
+}
+
 /// A filter that determines whether an entry should be ignored when searching
 /// for the root directory of a Zip archive.
 ///
@@ -1950,11 +1977,11 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
 
     if path.components().count() == 1
         && path.file_name().is_some_and(|file_name| {
-        COMMON_FILTER_ROOT_FILES
-            .iter()
-            .map(OsStr::new)
-            .any(|cmp| cmp == file_name)
-    })
+            COMMON_FILTER_ROOT_FILES
+                .iter()
+                .map(OsStr::new)
+                .any(|cmp| cmp == file_name)
+        })
     {
         return false;
     }
@@ -1994,12 +2021,12 @@ fn read_local_fileblock<R: Read>(reader: &mut R) -> ZipResult<Option<ZipLocalEnt
     }))
 }
 
-fn read_zipfile_from_fileblock<'a, R: Read>(
+fn read_zipfile_from_fileblock<R: Read>(
     block: ZipLocalEntryBlockAndFields,
-    reader: &'a mut R,
+    reader: &mut R,
     data_descriptor: Option<ZipDataDescriptor>,
-) -> ZipResult<Option<ZipFile<'_>>> {
-    let mut result = ZipFileData::from_local_block(block, data_descriptor)?;
+) -> ZipResult<Option<ZipFile<R>>> {
+    let mut result = ZipFileData::from_local_block(block, data_descriptor, reader)?;
 
     match crate::read::parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
@@ -2027,37 +2054,6 @@ fn read_zipfile_from_fileblock<'a, R: Read>(
             result_flags,
         )?,
     }))
-}
-
-/// Read ZipFile structures from a non-seekable reader.
-///
-/// This is an alternative method to read a zip file. If possible, use the ZipArchive functions
-/// as some information will be missing when reading this manner.
-///
-/// Reads a file header from the start of the stream. Will return `Ok(Some(..))` if a file is
-/// present at the start of the stream. Returns `Ok(None)` if the start of the central directory
-/// is encountered. No more files should be read after this.
-///
-/// The Drop implementation of ZipFile ensures that the reader will be correctly positioned after
-/// the structure is done.
-///
-/// This method will not find a ZipFile entry if the zip file uses data descriptors.
-/// In that case you could use [read_zipfile_from_seekable_stream]
-///
-/// Missing fields are:
-/// * `comment`: set to an empty string
-/// * `data_start`: set to 0
-/// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
-    let block = read_local_fileblock(reader)?;
-    let block = match block {
-        Some(block) => block,
-        None => return Ok(None),
-    };
-
-    // we can't look for a data descriptor since we can't seek back
-    // TODO: provide a method that buffers the read data and allows seeking back
-    read_zipfile_from_fileblock(block, reader, None)
 }
 
 /// Read ZipFile structures from a seekable reader.
@@ -2095,7 +2091,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
     reader: &mut S,
-) -> ZipResult<Option<ZipFile>> {
+) -> ZipResult<Option<ZipFile<S>>> {
     let local_entry_block = read_local_fileblock(reader)?;
     let local_entry_block = match local_entry_block {
         Some(local_entry_block) => local_entry_block,
@@ -2134,15 +2130,14 @@ pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
                 reader.seek(SeekFrom::Current(-4))?; // go back to the start of the data descriptor
                 read_count_total -= 4;
 
-                let mut data_descriptor_block = [0u8; mem::size_of::<ZipDataDescriptor>()];
-                reader.read_exact(&mut data_descriptor_block)?;
-                let data_descriptor_block: Box<[u8]> = data_descriptor_block.into();
+                let mut data_descriptor = ZipDataDescriptor::zeroed();
+                reader.read_exact(data_descriptor.as_bytes_mut())?;
                 // seek back to data end
                 reader.seek(SeekFrom::Current(
                     -(mem::size_of::<ZipDataDescriptor>() as i64),
                 ))?;
 
-                let data_descriptor = ZipDataDescriptor::interpret(&data_descriptor_block)?;
+                let data_descriptor = ZipDataDescriptor::from_le(data_descriptor);
 
                 // check if the data descriptor is indeed valid for the read data
                 if data_descriptor.compressed_size == read_count_total as u32 {
