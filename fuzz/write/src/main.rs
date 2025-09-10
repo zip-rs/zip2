@@ -73,7 +73,9 @@ impl FileOperation<'_> {
         match &self.basic {
             BasicFileOperation::WriteNormalFile { options, .. }
             | BasicFileOperation::WriteDirectory(options)
-            | BasicFileOperation::WriteSymlinkWithTarget { options, .. } => !options.has_encryption(),
+            | BasicFileOperation::WriteSymlinkWithTarget { options, .. } => {
+                !options.has_encryption()
+            }
             BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
             BasicFileOperation::DeepCopy(base) => base.is_streamable(),
             BasicFileOperation::MergeWithOtherFile {
