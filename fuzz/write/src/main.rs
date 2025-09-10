@@ -79,7 +79,12 @@ impl FileOperation<'_> {
             BasicFileOperation::MergeWithOtherFile {
                 operations,
                 initial_junk,
-            } => initial_junk.is_empty() && operations.iter().all(|(op, _)| op.is_streamable()),
+            } => {
+                if !initial_junk.is_empty() {
+                    return false;
+                }
+                operations.iter().all(|(op, _)| op.is_streamable())
+            }
             _ => true,
         }
     }
@@ -318,7 +323,9 @@ impl FuzzTestCase<'_> {
         mut stringifier: impl ops::DerefMut<Target = W>,
         panic_on_error: bool,
     ) -> ZipResult<()> {
+        // Indicates the starting position if we use read_zipfile_from_stream at the end.
         let junk_len = self.initial_junk.len();
+
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
         let mut writer = zip::ZipWriter::new(initial_junk);
