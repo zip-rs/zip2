@@ -1113,7 +1113,8 @@ impl FixedSizeBlock for crate::types::ZipDataDescriptor {
         self.magic
     }
 
-    const WRONG_MAGIC_ERROR: ZipError = ZipError::InvalidArchive(Cow::Borrowed("Invalid data descriptor"));
+    const WRONG_MAGIC_ERROR: ZipError =
+        ZipError::InvalidArchive(Cow::Borrowed("Invalid data descriptor"));
 
     to_and_from_le![
         (magic, spec::Magic),

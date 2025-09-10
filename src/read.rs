@@ -1925,7 +1925,7 @@ impl<R: Read> Drop for ZipFile<'_, R> {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
- let block = read_local_fileblock(reader)?;
+    let block = read_local_fileblock(reader)?;
     let block = match block {
         Some(block) => block,
         None => return Ok(None),
