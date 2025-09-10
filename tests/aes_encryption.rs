@@ -1,6 +1,7 @@
 #![cfg(feature = "aes-crypto")]
 
 use std::io::{self, Read, Write};
+use zip::write::ZipWriter;
 use zip::{result::ZipError, write::SimpleFileOptions, AesMode, CompressionMethod, ZipArchive};
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
@@ -150,5 +151,87 @@ fn test_extract_encrypted_file<R: io::Read + io::Seek>(
             .read_to_string(&mut content)
             .expect("couldn't read encrypted file");
         assert_eq!(SECRET_CONTENT, content);
+    }
+}
+
+#[test]
+fn raw_copy_from_aes_zip() {
+    let mut v = Vec::new();
+    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
+
+    let dst_cursor = {
+        let mut src =
+            ZipArchive::new(io::Cursor::new(v.as_slice())).expect("couldn't open source zip");
+        let mut dst = ZipWriter::new(io::Cursor::new(Vec::new()));
+
+        let total = src.len();
+        for i in 0..total {
+            let file = src.by_index_raw(i).expect("read source entry");
+            let name = file.name().to_string();
+            if file.is_dir() {
+                dst.add_directory(&name, SimpleFileOptions::default())
+                    .expect("add directory");
+            } else {
+                dst.raw_copy_file(file).expect("raw copy file");
+            }
+        }
+        dst.finish().expect("finish dst")
+    };
+
+    let mut src_zip = ZipArchive::new(io::Cursor::new(v.as_slice())).expect("reopen src zip");
+    let mut dst_zip = ZipArchive::new(dst_cursor).expect("reopen dst zip");
+
+    let total = src_zip.len();
+
+    for i in 0..total {
+        // Copy out simple header fields without holding borrows across later reads
+        let (name, is_dir, s_encrypted, d_encrypted, s_comp, d_comp) = {
+            let s = src_zip.by_index_raw(i).expect("src by_index_raw");
+            let name = s.name().to_string();
+            let is_dir = s.is_dir();
+            let s_encrypted = s.encrypted();
+            let s_comp = s.compression();
+            let d = dst_zip.by_index_raw(i).expect("dst by_index_raw");
+            let d_encrypted = d.encrypted();
+            let d_comp = d.compression();
+            (name, is_dir, s_encrypted, d_encrypted, s_comp, d_comp)
+        };
+
+        // AES-critical invariants preserved by raw copy
+        assert_eq!(
+            s_encrypted, d_encrypted,
+            "encrypted flag differs for {name}"
+        );
+        assert_eq!(s_comp, d_comp, "compression method differs for {name}");
+
+        // For files, verify content bytes match. For encrypted entries, use the shared fixture password
+        if !is_dir {
+            let mut s_buf = Vec::new();
+            let mut d_buf = Vec::new();
+            if s_encrypted {
+                src_zip
+                    .by_index_decrypt(i, PASSWORD)
+                    .expect("decrypt src")
+                    .read_to_end(&mut s_buf)
+                    .expect("read src");
+                dst_zip
+                    .by_index_decrypt(i, PASSWORD)
+                    .expect("decrypt dst")
+                    .read_to_end(&mut d_buf)
+                    .expect("read dst");
+            } else {
+                src_zip
+                    .by_index(i)
+                    .expect("open src")
+                    .read_to_end(&mut s_buf)
+                    .expect("read src");
+                dst_zip
+                    .by_index(i)
+                    .expect("open dst")
+                    .read_to_end(&mut d_buf)
+                    .expect("read dst");
+            }
+            assert_eq!(s_buf, d_buf, "content differs for {name}");
+        }
     }
 }
