@@ -71,14 +71,16 @@ impl FileOperation<'_> {
 
     fn is_streamable(&self) -> bool {
         match &self.basic {
-            BasicFileOperation::WriteNormalFile {options, ..} => !options.has_encryption(),
+            BasicFileOperation::WriteNormalFile { options, .. } => !options.has_encryption(),
             BasicFileOperation::WriteDirectory(options) => !options.has_encryption(),
-            BasicFileOperation::WriteSymlinkWithTarget {options, ..} => !options.has_encryption(),
+            BasicFileOperation::WriteSymlinkWithTarget { options, .. } => !options.has_encryption(),
             BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
             BasicFileOperation::DeepCopy(base) => base.is_streamable(),
-            BasicFileOperation::MergeWithOtherFile {operations, initial_junk} =>
-                initial_junk.is_empty() && operations.iter().all(|(op, _)| op.is_streamable()),
-            _ => true
+            BasicFileOperation::MergeWithOtherFile {
+                operations,
+                initial_junk,
+            } => initial_junk.is_empty() && operations.iter().all(|(op, _)| op.is_streamable()),
+            _ => true,
         }
     }
 }
@@ -342,10 +344,13 @@ impl FuzzTestCase<'_> {
             );
         }
         if streamable {
-            writeln!(stringifier, "let mut stream = writer.finish()?;\n\
+            writeln!(
+                stringifier,
+                "let mut stream = writer.finish()?;\n\
                     stream.seek(SeekFrom::Start({junk_len}))?;\n\
-                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}")
-                .map_err(|_| ZipError::InvalidArchive("Failed to read from stream".into()))?;
+                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}"
+            )
+            .map_err(|_| ZipError::InvalidArchive("Failed to read from stream".into()))?;
             let mut stream = writer.finish()?;
             stream.seek(SeekFrom::Start(junk_len as u64))?;
             while read_zipfile_from_stream(&mut stream)?.is_some() {}
