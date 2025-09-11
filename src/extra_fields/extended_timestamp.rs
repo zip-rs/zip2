@@ -1,4 +1,4 @@
-use crate::result::ZipError::InvalidArchive;
+use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
 use std::io::Read;
