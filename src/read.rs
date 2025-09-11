@@ -2053,8 +2053,7 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
     }
 
     true
-Pr0methean
-mentioned this last week}
+}
 
 #[cfg(test)]
 mod test {
