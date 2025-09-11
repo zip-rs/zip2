@@ -149,7 +149,7 @@ jobs:
       - run: sudo apt install rename
       - name: Rename files
         run: |
-            rename 's/:/-/g' *
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -197,7 +197,7 @@ jobs:
       - run: sudo apt install rename
       - name: Rename files
         run: |
-            rename 's/:/-/g' *
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -242,7 +242,7 @@ jobs:
       - run: sudo apt install rename
       - name: Rename files
         run: |
-            rename 's/:/-/g' *
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -290,7 +290,7 @@ jobs:
       - run: sudo apt install rename
       - name: Rename files
         run: |
-            rename 's/:/-/g' *
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
