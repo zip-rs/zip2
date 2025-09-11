@@ -230,7 +230,7 @@ fn do_operation(
                     "let sub_writer = {{\n\
                           let mut initial_junk = Cursor::new(vec!{initial_junk:?});\n\
                           initial_junk.seek(SeekFrom::End(0))?;
-                          let mut writer = ZipWriter::new(initial_junk);",/
+                          let mut writer = ZipWriter::new(initial_junk);",
                 )?;
             }
             let mut initial_junk = Cursor::new(initial_junk.into_vec());
