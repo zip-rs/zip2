@@ -910,12 +910,22 @@ impl<R: Read + Seek> ZipArchive<R> {
             }
             let mut file = self.by_index(i)?;
             let mut outfile = fs::File::create(&outpath)?;
+
             io::copy(&mut file, &mut outfile)?;
             #[cfg(unix)]
             {
                 // Check for real permissions, which we'll set in a second pass
                 if let Some(mode) = file.unix_mode() {
                     files_by_unix_mode.push((outpath.clone(), mode));
+                }
+            }
+            #[cfg(feature = "chrono")]
+            {
+                // Set original timestamp.
+                if let Some(last_modified) = file.last_modified() {
+                    if let Some(t) = datetime_to_systemtime(&last_modified) {
+                        outfile.set_modified(t)?;
+                    }
                 }
             }
         }
@@ -1931,7 +1941,7 @@ impl<R: Read> Drop for ZipFile<'_, R> {
 /// to read the stream. This is due to the design choice of the ZIP format, placing the file
 /// index at the end of a ZIP file. When reading it incrementally different files may be seen,
 /// which are not listed in the file index.
-pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
+pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
 
 
     let block = read_local_fileblock(reader)?;
@@ -2269,6 +2279,35 @@ pub fn advance_stream_to_next_zipfile_start<S: Read + Seek>(
     reader: &mut S,
 ) -> ZipResult<Option<usize>> {
     advance_stream_to_next_magic_start(reader, spec::Magic::LOCAL_FILE_HEADER_SIGNATURE)
+}
+
+#[cfg(feature = "chrono")]
+/// Generate a `SystemTime` from a `DateTime`.
+fn datetime_to_systemtime(datetime: &DateTime) -> Option<std::time::SystemTime> {
+    if let Some(t) = generate_chrono_datetime(datetime) {
+        let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(t, chrono::Utc);
+        return Some(time.into());
+    }
+    None
+}
+
+#[cfg(feature = "chrono")]
+/// Generate a `NaiveDateTime` from a `DateTime`.
+fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime> {
+    if let Some(d) = chrono::NaiveDate::from_ymd_opt(
+        datetime.year().into(),
+        datetime.month().into(),
+        datetime.day().into(),
+    ) {
+        if let Some(d) = d.and_hms_opt(
+            datetime.hour().into(),
+            datetime.minute().into(),
+            datetime.second().into(),
+        ) {
+            return Some(d);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

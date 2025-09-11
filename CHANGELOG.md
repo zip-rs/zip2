@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.1](https://github.com/zip-rs/zip2/compare/v5.1.0...v5.1.1) - 2025-09-11
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- panic when reading empty extended-timestamp field ([#404](https://github.com/zip-rs/zip2/pull/404)) ([#422](https://github.com/zip-rs/zip2/pull/422))
+- Restore original file timestamp when unzipping with `chrono` ([#46](https://github.com/zip-rs/zip2/pull/46))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Configure Amazon Q rules ([#421](https://github.com/zip-rs/zip2/pull/421))
+
 ## [5.1.0](https://github.com/zip-rs/zip2/compare/v5.0.1...v5.1.0) - 2025-09-10
 
 ### <!-- 0 -->🚀 Features
