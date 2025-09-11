@@ -911,16 +911,6 @@ impl<R: Read + Seek> ZipArchive<R> {
             let mut file = self.by_index(i)?;
             let mut outfile = fs::File::create(&outpath)?;
 
-            #[cfg(feature = "chrono")]
-            {
-                // Set original timestamp.
-                if let Some(last_modified) = file.last_modified() {
-                    if let Some(t) = datetime_to_systemtime(&last_modified) {
-                        outfile.set_modified(t)?;
-                    }
-                }
-            }
-
             io::copy(&mut file, &mut outfile)?;
             #[cfg(unix)]
             {
@@ -929,9 +919,14 @@ impl<R: Read + Seek> ZipArchive<R> {
                     files_by_unix_mode.push((outpath.clone(), mode));
                 }
             }
-            // Set original timestamp.
-            if let Some(t) = datetime_to_systemtime(&file.last_modified()) {
-                outfile.set_modified(t)?;
+            #[cfg(feature = "chrono")]
+            {
+                // Set original timestamp.
+                if let Some(last_modified) = file.last_modified() {
+                    if let Some(t) = datetime_to_systemtime(&last_modified) {
+                        outfile.set_modified(t)?;
+                    }
+                }
             }
         }
         #[cfg(unix)]
