@@ -1984,6 +1984,7 @@ fn datetime_to_systemtime(datetime: &DateTime) -> Option<std::time::SystemTime> 
     None
 }
 
+#[cfg(feature = "chrono")]
 /// Generate a `NaiveDateTime` from a `DateTime`.
 fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime> {
     if let Some(d) = chrono::NaiveDate::from_ymd_opt(
