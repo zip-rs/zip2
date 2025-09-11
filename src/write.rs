@@ -406,7 +406,18 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 
     /// Indicates whether this file will be encrypted (whether with AES or ZipCrypto).
     pub const fn has_encryption(&self) -> bool {
-        self.aes_mode.is_some() || self.encrypt_with.is_some()
+        if self.encrypt_with.is_some() {
+            true
+        } else {
+            #[cfg(feature = "aes-crypto")]
+            {
+                self.aes_mode.is_some()
+            }
+            #[cfg(not(feature = "aes-crypto"))]
+            {
+                false
+            }
+        }
     }
 
     /// Set the compression method for the new file
