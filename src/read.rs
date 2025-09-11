@@ -2062,6 +2062,7 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
     true
 }
 
+#[cfg(feature = "chrono")]
 /// Generate a `SystemTime` from a `DateTime`.
 fn datetime_to_systemtime(datetime: &DateTime) -> Option<std::time::SystemTime> {
     if let Some(t) = generate_chrono_datetime(datetime) {
@@ -2071,6 +2072,7 @@ fn datetime_to_systemtime(datetime: &DateTime) -> Option<std::time::SystemTime> 
     None
 }
 
+#[cfg(feature = "chrono")]
 /// Generate a `NaiveDateTime` from a `DateTime`.
 fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime> {
     if let Some(d) = chrono::NaiveDate::from_ymd_opt(
