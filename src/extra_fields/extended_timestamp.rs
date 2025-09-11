@@ -106,7 +106,7 @@ pub fn test_bad_extended_timestamp() -> ZipResult<()> {
     let mut v = Vec::new();
     v.extend_from_slice(include_bytes!(
         "../../tests/data/extended_timestamp_bad.zip"
-    ));
-    assert!(ZipArchive::new(Cursor::new(v)).is_err());
+    assert!(ZipArchive::new(Cursor::new(v)).is_err(), "Expected error when reading ZIP with empty extended timestamp field");
+    Ok(())
     Ok(())
 }
