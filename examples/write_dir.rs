@@ -25,9 +25,8 @@ struct Args {
 enum CompressionMethod {
     Stored,
     Deflated,
-    DeflatedZlib,
-    DeflatedZlibNg,
     Bzip2,
+    Xz,
     Zstd,
 }
 
@@ -50,24 +49,6 @@ fn real_main() -> i32 {
             #[cfg(feature = "deflate-flate2")]
             zip::CompressionMethod::Deflated
         }
-        CompressionMethod::DeflatedZlib => {
-            #[cfg(not(feature = "deflate-zlib"))]
-            {
-                println!("The `deflate-zlib` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-zlib")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::DeflatedZlibNg => {
-            #[cfg(not(feature = "deflate-zlib-ng"))]
-            {
-                println!("The `deflate-zlib-ng` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-zlib-ng")]
-            zip::CompressionMethod::Deflated
-        }
         CompressionMethod::Bzip2 => {
             #[cfg(not(feature = "bzip2"))]
             {
@@ -76,6 +57,15 @@ fn real_main() -> i32 {
             }
             #[cfg(feature = "bzip2")]
             zip::CompressionMethod::Bzip2
+        }
+        CompressionMethod::Xz => {
+            #[cfg(not(feature = "xz"))]
+            {
+                println!("The `xz` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "xz")]
+            zip::CompressionMethod::Xz
         }
         CompressionMethod::Zstd => {
             #[cfg(not(feature = "zstd"))]
@@ -88,7 +78,7 @@ fn real_main() -> i32 {
         }
     };
     match doit(src_dir, dst_file, method) {
-        Ok(_) => println!("done: {:?} written to {:?}", src_dir, dst_file),
+        Ok(_) => println!("done: {src_dir:?} written to {dst_file:?}"),
         Err(e) => eprintln!("Error: {e:?}"),
     }
 
