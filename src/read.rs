@@ -2038,7 +2038,7 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
 /// Generate a `SystemTime` from a `DateTime`.
 fn datetime_to_systemtime(datetime: &DateTime) -> Option<std::time::SystemTime> {
     if let Some(t) = generate_chrono_datetime(datetime) {
-        let time = chrono::DateTime::<chrono::Utc>::from_utc(t, chrono::Utc);
+        let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(t, chrono::Utc);
         return Some(time.into());
     }
     None
