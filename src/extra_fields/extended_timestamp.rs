@@ -22,7 +22,7 @@ impl ExtendedTimestamp {
         R: Read,
     {
         if len == 0 {
-            return Err(InvalidArchive("Extended timestamp field is empty".into()));
+            return Err(invalid!("Extended timestamp field is empty"));
         }
         let mut flags = [0u8];
         let mut bytes_to_read = len as usize;
