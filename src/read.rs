@@ -1924,7 +1924,16 @@ impl<R: Read> Drop for ZipFile<'_, R> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
+///
+/// Security considerations:
+/// An attacker may craft an ZIP file that decodes normally using the `ZipArchive` struct
+/// or any other ZIP file reader but decode to a different set of files when using this function
+/// to read the stream. This is due to the design choice of the ZIP format, placing the file
+/// index at the end of a ZIP file. When reading it incrementally different files may be seen,
+/// which are not listed in the file index.
+pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
+
+
     let block = read_local_fileblock(reader)?;
     let block = match block {
         Some(block) => block,
@@ -2089,9 +2098,17 @@ fn read_zipfile_from_fileblock<R: Read>(
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
+///
+/// Security considerations:
+/// An attacker may craft an ZIP file that decodes normally using the `ZipArchive` struct
+/// or any other ZIP file reader but decode to a different set of files when using this function
+/// to read the stream. This is due to the design choice of the ZIP format, placing the file
+/// index at the end of a ZIP file. When reading it incrementally different files may be seen,
+/// which are not listed in the file index.
 pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
     reader: &mut S,
 ) -> ZipResult<Option<ZipFile<'_, S>>> {
+    let initial_stream_position = reader.stream_position()?;
     let local_entry_block = read_local_fileblock(reader)?;
     let local_entry_block = match local_entry_block {
         Some(local_entry_block) => local_entry_block,
@@ -2104,22 +2121,22 @@ pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
     if using_data_descriptor {
         // we must find the data descriptor to get the compressed size
 
-        let mut read_count_total: usize = 0;
+        let stream_position_compressed_file_start = reader.stream_position()?;
         loop {
             let read_count = reader.read(&mut read_buffer)?;
             if read_count == 0 {
                 return Ok(None); // EOF
             }
 
-            read_count_total += read_count;
+            let stream_position = reader.stream_position()?;
 
-            if read_count_total > u32::MAX as usize {
+            if stream_position.saturating_sub(initial_stream_position) > u32::MAX as u64 {
                 return Ok(None); // file too large
             }
 
             shift_register = shift_register >> 8 | (read_buffer[0] as u32) << 24;
 
-            if read_count_total < 4 {
+            if stream_position < stream_position_compressed_file_start+4 {
                 continue;
             }
 
@@ -2128,7 +2145,6 @@ pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
             {
                 // found a potential data descriptor
                 reader.seek(SeekFrom::Current(-4))?; // go back to the start of the data descriptor
-                read_count_total -= 4;
 
                 let mut data_descriptor = ZipDataDescriptor::zeroed();
                 reader.read_exact(data_descriptor.as_bytes_mut())?;
@@ -2140,12 +2156,16 @@ pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
                 let data_descriptor = ZipDataDescriptor::from_le(data_descriptor);
 
                 // check if the data descriptor is indeed valid for the read data
-                if data_descriptor.compressed_size == read_count_total as u32 {
-                    // todo also check crc
-                    // valid data descriptor
+                let compressed_byte_count_read_sofar = (stream_position-4)-stream_position_compressed_file_start;
+                if data_descriptor.compressed_size == compressed_byte_count_read_sofar as u32 {
+                    // todo also check crc, current behavior when a the data descriptor magic number is encountered to to bail out
+                    // and just try decompressing a file - if the found magic number was just a coincidence (not the actual data descriptor)
+                    // then checking the crc will yield an error
+                    //
+                    // it would be best to check the crc already here to prevent this in the future
 
                     // seek back to data start
-                    reader.seek(SeekFrom::Current(-(read_count_total as i64)))?;
+                    reader.seek(SeekFrom::Start(initial_stream_position + mem::size_of::<ZipLocalEntryBlock>() as u64))?;
 
                     return read_zipfile_from_fileblock(
                         local_entry_block,
@@ -2156,7 +2176,6 @@ pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
                     // data descriptor is invalid
 
                     reader.seek(SeekFrom::Current(4))?; // skip the magic number
-                    read_count_total += 4;
 
                     // continue data descriptor searching
                 }
@@ -2164,6 +2183,7 @@ pub fn read_zipfile_from_seekablestream<S: Read + Seek>(
         }
     } else {
         // dont using a data descriptor
+        reader.seek(SeekFrom::Start(initial_stream_position + mem::size_of::<ZipLocalEntryBlock>() as u64))?;
         read_zipfile_from_fileblock(local_entry_block, reader, None)
     }
 }
