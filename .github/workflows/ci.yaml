@@ -147,7 +147,9 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
             find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
@@ -195,7 +197,9 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
             find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
@@ -240,7 +244,9 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
             find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
@@ -288,7 +294,9 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
             find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
