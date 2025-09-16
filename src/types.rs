@@ -3,7 +3,7 @@ use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
 use std::cmp::Ordering;
-use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::mem;
@@ -33,6 +33,7 @@ use crate::{CompressionMethod, ZIP64_BYTES_THR};
 use std::io::{Read, Seek};
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+use typed_path::WindowsPath;
 
 pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
@@ -587,11 +588,11 @@ impl ZipFileData {
     }
 
     /// Simplify the file name by removing the prefix and parent directories and only return normal components
-    pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
+    pub(crate) fn simplified_components(&self) -> Option<Vec<OsString>> {
         if self.file_name.contains('\0') {
             return None;
         }
-        let input = Path::new(OsStr::new(&*self.file_name));
+        let input = WindowsPath::new(&*self.file_name);
         crate::path::simplified_components(input)
     }
 
@@ -599,22 +600,9 @@ impl ZipFileData {
         if self.file_name.contains('\0') {
             return None;
         }
-        let path = PathBuf::from(self.file_name.to_string());
-        let mut depth = 0usize;
-        for component in path.components() {
-            match component {
-                Component::Prefix(_) | Component::RootDir => {
-                    if depth > 0 {
-                        return None;
-                    }
-                    // else absolute path becomes relative to destination instead
-                }
-                Component::ParentDir => depth = depth.checked_sub(1)?,
-                Component::Normal(_) => depth += 1,
-                Component::CurDir => (),
-            }
-        }
-        Some(path)
+        Some(PathBuf::from_iter(
+            self.simplified_components()?.into_iter(),
+        ))
     }
 
     /// Get unix mode for the file

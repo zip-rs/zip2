@@ -19,7 +19,7 @@ use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator
 use crate::ZIP64_BYTES_THR;
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
 use std::mem;
@@ -27,6 +27,7 @@ use std::mem::size_of;
 use std::ops::{Deref, Range};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use typed_path::{WindowsComponent, WindowsPath, WindowsPathBuf};
 
 mod config;
 
@@ -113,6 +114,7 @@ pub(crate) mod zip_archive {
 #[cfg(feature = "aes-crypto")]
 use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
+use crate::path::simplified_components;
 use crate::result::ZipError::InvalidPassword;
 use crate::spec::is_dir;
 use crate::types::ffi::{S_IFLNK, S_IFREG};
@@ -862,22 +864,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                 self.root_dir(&filter)
                     .transpose()
                     .map(|root_dir| root_dir.map(|root_dir| (root_dir, filter)))
-            })
-            .transpose()?;
-
-        // If we have a root dir, simplify the path components to be more
-        // appropriate for passing to `safe_prepare_path`
-        let root_dir = root_dir
-            .as_ref()
-            .map(|(root_dir, filter)| {
-                crate::path::simplified_components(root_dir)
-                    .ok_or_else(|| {
-                        // Should be unreachable
-                        debug_assert!(false, "Invalid root dir path");
-
-                        invalid!("Invalid root dir path")
-                    })
-                    .map(|root_dir| (root_dir, filter))
             })
             .transpose()?;
 
@@ -1644,8 +1630,9 @@ impl<'a, R: Read> ZipFile<'a, R> {
         &self,
         base_path: &Path,
         outpath: &mut PathBuf,
-        root_dir: Option<&(Vec<&OsStr>, impl RootDirFilter)>,
+        root_dir: Option<&(Vec<OsString>, impl RootDirFilter)>,
     ) -> ZipResult<()> {
+        let base_path = simplified_components(&WindowsPathBuf::from(base_path)).unwrap_or(vec![]);
         let components = self
             .simplified_components()
             .ok_or(invalid!("Invalid file path"))?;
@@ -1715,27 +1702,30 @@ impl<'a, R: Read> ZipFile<'a, R> {
                 // - issues with file-system specific path resolution (case sensitivity, etc)
                 let target = std::fs::read_link(&outpath)?;
 
-                if !crate::path::simplified_components(&target)
+                if !crate::path::simplified_components(&WindowsPath::from(&target))
                     .ok_or(invalid!("Invalid symlink target path"))?
-                    .starts_with(
-                        &crate::path::simplified_components(base_path)
-                            .ok_or(invalid!("Invalid base path"))?,
-                    )
+                    .starts_with(base_path)
                 {
                     let is_absolute_enclosed = base_path
-                        .components()
+                        .into_iter()
                         .map(Some)
                         .chain(std::iter::once(None))
                         .zip(target.components().map(Some).chain(std::iter::repeat(None)))
                         .all(|(a, b)| match (a, b) {
                             // both components are normal
-                            (Some(Component::Normal(a)), Some(Component::Normal(b))) => a == b,
+                            (
+                                Some(WindowsComponent::Normal(a)),
+                                Some(WindowsComponent::Normal(b)),
+                            ) => a == b,
                             // both components consumed fully
                             (None, None) => true,
                             // target consumed fully but base path is not
                             (Some(_), None) => false,
                             // base path consumed fully but target is not (and normal)
-                            (None, Some(Component::CurDir | Component::Normal(_))) => true,
+                            (
+                                None,
+                                Some(WindowsComponent::CurDir | WindowsComponent::Normal(_)),
+                            ) => true,
                             _ => false,
                         });
 

@@ -45,6 +45,7 @@ sha1 = { version = "0.10", optional = true }
 time = { workspace = true, optional = true, features = [
     "std",
 ] }
+typed-path = "0.11.0"
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }

@@ -1,23 +1,30 @@
 //! Path manipulation utilities
 
-use std::{
-    ffi::OsStr,
-    path::{Component, Path},
-};
+use std::ffi::OsString;
+use typed_path::{Component, WindowsComponent, WindowsEncoding};
 
 /// Simplify a path by removing the prefix and parent directories and only return normal components
-pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
+pub(crate) fn simplified_components(
+    input: &typed_path::Path<WindowsEncoding>,
+) -> Option<Vec<OsString>> {
     let mut out = Vec::new();
     for component in input.components() {
         match component {
             // Skip prefix and root directory components instead of rejecting the entire path
             // This allows extraction of ZIP files with absolute paths, similar to other ZIP tools
-            Component::Prefix(_) | Component::RootDir => (),
-            Component::ParentDir => {
+            WindowsComponent::Prefix(_) | WindowsComponent::RootDir => (),
+            WindowsComponent::ParentDir => {
                 out.pop()?;
             }
-            Component::Normal(_) => out.push(component.as_os_str()),
-            Component::CurDir => (),
+            WindowsComponent::Normal(bytes) => {
+                if component.is_valid() {
+                    // SAFETY: relies on above is_valid check
+                    out.push(unsafe { OsString::from_encoded_bytes_unchecked(bytes.to_vec()) });
+                } else {
+                    return None;
+                }
+            }
+            WindowsComponent::CurDir => (),
         }
     }
     Some(out)
@@ -26,11 +33,11 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use typed_path::WindowsPath;
 
     #[test]
     fn test_simplified_components_relative_path() {
-        let path = Path::new("foo/bar/baz.txt");
+        let path = WindowsPath::new("foo/bar/baz.txt");
         let components = simplified_components(path).unwrap();
         assert_eq!(components.len(), 3);
         assert_eq!(components[0], "foo");
@@ -40,7 +47,7 @@ mod tests {
 
     #[test]
     fn test_simplified_components_absolute_unix_path() {
-        let path = Path::new("/foo/bar/baz.txt");
+        let path = WindowsPath::new("/foo/bar/baz.txt");
         let components = simplified_components(path).unwrap();
         assert_eq!(components.len(), 3);
         assert_eq!(components[0], "foo");
@@ -50,7 +57,7 @@ mod tests {
 
     #[test]
     fn test_simplified_components_with_parent_dirs() {
-        let path = Path::new("foo/../bar/baz.txt");
+        let path = WindowsPath::new("foo/../bar/baz.txt");
         let components = simplified_components(path).unwrap();
         assert_eq!(components.len(), 2);
         assert_eq!(components[0], "bar");
@@ -59,14 +66,14 @@ mod tests {
 
     #[test]
     fn test_simplified_components_too_many_parent_dirs() {
-        let path = Path::new("foo/../../bar");
+        let path = WindowsPath::new("foo/../../bar");
         let result = simplified_components(path);
         assert!(result.is_none()); // Should still fail for directory traversal attacks
     }
 
     #[test]
     fn test_simplified_components_with_current_dir() {
-        let path = Path::new("foo/./bar/baz.txt");
+        let path = WindowsPath::new("foo/./bar/baz.txt");
         let components = simplified_components(path).unwrap();
         assert_eq!(components.len(), 3);
         assert_eq!(components[0], "foo");
@@ -76,14 +83,14 @@ mod tests {
 
     #[test]
     fn test_simplified_components_empty_path() {
-        let path = Path::new("");
+        let path = WindowsPath::new("");
         let components = simplified_components(path).unwrap();
         assert_eq!(components.len(), 0);
     }
 
     #[test]
     fn test_simplified_components_root_only() {
-        let path = Path::new("/");
+        let path = WindowsPath::new("/");
         let components = simplified_components(path).unwrap();
         assert_eq!(components.len(), 0);
     }
