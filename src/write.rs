@@ -540,10 +540,10 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 }
 impl FileOptions<'_, ExtendedFileOptions> {
     /// Adds an extra data field.
-    pub fn add_extra_data(
+    pub fn add_extra_data<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
-        data: Box<[u8]>,
+        data: D,
         central_only: bool,
     ) -> ZipResult<()> {
         self.extended_options
