@@ -31,7 +31,7 @@
 //!
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![warn(missing_docs)]
-#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
+#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::HasZipMetadata;
 pub use crate::read::ZipArchive;
@@ -71,3 +71,6 @@ zip = \"="]
 #[doc = "\"\n\
 ```"]
 pub mod unstable;
+
+#[doc(hidden)]
+pub mod macros;

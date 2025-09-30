@@ -1692,35 +1692,35 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             );
         }
 
-        {
-            #[allow(deprecated)]
-            #[allow(unreachable_code)]
-            match compression {
-                Stored => {
-                    if compression_level.is_some() {
-                        Err(UnsupportedArchive("Unsupported compression level"))
-                    } else {
-                        Ok(Box::new(|bare| Ok(Storer(bare))))
-                    }
+        match compression {
+            Stored => {
+                if compression_level.is_some() {
+                    Err(UnsupportedArchive("Unsupported compression level"))
+                } else {
+                    Ok(Box::new(|bare| Ok(Storer(bare))))
                 }
-                #[cfg(feature = "_deflate-any")]
-                CompressionMethod::Deflated => {
-                    #[cfg(feature = "deflate-flate2")]
-                    let default = Compression::default().level() as i64;
+            }
+            #[allow(unreachable_code)]
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => {
+                let default = crate::cfg_if_expr! {
+                    i64:
+                    #[cfg(feature = "deflate-flate2")] => Compression::default().level() as i64,
+                    #[cfg(feature = "deflate-zopfli")] => 24,
+                    _ => compile_error!("could not calculate default: unknown deflate variant"),
+                };
 
-                    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
-                    let default = 24;
+                let level = clamp_opt(
+                    compression_level.unwrap_or(default),
+                    deflate_compression_level_range(),
+                )
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    as u32;
 
-                    let level = clamp_opt(
-                        compression_level.unwrap_or(default),
-                        deflate_compression_level_range(),
-                    )
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                        as u32;
-
-                    #[cfg(feature = "deflate-zopfli")]
+                #[cfg(feature = "deflate-zopfli")]
+                {
                     macro_rules! deflate_zopfli_and_return {
-                        ($bare:expr, $best_non_zopfli:expr) => {
+                        ($bare:expr, $best_non_zopfli:expr) => {{
                             let options = Options {
                                 iteration_count: NonZeroU64::try_from(
                                     (level - $best_non_zopfli) as u64,
@@ -1728,7 +1728,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                 .unwrap(),
                                 ..Default::default()
                             };
-                            return Ok(Box::new(move |bare| {
+                            Ok(Box::new(move |bare| {
                                 Ok(match zopfli_buffer_size {
                                     Some(size) => GenericZipWriter::BufferedZopfliDeflater(
                                         BufWriter::with_capacity(
@@ -1748,148 +1748,143 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                         ),
                                     ),
                                 })
-                            }));
-                        };
+                            }))
+                        }};
                     }
 
-                    #[cfg(all(feature = "deflate-zopfli", feature = "deflate-flate2"))]
-                    {
-                        let best_non_zopfli = Compression::best().level();
-                        if level > best_non_zopfli {
-                            deflate_zopfli_and_return!(bare, best_non_zopfli);
+                    crate::cfg_if! {
+                        if #[cfg(feature = "deflate-flate2")] {
+                            let best_non_zopfli = Compression::best().level();
+                            if level > best_non_zopfli {
+                                return deflate_zopfli_and_return!(bare, best_non_zopfli);
+                            }
+                        } else {
+                            let best_non_zopfli = 9;
+                            return deflate_zopfli_and_return!(bare, best_non_zopfli);
                         }
                     }
-
-                    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
-                    {
-                        let best_non_zopfli = 9;
-                        deflate_zopfli_and_return!(bare, best_non_zopfli);
-                    }
-
-                    #[cfg(feature = "deflate-flate2")]
-                    {
-                        Ok(Box::new(move |bare| {
-                            Ok(GenericZipWriter::Deflater(DeflateEncoder::new(
-                                bare,
-                                Compression::new(level),
-                            )))
-                        }))
-                    }
                 }
-                #[cfg(feature = "deflate64")]
-                CompressionMethod::Deflate64 => {
-                    Err(UnsupportedArchive("Compressing Deflate64 is not supported"))
+
+                crate::cfg_if_expr! {
+                    ZipResult<SwitchWriterFunction<W>>:
+                    #[cfg(feature = "deflate-flate2")] => Ok(Box::new(move |bare| {
+                        Ok(GenericZipWriter::Deflater(DeflateEncoder::new(
+                            bare,
+                            Compression::new(level),
+                        )))
+                    })),
+                    _ => unreachable!("deflate writer: have no fallback for this case")
                 }
-                #[cfg(feature = "bzip2")]
-                CompressionMethod::Bzip2 => {
-                    let level = clamp_opt(
-                        compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
-                        bzip2_compression_level_range(),
-                    )
+            }
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => {
+                Err(UnsupportedArchive("Compressing Deflate64 is not supported"))
+            }
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2 => {
+                let level = clamp_opt(
+                    compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
+                    bzip2_compression_level_range(),
+                )
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    as u32;
+                Ok(Box::new(move |bare| {
+                    Ok(GenericZipWriter::Bzip2(BzEncoder::new(
+                        bare,
+                        bzip2::Compression::new(level),
+                    )))
+                }))
+            }
+            CompressionMethod::AES => Err(UnsupportedArchive(
+                "AES encryption is enabled through FileOptions::with_aes_encryption",
+            )),
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd => {
+                let level = clamp_opt(
+                    compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
+                    zstd::compression_level_range(),
+                )
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?;
+                Ok(Box::new(move |bare| {
+                    Ok(GenericZipWriter::Zstd(
+                        ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
+                    ))
+                }))
+            }
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Shrink => Err(ZipError::UnsupportedArchive(
+                "Shrink compression unsupported",
+            )),
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Reduce(_) => Err(ZipError::UnsupportedArchive(
+                "Reduce compression unsupported",
+            )),
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Implode => Err(ZipError::UnsupportedArchive(
+                "Implode compression unsupported",
+            )),
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => {
+                Err(UnsupportedArchive("LZMA isn't supported for compression"))
+            }
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz => {
+                let level = clamp_opt(compression_level.unwrap_or(6), 0..=9)
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                        as u32;
-                    Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Bzip2(BzEncoder::new(
-                            bare,
-                            bzip2::Compression::new(level),
-                        )))
-                    }))
-                }
-                CompressionMethod::AES => Err(UnsupportedArchive(
-                    "AES encryption is enabled through FileOptions::with_aes_encryption",
-                )),
-                #[cfg(feature = "zstd")]
-                CompressionMethod::Zstd => {
-                    let level = clamp_opt(
-                        compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
-                        zstd::compression_level_range(),
-                    )
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
-                    Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Zstd(
-                            ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
-                        ))
-                    }))
-                }
-                #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Shrink => Err(ZipError::UnsupportedArchive(
-                    "Shrink compression unsupported",
-                )),
-                #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Reduce(_) => Err(ZipError::UnsupportedArchive(
-                    "Reduce compression unsupported",
-                )),
-                #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Implode => Err(ZipError::UnsupportedArchive(
-                    "Implode compression unsupported",
-                )),
-                #[cfg(feature = "lzma")]
-                CompressionMethod::Lzma => {
-                    Err(UnsupportedArchive("LZMA isn't supported for compression"))
-                }
-                #[cfg(feature = "xz")]
-                CompressionMethod::Xz => {
-                    let level = clamp_opt(compression_level.unwrap_or(6), 0..=9)
-                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                        as u32;
-                    Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Xz(Box::new(
-                            lzma_rust2::XzWriter::new(
-                                bare,
-                                lzma_rust2::XzOptions::with_preset(level),
-                            )
+                    as u32;
+                Ok(Box::new(move |bare| {
+                    Ok(GenericZipWriter::Xz(Box::new(
+                        lzma_rust2::XzWriter::new(bare, lzma_rust2::XzOptions::with_preset(level))
                             .map_err(ZipError::Io)?,
-                        )))
-                    }))
-                }
-                #[cfg(feature = "ppmd")]
-                CompressionMethod::Ppmd => {
-                    const ORDERS: [u32; 10] = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+                    )))
+                }))
+            }
+            #[cfg(feature = "ppmd")]
+            CompressionMethod::Ppmd => {
+                const ORDERS: [u32; 10] = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-                    let level = clamp_opt(compression_level.unwrap_or(7), 1..=9)
-                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                        as u32;
+                let level = clamp_opt(compression_level.unwrap_or(7), 1..=9)
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    as u32;
 
-                    let order = ORDERS[level as usize];
-                    let memory_size = 1 << (level + 19);
-                    let memory_size_mb = memory_size / 1024 / 1024;
+                let order = ORDERS[level as usize];
+                let memory_size = 1 << (level + 19);
+                let memory_size_mb = memory_size / 1024 / 1024;
 
-                    Ok(Box::new(move |mut bare| {
-                        let parameter: u16 = (order as u16 - 1)
-                            + ((memory_size_mb - 1) << 4) as u16
-                            + ((ppmd_rust::RestoreMethod::Restart as u16) << 12);
+                Ok(Box::new(move |mut bare| {
+                    let parameter: u16 = (order as u16 - 1)
+                        + ((memory_size_mb - 1) << 4) as u16
+                        + ((ppmd_rust::RestoreMethod::Restart as u16) << 12);
 
-                        bare.write_all(&parameter.to_le_bytes())
-                            .map_err(ZipError::Io)?;
+                    bare.write_all(&parameter.to_le_bytes())
+                        .map_err(ZipError::Io)?;
 
-                        let encoder = ppmd_rust::Ppmd8Encoder::new(
-                            bare,
-                            order,
-                            memory_size,
-                            ppmd_rust::RestoreMethod::Restart,
-                        )
-                        .map_err(|error| match error {
-                            ppmd_rust::Error::RangeDecoderInitialization => {
-                                ZipError::InvalidArchive(
-                                    "PPMd range coder initialization failed".into(),
-                                )
-                            }
-                            ppmd_rust::Error::InvalidParameter => {
-                                ZipError::InvalidArchive("Invalid PPMd parameter".into())
-                            }
-                            ppmd_rust::Error::IoError(io_error) => ZipError::Io(io_error),
-                            ppmd_rust::Error::MemoryAllocation => ZipError::Io(io::Error::new(
-                                ErrorKind::OutOfMemory,
-                                "PPMd could not allocate memory",
-                            )),
-                        })?;
+                    let encoder = ppmd_rust::Ppmd8Encoder::new(
+                        bare,
+                        order,
+                        memory_size,
+                        ppmd_rust::RestoreMethod::Restart,
+                    )
+                    .map_err(|error| match error {
+                        ppmd_rust::Error::RangeDecoderInitialization => ZipError::InvalidArchive(
+                            "PPMd range coder initialization failed".into(),
+                        ),
+                        ppmd_rust::Error::InvalidParameter => {
+                            ZipError::InvalidArchive("Invalid PPMd parameter".into())
+                        }
+                        ppmd_rust::Error::IoError(io_error) => ZipError::Io(io_error),
+                        ppmd_rust::Error::MemoryAllocation => ZipError::Io(io::Error::new(
+                            ErrorKind::OutOfMemory,
+                            "PPMd could not allocate memory",
+                        )),
+                    })?;
 
-                        Ok(GenericZipWriter::Ppmd(Box::new(encoder)))
-                    }))
-                }
-                CompressionMethod::Unsupported(..) => {
-                    Err(UnsupportedArchive("Unsupported compression"))
-                }
+                    Ok(GenericZipWriter::Ppmd(Box::new(encoder)))
+                }))
+            }
+            #[allow(deprecated)]
+            CompressionMethod::Unsupported(..) => {
+                Err(UnsupportedArchive("Unsupported compression"))
             }
         }
     }
@@ -1971,15 +1966,19 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
 #[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    #[cfg(feature = "deflate-flate2")]
-    let min = Compression::fast().level() as i64;
-    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
-    let min = 1;
+    let min = crate::cfg_if_expr! {
+        i64:
+        #[cfg(feature = "deflate-flate2")] => Compression::fast().level() as i64,
+        #[cfg(feature = "deflate-zopfli")] => 1,
+        _ => compile_error!("min: unknown deflate variant"),
+    };
 
-    #[cfg(feature = "deflate-zopfli")]
-    let max = 264;
-    #[cfg(all(feature = "deflate-flate2", not(feature = "deflate-zopfli")))]
-    let max = Compression::best().level() as i64;
+    let max = crate::cfg_if_expr! {
+        i64:
+        #[cfg(feature = "deflate-zopfli")] => 264,
+        #[cfg(feature = "deflate-flate2")] => Compression::best().level() as i64,
+        _ => compile_error!("max: unknown deflate variant"),
+    };
 
     min..=max
 }
