@@ -1,16 +1,22 @@
+#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
+
+#[cfg(fuzzing)]
 use afl::fuzz;
 use arbitrary::{Arbitrary, Unstructured};
 use core::fmt::Debug;
 use replace_with::replace_with_or_abort;
-use std::fmt::{Arguments, Formatter, Write};
+use std::fmt::{Formatter, Write};
 use std::io::Write as IoWrite;
 use std::io::{Cursor, Seek, SeekFrom};
+use std::ops;
 use std::path::PathBuf;
+#[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
 
+#[cfg(fuzzing)]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -292,16 +298,20 @@ fn do_operation(
 }
 
 impl FuzzTestCase<'_> {
-    fn execute(self, stringifier: &mut impl Write, panic_on_error: bool) -> ZipResult<()> {
+    fn execute<W: Write>(
+        self,
+        mut stringifier: impl ops::DerefMut<Target = W>,
+        panic_on_error: bool,
+    ) -> ZipResult<()> {
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
         let mut writer = zip::ZipWriter::new(initial_junk);
         let mut files_added = 0;
         let mut final_reopen = false;
-        if let Some((last_op, _)) = self.operations.last() {
-            if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
-                final_reopen = true;
-            }
+        if let Some((last_op, _)) = self.operations.last()
+            && last_op.reopen != ReopenOption::ViaFinishIntoReadable
+        {
+            final_reopen = true;
         }
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
@@ -312,7 +322,7 @@ impl FuzzTestCase<'_> {
                 abort,
                 self.flush_on_finish_file,
                 &mut files_added,
-                stringifier,
+                stringifier.deref_mut(),
                 panic_on_error,
             );
         }
@@ -346,9 +356,11 @@ impl Debug for FuzzTestCase<'_> {
     }
 }
 
+#[cfg(fuzzing)]
 #[derive(Default, Eq, PartialEq)]
 struct NoopWrite {}
 
+#[cfg(fuzzing)]
 impl Write for NoopWrite {
     fn write_str(&mut self, _: &str) -> std::fmt::Result {
         Ok(())
@@ -358,15 +370,73 @@ impl Write for NoopWrite {
         Ok(())
     }
 
-    fn write_fmt(&mut self, _: Arguments<'_>) -> std::fmt::Result {
+    fn write_fmt(&mut self, _: std::fmt::Arguments<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
 
-fn main() {
-    fuzz!(|data: &[u8]| {
-        if let Ok(test_case) = Unstructured::new(data).arbitrary::<FuzzTestCase>() {
-            test_case.execute(&mut NoopWrite::default(), true).unwrap();
+#[cfg(not(fuzzing))]
+struct StdoutWrite(std::io::Stdout);
+
+#[cfg(not(fuzzing))]
+impl Default for StdoutWrite {
+    fn default() -> Self {
+        Self(std::io::stdout())
+    }
+}
+
+#[cfg(not(fuzzing))]
+impl Write for StdoutWrite {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        match self.0.write_all(s.as_bytes()) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("error writing string {s:?}: {e}");
+                Err(std::fmt::Error)
+            }
         }
-    });
+    }
+}
+
+#[cfg(not(fuzzing))]
+impl ops::Drop for StdoutWrite {
+    fn drop(&mut self) {
+        match self.0.flush() {
+            Ok(()) => (),
+            Err(e) => {
+                eprintln!("error flushing: {e}");
+            }
+        }
+    }
+}
+
+fn main() {
+    #[cfg(fuzzing)]
+    {
+        let mut w = NoopWrite::default();
+        fuzz!(|data: &[u8]| {
+            let u = Unstructured::new(data);
+            if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
+                for test_case in it {
+                    if let Ok(test_case) = test_case {
+                        test_case.execute(&mut w, true).unwrap();
+                    }
+                }
+            }
+        });
+    }
+
+    #[cfg(not(fuzzing))]
+    {
+        use std::io::Read;
+        let mut v = Vec::new();
+        std::io::stdin().read_to_end(&mut v).unwrap();
+        let u = Unstructured::new(&v[..]);
+        let mut w = StdoutWrite::default();
+        if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
+            for test_case in it.flatten() {
+                test_case.execute(&mut w, true).unwrap();
+            }
+        }
+    }
 }
