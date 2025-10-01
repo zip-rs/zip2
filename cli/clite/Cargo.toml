@@ -1,0 +1,66 @@
+[package]
+name                    = "zip-clite"
+version                 = "0.0.1"
+authors                 = [
+    "Danny McClanahan <dmcC2@hypnicjerk.ai>",
+]
+license                 = "MIT"
+repository              = "https://github.com/zip-rs/zip2.git"
+keywords                = ["zip", "archive", "compression", "cli"]
+categories              = ["command-line-utilities", "compression", "filesystem", "development-tools::build-utils"]
+# This field is not as important as in the top-level library API, but as there:
+# Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
+# The MSRV policy is documented in `README.md`.
+rust-version            = "1.83.0"
+description             = """
+Binary for creation and manipulation of zip files.
+
+This distribution is created to be intentionally very small and easy to audit. It has reduced
+functionality, builds to optimize for size, and only bundles in support for a Rust
+DEFLATE implementation.
+"""
+edition                 = "2021"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members                 = ["."]
+
+[[bin]]
+name                    = "zip-clite"
+
+# NB: This is not a dependency on the top-level `zip` crate, but the `zip-cli` crate (which mirrors
+#     the declared features from `zip`). We do not use its `main.rs` entry point, but rely upon
+#     `lib.rs`, which was specifically designed to minimize the amount of code specific to
+#     `zip-clite`.
+[dependencies.zip-cli]
+path                    = ".."
+default-features        = false
+
+[features]
+aes-crypto              = ["zip-cli/aes-crypto"]
+bzip2                   = ["zip-cli/bzip2"]
+chrono                  = ["zip-cli/chrono"]
+_deflate-any            = ["zip-cli/_deflate-any"]
+deflate64               = ["zip-cli/deflate64"]
+deflate                 = ["zip-cli/deflate"]
+deflate-flate2          = ["zip-cli/deflate-flate2"]
+deflate-flate2-zlib-rs  = ["zip-cli/deflate-flate2-zlib-rs"]
+deflate-flate2-zlib     = ["zip-cli/deflate-flate2-zlib"]
+deflate-zopfli          = ["zip-cli/deflate-zopfli"]
+lzma                    = ["zip-cli/lzma"]
+ppmd                    = ["zip-cli/ppmd"]
+time                    = ["zip-cli/time"]
+xz                      = ["zip-cli/xz"]
+zstd                    = ["zip-cli/zstd"]
+
+# Only bring in the pure-Rust DEFLATE implementation by default.
+default                 = [
+  "deflate-flate2",
+  "deflate-flate2-zlib-rs",
+]
+
+[profile.release]
+strip                   = true
+lto                     = true
+opt-level               = "s"
+codegen-units           = 1

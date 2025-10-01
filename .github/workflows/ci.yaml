@@ -22,7 +22,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml', 'cli/Cargo.toml', 'cli/clite/Cargo.toml']
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
         feature_flag:
@@ -53,7 +53,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml', 'cli/Cargo.toml', 'cli/clite/Cargo.toml']
         feature_flag:
         - "--all-features"
         - "--no-default-features"
@@ -100,6 +100,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: fmt fuzz
         run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
+      - name: fmt cli
+        run: cargo fmt --all --manifest-path ${{ github.workspace }}/cli/Cargo.toml -- --check
+      - name: fmt clite
+        run: cargo fmt --all --manifest-path ${{ github.workspace }}/cli/clite/Cargo.toml -- --check
 
   check_minimal_versions:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
@@ -124,7 +128,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml', 'cli/Cargo.toml', 'cli/clite/Cargo.toml']
         feature_flag: ["--all-features", "--no-default-features", ""]
     runs-on: ubuntu-latest
     steps:
