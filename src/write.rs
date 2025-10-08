@@ -143,7 +143,7 @@ pub(crate) mod zip_writer {
     /// use std::io::Write;
     /// use zip::write::SimpleFileOptions;
     ///
-    /// We use a cursor + vec here, though you'd normally use a `File`
+    /// // We use a cursor + vec here, though you'd normally use a `File`
     /// let mut cur = std::io::Cursor::new(Vec::new());
     /// let mut zip = ZipWriter::new(&mut cur);
     ///
