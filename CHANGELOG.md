@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
+
+### <!-- 0 -->🚀 Features
+
+- Add by_index_with_options(), which can be used to ignore encryption in a file's metadata ([#439](https://github.com/zip-rs/zip2/pull/439)) and may be used for other file-specific overrides in the future.
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- [**breaking**] `FileOptions::add_extra_data` is now generic and accepts any `AsRef<[u8]>`. (#435)
+- [**breaking**] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
+
 ## [5.1.1](https://github.com/zip-rs/zip2/compare/v5.1.0...v5.1.1) - 2025-09-11
 
 ### <!-- 1 -->🐛 Bug Fixes
