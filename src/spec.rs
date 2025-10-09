@@ -362,8 +362,38 @@ impl Zip32CentralDirectoryEnd {
         Ok(())
     }
 
+    pub fn write_with_zip64_indicator<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        let Self {
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment,
+        } = self;
+        
+        // When ZIP64 is present, set comment length to 0xFFFF to indicate ZIP64 footer presence
+        let block = Zip32CDEBlock {
+            magic: Zip32CDEBlock::MAGIC,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment_length: u16::MAX,
+        };
+
+        block.write(writer)?;
+        // Write empty comment since the real comment is in the ZIP64 footer
+        Ok(())
+    }
+
     pub fn may_be_zip64(&self) -> bool {
-        self.number_of_files == u16::MAX || self.central_directory_offset == u32::MAX
+        self.number_of_files == u16::MAX 
+            || self.central_directory_offset == u32::MAX
+            || self.zip_file_comment.len() == u16::MAX as usize
     }
 }
 
