@@ -295,14 +295,7 @@ impl ExtendedFileOptions {
         data: D,
         central_only: bool,
     ) -> ZipResult<()> {
-        self.add_extra_data_impl(header_id, data.as_ref(), central_only)
-    }
-    fn add_extra_data_impl(
-        &mut self,
-        header_id: u16,
-        data: &[u8],
-        central_only: bool,
-    ) -> ZipResult<()> {
+        let data = data.as_ref();
         let len = data.len() + 4;
         if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
