@@ -3,7 +3,7 @@
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use std::io::prelude::*;
-use zip::{result::ZipError, write::SimpleFileOptions};
+use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -30,59 +30,51 @@ enum CompressionMethod {
     Zstd,
 }
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> ! {
     let args = Args::parse();
     let src_dir = &args.source;
     let dst_file = &args.destination;
     let method = match args.compression_method {
         CompressionMethod::Stored => zip::CompressionMethod::Stored,
-        CompressionMethod::Deflated => {
-            #[cfg(not(feature = "deflate-flate2"))]
-            {
+        CompressionMethod::Deflated => cfg_if_expr! {
+            #[cfg(feature = "deflate-flate2")] => zip::CompressionMethod::Deflated,
+            _ => {
                 println!("The `deflate-flate2` feature is not enabled");
-                return 1;
+                std::process::exit(1)
             }
-            #[cfg(feature = "deflate-flate2")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::Bzip2 => {
-            #[cfg(not(feature = "bzip2"))]
-            {
+        },
+        CompressionMethod::Bzip2 => cfg_if_expr! {
+            #[cfg(feature = "bzip2")] => zip::CompressionMethod::Bzip2,
+            _ => {
                 println!("The `bzip2` feature is not enabled");
-                return 1;
+                std::process::exit(1)
             }
-            #[cfg(feature = "bzip2")]
-            zip::CompressionMethod::Bzip2
-        }
-        CompressionMethod::Xz => {
-            #[cfg(not(feature = "xz"))]
-            {
+        },
+        CompressionMethod::Xz => cfg_if_expr! {
+            #[cfg(feature = "xz")] => zip::CompressionMethod::Xz,
+            _ => {
                 println!("The `xz` feature is not enabled");
-                return 1;
+                std::process::exit(1)
             }
-            #[cfg(feature = "xz")]
-            zip::CompressionMethod::Xz
-        }
-        CompressionMethod::Zstd => {
-            #[cfg(not(feature = "zstd"))]
-            {
+        },
+        CompressionMethod::Zstd => cfg_if_expr! {
+            #[cfg(feature = "zstd")] => zip::CompressionMethod::Zstd,
+            _ => {
                 println!("The `zstd` feature is not enabled");
-                return 1;
+                std::process::exit(1)
             }
-            #[cfg(feature = "zstd")]
-            zip::CompressionMethod::Zstd
-        }
+        },
     };
     match doit(src_dir, dst_file, method) {
-        Ok(_) => println!("done: {src_dir:?} written to {dst_file:?}"),
-        Err(e) => eprintln!("Error: {e:?}"),
+        Ok(_) => {
+            println!("done: {src_dir:?} written to {dst_file:?}");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            std::process::abort();
+        }
     }
-
-    0
 }
 
 fn zip_dir<T>(

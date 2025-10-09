@@ -1,0 +1,70 @@
+[package]
+name                    = "zip-cli"
+version                 = "0.0.1"
+authors                 = [
+    "Danny McClanahan <dmcC2@hypnicjerk.ai>",
+]
+license                 = "MIT"
+repository              = "https:    //github.com/zip-rs/zip2.git"
+keywords                = ["zip", "archive", "compression", "cli"]
+categories              = ["command-line-utilities", "compression", "filesystem", "development-tools::build-utils"]
+# This field is not as important as in the top-level library API, but as there:
+# Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
+# The MSRV policy is documented in `README.md`.
+rust-version            = "1.83.0"
+description             = """
+Binary for creation and manipulation of zip files.
+
+This package can enable or disable certain dependencies during the build and install process with
+cargo features.
+"""
+edition                 = "2021"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members                 = ["."]
+
+[lib]
+
+[[bin]]
+name                    = "zip-cli"
+
+[dependencies.zip]
+path                    = ".."
+default-features        = false
+
+[features]
+aes-crypto              = ["zip/aes-crypto"]
+bzip2                   = ["zip/bzip2"]
+chrono                  = ["zip/chrono"]
+_deflate-any            = ["zip/_deflate-any"]
+deflate64               = ["zip/deflate64"]
+deflate                 = ["zip/deflate"]
+deflate-flate2          = ["zip/deflate-flate2"]
+deflate-flate2-zlib-rs  = ["zip/deflate-flate2-zlib-rs"]
+deflate-flate2-zlib     = ["zip/deflate-flate2-zlib"]
+deflate-zopfli          = ["zip/deflate-zopfli"]
+lzma                    = ["zip/lzma"]
+ppmd                    = ["zip/ppmd"]
+time                    = ["zip/time"]
+xz                      = ["zip/xz"]
+zstd                    = ["zip/zstd"]
+
+# Generate a highly featureful binary by default.
+default                 = [
+    "aes-crypto",
+    "bzip2",
+    "deflate64",
+    "deflate",
+    "lzma",
+    "ppmd",
+    "time",
+    "xz",
+    "zstd",
+]
+
+[profile.release]
+strip                   = true
+lto                     = true
+opt-level               = 3
+codegen-units           = 1

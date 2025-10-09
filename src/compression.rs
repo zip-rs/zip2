@@ -2,6 +2,8 @@
 
 use std::{fmt, io};
 
+use crate::cfg_if_expr;
+
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
 ///
@@ -11,7 +13,7 @@ use std::{fmt, io};
 /// When creating ZIP files, you may choose the method to use with
 /// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub enum CompressionMethod {
     /// Store the file as is
@@ -55,7 +57,7 @@ pub enum CompressionMethod {
     Ppmd,
     /// Unsupported compression method
     #[cfg_attr(
-        not(fuzzing),
+        not(any(fuzzing, feature = "arbitrary")),
         deprecated(since = "0.5.7", note = "use the constants instead")
     )]
     Unsupported(u16),
@@ -228,11 +230,10 @@ impl CompressionMethod {
 
 impl Default for CompressionMethod {
     fn default() -> Self {
-        #[cfg(feature = "_deflate-any")]
-        return CompressionMethod::Deflated;
-
-        #[cfg(not(feature = "_deflate-any"))]
-        return CompressionMethod::Stored;
+        cfg_if_expr! {
+            #[cfg(feature = "_deflate-any")] => CompressionMethod::Deflated,
+            _ => CompressionMethod::Stored
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 //! Types that specify what is contained in a ZIP.
+use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
@@ -152,7 +153,7 @@ impl DateTime {
     }
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
         let year: u16 = u.int_in_range(1980..=2107)?;
@@ -713,16 +714,11 @@ impl ZipFileData {
             system: System::Unix,
             version_made_by: DEFAULT_VERSION,
             flags: 0,
-            encrypted: options.encrypt_with.is_some() || {
-                #[cfg(feature = "aes-crypto")]
-                {
-                    options.aes_mode.is_some()
-                }
-                #[cfg(not(feature = "aes-crypto"))]
-                {
-                    false
-                }
-            },
+            encrypted: options.encrypt_with.is_some()
+                || cfg_if_expr! {
+                    #[cfg(feature = "aes-crypto")] => options.aes_mode.is_some(),
+                    _ => false
+                },
             using_data_descriptor: false,
             is_utf8: !file_name.is_ascii(),
             compression_method,
@@ -1235,7 +1231,7 @@ pub enum AesVendorVersion {
 
 /// AES variant used.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum AesMode {
     /// 128-bit AES encryption.
