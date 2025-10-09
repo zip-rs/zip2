@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.2.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v5.2.0) - 2025-10-09
+
+### <!-- 0 -->🚀 Features
+
+- Add by_index_with_options() for ignoring encryption ([#439](https://github.com/zip-rs/zip2/pull/439))
+
 ## [5.1.1](https://github.com/zip-rs/zip2/compare/v5.1.0...v5.1.1) - 2025-09-11
 
 ### <!-- 1 -->🐛 Bug Fixes
