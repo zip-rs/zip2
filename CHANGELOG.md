@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 0 -->🚀 Features
 
-- Add by_index_with_options() for ignoring encryption ([#439](https://github.com/zip-rs/zip2/pull/439))
+- Add by_index_with_options(), which can be used to ignore encryption in a file's metadata ([#439](https://github.com/zip-rs/zip2/pull/439)) and may be used for other file-specific overrides in the future.
 
 ## [5.1.1](https://github.com/zip-rs/zip2/compare/v5.1.0...v5.1.1) - 2025-09-11
 
