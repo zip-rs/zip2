@@ -942,20 +942,20 @@ impl<W: Write + Seek> ZipWriter<W> {
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
                 0x9901,
-                aes_dummy_extra_data,
+                &aes_dummy_extra_data,
             )?;
         } else if let Some((mode, vendor, underlying)) = options.aes_mode {
             // For raw copies of AES entries, write the correct AES extra data immediately
             let mut body = [0; 7];
             [body[0], body[1]] = (vendor as u16).to_le_bytes(); // vendor version (1 or 2)
-            [body[2], body[3]] = b"AE"; // vendor id
+            [body[2], body[3]] = *b"AE"; // vendor id
             body[4] = mode as u8; // strength
             [body[5], body[6]] = underlying.serialize_to_u16().to_le_bytes(); // real compression method
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
                 0x9901,
-                body,
+                &body,
             )?;
         }
 
