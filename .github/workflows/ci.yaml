@@ -21,11 +21,14 @@ jobs:
   cache_to_artifact:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/cache@v4
+    - name: Configure Cache Env
+      uses: actions/github-script@v6
       with:
-        key: 'do_not_write_back'
-        path: cache
-        restore-keys: 'semver-cargo_semver-93c4e40f0b737772-linux-rustc-1.90.0-(1159e78c4-2025-09-14)-cargo-semver-checks-0.44.0-d41d8cd98f00b204e9800998ecf8427e-semver-checks-rustdoc-4854acc0120975c17defd9b1c649fb889256a863'
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+    - uses: actions/checkout@v5
+    - run: cargo run
     - name: Upload cache as artifact
       uses: actions/upload-artifact@v4
       with:
