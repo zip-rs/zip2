@@ -23,8 +23,9 @@ jobs:
     steps:
     - uses: actions/cache@v4
       with:
-        key: 'semver-cargo_semver-93c4e40f0b737772-linux-rustc-1.90.0-(1159e78c4-2025-09-14)-cargo-semver-checks-0.44.0-d41d8cd98f00b204e9800998ecf8427e-semver-checks-rustdoc-4854acc0120975c17defd9b1c649fb889256a863'
+        key: 'do_not_write_back'
         path: cache
+        restore-keys: 'semver-cargo_semver-93c4e40f0b737772-linux-rustc-1.90.0-(1159e78c4-2025-09-14)-cargo-semver-checks-0.44.0-d41d8cd98f00b204e9800998ecf8427e-semver-checks-rustdoc-4854acc0120975c17defd9b1c649fb889256a863'
     - name: Upload cache as artifact
       uses: actions/upload-artifact@v4
       with:
