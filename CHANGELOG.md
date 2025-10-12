@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- [**breaking**] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
+
 ## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
 
 ### <!-- 0 -->🚀 Features
@@ -16,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
 - [**breaking**] `FileOptions::add_extra_data` is now generic and accepts any `AsRef<[u8]>`. (#435)
-- [**breaking**] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
 
 ## [5.1.1](https://github.com/zip-rs/zip2/compare/v5.1.0...v5.1.1) - 2025-09-11
 
