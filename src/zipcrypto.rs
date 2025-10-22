@@ -206,6 +206,16 @@ pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) buffer: [u8; CHUNK_SIZE],
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
+    /// Gets a reference to the underlying writer.
+    pub fn get_ref(&self) -> &W {
+        &self.writer
+    }
+
+    /// Gets a mutable reference to the underlying writer.
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
     #[allow(unused)]
     pub(crate) fn finish(mut self) -> std::io::Result<W> {
         Ok(self.writer)

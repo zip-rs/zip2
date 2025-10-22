@@ -35,6 +35,25 @@ enum MaybeEncrypted<W> {
     ZipCrypto(crate::zipcrypto::ZipCryptoWriter<W>),
 }
 
+impl<W: Write> MaybeEncrypted<W> {
+    fn get_ref(&self) -> &W {
+        match self {
+            MaybeEncrypted::Unencrypted(w) => w,
+            #[cfg(feature = "aes-crypto")]
+            MaybeEncrypted::Aes(w) => w.get_ref(),
+            MaybeEncrypted::ZipCrypto(w) => w.get_ref(),
+        }
+    }
+    fn get_mut(&mut self) -> &mut W {
+        match self {
+            MaybeEncrypted::Unencrypted(w) => w,
+            #[cfg(feature = "aes-crypto")]
+            MaybeEncrypted::Aes(w) => w.get_mut(),
+            MaybeEncrypted::ZipCrypto(w) => w.get_mut(),
+        }
+    }
+}
+
 impl<W> Debug for MaybeEncrypted<W> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // Don't print W, since it may be a huge Vec<u8>
@@ -170,6 +189,55 @@ pub(crate) mod zip_writer {
                 "ZipWriter {{files: {:?}, stats: {:?}, writing_to_file: {}, writing_raw: {}, comment: {:?}, flush_on_finish_file: {}}}",
                 self.files, self.stats, self.writing_to_file, self.writing_raw,
                 self.comment, self.flush_on_finish_file))
+        }
+    }
+
+    impl<W: Write + Seek> ZipWriter<W> {
+        /// Gets a reference to the underlying writer in this ZipWrite.
+        pub fn get_ref(&self) -> &W {
+            use GenericZipWriter::*;
+            match &self.inner {
+                Closed => panic!("Can't get underlying writer of closed archive"),
+                Storer(w) => w.get_ref(),
+                #[cfg(feature = "deflate-flate2")]
+                Deflater(w) => w.get_ref().get_ref(),
+                #[cfg(feature = "deflate-zopfli")]
+                ZopfliDeflater(w) => w.get_ref().get_ref(),
+                #[cfg(feature = "deflate-zopfli")]
+                BufferedZopfliDeflater(w) => w.get_ref().get_ref().get_ref(),
+                #[cfg(feature = "bzip2")]
+                Bzip2(w) => w.get_ref().get_ref(),
+                #[cfg(feature = "zstd")]
+                Zstd(w) => w.get_ref().get_ref(),
+                #[cfg(feature = "xz")]
+                Xz(w) => w.inner().get_ref(),
+                #[cfg(feature = "ppmd")]
+                Ppmd(w) => w.get_ref().get_ref(),
+            }
+        }
+
+        /// Gets a reference to the underlying writer in this ZipWrite.
+        pub fn get_mut(&mut self) -> &mut W {
+            use MaybeEncrypted::*;
+            use GenericZipWriter::*;
+            match &mut self.inner {
+                Closed => panic!("Can't get underlying writer of closed archive"),
+                Storer(w) => w.get_mut(),
+                #[cfg(feature = "deflate-flate2")]
+                Deflater(w) => w.get_mut().get_mut(),
+                #[cfg(feature = "deflate-zopfli")]
+                ZopfliDeflater(w) => w.get_mut().get_mut(),
+                #[cfg(feature = "deflate-zopfli")]
+                BufferedZopfliDeflater(w) => w.get_mut().get_mut().get_mut(),
+                #[cfg(feature = "bzip2")]
+                Bzip2(w) => w.get_mut().get_mut(),
+                #[cfg(feature = "zstd")]
+                Zstd(w) => w.get_mut().get_mut(),
+                #[cfg(feature = "xz")]
+                Xz(w) => w.inner_mut().get_mut(),
+                #[cfg(feature = "ppmd")]
+                Ppmd(w) => w.get_mut().get_mut(),
+            }
         }
     }
 }
@@ -2379,6 +2447,16 @@ impl<W: Write> StreamWriter<W> {
             inner,
             bytes_written: 0,
         }
+    }
+
+    /// Gets a reference to the underlying writer.
+    pub fn get_ref(&self) -> &W {
+        &self.inner
+    }
+
+    /// Gets a mutable reference to the underlying writer.
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.inner
     }
 
     /// Consumes this wrapper, returning the underlying writer.

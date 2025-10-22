@@ -267,6 +267,16 @@ impl<W: Write> AesWriter<W> {
         })
     }
 
+    /// Gets a reference to the underlying writer.
+    pub fn get_ref(&self) -> &W {
+        &self.writer
+    }
+
+    /// Gets a mutable reference to the underlying writer.
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
     pub fn finish(mut self) -> io::Result<W> {
         self.write_encrypted_file_header()?;
 
