@@ -91,7 +91,7 @@ where
     pub fn new(key: &[u8]) -> AesCtrZipKeyStream<C> {
         AesCtrZipKeyStream {
             counter: 1,
-            cipher: C::Cipher::new(key.into()),
+            cipher: C::Cipher::new(key.try_into().expect("invalid key length")),
             buffer: [0u8; AES_BLOCK_SIZE],
             pos: AES_BLOCK_SIZE,
         }
