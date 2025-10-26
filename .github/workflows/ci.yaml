@@ -1,6 +1,7 @@
 name: CI
 permissions:
   contents: read
+  security-events: write
 
 on:
   pull_request:
@@ -130,8 +131,15 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
+    - name: Install required cargo
+      run: cargo install clippy-sarif sarif-fmt
     - run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings
+    - name: Upload analysis results to GitHub
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: rust-clippy-results.sarif
+        wait-for-processing: true
     - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   fuzz_read:
