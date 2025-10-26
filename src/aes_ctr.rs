@@ -5,7 +5,6 @@
 //! See [AesCtrZipKeyStream] for more information.
 
 use crate::unstable::LittleEndianWriteExt;
-use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockEncrypt, KeyInit};
 use std::{any, fmt};
 
@@ -92,7 +91,7 @@ where
     pub fn new(key: &[u8]) -> AesCtrZipKeyStream<C> {
         AesCtrZipKeyStream {
             counter: 1,
-            cipher: C::Cipher::new(GenericArray::from_slice(key)),
+            cipher: C::Cipher::new(key.into()),
             buffer: [0u8; AES_BLOCK_SIZE],
             pos: AES_BLOCK_SIZE,
         }
@@ -114,8 +113,7 @@ where
                     .as_mut()
                     .write_u128_le(self.counter)
                     .expect("did not expect u128 le conversion to fail");
-                self.cipher
-                    .encrypt_block(GenericArray::from_mut_slice(&mut self.buffer));
+                self.cipher.encrypt_block(&mut self.buffer);
                 self.counter += 1;
                 self.pos = 0;
             }
