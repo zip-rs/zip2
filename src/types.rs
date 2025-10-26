@@ -152,7 +152,7 @@ impl DateTime {
     }
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
         let year: u16 = u.int_in_range(1980..=2107)?;
@@ -1235,7 +1235,7 @@ pub enum AesVendorVersion {
 
 /// AES variant used.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum AesMode {
     /// 128-bit AES encryption.
