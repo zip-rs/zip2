@@ -175,6 +175,7 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
 
             if let Some(offset) = self.finder.find(window) {
                 let magic_pos = window_start + window_start_offset as u64 + offset as u64;
+                eprintln!("DEBUG: MagicFinder found signature at position {}", magic_pos);
                 reader.seek(SeekFrom::Start(magic_pos))?;
 
                 self.mid_buffer_offset = Some(self.finder.move_scope(window_start_offset + offset));
@@ -199,6 +200,7 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
             }
         }
 
+        eprintln!("DEBUG: MagicFinder exhausted search without finding signature");
         Ok(None)
     }
 }

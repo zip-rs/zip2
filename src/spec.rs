@@ -615,12 +615,19 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
     // Keep the last errors for cases of improper EOCD instances.
     let mut parsing_error = None;
+    
+    eprintln!("DEBUG: Searching for EOCD in range 0..{}, file_len={}", end_exclusive, file_len);
 
     while let Some(eocd_offset) = eocd_finder.next(reader)? {
+        eprintln!("DEBUG: Found EOCD signature at offset {}", eocd_offset);
         // Attempt to parse the EOCD block
         let eocd = match Zip32CentralDirectoryEnd::parse(reader) {
-            Ok(eocd) => eocd,
+            Ok(eocd) => {
+                eprintln!("DEBUG: Successfully parsed EOCD at offset {}", eocd_offset);
+                eocd
+            },
             Err(e) => {
+                eprintln!("DEBUG: Failed to parse EOCD at offset {}: {}", eocd_offset, e);
                 if parsing_error.is_none() {
                     parsing_error = Some(e);
                 }
@@ -631,6 +638,8 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
         // ! Relaxed (inequality) due to garbage-after-comment Python files
         // Consistency check: the EOCD comment must terminate before the end of file
         if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 > file_len {
+            eprintln!("DEBUG: EOCD comment length validation failed at offset {}: comment_len={}, eocd_offset={}, file_len={}", 
+                     eocd_offset, eocd.zip_file_comment.len(), eocd_offset, file_len);
             parsing_error = Some(invalid!("Invalid EOCD comment length"));
             continue;
         }
@@ -799,6 +808,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
         parsing_error = local_error.or(Some(invalid!("Could not find EOCD64")));
     }
 
+    eprintln!("DEBUG: No valid EOCD found, final parsing_error: {:?}", parsing_error);
     Err(parsing_error.unwrap_or(invalid!("Could not find EOCD")))
 }
 
