@@ -637,6 +637,20 @@ impl ZipFileData {
         }
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn is_symlink(&self) -> bool {
+        self.unix_mode()
+            /* TODO: could this just be != 0? */
+            .is_some_and(|mode| mode & ffi::S_IFLNK == ffi::S_IFLNK)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_dir_by_mode(&self) -> bool {
+        self.unix_mode()
+            /* TODO: could this just be != 0? */
+            .is_some_and(|mode| mode & ffi::S_IFDIR == ffi::S_IFDIR)
+    }
+
     /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
     pub fn version_needed(&self) -> u16 {
         let compression_version: u16 = match self.compression_method {
