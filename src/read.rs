@@ -658,26 +658,21 @@ impl<R: Read + Seek> ZipArchive<R> {
             ) {
                 Ok(cde) => cde,
                 Err(e) => {
-                    if let Some(previous_error) = last_err {
-                        return Err(previous_error);
-                    }
-                    return Err(e);
+                    // return the previous error first (if there is)
+                    return Err(last_err.unwrap_or(e));
                 }
             };
 
             // Turn EOCD into internal representation.
-            match CentralDirectoryInfo::try_from(&cde) {
-                Ok(info) => match Self::read_central_header(info, config, reader) {
-                    Ok(shared) => {
-                        return Ok(shared.build(
-                            cde.eocd.data.zip_file_comment,
-                            cde.eocd64.map(|v| v.data.extensible_data_sector),
-                        ));
-                    }
-                    Err(e) => {
-                        last_err = Some(e);
-                    }
-                },
+            match CentralDirectoryInfo::try_from(&cde)
+                .and_then(|info| Self::read_central_header(info, config, reader))
+            {
+                Ok(shared) => {
+                    return Ok(shared.build(
+                        cde.eocd.data.zip_file_comment,
+                        cde.eocd64.map(|v| v.data.extensible_data_sector),
+                    ));
+                }
                 Err(e) => {
                     last_err = Some(e);
                 }
