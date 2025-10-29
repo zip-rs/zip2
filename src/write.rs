@@ -13,20 +13,20 @@ use crate::types::{
     ZipRawValues, MIN_VERSION,
 };
 use crate::write::ffi::S_IFLNK;
+use core::default::Default;
+use core::fmt::{Debug, Formatter};
+use core::marker::PhantomData;
+use core::mem;
 #[cfg(feature = "deflate-zopfli")]
 use core::num::NonZeroU64;
+use core::str::{from_utf8, Utf8Error};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
 use std::borrow::ToOwned;
-use std::default::Default;
-use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
-use std::marker::PhantomData;
-use std::mem;
-use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
 #[cfg(feature = "deflate-flate2")]
@@ -40,7 +40,6 @@ use zopfli::Options;
 
 #[cfg(feature = "deflate-zopfli")]
 use std::io::BufWriter;
-use std::mem::size_of;
 use std::path::Path;
 
 #[cfg(feature = "zstd")]
@@ -703,7 +702,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.is_utf8 = !dest_name.is_ascii();
         new_data.header_start = write_position;
         let extra_data_start = write_position
-            + size_of::<ZipLocalEntryBlock>() as u64
+            + mem::size_of::<ZipLocalEntryBlock>() as u64
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         let mut data_start = extra_data_start;
@@ -961,8 +960,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             ),
             _ => (options.compression_method, None),
         };
-        let header_end =
-            header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
+        let header_end = header_start
+            + mem::size_of::<ZipLocalEntryBlock>() as u64
+            + name.to_string().len() as u64;
 
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
@@ -1535,7 +1535,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writer.seek(SeekFrom::Start(central_start))?;
             writer.write_u32_le(0)?;
             writer.seek(SeekFrom::Start(
-                footer_end - size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64,
+                footer_end - mem::size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64,
             ))?;
             writer.write_u32_le(0)?;
 
@@ -2113,7 +2113,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     ))?;
 
     let zip64_extra_field_start = file.header_start
-        + size_of::<ZipLocalEntryBlock>() as u64
+        + mem::size_of::<ZipLocalEntryBlock>() as u64
         + file.file_name_raw.len() as u64;
 
     writer.seek(SeekFrom::Start(zip64_extra_field_start))?;

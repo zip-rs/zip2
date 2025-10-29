@@ -17,20 +17,18 @@ use crate::types::{
 use crate::write::SimpleFileOptions;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use crate::ZIP64_BYTES_THR;
+use core::mem::{replace, size_of};
+use core::ops::{Deref, Range};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
-use std::mem;
-use std::mem::size_of;
-use std::ops::{Deref, Range};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 mod config;
 
-pub use config::*;
+pub use config::{Config, ArchiveOffset};
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
@@ -313,7 +311,8 @@ impl<R: Read> Read for SeekableTake<'_, R> {
 }
 
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
-    create_dir_all(outpath.as_ref())?;
+    use std::fs;
+    fs::create_dir_all(outpath.as_ref())?;
     #[cfg(unix)]
     {
         // Dirs must be writable until all normal files are extracted
@@ -854,7 +853,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<()> {
         use std::fs;
 
-        create_dir_all(&directory)?;
+        fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
         let root_dir = root_dir_filter
@@ -1603,7 +1602,7 @@ impl<'a> ZipReadOptions<'a> {
 /// Methods for retrieving information on zip files
 impl<'a, R: Read> ZipFile<'a, R> {
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
-        mem::replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
+        replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
     }
 
     /// Get the version of the file
