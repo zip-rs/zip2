@@ -682,6 +682,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     last_err = Some(e);
                 }
             };
+            // Something went wrong while decoding the cde, try to find a new one
             end_exclusive = cde.eocd.position;
             continue;
         }
