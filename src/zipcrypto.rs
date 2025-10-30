@@ -163,6 +163,16 @@ pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) keys: ZipCryptoKeys,
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
+    /// Gets a reference to the underlying writer.
+    pub fn get_ref(&self) -> &W {
+        &self.writer
+    }
+
+    /// Gets a mutable reference to the underlying writer.
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
     #[allow(unused)]
     pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
         self.buffer[11] = (crc32 >> 24) as u8;
