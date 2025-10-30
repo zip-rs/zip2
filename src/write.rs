@@ -2058,7 +2058,6 @@ fn update_local_file_header<T: Write + Seek>(
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
-            println!("EEE");
             return Err(ZipError::Io(io::Error::other(
                 "Large file option has not been set",
             )));
