@@ -603,7 +603,12 @@ impl ZipFileData {
         let mut depth = 0usize;
         for component in path.components() {
             match component {
-                Component::Prefix(_) | Component::RootDir => return None,
+                Component::Prefix(_) | Component::RootDir => {
+                    if depth > 0 {
+                        return None;
+                    }
+                    // else absolute path becomes relative to destination instead
+                }
                 Component::ParentDir => depth = depth.checked_sub(1)?,
                 Component::Normal(_) => depth += 1,
                 Component::CurDir => (),
