@@ -956,17 +956,25 @@ impl ZipFileData {
         )
     }
 
-    pub(crate) fn data_descriptor_block(&self) -> Option<ZipDataDescriptorBlock> {
+    pub(crate) fn write_data_descriptor<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> Result<(), ZipError> {
         if self.large_file {
-            return None;
+            return self.zip64_data_descriptor_block().write(writer);
+        } else {
+            self.data_descriptor_block().write(writer)?;
         }
+        Ok(())
+    }
 
-        Some(ZipDataDescriptorBlock {
+    pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
+        ZipDataDescriptorBlock {
             magic: ZipDataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size as u32,
             uncompressed_size: self.uncompressed_size as u32,
-        })
+        }
     }
 
     pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
