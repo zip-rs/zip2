@@ -962,10 +962,8 @@ impl ZipFileData {
     ) -> Result<(), ZipError> {
         if self.large_file {
             return self.zip64_data_descriptor_block().write(writer);
-        } else {
-            self.data_descriptor_block().write(writer)?;
         }
-        Ok(())
+        self.data_descriptor_block().write(writer)
     }
 
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
