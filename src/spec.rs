@@ -122,8 +122,6 @@ impl ExtraFieldMagic {
 ///     assert_eq!(description, "Large file option has not been set");
 ///     // Attempting to write anything further to the same zip will still succeed, but the previous
 ///     // failing entry has been removed.
-///     let options = SimpleFileOptions::default()
-///         .compression_method(zip::CompressionMethod::Stored);
 ///     zip.start_file("one.dat", options)?;
 ///     let zip = zip.finish_into_readable()?;
 ///     let names: Vec<_> = zip.file_names().collect();
