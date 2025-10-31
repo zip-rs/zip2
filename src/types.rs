@@ -964,7 +964,7 @@ impl ZipFileData {
         if self.large_file {
             return self.zip64_data_descriptor_block().write(writer);
         }
-        if self.compressed_size > spec::ZIP64_BYTES_THR {
+        if self.compressed_size > spec::ZIP64_BYTES_THR || self.uncompressed_size > spec::ZIP64_BYTES_THR {
             if auto_large_file {
                 return self.zip64_data_descriptor_block().write(writer);
             }
