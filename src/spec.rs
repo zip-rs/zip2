@@ -111,23 +111,28 @@ impl ExtraFieldMagic {
 ///
 /// let big_len: usize = (zip::ZIP64_BYTES_THR as usize) + 1;
 /// let big_buf = vec![0u8; big_len];
+/// {
 /// zip.start_file("zero.dat", options)?;
 /// // This is too big!
 /// let res = zip.write_all(&big_buf[..]).err().unwrap();
 /// assert_eq!(res.kind(), io::ErrorKind::Other);
 /// let description = format!("{}", &res);
 /// assert_eq!(description, "Large file option has not been set");
+/// }
+/// {
 /// // Attempting to write anything further to the same zip will still succeed, but the previous
 /// // failing entry has been removed.
 /// zip.start_file("one.dat", options)?;
 /// let zip = zip.finish_into_readable()?;
 /// let names: Vec<_> = zip.file_names().collect();
 /// assert_eq!(&names, &["one.dat"]);
+/// }
 ///
 /// // Create a new zip output.
 /// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
 /// // This time, create a zip64 record for the file.
-/// let options = options.large_file(true);
+/// let options = SimpleFileOptions::default()
+///      .compression_method(zip::CompressionMethod::Stored).large_file(true);
 /// zip.start_file("zero.dat", options)?;
 /// // This succeeds because we specified that it could be a large file.
 /// assert!(zip.write_all(&big_buf[..]).is_ok());

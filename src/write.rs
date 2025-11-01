@@ -1075,7 +1075,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             };
             update_aes_extra_data(writer, file)?;
             if file.using_data_descriptor {
-                write_data_descriptor(writer, file)?;
+                file.write_data_descriptor(writer)?;
             } else {
                 update_local_file_header(writer, file)?;
                 writer.seek(SeekFrom::Start(file_end))?;
@@ -2000,23 +2000,6 @@ fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData
     let aes_extra_data_start = file.aes_extra_data_start as usize;
     let extra_field = Arc::get_mut(file.extra_field.as_mut().unwrap()).unwrap();
     extra_field[aes_extra_data_start..aes_extra_data_start + buf.len()].copy_from_slice(&buf);
-
-    Ok(())
-}
-
-fn write_data_descriptor<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    if let Some(block) = file.data_descriptor_block() {
-        block.write(writer)?;
-    } else {
-        // check compressed size as well as it can also be slightly larger than uncompressed size
-        if file.compressed_size > spec::ZIP64_BYTES_THR {
-            return Err(ZipError::Io(io::Error::other(
-                "Large file option has not been set",
-            )));
-        }
-
-        file.zip64_data_descriptor_block().write(writer)?;
-    }
 
     Ok(())
 }
