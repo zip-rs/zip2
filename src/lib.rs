@@ -15,20 +15,20 @@
 //!
 //! This is a list of supported features:
 //!
-//! |         | Reading | Writing |
-//! | ------- | ------  | ------- |
-//! | Stored | ✅ | ✅ |
-//! | Deflate | ✅ [->](`crate::ZipArchive::by_name`)      | ✅ [->](`crate::write::FileOptions::compression_method`) |
-//! | Deflate64 | ✅ | |
-//! | Bzip2 | ✅ | ✅ |
-//! | ZStandard | ✅ | ✅ |
-//! | LZMA | ✅ | |
-//! | XZ | ✅ | ✅ |
-//! | PPMd | ✅ | ✅ |
-//! | AES encryption | ✅ | ✅ |
-//! | ZipCrypto deprecated encryption | ✅ | ✅ |
+//! |                                 | Reading                               | Writing                                                  |
+//! | ------------------------------- | ------------------------------------- | -------------------------------------------------------- |
+//! | Stored                          | ✅                                    | ✅                                                       |
+//! | Deflate                         | ✅ [->](`crate::ZipArchive::by_name`) | ✅ [->](`crate::write::FileOptions::compression_method`) |
+//! | Deflate64                       | ✅                                    |                                                          |
+//! | Bzip2                           | ✅                                    | ✅                                                       |
+//! | ZStandard                       | ✅                                    | ✅                                                       |
+//! | LZMA                            | ✅                                    |                                                          |
+//! | XZ                              | ✅                                    | ✅                                                       |
+//! | PPMd                            | ✅                                    | ✅                                                       |
+//! | AES encryption                  | ✅                                    | ✅                                                       |
+//! | ZipCrypto deprecated encryption | ✅                                    | ✅                                                       |
 //!
-//!
+
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06

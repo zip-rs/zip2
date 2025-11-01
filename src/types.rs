@@ -1,13 +1,12 @@
 //! Types that specify what is contained in a ZIP.
 use crate::cp437::FromCp437;
-use crate::write::{FileOptionExtension, FileOptions};
-use path::{Component, Path, PathBuf};
-use std::cmp::Ordering;
+use crate::write::FileOptionExtension;
+use crate::zipcrypto::EncryptWith;
+use core::cmp::Ordering;
+use core::fmt::{self, Debug, Formatter};
+use core::mem;
 use std::ffi::OsStr;
-use std::fmt;
-use std::fmt::{Debug, Formatter};
-use std::mem;
-use std::path;
+use std::path::{Component, MAIN_SEPARATOR, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
@@ -68,6 +67,25 @@ impl From<System> for u8 {
         }
     }
 }
+
+/// Metadata for a file to be written
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub struct FileOptions<'k, T: FileOptionExtension> {
+    pub(crate) compression_method: CompressionMethod,
+    pub(crate) compression_level: Option<i64>,
+    pub(crate) last_modified_time: DateTime,
+    pub(crate) permissions: Option<u32>,
+    pub(crate) large_file: bool,
+    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
+    pub(crate) extended_options: T,
+    pub(crate) alignment: u16,
+    #[cfg(feature = "deflate-zopfli")]
+    pub(super) zopfli_buffer_size: Option<usize>,
+    #[cfg(feature = "aes-crypto")]
+    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+}
+/// Simple File Options. Can be copied and good for simple writing zip files
+pub type SimpleFileOptions = FileOptions<'static, ()>;
 
 /// Representation of a moment in time.
 ///
@@ -569,7 +587,7 @@ impl ZipFileData {
         // zip files can contain both / and \ as separators regardless of the OS
         // and as we want to return a sanitized PathBuf that only supports the
         // OS separator let's convert incompatible separators to compatible ones
-        let separator = path::MAIN_SEPARATOR;
+        let separator = MAIN_SEPARATOR;
         let opposite_separator = match separator {
             '/' => '\\',
             _ => '/',

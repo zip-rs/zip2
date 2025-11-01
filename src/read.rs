@@ -14,7 +14,7 @@ use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
 };
-use crate::write::SimpleFileOptions;
+use crate::types::SimpleFileOptions;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use crate::ZIP64_BYTES_THR;
 use core::mem::{replace, size_of};
@@ -2111,7 +2111,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 mod test {
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
-    use crate::write::SimpleFileOptions;
+    use crate::types::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Read, Write};

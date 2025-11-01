@@ -2,11 +2,11 @@
 #![allow(non_local_definitions)]
 //! Error types that can be emitted from this library
 
+use core::error::Error;
+use core::fmt::{self, Display, Formatter};
+use core::num::TryFromIntError;
 use std::borrow::Cow;
-use std::error::Error;
-use std::fmt::{self, Display, Formatter};
 use std::io;
-use std::num::TryFromIntError;
 use std::string::FromUtf8Error;
 
 /// Generic result type with ZipError as its error variant

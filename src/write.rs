@@ -45,6 +45,9 @@ use std::path::Path;
 #[cfg(feature = "zstd")]
 use zstd::stream::write::Encoder as ZstdEncoder;
 
+// re-export from types
+pub use crate::types::{FileOptions, SimpleFileOptions};
+
 enum MaybeEncrypted<W> {
     Unencrypted(W),
     #[cfg(feature = "aes-crypto")]
@@ -188,7 +191,7 @@ use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
-use crate::zipcrypto::ZipCryptoKeys;
+use crate::zipcrypto::{EncryptWith, ZipCryptoKeys};
 use crate::CompressionMethod::Stored;
 pub use zip_writer::ZipWriter;
 
@@ -234,52 +237,6 @@ mod sealed {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum EncryptWith<'k> {
-    #[cfg(feature = "aes-crypto")]
-    Aes {
-        mode: AesMode,
-        password: &'k str,
-    },
-    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
-}
-
-#[cfg(fuzzing)]
-impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        #[cfg(feature = "aes-crypto")]
-        if bool::arbitrary(u)? {
-            return Ok(EncryptWith::Aes {
-                mode: AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&str>()?,
-            });
-        }
-
-        Ok(EncryptWith::ZipCrypto(
-            ZipCryptoKeys::arbitrary(u)?,
-            PhantomData,
-        ))
-    }
-}
-
-/// Metadata for a file to be written
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub struct FileOptions<'k, T: FileOptionExtension> {
-    pub(crate) compression_method: CompressionMethod,
-    pub(crate) compression_level: Option<i64>,
-    pub(crate) last_modified_time: DateTime,
-    pub(crate) permissions: Option<u32>,
-    pub(crate) large_file: bool,
-    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
-    pub(crate) extended_options: T,
-    pub(crate) alignment: u16,
-    #[cfg(feature = "deflate-zopfli")]
-    pub(super) zopfli_buffer_size: Option<usize>,
-    #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-}
-/// Simple File Options. Can be copied and good for simple writing zip files
-pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
@@ -960,9 +917,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             ),
             _ => (options.compression_method, None),
         };
-        let header_end = header_start
-            + size_of::<ZipLocalEntryBlock>() as u64
-            + name.to_string().len() as u64;
+        let header_end =
+            header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
 
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;

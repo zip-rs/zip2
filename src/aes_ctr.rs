@@ -7,7 +7,7 @@
 use crate::unstable::LittleEndianWriteExt;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockEncrypt, KeyInit};
-use std::{any, fmt};
+use core::{any, fmt};
 
 /// Internal block size of an AES cipher.
 const AES_BLOCK_SIZE: usize = 16;
