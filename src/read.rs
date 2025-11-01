@@ -6,17 +6,15 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
-use crate::read::zip_archive::{Shared, SharedBuilder};
-use crate::result::invalid;
-use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
-use crate::types::SimpleFileOptions;
+use crate::result::{invalid, ZipError, ZipResult};
+use crate::spec::{
+    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR,
+};
 use crate::types::{
-    AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
-    ZipLocalEntryBlock,
+    AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
+    ZipFileData, ZipLocalEntryBlock,
 };
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
-use crate::ZIP64_BYTES_THR;
 use core::mem::{replace, size_of};
 use core::ops::{Deref, Range};
 use indexmap::IndexMap;
@@ -544,7 +542,7 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
-        let shared = Arc::new(Shared {
+        let shared = Arc::new(zip_archive::Shared {
             files,
             offset: initial_offset,
             dir_start: central_start,
@@ -641,7 +639,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
+    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<zip_archive::Shared> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(io::SeekFrom::End(0))?;
         let mut end_exclusive = file_len;
@@ -675,7 +673,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         dir_info: CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
-    ) -> Result<SharedBuilder, ZipError> {
+    ) -> Result<zip_archive::SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
         let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
@@ -699,7 +697,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             files.push(file);
         }
 
-        Ok(SharedBuilder {
+        Ok(zip_archive::SharedBuilder {
             files,
             offset: dir_info.archive_offset,
             dir_start: dir_info.directory_start,

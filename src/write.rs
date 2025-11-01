@@ -6,13 +6,13 @@ use crate::compression::CompressionMethod;
 use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
+use crate::types::ffi::S_IFLNK;
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
     ffi, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock,
     ZipRawValues, MIN_VERSION,
 };
-use crate::write::ffi::S_IFLNK;
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
@@ -23,8 +23,7 @@ use core::str::{from_utf8, Utf8Error};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
 use std::borrow::ToOwned;
-use std::io;
-use std::io::prelude::*;
+use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
 use std::sync::Arc;
@@ -132,7 +131,16 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
-    use super::*;
+    use core::fmt::{Debug, Formatter};
+    use std::io::{Seek, Write};
+
+    use indexmap::IndexMap;
+
+    use crate::{
+        types::ZipFileData,
+        write::{GenericZipWriter, ZipWriterStats},
+    };
+
     /// ZIP archive generator
     ///
     /// Handles the bookkeeping involved in building an archive, and provides an
@@ -717,7 +725,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # {
-    /// use std::io::{Cursor, prelude::*};
+    /// use std::io::{Cursor, Read, Write};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
     /// let buf = Cursor::new(Vec::new());
@@ -1167,7 +1175,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # {
-    /// use std::io::{Cursor, prelude::*};
+    /// use std::io::{Cursor, Write, Read};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
     /// let buf = Cursor::new(Vec::new());

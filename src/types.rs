@@ -1298,7 +1298,6 @@ mod test {
 
     #[test]
     fn sanitize() {
-        use super::*;
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
         let data = ZipFileData {
             system: System::Dos,
@@ -1462,8 +1461,12 @@ mod test {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
+    use std::{path::PathBuf, sync::OnceLock};
+
     #[cfg(feature = "time")]
     use time::{format_description::well_known::Rfc3339, OffsetDateTime, PrimitiveDateTime};
+
+    use crate::types::{System, ZipFileData};
 
     #[cfg(feature = "time")]
     #[test]

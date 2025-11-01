@@ -210,11 +210,13 @@ impl ZipStreamFileMetadata {
 mod test {
     use tempfile::TempDir;
 
-    use super::*;
+    use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
+    use crate::read::ZipFile;
+    use crate::result::ZipResult;
     use crate::write::SimpleFileOptions;
     use crate::ZipWriter;
     use std::collections::BTreeSet;
-    use std::io::Cursor;
+    use std::io::{Cursor, Read};
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {
@@ -250,7 +252,7 @@ mod test {
 
     #[test]
     fn invalid_offset() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_offset.zip"
         )))
         .visit(&mut DummyVisitor)
@@ -259,7 +261,7 @@ mod test {
 
     #[test]
     fn invalid_offset2() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_offset2.zip"
         )))
         .visit(&mut DummyVisitor)
@@ -268,9 +270,8 @@ mod test {
 
     #[test]
     fn zip_read_streaming() {
-        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
-            "../../tests/data/mimetype.zip"
-        )));
+        let reader =
+            ZipStreamReader::new(Cursor::new(include_bytes!("../../tests/data/mimetype.zip")));
 
         #[derive(Default)]
         struct V {
@@ -305,7 +306,7 @@ mod test {
 
     #[test]
     fn file_and_dir_predicates() {
-        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        let reader = ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/files_and_dirs.zip"
         )));
 
@@ -352,7 +353,7 @@ mod test {
     /// files declared is more than the alleged offset in the CDE
     #[test]
     fn invalid_cde_number_of_files_allocation_smaller_offset() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
         )))
         .visit(&mut DummyVisitor)
@@ -364,7 +365,7 @@ mod test {
     /// files declared is less than the alleged offset in the CDE
     #[test]
     fn invalid_cde_number_of_files_allocation_greater_offset() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
         )))
         .visit(&mut DummyVisitor)

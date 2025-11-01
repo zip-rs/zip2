@@ -4,9 +4,8 @@ use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagic
 use crate::read::ArchiveOffset;
 use crate::result::{invalid, ZipError, ZipResult};
 use core::mem;
-use std::io;
-use std::io::prelude::*;
-use std::slice;
+use core::slice;
+use std::io::{self, Read, Seek, Write};
 
 /// "Magic" header values used in the zip spec to locate metadata records.
 ///
@@ -102,7 +101,7 @@ impl ExtraFieldMagic {
 /// # fn main() -> Result<(), zip::result::ZipError> {
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// use std::io::{self, Cursor, prelude::*};
+/// use std::io::{self, Cursor, Write};
 /// use std::error::Error;
 /// use zip::{ZipWriter, write::SimpleFileOptions};
 ///
@@ -811,8 +810,12 @@ pub(crate) fn is_dir(filename: &str) -> bool {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::io::Cursor;
+
+    use crate::{
+        result::{invalid, ZipError},
+        spec::{FixedSizeBlock, Magic, Pod},
+    };
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
     #[repr(packed, C)]
