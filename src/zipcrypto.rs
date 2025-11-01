@@ -3,11 +3,42 @@
 //! The following paper was used to implement the ZipCrypto algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
-use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
-use std::num::Wrapping;
+use core::fmt::{Debug, Formatter};
+use core::hash::Hash;
+use core::marker::PhantomData;
+use core::num::Wrapping;
 
 use crate::result::ZipError;
+#[cfg(feature = "aes-crypto")]
+use crate::AesMode;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EncryptWith<'k> {
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        mode: AesMode,
+        password: &'k str,
+    },
+    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
+}
+
+#[cfg(fuzzing)]
+impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        #[cfg(feature = "aes-crypto")]
+        if bool::arbitrary(u)? {
+            return Ok(EncryptWith::Aes {
+                mode: AesMode::arbitrary(u)?,
+                password: u.arbitrary::<&str>()?,
+            });
+        }
+
+        Ok(EncryptWith::ZipCrypto(
+            ZipCryptoKeys::arbitrary(u)?,
+            PhantomData,
+        ))
+    }
+}
 
 /// A container to hold the current key state
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]

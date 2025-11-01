@@ -6,31 +6,27 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
-use crate::read::zip_archive::{Shared, SharedBuilder};
-use crate::result::invalid;
-use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
-use crate::types::{
-    AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
-    ZipLocalEntryBlock,
+use crate::result::{invalid, ZipError, ZipResult};
+use crate::spec::{
+    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR,
 };
-use crate::write::SimpleFileOptions;
+use crate::types::{
+    AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
+    ZipFileData, ZipLocalEntryBlock,
+};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
-use crate::ZIP64_BYTES_THR;
+use core::mem::{replace, size_of};
+use core::ops::{Deref, Range};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::fs::create_dir_all;
 use std::io::{self, copy, prelude::*, sink, SeekFrom};
-use std::mem;
-use std::mem::size_of;
-use std::ops::{Deref, Range};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 mod config;
 
-pub use config::*;
+pub use config::{ArchiveOffset, Config};
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
@@ -313,7 +309,8 @@ impl<R: Read> Read for SeekableTake<'_, R> {
 }
 
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
-    create_dir_all(outpath.as_ref())?;
+    use std::fs;
+    fs::create_dir_all(outpath.as_ref())?;
     #[cfg(unix)]
     {
         // Dirs must be writable until all normal files are extracted
@@ -545,7 +542,7 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
-        let shared = Arc::new(Shared {
+        let shared = Arc::new(zip_archive::Shared {
             files,
             offset: initial_offset,
             dir_start: central_start,
@@ -642,7 +639,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
+    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<zip_archive::Shared> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(io::SeekFrom::End(0))?;
         let mut end_exclusive = file_len;
@@ -676,7 +673,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         dir_info: CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
-    ) -> Result<SharedBuilder, ZipError> {
+    ) -> Result<zip_archive::SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
         let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
@@ -700,7 +697,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             files.push(file);
         }
 
-        Ok(SharedBuilder {
+        Ok(zip_archive::SharedBuilder {
             files,
             offset: dir_info.archive_offset,
             dir_start: dir_info.directory_start,
@@ -854,7 +851,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<()> {
         use std::fs;
 
-        create_dir_all(&directory)?;
+        fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
         let root_dir = root_dir_filter
@@ -1603,7 +1600,7 @@ impl<'a> ZipReadOptions<'a> {
 /// Methods for retrieving information on zip files
 impl<'a, R: Read> ZipFile<'a, R> {
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
-        mem::replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
+        replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
     }
 
     /// Get the version of the file
@@ -2112,7 +2109,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 mod test {
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
-    use crate::write::SimpleFileOptions;
+    use crate::types::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Read, Write};
