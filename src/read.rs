@@ -10,11 +10,11 @@ use crate::read::zip_archive::{Shared, SharedBuilder};
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
+use crate::types::SimpleFileOptions;
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
     ZipLocalEntryBlock,
 };
-use crate::types::SimpleFileOptions;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use crate::ZIP64_BYTES_THR;
 use core::mem::{replace, size_of};
@@ -28,7 +28,7 @@ use std::sync::{Arc, OnceLock};
 
 mod config;
 
-pub use config::{Config, ArchiveOffset};
+pub use config::{ArchiveOffset, Config};
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;

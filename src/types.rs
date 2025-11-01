@@ -6,7 +6,7 @@ use core::cmp::Ordering;
 use core::fmt::{self, Debug, Formatter};
 use core::mem;
 use std::ffi::OsStr;
-use std::path::{Component, MAIN_SEPARATOR, Path, PathBuf};
+use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
