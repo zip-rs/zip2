@@ -120,7 +120,7 @@ pub trait ZipStreamVisitor {
     ///     - `external_attributes`: `unix_mode()`: will return None
     fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()>;
 
-    /// This function is guranteed to be called after all `visit_file`s.
+    /// This function is guaranteed to be called after all `visit_file`s.
     ///
     ///  * `metadata` - Provides missing metadata in `visit_file`.
     fn visit_additional_metadata(&mut self, metadata: &ZipStreamFileMetadata) -> ZipResult<()>;

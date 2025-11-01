@@ -153,7 +153,7 @@ mod tests {
     use aes::cipher::{BlockEncrypt, KeyInit};
 
     /// Checks whether `crypt_in_place` produces the correct plaintext after one use and yields the
-    /// cipertext again after applying it again.
+    /// ciphertext again after applying it again.
     fn roundtrip<Aes>(key: &[u8], ciphertext: &[u8], expected_plaintext: &[u8])
     where
         Aes: AesKind,
