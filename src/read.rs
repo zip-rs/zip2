@@ -85,7 +85,7 @@ pub(crate) mod zip_archive {
     /// change in the future.
     ///
     /// ```no_run
-    /// use std::io::prelude::*;
+    /// use std::io::{Read, Seek};
     /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
     ///     use zip::HasZipMetadata;
     ///     let mut zip = zip::ZipArchive::new(reader)?;
