@@ -1,4 +1,4 @@
-use std::io::prelude::*;
+use std::io::Write;
 use zip::write::SimpleFileOptions;
 #[cfg(feature = "aes-crypto")]
 use zip::{AesMode, CompressionMethod};
