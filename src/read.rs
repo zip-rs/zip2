@@ -20,7 +20,7 @@ use core::ops::{Deref, Range};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::io::{self, copy, prelude::*, sink, SeekFrom};
+use std::io::{self, copy, sink, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
