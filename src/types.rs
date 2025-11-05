@@ -702,8 +702,15 @@ impl ZipFileData {
         let permissions = options.permissions.unwrap_or(0o100644);
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let system = if cfg!(windows) {
+            System::Dos
+        } else if cfg!(linux) {
+            System::Unix
+        } else {
+            System::Unknown
+        };
         let mut local_block = ZipFileData {
-            system: System::Unix,
+            system: system,
             version_made_by: DEFAULT_VERSION,
             flags: 0,
             encrypted: options.encrypt_with.is_some() || {
