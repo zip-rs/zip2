@@ -704,10 +704,8 @@ impl ZipFileData {
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
         let system = if cfg!(windows) {
             System::Dos
-        } else if cfg!(linux) {
-            System::Unix
         } else {
-            System::Unknown
+            System::Unix
         };
         let mut local_block = ZipFileData {
             system: system,
