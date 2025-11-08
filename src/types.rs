@@ -136,6 +136,12 @@ impl PartialOrd for DateTime {
 }
 
 impl DateTime {
+    /// Constructs an 'default' datetime of 1980-01-01 00:00:00
+    pub const DEFAULT: Self = DateTime {
+        datepart: 0b0000000000100001,
+        timepart: 0,
+    };
+
     /// Returns the current time if possible, otherwise the default of 1980-01-01.
     #[cfg(feature = "time")]
     pub fn default_for_write() -> Self {
@@ -256,10 +262,7 @@ impl From<DateTime> for (u16, u16) {
 impl Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
-        DateTime {
-            datepart: 0b0000000000100001,
-            timepart: 0,
-        }
+        DateTime::DEFAULT
     }
 }
 

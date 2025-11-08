@@ -558,6 +558,27 @@ impl FileOptions<'_, ExtendedFileOptions> {
         self
     }
 }
+impl FileOptions<'static, ()> {
+    /// Constructs a const FileOptions object.
+    ///
+    /// Note: This value is different than the return value of [`FileOptions::default()`]:
+    /// - The `last_modified_time` is [`DateTime::DEFAULT`]. This corresponds to 1980-01-01 00:00:00
+    pub const DEFAULT: Self = Self {
+        compression_method: CompressionMethod::DEFAULT,
+        compression_level: None,
+        last_modified_time: DateTime::DEFAULT,
+        large_file: false,
+        permissions: None,
+        encrypt_with: None,
+        extended_options: (),
+        alignment: 1,
+        #[cfg(feature = "deflate-zopfli")]
+        zopfli_buffer_size: Some(1 << 15),
+        #[cfg(feature = "aes-crypto")]
+        aes_mode: None,
+    };
+}
+
 impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
     /// Construct a new FileOptions object
     fn default() -> Self {
