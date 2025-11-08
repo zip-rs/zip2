@@ -136,7 +136,7 @@ impl PartialOrd for DateTime {
 }
 
 impl DateTime {
-    /// Constructs an 'default' datetime of 1980-01-01 00:00:00
+    /// Constructs a default datetime of 1980-01-01 00:00:00.
     pub const DEFAULT: Self = DateTime {
         datepart: 0b0000000000100001,
         timepart: 0,

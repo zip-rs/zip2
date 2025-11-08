@@ -142,10 +142,10 @@ impl CompressionMethod {
     #[cfg(feature = "_deflate-any")]
     pub const DEFAULT: Self = CompressionMethod::Deflated;
 
-    #[cfg(all(not(feature = "_deflate-any"), feature = "bzip"))]
+    #[cfg(all(not(feature = "_deflate-any"), feature = "bzip2"))]
     pub const DEFAULT: Self = CompressionMethod::Bzip2;
 
-    #[cfg(all(not(feature = "_deflate-any"), not(feature = "bzip")))]
+    #[cfg(all(not(feature = "_deflate-any"), not(feature = "bzip2")))]
     pub const DEFAULT: Self = CompressionMethod::Stored;
 }
 impl CompressionMethod {
