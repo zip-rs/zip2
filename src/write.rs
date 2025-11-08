@@ -431,10 +431,9 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 
     /// Set the compression method for the new file
     ///
-    /// The default is `CompressionMethod::Deflated` if it is enabled. If not,
-    /// `CompressionMethod::Bzip2` is the default if it is enabled. If neither `bzip2` nor `deflate`
-    /// is enabled, `CompressionMethod::Zlib` is the default. If all else fails,
-    /// `CompressionMethod::Stored` becomes the default and files are written uncompressed.
+    /// The default is [`CompressionMethod::Deflated`] if it is enabled. If not,
+    /// [`CompressionMethod::Bzip2`] is the default if it is enabled. If neither `bzip2` nor `deflate`
+    /// is enabled, [`CompressionMethod::Stored`] becomes the default and files are written uncompressed.
     #[must_use]
     pub const fn compression_method(mut self, method: CompressionMethod) -> Self {
         self.compression_method = method;
@@ -562,6 +561,7 @@ impl FileOptions<'static, ()> {
     /// Constructs a const FileOptions object.
     ///
     /// Note: This value is different than the return value of [`FileOptions::default()`]:
+    ///
     /// - The `last_modified_time` is [`DateTime::DEFAULT`]. This corresponds to 1980-01-01 00:00:00
     pub const DEFAULT: Self = Self {
         compression_method: CompressionMethod::DEFAULT,
