@@ -77,6 +77,8 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in flate2 and the zlib backend; only use this if you need a dynamically linked system zlib
 deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
+deflate-flate2-zlib-ng = ["deflate-flate2", "flate2/zlib-ng"]
+deflate-flate2-zlib-ng-compat = ["deflate-flate2", "flate2/zlib-ng-compat"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
 jiff-02 = ["dep:jiff"]
