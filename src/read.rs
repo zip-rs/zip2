@@ -1548,14 +1548,13 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         0x7075 => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            let file_name = if let Some(pos) = file.file_name_raw.iter().rposition(|&b| b == 0x2f) {
-                // Get slice after last '/'
-                file.file_name_raw[pos + 1..].to_vec()
+            let file_name_for_crc = if let Some(pos) = file.file_name_raw.iter().rposition(|&b| b == b'/' || b == b'\\') {
+                &file.file_name_raw[pos + 1..]
             } else {
-                file.file_name_raw.to_vec()
+                &file.file_name_raw
             };
             file.file_name_raw =
-                UnicodeExtraField::try_from_reader(reader, len)?.unwrap_valid(&file_name)?;
+                UnicodeExtraField::try_from_reader(reader, len)?.unwrap_valid(file_name_for_crc)?;
             file.file_name =
                 String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
             file.is_utf8 = true;
