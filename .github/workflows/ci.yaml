@@ -1,4 +1,7 @@
 name: CI
+permissions:
+  contents: read
+  security-events: write
 
 on:
   pull_request:
@@ -32,13 +35,13 @@ jobs:
         - rustalias: stable
           rust: stable
         - rustalias: msrv
-          rust: '1.82'
+          rust: '1.83'
         - rustalias: nightly
           rust: nightly
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
     - run: cargo check --all ${{ matrix.feature_flag }} --bins --examples
@@ -56,7 +59,7 @@ jobs:
     name: 'Miri ${{ matrix.feature_flag }}'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: sudo apt install gcc-s390x-linux-gnu
     - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
     - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
@@ -71,7 +74,7 @@ jobs:
     name: 'Semver checks: ${{ matrix.feature_group }}'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           feature-group: ${{ matrix.feature_group }}
@@ -80,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
@@ -94,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly
 
       - name: resolve minimal versions
@@ -111,10 +114,17 @@ jobs:
         feature_flag: ["--all-features", "--no-default-features", ""]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-    - run: cargo clippy --all-targets ${{ matrix.feature_flag }} -- -D warnings
+    - name: Install required cargo
+      run: cargo install clippy-sarif sarif-fmt
+    - run: cargo clippy --all-targets ${{ matrix.feature_flag }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+    - name: Upload analysis results to GitHub
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: rust-clippy-results.sarif
+        wait-for-processing: true
     - run: cargo doc --no-deps ${{ matrix.feature_flag }}
 
   fuzz_read:
@@ -126,10 +136,10 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -145,11 +155,11 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
-            rename 's/:/-/g' map/*
-            rename 's/:/-/g' out_cmin/*
-            rename 's/:/-/g' out/default/crashes/*
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -178,10 +188,10 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -195,10 +205,11 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
-            rename 's/:/-/g' map/*
-            rename 's/:/-/g' out/default/crashes/*
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -222,10 +233,10 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -241,11 +252,11 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
-            rename 's/:/-/g' map/*
-            rename 's/:/-/g' out_cmin/*
-            rename 's/:/-/g' out/default/crashes/*
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -274,10 +285,10 @@ jobs:
       - miri
       - check_minimal_versions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
-      - run: cargo install cargo-afl
+      - run: cargo install cargo-afl --version 0.15.19
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -291,10 +302,11 @@ jobs:
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
       - run: sudo apt install rename
+        if: always()
       - name: Rename files
+        if: always()
         run: |
-            rename 's/:/-/g' map/*
-            rename 's/:/-/g' out/default/crashes/*
+            find . -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4

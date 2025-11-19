@@ -26,6 +26,7 @@ enum CompressionMethod {
     Stored,
     Deflated,
     Bzip2,
+    Xz,
     Zstd,
 }
 
@@ -56,6 +57,15 @@ fn real_main() -> i32 {
             }
             #[cfg(feature = "bzip2")]
             zip::CompressionMethod::Bzip2
+        }
+        CompressionMethod::Xz => {
+            #[cfg(not(feature = "xz"))]
+            {
+                println!("The `xz` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "xz")]
+            zip::CompressionMethod::Xz
         }
         CompressionMethod::Zstd => {
             #[cfg(not(feature = "zstd"))]

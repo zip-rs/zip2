@@ -440,11 +440,6 @@ impl DateTime {
 impl TryFrom<OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
-    #[allow(useless_deprecated)]
-    #[deprecated(
-        since = "2.5.0",
-        note = "use `TryFrom<PrimitiveDateTime> for DateTime` instead"
-    )]
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         Self::try_from(PrimitiveDateTime::new(dt.date(), dt.time()))
     }
@@ -470,11 +465,6 @@ impl TryFrom<PrimitiveDateTime> for DateTime {
 impl TryFrom<DateTime> for OffsetDateTime {
     type Error = ComponentRange;
 
-    #[allow(useless_deprecated)]
-    #[deprecated(
-        since = "2.5.0",
-        note = "use `TryFrom<DateTime> for PrimitiveDateTime` instead"
-    )]
     fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
         PrimitiveDateTime::try_from(dt).map(PrimitiveDateTime::assume_utc)
     }
@@ -502,6 +492,8 @@ pub struct ZipFileData {
     pub system: System,
     /// Specification version
     pub version_made_by: u8,
+    /// ZIP flags
+    pub flags: u16,
     /// True if the file is encrypted.
     pub encrypted: bool,
     /// True if file_name and file_comment are UTF8
@@ -720,7 +712,17 @@ impl ZipFileData {
         let mut local_block = ZipFileData {
             system: System::Unix,
             version_made_by: DEFAULT_VERSION,
-            encrypted: options.encrypt_with.is_some(),
+            flags: 0,
+            encrypted: options.encrypt_with.is_some() || {
+                #[cfg(feature = "aes-crypto")]
+                {
+                    options.aes_mode.is_some()
+                }
+                #[cfg(not(feature = "aes-crypto"))]
+                {
+                    false
+                }
+            },
             using_data_descriptor: false,
             is_utf8: !file_name.is_ascii(),
             compression_method,
@@ -804,6 +806,7 @@ impl ZipFileData {
             system: System::from(system),
             /* NB: this strips the top 8 bits! */
             version_made_by: version_made_by as u8,
+            flags,
             encrypted,
             using_data_descriptor,
             is_utf8,
@@ -953,17 +956,23 @@ impl ZipFileData {
         )
     }
 
-    pub(crate) fn data_descriptor_block(&self) -> Option<ZipDataDescriptorBlock> {
+    pub(crate) fn write_data_descriptor<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> Result<(), ZipError> {
         if self.large_file {
-            return None;
+            return self.zip64_data_descriptor_block().write(writer);
         }
+        self.data_descriptor_block().write(writer)
+    }
 
-        Some(ZipDataDescriptorBlock {
+    pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
+        ZipDataDescriptorBlock {
             magic: ZipDataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size as u32,
             uncompressed_size: self.uncompressed_size as u32,
-        })
+        }
     }
 
     pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
@@ -1223,7 +1232,7 @@ impl FixedSizeBlock for Zip64DataDescriptorBlock {
 ///
 /// According to the [specification](https://www.winzip.com/win/en/aes_info.html#winzip11) AE-2
 /// does not make use of the CRC check.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u16)]
 pub enum AesVendorVersion {
     Ae1 = 0x0001,
@@ -1282,6 +1291,7 @@ mod test {
         let data = ZipFileData {
             system: System::Dos,
             version_made_by: 0,
+            flags: 0,
             encrypted: false,
             using_data_descriptor: false,
             is_utf8: true,
