@@ -172,6 +172,7 @@ pub(crate) mod zip_writer {
         pub(super) zip64_comment: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
+        pub(crate) auto_large_file: bool,
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
@@ -671,6 +672,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
+            auto_large_file: false,
         })
     }
 
@@ -829,7 +831,14 @@ impl<W: Write + Seek> ZipWriter<W> {
             zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: true,
+            auto_large_file: false,
         }
+    }
+
+    /// Set automatically large file to true if needed
+    pub fn set_auto_large_file(mut self) -> Self {
+        self.auto_large_file = true;
+        self
     }
 
     /// Returns true if a file is currently open for writing.
@@ -1132,7 +1141,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             };
             update_aes_extra_data(writer, file)?;
             if file.using_data_descriptor {
-                file.write_data_descriptor(writer)?;
+                file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
                 update_local_file_header(writer, file)?;
                 writer.seek(SeekFrom::Start(file_end))?;
@@ -1679,6 +1688,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: false,
+            auto_large_file: false,
         }
     }
 }

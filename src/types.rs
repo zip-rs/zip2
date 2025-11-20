@@ -962,9 +962,20 @@ impl ZipFileData {
     pub(crate) fn write_data_descriptor<W: std::io::Write>(
         &self,
         writer: &mut W,
+        auto_large_file: bool,
     ) -> Result<(), ZipError> {
         if self.large_file {
             return self.zip64_data_descriptor_block().write(writer);
+        }
+        if self.compressed_size > spec::ZIP64_BYTES_THR
+            || self.uncompressed_size > spec::ZIP64_BYTES_THR
+        {
+            if auto_large_file {
+                return self.zip64_data_descriptor_block().write(writer);
+            }
+            return Err(ZipError::Io(std::io::Error::other(
+                "Large file option has not been set - use .large_file(true) in options",
+            )));
         }
         self.data_descriptor_block().write(writer)
     }
