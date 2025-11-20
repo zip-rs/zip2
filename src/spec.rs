@@ -92,7 +92,7 @@ impl ExtraFieldMagic {
 /// The file size at which a ZIP64 record becomes necessary.
 ///
 /// If a file larger than this threshold attempts to be written, compressed or uncompressed, and
-/// [`FileOptions::large_file()`](crate::write::FileOptions) was not true, then [`ZipWriter`] will
+/// [`FileOptions::large_file()`](crate::write::FileOptions::large_file) was not true, then [`crate::ZipWriter`] will
 /// raise an [`io::Error`] with [`io::ErrorKind::Other`].
 ///
 /// If the zip file itself is larger than this value, then a zip64 central directory record will be
@@ -145,7 +145,7 @@ pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 /// The number of entries within a single zip necessary to allocate a zip64 central
 /// directory record.
 ///
-/// If more than this number of entries is written to a [`ZipWriter`], then [`ZipWriter::finish()`]
+/// If more than this number of entries is written to a [`crate::ZipWriter`], then [`crate::ZipWriter::finish()`]
 /// will write out extra zip64 data to the end of the zip file.
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
