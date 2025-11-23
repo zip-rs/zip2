@@ -22,7 +22,7 @@ mod zipinfo_utf8;
 
 pub use extended_timestamp::*;
 pub use ntfs::Ntfs;
-pub use zipinfo_utf8::*;
+pub use zipinfo_utf8::UnicodeExtraField;
 
 /// contains one extra field
 #[derive(Debug, Clone)]

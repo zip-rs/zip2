@@ -13,7 +13,7 @@ use sha1::Sha1;
 use std::io::{self, Error, ErrorKind, Read, Write};
 use zeroize::{Zeroize, Zeroizing};
 
-/// The length of the password verifcation value in bytes
+/// The length of the password verification value in bytes
 pub const PWD_VERIFY_LENGTH: usize = 2;
 /// The length of the authentication code in bytes
 const AUTH_CODE_LENGTH: usize = 10;
