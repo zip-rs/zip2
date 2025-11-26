@@ -159,28 +159,25 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
-    pub(crate) buffer: Vec<u8>,
     pub(crate) keys: ZipCryptoKeys,
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
     #[allow(unused)]
-    pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
-        self.buffer[11] = (crc32 >> 24) as u8;
-        for byte in self.buffer.iter_mut() {
-            *byte = self.keys.encrypt_byte(*byte);
-        }
-        self.writer.write_all(&self.buffer)?;
-        self.writer.flush()?;
+    pub(crate) fn finish(mut self) -> std::io::Result<W> {
         Ok(self.writer)
     }
 }
 impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.buffer.extend_from_slice(buf);
+        let mut buf = buf.to_vec();
+        for byte in buf.iter_mut() {
+            *byte = self.keys.encrypt_byte(*byte);
+        }
+        self.writer.write_all(&buf)?;
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.writer.flush()
     }
 }
 
