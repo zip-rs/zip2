@@ -708,7 +708,7 @@ impl ZipFileData {
             System::Unix
         };
         let mut local_block = ZipFileData {
-            system: system,
+            system,
             version_made_by: DEFAULT_VERSION,
             flags: 0,
             encrypted: options.encrypt_with.is_some() || {
