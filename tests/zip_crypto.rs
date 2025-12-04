@@ -36,12 +36,11 @@ use std::io::Cursor;
 use zip::result::ZipError;
 
 #[test]
-#[cfg(feature = "deflate-flate2")]
 fn encrypting_file() {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
-    let mut archive = zip::write::ZipWriter::new(Cursor::new(&mut buf));
+    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buf));
     archive
         .start_file(
             "name",
