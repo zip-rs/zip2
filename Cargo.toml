@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "7.0.0"
+version = "6.0.0"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -50,8 +50,8 @@ zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
-lzma-rust2 = { version = "0.13", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
-bitstream-io =  { version = "4.5.0", optional = true }
+lzma-rust2 = { version = "0.15", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+bitstream-io = { version = "4.5.0", optional = true }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
@@ -77,6 +77,10 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in flate2 and the zlib backend; only use this if you need a dynamically linked system zlib
 deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
+# Pull in flate2 and the zlib-ng backend; a modern fork of zlib
+deflate-flate2-zlib-ng = ["deflate-flate2", "flate2/zlib-ng"]
+# Pull in flate2 and the zlib-ng backend with a zlib-compatible API
+deflate-flate2-zlib-ng-compat = ["deflate-flate2", "flate2/zlib-ng-compat"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
 jiff-02 = ["dep:jiff"]
