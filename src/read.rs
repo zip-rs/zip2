@@ -1548,7 +1548,11 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         0x7075 => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            let file_name_for_crc = if let Some(pos) = file.file_name_raw.iter().rposition(|&b| b == b'/' || b == b'\\') {
+            let file_name_for_crc = if let Some(pos) = file
+                .file_name_raw
+                .iter()
+                .rposition(|&b| b == b'/' || b == b'\\')
+            {
                 &file.file_name_raw[pos + 1..]
             } else {
                 &file.file_name_raw
