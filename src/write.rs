@@ -182,6 +182,7 @@ pub(crate) mod zip_writer {
         pub(super) zip64_comment: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
+        pub(crate) auto_large_file: bool,
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
@@ -395,10 +396,9 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 
     /// Set the compression method for the new file
     ///
-    /// The default is `CompressionMethod::Deflated` if it is enabled. If not,
-    /// `CompressionMethod::Bzip2` is the default if it is enabled. If neither `bzip2` nor `deflate`
-    /// is enabled, `CompressionMethod::Zlib` is the default. If all else fails,
-    /// `CompressionMethod::Stored` becomes the default and files are written uncompressed.
+    /// The default is [`CompressionMethod::Deflated`] if it is enabled. If not,
+    /// [`CompressionMethod::Bzip2`] is the default if it is enabled. If neither `bzip2` nor `deflate`
+    /// is enabled, [`CompressionMethod::Stored`] becomes the default and files are written uncompressed.
     #[must_use]
     pub const fn compression_method(mut self, method: CompressionMethod) -> Self {
         self.compression_method = method;
@@ -522,6 +522,28 @@ impl FileOptions<'_, ExtendedFileOptions> {
         self
     }
 }
+impl FileOptions<'static, ()> {
+    /// Constructs a const FileOptions object.
+    ///
+    /// Note: This value is different than the return value of [`FileOptions::default()`]:
+    ///
+    /// - The `last_modified_time` is [`DateTime::DEFAULT`]. This corresponds to 1980-01-01 00:00:00
+    pub const DEFAULT: Self = Self {
+        compression_method: CompressionMethod::DEFAULT,
+        compression_level: None,
+        last_modified_time: DateTime::DEFAULT,
+        large_file: false,
+        permissions: None,
+        encrypt_with: None,
+        extended_options: (),
+        alignment: 1,
+        #[cfg(feature = "deflate-zopfli")]
+        zopfli_buffer_size: Some(1 << 15),
+        #[cfg(feature = "aes-crypto")]
+        aes_mode: None,
+    };
+}
+
 impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
     /// Construct a new FileOptions object
     fn default() -> Self {
@@ -614,6 +636,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
+            auto_large_file: false,
         })
     }
 
@@ -772,7 +795,14 @@ impl<W: Write + Seek> ZipWriter<W> {
             zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: true,
+            auto_large_file: false,
         }
+    }
+
+    /// Set automatically large file to true if needed
+    pub fn set_auto_large_file(mut self) -> Self {
+        self.auto_large_file = true;
+        self
     }
 
     /// Returns true if a file is currently open for writing.
@@ -1075,7 +1105,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             };
             update_aes_extra_data(writer, file)?;
             if file.using_data_descriptor {
-                file.write_data_descriptor(writer)?;
+                file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
                 update_local_file_header(writer, file)?;
                 writer.seek(SeekFrom::Start(file_end))?;
@@ -1622,6 +1652,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: false,
+            auto_large_file: false,
         }
     }
 }

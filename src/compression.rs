@@ -139,6 +139,15 @@ impl CompressionMethod {
     pub const AES: Self = CompressionMethod::Aes;
     #[cfg(not(feature = "aes-crypto"))]
     pub const AES: Self = CompressionMethod::Unsupported(99);
+
+    #[cfg(feature = "_deflate-any")]
+    pub const DEFAULT: Self = CompressionMethod::Deflated;
+
+    #[cfg(all(not(feature = "_deflate-any"), feature = "bzip2"))]
+    pub const DEFAULT: Self = CompressionMethod::Bzip2;
+
+    #[cfg(all(not(feature = "_deflate-any"), not(feature = "bzip2")))]
+    pub const DEFAULT: Self = CompressionMethod::Stored;
 }
 impl CompressionMethod {
     pub(crate) const fn parse_from_u16(val: u16) -> Self {
@@ -229,11 +238,7 @@ impl CompressionMethod {
 
 impl Default for CompressionMethod {
     fn default() -> Self {
-        #[cfg(feature = "_deflate-any")]
-        return CompressionMethod::Deflated;
-
-        #[cfg(not(feature = "_deflate-any"))]
-        return CompressionMethod::Stored;
+        Self::DEFAULT
     }
 }
 
