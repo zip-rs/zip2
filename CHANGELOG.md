@@ -9,32 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.0.0](https://github.com/zip-rs/zip2/compare/v6.0.0...v7.0.0) - 2025-12-04
 
-### <!-- 0 -->🚀 Features
+### ⚠️ Breaking Changes
+
+- Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. ([#405](https://github.com/zip-rs/zip2/pull/405), [#425](https://github.com/zip-rs/zip2/pull/425))
+
+### 🚀 Features
 
 - *(`SimpleFileOptions`)* const DEFAULT implementation ([#474](https://github.com/zip-rs/zip2/pull/474))
 - ZipWriter `set_auto_large_file()` method to enable large-file data descriptor when necessary ([#468](https://github.com/zip-rs/zip2/pull/468))
+- expose more flate2 feature flags ([#476](https://github.com/zip-rs/zip2/pull/476))
 
-### <!-- 1 -->🐛 Bug Fixes
+### 🐛 Bug Fixes
 
 - cargo doc warnings ([#472](https://github.com/zip-rs/zip2/pull/472))
 - Write ZIP64 data descriptors when large_file option is true ([#467](https://github.com/zip-rs/zip2/pull/467))
-- Pin generic-array to an old version to work around RustCrypto/traits issue #2036 until next RustCrypto & aes-crypto releases ([#458](
+- Pin generic-array to an old version to work around https://github.com/RustCrypto/traits/issues/2036 until next RustCrypto & aes-crypto releases ([#458](https://github.com/zip-rs/zip2/pull/458))
 
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-- Revert version bump so that release-plz will trigger
-- expose more flate2 feature flags ([#476](https://github.com/zip-rs/zip2/pull/476))
-- Next release will be 7.0.0
-- release v6.0.0 ([#442](https://github.com/zip-rs/zip2/pull/442))
-
-### Deps
+### ⚙️ Miscellaneous Tasks
 
 - Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-- [**breaking**] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
-
 ## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
 
 ### <!-- 0 -->🚀 Features
