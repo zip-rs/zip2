@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - cargo doc warnings ([#472](https://github.com/zip-rs/zip2/pull/472))
 - Write ZIP64 data descriptors when large_file option is true ([#467](https://github.com/zip-rs/zip2/pull/467))
-- Pin generic-array to an old version to work around https://github.com/RustCrypto/traits/issues/2036 until next RustCrypto & aes-crypto releases ([#458](https://github.com/zip-rs/zip2/pull/458))
+- Pin generic-array to an old version to work around RustCrypto/traits issue #2036 until next RustCrypto & aes-crypto releases ([#458](
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
