@@ -643,29 +643,40 @@ impl<R: Read + Seek> ZipArchive<R> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(io::SeekFrom::End(0))?;
         let mut end_exclusive = file_len;
+        let mut last_err = None;
 
         loop {
             // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
-            let cde = spec::find_central_directory(
+            let cde = match spec::find_central_directory(
                 reader,
                 config.archive_offset,
                 end_exclusive,
                 file_len,
-            )?;
-
-            // Turn EOCD into internal representation.
-            let Ok(shared) = CentralDirectoryInfo::try_from(&cde)
-                .and_then(|info| Self::read_central_header(info, config, reader))
-            else {
-                // The next EOCD candidate should start before the current one.
-                end_exclusive = cde.eocd.position;
-                continue;
+            ) {
+                Ok(cde) => cde,
+                Err(e) => {
+                    // return the previous error first (if there is)
+                    return Err(last_err.unwrap_or(e));
+                }
             };
 
-            return Ok(shared.build(
-                cde.eocd.data.zip_file_comment,
-                cde.eocd64.map(|v| v.data.extensible_data_sector),
-            ));
+            // Turn EOCD into internal representation.
+            match CentralDirectoryInfo::try_from(&cde)
+                .and_then(|info| Self::read_central_header(info, config, reader))
+            {
+                Ok(shared) => {
+                    return Ok(shared.build(
+                        cde.eocd.data.zip_file_comment,
+                        cde.eocd64.map(|v| v.data.extensible_data_sector),
+                    ));
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            };
+            // Something went wrong while decoding the cde, try to find a new one
+            end_exclusive = cde.eocd.position;
+            continue;
         }
     }
 
