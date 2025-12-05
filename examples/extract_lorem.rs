@@ -1,4 +1,4 @@
-use std::io::prelude::*;
+use std::io::Read;
 
 fn main() {
     std::process::exit(real_main());
