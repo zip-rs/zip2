@@ -44,7 +44,7 @@ pub(crate) mod zip_archive {
 
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
-    pub(crate) struct Shared {
+    pub struct Shared {
         pub(crate) files: IndexMap<Box<str>, super::ZipFileData>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
@@ -761,6 +761,60 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// A default [`Config`] is used.
     pub fn new(reader: R) -> ZipResult<ZipArchive<R>> {
         Self::with_config(Default::default(), reader)
+    }
+
+    /// Get the metadata associated with the ZIP archive.
+    ///
+    /// This can be used with [`Self::new_with_metadata`] to create a new reader over the
+    /// same file without needing to reparse the metadata.
+    pub fn metadata(&self) -> Arc<Shared> {
+        self.shared.clone()
+    }
+
+    // UNSAFETY: Requires `unsafe` because this relies on the user to ensure
+    // `reader` and `metadata` are compatible.
+    // This is similar to [how `sguaba` uses `unsafe`](https://github.com/helsing-ai/sguaba/blob/6c82af9626d0fe761a75d023be571cebb5d7e5a0/src/lib.rs#L64).
+    /// Read a ZIP archive using the given `metadata`.
+    ///
+    /// This is useful for creating multiple readers over the same file without
+    /// needing to reparse the metadata.
+    ///
+    /// # Safety
+    /// `unsafe` is used here to indicate that `reader` and `metadata` could
+    /// potentially be incompatible, and it is left to the user to ensure they are.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use std::fs;
+    /// use rayon::prelude::*;
+    ///
+    /// const FILE_NAME: &str = "my_data.zip";
+    ///
+    /// let file = fs::File::open(FILE_NAME).unwrap();
+    /// let mut archive = zip::ZipArchive::new(file).unwrap();
+    ///
+    /// let file_names = (0..archive.len())
+    ///     .into_par_iter()
+    ///     .map_init({
+    ///         let metadata = archive.metadata().clone();
+    ///         move || {
+    ///             let file = fs::File::open(FILE_NAME).unwrap();
+    ///             unsafe { zip::ZipArchive::new_with_metadata(file, metadata.clone()) }
+    ///         }},
+    ///         |archive, i| {
+    ///             let mut file = archive.by_index(i).unwrap();
+    ///             file.enclosed_name()
+    ///         }
+    ///     )
+    ///     .filter_map(|name| name)
+    ///     .collect::<Vec<_>>();
+    /// ```
+    pub unsafe fn new_with_metadata(reader: R, metadata: Arc<Shared>) -> Self {
+        Self {
+            reader,
+            shared: metadata,
+        }
     }
 
     /// Read a ZIP archive providing a read configuration, collecting the files it contains.
