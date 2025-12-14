@@ -6,7 +6,7 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
-use crate::read::zip_archive::{Shared, SharedBuilder};
+use crate::read::zip_archive::SharedBuilder;
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
@@ -31,6 +31,7 @@ use std::sync::{Arc, OnceLock};
 mod config;
 
 pub use config::*;
+pub use zip_archive::Shared;
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
@@ -810,7 +811,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///     .filter_map(|name| name)
     ///     .collect::<Vec<_>>();
     /// ```
-    pub unsafe fn new_with_metadata(reader: R, metadata: Arc<Shared>) -> Self {
+    pub unsafe fn unsafe_new_with_metadata(reader: R, metadata: Arc<Shared>) -> Self {
         Self {
             reader,
             shared: metadata,
