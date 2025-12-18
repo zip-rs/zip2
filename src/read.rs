@@ -190,19 +190,24 @@ impl<R: Read + Seek> IterableZipArchive<R> {
 pub struct IterableShared<R> {
     reader: R,
     dir_info: CentralDirectoryInfo,
+    current_file: usize,
 }
 
 impl<R: Read + Seek> IterableShared<R> {
     /// Try to create an iterable of files
     pub(crate) fn try_new(mut reader: R, dir_info: CentralDirectoryInfo) -> ZipResult<Self> {
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
-        Ok(Self { reader, dir_info })
+        Ok(Self {
+            reader,
+            dir_info,
+            current_file: 0,
+        })
     }
 }
 
 impl<R: Read + Seek> Iterator for IterableShared<R> {
     // We can refer to this type using Self::Item
-    type Item = ZipFileData;
+    type Item = ZipResult<ZipFileData>;
 
     // Here, we define the sequence using `.curr` and `.next`.
     // The return type is `Option<T>`:
@@ -211,7 +216,11 @@ impl<R: Read + Seek> Iterator for IterableShared<R> {
     // We use Self::Item in the return type, so we can change
     // the type without having to update the function signatures.
     fn next(&mut self) -> Option<Self::Item> {
-        central_header_to_zip_file(&mut self.reader, &self.dir_info).ok()
+        if self.current_file >= self.dir_info.number_of_files {
+            return None;
+        }
+        self.current_file += 1;
+        Some(central_header_to_zip_file(&mut self.reader, &self.dir_info))
     }
 }
 
