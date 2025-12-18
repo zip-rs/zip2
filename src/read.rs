@@ -129,18 +129,12 @@ impl<R: Read + Seek> IterableZipArchive<R> {
     ) -> ZipResult<IterableShared<R>> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
-        let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
-            0
-        } else {
-            dir_info.number_of_files
-        };
+        if dir_info.number_of_files > dir_info.directory_start as usize {
+            return unsupported_zip_error("Fishy error :)");
+        }
 
         if dir_info.disk_number != dir_info.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
-        }
-
-        if file_capacity.saturating_mul(size_of::<ZipFileData>()) > isize::MAX as usize {
-            return unsupported_zip_error("Oversized central directory");
         }
 
         IterableShared::try_new(reader, dir_info)
@@ -206,15 +200,8 @@ impl<R: Read + Seek> IterableShared<R> {
 }
 
 impl<R: Read + Seek> Iterator for IterableShared<R> {
-    // We can refer to this type using Self::Item
     type Item = ZipResult<ZipFileData>;
 
-    // Here, we define the sequence using `.curr` and `.next`.
-    // The return type is `Option<T>`:
-    //     * When the `Iterator` is finished, `None` is returned.
-    //     * Otherwise, the next value is wrapped in `Some` and returned.
-    // We use Self::Item in the return type, so we can change
-    // the type without having to update the function signatures.
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_file >= self.dir_info.number_of_files {
             return None;
