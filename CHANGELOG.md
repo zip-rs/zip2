@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [7.0.0](https://github.com/zip-rs/zip2/compare/v6.0.0...v7.0.0) - 2025-12-05
 
+### <!-- 9 -->⚠️ Breaking Changes
+
+- Removed the following features: `getrandom`, `hmac`, `pbkdf2`, `sha1`, `zeroize`.
+- Removed `lzma-static` and `xz-static` feature flags, which were deprecated synonyms of `lzma` and `xz`. ([#405](https://github.com/zip-rs/zip2/pull/405), [#425](https://github.com/zip-rs/zip2/pull/425))
+
 ### <!-- 0 -->🚀 Features
 
 - *(`SimpleFileOptions`)* const DEFAULT implementation ([#474](https://github.com/zip-rs/zip2/pull/474))
@@ -30,11 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deps
 
-- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-- [**breaking**] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
+- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))*] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
 
 ## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
 
