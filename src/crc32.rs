@@ -1,7 +1,6 @@
 //! Helper module to compute a CRC32 checksum
 
-use std::io;
-use std::io::prelude::*;
+use std::io::{self, Read};
 
 use crc32fast::Hasher;
 
@@ -85,7 +84,9 @@ impl<R: Read> Read for Crc32Reader<R> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use std::io::Read;
+
+    use super::Crc32Reader;
 
     #[test]
     fn test_empty_reader() {
