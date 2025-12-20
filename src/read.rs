@@ -37,6 +37,15 @@ pub(crate) mod stream;
 
 pub(crate) mod magic_finder;
 
+#[cfg(feature = "parallelism")]
+pub(crate) mod handle_creation;
+#[cfg(feature = "parallelism")]
+pub(crate) mod pipelining;
+#[cfg(all(unix, feature = "parallelism"))]
+pub use pipelining::split_extraction::{split_extract, ExtractionParameters, SplitExtractionError};
+#[cfg(feature = "parallelism")]
+pub(crate) mod split;
+
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
     use indexmap::IndexMap;
