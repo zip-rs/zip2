@@ -3,7 +3,7 @@ use super::{
     ZipFile, ZipFileData, ZipResult,
 };
 use crate::spec::FixedSizeBlock;
-use indexmap::IndexMap;
+use indexmap::IndexSet;
 use std::fs;
 use std::fs::create_dir_all;
 use std::io::{self, Read};
@@ -60,17 +60,17 @@ impl<R: Read> ZipStreamReader<R> {
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
-        struct Extractor(PathBuf, IndexMap<Box<str>, ()>);
+        struct Extractor(PathBuf, IndexSet<Box<str>>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-                self.1.insert(file.name().into(), ());
+                self.1.insert(file.name().into());
                 let mut outpath = self.0.clone();
                 file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
 
                 if file.is_symlink() {
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(&outpath, &target, &self.1)?;
+                    make_symlink(&outpath, &target, |name| self.1.contains(name))?;
                     return Ok(());
                 }
 
@@ -108,7 +108,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
 
-        self.visit(&mut Extractor(directory, IndexMap::new()))
+        self.visit(&mut Extractor(directory, IndexSet::new()))
     }
 }
 

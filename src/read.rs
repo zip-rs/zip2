@@ -16,8 +16,8 @@ use crate::types::{
 };
 use crate::write::SimpleFileOptions;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
+use crate::zipindex::ZipIndex;
 use crate::ZIP64_BYTES_THR;
-use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fs::create_dir_all;
@@ -31,6 +31,7 @@ use std::sync::{Arc, OnceLock};
 mod config;
 
 pub use config::*;
+use indexmap::IndexMap;
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
@@ -39,13 +40,13 @@ pub(crate) mod magic_finder;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
-    use indexmap::IndexMap;
+    use crate::zipindex::ZipIndex;
     use std::sync::Arc;
 
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
     pub(crate) struct Shared {
-        pub(crate) files: IndexMap<Box<str>, super::ZipFileData>,
+        pub(crate) files: ZipIndex,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
         // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -67,12 +68,8 @@ pub(crate) mod zip_archive {
 
     impl SharedBuilder {
         pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> Shared {
-            let mut index_map = IndexMap::with_capacity(self.files.len());
-            self.files.into_iter().for_each(|file| {
-                index_map.insert(file.file_name.clone(), file);
-            });
             Shared {
-                files: index_map,
+                files: ZipIndex::from_vec(self.files),
                 offset: self.offset,
                 dir_start: self.dir_start,
                 config: self.config,
@@ -445,10 +442,10 @@ pub(crate) fn make_reader<R: Read>(
     ))))
 }
 
-pub(crate) fn make_symlink<T>(
+pub(crate) fn make_symlink(
     outpath: &Path,
     target: &[u8],
-    #[allow(unused)] existing_files: &IndexMap<Box<str>, T>,
+    #[allow(unused)] is_known_filename: impl Fn(&str) -> bool,
 ) -> ZipResult<()> {
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -467,8 +464,7 @@ pub(crate) fn make_symlink<T>(
     #[cfg(windows)]
     {
         let target = Path::new(OsStr::new(&target_str));
-        let target_is_dir_from_archive =
-            existing_files.contains_key(target_str) && is_dir(target_str);
+        let target_is_dir_from_archive = is_known_filename(target_str) && is_dir(target_str);
         let target_is_dir = if target_is_dir_from_archive {
             true
         } else if let Ok(meta) = std::fs::metadata(target) {
@@ -535,14 +531,14 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: IndexMap<Box<str>, ZipFileData>,
+        files: ZipIndex,
         comment: Box<[u8]>,
         zip64_comment: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> ZipResult<Self> {
-        let initial_offset = match files.first() {
-            Some((_, file)) => file.header_start,
+        let initial_offset = match files.values().next() {
+            Some(file) => file.header_start,
             None => central_start,
         };
         let shared = Arc::new(Shared {
@@ -578,9 +574,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         mut w: W,
     ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
         if self.shared.files.is_empty() {
-            return Ok(IndexMap::new());
+            return Ok(IndexMap::default());
         }
-        let mut new_files = self.shared.files.clone();
+        let mut new_files: IndexMap<Box<str>, ZipFileData> = self.shared.files.clone().into();
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
          * definitely be greater than 0.
@@ -916,7 +912,9 @@ impl<R: Read + Seek> ZipArchive<R> {
             drop(file);
 
             if let Some(target) = symlink_target {
-                make_symlink(&outpath, &target, &self.shared.files)?;
+                make_symlink(&outpath, &target, |name| {
+                    self.shared.files.contains_key(name)
+                })?;
                 continue;
             }
             let mut file = self.by_index(i)?;

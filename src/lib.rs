@@ -54,6 +54,7 @@ mod spec;
 mod types;
 pub mod write;
 mod zipcrypto;
+mod zipindex;
 pub use extra_fields::ExtraField;
 #[cfg(feature = "legacy-zip")]
 mod legacy;

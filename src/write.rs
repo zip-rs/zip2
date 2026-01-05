@@ -664,7 +664,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: shared.files,
+            files: shared.files.into(),
             stats: Default::default(),
             writing_to_file: false,
             comment: shared.comment,
@@ -808,8 +808,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
 
-        let archive =
-            ZipArchive::from_finalized_writer(files, comment, zip64_comment, inner, central_start)?;
+        let archive = ZipArchive::from_finalized_writer(
+            files.into(),
+            comment,
+            zip64_comment,
+            inner,
+            central_start,
+        )?;
         Ok(archive)
     }
 }
