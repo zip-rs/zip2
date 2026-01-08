@@ -766,7 +766,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the metadata associated with the ZIP archive.
     ///
-    /// This can be used with [`Self::new_with_metadata`] to create a new reader over the
+    /// This can be used with [`Self::unsafe_new_with_metadata`] to create a new reader over the
     /// same file without needing to reparse the metadata.
     pub fn metadata(&self) -> Arc<Shared> {
         self.shared.clone()
@@ -801,7 +801,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///         let metadata = archive.metadata().clone();
     ///         move || {
     ///             let file = fs::File::open(FILE_NAME).unwrap();
-    ///             unsafe { zip::ZipArchive::new_with_metadata(file, metadata.clone()) }
+    ///             unsafe { zip::ZipArchive::unsafe_new_with_metadata(file, metadata.clone()) }
     ///         }},
     ///         |archive, i| {
     ///             let mut file = archive.by_index(i).unwrap();
