@@ -31,7 +31,6 @@ use std::sync::{Arc, OnceLock};
 mod config;
 
 pub use config::*;
-pub use zip_archive::ZipArchiveMetadata;
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
@@ -52,7 +51,7 @@ pub struct ZipArchiveMetadata {
 }
 
 pub(crate) mod zip_archive {
-    pub(crate) use super::ZipArchiveMetadata;
+    use crate::read::ZipArchiveMetadata;
     use indexmap::IndexMap;
     use std::sync::Arc;
 
