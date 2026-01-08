@@ -775,9 +775,6 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.shared.clone()
     }
 
-    // UNSAFETY: Requires `unsafe` because this relies on the user to ensure
-    // `reader` and `metadata` are compatible.
-    // This is similar to [how `sguaba` uses `unsafe`](https://github.com/helsing-ai/sguaba/blob/6c82af9626d0fe761a75d023be571cebb5d7e5a0/src/lib.rs#L64).
     /// Read a ZIP archive using the given `metadata`.
     ///
     /// This is useful for creating multiple readers over the same file without
