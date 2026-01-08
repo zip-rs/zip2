@@ -31,7 +31,7 @@ use std::sync::{Arc, OnceLock};
 mod config;
 
 pub use config::*;
-pub use zip_archive::Shared;
+pub use zip_archive::ZipArchiveMetadata;
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
@@ -40,7 +40,7 @@ pub(crate) mod magic_finder;
 
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
-pub struct Shared {
+pub struct ZipArchiveMetadata {
     pub(crate) files: IndexMap<Box<str>, ZipFileData>,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
@@ -52,7 +52,7 @@ pub struct Shared {
 }
 
 pub(crate) mod zip_archive {
-    use super::Shared;
+    use super::ZipArchiveMetadata;
     use indexmap::IndexMap;
     use std::sync::Arc;
 
@@ -67,12 +67,16 @@ pub(crate) mod zip_archive {
     }
 
     impl SharedBuilder {
-        pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> Shared {
+        pub fn build(
+            self,
+            comment: Box<[u8]>,
+            zip64_comment: Option<Box<[u8]>>,
+        ) -> ZipArchiveMetadata {
             let mut index_map = IndexMap::with_capacity(self.files.len());
             self.files.into_iter().for_each(|file| {
                 index_map.insert(file.file_name.clone(), file);
             });
-            Shared {
+            ZipArchiveMetadata {
                 files: index_map,
                 offset: self.offset,
                 dir_start: self.dir_start,
@@ -107,7 +111,7 @@ pub(crate) mod zip_archive {
     #[derive(Clone, Debug)]
     pub struct ZipArchive<R> {
         pub(super) reader: R,
-        pub(super) shared: Arc<Shared>,
+        pub(super) shared: Arc<ZipArchiveMetadata>,
     }
 }
 
@@ -546,7 +550,7 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
-        let shared = Arc::new(Shared {
+        let shared = Arc::new(ZipArchiveMetadata {
             files,
             offset: initial_offset,
             dir_start: central_start,
@@ -643,7 +647,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
+    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<ZipArchiveMetadata> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(io::SeekFrom::End(0))?;
         let mut end_exclusive = file_len;
@@ -768,7 +772,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This can be used with [`Self::unsafe_new_with_metadata`] to create a new reader over the
     /// same file without needing to reparse the metadata.
-    pub fn metadata(&self) -> Arc<Shared> {
+    pub fn metadata(&self) -> Arc<ZipArchiveMetadata> {
         self.shared.clone()
     }
 
@@ -811,7 +815,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///     .filter_map(|name| name)
     ///     .collect::<Vec<_>>();
     /// ```
-    pub unsafe fn unsafe_new_with_metadata(reader: R, metadata: Arc<Shared>) -> Self {
+    pub unsafe fn unsafe_new_with_metadata(reader: R, metadata: Arc<ZipArchiveMetadata>) -> Self {
         Self {
             reader,
             shared: metadata,
