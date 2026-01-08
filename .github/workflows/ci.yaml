@@ -160,9 +160,9 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-            find out -type f -exec rename 's/:/-/g' {} \;
-            find out_cmin -type f -exec rename 's/:/-/g' {} \;
-            find map -type f -exec rename 's/:/-/g' {} \;
+          find out -type f -exec rename 's/:/-/g' {} \;
+          find out_cmin -type f -exec rename 's/:/-/g' {} \;
+          find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
         uses: actions/upload-artifact@v4
         with:
@@ -212,9 +212,9 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-            find out -type f -exec rename 's/:/-/g' {} \;
-            find out_cmin -type f -exec rename 's/:/-/g' {} \;
-            find map -type f -exec rename 's/:/-/g' {} \;
+          find out -type f -exec rename 's/:/-/g' {} \;
+          find out_cmin -type f -exec rename 's/:/-/g' {} \;
+          find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
