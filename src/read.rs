@@ -38,23 +38,23 @@ pub(crate) mod stream;
 
 pub(crate) mod magic_finder;
 
-// Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
+/// Immutable metadata about a `ZipArchive`.
+#[derive(Debug)]
+pub struct Shared {
+    pub(crate) files: IndexMap<Box<str>, ZipFileData>,
+    pub(crate) offset: u64,
+    pub(crate) dir_start: u64,
+    // This isn't yet used anywhere, but it is here for use cases in the future.
+    #[allow(dead_code)]
+    pub(crate) config: Config,
+    pub(crate) comment: Box<[u8]>,
+    pub(crate) zip64_comment: Option<Box<[u8]>>,
+}
+
 pub(crate) mod zip_archive {
+    use super::Shared;
     use indexmap::IndexMap;
     use std::sync::Arc;
-
-    /// Extract immutable data from `ZipArchive` to make it cheap to clone
-    #[derive(Debug)]
-    pub struct Shared {
-        pub(crate) files: IndexMap<Box<str>, super::ZipFileData>,
-        pub(super) offset: u64,
-        pub(super) dir_start: u64,
-        // This isn't yet used anywhere, but it is here for use cases in the future.
-        #[allow(dead_code)]
-        pub(super) config: super::Config,
-        pub(crate) comment: Box<[u8]>,
-        pub(crate) zip64_comment: Option<Box<[u8]>>,
-    }
 
     #[derive(Debug)]
     pub(crate) struct SharedBuilder {
