@@ -2023,7 +2023,11 @@ fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
-fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData, bytes_written: u64) -> ZipResult<()> {
+fn update_aes_extra_data<W: Write + Seek>(
+    writer: &mut W,
+    file: &mut ZipFileData,
+    bytes_written: u64,
+) -> ZipResult<()> {
     let Some((aes_mode, version, compression_method)) = &mut file.aes_mode else {
         return Ok(());
     };
