@@ -110,6 +110,107 @@ pub(crate) mod zip_archive {
     }
 }
 
+/// Iterable version of ZipArchive
+pub struct IterableZipArchive<R> {
+    #[allow(unused)]
+    pub(crate) config: Config,
+    pub(crate) iterable_shared: IterableShared<R>,
+}
+impl<R: Read + Seek> IterableZipArchive<R> {
+    /// Try to create a new zip archive
+    pub fn try_new(reader: R, config: Config) -> ZipResult<IterableZipArchive<R>> {
+        Self::with_config(config, reader)
+    }
+
+    /// Read the central header
+    fn read_central_header(
+        dir_info: CentralDirectoryInfo,
+        reader: R,
+    ) -> ZipResult<IterableShared<R>> {
+        // If the parsed number of files is greater than the offset then
+        // something fishy is going on and we shouldn't trust number_of_files.
+        if dir_info.number_of_files > dir_info.directory_start as usize {
+            return unsupported_zip_error("Fishy error :)");
+        }
+
+        if dir_info.disk_number != dir_info.disk_with_central_directory {
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
+        }
+
+        IterableShared::try_new(reader, dir_info)
+    }
+
+    fn with_config(config: Config, mut reader: R) -> ZipResult<IterableZipArchive<R>> {
+        let file_len = reader.seek(io::SeekFrom::End(0))?;
+        let mut end_exclusive = file_len;
+        let mut last_err = None;
+
+        let dir_info = loop {
+            let cde = match spec::find_central_directory(
+                &mut reader,
+                config.archive_offset,
+                end_exclusive,
+                file_len,
+            ) {
+                Ok(cde) => cde,
+                Err(e) => return Err(last_err.unwrap_or(e)),
+            };
+
+            match CentralDirectoryInfo::try_from(&cde) {
+                Ok(info) => break info,
+                Err(e) => {
+                    last_err = Some(e);
+                    end_exclusive = cde.eocd.position;
+                }
+            }
+        };
+
+        let iterable_shared = Self::read_central_header(dir_info, reader)?;
+
+        Ok(IterableZipArchive {
+            config,
+            iterable_shared,
+        })
+    }
+
+    /// Get the file as an iterator
+    pub fn files(&mut self) -> &mut IterableShared<R> {
+        &mut self.iterable_shared
+    }
+}
+
+/// Iterable Files
+#[derive(Debug)]
+pub struct IterableShared<R> {
+    reader: R,
+    dir_info: CentralDirectoryInfo,
+    current_file: usize,
+}
+
+impl<R: Read + Seek> IterableShared<R> {
+    /// Try to create an iterable of files
+    pub(crate) fn try_new(mut reader: R, dir_info: CentralDirectoryInfo) -> ZipResult<Self> {
+        reader.seek(SeekFrom::Start(dir_info.directory_start))?;
+        Ok(Self {
+            reader,
+            dir_info,
+            current_file: 0,
+        })
+    }
+}
+
+impl<R: Read + Seek> Iterator for IterableShared<R> {
+    type Item = ZipResult<ZipFileData>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_file >= self.dir_info.number_of_files {
+            return None;
+        }
+        self.current_file += 1;
+        Some(central_header_to_zip_file(&mut self.reader, &self.dir_info))
+    }
+}
+
 #[cfg(feature = "aes-crypto")]
 use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
