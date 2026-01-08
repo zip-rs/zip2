@@ -169,11 +169,15 @@ impl<W: std::io::Write> ZipCryptoWriter<W> {
 }
 impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut buf = buf.to_vec();
-        for byte in buf.iter_mut() {
-            *byte = self.keys.encrypt_byte(*byte);
+        const CHUNK_SIZE: usize = 4096;
+        let mut temp_buf = [0u8; CHUNK_SIZE];
+        for chunk in buf.chunks(CHUNK_SIZE) {
+            let encrypted_chunk = &mut temp_buf[..chunk.len()];
+            for (i, &byte) in chunk.iter().enumerate() {
+                encrypted_chunk[i] = self.keys.encrypt_byte(byte);
+            }
+            self.writer.write_all(encrypted_chunk)?;
         }
-        self.writer.write_all(&buf)?;
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
