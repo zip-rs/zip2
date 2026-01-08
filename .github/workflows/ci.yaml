@@ -60,7 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-    - run: sudo apt install gcc-s390x-linux-gnu
+    - run: sudo apt-get update
+    - run: sudo apt-get install crossbuild-essential-s390x
     - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
     - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
     - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
