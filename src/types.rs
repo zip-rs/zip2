@@ -2,7 +2,6 @@
 use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
-use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -85,7 +84,7 @@ impl From<System> for u8 {
 ///
 /// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
 /// for details.
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     datepart: u16,
     timepart: u16,
@@ -105,33 +104,6 @@ impl Debug for DateTime {
             self.minute(),
             self.second()
         ))
-    }
-}
-
-impl Ord for DateTime {
-    fn cmp(&self, other: &Self) -> Ordering {
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.year().cmp(&other.year()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.month().cmp(&other.month()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.day().cmp(&other.day()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.hour().cmp(&other.hour()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.minute().cmp(&other.minute()) {
-            return ord;
-        }
-        self.second().cmp(&other.second())
-    }
-}
-
-impl PartialOrd for DateTime {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 

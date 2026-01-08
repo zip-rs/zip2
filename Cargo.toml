@@ -50,7 +50,7 @@ zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.9", optional = true }
-lzma-rust2 = { version = "0.15", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+lzma-rust2 = { version = "0.15.5", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.5.0", optional = true }
 
 [target.'cfg(fuzzing)'.dependencies]
