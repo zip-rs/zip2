@@ -10,4 +10,4 @@ edition = "2024"
 afl = "0.15"
 arbitrary = { version = "1.4.1", features = ["derive"] }
 tikv-jemallocator = "0.6.0"
-zip = { path = "..", default-features = false, features = ["arbitrary"] }
+zip = { path = "..", default-features = false, features = ["_arbitrary"] }
