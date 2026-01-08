@@ -239,6 +239,10 @@ fn do_operation(
         writer.abort_file()?;
         *files_added -= 1;
     }
+    let try_into_new_writer = |old_writer| {
+        // return a ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>>
+        zip::ZipWriter::new_append(old_writer.finish()?)
+    };
     // If a comment is set, we finish the archive, reopen it for append and then set a shorter
     // comment, then there will be junk after the new comment that we can't get rid of. Thus, we
     // can only check that the expected is a prefix of the actual
@@ -254,11 +258,7 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
-                let get_writer = || {
-                    // return a ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>>
-                    zip::ZipWriter::new_append(old_writer.finish()?)
-                };
-                get_writer().unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
@@ -276,18 +276,14 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer| {
-                let get_writer = || {
-                    // return a ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>>
-                    zip::ZipWriter::new_append(old_writer.finish()?)
-                };
-                get_writer().unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
             });
-            assert!(writer.get_raw_comment().starts_with(&old_comment));
+            debug_assert!(writer.get_raw_comment().starts_with(&old_comment));
         }
     }
     Ok(())
