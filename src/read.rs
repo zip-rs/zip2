@@ -118,8 +118,8 @@ pub struct IterableZipArchive<R> {
 }
 impl<R: Read + Seek> IterableZipArchive<R> {
     /// Try to create a new zip archive
-    pub fn try_new(reader: R) -> ZipResult<IterableZipArchive<R>> {
-        Self::with_config(Default::default(), reader)
+    pub fn try_new(reader: R, config: Config) -> ZipResult<IterableZipArchive<R>> {
+        Self::with_config(config, reader)
     }
 
     /// Read the central header
