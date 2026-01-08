@@ -63,7 +63,7 @@ tempfile = "3.15"
 rayon = "1.11.0"
 
 [features]
-arbitrary = ["dep:arbitrary"]
+_arbitrary = ["dep:arbitrary"]
 aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "dep:getrandom", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
 chrono = ["dep:chrono"]
 _deflate-any = []

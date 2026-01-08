@@ -41,7 +41,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
 }
 
 /// A container to hold the current key state
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
