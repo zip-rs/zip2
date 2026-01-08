@@ -52,7 +52,7 @@ pub struct ZipArchiveMetadata {
 }
 
 pub(crate) mod zip_archive {
-    use super::ZipArchiveMetadata;
+    pub(crate) use super::ZipArchiveMetadata;
     use indexmap::IndexMap;
     use std::sync::Arc;
 
