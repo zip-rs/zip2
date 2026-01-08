@@ -1031,7 +1031,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_mode,
             &extra_data,
         );
-        file.using_data_descriptor = !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
+        file.using_data_descriptor =
+            !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file)?;
@@ -1088,7 +1089,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // files to use a data descriptor. This way, we can use the
                 // local_modified_time as a password check byte instead of the
                 // CRC.
-                crypto_header[10..=11].copy_from_slice(&file.last_modified_time.unwrap_or_else(DateTime::default_for_write).timepart().to_le_bytes());
+                crypto_header[10..=11].copy_from_slice(
+                    &file
+                        .last_modified_time
+                        .unwrap_or_else(DateTime::default_for_write)
+                        .timepart()
+                        .to_le_bytes(),
+                );
                 let result = zipwriter.write_all(&crypto_header);
                 self.ok_or_abort_file(result)?;
                 self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
