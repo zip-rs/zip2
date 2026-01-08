@@ -243,7 +243,7 @@ fn do_operation(
         old_writer: zip::ZipWriter<Cursor<Vec<u8>>>,
     ) -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
         zip::ZipWriter::new_append(old_writer.finish()?)
-    };
+    }
     // If a comment is set, we finish the archive, reopen it for append and then set a shorter
     // comment, then there will be junk after the new comment that we can't get rid of. Thus, we
     // can only check that the expected is a prefix of the actual
