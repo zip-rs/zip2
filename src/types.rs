@@ -2,7 +2,6 @@
 use crate::cp437::FromCp437;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
-use core::cmp::Ordering;
 use core::fmt::{self, Debug, Formatter};
 use core::mem;
 use std::ffi::OsStr;
