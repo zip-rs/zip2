@@ -239,8 +239,9 @@ fn do_operation(
         writer.abort_file()?;
         *files_added -= 1;
     }
-    fn try_into_new_writer(old_writer: zip::ZipWriter<Cursor<Vec<u8>>>)
-            -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
+    fn try_into_new_writer(
+        old_writer: zip::ZipWriter<Cursor<Vec<u8>>>,
+    ) -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
         zip::ZipWriter::new_append(old_writer.finish()?)
     };
     // If a comment is set, we finish the archive, reopen it for append and then set a shorter
