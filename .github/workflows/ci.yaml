@@ -213,7 +213,6 @@ jobs:
         if: always()
         run: |
           find out -type f -exec rename 's/:/-/g' {} \;
-          find out_cmin -type f -exec rename 's/:/-/g' {} \;
           find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
@@ -314,7 +313,6 @@ jobs:
         if: always()
         run: |
           find out -type f -exec rename 's/:/-/g' {} \;
-          find out_cmin -type f -exec rename 's/:/-/g' {} \;
           find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
