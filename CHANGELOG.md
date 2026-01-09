@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.0](https://github.com/zip-rs/zip2/compare/v6.0.0...v7.0.0) - 2025-12-05
+
+### <!-- 9 -->⚠️ Breaking Changes
+
+- Removed the following features: `getrandom`, `hmac`, `pbkdf2`, `sha1`, `zeroize`.
+- Removed `lzma-static` and `xz-static` feature flags, which were deprecated synonyms of `lzma` and `xz`. ([#405](https://github.com/zip-rs/zip2/pull/405), [#425](https://github.com/zip-rs/zip2/pull/425))
+
+### <!-- 0 -->🚀 Features
+
+- *(`SimpleFileOptions`)* const DEFAULT implementation ([#474](https://github.com/zip-rs/zip2/pull/474))
+- ZipWriter `set_auto_large_file()` method to enable large-file data descriptor when necessary ([#468](https://github.com/zip-rs/zip2/pull/468))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- print previous error when failing to search another cde ([#460](https://github.com/zip-rs/zip2/pull/460))
+- cargo doc warnings ([#472](https://github.com/zip-rs/zip2/pull/472))
+- Write ZIP64 data descriptors when large_file option is true ([#467](https://github.com/zip-rs/zip2/pull/467))
+- Pin generic-array to an old version to work around https://github.com/RustCrypto/traits/issues/2036 until next RustCrypto & aes-crypto releases ([#458](https://github.com/zip-rs/zip2/pull/458))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Revert version bump so that release-plz will trigger
+- expose more flate2 feature flags ([#476](https://github.com/zip-rs/zip2/pull/476))
+- Next release will be 7.0.0
+- release v6.0.0 ([#442](https://github.com/zip-rs/zip2/pull/442))
+
+### Deps
+
+- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))*] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
+
+## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
+
+### <!-- 0 -->🚀 Features
+
+- Add by_index_with_options(), which can be used to ignore encryption in a file's metadata ([#439](https://github.com/zip-rs/zip2/pull/439)) and may be used for other file-specific overrides in the future.
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- [**breaking**] `FileOptions::add_extra_data` is now generic and accepts any `AsRef<[u8]>`. (#435)
+
 ## [5.1.1](https://github.com/zip-rs/zip2/compare/v5.1.0...v5.1.1) - 2025-09-11
 
 ### <!-- 1 -->🐛 Bug Fixes

@@ -6,7 +6,7 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
-use crate::read::zip_archive::{Shared, SharedBuilder};
+use crate::read::zip_archive::SharedBuilder;
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
@@ -47,22 +47,23 @@ pub use pipelining::split_extraction::{split_extract, ExtractionParameters, Spli
 pub(crate) mod split;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
+/// Immutable metadata about a `ZipArchive`.
+#[derive(Debug)]
+pub struct ZipArchiveMetadata {
+    pub(crate) files: IndexMap<Box<str>, ZipFileData>,
+    pub(crate) offset: u64,
+    pub(crate) dir_start: u64,
+    // This isn't yet used anywhere, but it is here for use cases in the future.
+    #[allow(dead_code)]
+    pub(crate) config: Config,
+    pub(crate) comment: Box<[u8]>,
+    pub(crate) zip64_comment: Option<Box<[u8]>>,
+}
+
 pub(crate) mod zip_archive {
+    use crate::read::ZipArchiveMetadata;
     use indexmap::IndexMap;
     use std::sync::Arc;
-
-    /// Extract immutable data from `ZipArchive` to make it cheap to clone
-    #[derive(Debug)]
-    pub(crate) struct Shared {
-        pub(crate) files: IndexMap<Box<str>, super::ZipFileData>,
-        pub(super) offset: u64,
-        pub(super) dir_start: u64,
-        // This isn't yet used anywhere, but it is here for use cases in the future.
-        #[allow(dead_code)]
-        pub(super) config: super::Config,
-        pub(crate) comment: Box<[u8]>,
-        pub(crate) zip64_comment: Option<Box<[u8]>>,
-    }
 
     #[derive(Debug)]
     pub(crate) struct SharedBuilder {
@@ -75,12 +76,16 @@ pub(crate) mod zip_archive {
     }
 
     impl SharedBuilder {
-        pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> Shared {
+        pub fn build(
+            self,
+            comment: Box<[u8]>,
+            zip64_comment: Option<Box<[u8]>>,
+        ) -> ZipArchiveMetadata {
             let mut index_map = IndexMap::with_capacity(self.files.len());
             self.files.into_iter().for_each(|file| {
                 index_map.insert(file.file_name.clone(), file);
             });
-            Shared {
+            ZipArchiveMetadata {
                 files: index_map,
                 offset: self.offset,
                 dir_start: self.dir_start,
@@ -115,7 +120,7 @@ pub(crate) mod zip_archive {
     #[derive(Clone, Debug)]
     pub struct ZipArchive<R> {
         pub(super) reader: R,
-        pub(super) shared: Arc<Shared>,
+        pub(super) shared: Arc<ZipArchiveMetadata>,
     }
 }
 
@@ -554,7 +559,7 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
-        let shared = Arc::new(Shared {
+        let shared = Arc::new(ZipArchiveMetadata {
             files,
             offset: initial_offset,
             dir_start: central_start,
@@ -651,33 +656,44 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<Shared> {
+    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<ZipArchiveMetadata> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(io::SeekFrom::End(0))?;
         let mut end_exclusive = file_len;
+        let mut last_err = None;
 
         loop {
             // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
-            let cde = spec::find_central_directory(
+            let cde = match spec::find_central_directory(
                 reader,
                 config.archive_offset,
                 end_exclusive,
                 file_len,
-            )?;
-
-            // Turn EOCD into internal representation.
-            let Ok(shared) = CentralDirectoryInfo::try_from(&cde)
-                .and_then(|info| Self::read_central_header(info, config, reader))
-            else {
-                // The next EOCD candidate should start before the current one.
-                end_exclusive = cde.eocd.position;
-                continue;
+            ) {
+                Ok(cde) => cde,
+                Err(e) => {
+                    // return the previous error first (if there is)
+                    return Err(last_err.unwrap_or(e));
+                }
             };
 
-            return Ok(shared.build(
-                cde.eocd.data.zip_file_comment,
-                cde.eocd64.map(|v| v.data.extensible_data_sector),
-            ));
+            // Turn EOCD into internal representation.
+            match CentralDirectoryInfo::try_from(&cde)
+                .and_then(|info| Self::read_central_header(info, config, reader))
+            {
+                Ok(shared) => {
+                    return Ok(shared.build(
+                        cde.eocd.data.zip_file_comment,
+                        cde.eocd64.map(|v| v.data.extensible_data_sector),
+                    ));
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            };
+            // Something went wrong while decoding the cde, try to find a new one
+            end_exclusive = cde.eocd.position;
+            continue;
         }
     }
 
@@ -759,6 +775,57 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// A default [`Config`] is used.
     pub fn new(reader: R) -> ZipResult<ZipArchive<R>> {
         Self::with_config(Default::default(), reader)
+    }
+
+    /// Get the metadata associated with the ZIP archive.
+    ///
+    /// This can be used with [`Self::unsafe_new_with_metadata`] to create a new reader over the
+    /// same file without needing to reparse the metadata.
+    pub fn metadata(&self) -> Arc<ZipArchiveMetadata> {
+        self.shared.clone()
+    }
+
+    /// Read a ZIP archive using the given `metadata`.
+    ///
+    /// This is useful for creating multiple readers over the same file without
+    /// needing to reparse the metadata.
+    ///
+    /// # Safety
+    /// `unsafe` is used here to indicate that `reader` and `metadata` could
+    /// potentially be incompatible, and it is left to the user to ensure they are.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use std::fs;
+    /// use rayon::prelude::*;
+    ///
+    /// const FILE_NAME: &str = "my_data.zip";
+    ///
+    /// let file = fs::File::open(FILE_NAME).unwrap();
+    /// let mut archive = zip::ZipArchive::new(file).unwrap();
+    ///
+    /// let file_names = (0..archive.len())
+    ///     .into_par_iter()
+    ///     .map_init({
+    ///         let metadata = archive.metadata().clone();
+    ///         move || {
+    ///             let file = fs::File::open(FILE_NAME).unwrap();
+    ///             unsafe { zip::ZipArchive::unsafe_new_with_metadata(file, metadata.clone()) }
+    ///         }},
+    ///         |archive, i| {
+    ///             let mut file = archive.by_index(i).unwrap();
+    ///             file.enclosed_name()
+    ///         }
+    ///     )
+    ///     .filter_map(|name| name)
+    ///     .collect::<Vec<_>>();
+    /// ```
+    pub unsafe fn unsafe_new_with_metadata(reader: R, metadata: Arc<ZipArchiveMetadata>) -> Self {
+        Self {
+            reader,
+            shared: metadata,
+        }
     }
 
     /// Read a ZIP archive providing a read configuration, collecting the files it contains.
@@ -1062,14 +1129,16 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<ZipFile<'_, R>> {
         self.index_for_path(path)
             .ok_or(ZipError::FileNotFound)
-            .and_then(|index| self.by_index_with_optional_password(index, Some(password)))
+            .and_then(|index| {
+                self.by_index_with_options(index, ZipReadOptions::new().password(Some(password)))
+            })
     }
 
     /// Search for a file entry by path
     pub fn by_path<T: AsRef<Path>>(&mut self, path: T) -> ZipResult<ZipFile<'_, R>> {
         self.index_for_path(path)
             .ok_or(ZipError::FileNotFound)
-            .and_then(|index| self.by_index_with_optional_password(index, None))
+            .and_then(|index| self.by_index_with_options(index, ZipReadOptions::new()))
     }
 
     /// Get the index of a file entry by path, if it's present.
@@ -1125,7 +1194,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let Some(index) = self.shared.files.get_index_of(name) else {
             return Err(ZipError::FileNotFound);
         };
-        self.by_index_with_optional_password(index, password)
+        self.by_index_with_options(index, ZipReadOptions::new().password(password))
     }
 
     /// Get a contained file by index, decrypt with given password
@@ -1146,12 +1215,12 @@ impl<R: Read + Seek> ZipArchive<R> {
         file_number: usize,
         password: &[u8],
     ) -> ZipResult<ZipFile<'_, R>> {
-        self.by_index_with_optional_password(file_number, Some(password))
+        self.by_index_with_options(file_number, ZipReadOptions::new().password(Some(password)))
     }
 
     /// Get a contained file by index
     pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
-        self.by_index_with_optional_password(file_number, None)
+        self.by_index_with_options(file_number, ZipReadOptions::new())
     }
 
     /// Get a contained file by index without decompressing it
@@ -1168,10 +1237,11 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
-    fn by_index_with_optional_password(
+    /// Get a contained file by index with options.
+    pub fn by_index_with_options(
         &mut self,
         file_number: usize,
-        mut password: Option<&[u8]>,
+        mut options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'_, R>> {
         let (_, data) = self
             .shared
@@ -1179,14 +1249,24 @@ impl<R: Read + Seek> ZipArchive<R> {
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
 
-        match (password, data.encrypted) {
-            (None, true) => return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)),
-            (Some(_), false) => password = None, //Password supplied, but none needed! Discard.
-            _ => {}
+        if options.ignore_encryption_flag {
+            // Always use no password when we're ignoring the encryption flag.
+            options.password = None;
+        } else {
+            // Require and use the password only if the file is encrypted.
+            match (options.password, data.encrypted) {
+                (None, true) => {
+                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED))
+                }
+                // Password supplied, but none needed! Discard.
+                (Some(_), false) => options.password = None,
+                _ => {}
+            }
         }
         let limit_reader = find_content(data, &mut self.reader)?;
 
-        let crypto_reader = make_crypto_reader(data, limit_reader, password, data.aes_mode)?;
+        let crypto_reader =
+            make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
 
         Ok(ZipFile {
             data: Cow::Borrowed(data),
@@ -1564,6 +1644,38 @@ pub trait HasZipMetadata {
     fn get_metadata(&self) -> &ZipFileData;
 }
 
+/// Options for reading a file from an archive.
+#[derive(Default)]
+pub struct ZipReadOptions<'a> {
+    /// The password to use when decrypting the file.  This is ignored if not required.
+    password: Option<&'a [u8]>,
+
+    /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
+    ignore_encryption_flag: bool,
+}
+
+impl<'a> ZipReadOptions<'a> {
+    /// Create a new set of options with the default values.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the password, if any, to use.  Return for chaining.
+    #[must_use]
+    pub fn password(mut self, password: Option<&'a [u8]>) -> Self {
+        self.password = password;
+        self
+    }
+
+    /// Set the ignore encryption flag.  Return for chaining.
+    #[must_use]
+    pub fn ignore_encryption_flag(mut self, ignore: bool) -> Self {
+        self.ignore_encryption_flag = ignore;
+        self
+    }
+}
+
 /// Methods for retrieving information on zip files
 impl<'a, R: Read> ZipFile<'a, R> {
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
@@ -1623,7 +1735,7 @@ impl<'a, R: Read> ZipFile<'a, R> {
     /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
-    /// [`ParentDir`]: `PathBuf::Component::ParentDir`
+    /// [`ParentDir`]: `Component::ParentDir`
     pub fn mangled_name(&self) -> PathBuf {
         self.get_metadata().file_name_sanitized()
     }
@@ -2074,6 +2186,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 
 #[cfg(test)]
 mod test {
+    use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
     use crate::write::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
@@ -2381,6 +2494,25 @@ mod test {
                 file.name()
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_ignore_encryption_flag() -> ZipResult<()> {
+        let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../tests/data/ignore_encryption_flag.zip"
+        )))?;
+
+        // Get the file entry by ignoring its encryption flag.
+        let mut file =
+            reader.by_index_with_options(0, ZipReadOptions::new().ignore_encryption_flag(true))?;
+        let mut contents = String::new();
+        assert_eq!(file.name(), "plaintext.txt");
+
+        // The file claims it is encrypted, but it is not.
+        assert!(file.encrypted());
+        file.read_to_string(&mut contents)?; // ensures valid UTF-8
+        assert_eq!(contents, "This file is not encrypted.\n");
         Ok(())
     }
 }

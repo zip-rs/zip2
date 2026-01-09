@@ -29,12 +29,12 @@
 //! | ZipCrypto deprecated encryption | ✅ | ✅ |
 //!
 //!
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::HasZipMetadata;
-pub use crate::read::ZipArchive;
+pub use crate::read::{ZipArchive, ZipReadOptions};
 pub use crate::spec::{ZIP64_BYTES_THR, ZIP64_ENTRY_THR};
 pub use crate::types::{AesMode, DateTime};
 pub use crate::write::ZipWriter;

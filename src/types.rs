@@ -2,7 +2,6 @@
 use crate::cp437::FromCp437;
 use crate::write::{FileOptionExtension, FileOptions};
 use path::{Component, Path, PathBuf};
-use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -85,7 +84,7 @@ impl From<System> for u8 {
 ///
 /// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
 /// for details.
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     datepart: u16,
     timepart: u16,
@@ -108,34 +107,13 @@ impl Debug for DateTime {
     }
 }
 
-impl Ord for DateTime {
-    fn cmp(&self, other: &Self) -> Ordering {
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.year().cmp(&other.year()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.month().cmp(&other.month()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.day().cmp(&other.day()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.hour().cmp(&other.hour()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.minute().cmp(&other.minute()) {
-            return ord;
-        }
-        self.second().cmp(&other.second())
-    }
-}
-
-impl PartialOrd for DateTime {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl DateTime {
+    /// Constructs a default datetime of 1980-01-01 00:00:00.
+    pub const DEFAULT: Self = DateTime {
+        datepart: 0b0000000000100001,
+        timepart: 0,
+    };
+
     /// Returns the current time if possible, otherwise the default of 1980-01-01.
     #[cfg(feature = "time")]
     pub fn default_for_write() -> Self {
@@ -256,10 +234,7 @@ impl From<DateTime> for (u16, u16) {
 impl Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
-        DateTime {
-            datepart: 0b0000000000100001,
-            timepart: 0,
-        }
+        DateTime::DEFAULT
     }
 }
 
@@ -970,17 +945,34 @@ impl ZipFileData {
         )
     }
 
-    pub(crate) fn data_descriptor_block(&self) -> Option<ZipDataDescriptorBlock> {
+    pub(crate) fn write_data_descriptor<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+        auto_large_file: bool,
+    ) -> Result<(), ZipError> {
         if self.large_file {
-            return None;
+            return self.zip64_data_descriptor_block().write(writer);
         }
+        if self.compressed_size > spec::ZIP64_BYTES_THR
+            || self.uncompressed_size > spec::ZIP64_BYTES_THR
+        {
+            if auto_large_file {
+                return self.zip64_data_descriptor_block().write(writer);
+            }
+            return Err(ZipError::Io(std::io::Error::other(
+                "Large file option has not been set - use .large_file(true) in options",
+            )));
+        }
+        self.data_descriptor_block().write(writer)
+    }
 
-        Some(ZipDataDescriptorBlock {
+    pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
+        ZipDataDescriptorBlock {
             magic: ZipDataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size as u32,
             uncompressed_size: self.uncompressed_size as u32,
-        })
+        }
     }
 
     pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
