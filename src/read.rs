@@ -6,7 +6,6 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
-use crate::read::zip_archive::SharedBuilder;
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{
     self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR,
