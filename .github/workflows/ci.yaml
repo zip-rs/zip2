@@ -46,7 +46,7 @@ jobs:
         - rustalias: nightly
           rust: nightly
           workspace: 'fuzz/Cargo.toml'
-    name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
+    name: 'Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v5
