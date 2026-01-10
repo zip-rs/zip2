@@ -25,7 +25,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         feature_flag:
         - "--all-features"
         - "--no-default-features"
