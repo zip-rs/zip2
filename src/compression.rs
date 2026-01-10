@@ -1,6 +1,7 @@
 //! Possible ZIP compression methods.
 
-use std::{fmt, io};
+use core::fmt;
+use std::io;
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.

@@ -1,7 +1,7 @@
 use bencher::{benchmark_group, benchmark_main};
 
 use std::fs;
-use std::io::{self, prelude::*, Cursor};
+use std::io::{self, Cursor, Write};
 
 use bencher::Bencher;
 use tempfile::TempDir;
