@@ -29,6 +29,8 @@ jobs:
         feature_flag:
         - "--all-features"
         - "--no-default-features"
+        - "--no-default-features --features deflate-flate2-zlib-rs"
+        - "--no-default-features --features deflate-zopfli"
         - ""
         include:
         - rustalias: stable
@@ -37,11 +39,6 @@ jobs:
           rust: '1.83'
         - rustalias: nightly
           rust: nightly
-        # Break out a separate test shard for specific dependencies on their own.
-        - feature_flag: "--no-default-features --features deflate-flate2-zlib-rs"
-          workspace: 'Cargo.toml'
-        - feature_flag: "--no-default-features --features deflate-zopfli"
-          workspace: 'Cargo.toml'
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
