@@ -22,7 +22,7 @@ pub(crate) enum EncryptWith<'k> {
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "_arbitrary")]
 impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         #[cfg(feature = "aes-crypto")]

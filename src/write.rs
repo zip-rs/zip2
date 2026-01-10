@@ -246,52 +246,6 @@ mod sealed {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum EncryptWith<'k> {
-    #[cfg(feature = "aes-crypto")]
-    Aes {
-        mode: AesMode,
-        password: &'k str,
-    },
-    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
-}
-
-#[cfg(feature = "_arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        #[cfg(feature = "aes-crypto")]
-        if bool::arbitrary(u)? {
-            return Ok(EncryptWith::Aes {
-                mode: AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&str>()?,
-            });
-        }
-
-        Ok(EncryptWith::ZipCrypto(
-            ZipCryptoKeys::arbitrary(u)?,
-            PhantomData,
-        ))
-    }
-}
-
-/// Metadata for a file to be written
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub struct FileOptions<'k, T: FileOptionExtension> {
-    pub(crate) compression_method: CompressionMethod,
-    pub(crate) compression_level: Option<i64>,
-    pub(crate) last_modified_time: DateTime,
-    pub(crate) permissions: Option<u32>,
-    pub(crate) large_file: bool,
-    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
-    pub(crate) extended_options: T,
-    pub(crate) alignment: u16,
-    #[cfg(feature = "deflate-zopfli")]
-    pub(super) zopfli_buffer_size: Option<usize>,
-    #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-}
-/// Simple File Options. Can be copied and good for simple writing zip files
-pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
