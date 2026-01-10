@@ -62,7 +62,23 @@ fn real_main() -> i32 {
     };
 
     let requested = PathBuf::from_str(append_dir_path).unwrap();
-    let to_append = base_dir.join(requested);
+    let to_append = match PathBuf::from_str(append_dir_path) {
+        Ok(path) => {
+            if path.is_absolute() {
+                let _ = writeln!(io::stderr(), "Absolute paths are not allowed");
+                return 1;
+            }
+            if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                let _ = writeln!(io::stderr(), "Parent directory references (..) are not allowed");
+                return 1;
+            }
+            base_dir.join(path)
+        }
+        Err(e) => {
+            let _ = writeln!(io::stderr(), "Invalid path: {}", e);
+            return 1;
+        }
+    };
     let to_append = match to_append.canonicalize() {
         Ok(p) => p,
         Err(e) => {
