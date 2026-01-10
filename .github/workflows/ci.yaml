@@ -59,8 +59,8 @@ jobs:
         - "--all-features"
         - "--no-default-features"
         - ""
-        - "--no-default-features --features deflate-flate2-zlib-rs"
-        - "--no-default-features --features deflate-zopfli"
+        - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+        - "--no-default-features --features zip/deflate-zopfli"
     name: 'Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
     runs-on: ubuntu-latest
     steps:
