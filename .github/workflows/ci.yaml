@@ -23,9 +23,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rustalias: [stable, nightly, msrv]
         feature_flag:
         - "--all-features"
         - "--no-default-features"
@@ -35,10 +33,19 @@ jobs:
         include:
         - rustalias: stable
           rust: stable
+          workspace: 'Cargo.toml'
         - rustalias: msrv
           rust: '1.83'
+          workspace: 'Cargo.toml'
         - rustalias: nightly
           rust: nightly
+          workspace: 'Cargo.toml'
+        - rustalias: stable
+          rust: stable
+          workspace: 'fuzz/Cargo.toml'
+        - rustalias: nightly
+          rust: nightly
+          workspace: 'fuzz/Cargo.toml'
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
