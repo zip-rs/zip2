@@ -59,13 +59,9 @@ jobs:
         - "--all-features"
         - "--no-default-features"
         - ""
-        include:
-          # Break out a separate test shard for specific dependencies on their own.
-        - feature_flag: "--no-default-features --features deflate-flate2-zlib-rs"
-          workspace: 'Cargo.toml'
-        - feature_flag: "--no-default-features --features deflate-zopfli"
-          workspace: 'Cargo.toml'
-    name: 'Miri ${{ matrix.feature_flag }}'
+        - "--no-default-features --features deflate-flate2-zlib-rs"
+        - "--no-default-features --features deflate-zopfli"
+    name: 'Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
@@ -128,6 +124,7 @@ jobs:
       matrix:
         workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         feature_flag: ["--all-features", "--no-default-features", ""]
+    name: 'Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
