@@ -25,6 +25,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         feature_flag:
         - "--all-features"
         - "--no-default-features"
@@ -34,19 +35,13 @@ jobs:
         include:
         - rustalias: stable
           rust: stable
-          workspace: 'Cargo.toml'
         - rustalias: msrv
           rust: '1.83'
-          workspace: 'Cargo.toml'
         - rustalias: nightly
           rust: nightly
-          workspace: 'Cargo.toml'
-        - rustalias: stable
-          rust: stable
-          workspace: 'fuzz/Cargo.toml'
-        - rustalias: nightly
-          rust: nightly
-          workspace: 'fuzz/Cargo.toml'
+        exclude:
+          - rustalias: msrv
+            workspace: 'fuzz/Cargo.toml'
     name: 'Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
