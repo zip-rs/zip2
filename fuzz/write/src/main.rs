@@ -416,10 +416,8 @@ fn main() {
         fuzz!(|data: &[u8]| {
             let u = Unstructured::new(data);
             if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
-                for test_case in it {
-                    if let Ok(test_case) = test_case {
-                        test_case.execute(&mut w, true).unwrap();
-                    }
+                for test_case in it.flatten() {
+                    test_case.execute(&mut w, true).unwrap();
                 }
             }
         });
