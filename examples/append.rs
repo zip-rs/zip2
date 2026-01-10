@@ -29,7 +29,10 @@ fn gather_files<'a, T: Into<&'a Path>>(path: T, base: &Path, files: &mut Vec<Pat
                     files.push(canonical);
                 }
             }
-            Err(_) => todo!(),
+            Err(e) => {
+                eprintln!("Warning: Failed to read directory entry: {}", e);
+                continue;
+            }
         }
     }
 }
