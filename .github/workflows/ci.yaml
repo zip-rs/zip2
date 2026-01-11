@@ -25,11 +25,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         feature_flag:
         - "--all-features"
         - "--no-default-features"
-        - "--no-default-features --features deflate-flate2-zlib-rs"
-        - "--no-default-features --features deflate-zopfli"
+        - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+        - "--no-default-features --features zip/deflate-zopfli"
         - ""
         include:
         - rustalias: stable
@@ -38,25 +39,29 @@ jobs:
           rust: '1.83'
         - rustalias: nightly
           rust: nightly
-    name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
+        exclude:
+          - rustalias: msrv
+            workspace: 'fuzz/Cargo.toml'
+    name: 'Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v5
     - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
-    - run: cargo check --all ${{ matrix.feature_flag }} --bins --examples
-    - run: cargo test --all ${{ matrix.feature_flag }}
+    - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
+    - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   miri:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         feature_flag:
         - "--all-features"
         - "--no-default-features"
-        - "--no-default-features --features deflate-flate2-zlib-rs"
-        - "--no-default-features --features deflate-zopfli"
         - ""
-    name: 'Miri ${{ matrix.feature_flag }}'
+        - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+        - "--no-default-features --features zip/deflate-zopfli"
+    name: 'Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
@@ -66,11 +71,13 @@ jobs:
     - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
     - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
     - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-    - run: cargo +nightly miri test --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
+    - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
   cargo_semver:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
+        # Only do semver checks on the released library.
+        workspace: ['Cargo.toml']
         feature_group: ["all-features", "default-features", "only-explicit-features"]
     name: 'Semver checks: ${{ matrix.feature_group }}'
     runs-on: ubuntu-latest
@@ -78,6 +85,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
+          manifest-path: ${{ github.workspace }}/${{ matrix.workspace }}
           feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
@@ -88,13 +96,15 @@ jobs:
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
-      - name: fmt fuzz_read
-        run: cargo fmt --manifest-path fuzz_read/Cargo.toml -- --check
-      - name: fmt fuzz_write
-        run: cargo fmt --manifest-path fuzz_write/Cargo.toml -- --check
+      - name: fmt fuzz
+        run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
 
   check_minimal_versions:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    strategy:
+      matrix:
+        # Only check minimal versions for the released library.
+        workspace: ['Cargo.toml']
     runs-on: ubuntu-latest
 
     steps:
@@ -102,31 +112,33 @@ jobs:
       - run: rustup toolchain add nightly && rustup default nightly
 
       - name: resolve minimal versions
-        run: cargo -Z minimal-versions update
+        run: cargo -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
-        run: cargo check --all-features
+        run: cargo check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: test
-        run: cargo test --all-features
+        run: cargo test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   style_and_docs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         feature_flag: ["--all-features", "--no-default-features", ""]
+    name: 'Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
     - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
     - name: Install required cargo
       run: cargo install clippy-sarif sarif-fmt
-    - run: cargo clippy --all-targets ${{ matrix.feature_flag }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+    - run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
     - name: Upload analysis results to GitHub
       if: always()
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: rust-clippy-results.sarif
         wait-for-processing: true
-    - run: cargo doc --no-deps ${{ matrix.feature_flag }}
+    - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   fuzz_read:
     runs-on: ubuntu-latest
@@ -145,16 +157,16 @@ jobs:
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
-        run: cargo afl clippy --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml -- -D warnings
+        run: cargo afl clippy --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
+        run: cargo afl build --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - name: Minimize corpus
-        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - run: sudo apt install rename
         if: always()
       - name: Rename files
@@ -199,14 +211,14 @@ jobs:
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
-        run: cargo afl clippy --no-default-features --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml -- -D warnings
+        run: cargo afl clippy --no-default-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --manifest-path ${{ github.workspace }}/fuzz_read/Cargo.toml
+        run: cargo afl build -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_read/target/debug/fuzz_read
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - run: sudo apt install rename
         if: always()
       - name: Rename files
@@ -245,16 +257,16 @@ jobs:
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
-        run: cargo afl clippy --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml -- -D warnings
+        run: cargo afl clippy --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
+        run: cargo afl build --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
       - name: Minimize corpus
-        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
       - run: sudo apt install rename
         if: always()
       - name: Rename files
@@ -299,14 +311,14 @@ jobs:
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
-        run: cargo afl clippy --no-default-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml -- -D warnings
+        run: cargo afl clippy --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --all-features --manifest-path ${{ github.workspace }}/fuzz_write/Cargo.toml
+        run: cargo afl build --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz_write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz_write/fuzz.dict -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz_write/target/debug/fuzz_write
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
       - run: sudo apt install rename
         if: always()
       - name: Rename files

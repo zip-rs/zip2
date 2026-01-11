@@ -22,7 +22,7 @@ pub(crate) enum EncryptWith<'k> {
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "_arbitrary")]
 impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         #[cfg(feature = "aes-crypto")]
@@ -41,7 +41,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
 }
 
 /// A container to hold the current key state
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
