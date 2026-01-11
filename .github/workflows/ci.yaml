@@ -273,7 +273,7 @@ jobs:
         if: always()
         run: |
           find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find out_cmin -type f -name '*:*' -P4 -exec rename 's/:/-/g' {} \;
+          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \;
           find map -type f -name '*:*' -P4 -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
         uses: actions/upload-artifact@v6
