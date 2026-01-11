@@ -11,7 +11,15 @@ fn real_main() -> i32 {
         println!("Usage: {} <filename>", args[0]);
         return 1;
     }
-    let fname = std::path::Path::new(&*args[1]);
+    let fname_arg = &args[1];
+    let fname_path = std::path::Path::new(fname_arg);
+    // Basic validation to guard against unsafe paths.
+    // Reject absolute paths and any path containing parent directory references.
+    if fname_path.is_absolute() || fname_arg.contains("..") {
+        println!("Error: refusing to open unsafe path \"{}\"", fname_arg);
+        return 1;
+    }
+    let fname = fname_path;
     let file = fs::File::open(fname).unwrap();
     let reader = BufReader::new(file);
 
