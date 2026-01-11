@@ -61,13 +61,6 @@ fn real_main() -> i32 {
         }
     };
 
-    let requested = match PathBuf::from_str(append_dir_path) {
-        Ok(path) => path,
-        Err(e) => {
-            let _ = writeln!(io::stderr(), "Invalid path format: {}", e);
-            return 1;
-        }
-    };
     let to_append = match PathBuf::from_str(append_dir_path) {
         Ok(path) => {
             if path.is_absolute() {
