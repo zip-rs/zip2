@@ -17,9 +17,8 @@
 use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
-use std::io::{self, Read, Write};
-use zip::write::ZipWriter;
-use zip::{result::ZipError, write::SimpleFileOptions, AesMode, CompressionMethod, ZipArchive};
+use std::io::{self, Read};
+use zip::ZipArchive;
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 
