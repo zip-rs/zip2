@@ -6,27 +6,26 @@ use crate::compression::CompressionMethod;
 use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
+use crate::types::ffi::S_IFLNK;
 #[cfg(feature = "aes-crypto")]
 use crate::types::AesMode;
 use crate::types::{
     ffi, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock,
     ZipRawValues, MIN_VERSION,
 };
-use crate::write::ffi::S_IFLNK;
+use core::default::Default;
+use core::fmt::{Debug, Formatter};
+use core::marker::PhantomData;
+use core::mem::{self, size_of};
 #[cfg(feature = "deflate-zopfli")]
 use core::num::NonZeroU64;
+use core::str::{from_utf8, Utf8Error};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
 use std::borrow::ToOwned;
-use std::default::Default;
-use std::fmt::{Debug, Formatter};
-use std::io;
-use std::io::prelude::*;
+use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
-use std::marker::PhantomData;
-use std::mem;
-use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
 #[cfg(feature = "deflate-flate2")]
@@ -40,11 +39,13 @@ use zopfli::Options;
 
 #[cfg(feature = "deflate-zopfli")]
 use std::io::BufWriter;
-use std::mem::size_of;
 use std::path::Path;
 
 #[cfg(feature = "zstd")]
 use zstd::stream::write::Encoder as ZstdEncoder;
+
+// re-export from types
+pub use crate::types::{FileOptions, SimpleFileOptions};
 
 enum MaybeEncrypted<W> {
     Unencrypted(W),
@@ -130,7 +131,16 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
-    use super::*;
+    use core::fmt::{Debug, Formatter};
+    use std::io::{Seek, Write};
+
+    use indexmap::IndexMap;
+
+    use crate::{
+        types::ZipFileData,
+        write::{GenericZipWriter, ZipWriterStats},
+    };
+
     /// ZIP archive generator
     ///
     /// Handles the bookkeeping involved in building an archive, and provides an
@@ -190,7 +200,7 @@ use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
-use crate::zipcrypto::ZipCryptoKeys;
+use crate::zipcrypto::{EncryptWith, ZipCryptoKeys};
 use crate::CompressionMethod::Stored;
 pub use zip_writer::ZipWriter;
 
@@ -236,55 +246,10 @@ mod sealed {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum EncryptWith<'k> {
-    #[cfg(feature = "aes-crypto")]
-    Aes {
-        mode: AesMode,
-        password: &'k str,
-    },
-    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
-}
-
-#[cfg(fuzzing)]
-impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        #[cfg(feature = "aes-crypto")]
-        if bool::arbitrary(u)? {
-            return Ok(EncryptWith::Aes {
-                mode: AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&str>()?,
-            });
-        }
-
-        Ok(EncryptWith::ZipCrypto(
-            ZipCryptoKeys::arbitrary(u)?,
-            PhantomData,
-        ))
-    }
-}
-
-/// Metadata for a file to be written
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub struct FileOptions<'k, T: FileOptionExtension> {
-    pub(crate) compression_method: CompressionMethod,
-    pub(crate) compression_level: Option<i64>,
-    pub(crate) last_modified_time: DateTime,
-    pub(crate) permissions: Option<u32>,
-    pub(crate) large_file: bool,
-    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
-    pub(crate) extended_options: T,
-    pub(crate) alignment: u16,
-    #[cfg(feature = "deflate-zopfli")]
-    pub(super) zopfli_buffer_size: Option<usize>,
-    #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-}
-/// Simple File Options. Can be copied and good for simple writing zip files
-pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
     extra_data: Arc<Vec<u8>>,
@@ -380,7 +345,7 @@ impl Debug for ExtendedFileOptions {
     }
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "_arbitrary")]
 impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut options = FullFileOptions {
@@ -784,7 +749,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # {
-    /// use std::io::{Cursor, prelude::*};
+    /// use std::io::{Cursor, Read, Write};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
     /// let buf = Cursor::new(Vec::new());
@@ -1031,7 +996,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_mode,
             &extra_data,
         );
-        file.using_data_descriptor = !self.seek_possible;
+        file.using_data_descriptor =
+            !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file)?;
@@ -1064,14 +1030,37 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.inner = Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
+                let file = &mut self.files[index];
+                // With ZipCrypto, we _need_ to use a data descriptor so that
+                // we can initialize the stream properly.
                 let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
                     writer: mem::replace(&mut self.inner, Closed).unwrap(),
-                    buffer: vec![],
                     keys,
                 };
                 self.stats.start = zipwriter.writer.stream_position()?;
                 // crypto_header is counted as part of the data
-                let crypto_header = [0u8; 12];
+                let mut crypto_header = [0u8; 12];
+                // The last two bytes of the header should either be the CRC of
+                // the file _OR_ the last timepart of the last modified time if
+                // a data descriptor is used.
+                //
+                // However, this header is encrypted, and ZipCrypto is not a
+                // seekable encryption algorithm - an earlier plaintext byte
+                // will have an impact on the later values.
+                //
+                // This makes it impossible to write the file without first
+                // calculating its CRC. To avoid having to read the file twice
+                // or keeping the entire file in memory, we force all ZipCrypto
+                // files to use a data descriptor. This way, we can use the
+                // local_modified_time as a password check byte instead of the
+                // CRC.
+                crypto_header[10..=11].copy_from_slice(
+                    &file
+                        .last_modified_time
+                        .unwrap_or_else(DateTime::default_for_write)
+                        .timepart()
+                        .to_le_bytes(),
+                );
                 let result = zipwriter.write_all(&crypto_header);
                 self.ok_or_abort_file(result)?;
                 self.inner = Storer(MaybeEncrypted::ZipCrypto(zipwriter));
@@ -1163,8 +1152,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish()?));
             }
             Storer(MaybeEncrypted::ZipCrypto(writer)) => {
-                let crc32 = self.stats.hasher.clone().finalize();
-                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
+                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish()?))
             }
             Storer(MaybeEncrypted::Unencrypted(w)) => {
                 self.inner = Storer(MaybeEncrypted::Unencrypted(w))
@@ -1241,7 +1229,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// # fn main() -> Result<(), zip::result::ZipError> {
     /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
     /// # {
-    /// use std::io::{Cursor, prelude::*};
+    /// use std::io::{Cursor, Write, Read};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
     /// let buf = Cursor::new(Vec::new());
