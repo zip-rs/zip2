@@ -22,14 +22,14 @@ fn real_main() -> i32 {
             p
         }
         Err(e) => {
-            println!("Error: cannot access '{}': {e}", args[1]);
+            println!("Error: cannot access {:?}: {e}", args[1]);
             return 1;
         }
     };
     let zipfile = match std::fs::File::open(&fname) {
         Ok(f) => f,
         Err(e) => {
-            println!("Error: failed to open '{}': {e}", fname.display());
+            println!("Error: failed to open {:?}: {e}", fname.display());
             return 1;
         }
     };
