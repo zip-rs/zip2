@@ -176,20 +176,20 @@ jobs:
           find out_cmin -type f -exec rename 's/:/-/g' {} \;
           find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_read_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_read_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_read_coverage
           path: map
@@ -228,14 +228,14 @@ jobs:
           find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_read_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_read_coverage_no_features
           path: map
@@ -276,20 +276,20 @@ jobs:
           find out_cmin -type f -exec rename 's/:/-/g' {} \;
           find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload updated corpus
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_write_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_write_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_write_coverage
           path: map
@@ -328,14 +328,14 @@ jobs:
           find map -type f -exec rename 's/:/-/g' {} \;
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_write_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz_write_coverage_no_features
           path: map
