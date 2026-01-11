@@ -76,7 +76,8 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
 
     let mut bytes = vec![0u8; comment_length];
     getrandom::fill(&mut bytes).unwrap();
-    // should use writer.set_raw_zip64_comment(comment); but still work
+    // should use the line below but still works
+    // writer.set_raw_zip64_comment(Some(comment));
     writer.set_raw_comment(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
