@@ -249,6 +249,7 @@ mod sealed {
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
     extra_data: Arc<Vec<u8>>,
@@ -344,7 +345,7 @@ impl Debug for ExtendedFileOptions {
     }
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "_arbitrary")]
 impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut options = FullFileOptions {
