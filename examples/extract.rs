@@ -14,7 +14,10 @@ fn real_main() -> i32 {
 
     let file_arg = &args[1];
     if file_arg.contains("..") || file_arg.contains('/') || file_arg.contains('\\') {
-        eprintln!("Error: invalid filename '{}'. Directory separators and \"..\" are not allowed.", file_arg);
+        eprintln!(
+            "Error: invalid filename '{}'. Directory separators and \"..\" are not allowed.",
+            file_arg
+        );
         return 1;
     }
 

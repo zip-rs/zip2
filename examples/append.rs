@@ -1,9 +1,9 @@
+use std::io::{self, Write};
 use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
     str::FromStr,
 };
-use std::io::{self, Write};
 use zip::write::SimpleFileOptions;
 
 fn gather_files<'a, T: Into<&'a Path>>(path: T, base: &Path, files: &mut Vec<PathBuf>) {
@@ -67,8 +67,14 @@ fn real_main() -> i32 {
                 let _ = writeln!(io::stderr(), "Absolute paths are not allowed");
                 return 1;
             }
-            if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-                let _ = writeln!(io::stderr(), "Parent directory references (..) are not allowed");
+            if path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                let _ = writeln!(
+                    io::stderr(),
+                    "Parent directory references (..) are not allowed"
+                );
                 return 1;
             }
             base_dir.join(path)
@@ -81,7 +87,11 @@ fn real_main() -> i32 {
     let to_append = match to_append.canonicalize() {
         Ok(p) => p,
         Err(e) => {
-            let _ = writeln!(io::stderr(), "Failed to canonicalize append directory: {}", e);
+            let _ = writeln!(
+                io::stderr(),
+                "Failed to canonicalize append directory: {}",
+                e
+            );
             return 1;
         }
     };
@@ -93,7 +103,6 @@ fn real_main() -> i32 {
         );
         return 1;
     }
-
 
     let existing_zip = OpenOptions::new()
         .read(true)
