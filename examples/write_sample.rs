@@ -38,7 +38,7 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
     }
 
     // Create the file relative to the current working directory
-    let base = std::env::current_dir().map_err(|_| zip::result::ZipError::FileNotFound)?;
+    let base = std::env::current_dir()?;
     let safe_path = base.join(path);
 
     let file =
