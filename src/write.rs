@@ -824,7 +824,14 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This sets the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
     pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
-        self.comment = comment;
+        let max_comment_len = u16::MAX as usize; // 65,535
+        if comment.len() > max_comment_len {
+            self.set_raw_zip64_comment(Some(comment));
+            self.comment = Box::new([]);
+        } else {
+            self.comment = comment;
+            self.set_raw_zip64_comment(None);
+        }
     }
 
     /// Get ZIP archive comment.
