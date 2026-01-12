@@ -7,6 +7,7 @@
 use crate::unstable::LittleEndianWriteExt;
 use aes::cipher::{BlockEncrypt, KeyInit};
 use core::{any, fmt};
+use crate::result::{ZipError, ZipResult};
 
 /// Internal block size of an AES cipher.
 const AES_BLOCK_SIZE: usize = 16;
@@ -85,16 +86,14 @@ where
 {
     /// Creates a new zip variant AES-CTR key stream.
     ///
-    /// # Panics
-    ///
-    /// This panics if `key` doesn't have the correct size for cipher `C`.
-    pub fn new(key: &[u8]) -> AesCtrZipKeyStream<C> {
-        AesCtrZipKeyStream {
+    /// Returns `ZipError::InvalidPassword` if `key` doesn't have the correct size for cipher `C`.
+    pub fn new(key: &[u8]) -> ZipResult<AesCtrZipKeyStream<C>> {
+        Ok(AesCtrZipKeyStream {
             counter: 1,
-            cipher: C::Cipher::new(key.try_into().expect("invalid key length")),
+            cipher: C::Cipher::new_from_slice(key).map_err(|_| ZipError::InvalidPassword)?,
             buffer: [0u8; AES_BLOCK_SIZE],
             pos: AES_BLOCK_SIZE,
-        }
+        })
     }
 }
 
@@ -113,7 +112,7 @@ where
                     .as_mut()
                     .write_u128_le(self.counter)
                     .expect("did not expect u128 le conversion to fail");
-                self.cipher.encrypt_block(&mut self.buffer);
+                self.cipher.encrypt_block(self.buffer.as_mut().into());
                 self.counter += 1;
                 self.pos = 0;
             }
