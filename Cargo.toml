@@ -64,7 +64,7 @@ rayon = "1.11"
 
 [features]
 _arbitrary = ["dep:arbitrary"]
-aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "dep:getrandom", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
+aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
 chrono = ["dep:chrono"]
 _deflate-any = []
 _all-features = [] # Detect when --all-features is used
