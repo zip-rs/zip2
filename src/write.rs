@@ -107,8 +107,8 @@ enum GenericZipWriter<W: Write + Seek> {
 impl<W: Write + Seek> Debug for GenericZipWriter<W> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Closed => f.write_str("Closed"),
-            Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
+            GenericZipWriter::Closed => f.write_str("Closed"),
+            GenericZipWriter::Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
             #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(w) => {
                 f.write_fmt(format_args!("Deflater({:?})", w.get_ref()))
