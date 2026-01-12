@@ -577,7 +577,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
             Some(ref mut w) => {
                 let write_result = w.write(buf);
                 if let Ok(count) = write_result {
-                    self.stats.update(&buf[0..count]);
+                    self.stats.update(&buf[..count]);
                     if self.stats.bytes_written > spec::ZIP64_BYTES_THR
                         && !self.files.last_mut().unwrap().1.large_file
                     {
