@@ -33,7 +33,7 @@ constant_time_eq = { version = "0.4", optional = true }
 crc32fast = "1.5"
 flate2 = { version = "1.1", default-features = false, optional = true }
 generic-array = { version = "=0.14.7", optional = true }
-getrandom = { version = "0.3", features = ["std"], optional = true }
+getrandom = { version = "0.3", default-features = false, optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
