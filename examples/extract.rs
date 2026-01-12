@@ -21,8 +21,37 @@ fn real_main() -> i32 {
         return 1;
     }
 
-    let fname = std::path::Path::new(file_arg);
-    let file = fs::File::open(fname).unwrap();
+    // Build a path to the archive relative to a safe base directory (current working directory)
+    let base_dir = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("Error: unable to determine current directory: {e}");
+            return 1;
+        }
+    };
+
+    let candidate_path = base_dir.join(std::path::Path::new(file_arg));
+    let fname = match candidate_path.canonicalize() {
+        Ok(path) => {
+            if !path.starts_with(&base_dir) {
+                eprintln!(
+                    "Error: resolved path '{}' escapes the allowed directory.",
+                    path.display()
+                );
+                return 1;
+            }
+            path
+        }
+        Err(e) => {
+            eprintln!(
+                "Error: unable to resolve archive path '{}': {e}",
+                candidate_path.display()
+            );
+            return 1;
+        }
+    };
+
+    let file = fs::File::open(&fname).unwrap();
 
     let mut archive = zip::ZipArchive::new(file).unwrap();
 
