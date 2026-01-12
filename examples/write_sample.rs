@@ -36,15 +36,14 @@ fn write_zip_file(filename: &str) -> zip::result::ZipResult<()> {
     {
         // Return an error instead of writing to an arbitrary location
         return Err(invalid!(
-            "unsafe output path: attempted directory traversal or absolute path",
+            "unsafe output path: attempted directory traversal or absolute path".into(),
         ));
     }
 
     // Create the file relative to the current working directory
     let base = std::env::current_dir().map_err(|_| {
         zip::result::ZipError::Io(
-            std::io::ErrorKind::NotFound,
-            "Failed to get current directory".to_string(),
+            std::io::Error::new(ErrorKind::NotFound, "Failed to get current directory")
         )
     })?;
     let safe_path = base.join(path);
