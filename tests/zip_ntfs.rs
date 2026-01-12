@@ -13,7 +13,7 @@ fn test_ntfs() {
             assert_eq!(ts.mtime(), 133_813_273_144_169_390);
             #[cfg(feature = "nt-time")]
             assert_eq!(
-                time::UtcDateTime::try_from(ts.modified_file_time()).unwrap(),
+                time::OffsetDateTime::try_from(ts.modified_file_time()).unwrap(),
                 time::macros::datetime!(2025-01-14 11:21:54.416_939_000 UTC)
             );
 
