@@ -1692,7 +1692,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
-                let _ = write!(io::stderr(), "ZipWriter drop failed: {e:?}");
+                let _ = write!(io::stderr(), "ZipWriter::drop: failed to finalize archive: {e:?}");
             }
         }
     }
