@@ -20,11 +20,11 @@ fn real_main() -> i32 {
         Ok(_) => {
             println!("File written to {filename}");
             0
-        },
+        }
         Err(e) => {
             eprintln!("Error: {e:?}");
             1
-        },
+        }
     }
 }
 
@@ -45,9 +45,10 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
 
     // Create the file relative to the current working directory
     let base = std::env::current_dir().map_err(|_| {
-        zip::result::ZipError::Io(
-            std::io::Error::new(ErrorKind::NotFound, "Failed to get current directory")
-        )
+        zip::result::ZipError::Io(std::io::Error::new(
+            ErrorKind::NotFound,
+            "Failed to get current directory",
+        ))
     })?;
     let safe_path = base.join(path);
 
