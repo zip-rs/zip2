@@ -49,8 +49,7 @@ fn write_zip_file(filename: &str) -> zip::result::ZipResult<()> {
     })?;
     let safe_path = base.join(path);
 
-    let file =
-        std::fs::File::create(safe_path).map_err(|_| zip::result::ZipError::FileNotFound)?;
+    let file = std::fs::File::create(safe_path)?;
 
     let mut zip = zip::ZipWriter::new(file);
 
