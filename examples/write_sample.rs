@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::Path;
 use zip::write::SimpleFileOptions;
 #[cfg(feature = "aes-crypto")]
@@ -17,11 +17,15 @@ fn real_main() -> i32 {
 
     let filename = &args[1];
     match doit(filename) {
-        Ok(_) => println!("File written to {filename}"),
-        Err(e) => println!("Error: {e:?}"),
+        Ok(_) => {
+            println!("File written to {filename}");
+            0
+        },
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            1
+        },
     }
-
-    0
 }
 
 fn doit(filename: &str) -> zip::result::ZipResult<()> {
@@ -35,15 +39,14 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
     {
         // Return an error instead of writing to an arbitrary location
         return Err(zip::result::ZipError::InvalidArchive(
-            "unsafe output path: attempted directory traversal or absolute path",
+            "unsafe output path: attempted directory traversal or absolute path".into(),
         ));
     }
 
     // Create the file relative to the current working directory
     let base = std::env::current_dir().map_err(|_| {
         zip::result::ZipError::Io(
-            std::io::ErrorKind::NotFound,
-            "Failed to get current directory".to_string(),
+            std::io::Error::new(ErrorKind::NotFound, "Failed to get current directory")
         )
     })?;
     let safe_path = base.join(path);
