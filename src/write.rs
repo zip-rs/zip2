@@ -827,8 +827,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         let max_comment_len = u16::MAX as usize; // 65,535
         if comment.len() > max_comment_len {
             self.set_raw_zip64_comment(Some(comment));
+            self.comment = Box::new([]);
         } else {
             self.comment = comment;
+            self.set_raw_zip64_comment(None);
         }
     }
 
