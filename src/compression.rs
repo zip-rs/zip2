@@ -434,7 +434,7 @@ impl<R: io::BufRead> Decompressor<R> {
             }
             #[cfg(feature = "deflate64")]
             CompressionMethod::Deflate64 => {
-                Decompressor::Deflate64(deflate64::stream::Deflate64Decoder::with_buffer(reader))
+                Decompressor::Deflate64(deflate64::Deflate64Decoder::with_buffer(reader))
             }
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => Decompressor::Bzip2(bzip2::bufread::BzDecoder::new(reader)),
