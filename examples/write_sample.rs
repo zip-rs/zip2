@@ -41,7 +41,8 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
     let base = std::env::current_dir().map_err(|_| zip::result::ZipError::FileNotFound)?;
     let safe_path = base.join(path);
 
-    let file = std::fs::File::create(safe_path).unwrap();
+    let file =
+        std::fs::File::create(safe_path).map_err(|_| zip::result::ZipError::FileNotFound)?;
 
     let mut zip = zip::ZipWriter::new(file);
 
