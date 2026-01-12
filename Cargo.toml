@@ -63,8 +63,17 @@ getrandom = { version = "0.3", default-features = false, optional = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", default-features = false, features = ["wasm_js"], optional = true }
 
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+getrandom = { version = "0.3", default-features = false, features = ["std"] }
+
+# wasm32
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom = { version = "0.3", default-features = false, features = ["std", "wasm_js"] }
+
 [dev-dependencies]
 bencher = "0.1"
+getrandom = { version = "0.3", default-features = false, features = [] }
 walkdir = "2.5"
 time = { version = "0.3", features = ["formatting", "macros"] }
 anyhow = "1.0"
