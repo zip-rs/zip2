@@ -1,12 +1,11 @@
 //! Types that specify what is contained in a ZIP.
 use crate::cp437::FromCp437;
-use crate::write::{FileOptionExtension, FileOptions};
-use path::{Component, Path, PathBuf};
+use crate::write::FileOptionExtension;
+use crate::zipcrypto::EncryptWith;
+use core::fmt::{self, Debug, Formatter};
+use core::mem;
 use std::ffi::OsStr;
-use std::fmt;
-use std::fmt::{Debug, Formatter};
-use std::mem;
-use std::path;
+use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
@@ -67,6 +66,25 @@ impl From<System> for u8 {
         }
     }
 }
+
+/// Metadata for a file to be written
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub struct FileOptions<'k, T: FileOptionExtension> {
+    pub(crate) compression_method: CompressionMethod,
+    pub(crate) compression_level: Option<i64>,
+    pub(crate) last_modified_time: DateTime,
+    pub(crate) permissions: Option<u32>,
+    pub(crate) large_file: bool,
+    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
+    pub(crate) extended_options: T,
+    pub(crate) alignment: u16,
+    #[cfg(feature = "deflate-zopfli")]
+    pub(super) zopfli_buffer_size: Option<usize>,
+    #[cfg(feature = "aes-crypto")]
+    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+}
+/// Simple File Options. Can be copied and good for simple writing zip files
+pub type SimpleFileOptions = FileOptions<'static, ()>;
 
 /// Representation of a moment in time.
 ///
@@ -130,7 +148,7 @@ impl DateTime {
     }
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
         let year: u16 = u.int_in_range(1980..=2107)?;
@@ -544,7 +562,7 @@ impl ZipFileData {
         // zip files can contain both / and \ as separators regardless of the OS
         // and as we want to return a sanitized PathBuf that only supports the
         // OS separator let's convert incompatible separators to compatible ones
-        let separator = path::MAIN_SEPARATOR;
+        let separator = MAIN_SEPARATOR;
         let opposite_separator = match separator {
             '/' => '\\',
             _ => '/',
@@ -1227,7 +1245,7 @@ pub enum AesVendorVersion {
 
 /// AES variant used.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum AesMode {
     /// 128-bit AES encryption.
@@ -1272,7 +1290,6 @@ mod test {
 
     #[test]
     fn sanitize() {
-        use super::*;
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
         let data = ZipFileData {
             system: System::Dos,
@@ -1436,8 +1453,12 @@ mod test {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
+    use std::{path::PathBuf, sync::OnceLock};
+
     #[cfg(feature = "time")]
     use time::{format_description::well_known::Rfc3339, OffsetDateTime, PrimitiveDateTime};
+
+    use crate::types::{System, ZipFileData};
 
     #[cfg(feature = "time")]
     #[test]

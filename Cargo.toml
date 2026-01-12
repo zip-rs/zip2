@@ -13,6 +13,7 @@ keywords = ["zip", "archive", "compression"]
 # Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
 # The MSRV policy is documented in `README.md`.
 rust-version = "1.83.0"
+categories = ["compression", "filesystem", "parser-implementations"]
 description = """
 Library to support the reading and writing of zip files.
 """
@@ -23,10 +24,8 @@ exclude = ["tests/**", "examples/**", ".github/**", "fuzz_read/**", "fuzz_write/
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[workspace.dependencies]
-time = { version = "0.3.37", default-features = false }
-
 [dependencies]
+arbitrary = { version = "1.4", features = ["derive"], optional = true }
 aes = { version = "0.8", optional = true }
 bzip2 = { version = "0.6.0", optional = true }
 chrono = { version = "^0.4.27", optional = true }
@@ -34,7 +33,6 @@ constant_time_eq = { version = "0.3.1", optional = true }
 crc32fast = "1.4"
 flate2 = { version = "1.1.1", default-features = false, optional = true }
 generic-array = { version = "=0.14.7", optional = true }
-getrandom = { version = "0.3.1", features = ["std"], optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
@@ -43,7 +41,7 @@ nt-time = { version = "0.10.6", default-features = false, optional = true }
 ppmd-rust = { version = "1.2", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
-time = { workspace = true, optional = true, features = [
+time = { version = "0.3.37", default-features = false, optional = true, features = [
     "std",
 ] }
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
@@ -53,19 +51,30 @@ deflate64 = { version = "0.1.9", optional = true }
 lzma-rust2 = { version = "0.15.5", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.5.0", optional = true }
 
-[target.'cfg(fuzzing)'.dependencies]
-arbitrary = { version = "1.4.1", features = ["derive"] }
+# todo remove - needed for https://github.com/zip-rs/zip2/pull/504
+rustversion = { version = "=1.0.6" }
+
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = { version = "0.3.1", features = ["std"], optional = true }
+
+# wasm32
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true }
 
 [dev-dependencies]
 bencher = "0.1.5"
-getrandom = { version = "0.3.1", features = ["wasm_js", "std"] }
 walkdir = "2.5"
-time = { workspace = true, features = ["formatting", "macros"] }
+time = { version = "0.3", features = ["formatting", "macros"] }
 anyhow = "1.0.95"
 clap = { version = "=4.4.18", features = ["derive"] }
 tempfile = "3.15"
+rayon = "1.11.0"
+wasm-bindgen-test = "0.3.56"
 
 [features]
+_arbitrary = ["dep:arbitrary"]
 aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "dep:getrandom", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
 chrono = ["dep:chrono"]
 _deflate-any = []

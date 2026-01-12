@@ -1,4 +1,5 @@
-use std::io::prelude::*;
+use std::io::Write;
+use std::path::Path;
 use zip::write::SimpleFileOptions;
 #[cfg(feature = "aes-crypto")]
 use zip::{AesMode, CompressionMethod};
@@ -24,8 +25,23 @@ fn real_main() -> i32 {
 }
 
 fn doit(filename: &str) -> zip::result::ZipResult<()> {
-    let path = std::path::Path::new(filename);
-    let file = std::fs::File::create(path).unwrap();
+    let path = Path::new(filename);
+
+    // Validate that the provided filename does not escape the current directory
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        // Return an error instead of writing to an arbitrary location
+        return Err(zip::result::ZipError::FileNotFound);
+    }
+
+    // Create the file relative to the current working directory
+    let base = std::env::current_dir().map_err(|_| zip::result::ZipError::FileNotFound)?;
+    let safe_path = base.join(path);
+
+    let file = std::fs::File::create(safe_path).unwrap();
 
     let mut zip = zip::ZipWriter::new(file);
 
