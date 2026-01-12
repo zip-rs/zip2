@@ -9,6 +9,8 @@ jobs:
   auto-merge:
     runs-on: ubuntu-latest
     if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'github-actions' }}
+    env:
+      GH_TOKEN: "${{ github.token }}"
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
