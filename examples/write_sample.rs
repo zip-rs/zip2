@@ -35,8 +35,8 @@ fn write_zip_file(filename: &str) -> zip::result::ZipResult<()> {
             .any(|c| matches!(c, std::path::Component::ParentDir))
     {
         // Return an error instead of writing to an arbitrary location
-        return Err(zip::result::ZipError::InvalidArchive(
-            "unsafe output path: attempted directory traversal or absolute path".into(),
+        return Err(invalid!(
+            "unsafe output path: attempted directory traversal or absolute path",
         ));
     }
 
