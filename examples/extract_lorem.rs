@@ -10,8 +10,29 @@ fn real_main() -> i32 {
         println!("Usage: {} <filename>", args[0]);
         return 1;
     }
-    let fname = std::path::Path::new(&*args[1]);
-    let zipfile = std::fs::File::open(fname).unwrap();
+    // Constrain the file path to the current directory and prevent directory traversal.
+    let base_dir = std::path::Path::new(".");
+    let requested_path = base_dir.join(&*args[1]);
+    let fname = match std::fs::canonicalize(&requested_path) {
+        Ok(p) => {
+            if !p.starts_with(base_dir) {
+                println!("Error: invalid filename (outside allowed directory)");
+                return 1;
+            }
+            p
+        }
+        Err(e) => {
+            println!("Error: cannot access {:?}: {e}", args[1]);
+            return 1;
+        }
+    };
+    let zipfile = match std::fs::File::open(&fname) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("Error: failed to open {:?}: {e}", fname.display());
+            return 1;
+        }
+    };
 
     let mut archive = zip::ZipArchive::new(zipfile).unwrap();
 
