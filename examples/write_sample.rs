@@ -40,7 +40,12 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
     }
 
     // Create the file relative to the current working directory
-    let base = std::env::current_dir().map_err(|_| zip::result::ZipError::Io(std::io::ErrorKind::NotFound, "Failed to get current directory".to_string()))?;
+    let base = std::env::current_dir().map_err(|_| {
+        zip::result::ZipError::Io(
+            std::io::ErrorKind::NotFound,
+            "Failed to get current directory".to_string(),
+        )
+    })?;
     let safe_path = base.join(path);
 
     let file = std::fs::File::create(safe_path)?;
