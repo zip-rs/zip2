@@ -40,7 +40,18 @@ use zopfli::Options;
 #[cfg(feature = "deflate-zopfli")]
 use std::io::BufWriter;
 use std::path::Path;
-
+#[cfg(feature = "bzip2")]
+use GenericZipWriter::Bzip2;
+#[cfg(feature = "deflate-flate2")]
+use GenericZipWriter::Deflater;
+#[cfg(feature = "deflate-zopfli")]
+use GenericZipWriter::{BufferedZopfliDeflater, ZopfliDeflater};
+#[cfg(feature = "ppmd")]
+use GenericZipWriter::Ppmd;
+#[cfg(feature = "zstd")]
+use GenericZipWriter::Zstd;
+#[cfg(feature = "xz")]
+use GenericZipWriter::Xz;
 #[cfg(feature = "zstd")]
 use zstd::stream::write::Encoder as ZstdEncoder;
 
@@ -110,21 +121,21 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             Closed => f.write_str("Closed"),
             Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(w) => {
+            Deflater(w) => {
                 f.write_fmt(format_args!("Deflater({:?})", w.get_ref()))
             }
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
+            ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::BufferedZopfliDeflater(_) => f.write_str("BufferedZopfliDeflater"),
+            BufferedZopfliDeflater(_) => f.write_str("BufferedZopfliDeflater"),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
+            Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
             #[cfg(feature = "zstd")]
-            GenericZipWriter::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
+            Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
             #[cfg(feature = "xz")]
-            GenericZipWriter::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.inner())),
+            Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.inner())),
             #[cfg(feature = "ppmd")]
-            GenericZipWriter::Ppmd(_) => f.write_fmt(format_args!("Ppmd8Encoder")),
+            Ppmd(_) => f.write_fmt(format_args!("Ppmd8Encoder")),
         }
     }
 }
@@ -1751,7 +1762,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             };
                             return Ok(Box::new(move |bare| {
                                 Ok(match zopfli_buffer_size {
-                                    Some(size) => GenericZipWriter::BufferedZopfliDeflater(
+                                    Some(size) => BufferedZopfliDeflater(
                                         BufWriter::with_capacity(
                                             size,
                                             zopfli::DeflateEncoder::new(
@@ -1761,7 +1772,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                             ),
                                         ),
                                     ),
-                                    None => GenericZipWriter::ZopfliDeflater(
+                                    None => ZopfliDeflater(
                                         zopfli::DeflateEncoder::new(
                                             options,
                                             Default::default(),
@@ -1810,7 +1821,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Bzip2(BzEncoder::new(
+                        Ok(Bzip2(BzEncoder::new(
                             bare,
                             bzip2::Compression::new(level),
                         )))
@@ -1827,7 +1838,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     )
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                     Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Zstd(
+                        Ok(Zstd(
                             ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
                         ))
                     }))
@@ -1854,7 +1865,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Xz(Box::new(
+                        Ok(Xz(Box::new(
                             lzma_rust2::XzWriter::new(
                                 bare,
                                 lzma_rust2::XzOptions::with_preset(level),
@@ -1905,7 +1916,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             )),
                         })?;
 
-                        Ok(GenericZipWriter::Ppmd(Box::new(encoder)))
+                        Ok(Ppmd(Box::new(encoder)))
                     }))
                 }
                 CompressionMethod::Unsupported(..) => {
@@ -1919,22 +1930,22 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         let bare = match mem::replace(self, Closed) {
             Storer(w) => w,
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(w) => w.finish()?,
+            Deflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
+            ZopfliDeflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::BufferedZopfliDeflater(w) => w
+            BufferedZopfliDeflater(w) => w
                 .into_inner()
                 .map_err(|e| ZipError::Io(e.into_error()))?
                 .finish()?,
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(w) => w.finish()?,
+            Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
-            GenericZipWriter::Zstd(w) => w.finish()?,
+            Zstd(w) => w.finish()?,
             #[cfg(feature = "xz")]
-            GenericZipWriter::Xz(w) => w.finish()?,
+            Xz(w) => w.finish()?,
             #[cfg(feature = "ppmd")]
-            GenericZipWriter::Ppmd(w) => {
+            Ppmd(w) => {
                 // ZIP needs to encode an end marker (7z for example doesn't encode one).
                 w.finish(true)?
             }
@@ -1954,19 +1965,19 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         match self {
             Storer(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
+            Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
+            ZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::BufferedZopfliDeflater(w) => Some(w as &mut dyn Write),
+            BufferedZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
+            Bzip2(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
-            GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
+            Zstd(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "xz")]
-            GenericZipWriter::Xz(ref mut w) => Some(w as &mut dyn Write),
+            Xz(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "ppmd")]
-            GenericZipWriter::Ppmd(ref mut w) => Some(w as &mut dyn Write),
+            Ppmd(ref mut w) => Some(w as &mut dyn Write),
             Closed => None,
         }
     }
