@@ -29,7 +29,8 @@ const PASSWORD: &[u8] = b"helloworld";
 #[cfg(feature = "aes-crypto")]
 fn aes256_encrypted_uncompressed_file() {
     let zip_data = include_bytes!("data/aes_archive.zip").to_vec();
-    let mut archive = ZipArchive::new(io::Cursor::new(zip_data)).expect("couldn't open test zip file");
+    let mut archive =
+        ZipArchive::new(io::Cursor::new(zip_data)).expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_256_uncompressed", PASSWORD)
