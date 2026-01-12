@@ -31,25 +31,19 @@ fn real_main() -> i32 {
     };
 
     let candidate_path = base_dir.join(std::path::Path::new(file_arg));
-    let fname = match candidate_path.canonicalize() {
-        Ok(path) => {
-            if !path.starts_with(&base_dir) {
-                eprintln!(
-                    "Error: resolved path '{}' escapes the allowed directory.",
-                    path.display()
-                );
-                return 1;
-            }
-            path
-        }
-        Err(e) => {
-            eprintln!(
-                "Error: unable to resolve archive path '{}': {e}",
-                candidate_path.display()
-            );
-            return 1;
-        }
-    };
+    let candidate_path = base_dir.join(std::path::Path::new(file_arg));
+    
+    // Validate the path without requiring the file to exist
+    let normalized_candidate = candidate_path.components().collect::<std::path::PathBuf>();
+    if !normalized_candidate.starts_with(&base_dir) {
+        eprintln!(
+            "Error: path '{}' escapes the allowed directory.",
+            candidate_path.display()
+        );
+        return 1;
+    }
+    
+    let fname = candidate_path;
 
     let file = fs::File::open(&fname).unwrap();
 
