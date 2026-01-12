@@ -40,20 +40,20 @@ use zopfli::Options;
 #[cfg(feature = "deflate-zopfli")]
 use std::io::BufWriter;
 use std::path::Path;
+#[cfg(feature = "zstd")]
+use zstd::stream::write::Encoder as ZstdEncoder;
 #[cfg(feature = "bzip2")]
 use GenericZipWriter::Bzip2;
 #[cfg(feature = "deflate-flate2")]
 use GenericZipWriter::Deflater;
-#[cfg(feature = "deflate-zopfli")]
-use GenericZipWriter::{BufferedZopfliDeflater, ZopfliDeflater};
 #[cfg(feature = "ppmd")]
 use GenericZipWriter::Ppmd;
-#[cfg(feature = "zstd")]
-use GenericZipWriter::Zstd;
 #[cfg(feature = "xz")]
 use GenericZipWriter::Xz;
 #[cfg(feature = "zstd")]
-use zstd::stream::write::Encoder as ZstdEncoder;
+use GenericZipWriter::Zstd;
+#[cfg(feature = "deflate-zopfli")]
+use GenericZipWriter::{BufferedZopfliDeflater, ZopfliDeflater};
 
 // re-export from types
 pub use crate::types::{FileOptions, SimpleFileOptions};
@@ -121,9 +121,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             Closed => f.write_str("Closed"),
             Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
             #[cfg(feature = "deflate-flate2")]
-            Deflater(w) => {
-                f.write_fmt(format_args!("Deflater({:?})", w.get_ref()))
-            }
+            Deflater(w) => f.write_fmt(format_args!("Deflater({:?})", w.get_ref())),
             #[cfg(feature = "deflate-zopfli")]
             ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
             #[cfg(feature = "deflate-zopfli")]
@@ -1703,7 +1701,10 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
-                let _ = write!(io::stderr(), "ZipWriter::drop: failed to finalize archive: {e:?}");
+                let _ = write!(
+                    io::stderr(),
+                    "ZipWriter::drop: failed to finalize archive: {e:?}"
+                );
             }
         }
     }
@@ -1762,23 +1763,19 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             };
                             return Ok(Box::new(move |bare| {
                                 Ok(match zopfli_buffer_size {
-                                    Some(size) => BufferedZopfliDeflater(
-                                        BufWriter::with_capacity(
-                                            size,
-                                            zopfli::DeflateEncoder::new(
-                                                options,
-                                                Default::default(),
-                                                bare,
-                                            ),
-                                        ),
-                                    ),
-                                    None => ZopfliDeflater(
+                                    Some(size) => BufferedZopfliDeflater(BufWriter::with_capacity(
+                                        size,
                                         zopfli::DeflateEncoder::new(
                                             options,
                                             Default::default(),
                                             bare,
                                         ),
-                                    ),
+                                    )),
+                                    None => ZopfliDeflater(zopfli::DeflateEncoder::new(
+                                        options,
+                                        Default::default(),
+                                        bare,
+                                    )),
                                 })
                             }));
                         };
@@ -1821,10 +1818,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
-                        Ok(Bzip2(BzEncoder::new(
-                            bare,
-                            bzip2::Compression::new(level),
-                        )))
+                        Ok(Bzip2(BzEncoder::new(bare, bzip2::Compression::new(level))))
                     }))
                 }
                 CompressionMethod::AES => Err(UnsupportedArchive(
