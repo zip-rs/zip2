@@ -29,7 +29,7 @@ arbitrary = { version = "1.4", features = ["derive"], optional = true }
 aes = { version = "0.8", optional = true }
 bzip2 = { version = "0.6", optional = true }
 chrono = { version = "^0.4.27", optional = true, default-features = false, features = ["std"] }
-constant_time_eq = { version = "0.4", optional = true }
+constant_time_eq = { version = "0.3", optional = true }
 crc32fast = "1.5"
 flate2 = { version = "1.1", default-features = false, optional = true }
 generic-array = { version = "=0.14.7", optional = true }
