@@ -50,7 +50,10 @@ fn real_main() -> i32 {
     let mut archive = zip::ZipArchive::new(file).unwrap();
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i).unwrap();
+        let Ok(file) = fs::File::open(&fname) else {
+            eprintln!("Error: unable to open archive '{}': {e}", fname.display());
+            return 1;
+        };
         let outpath = match file.enclosed_name() {
             Some(path) => path,
             None => continue,
