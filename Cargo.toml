@@ -47,7 +47,7 @@ time = { version = "0.3", default-features = false, optional = true, features = 
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
-deflate64 = { version = "0.1", optional = true }
+deflate64 = { version = "0.1.10", optional = true }
 lzma-rust2 = { version = "0.15", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.5", optional = true }
 
@@ -57,11 +57,11 @@ rustversion = { version = "=1.0.6" }
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-getrandom = { version = "0.3.1", features = ["std"], optional = true }
+getrandom = { version = "0.3", default-features = false, optional = true }
 
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true }
+getrandom = { version = "0.3", default-features = false, features = ["wasm_js"], optional = true }
 
 [dev-dependencies]
 bencher = "0.1"
