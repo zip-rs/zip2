@@ -1,4 +1,4 @@
-//! These are test for the wasm32 arch
+//! These are tests for the wasm32 architecture
 //!
 //! ## Tests
 //!
