@@ -38,7 +38,7 @@ hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
 memchr = "2.7"
-nt-time = { version = "0.10.6", default-features = false, optional = true }
+nt-time = { version = "0.13.0", default-features = false, optional = true }
 ppmd-rust = { version = "1.2", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
