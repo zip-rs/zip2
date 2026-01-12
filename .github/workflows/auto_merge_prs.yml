@@ -9,6 +9,8 @@ jobs:
   auto-merge:
     runs-on: ubuntu-latest
     if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'github-actions' }}
+    env:
+      GH_TOKEN: "${{ github.token }}"
     steps:
       - name: Dependabot metadata
         id: metadata
