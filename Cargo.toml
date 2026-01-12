@@ -33,7 +33,6 @@ constant_time_eq = { version = "0.3.1", optional = true }
 crc32fast = "1.4"
 flate2 = { version = "1.1.1", default-features = false, optional = true }
 generic-array = { version = "=0.14.7", optional = true }
-getrandom = { version = "0.3.1", features = ["std"], optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
@@ -52,15 +51,27 @@ deflate64 = { version = "0.1.9", optional = true }
 lzma-rust2 = { version = "0.15.5", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.5.0", optional = true }
 
+# todo remove - needed for https://github.com/zip-rs/zip2/pull/504
+rustversion = { version = "=1.0.6" }
+
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = { version = "0.3.1", features = ["std"], optional = true }
+
+# wasm32
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3.1", features = ["wasm_js", "std"], optional = true }
+
 [dev-dependencies]
 bencher = "0.1.5"
-getrandom = { version = "0.3.1", features = ["wasm_js", "std"] }
 walkdir = "2.5"
 time = { version = "0.3", features = ["formatting", "macros"] }
 anyhow = "1.0.95"
 clap = { version = "=4.4.18", features = ["derive"] }
 tempfile = "3.15"
 rayon = "1.11.0"
+wasm-bindgen-test = "0.3.56"
 
 [features]
 _arbitrary = ["dep:arbitrary"]
