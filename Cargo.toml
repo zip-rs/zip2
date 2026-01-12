@@ -76,7 +76,7 @@ bencher = "0.1"
 getrandom = { version = "0.3", default-features = false, features = [] }
 walkdir = "2.5"
 time = { version = "0.3", features = ["formatting", "macros"] }
-anyhow = "1.0"
+anyhow = "1.0.100"
 clap = { version = "=4.4.18", features = ["derive"] }
 tempfile = "3.15"
 rayon = "1.11"
