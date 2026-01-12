@@ -12,6 +12,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "_deflate-any")]
     {
         let filename = &*args[1];
+        // Ensure that the filename has no path separators or parent directory references
+        if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+            return Err("Invalid filename: path separators or '..' are not allowed".into());
+        }
         use std::io::Write;
 
         use zip::write::SimpleFileOptions;

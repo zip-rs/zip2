@@ -11,7 +11,17 @@ fn real_main() -> i32 {
         println!("Usage: {} <filename>", args[0]);
         return 1;
     }
-    let fname = std::path::Path::new(&*args[1]);
+
+    let file_arg = &args[1];
+    if file_arg.contains("..") || file_arg.contains('/') || file_arg.contains('\\') {
+        eprintln!(
+            "Error: invalid filename '{}'. Directory separators and \"..\" are not allowed.",
+            file_arg
+        );
+        return 1;
+    }
+
+    let fname = std::path::Path::new(file_arg);
     let file = fs::File::open(fname).unwrap();
 
     let mut archive = zip::ZipArchive::new(file).unwrap();
