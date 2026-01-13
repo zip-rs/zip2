@@ -52,7 +52,7 @@ lzma-rust2 = { version = "0.15", optional = true, default-features = false, feat
 bitstream-io = { version = "4.5", optional = true }
 
 # todo remove - needed for https://github.com/zip-rs/zip2/pull/504
-rustversion = { version = "=1.0.6" }
+rustversion = { version = "=1.0.22" }
 
 
 # native:
