@@ -3,6 +3,10 @@ permissions:
   contents: read
   security-events: write
 
+concurrency:
+  group: ${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: false
+
 on:
   pull_request:
     branches:

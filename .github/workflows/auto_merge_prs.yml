@@ -19,4 +19,5 @@ jobs:
       - name: Enable auto-merge
         run: gh pr merge --auto --merge "$PR_URL"
         env:
+          GH_TOKEN: "${{ github.token }}"
           PR_URL: ${{github.event.pull_request.html_url}}
