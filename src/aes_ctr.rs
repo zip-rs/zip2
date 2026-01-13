@@ -156,22 +156,22 @@ mod tests {
         Aes: AesKind,
         Aes::Cipher: KeyInit + BlockEncrypt,
     {
-        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
+        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key).unwrap();
 
         let mut plaintext = ciphertext.to_vec().into_boxed_slice();
         key_stream.crypt_in_place(&mut plaintext);
         assert_eq!(*plaintext, *expected_plaintext);
 
         // Round-tripping should yield the ciphertext again.
-        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
+        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key).unwrap();
         key_stream.crypt_in_place(&mut plaintext);
         assert_eq!(*plaintext, *ciphertext);
     }
 
     #[test]
-    #[should_panic]
     fn new_with_wrong_key_size() {
-        AesCtrZipKeyStream::<Aes128>::new(&[1, 2, 3, 4, 5]);
+        AesCtrZipKeyStream::<Aes128>::new(&[1, 2, 3, 4, 5])
+            .expect_err("Wrong key size should fail");
     }
 
     // The data used in these tests was generated with p7zip without any compression.
