@@ -4,10 +4,10 @@
 //! different byte order (little endian) than NIST (big endian).
 //! See [AesCtrZipKeyStream] for more information.
 
+use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianWriteExt;
 use aes::cipher::{BlockEncrypt, KeyInit};
 use core::{any, fmt};
-use crate::result::{ZipError, ZipResult};
 
 /// Internal block size of an AES cipher.
 const AES_BLOCK_SIZE: usize = 16;

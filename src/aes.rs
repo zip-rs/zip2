@@ -5,6 +5,7 @@
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
 use crate::aes_ctr::AesCipher;
+use crate::result::ZipResult;
 use crate::types::AesMode;
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
@@ -12,7 +13,6 @@ use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use std::io::{self, Error, ErrorKind, Read, Write};
 use zeroize::{Zeroize, Zeroizing};
-use crate::result::ZipResult;
 
 /// The length of the password verification value in bytes
 pub const PWD_VERIFY_LENGTH: usize = 2;
