@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.1.0](https://github.com/zip-rs/zip2/compare/v7.0.0...v7.1.0) - 2026-01-14
+
+### <!-- 0 -->🚀 Features
+
+- display the underlying error in Display impl for ZipError::Display ([#483](https://github.com/zip-rs/zip2/pull/483))
+- Enable creation of `ZipArchive` without reparsing ([#485](https://github.com/zip-rs/zip2/pull/485))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Return InvalidPassword rather than panic when AES key is the wrong length ([#457](https://github.com/zip-rs/zip2/pull/457))
+- bench with auto zip64 comment ([#505](https://github.com/zip-rs/zip2/pull/505))
+- add condition for `getrandom` dependency ([#504](https://github.com/zip-rs/zip2/pull/504))
+- *(zipcrypto)* Support streaming ZipCrypto encryption, don't store entire file in memory ([#462](https://github.com/zip-rs/zip2/pull/462))
+
+### <!-- 2 -->🚜 Refactor
+
+- Clean up imports and move types ([#461](https://github.com/zip-rs/zip2/pull/461))
+- Replace handwritten `Ord` and `PartialOrd` for `DateTime` ([#484](https://github.com/zip-rs/zip2/pull/484))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Lock `lzma-rust2` to at least 0.15.5 ([#491](https://github.com/zip-rs/zip2/pull/491))
+
 ## [7.0.0](https://github.com/zip-rs/zip2/compare/v6.0.0...v7.0.0) - 2025-12-05
 
 ### <!-- 9 -->⚠️ Breaking Changes
