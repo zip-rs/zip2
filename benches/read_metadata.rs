@@ -1,7 +1,7 @@
 use bencher::{benchmark_group, benchmark_main};
 
 use std::fs;
-use std::io::{self, prelude::*, Cursor};
+use std::io::{self, Cursor, Write};
 
 use bencher::Bencher;
 use tempfile::TempDir;
@@ -76,6 +76,8 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
 
     let mut bytes = vec![0u8; comment_length];
     getrandom::fill(&mut bytes).unwrap();
+    // should use the line below but still works
+    // writer.set_raw_zip64_comment(Some(comment));
     writer.set_raw_comment(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
