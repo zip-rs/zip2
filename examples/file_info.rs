@@ -12,15 +12,30 @@ fn real_main() -> i32 {
         return 1;
     }
     let fname_arg = &args[1];
-    let fname_path = std::path::Path::new(fname_arg);
-    // Basic validation to guard against unsafe paths.
-    // Reject absolute paths and any path containing parent directory references.
-    if fname_path.is_absolute() || fname_arg.contains("..") {
-        println!("Error: refusing to open unsafe path \"{}\"", fname_arg);
-        return 1;
-    }
-    let fname = fname_path;
-    let file = fs::File::open(fname).unwrap();
+    // Determine a trusted base directory (current working directory).
+    let base_dir = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("Error: could not determine current directory: {e}");
+            return 1;
+        }
+    };
+    // Construct the path relative to the trusted base directory and canonicalize it.
+    let candidate_path = base_dir.join(fname_arg);
+    let fname = match candidate_path.canonicalize() {
+        Ok(path) => {
+            if !path.starts_with(&base_dir) {
+                println!("Error: refusing to open path outside of base directory: \"{}\"", fname_arg);
+                return 1;
+            }
+            path
+        }
+        Err(e) => {
+            println!("Error: could not open \"{}\": {e}", fname_arg);
+            return 1;
+        }
+    };
+    let file = fs::File::open(&fname).unwrap();
     let reader = BufReader::new(file);
 
     let mut archive = zip::ZipArchive::new(reader).unwrap();
