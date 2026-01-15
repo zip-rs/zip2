@@ -31,6 +31,16 @@ fn real_main() -> i32 {
 }
 
 fn update_file(archive_filename: &str, file_to_update: &str, in_place: bool) -> ZipResult<()> {
+    // Basic validation: do not allow absolute paths or parent directory components.
+    let archive_path = std::path::Path::new(archive_filename);
+    if archive_path.is_absolute()
+        || archive_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(ZipError::FileNotFound);
+    }
+
     let fname = std::path::Path::new(archive_filename);
     let zipfile = std::fs::File::open(fname)?;
 
