@@ -11,7 +11,7 @@ fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
         println!(
-            "Usage: {} <filename> <file_within_archive_to_delete>",
+            "Usage: {:?} <filename> <file_within_archive_to_delete>",
             args[0]
         );
         return 1;
@@ -20,9 +20,9 @@ fn real_main() -> i32 {
     let file_to_remove = &*args[2];
     let base_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     match remove_file(&base_dir, filename, file_to_remove, false) {
-        Ok(_) => println!("{file_to_remove} deleted from {filename}"),
+        Ok(_) => println!("{file_to_remove:?} deleted from {filename:?}"),
         Err(e) => {
-            eprintln!("Error: {e:?}");
+            eprintln!("Error: {e}");
             return 1;
         }
     }
