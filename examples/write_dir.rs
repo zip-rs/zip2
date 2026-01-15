@@ -91,7 +91,7 @@ fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> a
     }
 
     let path = Path::new(dst_file);
-    let file = File::create(path).unwrap();
+    let file = File::create(path)?;
 
     let walkdir = WalkDir::new(src_dir);
 
