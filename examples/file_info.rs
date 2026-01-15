@@ -35,7 +35,13 @@ fn real_main() -> i32 {
             return 1;
         }
     };
-    let file = fs::File::open(&fname).unwrap();
+    let file = match fs::File::open(&fname) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Error: could not open file {:?}: {e}", fname.display());
+            return 1;
+        }
+    };
     let reader = BufReader::new(file);
 
     let mut archive = zip::ZipArchive::new(reader).unwrap();
