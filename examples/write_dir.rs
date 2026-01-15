@@ -2,12 +2,11 @@
 #![allow(dead_code)]
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
-use std::io::prelude::*;
-use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
-
 use std::fs::File;
+use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
+use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
 
 #[derive(Parser)]
 #[command(about, long_about = None)]

@@ -36,12 +36,12 @@ use std::io::Cursor;
 use zip::result::ZipError;
 
 #[test]
-#[cfg(feature = "deflate-flate2")]
+#[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
 fn encrypting_file() {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
-    let mut archive = zip::write::ZipWriter::new(Cursor::new(&mut buf));
+    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buf));
     archive
         .start_file(
             "name",
@@ -101,13 +101,29 @@ fn encrypted_file() {
         file.read_to_end(&mut data).unwrap();
         assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
     }
+
+    // Again, but with the options API.
+    {
+        use zip::read::ZipReadOptions;
+
+        // Correct password, read contents
+        let mut file = archive
+            .by_index_with_options(0, ZipReadOptions::new().password(Some("test".as_bytes())))
+            .unwrap();
+        let file_name = file.enclosed_name().unwrap();
+        assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
+
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
+    }
 }
 
 #[test]
 fn buffered_read() {
     use std::io::{BufReader, Read};
 
-    // delibirately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens, it's not going to take entire buffer,
+    // deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens, it's not going to take entire buffer,
     // for this file it needs to be between 13..=46 bytes (with exception of 44 bytes)
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
     let buffered = BufReader::with_capacity(13, zip_file_bytes);

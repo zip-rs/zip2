@@ -1,6 +1,7 @@
 //! Possible ZIP compression methods.
 
-use std::{fmt, io};
+use core::fmt;
+use std::io;
 
 use crate::cfg_if_expr;
 
@@ -13,7 +14,7 @@ use crate::cfg_if_expr;
 /// When creating ZIP files, you may choose the method to use with
 /// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub enum CompressionMethod {
     /// Store the file as is
@@ -57,7 +58,7 @@ pub enum CompressionMethod {
     Ppmd,
     /// Unsupported compression method
     #[cfg_attr(
-        not(fuzzing),
+        not(any(fuzzing, feature = "_arbitrary")),
         deprecated(since = "0.5.7", note = "use the constants instead")
     )]
     Unsupported(u16),
@@ -140,6 +141,13 @@ impl CompressionMethod {
     pub const AES: Self = CompressionMethod::Aes;
     #[cfg(not(feature = "aes-crypto"))]
     pub const AES: Self = CompressionMethod::Unsupported(99);
+
+    #[cfg(feature = "_deflate-any")]
+    pub const DEFAULT: Self = cfg_if_expr! {
+        #[cfg(feature = "_deflate-any")] => CompressionMethod::Deflated,
+        #[cfg(all(not(feature = "_deflate-any"), feature = "bzip2"))] => CompressionMethod::Bzip2,
+        _ => CompressionMethod::Stored
+    };
 }
 impl CompressionMethod {
     pub(crate) const fn parse_from_u16(val: u16) -> Self {
@@ -230,10 +238,7 @@ impl CompressionMethod {
 
 impl Default for CompressionMethod {
     fn default() -> Self {
-        cfg_if_expr! {
-            #[cfg(feature = "_deflate-any")] => CompressionMethod::Deflated,
-            _ => CompressionMethod::Stored
-        }
+        Self::DEFAULT
     }
 }
 

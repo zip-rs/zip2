@@ -1,4 +1,5 @@
-use std::io::prelude::*;
+use std::io::{ErrorKind, Write};
+use std::path::Path;
 use zip::write::SimpleFileOptions;
 #[cfg(feature = "aes-crypto")]
 use zip::{AesMode, CompressionMethod};
@@ -14,18 +15,44 @@ fn real_main() -> i32 {
         return 1;
     }
 
-    let filename = &*args[1];
+    let filename = &args[1];
     match doit(filename) {
-        Ok(_) => println!("File written to {filename}"),
-        Err(e) => println!("Error: {e:?}"),
+        Ok(_) => {
+            println!("File written to {filename}");
+            0
+        }
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            1
+        }
     }
-
-    0
 }
 
 fn doit(filename: &str) -> zip::result::ZipResult<()> {
-    let path = std::path::Path::new(filename);
-    let file = std::fs::File::create(path).unwrap();
+    let path = Path::new(filename);
+
+    // Validate that the provided filename does not escape the current directory
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        // Return an error instead of writing to an arbitrary location
+        return Err(zip::result::ZipError::InvalidArchive(
+            "unsafe output path: attempted directory traversal or absolute path".into(),
+        ));
+    }
+
+    // Create the file relative to the current working directory
+    let base = std::env::current_dir().map_err(|_| {
+        zip::result::ZipError::Io(std::io::Error::new(
+            ErrorKind::NotFound,
+            "Failed to get current directory",
+        ))
+    })?;
+    let safe_path = base.join(path);
+
+    let file = std::fs::File::create(safe_path)?;
 
     let mut zip = zip::ZipWriter::new(file);
 
@@ -62,7 +89,7 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
     Ok(())
 }
 
-const LOREM_IPSUM : &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
+const LOREM_IPSUM: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
 molestie. Proin blandit ornare dui, a tempor nisl accumsan in. Praesent a consequat felis. Morbi metus diam, auctor in auctor vel, feugiat id odio. Curabitur ex ex,
 dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim vehicula, porta tristique augue tincidunt. Vivamus ut gravida est. Sed pellentesque, dolor
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
