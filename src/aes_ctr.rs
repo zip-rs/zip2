@@ -107,11 +107,7 @@ where
     fn crypt_in_place(&mut self, mut target: &mut [u8]) {
         while !target.is_empty() {
             if self.pos == AES_BLOCK_SIZE {
-                // Note: AES block size is always 16 bytes, same as u128.
-                self.buffer
-                    .as_mut()
-                    .write_u128_le(self.counter)
-                    .expect("failed to write AES-CTR counter as little-endian u128 into buffer");
+                *self.buffer = self.counter.to_le_bytes();
                 self.cipher.encrypt_block(self.buffer.as_mut().into());
                 self.counter += 1;
                 self.pos = 0;
@@ -137,7 +133,7 @@ pub trait AesCipher {
 /// XORs a slice in place with another slice.
 #[inline]
 fn xor(dest: &mut [u8], src: &[u8]) {
-    assert_eq!(
+    debug_assert_eq!(
         dest.len(),
         src.len(),
         "XOR operation requires destination and source slices to have equal length"
