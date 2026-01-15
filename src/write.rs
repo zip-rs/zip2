@@ -58,6 +58,7 @@ use GenericZipWriter::{BufferedZopfliDeflater, ZopfliDeflater};
 // re-export from types
 pub use crate::types::{FileOptions, SimpleFileOptions};
 
+#[cfg_attr(feature = "aes-crypto", allow(clippy::large_enum_variant))]
 enum MaybeEncrypted<W> {
     Unencrypted(W),
     #[cfg(feature = "aes-crypto")]

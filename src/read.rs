@@ -172,7 +172,7 @@ impl<'a, R: Read> CryptoReader<'a, R> {
     }
 
     /// Returns `true` if the data is encrypted using AE2.
-    #[allow(clippy::needless_return)]
+    #[allow(clippy::needless_return)] // can't use cfg_if_expr! because const
     pub const fn is_ae2_encrypted(&self) -> bool {
         cfg_if! {
             if #[cfg(feature = "aes-crypto")] {
@@ -540,16 +540,18 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 /// Store all entries which specify a numeric "mode" which is familiar to POSIX operating systems.
 #[cfg(unix)]
 #[derive(Default, Debug)]
-struct FilesByUnixMode {
+struct UnixFileModes {
     map: std::collections::BTreeMap<PathBuf, u32>,
 }
 
 #[cfg(unix)]
-impl FilesByUnixMode {
+impl UnixFileModes {
+    #[cfg_attr(not(debug_assertions), allow(unused))]
     pub fn add_mode(&mut self, path: PathBuf, mode: u32) {
         // We don't print a warning or consider it remotely out of the ordinary to receive two
         // separate modes for the same path: just take the later one.
-        let _ = self.map.insert(path, mode);
+        let old_entry = self.map.insert(path, mode);
+        debug_assert_eq!(old_entry, None);
     }
 
     // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
@@ -975,7 +977,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .transpose()?;
 
         #[cfg(unix)]
-        let mut files_by_unix_mode = FilesByUnixMode::default();
+        let mut files_by_unix_mode = UnixFileModes::default();
 
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
@@ -993,9 +995,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let mut target = Vec::with_capacity(file.size() as usize);
                 file.read_to_end(&mut target)?;
                 symlink_target = Some(target);
-            }
-
-            if symlink_target.is_none() && file.is_dir() {
+            } else if file.is_dir() {
                 crate::read::make_writable_dir_all(&outpath)?;
                 continue;
             }
