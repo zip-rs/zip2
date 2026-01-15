@@ -3,14 +3,45 @@
 //! The following paper was used to implement the ZipCrypto algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
-use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
-use std::num::Wrapping;
+use core::fmt::{Debug, Formatter};
+use core::hash::Hash;
+use core::marker::PhantomData;
+use core::num::Wrapping;
 
 use crate::result::ZipError;
+#[cfg(feature = "aes-crypto")]
+use crate::AesMode;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EncryptWith<'k> {
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        mode: AesMode,
+        password: &'k str,
+    },
+    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
+}
+
+#[cfg(feature = "_arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        #[cfg(feature = "aes-crypto")]
+        if bool::arbitrary(u)? {
+            return Ok(EncryptWith::Aes {
+                mode: AesMode::arbitrary(u)?,
+                password: u.arbitrary::<&str>()?,
+            });
+        }
+
+        Ok(EncryptWith::ZipCrypto(
+            ZipCryptoKeys::arbitrary(u)?,
+            PhantomData,
+        ))
+    }
+}
 
 /// A container to hold the current key state
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
@@ -27,13 +58,13 @@ impl Debug for ZipCryptoKeys {
             use std::hash::Hasher;
             let mut t = DefaultHasher::new();
             self.hash(&mut t);
-            return f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()));
+            f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
         }
         #[cfg(any(test, fuzzing))]
-        return f.write_fmt(format_args!(
-            "ZipCryptoKeys({:#10x},{:#10x},{:#10x})",
+        f.write_fmt(format_args!(
+            "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
             self.key_0, self.key_1, self.key_2
-        ));
+        ))
     }
 }
 
@@ -43,6 +74,15 @@ impl ZipCryptoKeys {
             key_0: Wrapping(0x12345678),
             key_1: Wrapping(0x23456789),
             key_2: Wrapping(0x34567890),
+        }
+    }
+
+    #[allow(unused)]
+    pub const fn of(key_0: u32, key_1: u32, key_2: u32) -> ZipCryptoKeys {
+        ZipCryptoKeys {
+            key_0: Wrapping(key_0),
+            key_1: Wrapping(key_1),
+            key_2: Wrapping(key_2),
         }
     }
 
@@ -150,28 +190,29 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
-    pub(crate) buffer: Vec<u8>,
     pub(crate) keys: ZipCryptoKeys,
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
     #[allow(unused)]
-    pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
-        self.buffer[11] = (crc32 >> 24) as u8;
-        for byte in self.buffer.iter_mut() {
-            *byte = self.keys.encrypt_byte(*byte);
-        }
-        self.writer.write_all(&self.buffer)?;
-        self.writer.flush()?;
+    pub(crate) fn finish(mut self) -> std::io::Result<W> {
         Ok(self.writer)
     }
 }
 impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.buffer.extend_from_slice(buf);
+        const CHUNK_SIZE: usize = 4096;
+        let mut temp_buf = [0u8; CHUNK_SIZE];
+        for chunk in buf.chunks(CHUNK_SIZE) {
+            let encrypted_chunk = &mut temp_buf[..chunk.len()];
+            for (i, &byte) in chunk.iter().enumerate() {
+                encrypted_chunk[i] = self.keys.encrypt_byte(byte);
+            }
+            self.writer.write_all(encrypted_chunk)?;
+        }
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.writer.flush()
     }
 }
 

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
-use std::io::prelude::*;
+use std::io::{Read, Seek, Write};
 use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
@@ -25,32 +25,14 @@ struct Args {
 enum CompressionMethod {
     Stored,
     Deflated,
-    DeflatedMiniz,
-    DeflatedZlib,
     Bzip2,
+    Xz,
     Zstd,
 }
 
 fn main() {
     std::process::exit(real_main());
 }
-
-const METHOD_STORED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
-
-#[cfg(feature = "_deflate-any")]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
-#[cfg(not(feature = "_deflate-any"))]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
-
-#[cfg(feature = "bzip2")]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
-#[cfg(not(feature = "bzip2"))]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
-
-#[cfg(feature = "zstd")]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
-#[cfg(not(feature = "zstd"))]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
 
 fn real_main() -> i32 {
     let args = Args::parse();
@@ -59,30 +41,12 @@ fn real_main() -> i32 {
     let method = match args.compression_method {
         CompressionMethod::Stored => zip::CompressionMethod::Stored,
         CompressionMethod::Deflated => {
-            #[cfg(not(feature = "deflate"))]
+            #[cfg(not(feature = "deflate-flate2"))]
             {
-                println!("The `deflate` feature is not enabled");
+                println!("The `deflate-flate2` feature is not enabled");
                 return 1;
             }
-            #[cfg(feature = "deflate")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::DeflatedMiniz => {
-            #[cfg(not(feature = "deflate-miniz"))]
-            {
-                println!("The `deflate-miniz` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-miniz")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::DeflatedZlib => {
-            #[cfg(not(feature = "deflate-zlib"))]
-            {
-                println!("The `deflate-zlib` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-zlib")]
+            #[cfg(feature = "deflate-flate2")]
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::Bzip2 => {
@@ -93,6 +57,15 @@ fn real_main() -> i32 {
             }
             #[cfg(feature = "bzip2")]
             zip::CompressionMethod::Bzip2
+        }
+        CompressionMethod::Xz => {
+            #[cfg(not(feature = "xz"))]
+            {
+                println!("The `xz` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "xz")]
+            zip::CompressionMethod::Xz
         }
         CompressionMethod::Zstd => {
             #[cfg(not(feature = "zstd"))]
@@ -105,7 +78,7 @@ fn real_main() -> i32 {
         }
     };
     match doit(src_dir, dst_file, method) {
-        Ok(_) => println!("done: {:?} written to {:?}", src_dir, dst_file),
+        Ok(_) => println!("done: {src_dir:?} written to {dst_file:?}"),
         Err(e) => eprintln!("Error: {e:?}"),
     }
 
