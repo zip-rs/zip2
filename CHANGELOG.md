@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deps
 
-- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))*] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
+- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))
 
 ## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
 
