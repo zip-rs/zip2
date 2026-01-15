@@ -111,7 +111,7 @@ where
                 self.buffer
                     .as_mut()
                     .write_u128_le(self.counter)
-                    .expect("did not expect u128 le conversion to fail");
+                    .expect("failed to write AES-CTR counter as little-endian u128 into buffer");
                 self.cipher.encrypt_block(self.buffer.as_mut().into());
                 self.counter += 1;
                 self.pos = 0;
