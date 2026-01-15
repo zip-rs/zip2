@@ -104,7 +104,7 @@ fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> a
     let mut buffer = Vec::new();
     for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        let name = path.strip_prefix(prefix).unwrap();
+        let name = path.strip_prefix(prefix)?;
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
