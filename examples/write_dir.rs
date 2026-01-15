@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
