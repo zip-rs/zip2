@@ -3,8 +3,6 @@
 use core::fmt;
 use std::io;
 
-use crate::cfg_if_expr;
-
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
 ///
