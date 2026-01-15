@@ -31,7 +31,7 @@ fn real_main() -> i32 {
             path
         }
         Err(e) => {
-            println!("Error: could not open \"{}\": {e}", fname_arg);
+            eprintln!("Error: path validation failed for {:?}: {e}", fname_arg);
             return 1;
         }
     };
