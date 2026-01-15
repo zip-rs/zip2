@@ -15,7 +15,7 @@ const AES_BLOCK_SIZE: usize = 16;
 /// AES-128.
 #[derive(Debug)]
 pub struct Aes128;
-/// AES-192
+/// AES-192.
 #[derive(Debug)]
 pub struct Aes192;
 /// AES-256.
