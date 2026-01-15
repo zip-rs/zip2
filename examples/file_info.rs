@@ -29,19 +29,19 @@ fn real_main() -> i32 {
                 return 1;
             }
             path
-        }
-        Err(e) => {
-            eprintln!("Error: path validation failed for {:?}: {e}", fname_arg);
+let fname = match candidate_path.canonicalize() {
+    Ok(path) => {
+        if !path.starts_with(&base_dir) {
+            eprintln!("Error: refusing to open path outside of base directory: {:?}", fname_arg);
             return 1;
         }
-    };
-    let file = match fs::File::open(&fname) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Error: could not open file {:?}: {e}", fname.display());
-            return 1;
-        }
-    };
+        path
+    }
+    Err(e) => {
+        eprintln!("Error: could not open {:?}: {e}", fname_arg);
+        return 1;
+    }
+};
     let reader = BufReader::new(file);
 
     let mut archive = zip::ZipArchive::new(reader).unwrap();
