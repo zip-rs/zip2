@@ -995,9 +995,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let mut target = Vec::with_capacity(file.size() as usize);
                 file.read_to_end(&mut target)?;
                 symlink_target = Some(target);
-            }
-
-            if symlink_target.is_none() && file.is_dir() {
+            } else if file.is_dir() {
                 crate::read::make_writable_dir_all(&outpath)?;
                 continue;
             }
