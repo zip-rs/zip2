@@ -24,7 +24,7 @@ fn real_main() -> i32 {
     let candidate_path = base_dir.join(fname_arg);
     let fname = match candidate_path.canonicalize() {
         Ok(path) => {
-            if !path.starts_with(&base_dir) {
+            if !path.starts_with(&base_dir.canonicalize().unwrap_or(base_dir.clone())) {
                 println!("Error: refusing to open path outside of base directory: \"{}\"", fname_arg);
                 return 1;
             }
