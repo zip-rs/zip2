@@ -1792,16 +1792,16 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             return deflate_zopfli_and_return!(bare, best_non_zopfli);
                         }
                     }
-                    crate::cfg_if_expr! {
-                        ZipResult<SwitchWriterFunction<W>>:
-                        #[cfg(feature = "deflate-flate2")] => Ok(Box::new(move |bare| {
-                            Ok(GenericZipWriter::Deflater(DeflateEncoder::new(
-                                bare,
-                                Compression::new(level),
-                            )))
-                        })),
-                        _ => unreachable!("deflate writer: have no fallback for this case")
-                    }
+                }
+                crate::cfg_if_expr! {
+                    ZipResult<SwitchWriterFunction<W>>:
+                    #[cfg(feature = "deflate-flate2")] => Ok(Box::new(move |bare| {
+                        Ok(GenericZipWriter::Deflater(DeflateEncoder::new(
+                            bare,
+                            Compression::new(level),
+                        )))
+                    })),
+                    _ => unreachable!("deflate writer: have no fallback for this case")
                 }
             }
             #[cfg(feature = "deflate64")]
