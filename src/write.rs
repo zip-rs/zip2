@@ -2024,7 +2024,7 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
     feature = "xz",
     feature = "zstd",
 ))]
-fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
+fn validate_value_in_range<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     value: T,
     range: std::ops::RangeInclusive<U>,
 ) -> Option<T> {
