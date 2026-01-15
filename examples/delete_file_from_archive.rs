@@ -18,7 +18,8 @@ fn real_main() -> i32 {
     }
     let filename = &*args[1];
     let file_to_remove = &*args[2];
-    match remove_file(filename, file_to_remove, false) {
+    let base_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    match remove_file(&base_dir, filename, file_to_remove, false) {
         Ok(_) => println!("{file_to_remove} deleted from {filename}"),
         Err(e) => {
             eprintln!("Error: {e:?}");
@@ -28,14 +29,26 @@ fn real_main() -> i32 {
     0
 }
 
-fn remove_file(archive_filename: &str, file_to_remove: &str, in_place: bool) -> ZipResult<()> {
-    let fname = std::path::Path::new(archive_filename);
-    let zipfile = std::fs::File::open(fname)?;
+fn remove_file(
+    base_dir: &std::path::Path,
+    archive_filename: &str,
+    file_to_remove: &str,
+    in_place: bool,
+) -> ZipResult<()> {
+    let unsafe_path = std::path::Path::new(archive_filename);
+    let joined = base_dir.join(unsafe_path);
+    let fname = joined
+        .canonicalize()
+        .map_err(|_| ZipError::FileNotFound)?;
+    if !fname.starts_with(base_dir) {
+        return Err(ZipError::FileNotFound);
+    }
+    let zipfile = std::fs::File::open(&fname)?;
 
     let mut archive = zip::ZipArchive::new(zipfile)?;
 
     // Open a new, empty archive for writing to
-    let new_filename = replacement_filename(archive_filename.as_ref())?;
+    let new_filename = replacement_filename(fname.as_path())?;
     let new_file = std::fs::File::create(&new_filename)?;
     let mut new_archive = zip::ZipWriter::new(new_file);
 
@@ -59,7 +72,7 @@ fn remove_file(archive_filename: &str, file_to_remove: &str, in_place: bool) -> 
 
     // If we're doing this in place then overwrite the original with the new
     if in_place {
-        std::fs::rename(new_filename, archive_filename)?;
+        std::fs::rename(new_filename, &fname)?;
     }
 
     Ok(())
