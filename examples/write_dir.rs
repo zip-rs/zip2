@@ -7,7 +7,7 @@ use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use walkdir::{DirEntry, WalkDir};
+use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -108,7 +108,7 @@ fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> a
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
-            .with_context(|| format!("{name:?} Is a Non UTF-8 Path"))?;
+            .with_context(|| format!("{name:?} is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
@@ -127,5 +127,6 @@ fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> a
             zip.add_directory(path_as_string, options)?;
         }
     }
-    zip.finish()
+    zip.finish()?;
+    Ok(())
 }
