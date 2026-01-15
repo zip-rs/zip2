@@ -1,0 +1,17 @@
+[package]
+name = "fuzz_write"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+afl.workspace = true
+arbitrary.workspace = true
+replace_with = "^0.1.8"
+zip.workspace = true
+
+[target.'cfg(fuzzing)'.dependencies]
+tikv-jemallocator.workspace = true
+
+[features]
+zip-default = ["zip/default"]

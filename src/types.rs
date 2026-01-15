@@ -1,13 +1,11 @@
 //! Types that specify what is contained in a ZIP.
 use crate::cp437::FromCp437;
-use crate::write::{FileOptionExtension, FileOptions};
-use path::{Component, Path, PathBuf};
-use std::cmp::Ordering;
+use crate::write::FileOptionExtension;
+use crate::zipcrypto::EncryptWith;
+use core::fmt::{self, Debug, Formatter};
+use core::mem;
 use std::ffi::OsStr;
-use std::fmt;
-use std::fmt::{Debug, Formatter};
-use std::mem;
-use std::path;
+use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
@@ -69,6 +67,25 @@ impl From<System> for u8 {
     }
 }
 
+/// Metadata for a file to be written
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub struct FileOptions<'k, T: FileOptionExtension> {
+    pub(crate) compression_method: CompressionMethod,
+    pub(crate) compression_level: Option<i64>,
+    pub(crate) last_modified_time: DateTime,
+    pub(crate) permissions: Option<u32>,
+    pub(crate) large_file: bool,
+    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
+    pub(crate) extended_options: T,
+    pub(crate) alignment: u16,
+    #[cfg(feature = "deflate-zopfli")]
+    pub(super) zopfli_buffer_size: Option<usize>,
+    #[cfg(feature = "aes-crypto")]
+    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+}
+/// Simple File Options. Can be copied and good for simple writing zip files
+pub type SimpleFileOptions = FileOptions<'static, ()>;
+
 /// Representation of a moment in time.
 ///
 /// Zip files use an old format from DOS to store timestamps,
@@ -85,7 +102,7 @@ impl From<System> for u8 {
 ///
 /// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
 /// for details.
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     datepart: u16,
     timepart: u16,
@@ -108,34 +125,13 @@ impl Debug for DateTime {
     }
 }
 
-impl Ord for DateTime {
-    fn cmp(&self, other: &Self) -> Ordering {
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.year().cmp(&other.year()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.month().cmp(&other.month()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.day().cmp(&other.day()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.hour().cmp(&other.hour()) {
-            return ord;
-        }
-        if let ord @ (Ordering::Less | Ordering::Greater) = self.minute().cmp(&other.minute()) {
-            return ord;
-        }
-        self.second().cmp(&other.second())
-    }
-}
-
-impl PartialOrd for DateTime {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl DateTime {
+    /// Constructs a default datetime of 1980-01-01 00:00:00.
+    pub const DEFAULT: Self = DateTime {
+        datepart: 0b0000000000100001,
+        timepart: 0,
+    };
+
     /// Returns the current time if possible, otherwise the default of 1980-01-01.
     #[cfg(feature = "time")]
     pub fn default_for_write() -> Self {
@@ -152,7 +148,7 @@ impl DateTime {
     }
 }
 
-#[cfg(fuzzing)]
+#[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
         let year: u16 = u.int_in_range(1980..=2107)?;
@@ -256,10 +252,7 @@ impl From<DateTime> for (u16, u16) {
 impl Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
-        DateTime {
-            datepart: 0b0000000000100001,
-            timepart: 0,
-        }
+        DateTime::DEFAULT
     }
 }
 
@@ -569,7 +562,7 @@ impl ZipFileData {
         // zip files can contain both / and \ as separators regardless of the OS
         // and as we want to return a sanitized PathBuf that only supports the
         // OS separator let's convert incompatible separators to compatible ones
-        let separator = path::MAIN_SEPARATOR;
+        let separator = MAIN_SEPARATOR;
         let opposite_separator = match separator {
             '/' => '\\',
             _ => '/',
@@ -956,17 +949,34 @@ impl ZipFileData {
         )
     }
 
-    pub(crate) fn data_descriptor_block(&self) -> Option<ZipDataDescriptorBlock> {
+    pub(crate) fn write_data_descriptor<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+        auto_large_file: bool,
+    ) -> Result<(), ZipError> {
         if self.large_file {
-            return None;
+            return self.zip64_data_descriptor_block().write(writer);
         }
+        if self.compressed_size > spec::ZIP64_BYTES_THR
+            || self.uncompressed_size > spec::ZIP64_BYTES_THR
+        {
+            if auto_large_file {
+                return self.zip64_data_descriptor_block().write(writer);
+            }
+            return Err(ZipError::Io(std::io::Error::other(
+                "Large file option has not been set - use .large_file(true) in options",
+            )));
+        }
+        self.data_descriptor_block().write(writer)
+    }
 
-        Some(ZipDataDescriptorBlock {
+    pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
+        ZipDataDescriptorBlock {
             magic: ZipDataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size as u32,
             uncompressed_size: self.uncompressed_size as u32,
-        })
+        }
     }
 
     pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
@@ -1235,7 +1245,7 @@ pub enum AesVendorVersion {
 
 /// AES variant used.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum AesMode {
     /// 128-bit AES encryption.
@@ -1280,7 +1290,6 @@ mod test {
 
     #[test]
     fn sanitize() {
-        use super::*;
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
         let data = ZipFileData {
             system: System::Dos,
@@ -1444,8 +1453,12 @@ mod test {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
+    use std::{path::PathBuf, sync::OnceLock};
+
     #[cfg(feature = "time")]
     use time::{format_description::well_known::Rfc3339, OffsetDateTime, PrimitiveDateTime};
+
+    use crate::types::{System, ZipFileData};
 
     #[cfg(feature = "time")]
     #[test]
