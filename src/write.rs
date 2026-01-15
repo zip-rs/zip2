@@ -1095,9 +1095,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         if self.files.contains_key(&file.file_name) {
             return Err(invalid!("Duplicate filename: {}", file.file_name));
         }
-        let file_name = file.file_name.to_owned();
-        self.files.insert(file_name.clone(), file);
-        Ok(self.files.get_index_of(&file_name).unwrap())
+        let (index, _) = self.files.insert_full(file.file_name.clone(), file);
+        Ok(index)
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {
