@@ -13,7 +13,7 @@ fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
         println!(
-            "Usage: {} <filename> <file_within_archive_to_update>",
+            "Usage: {:?} <filename> <file_within_archive_to_update>",
             args[0]
         );
         return 1;
@@ -21,9 +21,9 @@ fn real_main() -> i32 {
     let filename = &*args[1];
     let file_to_update = &*args[2];
     match update_file(filename, file_to_update, false) {
-        Ok(_) => println!("{file_to_update} updated in {filename}"),
+        Ok(_) => println!("{file_to_update:?} updated in {filename:?}"),
         Err(e) => {
-            eprintln!("Error: {e:?}");
+            eprintln!("Error: {e}");
             return 1;
         }
     }
