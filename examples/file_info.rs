@@ -25,23 +25,16 @@ fn real_main() -> i32 {
     let fname = match candidate_path.canonicalize() {
         Ok(path) => {
             if !path.starts_with(&base_dir.canonicalize().unwrap_or(base_dir.clone())) {
-                println!("Error: refusing to open path outside of base directory: \"{}\"", fname_arg);
+                println!("Error: refusing to open path outside of base directory: {:?}", fname_arg);
                 return 1;
             }
             path
-let fname = match candidate_path.canonicalize() {
-    Ok(path) => {
-        if !path.starts_with(&base_dir) {
-            eprintln!("Error: refusing to open path outside of base directory: {:?}", fname_arg);
+        }
+        Err(e) => {
+            eprintln!("Error: could not open {:?}: {e}", fname_arg);
             return 1;
         }
-        path
-    }
-    Err(e) => {
-        eprintln!("Error: could not open {:?}: {e}", fname_arg);
-        return 1;
-    }
-};
+    };
     let reader = BufReader::new(file);
 
     let mut archive = zip::ZipArchive::new(reader).unwrap();
