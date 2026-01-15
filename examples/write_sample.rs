@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let filename = &args[1];
-    match doit(filename) {
+    match write_zip_file(filename) {
         Ok(_) => {
             println!("File written to {filename}");
             Ok(())
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn doit(filename: &str) -> zip::result::ZipResult<()> {
+fn write_zip_file(filename: &str) -> zip::result::ZipResult<()> {
     let path = Path::new(filename);
 
     // Validate that the provided filename does not escape the current directory
