@@ -3,8 +3,6 @@
 use core::fmt;
 use std::io;
 
-use crate::cfg_if_expr;
-
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
 ///
@@ -143,11 +141,13 @@ impl CompressionMethod {
     pub const AES: Self = CompressionMethod::Unsupported(99);
 
     #[cfg(feature = "_deflate-any")]
-    pub const DEFAULT: Self = cfg_if_expr! {
-        #[cfg(feature = "_deflate-any")] => CompressionMethod::Deflated,
-        #[cfg(all(not(feature = "_deflate-any"), feature = "bzip2"))] => CompressionMethod::Bzip2,
-        _ => CompressionMethod::Stored
-    };
+    pub const DEFAULT: Self = CompressionMethod::Deflated;
+
+    #[cfg(all(not(feature = "_deflate-any"), feature = "bzip2"))]
+    pub const DEFAULT: Self = CompressionMethod::Bzip2;
+
+    #[cfg(all(not(feature = "_deflate-any"), not(feature = "bzip2")))]
+    pub const DEFAULT: Self = CompressionMethod::Stored;
 }
 impl CompressionMethod {
     pub(crate) const fn parse_from_u16(val: u16) -> Self {
