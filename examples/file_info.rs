@@ -25,7 +25,7 @@ fn real_main() -> i32 {
     let candidate_path = base_dir.join(fname_arg);
     // FIXME: still vulnerable to a Time-of-check to time-of-use (TOCTOU) race condition.
     //
-    // An attacker could modify a path component (e.g., by replacing a directory with a symlink)
+    // An attacker could modify a path component (e.g., by replacing a directory with a symlink
     // between the canonicalize() and open() calls. This could bypass the starts_with check and lead
     // to path traversal. A fully secure solution is difficult without openat-like functionality
     // (which isn't in std).
@@ -43,8 +43,9 @@ fn real_main() -> i32 {
         }
     };
     let mut archive = match fs::File::open(&fname)
-            .map_err(ZipError::from)
-            .and_then(|file| zip::ZipArchive::new(BufReader::new(file))) {
+        .map_err(ZipError::from)
+        .and_then(|file| zip::ZipArchive::new(BufReader::new(file)))
+    {
         Ok(file) => file,
         Err(e) => {
             eprintln!("Error: could not open {:?}: {e}", fname_arg);
