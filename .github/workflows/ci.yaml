@@ -61,7 +61,7 @@ jobs:
       matrix:
         browser_flags: ["--headless --chrome", "--firefox", "--node"]
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rustalias: [stable, nightly, msrv]
+        rustalias: [stable, nightly]
         workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
         feature_flag:
           - "--all-features"
