@@ -68,7 +68,6 @@ fn remove_file(
     new_archive.finish()?;
 
     drop(archive);
-    drop(new_archive);
 
     // If we're doing this in place then overwrite the original with the new
     if in_place {
