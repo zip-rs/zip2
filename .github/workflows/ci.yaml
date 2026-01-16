@@ -55,6 +55,7 @@ jobs:
     - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
     - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   wasm:
+    needs: build_and_test
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -178,6 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - wasm
       - cargo_fmt
       - style_and_docs
       - miri
@@ -232,6 +234,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - wasm
       - cargo_fmt
       - style_and_docs
       - miri
@@ -278,6 +281,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - wasm
       - cargo_fmt
       - style_and_docs
       - miri
@@ -332,6 +336,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - wasm
       - cargo_fmt
       - style_and_docs
       - miri
