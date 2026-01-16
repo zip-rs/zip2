@@ -31,23 +31,33 @@ fn real_main() -> i32 {
 }
 
 fn update_file(archive_filename: &str, file_to_update: &str, in_place: bool) -> ZipResult<()> {
-    // Basic validation: do not allow absolute paths or parent directory components.
-    let archive_path = std::path::Path::new(archive_filename);
-    if archive_path.is_absolute()
-        || archive_path
+    // Validate the archive path:
+    //  - Disallow absolute paths.
+    //  - Disallow parent directory components.
+    //  - Ensure the resolved path stays within the current working directory.
+    let raw_path = std::path::Path::new(archive_filename);
+    if raw_path.is_absolute()
+        || raw_path
             .components()
             .any(|c| matches!(c, std::path::Component::ParentDir))
     {
         return Err(ZipError::FileNotFound);
     }
 
-    let fname = std::path::Path::new(archive_filename);
-    let zipfile = std::fs::File::open(fname)?;
+    // Use the current working directory as the base for archives.
+    let base_dir = std::env::current_dir()?;
+    let joined = base_dir.join(raw_path);
+    let archive_path = joined.canonicalize()?;
+    if !archive_path.starts_with(&base_dir) {
+        return Err(ZipError::FileNotFound);
+    }
+
+    let zipfile = std::fs::File::open(&archive_path)?;
 
     let mut archive = zip::ZipArchive::new(zipfile)?;
 
     // Open a new, empty archive for writing to
-    let new_filename = replacement_filename(archive_filename.as_ref())?;
+    let new_filename = replacement_filename(&archive_path)?;
     let new_file = std::fs::File::create(&new_filename)?;
     let mut new_archive = zip::ZipWriter::new(new_file);
 
@@ -76,7 +86,7 @@ fn update_file(archive_filename: &str, file_to_update: &str, in_place: bool) -> 
 
     // If we're doing this in place then overwrite the original with the new
     if in_place {
-        std::fs::rename(new_filename, archive_filename)?;
+        std::fs::rename(&new_filename, &archive_path)?;
     }
 
     Ok(())
