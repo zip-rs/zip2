@@ -62,7 +62,6 @@ jobs:
     - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   wasm:
     needs: build_and_test
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         browser_flags: ["--headless --chrome", "--firefox", "--node"]
@@ -85,6 +84,7 @@ jobs:
         exclude:
           - rustalias: msrv
             workspace: 'fuzz/Cargo.toml'
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v6
     - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
