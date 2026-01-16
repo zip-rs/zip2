@@ -54,6 +54,34 @@ jobs:
 
     - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
     - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
+  wasm:
+    runs-on: ubuntu-latest
+    browser-flags: ["--headless --chrome", "--firefox", "--node"]
+    os: [ubuntu-latest, macOS-latest, windows-latest]
+    rustalias: [stable, nightly, msrv]
+    workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+    feature_flag:
+      - "--all-features"
+      - "--no-default-features"
+      - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+      - "--no-default-features --features zip/deflate-zopfli"
+      - ""
+        include:
+        - rustalias: stable
+          rust: stable
+        - rustalias: msrv
+          rust: '1.83'
+        - rustalias: nightly
+          rust: nightly
+        exclude:
+          - rustalias: msrv
+            workspace: 'fuzz/Cargo.toml'
+    steps:
+    - uses: actions/checkout@v6
+    - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+    - run: rustup target add wasm32-unknown-unknown
+    - run: cargo install wasm-pack
+    - run: wasm-pack test ${{ matrix.browser-flags }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   miri:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
