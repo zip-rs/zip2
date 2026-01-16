@@ -102,8 +102,9 @@ lzma = ["dep:lzma-rust2"]
 ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:lzma-rust2"]
-bzip2 = ["dep:bzip2", "bzip2/default"]
-bzip2-rs = ["dep:bzip2", "bzip2/libbz2-rs-sys"]
+_bzip2_any = []
+bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any"]
+bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
 legacy-zip = ["bitstream-io"]
 default = [
     "aes-crypto",
