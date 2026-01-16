@@ -5,7 +5,6 @@
 //! See [AesCtrZipKeyStream] for more information.
 
 use crate::result::{ZipError, ZipResult};
-use crate::unstable::LittleEndianWriteExt;
 use aes::cipher::{BlockEncrypt, KeyInit};
 use core::{any, fmt};
 
@@ -107,7 +106,7 @@ where
     fn crypt_in_place(&mut self, mut target: &mut [u8]) {
         while !target.is_empty() {
             if self.pos == AES_BLOCK_SIZE {
-                *self.buffer = self.counter.to_le_bytes();
+                self.buffer = self.counter.to_le_bytes();
                 self.cipher.encrypt_block(self.buffer.as_mut().into());
                 self.counter += 1;
                 self.pos = 0;
