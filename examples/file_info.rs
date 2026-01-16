@@ -1,3 +1,4 @@
+use zip::result::ZipError;
 use std::fs;
 use std::io::BufReader;
 
