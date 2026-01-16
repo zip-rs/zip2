@@ -66,6 +66,7 @@ getrandom = { version = "0.3", default-features = false, features = ["std"] }
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 getrandom = { version = "0.3", default-features = false, features = ["std", "wasm_js"] }
+wasm-bindgen-test = "0.3"
 
 [dev-dependencies]
 bencher = "0.1"
