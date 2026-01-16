@@ -24,6 +24,12 @@ env:
 
 jobs:
   build_and_test:
+    needs:
+    - cargo_fmt
+    - style_and_docs
+    - miri
+    - check_minimal_versions
+    - cargo_semver
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
@@ -180,10 +186,6 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -235,10 +237,6 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -282,10 +280,6 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -337,10 +331,6 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
