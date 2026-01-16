@@ -1,11 +1,13 @@
 use std::error::Error;
 use std::fs;
 use std::io::BufReader;
+use zip::result::ZipError;
+use zip::ZipArchive;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <filename>", args[0]);
+        eprintln!("Usage: {:?} <filename>", args[0]);
         return Err("Wrong usage".into());
     }
     let fname_arg = &args[1];
@@ -13,14 +15,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Basic validation to guard against unsafe paths.
     // Reject absolute paths and any path containing parent directory references.
     if fname_path.is_absolute() || fname_arg.contains("..") {
-        eprintln!("Error: refusing to open unsafe path \"{}\"", fname_arg);
+        eprintln!("Error: refusing to open unsafe path {:?}", fname_arg);
         return Err("Unsafe path".into());
     }
     let fname = fname_path;
-    let file = fs::File::open(fname).unwrap();
-    let reader = BufReader::new(file);
-
-    let mut archive = zip::ZipArchive::new(reader).unwrap();
+    let archive = match fs::File::open(fname)
+            .map_err(ZipError::from)
+            .and_then(|file| ZipArchive::new(BufReader::new(file))) {
+        Ok(archive) => archive,
+        Err(e) => {
+            eprintln!("Error opening {:?}: {e}", fname.display());
+            return 1;
+        }
+    };
 
     for i in 0..archive.len() {
         let file = archive.by_index(i).unwrap();
