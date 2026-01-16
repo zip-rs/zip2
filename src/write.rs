@@ -715,8 +715,17 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             + size_of::<ZipLocalEntryBlock>() as u64
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
-        let mut data_start = extra_data_start;
         if let Some(extra) = &src_data.extra_field {
+            let stripped = strip_alignment_extra_field(extra);
+            if !stripped.is_empty() {
+                new_data.extra_field = Some(stripped.into());
+            } else {
+                new_data.extra_field = None;
+            }
+        }
+
+        let mut data_start = extra_data_start;
+        if let Some(extra) = &new_data.extra_field {
             data_start += extra.len() as u64;
         }
         new_data.data_start.take();
@@ -1003,12 +1012,18 @@ impl<W: Write + Seek> ZipWriter<W> {
                 while pad_length < 6 {
                     pad_length += align as usize;
                 }
-                // Add an extra field to the extra_data, per APPNOTE 4.6.11
-                let mut pad_body = vec![0; pad_length - 4];
-                debug_assert!(pad_body.len() >= 2);
-                [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                ExtendedFileOptions::add_extra_data_unchecked(&mut extra_data, 0xa11e, &pad_body)?;
-                debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
+                let new_len = extra_data.len() + pad_length;
+                if new_len > u16::MAX as usize {
+                     // Alignment is impossible without exceeding extra field size limits.
+                     // Skip alignment.
+                } else {
+                    // Add an extra field to the extra_data, per APPNOTE 4.6.11
+                    let mut pad_body = vec![0; pad_length - 4];
+                    debug_assert!(pad_body.len() >= 2);
+                    [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
+                    ExtendedFileOptions::add_extra_data_unchecked(&mut extra_data, 0xa11e, &pad_body)?;
+                    debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
+                }
             }
         }
         let extra_data_len = extra_data.len();
@@ -2119,7 +2134,22 @@ fn update_local_file_header<T: Write + Seek>(
 }
 
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    let block = file.block()?;
+    let mut block = file.block()?;
+    let stripped_extra = if let Some(extra) = &file.extra_field {
+        strip_alignment_extra_field(extra)
+    } else {
+        Vec::new()
+    };
+    let central_len = file.central_extra_field_len();
+    let zip64_len = if let Some(zip64) = file.zip64_extra_field_block() {
+        zip64.full_size()
+    } else {
+        0
+    };
+    block.extra_field_length = (zip64_len + stripped_extra.len() + central_len)
+        .try_into()
+        .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
+
     block.write(writer)?;
     // file name
     writer.write_all(&file.file_name_raw)?;
@@ -2127,8 +2157,8 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     if let Some(zip64_extra_field) = &file.zip64_extra_field_block() {
         writer.write_all(&zip64_extra_field.serialize())?;
     }
-    if let Some(extra_field) = &file.extra_field {
-        writer.write_all(extra_field)?;
+    if !stripped_extra.is_empty() {
+        writer.write_all(&stripped_extra)?;
     }
     if let Some(central_extra_field) = &file.central_extra_field {
         writer.write_all(central_extra_field)?;
@@ -2137,6 +2167,28 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     writer.write_all(file.file_comment.as_bytes())?;
 
     Ok(())
+}
+
+fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
+    let mut new_extra = Vec::with_capacity(extra_field.len());
+    let mut cursor = 0;
+    while cursor + 4 <= extra_field.len() {
+        let tag = u16::from_le_bytes([extra_field[cursor], extra_field[cursor + 1]]);
+        let len = u16::from_le_bytes([extra_field[cursor + 2], extra_field[cursor + 3]]) as usize;
+        if cursor + 4 + len > extra_field.len() {
+            new_extra.extend_from_slice(&extra_field[cursor..]);
+            break;
+        }
+
+        if tag != 0xa11e {
+            new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
+        }
+        cursor += 4 + len;
+    }
+    if cursor < extra_field.len() {
+        new_extra.extend_from_slice(&extra_field[cursor..]);
+    }
+    new_extra
 }
 
 fn update_local_zip64_extra_field<T: Write + Seek>(
