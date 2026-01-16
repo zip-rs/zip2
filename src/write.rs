@@ -404,6 +404,18 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         *self.permissions.get_or_insert(0o644) |= ffi::S_IFREG;
     }
 
+    /// Indicates whether this file will be encrypted (whether with AES or ZipCrypto).
+    pub const fn has_encryption(&self) -> bool {
+        #[cfg(feature = "aes-crypto")]
+        {
+            self.encrypt_with.is_some() || self.aes_mode.is_some()
+        }
+        #[cfg(not(feature = "aes-crypto"))]
+        {
+            self.encrypt_with.is_some()
+        }
+    }
+
     /// Set the compression method for the new file
     ///
     /// The default is [`CompressionMethod::Deflated`] if it is enabled. If not,
