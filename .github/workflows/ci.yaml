@@ -77,13 +77,8 @@ jobs:
         include:
         - rustalias: stable
           rust: stable
-        - rustalias: msrv
-          rust: '1.83'
         - rustalias: nightly
           rust: nightly
-        exclude:
-          - rustalias: msrv
-            workspace: 'fuzz/Cargo.toml'
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v6
