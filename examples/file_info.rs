@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         return 1;
     }
     let fname = safe_path;
-    let archive = match fs::File::open(&fname)
+    let mut archive = match fs::File::open(&fname)
         .map_err(ZipError::from)
         .and_then(|file| ZipArchive::new(BufReader::new(file)))
     {
