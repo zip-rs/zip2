@@ -37,8 +37,8 @@ fn aes256_encrypted_uncompressed_file() {
         .expect("couldn't find file in archive");
     assert_eq!("secret_data_256_uncompressed", file.name());
 
-    let mut content = String::new();
-    file.read_to_string(&mut content)
+    let mut decrypted_content = String::new();
+    file.read_to_string(&mut decrypted_content)
         .expect("couldn't read encrypted file");
-    assert_eq!(SECRET_CONTENT, content);
+    assert_eq!(SECRET_CONTENT, decrypted_content);
 }
