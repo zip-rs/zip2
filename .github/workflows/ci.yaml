@@ -58,7 +58,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        browser-flags: ["--headless --chrome", "--firefox", "--node"]
+        browser_flags: ["--headless --chrome", "--firefox", "--node"]
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
         workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
@@ -83,7 +83,7 @@ jobs:
     - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
     - run: rustup target add wasm32-unknown-unknown
     - run: cargo install wasm-pack
-    - run: wasm-pack test ${{ matrix.browser-flags }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
+    - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   miri:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
