@@ -193,7 +193,17 @@ fn invalid_state<T>() -> io::Result<T> {
 pub(crate) enum ZipFileReader<'a, R: Read> {
     NoReader,
     Raw(io::Take<&'a mut R>),
-    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
+    Stored(Crc32Reader<CryptoReader<'a>>),
+    #[cfg(feature = "_deflate-any")]
+    Deflated(Crc32Reader<DeflateDecoder<CryptoReader<'a>>>),
+    #[cfg(feature = "deflate64")]
+    Deflate64(Crc32Reader<Deflate64Decoder<io::BufReader<CryptoReader<'a>>>>),
+    #[cfg(feature = "bzip2")]
+    Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
+    #[cfg(feature = "zstd")]
+    Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a>>>>),
+    #[cfg(feature = "lzma")]
+    Lzma(Crc32Reader<Box<LzmaDecoder<CryptoReader<'a>>>>),
 }
 
 impl<R: Read> Read for ZipFileReader<'_, R> {
