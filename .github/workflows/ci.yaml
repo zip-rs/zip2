@@ -56,16 +56,18 @@ jobs:
     - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   wasm:
     runs-on: ubuntu-latest
-    browser-flags: ["--headless --chrome", "--firefox", "--node"]
-    os: [ubuntu-latest, macOS-latest, windows-latest]
-    rustalias: [stable, nightly, msrv]
-    workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
-    feature_flag:
-      - "--all-features"
-      - "--no-default-features"
-      - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-      - "--no-default-features --features zip/deflate-zopfli"
-      - ""
+    strategy:
+      matrix:
+        browser-flags: ["--headless --chrome", "--firefox", "--node"]
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        rustalias: [stable, nightly, msrv]
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        feature_flag:
+          - "--all-features"
+          - "--no-default-features"
+          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+          - "--no-default-features --features zip/deflate-zopfli"
+          - ""
         include:
         - rustalias: stable
           rust: stable
