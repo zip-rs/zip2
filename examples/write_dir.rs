@@ -50,12 +50,12 @@ fn real_main() -> i32 {
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::Bzip2 => {
-            #[cfg(not(feature = "bzip2"))]
+            #[cfg(not(feature = "_bzip2_any"))]
             {
                 println!("The `bzip2` feature is not enabled");
                 return 1;
             }
-            #[cfg(feature = "bzip2")]
+            #[cfg(feature = "_bzip2_any")]
             zip::CompressionMethod::Bzip2
         }
         CompressionMethod::Xz => {
