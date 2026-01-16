@@ -12,14 +12,36 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let fname_arg = &args[1];
     let fname_path = std::path::Path::new(fname_arg);
-    // Basic validation to guard against unsafe paths.
-    // Reject absolute paths and any path containing parent directory references.
-    if fname_path.is_absolute() || fname_arg.contains("..") {
-        eprintln!("Error: refusing to open unsafe path {:?}", fname_arg);
+    // Validate and constrain the input path to a safe base directory to
+    // avoid opening files outside the intended location.
+    let safe_base = match std::env::current_dir() {
+        Ok(dir) => dir.join("files"),
+        Err(e) => {
+            eprintln!("Error determining current directory: {e}");
+            return 1;
+        }
+    };
+    if let Err(e) = fs::create_dir_all(&safe_base) {
+        eprintln!("Error ensuring safe base directory exists {:?}: {e}", safe_base);
         return Err("Unsafe path".into());
     }
-    let fname = fname_path;
-    let archive = match fs::File::open(fname)
+    let candidate_path = safe_base.join(fname_path);
+    let safe_path = match candidate_path.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Error resolving path {:?}: {e}", candidate_path);
+            return 1;
+        }
+    };
+    if !safe_path.starts_with(&safe_base) {
+        eprintln!(
+            "Error: refusing to open path outside of safe directory: {:?}",
+            fname_arg
+        );
+        return 1;
+    }
+    let fname = safe_path;
+    let archive = match fs::File::open(&fname)
             .map_err(ZipError::from)
             .and_then(|file| ZipArchive::new(BufReader::new(file))) {
         Ok(archive) => archive,
