@@ -43,7 +43,7 @@ fn real_main() -> i32 {
     };
     let mut archive = match fs::File::open(&fname)
             .map_err(ZipError::from)
-            .and_then(|file| zip::ZipArchive::new(BufReader::new(file)) {
+            .and_then(|file| zip::ZipArchive::new(BufReader::new(file))) {
         Ok(file) => file,
         Err(e) => {
             eprintln!("Error: could not open {:?}: {e}", fname_arg);
