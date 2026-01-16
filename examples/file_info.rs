@@ -22,7 +22,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     if let Err(e) = fs::create_dir_all(&safe_base) {
-        eprintln!("Error ensuring safe base directory exists {:?}: {e}", safe_base);
+        eprintln!(
+            "Error ensuring safe base directory exists {:?}: {e}",
+            safe_base
+        );
         return Err("Unsafe path".into());
     }
     let candidate_path = safe_base.join(fname_path);
@@ -42,8 +45,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let fname = safe_path;
     let archive = match fs::File::open(&fname)
-            .map_err(ZipError::from)
-            .and_then(|file| ZipArchive::new(BufReader::new(file))) {
+        .map_err(ZipError::from)
+        .and_then(|file| ZipArchive::new(BufReader::new(file)))
+    {
         Ok(archive) => archive,
         Err(e) => {
             eprintln!("Error opening {:?}: {e}", fname.display());
