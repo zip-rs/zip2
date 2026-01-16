@@ -1014,14 +1014,18 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
                 let new_len = extra_data.len() + pad_length;
                 if new_len > u16::MAX as usize {
-                     // Alignment is impossible without exceeding extra field size limits.
-                     // Skip alignment.
+                    // Alignment is impossible without exceeding extra field size limits.
+                    // Skip alignment.
                 } else {
                     // Add an extra field to the extra_data, per APPNOTE 4.6.11
                     let mut pad_body = vec![0; pad_length - 4];
                     debug_assert!(pad_body.len() >= 2);
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    ExtendedFileOptions::add_extra_data_unchecked(&mut extra_data, 0xa11e, &pad_body)?;
+                    ExtendedFileOptions::add_extra_data_unchecked(
+                        &mut extra_data,
+                        0xa11e,
+                        &pad_body,
+                    )?;
                     debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
                 }
             }
