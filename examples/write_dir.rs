@@ -1,10 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
 use walkdir::WalkDir;
 use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -60,7 +60,7 @@ fn zip_dir(
     src_dir: &Path,
     dst_file: &Path,
     method: zip::CompressionMethod,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }
@@ -83,7 +83,7 @@ fn zip_dir(
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
-            .ok_or_else(|| format!("{name:?} is a Non UTF-8 Path"))?;
+            .ok_or_else(|| anyhow!("{name:?} is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
