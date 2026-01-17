@@ -1313,9 +1313,11 @@ mod test {
     fn unix_mode_robustness() {
         use super::{System, ZipFileData};
         use crate::types::ffi::S_IFLNK;
-        let mut data = ZipFileData::default();
-        data.system = System::Dos;
-        data.external_attributes = (S_IFLNK | 0o777) << 16;
+        let mut data = ZipFileData {
+            system: System::Dos,
+            external_attributes: (S_IFLNK | 0o777) << 16,
+            ..ZipFileData::default()
+        };
         assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
 
         data.system = System::Unknown;
