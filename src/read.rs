@@ -2,7 +2,7 @@
 
 #[cfg(feature = "aes-crypto")]
 use crate::aes::{AesReader, AesReaderValid};
-use crate::compression::{CompressionMethod};
+use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
@@ -23,17 +23,6 @@ use std::ffi::OsStr;
 use std::io::{self, copy, sink, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-
-#[cfg(feature = "bzip2")]
-use bzip2::read::BzDecoder;
-#[cfg(feature = "deflate64")]
-use deflate64::Deflate64Decoder;
-#[cfg(feature = "_deflate-any")]
-use flate2::read::DeflateDecoder;
-#[cfg(feature = "lzma")]
-use lzma_rust2::LzmaReader as LzmaDecoder;
-#[cfg(feature = "zstd")]
-use zstd::Decoder as ZstdDecoder;
 
 mod config;
 
@@ -204,23 +193,7 @@ fn invalid_state<T>() -> io::Result<T> {
 pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
     NoReader,
     Raw(io::Take<&'a mut R>),
-    Stored(Crc32Reader<CryptoReader<'a, R>>),
-    #[cfg(feature = "_deflate-any")]
-    Deflated(Crc32Reader<DeflateDecoder<CryptoReader<'a, R>>>),
-    #[cfg(feature = "deflate64")]
-    Deflate64(Crc32Reader<Deflate64Decoder<io::BufReader<CryptoReader<'a, R>>>>),
-    #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a, R>>>),
-    #[cfg(feature = "zstd")]
-    Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a, R>>>>),
-    #[cfg(feature = "lzma")]
-    Lzma(Crc32Reader<Box<LzmaDecoder<CryptoReader<'a, R>>>>),
-    #[cfg(feature = "legacy-zip")]
-    Shrink(Crc32Reader<crate::legacy::shrink::ShrinkDecoder<CryptoReader<'a, R>>>),
-    #[cfg(feature = "legacy-zip")]
-    Reduce(Crc32Reader<crate::legacy::reduce::ReduceDecoder<CryptoReader<'a, R>>>),
-    #[cfg(feature = "legacy-zip")]
-    Implode(Crc32Reader<crate::legacy::implode::ImplodeDecoder<CryptoReader<'a, R>>>),
+    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
 }
 
 impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
@@ -228,23 +201,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read(buf),
-            ZipFileReader::Stored(r) => r.read(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Shrink(r) => r.read(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Reduce(r) => r.read(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Implode(r) => r.read(buf),
+            ZipFileReader::Compressed(r) => r.read(buf),
         }
     }
 
@@ -252,23 +209,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_exact(buf),
-            ZipFileReader::Stored(r) => r.read_exact(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read_exact(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read_exact(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read_exact(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read_exact(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read_exact(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Shrink(r) => r.read_exact(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Reduce(r) => r.read_exact(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Implode(r) => r.read_exact(buf),
+            ZipFileReader::Compressed(r) => r.read_exact(buf),
         }
     }
 
@@ -276,23 +217,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_end(buf),
-            ZipFileReader::Stored(r) => r.read_to_end(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read_to_end(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read_to_end(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read_to_end(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read_to_end(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read_to_end(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Shrink(r) => r.read_to_end(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Reduce(r) => r.read_to_end(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Implode(r) => r.read_to_end(buf),
+            ZipFileReader::Compressed(r) => r.read_to_end(buf),
         }
     }
 
@@ -300,23 +225,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_string(buf),
-            ZipFileReader::Stored(r) => r.read_to_string(buf),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => r.read_to_string(buf),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => r.read_to_string(buf),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => r.read_to_string(buf),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => r.read_to_string(buf),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read_to_string(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Shrink(r) => r.read_to_string(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Reduce(r) => r.read_to_string(buf),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Implode(r) => r.read_to_string(buf),
+            ZipFileReader::Compressed(r) => r.read_to_string(buf),
         }
     }
 }
@@ -326,23 +235,9 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => Ok(r),
-            ZipFileReader::Stored(r) => Ok(r.into_inner().into_inner()),
-            #[cfg(feature = "_deflate-any")]
-            ZipFileReader::Deflated(r) => Ok(r.into_inner().into_inner().into_inner()),
-            #[cfg(feature = "deflate64")]
-            ZipFileReader::Deflate64(r) => Ok(r.into_inner().into_inner().into_inner().into_inner()),
-            #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(r) => Ok(r.into_inner().into_inner().into_inner()),
-            #[cfg(feature = "zstd")]
-            ZipFileReader::Zstd(r) => Ok(r.into_inner().finish().into_inner().into_inner()),
-            #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => Ok(r.into_inner().into_inner().into_inner()),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Shrink(r) => Ok(r.into_inner().into_inner().into_inner()),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Reduce(r) => Ok(r.into_inner().into_inner().into_inner()),
-            #[cfg(feature = "legacy-zip")]
-            ZipFileReader::Implode(r) => Ok(r.into_inner().into_inner().into_inner()),
+            ZipFileReader::Compressed(r) => {
+                Ok(r.into_inner().into_inner()?.into_inner().into_inner())
+            }
         }
     }
 }
@@ -534,106 +429,21 @@ pub(crate) fn make_reader<'a, R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
     crc32: u32,
-    mut reader: CryptoReader<'a, R>,
+    reader: CryptoReader<'a, R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
 ) -> ZipResult<ZipFileReader<'a, R>> {
     let ae2_encrypted = reader.is_ae2_encrypted();
-
-    match compression_method {
-        CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(
-            reader,
-            crc32,
-            ae2_encrypted,
-        ))),
-        #[cfg(feature = "_deflate-any")]
-        CompressionMethod::Deflated => {
-            Ok(ZipFileReader::Deflated(Crc32Reader::new(
-                DeflateDecoder::new(reader),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "deflate64")]
-        CompressionMethod::Deflate64 => {
-            Ok(ZipFileReader::Deflate64(Crc32Reader::new(
-                Deflate64Decoder::with_buffer(io::BufReader::new(reader)),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "bzip2")]
-        CompressionMethod::Bzip2 => {
-            Ok(ZipFileReader::Bzip2(Crc32Reader::new(
-                BzDecoder::new(reader),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "zstd")]
-        CompressionMethod::Zstd => {
-            Ok(ZipFileReader::Zstd(Crc32Reader::new(
-                ZstdDecoder::with_buffer(io::BufReader::new(reader))?,
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "lzma")]
-        CompressionMethod::Lzma => {
-            // 5.8.8.1 LZMA Version Information & 5.8.8.2 LZMA Properties Size
-            let mut header = [0; 4];
-            reader.read_exact(&mut header)?;
-            let _version_information = u16::from_le_bytes(header[0..2].try_into().unwrap());
-            let properties_size = u16::from_le_bytes(header[2..4].try_into().unwrap());
-            if properties_size != 5 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("unexpected LZMA properties size of {properties_size}"),
-                ).into());
-            }
-
-            let mut props_data = [0; 5];
-            reader.read_exact(&mut props_data)?;
-            let props = props_data[0];
-            let dict_size = u32::from_le_bytes(props_data[1..5].try_into().unwrap());
-
-            Ok(ZipFileReader::Lzma(Crc32Reader::new(
-                Box::new(LzmaDecoder::new_with_props(
-                    reader,
-                    uncompressed_size,
-                    props,
-                    dict_size,
-                    None,
-                )?),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "legacy-zip")]
-        CompressionMethod::Shrink => {
-            Ok(ZipFileReader::Shrink(Crc32Reader::new(
-                crate::legacy::shrink::ShrinkDecoder::new(reader, uncompressed_size),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "legacy-zip")]
-        CompressionMethod::Reduce(n) => {
-            Ok(ZipFileReader::Reduce(Crc32Reader::new(
-                crate::legacy::reduce::ReduceDecoder::new(reader, uncompressed_size, n),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        #[cfg(feature = "legacy-zip")]
-        CompressionMethod::Implode => {
-            Ok(ZipFileReader::Implode(Crc32Reader::new(
-                crate::legacy::implode::ImplodeDecoder::new(reader, uncompressed_size, flags),
-                crc32,
-                ae2_encrypted,
-            )))
-        }
-        _ => unsupported_zip_error("Compression method not supported"),
-    }
+    #[cfg(not(feature = "legacy-zip"))] let flags = 0;
+    Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
+        Decompressor::new(
+            io::BufReader::new(reader),
+            compression_method,
+            uncompressed_size,
+            flags,
+        )?,
+        crc32,
+        ae2_encrypted,
+    ))))
 }
 
 pub(crate) fn make_symlink<T>(
