@@ -54,7 +54,7 @@ fn main() -> Result<()> {
         },
     };
     zip_dir(src_dir, dst_file, method)?;
-    println!("done: {src_dir:?} written to {dst_file:?}"),
+    println!("done: {src_dir:?} written to {dst_file:?}");
     Ok(())
 }
 

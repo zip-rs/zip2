@@ -1759,7 +1759,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(default),
                     deflate_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
 
                 #[cfg(feature = "deflate-zopfli")]
@@ -1815,62 +1815,67 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     })),
                     _ => unreachable!("deflate writer: have no fallback for this case")
                 }
-                #[cfg(feature = "_bzip2_any")]
-                CompressionMethod::Bzip2 => {
-                    let level = validate_value_in_range(
-                        compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
-                        bzip2_compression_level_range(),
-                    )
+            }
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => {
+                Err(UnsupportedArchive("Compressing Deflate64 is not supported"))
+            }
+            #[cfg(feature = "_bzip2_any")]
+            CompressionMethod::Bzip2 => {
+                let level = validate_value_in_range(
+                    compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
+                    bzip2_compression_level_range(),
+                )
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    as u32;
+                Ok(Box::new(move |bare| {
+                    Ok(Bzip2(BzEncoder::new(bare, bzip2::Compression::new(level))))
+                }))
+            }
+            CompressionMethod::AES => Err(UnsupportedArchive(
+                "AES encryption is enabled through FileOptions::with_aes_encryption",
+            )),
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd => {
+                let level = validate_value_in_range(
+                    compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
+                    zstd::compression_level_range(),
+                )
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?;
+                Ok(Box::new(move |bare| {
+                    Ok(Zstd(
+                        ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
+                    ))
+                }))
+            }
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Shrink => Err(ZipError::UnsupportedArchive(
+                "Shrink compression unsupported",
+            )),
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Reduce(_) => Err(ZipError::UnsupportedArchive(
+                "Reduce compression unsupported",
+            )),
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Implode => Err(ZipError::UnsupportedArchive(
+                "Implode compression unsupported",
+            )),
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => {
+                Err(UnsupportedArchive("LZMA isn't supported for compression"))
+            }
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz => {
+                let level = validate_value_in_range(compression_level.unwrap_or(6), 0..=9)
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                        as u32;
-                    Ok(Box::new(move |bare| {
-                        Ok(Bzip2(BzEncoder::new(bare, bzip2::Compression::new(level))))
-                    }))
-                }
-                CompressionMethod::AES => Err(UnsupportedArchive(
-                    "AES encryption is enabled through FileOptions::with_aes_encryption",
-                )),
-                #[cfg(feature = "zstd")]
-                CompressionMethod::Zstd => {
-                    let level = validate_value_in_range(
-                        compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
-                        zstd::compression_level_range(),
-                    )
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
-                    Ok(Box::new(move |bare| {
-                        Ok(Zstd(
-                            ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
-                        ))
-                    }))
-                }
-                #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Shrink => Err(ZipError::UnsupportedArchive(
-                    "Shrink compression unsupported",
-                )),
-                #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Reduce(_) => Err(ZipError::UnsupportedArchive(
-                    "Reduce compression unsupported",
-                )),
-                #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Implode => Err(ZipError::UnsupportedArchive(
-                    "Implode compression unsupported",
-                )),
-                #[cfg(feature = "lzma")]
-                CompressionMethod::Lzma => {
-                    Err(UnsupportedArchive("LZMA isn't supported for compression"))
-                }
-                #[cfg(feature = "xz")]
-                CompressionMethod::Xz => {
-                    let level = validate_value_in_range(compression_level.unwrap_or(6), 0..=9)
-                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                        as u32;
-                    Ok(Box::new(move |bare| {
-                        Ok(Xz(Box::new(
-                            lzma_rust2::XzWriter::new(
-                                bare,
-                                lzma_rust2::XzOptions::with_preset(level),
-                            )
-                            .map_err(ZipError::Io)?,
+                    as u32;
+                Ok(Box::new(move |bare| {
+                    Ok(Xz(Box::new(
+                        lzma_rust2::XzWriter::new(
+                            bare,
+                            lzma_rust2::XzOptions::with_preset(level),
+                        )
+                        .map_err(ZipError::Io)?,
                     )))
                 }))
             }
