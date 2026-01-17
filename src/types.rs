@@ -5,8 +5,9 @@ use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
 use core::mem;
 use std::ffi::OsStr;
-use std::path::{Component, Path, PathBuf, MAIN_SEPARATOR};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
@@ -556,25 +557,15 @@ impl ZipFileData {
         let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],
             None => &self.file_name,
-        }
-        .to_string();
-
-        // zip files can contain both / and \ as separators regardless of the OS
-        // and as we want to return a sanitized PathBuf that only supports the
-        // OS separator let's convert incompatible separators to compatible ones
-        let separator = MAIN_SEPARATOR;
-        let opposite_separator = match separator {
-            '/' => '\\',
-            _ => '/',
         };
-        let filename =
-            no_null_filename.replace(&opposite_separator.to_string(), &separator.to_string());
 
-        Path::new(&filename)
+        Utf8WindowsPath::new(no_null_filename)
             .components()
-            .filter(|component| matches!(*component, Component::Normal(..)))
-            .fold(PathBuf::new(), |mut path, ref cur| {
-                path.push(cur.as_os_str());
+            .filter(|component| matches!(*component, Utf8WindowsComponent::Normal(..)))
+            .fold(PathBuf::new(), |mut path, cur| {
+                if let Utf8WindowsComponent::Normal(s) = cur {
+                    path.push(s);
+                }
                 path
             })
     }
@@ -592,22 +583,27 @@ impl ZipFileData {
         if self.file_name.contains('\0') {
             return None;
         }
-        let path = PathBuf::from(self.file_name.to_string());
         let mut depth = 0usize;
-        for component in path.components() {
+        let mut out_path = PathBuf::new();
+        for component in Utf8WindowsPath::new(&self.file_name).components() {
             match component {
-                Component::Prefix(_) | Component::RootDir => {
+                Utf8WindowsComponent::Prefix(_) | Utf8WindowsComponent::RootDir => {
                     if depth > 0 {
                         return None;
                     }
-                    // else absolute path becomes relative to destination instead
                 }
-                Component::ParentDir => depth = depth.checked_sub(1)?,
-                Component::Normal(_) => depth += 1,
-                Component::CurDir => (),
+                Utf8WindowsComponent::ParentDir => {
+                    depth = depth.checked_sub(1)?;
+                    out_path.pop();
+                }
+                Utf8WindowsComponent::Normal(s) => {
+                    depth += 1;
+                    out_path.push(s);
+                }
+                Utf8WindowsComponent::CurDir => (),
             }
         }
-        Some(path)
+        Some(out_path)
     }
 
     /// Get unix mode for the file

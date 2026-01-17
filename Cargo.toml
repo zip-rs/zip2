@@ -50,6 +50,7 @@ zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.10", optional = true }
 lzma-rust2 = { version = "0.15", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.5", optional = true }
+typed-path = "0.10"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

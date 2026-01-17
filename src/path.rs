@@ -2,22 +2,24 @@
 
 use std::{
     ffi::OsStr,
-    path::{Component, Path},
+    path::Path,
 };
+use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 /// Simplify a path by removing the prefix and parent directories and only return normal components
 pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
     let mut out = Vec::new();
-    for component in input.components() {
+    let input_str = input.to_str()?;
+    for component in Utf8WindowsPath::new(input_str).components() {
         match component {
             // Skip prefix and root directory components instead of rejecting the entire path
             // This allows extraction of ZIP files with absolute paths, similar to other ZIP tools
-            Component::Prefix(_) | Component::RootDir => (),
-            Component::ParentDir => {
+            Utf8WindowsComponent::Prefix(_) | Utf8WindowsComponent::RootDir => (),
+            Utf8WindowsComponent::ParentDir => {
                 out.pop()?;
             }
-            Component::Normal(_) => out.push(component.as_os_str()),
-            Component::CurDir => (),
+            Utf8WindowsComponent::Normal(s) => out.push(OsStr::new(s)),
+            Utf8WindowsComponent::CurDir => (),
         }
     }
     Some(out)
