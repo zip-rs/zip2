@@ -1,13 +1,11 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-use anyhow::Context;
+use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
-use std::io::{Read, Write};
-use zip::{result::ZipError, write::SimpleFileOptions};
+use walkdir::WalkDir;
+use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -30,62 +28,36 @@ enum CompressionMethod {
     Zstd,
 }
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<()> {
     let args = Args::parse();
     let src_dir = &args.source;
     let dst_file = &args.destination;
-    let method = match args.compression_method {
-        CompressionMethod::Stored => zip::CompressionMethod::Stored,
-        CompressionMethod::Deflated => {
-            #[cfg(not(feature = "deflate-flate2"))]
-            {
-                println!("The `deflate-flate2` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "deflate-flate2")]
-            zip::CompressionMethod::Deflated
-        }
-        CompressionMethod::Bzip2 => {
-            #[cfg(not(feature = "_bzip2_any"))]
-            {
-                println!("The `bzip2` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "_bzip2_any")]
-            zip::CompressionMethod::Bzip2
-        }
-        CompressionMethod::Xz => {
-            #[cfg(not(feature = "xz"))]
-            {
-                println!("The `xz` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "xz")]
-            zip::CompressionMethod::Xz
-        }
-        CompressionMethod::Zstd => {
-            #[cfg(not(feature = "zstd"))]
-            {
-                println!("The `zstd` feature is not enabled");
-                return 1;
-            }
-            #[cfg(feature = "zstd")]
-            zip::CompressionMethod::Zstd
-        }
+    let method: Result<zip::CompressionMethod> = match args.compression_method {
+        CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
+        CompressionMethod::Deflated => cfg_if_expr! {
+            #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
+            _ => Err(anyhow!("The `deflate-flate2` features are not enabled")),
+        },
+        CompressionMethod::Bzip2 => cfg_if_expr! {
+            #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
+            _ => Err(anyhow!("The `bzip2` features are not enabled")),
+        },
+        CompressionMethod::Xz => cfg_if_expr! {
+            #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
+            _ => Err(anyhow!("The `xz` feature is not enabled")),
+        },
+        CompressionMethod::Zstd => cfg_if_expr! {
+            #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
+            _ => Err(anyhow!("The `zstd` feature is not enabled")),
+        },
     };
-    match zip_dir(src_dir, dst_file, method) {
-        Ok(_) => println!("done: {src_dir:?} written to {dst_file:?}"),
-        Err(e) => eprintln!("Error: {e:?}"),
-    }
-
-    0
+    let method = method?;
+    zip_dir(src_dir, dst_file, method)?;
+    println!("done: {src_dir:?} written to {dst_file:?}");
+    Ok(())
 }
 
-fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> anyhow::Result<()> {
+fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> Result<()> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }
@@ -108,7 +80,7 @@ fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> a
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
-            .with_context(|| format!("{name:?} is a Non UTF-8 Path"))?;
+            .ok_or_else(|| anyhow!("{name:?} is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
