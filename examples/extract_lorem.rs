@@ -1,14 +1,10 @@
-use std::io::Read;
+use std::{error::Error, io::Read};
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        println!("Usage: {} <filename>", args[0]);
-        return 1;
+        eprintln!("Usage: {} <filename>", args[0]);
+        return Err("Wrong usage".into());
     }
     // Constrain the file path to the current directory and prevent directory traversal.
     let base_dir = std::path::Path::new(".");
@@ -16,21 +12,21 @@ fn real_main() -> i32 {
     let fname = match std::fs::canonicalize(&requested_path) {
         Ok(p) => {
             if !p.starts_with(base_dir) {
-                println!("Error: invalid filename (outside allowed directory)");
-                return 1;
+                eprintln!("Error: invalid filename (outside allowed directory)");
+                return Err("Invalid filename".into());
             }
             p
         }
         Err(e) => {
             println!("Error: cannot access {:?}: {e}", args[1]);
-            return 1;
+            return Err(e.into());
         }
     };
     let zipfile = match std::fs::File::open(&fname) {
         Ok(f) => f,
         Err(e) => {
             println!("Error: failed to open {:?}: {e}", fname.display());
-            return 1;
+            return Err(e.into());
         }
     };
 
@@ -38,9 +34,9 @@ fn real_main() -> i32 {
 
     let mut file = match archive.by_name("test/lorem_ipsum.txt") {
         Ok(file) => file,
-        Err(..) => {
+        Err(e) => {
             println!("File test/lorem_ipsum.txt not found");
-            return 2;
+            return Err(e.into());
         }
     };
 
@@ -48,5 +44,5 @@ fn real_main() -> i32 {
     file.read_to_string(&mut contents).unwrap();
     println!("{contents}");
 
-    0
+    Ok(())
 }

@@ -1,23 +1,20 @@
+use std::error::Error;
 use std::fs;
 use std::io::BufReader;
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        println!("Usage: {} <filename>", args[0]);
-        return 1;
+        eprintln!("Usage: {} <filename>", args[0]);
+        return Err("Wrong usage".into());
     }
     let fname_arg = &args[1];
     let fname_path = std::path::Path::new(fname_arg);
     // Basic validation to guard against unsafe paths.
     // Reject absolute paths and any path containing parent directory references.
     if fname_path.is_absolute() || fname_arg.contains("..") {
-        println!("Error: refusing to open unsafe path \"{}\"", fname_arg);
-        return 1;
+        eprintln!("Error: refusing to open unsafe path \"{}\"", fname_arg);
+        return Err("Unsafe path".into());
     }
     let fname = fname_path;
     let file = fs::File::open(fname).unwrap();
@@ -58,5 +55,5 @@ fn real_main() -> i32 {
         }
     }
 
-    0
+    Ok(())
 }
