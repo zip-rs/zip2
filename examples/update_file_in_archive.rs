@@ -1,8 +1,8 @@
 // See this dicussion for further background on why it is done like this:
 // https://github.com/zip-rs/zip/discussions/430
 
-use std::io::Write;
 use anyhow::{anyhow, Result};
+use std::io::Write;
 use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 
