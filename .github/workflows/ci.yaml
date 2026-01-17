@@ -24,7 +24,6 @@ env:
 
 jobs:
   build_and_test:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
@@ -55,7 +54,6 @@ jobs:
     - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
     - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   miri:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
@@ -104,7 +102,6 @@ jobs:
         run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
 
   check_minimal_versions:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         # Only check minimal versions for the released library.
@@ -123,7 +120,6 @@ jobs:
         run: cargo test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   style_and_docs:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
