@@ -1759,7 +1759,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(default),
                     deflate_compression_level_range(),
                 )
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
 
                 #[cfg(feature = "deflate-zopfli")]
@@ -1871,11 +1871,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     as u32;
                 Ok(Box::new(move |bare| {
                     Ok(Xz(Box::new(
-                        lzma_rust2::XzWriter::new(
-                            bare,
-                            lzma_rust2::XzOptions::with_preset(level),
-                        )
-                        .map_err(ZipError::Io)?,
+                        lzma_rust2::XzWriter::new(bare, lzma_rust2::XzOptions::with_preset(level))
+                            .map_err(ZipError::Io)?,
                     )))
                 }))
             }
