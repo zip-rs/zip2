@@ -2,9 +2,9 @@
 
 use std::io::{self, Read, Write};
 use zip::write::ZipWriter;
-use zip::{result::ZipError, write::SimpleFileOptions, AesMode, ZipArchive};
 #[cfg(feature = "deflate-flate2")]
 use zip::CompressionMethod::Deflated;
+use zip::{result::ZipError, write::SimpleFileOptions, AesMode, ZipArchive};
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 

@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
-use zip::CompressionMethod::Stored;
 use zip::write::SimpleFileOptions;
+use zip::CompressionMethod::Stored;
 #[cfg(all(feature = "aes-crypto", feature = "zstd"))]
 use zip::{AesMode, CompressionMethod::Zstd};
 
