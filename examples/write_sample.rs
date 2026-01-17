@@ -1,10 +1,10 @@
 use std::error::Error;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
+use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
 #[cfg(feature = "aes-crypto")]
 use zip::{AesMode, CompressionMethod};
-use zip::result::ZipError;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
