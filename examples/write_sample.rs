@@ -1,29 +1,26 @@
+use std::error::Error;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use zip::write::SimpleFileOptions;
 #[cfg(feature = "aes-crypto")]
 use zip::{AesMode, CompressionMethod};
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        println!("Usage: {} <filename>", args[0]);
-        return 1;
+        eprintln!("Usage: {} <filename>", args[0]);
+        return Err("Wrong usage".into());
     }
 
     let filename = &args[1];
     match doit(filename) {
         Ok(_) => {
             println!("File written to {filename}");
-            0
+            Ok(())
         }
         Err(e) => {
             eprintln!("Error: {e:?}");
-            1
+            Err(e.into())
         }
     }
 }

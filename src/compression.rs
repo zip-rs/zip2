@@ -1,5 +1,6 @@
 //! Possible ZIP compression methods.
 
+use crate::cfg_if_expr;
 use core::fmt;
 use std::io;
 
@@ -238,7 +239,10 @@ impl CompressionMethod {
 
 impl Default for CompressionMethod {
     fn default() -> Self {
-        Self::DEFAULT
+        cfg_if_expr! {
+            #[cfg(feature = "_deflate-any")] => CompressionMethod::Deflated,
+            _ => CompressionMethod::Stored
+        }
     }
 }
 
