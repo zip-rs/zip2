@@ -42,19 +42,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
             CompressionMethod::Deflated => cfg_if_expr! {
                 #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
-                _ => Err("The `deflate-flate2` features are not enabled"),
+                _ => Err("The `deflate-flate2` features are not enabled".into()),
             },
             CompressionMethod::Bzip2 => cfg_if_expr! {
                 #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
-                _ => Err("The `bzip2` features are not enabled"),
+                _ => Err("The `bzip2` features are not enabled".into()),
             },
             CompressionMethod::Xz => cfg_if_expr! {
                 #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
-                _ => Err("The `xz` feature is not enabled"),
+                _ => Err("The `xz` feature is not enabled".into()),
             },
             CompressionMethod::Zstd => cfg_if_expr! {
                 #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
-                _ => Err("The `zstd` feature is not enabled"),
+                _ => Err("The `zstd` feature is not enabled".into()),
             },
         };
     let method = method?;
