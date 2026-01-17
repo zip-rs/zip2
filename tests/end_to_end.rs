@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
+use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
-use zip::unstable::LittleEndianWriteExt;
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
