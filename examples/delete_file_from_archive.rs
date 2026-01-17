@@ -37,9 +37,7 @@ fn remove_file(
 ) -> ZipResult<()> {
     let unsafe_path = std::path::Path::new(archive_filename);
     let joined = base_dir.join(unsafe_path);
-    let fname = joined
-        .canonicalize()
-        .map_err(|_| ZipError::FileNotFound)?;
+    let fname = joined.canonicalize().map_err(|_| ZipError::FileNotFound)?;
     if !fname.starts_with(base_dir) {
         return Err(ZipError::FileNotFound);
     }
