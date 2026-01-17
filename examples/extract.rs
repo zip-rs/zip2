@@ -1,17 +1,14 @@
+use std::error::Error;
 use std::fs;
 use std::io;
 use zip::result::ZipError;
 use zip::ZipArchive;
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        println!("Usage: {} <filename>", args[0]);
-        return 1;
+        eprintln!("Usage: {} <filename>", args[0]);
+        return Err("Wrong usage".into());
     }
 
     let file_arg = &args[1];
@@ -20,7 +17,7 @@ fn real_main() -> i32 {
             "Error: invalid filename '{}'. Directory separators and \"..\" are not allowed.",
             file_arg
         );
-        return 1;
+        return Err("Invalide filename".into());
     }
 
     // Build a path to the archive relative to a safe base directory (current working directory)
@@ -28,7 +25,7 @@ fn real_main() -> i32 {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!("Error: unable to determine current directory: {e}");
-            return 1;
+            return Err("Unable to get the current_dir".into());
         }
     };
 
@@ -41,12 +38,12 @@ fn real_main() -> i32 {
             "Error: path '{}' escapes the allowed directory.",
             candidate_path.display()
         );
-        return 1;
+        return Err("Invalid path".into());
     }
 
     let mut archive = match fs::File::open(&out_root)
         .map_err(ZipError::from)
-        .and_then(|f| ZipArchive::new(f))
+        .and_then(ZipArchive::new)
     {
         Ok(archive) => archive,
         Err(e) => {
@@ -54,7 +51,7 @@ fn real_main() -> i32 {
                 "Error: unable to open archive {:?}: {e}",
                 out_root.display()
             );
-            return 1;
+            return Err(e.into());
         }
     };
 
@@ -147,8 +144,8 @@ fn real_main() -> i32 {
 
     if some_files_failed {
         eprintln!("Error: some files failed to extract; see above errors.");
-        1
+        Err("Extration partially failed".into())
     } else {
-        0
+        Ok(())
     }
 }
