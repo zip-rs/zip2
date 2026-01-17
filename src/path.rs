@@ -1,9 +1,6 @@
 //! Path manipulation utilities
 
-use std::{
-    ffi::OsStr,
-    path::Path,
-};
+use std::{ffi::OsStr, path::Path};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 /// Simplify a path by removing the prefix and parent directories and only return normal components
