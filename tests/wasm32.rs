@@ -12,7 +12,7 @@
 //! wasm-pack test --node
 //! ```
 //!
-#![cfg(target_arch = "wasm32")]
+#![cfg(all(target_arch = "wasm32", feature = "aes-crypto"))]
 
 use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
@@ -26,7 +26,6 @@ const PASSWORD: &[u8] = b"helloworld";
 
 /// wasm-pack test --headless --chrome --features aes-crypto
 #[wasm_bindgen_test]
-#[cfg(feature = "aes-crypto")]
 fn aes256_encrypted_uncompressed_file() {
     let zip_data = include_bytes!("data/aes_archive.zip").to_vec();
     let mut archive =

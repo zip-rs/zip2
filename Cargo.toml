@@ -55,12 +55,16 @@ bitstream-io = { version = "4.5", optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 getrandom = { version = "0.3", default-features = false, optional = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+getrandom = { version = "0.3", default-features = false }
+
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", default-features = false, features = ["wasm_js"], optional = true }
 
-[package.metadata.wasm-pack.dependencies]
-getrandom = { version = "0.3", default-features = false, features = ["wasm_js"], optional = true }
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
+wasm-bindgen-test = "^0.3.56"
 
 [dev-dependencies]
 bencher = "0.1"
@@ -71,9 +75,6 @@ anyhow = "1.0.100"
 clap = { version = "=4.4.18", features = ["derive"] }
 tempfile = "3.15"
 rayon = "1.11"
-
-[package.metadata.wasm-pack.dev-dependencies]
-wasm-bindgen-test = "^0.3.56"
 
 [features]
 _arbitrary = ["dep:arbitrary"]
