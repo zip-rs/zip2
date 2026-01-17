@@ -1,34 +1,23 @@
 // See this dicussion for further background on why it is done like this:
 // https://github.com/zip-rs/zip/discussions/430
 
-use std::io::prelude::*;
-
+use std::io::Write;
+use anyhow::{anyhow, Result};
 use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
-        println!(
+        return Err(anyhow!(
             "Usage: {:?} <filename> <file_within_archive_to_update>",
             args[0]
-        );
-        return 1;
+        ));
     }
     let filename = &*args[1];
     let file_to_update = &*args[2];
-    match update_file(filename, file_to_update, false) {
-        Ok(_) => println!("{file_to_update:?} updated in {filename:?}"),
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return 1;
-        }
-    }
-    0
+    update_file(filename, file_to_update, false)?;
+    Ok(())
 }
 
 fn update_file(archive_filename: &str, file_to_update: &str, in_place: bool) -> ZipResult<()> {

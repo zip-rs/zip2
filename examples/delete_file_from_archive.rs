@@ -1,32 +1,22 @@
 // See this dicussion for further background on why it is done like this:
 // https://github.com/zip-rs/zip/discussions/430
 
+use anyhow::{anyhow, Result};
 use zip::result::{ZipError, ZipResult};
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
-        println!(
+        return Err(anyhow!(
             "Usage: {:?} <filename> <file_within_archive_to_delete>",
             args[0]
-        );
-        return 1;
+        ));
     }
     let filename = &*args[1];
     let file_to_remove = &*args[2];
     let base_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    match remove_file(&base_dir, filename, file_to_remove, false) {
-        Ok(_) => println!("{file_to_remove:?} deleted from {filename:?}"),
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return 1;
-        }
-    }
-    0
+    remove_file(&base_dir, filename, file_to_remove, false)?;
+    Ok(())
 }
 
 fn remove_file(
