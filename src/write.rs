@@ -1132,6 +1132,13 @@ impl<W: Write + Seek> ZipWriter<W> {
             debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
 
+            if !file.using_data_descriptor {
+                // Not using a data descriptor means the underlying writer
+                // supports seeking, so we can go back and update the AES Extra
+                // Data header to use AE1 for large files.
+                update_aes_extra_data(writer, file, self.stats.bytes_written)?;
+            }
+
             let crc = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2, _)));
 
             file.crc32 = if crc {
@@ -1143,10 +1150,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.using_data_descriptor {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
-                // Not using a data descriptor means the underlying writer
-                // supports seeking, so we can go back and update the AES Extra
-                // Data header to use AE1 for large files.
-                update_aes_extra_data(writer, file, self.stats.bytes_written)?;
                 update_local_file_header(writer, file)?;
                 writer.seek(SeekFrom::Start(file_end))?;
             }
