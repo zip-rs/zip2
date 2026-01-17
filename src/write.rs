@@ -1759,7 +1759,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(default),
                     deflate_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
 
                 #[cfg(feature = "deflate-zopfli")]
@@ -1820,19 +1820,16 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             CompressionMethod::Deflate64 => {
                 Err(UnsupportedArchive("Compressing Deflate64 is not supported"))
             }
-            #[cfg(feature = "bzip2")]
+            #[cfg(feature = "_bzip2_any")]
             CompressionMethod::Bzip2 => {
-                let level = clamp_opt(
+                let level = validate_value_in_range(
                     compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
                     bzip2_compression_level_range(),
                 )
                 .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
                 Ok(Box::new(move |bare| {
-                    Ok(GenericZipWriter::Bzip2(BzEncoder::new(
-                        bare,
-                        bzip2::Compression::new(level),
-                    )))
+                    Ok(Bzip2(BzEncoder::new(bare, bzip2::Compression::new(level))))
                 }))
             }
             CompressionMethod::AES => Err(UnsupportedArchive(
@@ -1840,13 +1837,13 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             )),
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => {
-                let level = clamp_opt(
+                let level = validate_value_in_range(
                     compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
                     zstd::compression_level_range(),
                 )
                 .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                 Ok(Box::new(move |bare| {
-                    Ok(GenericZipWriter::Zstd(
+                    Ok(Zstd(
                         ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
                     ))
                 }))
@@ -1869,13 +1866,16 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             }
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => {
-                let level = clamp_opt(compression_level.unwrap_or(6), 0..=9)
+                let level = validate_value_in_range(compression_level.unwrap_or(6), 0..=9)
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
                 Ok(Box::new(move |bare| {
-                    Ok(GenericZipWriter::Xz(Box::new(
-                        lzma_rust2::XzWriter::new(bare, lzma_rust2::XzOptions::with_preset(level))
-                            .map_err(ZipError::Io)?,
+                    Ok(Xz(Box::new(
+                        lzma_rust2::XzWriter::new(
+                            bare,
+                            lzma_rust2::XzOptions::with_preset(level),
+                        )
+                        .map_err(ZipError::Io)?,
                     )))
                 }))
             }
