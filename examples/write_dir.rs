@@ -72,14 +72,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             zip::CompressionMethod::Zstd
         }
     };
-    match zip_dir(src_dir, dest_file, method) {
-        Ok(_) => println!("done: {src_dir:?} written to {dest_file:?}"),
-        Err(e) => {
-            eprintln!("Error: {e:?}");
-            return Err(e);
-        }
-    }
-
+    zip_dir(src_dir, dest_file, method)?;
+    println!("done: {src_dir:?} written to {dest_file:?}"),
     Ok(())
 }
 
