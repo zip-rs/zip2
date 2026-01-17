@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Error: invalid filename '{}'. Directory separators and \"..\" are not allowed.",
             file_arg
         );
-        return Err("Invalide filename".into());
+        return Err("Invalid filename".into());
     }
 
     // Build a path to the archive relative to a safe base directory (current working directory)
@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if some_files_failed {
         eprintln!("Error: some files failed to extract; see above errors.");
-        Err("Extration partially failed".into())
+        Err("Extraction partially failed".into())
     } else {
         Ok(())
     }

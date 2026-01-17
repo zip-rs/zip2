@@ -37,8 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         CompressionMethod::Deflated => {
             #[cfg(not(feature = "deflate-flate2"))]
             {
-                println!("The `deflate-flate2` feature is not enabled");
-                return 1;
+                return Err("The `deflate-flate2` feature is not enabled".into());
             }
             #[cfg(feature = "deflate-flate2")]
             zip::CompressionMethod::Deflated
@@ -46,8 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         CompressionMethod::Bzip2 => {
             #[cfg(not(feature = "_bzip2_any"))]
             {
-                println!("The `bzip2` feature is not enabled");
-                return 1;
+                return Err("The `bzip2` feature is not enabled".into());
             }
             #[cfg(feature = "_bzip2_any")]
             zip::CompressionMethod::Bzip2
@@ -55,8 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         CompressionMethod::Xz => {
             #[cfg(not(feature = "xz"))]
             {
-                println!("The `xz` feature is not enabled");
-                return 1;
+                return Err("The `xz` feature is not enabled".into());
             }
             #[cfg(feature = "xz")]
             zip::CompressionMethod::Xz
@@ -64,8 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         CompressionMethod::Zstd => {
             #[cfg(not(feature = "zstd"))]
             {
-                println!("The `zstd` feature is not enabled");
-                return 1;
+                return Err("The `zstd` feature is not enabled".into());
             }
             #[cfg(feature = "zstd")]
             zip::CompressionMethod::Zstd
