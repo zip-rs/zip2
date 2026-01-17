@@ -2,7 +2,7 @@
 
 #[cfg(feature = "aes-crypto")]
 use crate::aes::{AesReader, AesReaderValid};
-use crate::compression::{CompressionMethod, Decompressor};
+use crate::compression::{CompressionMethod};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
@@ -22,7 +22,6 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{self, copy, sink, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "bzip2")]
@@ -258,6 +257,8 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
             ZipFileReader::Deflated(r) => r.read_exact(buf),
             #[cfg(feature = "deflate64")]
             ZipFileReader::Deflate64(r) => r.read_exact(buf),
+            #[cfg(feature = "zstd")]
+            ZipFileReader::Zstd(r) => r.read_exact(buf),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.read_exact(buf),
             #[cfg(feature = "lzma")]
@@ -631,7 +632,7 @@ pub(crate) fn make_reader<'a, R: Read + ?Sized>(
                 ae2_encrypted,
             )))
         }
-        _ => return unsupported_zip_error("Compression method not supported"),
+        _ => unsupported_zip_error("Compression method not supported"),
     }
 }
 
@@ -2358,8 +2359,10 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
     None
 }
 
-pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
-    reader: &'a mut R,
+/// Read ZipFile from a non-seekable reader like [read_zipfile_from_stream] does, but assume the
+/// given compressed size and don't read any further ahead than that.
+pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
+    reader: &mut R,
     compressed_size: u64
 ) -> ZipResult<Option<ZipFile<'_, R>>> {
     let signature = spec::Magic::literal(reader.read_u32_le()?);
@@ -2406,7 +2409,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
         compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,
-        compressed_size: compressed_size as u64,
+        compressed_size,
         uncompressed_size: uncompressed_size as u64,
         file_name: file_name.into(),
         file_name_raw: file_name_raw.into_boxed_slice(),
@@ -2433,7 +2436,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
         return unsupported_zip_error("Encrypted files are not supported");
     }
 
-    let limit_reader = (reader as &'a mut dyn io::Read).take(result.compressed_size);
+    let limit_reader = reader.take(result.compressed_size);
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
