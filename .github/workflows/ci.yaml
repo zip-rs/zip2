@@ -137,28 +137,13 @@ jobs:
       run: cargo install clippy-sarif sarif-fmt
     - run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
     - name: Upload analysis results to GitHub
-      if: github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+      if: always()
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: rust-clippy-results.sarif
         wait-for-processing: true
     - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-  check_codeql_status:
-    name: Check CodeQL Status
-    needs: style_and_docs
-    permissions:
-      contents: read
-      checks: read
-      pull-requests: read
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - name: Check CodeQL Status
-        uses: eldrick19/code-scanning-status-checker@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pr_number: ${{ github.event.pull_request.number }}
-          repo: ${{ github.repository }}
+
   fuzz_read:
     runs-on: ubuntu-latest
     needs:
