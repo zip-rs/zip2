@@ -27,7 +27,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 arbitrary = { version = "1.4", features = ["derive"], optional = true }
 aes = { version = "0.8", optional = true }
-bzip2 = { version = "0.6", optional = true }
+bzip2 = { version = "0.6", default-features = false, optional = true }
 chrono = { version = "^0.4.27", optional = true, default-features = false, features = ["std"] }
 constant_time_eq = { version = "0.3", optional = true }
 crc32fast = "1.5"
@@ -66,7 +66,6 @@ getrandom = { version = "0.3", default-features = false, features = ["std"] }
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 getrandom = { version = "0.3", default-features = false, features = ["std", "wasm_js"] }
-wasm-bindgen-test = "0.3"
 
 [dev-dependencies]
 bencher = "0.1"
@@ -103,6 +102,9 @@ lzma = ["dep:lzma-rust2"]
 ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:lzma-rust2"]
+_bzip2_any = []
+bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any"]
+bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
 legacy-zip = ["bitstream-io"]
 default = [
     "aes-crypto",
