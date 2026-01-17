@@ -125,7 +125,7 @@ fn parse_large_non_zip(bench: &mut Bencher) {
     let dir = TempDir::with_prefix("large-non-zip-bench").unwrap();
     let file = dir.path().join("zeros");
     let buf = vec![0u8; FILE_SIZE];
-    fs::write(&file, &buf).unwrap();
+    fs::write(&file, buf).unwrap();
 
     bench.iter(|| {
         assert!(zip::ZipArchive::new(std::fs::File::open(&file).unwrap()).is_err());
