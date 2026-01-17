@@ -1393,7 +1393,9 @@ fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipRe
     let mut data = vec![0; len].into_boxed_slice();
     if let Err(e) = reader.read_exact(&mut data) {
         if e.kind() == io::ErrorKind::UnexpectedEof {
-            return Err(invalid!("Variable-length field extends beyond file boundary"));
+            return Err(invalid!(
+                "Variable-length field extends beyond file boundary"
+            ));
         }
         return Err(e.into());
     }
@@ -1514,9 +1516,9 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 let write_start = processed_extra_field.len();
                 reader.seek(SeekFrom::Start(old_position))?;
                 processed_extra_field.extend_from_slice(&vec![0u8; field_len]);
-                if let Err(e) = reader.read_exact(
-                    &mut processed_extra_field[write_start..(write_start + field_len)],
-                ) {
+                if let Err(e) = reader
+                    .read_exact(&mut processed_extra_field[write_start..(write_start + field_len)])
+                {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
                         return Err(invalid!("Extra field content exceeds declared length"));
                     }

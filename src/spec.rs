@@ -525,7 +525,9 @@ impl Zip64CentralDirectoryEnd {
         let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
         if let Err(e) = reader.read_exact(&mut zip_file_comment) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Err(invalid!("EOCD64 extensible data sector exceeds file boundary"));
+                return Err(invalid!(
+                    "EOCD64 extensible data sector exceeds file boundary"
+                ));
             }
             return Err(e.into());
         }
@@ -663,10 +665,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
                 reader.seek(io::SeekFrom::Start(locator64_offset))?;
                 let locator64 = Zip64CentralDirectoryEndLocator::parse(reader);
-                Ok((
-                    locator64_offset,
-                    locator64?,
-                ))
+                Ok((locator64_offset, locator64?))
             }
 
             try_read_eocd64_locator(reader, eocd_offset).ok()
