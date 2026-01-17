@@ -1918,7 +1918,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
                     Ok(Ppmd(Box::new(encoder)))
                 }))
-            }#[allow(deprecated)]
+            }
+            #[allow(deprecated)]
             #[allow(deprecated)]
             #[allow(deprecated)]
             CompressionMethod::Unsupported(..) => {

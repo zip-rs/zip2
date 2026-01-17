@@ -56,11 +56,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn zip_dir(
-    src_dir: &Path,
-    dst_file: &Path,
-    method: zip::CompressionMethod,
-) -> Result<()> {
+fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> Result<()> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }
