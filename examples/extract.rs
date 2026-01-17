@@ -46,7 +46,7 @@ fn real_main() -> i32 {
 
     let mut archive = match fs::File::open(&out_root)
         .map_err(ZipError::from)
-        .and_then(|f| ZipArchive::new(f))
+        .and_then(ZipArchive::new)
     {
         Ok(archive) => archive,
         Err(e) => {
