@@ -1,6 +1,5 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-use anyhow::Context;
+//! Example to write a zip dir
+
 use clap::{Parser, ValueEnum};
 use std::io::{Read, Write};
 use zip::{result::ZipError, write::SimpleFileOptions};
@@ -30,14 +29,10 @@ enum CompressionMethod {
     Zstd,
 }
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let src_dir = &args.source;
-    let dst_file = &args.destination;
+    let dest_file = &args.destination;
     let method = match args.compression_method {
         CompressionMethod::Stored => zip::CompressionMethod::Stored,
         CompressionMethod::Deflated => {
@@ -77,20 +72,27 @@ fn real_main() -> i32 {
             zip::CompressionMethod::Zstd
         }
     };
-    match zip_dir(src_dir, dst_file, method) {
-        Ok(_) => println!("done: {src_dir:?} written to {dst_file:?}"),
-        Err(e) => eprintln!("Error: {e:?}"),
+    match zip_dir(src_dir, dest_file, method) {
+        Ok(_) => println!("done: {src_dir:?} written to {dest_file:?}"),
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            return Err(e);
+        }
     }
 
-    0
+    Ok(())
 }
 
-fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> anyhow::Result<()> {
+fn zip_dir(
+    src_dir: &Path,
+    dest_file: &Path,
+    method: zip::CompressionMethod,
+) -> Result<(), Box<dyn std::error::Error>> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }
 
-    let path = Path::new(dst_file);
+    let path = Path::new(dest_file);
     let file = File::create(path)?;
 
     let walkdir = WalkDir::new(src_dir);
@@ -108,7 +110,7 @@ fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> a
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
-            .with_context(|| format!("{name:?} is a Non UTF-8 Path"))?;
+            .ok_or_else(|| format!("{name:?} is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!

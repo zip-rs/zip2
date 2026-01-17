@@ -1,18 +1,18 @@
 // See this dicussion for further background on why it is done like this:
 // https://github.com/zip-rs/zip/discussions/430
 
-use anyhow::{anyhow, Result};
 use std::io::Write;
 use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
-        return Err(anyhow!(
+        return Err(format!(
             "Usage: {:?} <filename> <file_within_archive_to_update>",
             args[0]
-        ));
+        )
+        .into());
     }
     let filename = &*args[1];
     let file_to_update = &*args[2];
