@@ -82,6 +82,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v6
+    - name: Install LLVM and Clang
+      uses: KyleMayes/install-llvm-action@v2
+      with:
+        version: "10"
     - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
     - run: rustup target add wasm32-unknown-unknown
     - run: cargo install wasm-pack
