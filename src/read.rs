@@ -2,35 +2,32 @@
 
 #[cfg(feature = "aes-crypto")]
 use crate::aes::{AesReader, AesReaderValid};
+use crate::cfg_if;
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
-use crate::read::zip_archive::SharedBuilder;
-use crate::result::invalid;
-use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod};
-use crate::types::{
-    AesMode, AesVendorVersion, DateTime, System, ZipCentralEntryBlock, ZipFileData,
-    ZipLocalEntryBlock,
+use crate::result::{invalid, ZipError, ZipResult};
+use crate::spec::{
+    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR,
 };
-use crate::write::SimpleFileOptions;
+use crate::types::{
+    AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
+    ZipFileData, ZipLocalEntryBlock,
+};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
-use crate::ZIP64_BYTES_THR;
+use core::mem::{replace, size_of};
+use core::ops::{Deref, Range};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::fs::create_dir_all;
-use std::io::{self, copy, prelude::*, sink, SeekFrom};
-use std::mem;
-use std::mem::size_of;
-use std::ops::{Deref, Range};
+use std::io::{self, copy, sink, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 mod config;
 
-pub use config::*;
+pub use config::{ArchiveOffset, Config};
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
@@ -103,7 +100,7 @@ pub(crate) mod zip_archive {
     /// change in the future.
     ///
     /// ```no_run
-    /// use std::io::prelude::*;
+    /// use std::io::{Read, Seek};
     /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
     ///     use zip::HasZipMetadata;
     ///     let mut zip = zip::ZipArchive::new(reader)?;
@@ -185,17 +182,21 @@ impl<'a, R: Read> CryptoReader<'a, R> {
     }
 
     /// Returns `true` if the data is encrypted using AE2.
+    #[allow(clippy::needless_return)] // can't use cfg_if_expr! because const
     pub const fn is_ae2_encrypted(&self) -> bool {
-        #[cfg(feature = "aes-crypto")]
-        return matches!(
-            self,
-            CryptoReader::Aes {
-                vendor_version: AesVendorVersion::Ae2,
-                ..
+        cfg_if! {
+            if #[cfg(feature = "aes-crypto")] {
+                return matches!(
+                    self,
+                    CryptoReader::Aes {
+                        vendor_version: AesVendorVersion::Ae2,
+                        ..
+                    }
+                );
+            } else {
+                return false;
             }
-        );
-        #[cfg(not(feature = "aes-crypto"))]
-        false
+        }
     }
 }
 
@@ -327,7 +328,8 @@ impl<R: Read> Read for SeekableTake<'_, R> {
 }
 
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
-    create_dir_all(outpath.as_ref())?;
+    use std::fs;
+    fs::create_dir_all(outpath.as_ref())?;
     #[cfg(unix)]
     {
         // Dirs must be writable until all normal files are extracted
@@ -468,34 +470,32 @@ pub(crate) fn make_symlink<T>(
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
 
-    #[cfg(not(any(unix, windows)))]
-    {
-        use std::fs::File;
-        let output = File::create(outpath);
-        output?.write_all(target)?;
-    }
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
-    }
-    #[cfg(windows)]
-    {
-        let target = Path::new(OsStr::new(&target_str));
-        let target_is_dir_from_archive =
-            existing_files.contains_key(target_str) && is_dir(target_str);
-        let target_is_dir = if target_is_dir_from_archive {
-            true
-        } else if let Ok(meta) = std::fs::metadata(target) {
-            meta.is_dir()
+    cfg_if! {
+        if #[cfg(unix)] {
+            std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
+        } else if #[cfg(windows)] {
+            let target = Path::new(OsStr::new(&target_str));
+            let target_is_dir_from_archive =
+                existing_files.contains_key(target_str) && is_dir(target_str);
+            let target_is_dir = if target_is_dir_from_archive {
+                true
+            } else if let Ok(meta) = std::fs::metadata(target) {
+                meta.is_dir()
+            } else {
+                false
+            };
+            if target_is_dir {
+                std::os::windows::fs::symlink_dir(target, outpath)?;
+            } else {
+                std::os::windows::fs::symlink_file(target, outpath)?;
+            }
         } else {
-            false
-        };
-        if target_is_dir {
-            std::os::windows::fs::symlink_dir(target, outpath)?;
-        } else {
-            std::os::windows::fs::symlink_file(target, outpath)?;
+            use std::fs::File;
+            let output = File::create(outpath);
+            output?.write_all(target)?;
         }
     }
+
     Ok(())
 }
 
@@ -544,6 +544,35 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
             disk_number,
             disk_with_central_directory,
         })
+    }
+}
+
+/// Store all entries which specify a numeric "mode" which is familiar to POSIX operating systems.
+#[cfg(unix)]
+#[derive(Default, Debug)]
+struct UnixFileModes {
+    map: std::collections::BTreeMap<PathBuf, u32>,
+}
+
+#[cfg(unix)]
+impl UnixFileModes {
+    #[cfg_attr(not(debug_assertions), allow(unused))]
+    pub fn add_mode(&mut self, path: PathBuf, mode: u32) {
+        // We don't print a warning or consider it remotely out of the ordinary to receive two
+        // separate modes for the same path: just take the later one.
+        let old_entry = self.map.insert(path, mode);
+        debug_assert_eq!(old_entry, None);
+    }
+
+    // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
+    pub fn all_perms_with_children_first(
+        self,
+    ) -> impl IntoIterator<Item = (PathBuf, std::fs::Permissions)> {
+        use std::os::unix::fs::PermissionsExt;
+        self.map
+            .into_iter()
+            .rev()
+            .map(|(p, m)| (p, std::fs::Permissions::from_mode(m)))
     }
 }
 
@@ -701,7 +730,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         dir_info: CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
-    ) -> Result<SharedBuilder, ZipError> {
+    ) -> Result<zip_archive::SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
         let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
@@ -725,7 +754,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             files.push(file);
         }
 
-        Ok(SharedBuilder {
+        Ok(zip_archive::SharedBuilder {
             files,
             offset: dir_info.archive_offset,
             dir_start: dir_info.directory_start,
@@ -930,7 +959,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<()> {
         use std::fs;
 
-        create_dir_all(&directory)?;
+        fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
         let root_dir = root_dir_filter
@@ -958,66 +987,53 @@ impl<R: Read + Seek> ZipArchive<R> {
             .transpose()?;
 
         #[cfg(unix)]
-        let mut files_by_unix_mode = Vec::new();
+        let mut files_by_unix_mode = UnixFileModes::default();
 
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
 
             let mut outpath = directory.clone();
+            /* TODO: the control flow of this method call and subsequent expectations about the
+             *       values in this loop is extremely difficult to follow. It also appears to
+             *       perform a nested loop upon extracting every single file entry? Why does it
+             *       accept two arguments that point to the same directory path, one mutable? */
             file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
 
-            let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
+            #[cfg(any(unix, windows))]
+            if file.is_symlink() {
                 let mut target = Vec::with_capacity(file.size() as usize);
                 file.read_to_end(&mut target)?;
-                Some(target)
-            } else {
-                if file.is_dir() {
-                    crate::read::make_writable_dir_all(&outpath)?;
-                    continue;
-                }
-                None
-            };
-
-            drop(file);
-
-            if let Some(target) = symlink_target {
+                drop(file);
                 make_symlink(&outpath, &target, &self.shared.files)?;
                 continue;
+            } else if file.is_dir() {
+                crate::read::make_writable_dir_all(&outpath)?;
+                continue;
             }
-            let mut file = self.by_index(i)?;
             let mut outfile = fs::File::create(&outpath)?;
-
             io::copy(&mut file, &mut outfile)?;
-            #[cfg(unix)]
-            {
-                // Check for real permissions, which we'll set in a second pass
-                if let Some(mode) = file.unix_mode() {
-                    files_by_unix_mode.push((outpath.clone(), mode));
-                }
-            }
-            #[cfg(feature = "chrono")]
-            {
-                // Set original timestamp.
-                if let Some(last_modified) = file.last_modified() {
-                    if let Some(t) = datetime_to_systemtime(&last_modified) {
-                        outfile.set_modified(t)?;
-                    }
-                }
-            }
-        }
-        #[cfg(unix)]
-        {
-            use std::cmp::Reverse;
-            use std::os::unix::fs::PermissionsExt;
 
-            if files_by_unix_mode.len() > 1 {
-                // Ensure we update children's permissions before making a parent unwritable
-                files_by_unix_mode.sort_by_key(|(path, _)| Reverse(path.clone()));
+            // Check for real permissions, which we'll set in a second pass.
+            #[cfg(unix)]
+            if let Some(mode) = file.unix_mode() {
+                files_by_unix_mode.add_mode(outpath, mode);
             }
-            for (path, mode) in files_by_unix_mode.into_iter() {
-                fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+
+            // Set original timestamp.
+            #[cfg(feature = "chrono")]
+            if let Some(last_modified) = file.last_modified() {
+                if let Some(t) = datetime_to_systemtime(&last_modified) {
+                    outfile.set_modified(t)?;
+                }
             }
         }
+
+        // Ensure we update children's permissions before making a parent unwritable.
+        #[cfg(unix)]
+        for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
+            std::fs::set_permissions(path, perms)?;
+        }
+
         Ok(())
     }
 
@@ -1679,7 +1695,7 @@ impl<'a> ZipReadOptions<'a> {
 /// Methods for retrieving information on zip files
 impl<'a, R: Read> ZipFile<'a, R> {
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
-        mem::replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
+        replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
     }
 
     /// Get the version of the file
@@ -2188,7 +2204,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 mod test {
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
-    use crate::write::SimpleFileOptions;
+    use crate::types::SimpleFileOptions;
     use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Read, Write};

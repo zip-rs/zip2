@@ -1,16 +1,23 @@
+#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
+
+#[cfg(fuzzing)]
 use afl::fuzz;
 use arbitrary::{Arbitrary, Unstructured};
 use core::fmt::Debug;
 use replace_with::replace_with_or_abort;
-use std::fmt::{Arguments, Formatter, Write};
+use std::fmt::{Formatter, Write};
 use std::io::Write as IoWrite;
 use std::io::{Cursor, Seek, SeekFrom};
+use std::ops;
 use std::path::PathBuf;
+#[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
+use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
 
+#[cfg(fuzzing)]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -59,6 +66,28 @@ impl FileOperation<'_> {
                 .flat_map(|(op, abort)| if !abort { op.get_path() } else { None })
                 .next(),
             _ => Some(self.path.to_owned()),
+        }
+    }
+
+    fn is_streamable(&self) -> bool {
+        match &self.basic {
+            BasicFileOperation::WriteNormalFile { options, .. }
+            | BasicFileOperation::WriteDirectory(options)
+            | BasicFileOperation::WriteSymlinkWithTarget { options, .. } => {
+                !options.has_encryption()
+            }
+            BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
+            BasicFileOperation::DeepCopy(base) => base.is_streamable(),
+            BasicFileOperation::MergeWithOtherFile {
+                operations,
+                initial_junk,
+            } => {
+                if !initial_junk.is_empty() {
+                    return false;
+                }
+                operations.iter().all(|(op, _)| op.is_streamable())
+            }
+            _ => true,
         }
     }
 }
@@ -239,6 +268,11 @@ fn do_operation(
         writer.abort_file()?;
         *files_added -= 1;
     }
+    fn try_into_new_writer(
+        old_writer: zip::ZipWriter<Cursor<Vec<u8>>>,
+    ) -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
+        zip::ZipWriter::new_append(old_writer.finish()?)
+    }
     // If a comment is set, we finish the archive, reopen it for append and then set a shorter
     // comment, then there will be junk after the new comment that we can't get rid of. Thus, we
     // can only check that the expected is a prefix of the actual
@@ -254,10 +288,7 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
-                (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
-                    zip::ZipWriter::new_append(old_writer.finish()?)
-                })()
-                .unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
@@ -275,34 +306,39 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer| {
-                (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
-                    zip::ZipWriter::new_append(old_writer.finish()?)
-                })()
-                .unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
             });
-            assert!(writer.get_raw_comment().starts_with(&old_comment));
+            debug_assert!(writer.get_raw_comment().starts_with(&old_comment));
         }
     }
     Ok(())
 }
 
 impl FuzzTestCase<'_> {
-    fn execute(self, stringifier: &mut impl Write, panic_on_error: bool) -> ZipResult<()> {
+    fn execute<W: Write>(
+        self,
+        mut stringifier: impl ops::DerefMut<Target = W>,
+        panic_on_error: bool,
+    ) -> ZipResult<()> {
+        // Indicates the starting position if we use read_zipfile_from_stream at the end.
+        let junk_len = self.initial_junk.len();
+
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
         let mut writer = zip::ZipWriter::new(initial_junk);
         let mut files_added = 0;
         let mut final_reopen = false;
-        if let Some((last_op, _)) = self.operations.last() {
-            if last_op.reopen != ReopenOption::ViaFinishIntoReadable {
-                final_reopen = true;
-            }
+        if let Some((last_op, _)) = self.operations.last()
+            && last_op.reopen != ReopenOption::ViaFinishIntoReadable
+        {
+            final_reopen = true;
         }
+        let streamable = self.operations.iter().all(|(op, _)| op.is_streamable());
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
         for (operation, abort) in self.operations.into_vec().into_iter() {
@@ -312,11 +348,22 @@ impl FuzzTestCase<'_> {
                 abort,
                 self.flush_on_finish_file,
                 &mut files_added,
-                stringifier,
+                stringifier.deref_mut(),
                 panic_on_error,
             );
         }
-        if final_reopen {
+        if streamable {
+            writeln!(
+                stringifier,
+                "let mut stream = writer.finish()?;\n\
+                    stream.seek(SeekFrom::Start({junk_len}))?;\n\
+                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}"
+            )
+            .map_err(|_| ZipError::InvalidArchive("Failed to read from stream".into()))?;
+            let mut stream = writer.finish()?;
+            stream.seek(SeekFrom::Start(junk_len as u64))?;
+            while read_zipfile_from_stream(&mut stream)?.is_some() {}
+        } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
                 .map_err(|_| ZipError::InvalidArchive("".into()))?;
             let _ = writer.finish_into_readable()?;
@@ -346,9 +393,11 @@ impl Debug for FuzzTestCase<'_> {
     }
 }
 
+#[cfg(fuzzing)]
 #[derive(Default, Eq, PartialEq)]
 struct NoopWrite {}
 
+#[cfg(fuzzing)]
 impl Write for NoopWrite {
     fn write_str(&mut self, _: &str) -> std::fmt::Result {
         Ok(())
@@ -358,15 +407,71 @@ impl Write for NoopWrite {
         Ok(())
     }
 
-    fn write_fmt(&mut self, _: Arguments<'_>) -> std::fmt::Result {
+    fn write_fmt(&mut self, _: std::fmt::Arguments<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
 
-fn main() {
-    fuzz!(|data: &[u8]| {
-        if let Ok(test_case) = Unstructured::new(data).arbitrary::<FuzzTestCase>() {
-            test_case.execute(&mut NoopWrite::default(), true).unwrap();
+#[cfg(not(fuzzing))]
+struct StdoutWrite(std::io::Stdout);
+
+#[cfg(not(fuzzing))]
+impl Default for StdoutWrite {
+    fn default() -> Self {
+        Self(std::io::stdout())
+    }
+}
+
+#[cfg(not(fuzzing))]
+impl Write for StdoutWrite {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        match self.0.write_all(s.as_bytes()) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("error writing string {s:?}: {e}");
+                Err(std::fmt::Error)
+            }
         }
-    });
+    }
+}
+
+#[cfg(not(fuzzing))]
+impl ops::Drop for StdoutWrite {
+    fn drop(&mut self) {
+        match self.0.flush() {
+            Ok(()) => (),
+            Err(e) => {
+                eprintln!("error flushing: {e}");
+            }
+        }
+    }
+}
+
+fn main() {
+    #[cfg(fuzzing)]
+    {
+        let mut w = NoopWrite::default();
+        fuzz!(|data: &[u8]| {
+            let u = Unstructured::new(data);
+            if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
+                for test_case in it.flatten() {
+                    test_case.execute(&mut w, true).unwrap();
+                }
+            }
+        });
+    }
+
+    #[cfg(not(fuzzing))]
+    {
+        use std::io::Read;
+        let mut v = Vec::new();
+        std::io::stdin().read_to_end(&mut v).unwrap();
+        let u = Unstructured::new(&v[..]);
+        let mut w = StdoutWrite::default();
+        if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
+            for test_case in it.flatten() {
+                test_case.execute(&mut w, true).unwrap();
+            }
+        }
+    }
 }

@@ -3,14 +3,46 @@
 //! The following paper was used to implement the ZipCrypto algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
-use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
-use std::num::Wrapping;
+use core::fmt::{Debug, Formatter};
+use core::hash::Hash;
+use core::marker::PhantomData;
+use core::num::Wrapping;
 
+use crate::cfg_if_expr;
 use crate::result::ZipError;
+#[cfg(feature = "aes-crypto")]
+use crate::AesMode;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EncryptWith<'k> {
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        mode: AesMode,
+        password: &'k str,
+    },
+    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
+}
+
+#[cfg(feature = "_arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        #[cfg(feature = "aes-crypto")]
+        if bool::arbitrary(u)? {
+            return Ok(EncryptWith::Aes {
+                mode: AesMode::arbitrary(u)?,
+                password: u.arbitrary::<&str>()?,
+            });
+        }
+
+        Ok(EncryptWith::ZipCrypto(
+            ZipCryptoKeys::arbitrary(u)?,
+            PhantomData,
+        ))
+    }
+}
 
 /// A container to hold the current key state
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
@@ -21,19 +53,21 @@ pub(crate) struct ZipCryptoKeys {
 impl Debug for ZipCryptoKeys {
     #[allow(unreachable_code)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        #[cfg(not(any(test, fuzzing)))]
-        {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::Hasher;
-            let mut t = DefaultHasher::new();
-            self.hash(&mut t);
-            f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
+        cfg_if_expr! {
+            #[cfg(any(test, fuzzing))] => {
+                f.write_fmt(format_args!(
+                    "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
+                    self.key_0, self.key_1, self.key_2
+                ))
+            },
+            _ => {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::Hasher;
+                let mut t = DefaultHasher::new();
+                self.hash(&mut t);
+                f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
+            }
         }
-        #[cfg(any(test, fuzzing))]
-        f.write_fmt(format_args!(
-            "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
-            self.key_0, self.key_1, self.key_2
-        ))
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "7.0.0"
+version = "7.1.0"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -13,6 +13,7 @@ keywords = ["zip", "archive", "compression"]
 # Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci.yaml`.
 # The MSRV policy is documented in `README.md`.
 rust-version = "1.83.0"
+categories = ["compression", "filesystem", "parser-implementations"]
 description = """
 Library to support the reading and writing of zip files.
 """
@@ -23,39 +24,48 @@ exclude = ["tests/**", "examples/**", ".github/**", "fuzz_read/**", "fuzz_write/
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[workspace.dependencies]
-time = { version = "0.3.37", default-features = false }
-
 [dependencies]
+arbitrary = { version = "1.4", features = ["derive"], optional = true }
 aes = { version = "0.8", optional = true }
-by_address = { version = "1.2.1", optional = true }
-bzip2 = { version = "0.6.0", optional = true }
-chrono = { version = "^0.4.27", optional = true }
-constant_time_eq = { version = "0.3.1", optional = true }
-crc32fast = "1.4"
-displaydoc = "0.2.5"
-flate2 = { version = "1.1.1", default-features = false, optional = true }
+by_address = { version = "1.2", optional = true }
+bzip2 = { version = "0.6", default-features = false, optional = true }
+chrono = { version = "^0.4.27", optional = true, default-features = false, features = ["std"] }
+constant_time_eq = { version = "0.3", optional = true }
+crc32fast = "1.5"
+displaydoc = "0.2"
+flate2 = { version = "1.1", default-features = false, optional = true }
 generic-array = { version = "=0.14.7", optional = true }
-getrandom = { version = "0.3.1", features = ["std"], optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
 memchr = "2.7"
 nt-time = { version = "0.10.6", default-features = false, optional = true }
 num_cpus = { version = "1.16", optional = true }
-ppmd-rust = { version = "1.2", optional = true }
+ppmd-rust = { version = "1.3", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
 thiserror = "2"
-time = { workspace = true, optional = true, features = [
+time = { version = "0.3", default-features = false, optional = true, features = [
     "std",
 ] }
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "0.13", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
-deflate64 = { version = "0.1.9", optional = true }
-lzma-rust2 = { version = "0.15.5", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
-bitstream-io = { version = "4.5.0", optional = true }
+deflate64 = { version = "0.1.10", optional = true }
+lzma-rust2 = { version = "0.15", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+bitstream-io = { version = "4.5", optional = true }
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = { version = "0.3", default-features = false, optional = true }
+
+# wasm32
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", default-features = false, features = ["wasm_js"], optional = true }
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+getrandom = { version = "0.3", default-features = false, features = ["std"] }
 
 
 [target.'cfg(unix)'.dependencies]
@@ -63,21 +73,25 @@ libc = { version = "0.2.155", optional = true }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
+# wasm32
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom = { version = "0.3", default-features = false, features = ["std", "wasm_js"] }
 
 [dev-dependencies]
-bencher = "0.1.5"
-getrandom = { version = "0.3.1", features = ["wasm_js", "std"] }
+bencher = "0.1"
+getrandom = { version = "0.3", default-features = false, features = [] }
 walkdir = "2.5"
-time = { workspace = true, features = ["formatting", "macros"] }
-anyhow = "1.0.95"
+time = { version = "0.3", features = ["formatting", "macros"] }
+anyhow = "1.0.100"
 clap = { version = "=4.4.18", features = ["derive"] }
 tempdir = "0.3.7"
 tempfile = "3.15"
 num_cpus = "1"
-rayon = "1.11.0"
+rayon = "1.11"
 
 [features]
-aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "dep:getrandom", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
+_arbitrary = ["dep:arbitrary"]
+aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
 chrono = ["dep:chrono"]
 _deflate-any = []
 _all-features = [] # Detect when --all-features is used
@@ -100,6 +114,9 @@ lzma = ["dep:lzma-rust2"]
 ppmd = ["dep:ppmd-rust"]
 unreserved = []
 xz = ["dep:lzma-rust2"]
+_bzip2_any = []
+bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any"]
+bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
 legacy-zip = ["bitstream-io"]
 parallelism = ["libc", "num_cpus", "by_address"]
 default = [
