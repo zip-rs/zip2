@@ -622,7 +622,7 @@ impl ZipFileData {
                 };
                 if 0x01 == (self.external_attributes & 0x01) {
                     // Read-only bit; strip write permissions
-                    mode &= 0o0555;
+                    mode &= !0o222;
                 }
                 Some(mode)
             }
@@ -702,7 +702,16 @@ impl ZipFileData {
         let permissions = options.permissions.unwrap_or(0o100644);
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let mut external_attributes = permissions << 16;
         let system = if cfg!(windows) {
+            if is_dir(&file_name) {
+                // DOS directory bit
+                external_attributes |= 0x10;
+            }
+            if options.permissions.is_some_and(|permissions| permissions & 0o444 == 0) {
+                // DOS read-only bit
+                external_attributes |= 0x01;
+            }
             System::Dos
         } else {
             System::Unix
@@ -737,7 +746,7 @@ impl ZipFileData {
             header_start,
             data_start: OnceLock::new(),
             central_header_start: 0,
-            external_attributes: permissions << 16,
+            external_attributes,
             large_file: options.large_file,
             aes_mode,
             extra_fields: Vec::new(),
