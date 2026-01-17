@@ -496,7 +496,10 @@ pub(crate) struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn parse<T: Read + ?Sized>(reader: &mut T, max_size: u64) -> ZipResult<Zip64CentralDirectoryEnd> {
+    pub fn parse<T: Read + ?Sized>(
+        reader: &mut T,
+        max_size: u64,
+    ) -> ZipResult<Zip64CentralDirectoryEnd> {
         let Zip64CDEBlock {
             record_size,
             version_made_by,

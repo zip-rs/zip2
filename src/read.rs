@@ -433,7 +433,8 @@ pub(crate) fn make_reader<'a, R: Read + ?Sized>(
     #[cfg(feature = "legacy-zip")] flags: u16,
 ) -> ZipResult<ZipFileReader<'a, R>> {
     let ae2_encrypted = reader.is_ae2_encrypted();
-    #[cfg(not(feature = "legacy-zip"))] let flags = 0;
+    #[cfg(not(feature = "legacy-zip"))]
+    let flags = 0;
     Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
         Decompressor::new(
             io::BufReader::new(reader),
@@ -1262,7 +1263,8 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.uncompressed_size,
                 data.crc32,
                 crypto_reader,
-                #[cfg(feature = "legacy-zip")] data.flags,
+                #[cfg(feature = "legacy-zip")]
+                data.flags,
             )?,
         })
     }
@@ -2082,7 +2084,8 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
             uncompressed_size,
             crc32,
             crypto_reader,
-            #[cfg(feature = "legacy-zip")] result.flags,
+            #[cfg(feature = "legacy-zip")]
+            result.flags,
         )?,
     }))
 }
@@ -2173,7 +2176,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 /// given compressed size and don't read any further ahead than that.
 pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     reader: &mut R,
-    compressed_size: u64
+    compressed_size: u64,
 ) -> ZipResult<Option<ZipFile<'_, R>>> {
     let signature = spec::Magic::literal(reader.read_u32_le()?);
 
@@ -2250,12 +2253,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
-    let crypto_reader = make_crypto_reader(
-        &result,
-        limit_reader,
-        None,
-        None,
-    )?;
+    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
 
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
@@ -2264,7 +2262,8 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
             uncompressed_size as u64,
             result_crc32,
             crypto_reader,
-            #[cfg(feature = "legacy-zip")] result_flags,
+            #[cfg(feature = "legacy-zip")]
+            result_flags,
         )?,
     }))
 }
