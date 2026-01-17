@@ -641,7 +641,7 @@ impl ZipFileData {
             CompressionMethod::Stored => MIN_VERSION.into(),
             #[cfg(feature = "_deflate-any")]
             CompressionMethod::Deflated => 20,
-            #[cfg(feature = "bzip2")]
+            #[cfg(feature = "_bzip2_any")]
             CompressionMethod::Bzip2 => 46,
             #[cfg(feature = "deflate64")]
             CompressionMethod::Deflate64 => 21,

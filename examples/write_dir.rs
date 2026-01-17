@@ -2,12 +2,12 @@
 #![allow(dead_code)]
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use walkdir::{DirEntry, WalkDir};
+use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -50,12 +50,12 @@ fn real_main() -> i32 {
             zip::CompressionMethod::Deflated
         }
         CompressionMethod::Bzip2 => {
-            #[cfg(not(feature = "bzip2"))]
+            #[cfg(not(feature = "_bzip2_any"))]
             {
                 println!("The `bzip2` feature is not enabled");
                 return 1;
             }
-            #[cfg(feature = "bzip2")]
+            #[cfg(feature = "_bzip2_any")]
             zip::CompressionMethod::Bzip2
         }
         CompressionMethod::Xz => {
@@ -77,7 +77,7 @@ fn real_main() -> i32 {
             zip::CompressionMethod::Zstd
         }
     };
-    match doit(src_dir, dst_file, method) {
+    match zip_dir(src_dir, dst_file, method) {
         Ok(_) => println!("done: {src_dir:?} written to {dst_file:?}"),
         Err(e) => eprintln!("Error: {e:?}"),
     }
@@ -85,29 +85,30 @@ fn real_main() -> i32 {
     0
 }
 
-fn zip_dir<T>(
-    it: &mut dyn Iterator<Item = DirEntry>,
-    prefix: &Path,
-    writer: T,
-    method: zip::CompressionMethod,
-) -> anyhow::Result<()>
-where
-    T: Write + Seek,
-{
-    let mut zip = zip::ZipWriter::new(writer);
+fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> anyhow::Result<()> {
+    if !Path::new(src_dir).is_dir() {
+        return Err(ZipError::FileNotFound.into());
+    }
+
+    let path = Path::new(dst_file);
+    let file = File::create(path)?;
+
+    let walkdir = WalkDir::new(src_dir);
+
+    let mut zip = zip::ZipWriter::new(file);
     let options = SimpleFileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
 
-    let prefix = Path::new(prefix);
+    let prefix = Path::new(src_dir);
     let mut buffer = Vec::new();
-    for entry in it {
+    for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        let name = path.strip_prefix(prefix).unwrap();
+        let name = path.strip_prefix(prefix)?;
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
-            .with_context(|| format!("{name:?} Is a Non UTF-8 Path"))?;
+            .with_context(|| format!("{name:?} is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
@@ -127,21 +128,5 @@ where
         }
     }
     zip.finish()?;
-    Ok(())
-}
-
-fn doit(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> anyhow::Result<()> {
-    if !Path::new(src_dir).is_dir() {
-        return Err(ZipError::FileNotFound.into());
-    }
-
-    let path = Path::new(dst_file);
-    let file = File::create(path).unwrap();
-
-    let walkdir = WalkDir::new(src_dir);
-    let it = walkdir.into_iter();
-
-    zip_dir(&mut it.filter_map(|e| e.ok()), src_dir, file, method)?;
-
     Ok(())
 }
