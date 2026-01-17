@@ -995,13 +995,13 @@ impl<R: Read + Seek> ZipArchive<R> {
                 file.read_to_end(&mut target)?;
                 drop(file);
                 make_symlink(&outpath, &target, &self.shared.files)?;
+                continue;
             } else if file.is_dir() {
                 crate::read::make_writable_dir_all(&outpath)?;
                 continue;
-            } else {
-                let mut outfile = fs::File::create(&outpath)?;
-                io::copy(&mut file, &mut outfile)?;
             }
+            let mut outfile = fs::File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
 
             // Check for real permissions, which we'll set in a second pass.
             #[cfg(unix)]
