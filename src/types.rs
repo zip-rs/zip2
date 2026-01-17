@@ -610,9 +610,15 @@ impl ZipFileData {
         if self.external_attributes == 0 {
             return None;
         }
-
+        let unix_mode = self.external_attributes >> 16;
+        if unix_mode != 0 {
+            // If the high 16 bits are non-zero, they probably contain Unix permissions.
+            // This happens for archives created on Windows by this crate or other tools,
+            // and is the only way to identify symlinks in such archives.
+            return Some(unix_mode);
+        }
         match self.system {
-            System::Unix => Some(self.external_attributes >> 16),
+            System::Unix => Some(unix_mode),
             System::Dos => {
                 // Interpret MS-DOS directory bit
                 let mut mode = if 0x10 == (self.external_attributes & 0x10) {
@@ -703,7 +709,9 @@ impl ZipFileData {
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
         let mut external_attributes = permissions << 16;
-        let system = if cfg!(windows) {
+        let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
+            System::Unix
+        } else if cfg!(windows) {
             if is_dir(&file_name) {
                 // DOS directory bit
                 external_attributes |= 0x10;
@@ -1300,6 +1308,23 @@ mod test {
         assert_eq!(System::from(3), System::Unix);
         assert_eq!(u8::from(System::Unknown), 4u8);
         assert_eq!(System::Unknown as u8, 4u8);
+    }
+
+    #[test]
+    fn unix_mode_robustness() {
+        use super::{System, ZipFileData};
+        use crate::types::ffi::S_IFLNK;
+        let mut data = ZipFileData::default();
+        data.system = System::Dos;
+        data.external_attributes = (S_IFLNK | 0o777) << 16;
+        assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
+        
+        data.system = System::Unknown;
+        assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
+
+        data.external_attributes = 0x10; // DOS directory bit
+        data.system = System::Dos;
+        assert_eq!(data.unix_mode().unwrap() & 0o170000, crate::types::ffi::S_IFDIR);
     }
 
     #[test]
