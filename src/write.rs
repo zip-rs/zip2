@@ -2272,11 +2272,8 @@ mod test {
             .is_err());
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 108);
-        const DOS_DIR_ATTRIBUTES_BYTE: u8 = if cfg!(windows) {
-            0x10
-        } else {
-            0
-        };
+        const DOS_DIR_ATTRIBUTES_BYTE: u8 = if cfg!(windows) { 0x10 } else { 0 };
+        #[rustfmt::skip]
         assert_eq!(
             *result.get_ref(),
             &[
@@ -2306,6 +2303,7 @@ mod test {
             .is_err());
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 112);
+        #[rustfmt::skip]
         assert_eq!(
             *result.get_ref(),
             &[
@@ -2351,6 +2349,7 @@ mod test {
             .is_err());
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 162);
+        #[rustfmt::skip]
         assert_eq!(
             *result.get_ref(),
             &[
@@ -2390,6 +2389,7 @@ mod test {
         let result = writer.finish().unwrap();
 
         assert_eq!(result.get_ref().len(), 153);
+        #[rustfmt::skip]
         assert_eq!(result.get_ref(), &[80, 75, 3, 4, 10, 0, 0, 0, 0, 0, 0, 0, 33, 0, 94, 198, 50,
             12, 39, 0, 0, 0, 39, 0, 0, 0, 8, 0, 0, 0, 109, 105, 109, 101, 116, 121, 112, 101, 97,
             112, 112, 108, 105, 99, 97, 116, 105, 111, 110, 47, 118, 110, 100, 46, 111, 97, 115,
@@ -2446,7 +2446,7 @@ mod test {
         let result = writer.finish().unwrap();
 
         assert_eq!(result.get_ref().len(), 224);
-
+        #[rustfmt::skip]
         assert_eq!(result.get_ref(), &[80, 75, 3, 4, 10, 0, 0, 0, 0, 0, 0, 0, 33, 0, 29, 183, 125,
             75, 16, 0, 0, 0, 16, 0, 0, 0, 4, 0, 0, 0, 214, 208, 206, 196, 101, 110, 99, 111, 100,
             105, 110, 103, 32, 71, 66, 49, 56, 48, 51, 48, 80, 75, 3, 4, 10, 0, 0, 0, 0, 0, 0, 0,

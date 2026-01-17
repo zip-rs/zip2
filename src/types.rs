@@ -716,7 +716,10 @@ impl ZipFileData {
                 // DOS directory bit
                 external_attributes |= 0x10;
             }
-            if options.permissions.is_some_and(|permissions| permissions & 0o444 == 0) {
+            if options
+                .permissions
+                .is_some_and(|permissions| permissions & 0o444 == 0)
+            {
                 // DOS read-only bit
                 external_attributes |= 0x01;
             }
@@ -1318,13 +1321,16 @@ mod test {
         data.system = System::Dos;
         data.external_attributes = (S_IFLNK | 0o777) << 16;
         assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
-        
+
         data.system = System::Unknown;
         assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
 
         data.external_attributes = 0x10; // DOS directory bit
         data.system = System::Dos;
-        assert_eq!(data.unix_mode().unwrap() & 0o170000, crate::types::ffi::S_IFDIR);
+        assert_eq!(
+            data.unix_mode().unwrap() & 0o170000,
+            crate::types::ffi::S_IFDIR
+        );
     }
 
     #[test]
