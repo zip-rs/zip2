@@ -4,6 +4,7 @@
 use std::io::prelude::*;
 
 use zip::result::{ZipError, ZipResult};
+use zip::write::SimpleFileOptions;
 
 fn main() {
     std::process::exit(real_main());
@@ -69,10 +70,10 @@ fn update_file(archive_filename: &str, file_to_update: &str, in_place: bool) -> 
     let target: &std::path::Path = file_to_update.as_ref();
     let new = b"Lorem ipsum";
     for i in 0..archive.len() {
-        let file = archive.by_index_raw(i).unwrap();
+        let file = archive.by_index_raw(i)?;
         match file.enclosed_name() {
             Some(p) if p == target => {
-                new_archive.start_file(file_to_update, zip::write::FileOptions::default())?;
+                new_archive.start_file(file_to_update, SimpleFileOptions::default())?;
                 new_archive.write_all(new)?;
                 new_archive.flush()?;
             }
@@ -82,7 +83,6 @@ fn update_file(archive_filename: &str, file_to_update: &str, in_place: bool) -> 
     new_archive.finish()?;
 
     drop(archive);
-    drop(new_archive);
 
     // If we're doing this in place then overwrite the original with the new
     if in_place {
