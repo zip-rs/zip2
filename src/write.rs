@@ -1759,7 +1759,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(default),
                     deflate_compression_level_range(),
                 )
-                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
 
                 #[cfg(feature = "deflate-zopfli")]
@@ -1825,7 +1825,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
                         bzip2_compression_level_range(),
                     )
-                        .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
                         as u32;
                     Ok(Box::new(move |bare| {
                         Ok(Bzip2(BzEncoder::new(bare, bzip2::Compression::new(level))))
@@ -1840,7 +1840,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
                         zstd::compression_level_range(),
                     )
-                        .ok_or(UnsupportedArchive("Unsupported compression level"))?;
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                     Ok(Box::new(move |bare| {
                         Ok(Zstd(
                             ZstdEncoder::new(bare, level as i32).map_err(ZipError::Io)?,
@@ -1870,8 +1870,11 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         as u32;
                     Ok(Box::new(move |bare| {
                         Ok(Xz(Box::new(
-                            lzma_rust2::XzWriter::new(bare, lzma_rust2::XzOptions::with_preset(level))
-                                .map_err(ZipError::Io)?,
+                            lzma_rust2::XzWriter::new(
+                                bare,
+                                lzma_rust2::XzOptions::with_preset(level),
+                            )
+                            .map_err(ZipError::Io)?,
                     )))
                 }))
             }
@@ -1901,21 +1904,21 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             memory_size,
                             ppmd_rust::RestoreMethod::Restart,
                         )
-                            .map_err(|error| match error {
-                                ppmd_rust::Error::RangeDecoderInitialization =>
-                                    ZipError::InvalidArchive(
-                                        "PPMd range coder initialization failed".into(),
+                        .map_err(|error| match error {
+                            ppmd_rust::Error::RangeDecoderInitialization =>
+                                ZipError::InvalidArchive(
+                                    "PPMd range coder initialization failed".into(),
 
-                                ),
-                                ppmd_rust::Error::InvalidParameter => {
-                                    ZipError::InvalidArchive("Invalid PPMd parameter".into())
-                                }
-                                ppmd_rust::Error::IoError(io_error) => ZipError::Io(io_error),
-                                ppmd_rust::Error::MemoryAllocation => ZipError::Io(io::Error::new(
-                                    ErrorKind::OutOfMemory,
-                                    "PPMd could not allocate memory",
-                                )),
-                            })?;
+                            ),
+                            ppmd_rust::Error::InvalidParameter => {
+                                ZipError::InvalidArchive("Invalid PPMd parameter".into())
+                            }
+                            ppmd_rust::Error::IoError(io_error) => ZipError::Io(io_error),
+                            ppmd_rust::Error::MemoryAllocation => ZipError::Io(io::Error::new(
+                                ErrorKind::OutOfMemory,
+                                "PPMd could not allocate memory",
+                            )),
+                        })?;
 
                     Ok(Ppmd(Box::new(encoder)))
                 }))
