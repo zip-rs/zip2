@@ -2202,7 +2202,8 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
         crc32,
         compression_method,
         uncompressed_size,
-        #[cfg(feature = "legacy-zip")] flags,
+        #[cfg(feature = "legacy-zip")]
+        flags,
         ..
     } = result;
 
@@ -2213,7 +2214,8 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
             uncompressed_size,
             crc32,
             crypto_reader,
-            #[cfg(feature = "legacy-zip")] flags,
+            #[cfg(feature = "legacy-zip")]
+            flags,
         )?,
     }))
 }
