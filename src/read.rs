@@ -989,31 +989,19 @@ impl<R: Read + Seek> ZipArchive<R> {
              *       accept two arguments that point to the same directory path, one mutable? */
             file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
 
-            let mut symlink_target: Option<Vec<u8>> = None;
             #[cfg(any(unix, windows))]
             if file.is_symlink() {
                 let mut target = Vec::with_capacity(file.size() as usize);
                 file.read_to_end(&mut target)?;
-                symlink_target = Some(target);
-            } else if file.is_dir() {
-                crate::read::make_writable_dir_all(&outpath)?;
-                continue;
-            }
-            if let Some(target) = symlink_target {
-                drop(file);
-                symlink_target = Some(target);
-            } else if file.is_dir() {
-                crate::read::make_writable_dir_all(&outpath)?;
-                continue;
-            }
-            if let Some(target) = symlink_target {
                 drop(file);
                 make_symlink(&outpath, &target, &self.shared.files)?;
+            } else if file.is_dir() {
+                crate::read::make_writable_dir_all(&outpath)?;
                 continue;
+            } else {
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
             }
-            let mut outfile = fs::File::create(&outpath)?;
-
-            io::copy(&mut file, &mut outfile)?;
 
             // Check for real permissions, which we'll set in a second pass.
             #[cfg(unix)]
