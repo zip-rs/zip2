@@ -1,4 +1,5 @@
 //! Types that specify what is contained in a ZIP.
+use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
@@ -731,16 +732,11 @@ impl ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
             flags: 0,
-            encrypted: options.encrypt_with.is_some() || {
-                #[cfg(feature = "aes-crypto")]
-                {
-                    options.aes_mode.is_some()
-                }
-                #[cfg(not(feature = "aes-crypto"))]
-                {
-                    false
-                }
-            },
+            encrypted: options.encrypt_with.is_some()
+                || cfg_if_expr! {
+                    #[cfg(feature = "aes-crypto")] => options.aes_mode.is_some(),
+                    _ => false
+                },
             using_data_descriptor: false,
             is_utf8: !file_name.is_ascii(),
             compression_method,
