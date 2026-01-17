@@ -42,9 +42,7 @@ fn aes256_encrypted_file() {
 
 #[test]
 fn aes192_encrypted_file() {
-    let mut zip_data = Vec::new();
-    zip_data.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(zip_data)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip"))).expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_192", PASSWORD)
