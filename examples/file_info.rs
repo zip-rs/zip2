@@ -1,6 +1,6 @@
-use zip::result::ZipError;
 use std::fs;
 use std::io::BufReader;
+use zip::result::ZipError;
 
 fn main() {
     std::process::exit(real_main());
@@ -32,7 +32,10 @@ fn real_main() -> i32 {
     let fname = match candidate_path.canonicalize() {
         Ok(path) => {
             if !path.starts_with(&base_dir.canonicalize().unwrap_or(base_dir.clone())) {
-                println!("Error: refusing to open path outside of base directory: {:?}", fname_arg);
+                println!(
+                    "Error: refusing to open path outside of base directory: {:?}",
+                    fname_arg
+                );
                 return 1;
             }
             path
