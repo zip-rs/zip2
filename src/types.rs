@@ -610,9 +610,15 @@ impl ZipFileData {
         if self.external_attributes == 0 {
             return None;
         }
-
+        let unix_mode = self.external_attributes >> 16;
+        if unix_mode != 0 {
+            // If the high 16 bits are non-zero, they probably contain Unix permissions.
+            // This happens for archives created on Windows by this crate or other tools,
+            // and is the only way to identify symlinks in such archives.
+            return Some(unix_mode);
+        }
         match self.system {
-            System::Unix => Some(self.external_attributes >> 16),
+            System::Unix => Some(unix_mode),
             System::Dos => {
                 // Interpret MS-DOS directory bit
                 let mut mode = if 0x10 == (self.external_attributes & 0x10) {
@@ -622,7 +628,7 @@ impl ZipFileData {
                 };
                 if 0x01 == (self.external_attributes & 0x01) {
                     // Read-only bit; strip write permissions
-                    mode &= 0o0555;
+                    mode &= !0o222;
                 }
                 Some(mode)
             }
@@ -702,8 +708,27 @@ impl ZipFileData {
         let permissions = options.permissions.unwrap_or(0o100644);
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let mut external_attributes = permissions << 16;
+        let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
+            System::Unix
+        } else if cfg!(windows) {
+            if is_dir(&file_name) {
+                // DOS directory bit
+                external_attributes |= 0x10;
+            }
+            if options
+                .permissions
+                .is_some_and(|permissions| permissions & 0o444 == 0)
+            {
+                // DOS read-only bit
+                external_attributes |= 0x01;
+            }
+            System::Dos
+        } else {
+            System::Unix
+        };
         let mut local_block = ZipFileData {
-            system: System::Unix,
+            system,
             version_made_by: DEFAULT_VERSION,
             flags: 0,
             encrypted: options.encrypt_with.is_some() || {
@@ -732,7 +757,7 @@ impl ZipFileData {
             header_start,
             data_start: OnceLock::new(),
             central_header_start: 0,
-            external_attributes: permissions << 16,
+            external_attributes,
             large_file: options.large_file,
             aes_mode,
             extra_fields: Vec::new(),
@@ -1286,6 +1311,26 @@ mod test {
         assert_eq!(System::from(3), System::Unix);
         assert_eq!(u8::from(System::Unknown), 4u8);
         assert_eq!(System::Unknown as u8, 4u8);
+    }
+
+    #[test]
+    fn unix_mode_robustness() {
+        use super::{System, ZipFileData};
+        use crate::types::ffi::S_IFLNK;
+        let mut data = ZipFileData::default();
+        data.system = System::Dos;
+        data.external_attributes = (S_IFLNK | 0o777) << 16;
+        assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
+
+        data.system = System::Unknown;
+        assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
+
+        data.external_attributes = 0x10; // DOS directory bit
+        data.system = System::Dos;
+        assert_eq!(
+            data.unix_mode().unwrap() & 0o170000,
+            crate::types::ffi::S_IFDIR
+        );
     }
 
     #[test]
