@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::io::{self, Write};
 use std::{
     fs::{File, OpenOptions},
@@ -37,11 +38,11 @@ fn gather_files<'a, T: Into<&'a Path>>(path: T, base: &Path, files: &mut Vec<Pat
     }
 }
 
-fn real_main() -> i32 {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
-        println!("Usage: {} <existing archive> <folder_to_append>", args[0]);
-        return 1;
+        eprintln!("Usage: {} <existing archive> <folder_to_append>", args[0]);
+        return Err("Wrong usage".into());
     }
 
     let existing_archive_path = &*args[1];
@@ -52,36 +53,31 @@ fn real_main() -> i32 {
             Ok(c) => c,
             Err(e) => {
                 let _ = writeln!(io::stderr(), "Failed to canonicalize base directory: {}", e);
-                return 1;
+                return Err(e.into());
             }
         },
         Err(e) => {
             let _ = writeln!(io::stderr(), "Failed to determine current directory: {}", e);
-            return 1;
+            return Err(e.into());
         }
     };
 
     let to_append = match PathBuf::from_str(append_dir_path) {
         Ok(path) => {
             if path.is_absolute() {
-                let _ = writeln!(io::stderr(), "Absolute paths are not allowed");
-                return 1;
+                return Err("Absolute paths are not allowed".into());
             }
             if path
                 .components()
                 .any(|c| matches!(c, std::path::Component::ParentDir))
             {
-                let _ = writeln!(
-                    io::stderr(),
-                    "Parent directory references (..) are not allowed"
-                );
-                return 1;
+                return Err("Parent directory references (..) are not allowed".into());
             }
             base_dir.join(path)
         }
         Err(e) => {
             let _ = writeln!(io::stderr(), "Invalid path: {}", e);
-            return 1;
+            return Err(e.into());
         }
     };
     let to_append = match to_append.canonicalize() {
@@ -92,16 +88,12 @@ fn real_main() -> i32 {
                 "Failed to canonicalize append directory: {}",
                 e
             );
-            return 1;
+            return Err(e.into());
         }
     };
 
     if !to_append.starts_with(&base_dir) {
-        let _ = writeln!(
-            io::stderr(),
-            "Refusing to append from directory outside allowed base"
-        );
-        return 1;
+        return Err("Refusing to append from directory outside allowed base".into());
     }
 
     let existing_zip = OpenOptions::new()
@@ -125,9 +117,5 @@ fn real_main() -> i32 {
 
     append_zip.finish().unwrap();
 
-    0
-}
-
-fn main() {
-    std::process::exit(real_main());
+    Ok(())
 }
