@@ -32,25 +32,26 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let src_dir = &args.source;
     let dst_file = &args.destination;
-    let method = match args.compression_method {
-        CompressionMethod::Stored => zip::CompressionMethod::Stored,
+    let method: Result<zip::CompressionMethod> = match args.compression_method {
+        CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
         CompressionMethod::Deflated => cfg_if_expr! {
-            #[cfg(feature = "_deflate-any")] => zip::CompressionMethod::Deflated,
-            _ => return Err(anyhow!("The `deflate-flate2` features are not enabled")),
+            #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
+            _ => Err(anyhow!("The `deflate-flate2` features are not enabled")),
         },
         CompressionMethod::Bzip2 => cfg_if_expr! {
-            #[cfg(feature = "_bzip2_any")] => zip::CompressionMethod::Bzip2,
-            _ => return Err(anyhow!("The `bzip2` features are not enabled")),
+            #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
+            _ => Err(anyhow!("The `bzip2` features are not enabled")),
         },
         CompressionMethod::Xz => cfg_if_expr! {
-            #[cfg(feature = "xz")] => zip::CompressionMethod::Xz,
-            _ => return Err(anyhow!("The `xz` feature is not enabled")),
+            #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
+            _ => Err(anyhow!("The `xz` feature is not enabled")),
         },
         CompressionMethod::Zstd => cfg_if_expr! {
-            #[cfg(feature = "zstd")] => zip::CompressionMethod::Zstd,
-            _ => return Err(anyhow!("The `zstd` feature is not enabled")),
+            #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
+            _ => Err(anyhow!("The `zstd` feature is not enabled")),
         },
     };
+    let method = method?;
     zip_dir(src_dir, dst_file, method)?;
     println!("done: {src_dir:?} written to {dst_file:?}");
     Ok(())
