@@ -35,20 +35,20 @@ fn main() -> Result<()> {
     let method = match args.compression_method {
         CompressionMethod::Stored => zip::CompressionMethod::Stored,
         CompressionMethod::Deflated => cfg_if_expr! {
-            #[cfg(feature = "_deflate_flate2")] => zip::CompressionMethod::Deflated,
-            _ => return Err(anyhow!("The `deflate` features are not enabled"));
+            #[cfg(feature = "_deflate-any")] => zip::CompressionMethod::Deflated,
+            _ => return Err(anyhow!("The `deflate-flate2` features are not enabled")),
         },
         CompressionMethod::Bzip2 => cfg_if_expr! {
             #[cfg(feature = "_bzip2_any")] => zip::CompressionMethod::Bzip2,
-            _ => return Err(anyhow!("The `bzip2` features are not enabled"));
+            _ => return Err(anyhow!("The `bzip2` features are not enabled")),
         },
         CompressionMethod::Xz => cfg_if_expr! {
             #[cfg(feature = "xz")] => zip::CompressionMethod::Xz,
-            _ => return Err(anyhow!("The `xz` feature is not enabled"));
+            _ => return Err(anyhow!("The `xz` feature is not enabled")),
         },
         CompressionMethod::Zstd => cfg_if_expr! {
             #[cfg(feature = "zstd")] => zip::CompressionMethod::Zstd,
-            _ => return Err(anyhow!("The `zstd` feature is not enabled"));
+            _ => return Err(anyhow!("The `zstd` feature is not enabled")),
         },
     };
     zip_dir(src_dir, dst_file, method)?;
