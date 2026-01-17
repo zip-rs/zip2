@@ -4,6 +4,7 @@ use std::path::Path;
 use zip::write::SimpleFileOptions;
 #[cfg(feature = "aes-crypto")]
 use zip::{AesMode, CompressionMethod};
+use zip::result::ZipError;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
@@ -35,7 +36,7 @@ fn write_zip_file(filename: &str) -> zip::result::ZipResult<()> {
             .any(|c| matches!(c, std::path::Component::ParentDir))
     {
         // Return an error instead of writing to an arbitrary location
-        return Err(invalid!(
+        return Err(ZipError::InvalidArchive(
             "unsafe output path: attempted directory traversal or absolute path".into(),
         ));
     }
