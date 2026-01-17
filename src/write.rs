@@ -951,29 +951,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
         }
-        // Write AES encryption extra data.
-        #[allow(unused_mut)]
-        let mut aes_extra_data_start = 0;
-        #[cfg(feature = "aes-crypto")]
-        if let Some(EncryptWith::Aes { mode, .. }) = options.encrypt_with {
-            let aes_dummy_extra_data = [0x02, 0x00, 0x41, 0x45, mode as u8, 0x00, 0x00];
-            aes_extra_data_start = extra_data.len() as u64;
-            ExtendedFileOptions::add_extra_data_unchecked(
-                &mut extra_data,
-                0x9901,
-                &aes_dummy_extra_data,
-            )?;
-        } else if let Some((mode, vendor, underlying)) = options.aes_mode {
-            // For raw copies of AES entries, write the correct AES extra data immediately
-            let mut body = [0; 7];
-            [body[0], body[1]] = (vendor as u16).to_le_bytes(); // vendor version (1 or 2)
-            [body[2], body[3]] = *b"AE"; // vendor id
-            body[4] = mode as u8; // strength
-            [body[5], body[6]] = underlying.serialize_to_u16().to_le_bytes(); // real compression method
-            aes_extra_data_start = extra_data.len() as u64;
-            ExtendedFileOptions::add_extra_data_unchecked(&mut extra_data, 0x9901, &body)?;
-        }
 
+        // Figure out the underlying compression_method and aes mode when using
+        // AES encryption.
         let (compression_method, aes_mode) = match options.encrypt_with {
             // Preserve AES method for raw copies without needing a password
             #[cfg(feature = "aes-crypto")]
@@ -985,6 +965,21 @@ impl<W: Write + Seek> ZipWriter<W> {
             ),
             _ => (options.compression_method, None),
         };
+
+        // Write AES encryption extra data.
+        #[allow(unused_mut)]
+        let mut aes_extra_data_start = 0;
+        #[cfg(feature = "aes-crypto")]
+        if let Some((mode, vendor, underlying)) = aes_mode {
+            // For raw copies of AES entries, write the correct AES extra data immediately
+            let mut body = [0; 7];
+            [body[0], body[1]] = (vendor as u16).to_le_bytes(); // vendor version (1 or 2)
+            [body[2], body[3]] = *b"AE"; // vendor id
+            body[4] = mode as u8; // strength
+            [body[5], body[6]] = underlying.serialize_to_u16().to_le_bytes(); // real compression method
+            aes_extra_data_start = extra_data.len() as u64;
+            ExtendedFileOptions::add_extra_data_unchecked(&mut extra_data, 0x9901, &body)?;
+        }
         let header_end =
             header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
 
@@ -1137,26 +1132,22 @@ impl<W: Write + Seek> ZipWriter<W> {
             let file_end = writer.stream_position()?;
             debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
-            let mut crc = true;
-            if let Some(aes_mode) = &mut file.aes_mode {
-                // We prefer using AE-1 which provides an extra CRC check, but for small files we
-                // switch to AE-2 to prevent being able to use the CRC value to to reconstruct the
-                // unencrypted contents.
-                //
-                // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
-                aes_mode.1 = if self.stats.bytes_written < 20 {
-                    crc = false;
-                    AesVendorVersion::Ae2
-                } else {
-                    AesVendorVersion::Ae1
-                };
+
+            if !file.using_data_descriptor {
+                // Not using a data descriptor means the underlying writer
+                // supports seeking, so we can go back and update the AES Extra
+                // Data header to use AE1 for large files.
+                update_aes_extra_data(writer, file, self.stats.bytes_written)?;
             }
+
+            let crc = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2, _)));
+
             file.crc32 = if crc {
                 self.stats.hasher.clone().finalize()
             } else {
                 0
             };
-            update_aes_extra_data(writer, file)?;
+
             if file.using_data_descriptor {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
@@ -2045,9 +2036,27 @@ fn validate_value_in_range<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
-fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData) -> ZipResult<()> {
-    let Some((aes_mode, version, compression_method)) = file.aes_mode else {
+fn update_aes_extra_data<W: Write + Seek>(
+    writer: &mut W,
+    file: &mut ZipFileData,
+    bytes_written: u64,
+) -> ZipResult<()> {
+    let Some((aes_mode, version, compression_method)) = &mut file.aes_mode else {
         return Ok(());
+    };
+
+    // We prefer using AE-1 which provides an extra CRC check, but for small files we
+    // switch to AE-2 to prevent being able to use the CRC value to to reconstruct the
+    // unencrypted contents.
+    //
+    // We can only do this when the underlying writer supports
+    // seek operations, so we gate this behind using_data_descriptor.
+    //
+    // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
+    *version = if bytes_written < 20 {
+        AesVendorVersion::Ae2
+    } else {
+        AesVendorVersion::Ae1
     };
 
     let extra_data_start = file.extra_data_start.unwrap();
@@ -2064,11 +2073,11 @@ fn update_aes_extra_data<W: Write + Seek>(writer: &mut W, file: &mut ZipFileData
     // Data size.
     buf.write_u16_le(7)?;
     // Integer version number.
-    buf.write_u16_le(version as u16)?;
+    buf.write_u16_le(*version as u16)?;
     // Vendor ID.
     buf.write_all(b"AE")?;
     // AES encryption strength.
-    buf.write_all(&[aes_mode as u8])?;
+    buf.write_all(&[*aes_mode as u8])?;
     // Real compression method.
     buf.write_u16_le(compression_method.serialize_to_u16())?;
 
