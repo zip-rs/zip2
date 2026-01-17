@@ -1,13 +1,11 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-use anyhow::Context;
+use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
-use std::io::prelude::*;
+use walkdir::WalkDir;
 use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use walkdir::{DirEntry, WalkDir};
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -30,76 +28,59 @@ enum CompressionMethod {
     Zstd,
 }
 
-fn main() -> ! {
+fn main() -> Result<()> {
     let args = Args::parse();
     let src_dir = &args.source;
     let dst_file = &args.destination;
-    let method = match args.compression_method {
-        CompressionMethod::Stored => zip::CompressionMethod::Stored,
+    let method: Result<zip::CompressionMethod> = match args.compression_method {
+        CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
         CompressionMethod::Deflated => cfg_if_expr! {
-            #[cfg(feature = "deflate-flate2")] => zip::CompressionMethod::Deflated,
-            _ => {
-                println!("The `deflate-flate2` feature is not enabled");
-                std::process::exit(1)
-            }
+            #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
+            _ => Err(anyhow!("The `deflate-flate2` features are not enabled")),
         },
         CompressionMethod::Bzip2 => cfg_if_expr! {
-            #[cfg(feature = "bzip2")] => zip::CompressionMethod::Bzip2,
-            _ => {
-                println!("The `bzip2` feature is not enabled");
-                std::process::exit(1)
-            }
+            #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
+            _ => Err(anyhow!("The `bzip2` features are not enabled")),
         },
         CompressionMethod::Xz => cfg_if_expr! {
-            #[cfg(feature = "xz")] => zip::CompressionMethod::Xz,
-            _ => {
-                println!("The `xz` feature is not enabled");
-                std::process::exit(1)
-            }
+            #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
+            _ => Err(anyhow!("The `xz` feature is not enabled")),
         },
         CompressionMethod::Zstd => cfg_if_expr! {
-            #[cfg(feature = "zstd")] => zip::CompressionMethod::Zstd,
-            _ => {
-                println!("The `zstd` feature is not enabled");
-                std::process::exit(1)
-            }
+            #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
+            _ => Err(anyhow!("The `zstd` feature is not enabled")),
         },
     };
-    match doit(src_dir, dst_file, method) {
-        Ok(_) => {
-            println!("done: {src_dir:?} written to {dst_file:?}");
-            std::process::exit(0);
-        }
-        Err(e) => {
-            eprintln!("Error: {e:?}");
-            std::process::abort();
-        }
-    }
+    let method = method?;
+    zip_dir(src_dir, dst_file, method)?;
+    println!("done: {src_dir:?} written to {dst_file:?}");
+    Ok(())
 }
 
-fn zip_dir<T>(
-    it: &mut dyn Iterator<Item = DirEntry>,
-    prefix: &Path,
-    writer: T,
-    method: zip::CompressionMethod,
-) -> anyhow::Result<()>
-where
-    T: Write + Seek,
-{
-    let mut zip = zip::ZipWriter::new(writer);
+fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> Result<()> {
+    if !Path::new(src_dir).is_dir() {
+        return Err(ZipError::FileNotFound.into());
+    }
+
+    let path = Path::new(dst_file);
+    let file = File::create(path)?;
+
+    let walkdir = WalkDir::new(src_dir);
+
+    let mut zip = zip::ZipWriter::new(file);
     let options = SimpleFileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
 
-    let prefix = Path::new(prefix);
+    let prefix = Path::new(src_dir);
     let mut buffer = Vec::new();
-    for entry in it {
+    for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        let name = path.strip_prefix(prefix).unwrap();
+        let name = path.strip_prefix(prefix)?;
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
-            .with_context(|| format!("{name:?} Is a Non UTF-8 Path"))?;
+            .ok_or_else(|| anyhow!("{name:?} is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
@@ -119,21 +100,5 @@ where
         }
     }
     zip.finish()?;
-    Ok(())
-}
-
-fn doit(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> anyhow::Result<()> {
-    if !Path::new(src_dir).is_dir() {
-        return Err(ZipError::FileNotFound.into());
-    }
-
-    let path = Path::new(dst_file);
-    let file = File::create(path).unwrap();
-
-    let walkdir = WalkDir::new(src_dir);
-    let it = walkdir.into_iter();
-
-    zip_dir(&mut it.filter_map(|e| e.ok()), src_dir, file, method)?;
-
     Ok(())
 }

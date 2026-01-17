@@ -7,7 +7,7 @@ resolver = "2"
 edition = "2024"
 
 [workspace.dependencies]
-afl = "0.15"
-arbitrary = { version = "1.4.1", features = ["derive"] }
-tikv-jemallocator = "0.6.0"
-zip = { path = "..", default-features = false, features = ["arbitrary"] }
+afl = "0.17"
+arbitrary = { version = "^1.4.2", features = ["derive"] }
+tikv-jemallocator = "0.6"
+zip = { path = "..", default-features = false, features = ["_arbitrary"] }

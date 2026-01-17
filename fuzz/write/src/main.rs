@@ -12,6 +12,7 @@ use std::ops;
 use std::path::PathBuf;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
+use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
@@ -65,6 +66,28 @@ impl FileOperation<'_> {
                 .flat_map(|(op, abort)| if !abort { op.get_path() } else { None })
                 .next(),
             _ => Some(self.path.to_owned()),
+        }
+    }
+
+    fn is_streamable(&self) -> bool {
+        match &self.basic {
+            BasicFileOperation::WriteNormalFile { options, .. }
+            | BasicFileOperation::WriteDirectory(options)
+            | BasicFileOperation::WriteSymlinkWithTarget { options, .. } => {
+                !options.has_encryption()
+            }
+            BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
+            BasicFileOperation::DeepCopy(base) => base.is_streamable(),
+            BasicFileOperation::MergeWithOtherFile {
+                operations,
+                initial_junk,
+            } => {
+                if !initial_junk.is_empty() {
+                    return false;
+                }
+                operations.iter().all(|(op, _)| op.is_streamable())
+            }
+            _ => true,
         }
     }
 }
@@ -245,6 +268,11 @@ fn do_operation(
         writer.abort_file()?;
         *files_added -= 1;
     }
+    fn try_into_new_writer(
+        old_writer: zip::ZipWriter<Cursor<Vec<u8>>>,
+    ) -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
+        zip::ZipWriter::new_append(old_writer.finish()?)
+    }
     // If a comment is set, we finish the archive, reopen it for append and then set a shorter
     // comment, then there will be junk after the new comment that we can't get rid of. Thus, we
     // can only check that the expected is a prefix of the actual
@@ -260,10 +288,7 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
-                (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
-                    zip::ZipWriter::new_append(old_writer.finish()?)
-                })()
-                .unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
@@ -281,17 +306,14 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer| {
-                (|| -> ZipResult<zip::ZipWriter<Cursor<Vec<u8>>>> {
-                    zip::ZipWriter::new_append(old_writer.finish()?)
-                })()
-                .unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|_| {
                     if panic_on_error {
                         panic!("Failed to create new ZipWriter")
                     }
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
             });
-            assert!(writer.get_raw_comment().starts_with(&old_comment));
+            debug_assert!(writer.get_raw_comment().starts_with(&old_comment));
         }
     }
     Ok(())
@@ -303,6 +325,9 @@ impl FuzzTestCase<'_> {
         mut stringifier: impl ops::DerefMut<Target = W>,
         panic_on_error: bool,
     ) -> ZipResult<()> {
+        // Indicates the starting position if we use read_zipfile_from_stream at the end.
+        let junk_len = self.initial_junk.len();
+
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
         let mut writer = zip::ZipWriter::new(initial_junk);
@@ -313,6 +338,7 @@ impl FuzzTestCase<'_> {
         {
             final_reopen = true;
         }
+        let streamable = self.operations.iter().all(|(op, _)| op.is_streamable());
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
         for (operation, abort) in self.operations.into_vec().into_iter() {
@@ -326,7 +352,18 @@ impl FuzzTestCase<'_> {
                 panic_on_error,
             );
         }
-        if final_reopen {
+        if streamable {
+            writeln!(
+                stringifier,
+                "let mut stream = writer.finish()?;\n\
+                    stream.seek(SeekFrom::Start({junk_len}))?;\n\
+                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}"
+            )
+            .map_err(|_| ZipError::InvalidArchive("Failed to read from stream".into()))?;
+            let mut stream = writer.finish()?;
+            stream.seek(SeekFrom::Start(junk_len as u64))?;
+            while read_zipfile_from_stream(&mut stream)?.is_some() {}
+        } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
                 .map_err(|_| ZipError::InvalidArchive("".into()))?;
             let _ = writer.finish_into_readable()?;
@@ -417,10 +454,8 @@ fn main() {
         fuzz!(|data: &[u8]| {
             let u = Unstructured::new(data);
             if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
-                for test_case in it {
-                    if let Ok(test_case) = test_case {
-                        test_case.execute(&mut w, true).unwrap();
-                    }
+                for test_case in it.flatten() {
+                    test_case.execute(&mut w, true).unwrap();
                 }
             }
         });

@@ -1,6 +1,5 @@
 use std::collections::HashSet;
-use std::io::prelude::*;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
 use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
