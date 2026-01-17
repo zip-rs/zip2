@@ -2074,6 +2074,8 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
         crc32,
         uncompressed_size,
         compression_method,
+        #[cfg(feature = "legacy-zip")]
+        flags,
         ..
     } = result;
 
@@ -2085,7 +2087,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
             crc32,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
-            result.flags,
+            flags,
         )?,
     }))
 }
