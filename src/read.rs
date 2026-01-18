@@ -1411,9 +1411,16 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 }
 
 #[inline]
-fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> io::Result<Box<[u8]>> {
+fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipResult<Box<[u8]>> {
     let mut data = vec![0; len].into_boxed_slice();
-    reader.read_exact(&mut data)?;
+    if let Err(e) = reader.read_exact(&mut data) {
+        if e.kind() == io::ErrorKind::UnexpectedEof {
+            return Err(invalid!(
+                "Variable-length field extends beyond file boundary"
+            ));
+        }
+        return Err(e.into());
+    }
     Ok(data)
 }
 
@@ -1491,13 +1498,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
-    match parse_extra_field(&mut result) {
-        Ok(stripped_extra_field) => {
-            result.extra_field = stripped_extra_field;
-        }
-        Err(ZipError::Io(..)) => {}
-        Err(e) => return Err(e),
-    }
+    parse_extra_field(&mut result)?;
 
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
@@ -1513,33 +1514,47 @@ fn central_header_to_zip_file_inner<R: Read>(
     Ok(result)
 }
 
-pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<Option<Arc<Vec<u8>>>> {
-    let Some(ref extra_field) = file.extra_field else {
-        return Ok(None);
-    };
-    let extra_field = extra_field.clone();
-    let mut processed_extra_field = extra_field.clone();
-    let len = extra_field.len();
-    let mut reader = io::Cursor::new(&**extra_field);
+pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+    let mut extra_field = file.extra_field.clone();
+    let mut central_extra_field = file.central_extra_field.clone();
+    for field_group in [&mut extra_field, &mut central_extra_field] {
+        let Some(extra_field) = field_group else {
+            continue;
+        };
+        let mut modified = false;
+        let mut processed_extra_field = vec![];
+        let len = extra_field.len();
+        let mut reader = io::Cursor::new(&**extra_field);
 
-    /* TODO: codify this structure into Zip64ExtraFieldBlock fields! */
-    let mut position = reader.position() as usize;
-    while (position) < len {
-        let old_position = position;
-        let remove = parse_single_extra_field(file, &mut reader, position as u64, false)?;
-        position = reader.position() as usize;
-        if remove {
-            let remaining = len - (position - old_position);
-            if remaining == 0 {
-                return Ok(None);
+        let mut position = reader.position();
+        while position < len as u64 {
+            let old_position = position;
+            let remove = parse_single_extra_field(file, &mut reader, position, false)?;
+            position = reader.position();
+            if remove {
+                modified = true;
+            } else {
+                let field_len = (position - old_position) as usize;
+                let write_start = processed_extra_field.len();
+                reader.seek(SeekFrom::Start(old_position))?;
+                processed_extra_field.extend_from_slice(&vec![0u8; field_len]);
+                if let Err(e) = reader
+                    .read_exact(&mut processed_extra_field[write_start..(write_start + field_len)])
+                {
+                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                        return Err(invalid!("Extra field content exceeds declared length"));
+                    }
+                    return Err(e.into());
+                }
             }
-            let mut new_extra_field = Vec::with_capacity(remaining);
-            new_extra_field.extend_from_slice(&extra_field[0..old_position]);
-            new_extra_field.extend_from_slice(&extra_field[position..]);
-            processed_extra_field = Arc::new(new_extra_field);
+        }
+        if modified {
+            *field_group = Some(Arc::new(processed_extra_field));
         }
     }
-    Ok(Some(processed_extra_field))
+    file.extra_field = extra_field;
+    file.central_extra_field = central_extra_field;
+    Ok(())
 }
 
 pub(crate) fn parse_single_extra_field<R: Read>(
@@ -1548,8 +1563,18 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     bytes_already_read: u64,
     disallow_zip64: bool,
 ) -> ZipResult<bool> {
-    let kind = reader.read_u16_le()?;
-    let len = reader.read_u16_le()?;
+    let kind = match reader.read_u16_le() {
+        Ok(kind) => kind,
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false),
+        Err(e) => return Err(e.into()),
+    };
+    let len = match reader.read_u16_le() {
+        Ok(len) => len,
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+            return Err(invalid!("Extra field header truncated"))
+        }
+        Err(e) => return Err(e.into()),
+    };
     match kind {
         // Zip64 extended information extra field
         0x0001 => {
@@ -1559,21 +1584,44 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             file.large_file = true;
             let mut consumed_len = 0;
             if len >= 24 || file.uncompressed_size == spec::ZIP64_BYTES_THR {
-                file.uncompressed_size = reader.read_u64_le()?;
+                file.uncompressed_size = match reader.read_u64_le() {
+                    Ok(v) => v,
+                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                        return Err(invalid!("ZIP64 extra field truncated"))
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 consumed_len += size_of::<u64>();
             }
             if len >= 24 || file.compressed_size == spec::ZIP64_BYTES_THR {
-                file.compressed_size = reader.read_u64_le()?;
+                file.compressed_size = match reader.read_u64_le() {
+                    Ok(v) => v,
+                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                        return Err(invalid!("ZIP64 extra field truncated"))
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 consumed_len += size_of::<u64>();
             }
             if len >= 24 || file.header_start == spec::ZIP64_BYTES_THR {
-                file.header_start = reader.read_u64_le()?;
+                file.header_start = match reader.read_u64_le() {
+                    Ok(v) => v,
+                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                        return Err(invalid!("ZIP64 extra field truncated"))
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 consumed_len += size_of::<u64>();
             }
             let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
                 return Err(invalid!("ZIP64 extra-data field is the wrong length"));
             };
-            reader.read_exact(&mut vec![0u8; leftover_len])?;
+            if let Err(e) = reader.read_exact(&mut vec![0u8; leftover_len]) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(invalid!("ZIP64 extra field truncated"));
+                }
+                return Err(e.into());
+            }
             return Ok(true);
         }
         0x000a => {
@@ -1591,7 +1639,12 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             let vendor_version = reader.read_u16_le()?;
             let vendor_id = reader.read_u16_le()?;
             let mut out = [0u8];
-            reader.read_exact(&mut out)?;
+            if let Err(e) = reader.read_exact(&mut out) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(invalid!("AES extra field truncated"));
+                }
+                return Err(e.into());
+            }
             let aes_mode = out[0];
             let compression_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
 
@@ -1640,7 +1693,12 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             file.is_utf8 = true;
         }
         _ => {
-            reader.read_exact(&mut vec![0u8; len as usize])?;
+            if let Err(e) = reader.read_exact(&mut vec![0u8; len as usize]) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(invalid!("Extra field content truncated"));
+                }
+                return Err(e.into());
+            }
             // Other fields are ignored
         }
     }
