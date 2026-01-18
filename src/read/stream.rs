@@ -111,7 +111,7 @@ impl<R: Read> ZipStreamReader<R> {
     }
 }
 
-/// Visitor for ZipStreamReader
+/// Visitor for `ZipStreamReader`
 pub trait ZipStreamVisitor {
     ///  * `file` - contains the content of the file and most of the metadata,
     ///    except:

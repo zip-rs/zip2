@@ -123,12 +123,13 @@ impl Debug for DateTime {
 impl DateTime {
     /// Constructs a default datetime of 1980-01-01 00:00:00.
     pub const DEFAULT: Self = DateTime {
-        datepart: 0b0000000000100001,
+        datepart: 0b0000_0000_0010_0001,
         timepart: 0,
     };
 
     /// Returns the current time if possible, otherwise the default of 1980-01-01.
     #[cfg(feature = "time")]
+    #[must_use]
     pub fn default_for_write() -> Self {
         let now = time::OffsetDateTime::now_utc();
         time::PrimitiveDateTime::new(now.date(), now.time())
@@ -270,15 +271,16 @@ impl fmt::Display for DateTime {
 }
 
 impl DateTime {
-    /// Converts an msdos (u16, u16) pair to a DateTime object
+    /// Converts an msdos (u16, u16) pair to a `DateTime` object
     ///
     /// # Safety
     /// The caller must ensure the date and time are valid.
+    #[must_use]
     pub const unsafe fn from_msdos_unchecked(datepart: u16, timepart: u16) -> DateTime {
         DateTime { datepart, timepart }
     }
 
-    /// Converts an msdos (u16, u16) pair to a DateTime object if it represents a valid date and
+    /// Converts an msdos (u16, u16) pair to a `DateTime` object if it represents a valid date and
     /// time.
     pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
         let seconds = (timepart & 0b0000000000011111) << 1;
@@ -297,7 +299,7 @@ impl DateTime {
         )
     }
 
-    /// Constructs a DateTime from a specific date and time
+    /// Constructs a `DateTime` from a specific date and time
     ///
     /// The bounds are:
     /// * year: [1980, 2107]
@@ -346,12 +348,13 @@ impl DateTime {
     }
 
     /// Indicates whether this date and time can be written to a zip archive.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         Self::try_from_msdos(self.datepart, self.timepart).is_ok()
     }
 
     #[cfg(feature = "time")]
-    /// Converts a [`time::OffsetDateTime`] object to a DateTime
+    /// Converts a [`time::OffsetDateTime`] object to a `DateTime`
     ///
     /// Returns `Err` when this object is out of bounds
     #[deprecated(since = "0.6.4", note = "use `DateTime::try_from()` instead")]
@@ -360,17 +363,19 @@ impl DateTime {
     }
 
     /// Gets the time portion of this datetime in the msdos representation
+    #[must_use]
     pub const fn timepart(&self) -> u16 {
         self.timepart
     }
 
     /// Gets the date portion of this datetime in the msdos representation
+    #[must_use]
     pub const fn datepart(&self) -> u16 {
         self.datepart
     }
 
     #[cfg(feature = "time")]
-    /// Converts the DateTime to a [`time::OffsetDateTime`] structure
+    /// Converts the `DateTime` to a [`time::OffsetDateTime`] structure
     #[deprecated(
         since = "1.3.1",
         note = "use `time::OffsetDateTime::try_from()` instead"
@@ -380,6 +385,7 @@ impl DateTime {
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
+    #[must_use]
     pub const fn year(&self) -> u16 {
         (self.datepart >> 9) + 1980
     }
@@ -389,6 +395,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
+    #[must_use]
     pub const fn month(&self) -> u8 {
         ((self.datepart & 0b0000000111100000) >> 5) as u8
     }
@@ -398,6 +405,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
+    #[must_use]
     pub const fn day(&self) -> u8 {
         (self.datepart & 0b0000000000011111) as u8
     }
@@ -407,6 +415,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
+    #[must_use]
     pub const fn hour(&self) -> u8 {
         (self.timepart >> 11) as u8
     }
@@ -416,6 +425,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
+    #[must_use]
     pub const fn minute(&self) -> u8 {
         ((self.timepart & 0b0000011111100000) >> 5) as u8
     }
@@ -425,6 +435,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
+    #[must_use]
     pub const fn second(&self) -> u8 {
         ((self.timepart & 0b0000000000011111) << 1) as u8
     }
@@ -491,7 +502,7 @@ pub struct ZipFileData {
     pub flags: u16,
     /// True if the file is encrypted.
     pub encrypted: bool,
-    /// True if file_name and file_comment are UTF8
+    /// True if `file_name` and `file_comment` are UTF8
     pub is_utf8: bool,
     /// True if the file uses a data-descriptor section
     pub using_data_descriptor: bool,
@@ -509,7 +520,7 @@ pub struct ZipFileData {
     pub uncompressed_size: u64,
     /// Name of the file
     pub file_name: Box<str>,
-    /// Raw file name. To be used when file_name was incorrectly decoded.
+    /// Raw file name. To be used when `file_name` was incorrectly decoded.
     pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
     pub extra_field: Option<Arc<Vec<u8>>>,
@@ -811,9 +822,10 @@ impl ZipFileData {
         let mut extra_field = vec![0u8; extra_field_length];
         reader.read_exact(&mut extra_field)?;
 
-        let file_name: Box<str> = match is_utf8 {
-            true => String::from_utf8_lossy(&file_name_raw).into(),
-            false => file_name_raw.from_cp437().map_err(std::io::Error::other)?,
+        let file_name: Box<str> = if is_utf8 {
+            String::from_utf8_lossy(&file_name_raw).into()
+        } else {
+            file_name_raw.from_cp437().map_err(std::io::Error::other)?
         };
 
         let system: u8 = (version_made_by >> 8)
@@ -886,8 +898,7 @@ impl ZipFileData {
         } else {
             field.min(spec::ZIP64_BYTES_THR).try_into().map_err(|_| {
                 std::io::Error::other(format!(
-                    "File size {} exceeds maximum size for non-ZIP64 files",
-                    field
+                    "File size {field} exceeds maximum size for non-ZIP64 files"
                 ))
             })
         }
@@ -1305,11 +1316,13 @@ pub enum AesMode {
 #[cfg(feature = "aes-crypto")]
 impl AesMode {
     /// Length of the salt for the given AES mode.
+    #[must_use]
     pub const fn salt_length(&self) -> usize {
         self.key_length() / 2
     }
 
     /// Length of the key for the given AES mode.
+    #[must_use]
     pub const fn key_length(&self) -> usize {
         match self {
             Self::Aes128 => 16,
