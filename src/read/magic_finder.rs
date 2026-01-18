@@ -165,7 +165,13 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
 
             if self.mid_buffer_offset.is_none() {
                 reader.seek(SeekFrom::Start(window_start))?;
-                reader.read_exact(window)?;
+                if let Err(e) = reader.read_exact(window) {
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        // If we can't read the whole window, it means the bounds or file length are wrong.
+                        break;
+                    }
+                    return Err(e.into());
+                }
             }
 
             let (window, window_start_offset) = match self.mid_buffer_offset {
@@ -255,10 +261,16 @@ impl<'a, Direction: FinderDirection<'a>> OptimisticMagicFinder<Direction> {
 
             // Attempt to match only if there's enough space for the needle
             if v.saturating_add(buffer.len() as u64) <= self.inner.bounds.1 {
-                reader.read_exact(buffer)?;
-
-                // If a match is found, yield it.
-                if self.inner.finder.needle() == buffer {
+                if let Err(e) = reader.read_exact(buffer) {
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        if mandatory {
+                            return Ok(None);
+                        }
+                    } else {
+                        return Err(e.into());
+                    }
+                } else if self.inner.finder.needle() == buffer {
+                    // If a match is found, yield it.
                     self.initial_guess.take();
                     reader.seek(SeekFrom::Start(v))?;
                     return Ok(Some(v));
