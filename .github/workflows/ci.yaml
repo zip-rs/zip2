@@ -85,7 +85,7 @@ jobs:
           path: target
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
       - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
+        uses: KyleMayes/install-llvm-action@98e68e10c96dffcb7bfed8b2144541a66b49aa02 # 2.0.8
         with:
           version: "10"
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
