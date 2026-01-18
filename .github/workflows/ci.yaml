@@ -69,6 +69,7 @@ jobs:
         feature_flag:
           - "" # default features
           - "--no-default-features"
+          - "--all-features"
         include:
           - rustalias: stable
             rust: stable
