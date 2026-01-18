@@ -4,7 +4,7 @@ permissions:
   security-events: write
 
 concurrency:
-  group: ${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  group: ${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
   cancel-in-progress: false
 
 on:
@@ -30,7 +30,6 @@ jobs:
       - miri
       - check_minimal_versions
       - cargo_semver
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
@@ -87,7 +86,6 @@ jobs:
       - run: cargo install wasm-pack --locked
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
   miri:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
@@ -113,7 +111,6 @@ jobs:
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
   cargo_semver:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         # Only do semver checks on the released library.
@@ -129,7 +126,6 @@ jobs:
           manifest-path: ${{ github.workspace }}/${{ matrix.workspace }}
           feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -144,7 +140,6 @@ jobs:
         run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
 
   check_minimal_versions:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         # Only check minimal versions for the released library.
@@ -163,7 +158,6 @@ jobs:
         run: cargo test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   style_and_docs:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
