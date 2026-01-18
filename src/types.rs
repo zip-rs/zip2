@@ -880,15 +880,16 @@ impl ZipFileData {
 
         utf8_bit | using_data_descriptor_bit | encrypted_bit
     }
-
     fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
             Ok(spec::ZIP64_BYTES_THR as u32)
         } else {
-            field
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)
+            field.min(spec::ZIP64_BYTES_THR).try_into().map_err(|_| {
+                std::io::Error::other(format!(
+                    "File size {} exceeds maximum size for non-ZIP64 files",
+                    field
+                ))
+            })
         }
     }
 
