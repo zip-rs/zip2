@@ -192,6 +192,7 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "use a constant to construct a compression method"
     )]
+    #[must_use]
     pub const fn from_u16(val: u16) -> CompressionMethod {
         Self::parse_from_u16(val)
     }
@@ -232,6 +233,7 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "to match on other compression methods, use a constant"
     )]
+    #[must_use]
     pub const fn to_u16(self) -> u16 {
         self.serialize_to_u16()
     }

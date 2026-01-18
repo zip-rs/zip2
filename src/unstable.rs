@@ -14,9 +14,9 @@ pub mod write {
     use crate::write::{FileOptionExtension, FileOptions};
     /// Unstable methods for [`FileOptions`].
     pub trait FileOptionsExt {
-        /// Write the file with the given password using the deprecated ZipCrypto algorithm.
+        /// Write the file with the given password using the deprecated `ZipCrypto` algorithm.
         ///
-        /// This is not recommended for new archives, as ZipCrypto is not secure.
+        /// This is not recommended for new archives, as `ZipCrypto` is not secure.
         fn with_deprecated_encryption(self, password: &[u8]) -> Self;
     }
     impl<T: FileOptionExtension> FileOptionsExt for FileOptions<'_, T> {
@@ -97,12 +97,9 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Result<Box<str>, std::io::Erro
 
     for component in path.as_ref().components() {
         match component {
-            Component::Normal(os_str) => match os_str.to_str() {
-                Some(valid_str) => normalized_components.push(Cow::Borrowed(valid_str)),
-                None => {
-                    recreate = true;
-                    normalized_components.push(os_str.to_string_lossy());
-                }
+            Component::Normal(os_str) => if let Some(valid_str) = os_str.to_str() { normalized_components.push(Cow::Borrowed(valid_str)) } else {
+                recreate = true;
+                normalized_components.push(os_str.to_string_lossy());
             },
             Component::ParentDir => {
                 recreate = true;
