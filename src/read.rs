@@ -367,7 +367,7 @@ pub(crate) fn find_data_start(
     let variable_fields_len =
         // Each of these fields must be converted to u64 before adding, as the result may
         // easily overflow a u16.
-        block.file_name_length as u64 + block.extra_field_length as u64;
+        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
     let data_start =
         data.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
 
@@ -523,10 +523,10 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
                     )
                 }
                 _ => (
-                    value.eocd.data.central_directory_offset as u64,
+                    u64::from(value.eocd.data.central_directory_offset),
                     value.eocd.data.number_of_files_on_this_disk as usize,
-                    value.eocd.data.disk_number as u32,
-                    value.eocd.data.disk_with_central_directory as u32,
+                    u32::from(value.eocd.data.disk_number),
+                    u32::from(value.eocd.data.disk_with_central_directory),
                 ),
             };
 
@@ -606,7 +606,7 @@ impl<R> ZipArchive<R> {
             if file.using_data_descriptor {
                 return None;
             }
-            total = total.checked_add(file.uncompressed_size as u128)?;
+            total = total.checked_add(u128::from(file.uncompressed_size))?;
         }
         Some(total)
     }
