@@ -19,8 +19,8 @@ impl<'a> FromCp437 for &'a [u8] {
             std::str::from_utf8(self)?.into()
         } else {
             self.iter()
-                .filter_map(|c| to_char(*c))
-                .collect::<String>()
+                .map(|c| to_char(*c).ok_or_else(|| std::str::Utf8Error::from(std::str::from_utf8(&[*c]).unwrap_err())))
+                .collect::<Result<String, _>>()?
                 .into()
         };
         Ok(result)
