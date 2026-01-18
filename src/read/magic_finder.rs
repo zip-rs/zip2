@@ -209,7 +209,7 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
 /// found directly.
 ///
 /// The guess can be marked as mandatory to produce an error. This is useful
-/// if the ArchiveOffset is known and auto-detection is not desired.
+/// if the `ArchiveOffset` is known and auto-detection is not desired.
 pub struct OptimisticMagicFinder<Direction> {
     inner: MagicFinder<Direction>,
     initial_guess: Option<(u64, bool)>,

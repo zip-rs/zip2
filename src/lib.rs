@@ -37,7 +37,8 @@
     clippy::missing_panics_doc,
     clippy::cargo,
     clippy::unwrap_used,
-    clippy::expect_used
+    clippy::expect_used,
+    clippy::cast_lossless
 )]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};

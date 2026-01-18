@@ -297,7 +297,7 @@ impl ExtendedFileOptions {
         if len == 0 {
             return Ok(());
         }
-        if len > u16::MAX as u64 {
+        if len > u64::from(u16::MAX) {
             return Err(ZipError::Io(io::Error::other(
                 "Extra-data field can't exceed u16::MAX bytes",
             )));
@@ -974,7 +974,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
-            let align = options.alignment as u64;
+            let align = u64::from(options.alignment);
             let unaligned_header_bytes = extra_data_end % align;
             if unaligned_header_bytes != 0 {
                 let mut pad_length = (align - unaligned_header_bytes) as usize;
@@ -1586,7 +1586,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
         let writer = self.inner.get_plain();
 
-        let mut version_needed = MIN_VERSION as u16;
+        let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
         for file in self.files.values() {
             write_central_directory_header(writer, file)?;
@@ -1740,7 +1740,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             CompressionMethod::Deflated => {
                 let default = crate::cfg_if_expr! {
                     i64:
-                    #[cfg(feature = "deflate-flate2")] => flate2::Compression::default().level() as i64,
+                    #[cfg(feature = "deflate-flate2")] => i64::from(flate2::Compression::default().level()),
                     #[cfg(feature = "deflate-zopfli")] => 24,
                     _ => compile_error!("could not calculate default: unknown deflate variant"),
                 };
@@ -1757,9 +1757,9 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     macro_rules! deflate_zopfli_and_return {
                         ($bare:expr, $best_non_zopfli:expr) => {{
                             let options = zopfli::Options {
-                                iteration_count: core::num::NonZeroU64::try_from(
-                                    (level - $best_non_zopfli) as u64,
-                                )
+                                iteration_count: core::num::NonZeroU64::try_from(u64::from(
+                                    level - $best_non_zopfli,
+                                ))
                                 .unwrap(),
                                 ..Default::default()
                             };
@@ -1815,7 +1815,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[cfg(feature = "_bzip2_any")]
             CompressionMethod::Bzip2 => {
                 let level = validate_value_in_range(
-                    compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
+                    compression_level.unwrap_or(i64::from(bzip2::Compression::default().level())),
                     bzip2_compression_level_range(),
                 )
                 .ok_or(UnsupportedArchive("Unsupported compression level"))?
@@ -1833,7 +1833,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => {
                 let level = validate_value_in_range(
-                    compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
+                    compression_level.unwrap_or(i64::from(zstd::DEFAULT_COMPRESSION_LEVEL)),
                     zstd::compression_level_range(),
                 )
                 .ok_or(UnsupportedArchive("Unsupported compression level"))?;
@@ -2001,7 +2001,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
     let min = crate::cfg_if_expr! {
         i64:
-        #[cfg(feature = "deflate-flate2")] => flate2::Compression::fast().level() as i64,
+        #[cfg(feature = "deflate-flate2")] => i64::from(flate2::Compression::fast().level()),
         #[cfg(feature = "deflate-zopfli")] => 1,
         _ => compile_error!("min: unknown deflate variant"),
     };
@@ -2018,8 +2018,8 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
 
 #[cfg(feature = "_bzip2_any")]
 fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    let min = bzip2::Compression::fast().level() as i64;
-    let max = bzip2::Compression::best().level() as i64;
+    let min = i64::from(bzip2::Compression::fast().level());
+    let max = i64::from(bzip2::Compression::best().level());
     min..=max
 }
 

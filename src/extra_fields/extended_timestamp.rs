@@ -39,7 +39,7 @@ impl ExtendedTimestamp {
         // > present without access time, for example.)  TSize should equal
         // > (1 + 4*(number of set bits in Flags)), as the block is currently
         // > defined.
-        if len != 5 && len as u32 != 1 + 4 * flags.count_ones() {
+        if len != 5 && u32::from(len) != 1 + 4 * flags.count_ones() {
             //panic!("found len {len} and flags {flags:08b}");
             return Err(ZipError::UnsupportedArchive(
                 "flags and len don't match in extended timestamp field",

@@ -34,7 +34,7 @@ pub enum CompressionMethod {
     /// or from `ZipFileData`.
     #[cfg(feature = "aes-crypto")]
     Aes,
-    /// Compress the file using ZStandard
+    /// Compress the file using `ZStandard`
     #[cfg(feature = "zstd")]
     Zstd,
     /// Compress the file using LZMA
@@ -52,7 +52,7 @@ pub enum CompressionMethod {
     /// Compress the file using XZ
     #[cfg(feature = "xz")]
     Xz,
-    /// Compress the file using PPMd
+    /// Compress the file using `PPMd`
     #[cfg(feature = "ppmd")]
     Ppmd,
     /// Unsupported compression method
@@ -187,7 +187,7 @@ impl CompressionMethod {
         }
     }
 
-    /// Converts a u16 to its corresponding CompressionMethod
+    /// Converts a u16 to its corresponding `CompressionMethod`
     #[deprecated(
         since = "0.5.7",
         note = "use a constant to construct a compression method"
@@ -227,7 +227,7 @@ impl CompressionMethod {
         }
     }
 
-    /// Converts a CompressionMethod to a u16
+    /// Converts a `CompressionMethod` to a u16
     #[deprecated(
         since = "0.5.7",
         note = "to match on other compression methods, use a constant"
@@ -388,8 +388,8 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                     reader.read_exact(&mut buffer)?;
                     let parameters = u16::from_le_bytes(buffer);
 
-                    let order = ((parameters & 0x0F) + 1) as u32;
-                    let memory_size = 1024 * 1024 * (((parameters >> 4) & 0xFF) + 1) as u32;
+                    let order = u32::from((parameters & 0x0F) + 1);
+                    let memory_size = 1024 * 1024 * u32::from(((parameters >> 4) & 0xFF) + 1);
                     let restoration_method = (parameters >> 12) & 0x0F;
 
                     let mut decompressor = ppmd_rust::Ppmd8Decoder::new(
@@ -530,9 +530,9 @@ mod test {
 
     #[test]
     fn from_eq_to() {
-        for v in 0..(u16::MAX as u32 + 1) {
+        for v in 0..(u32::from(u16::MAX) + 1) {
             let from = CompressionMethod::parse_from_u16(v as u16);
-            let to = from.serialize_to_u16() as u32;
+            let to = u32::from(from.serialize_to_u16());
             assert_eq!(v, to);
         }
     }
