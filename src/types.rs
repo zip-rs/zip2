@@ -10,11 +10,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
-#[cfg(feature = "chrono")]
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-#[cfg(feature = "jiff-02")]
-use jiff::civil;
-
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Pod};
 
@@ -31,8 +26,6 @@ use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
 use crate::{CompressionMethod, ZIP64_BYTES_THR};
 use std::io::{Read, Seek};
-#[cfg(feature = "time")]
-use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
 pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
@@ -137,8 +130,8 @@ impl DateTime {
     /// Returns the current time if possible, otherwise the default of 1980-01-01.
     #[cfg(feature = "time")]
     pub fn default_for_write() -> Self {
-        let now = OffsetDateTime::now_utc();
-        PrimitiveDateTime::new(now.date(), now.time())
+        let now = time::OffsetDateTime::now_utc();
+        time::PrimitiveDateTime::new(now.date(), now.time())
             .try_into()
             .unwrap_or_else(|_| DateTime::default())
     }
@@ -166,10 +159,12 @@ impl arbitrary::Arbitrary<'_> for DateTime {
 }
 
 #[cfg(feature = "chrono")]
-impl TryFrom<NaiveDateTime> for DateTime {
+impl TryFrom<chrono::NaiveDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
-    fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
+    fn try_from(value: chrono::NaiveDateTime) -> Result<Self, Self::Error> {
+        use chrono::{Datelike, Timelike};
+
         DateTime::from_date_and_time(
             value.year().try_into()?,
             value.month().try_into()?,
@@ -182,31 +177,31 @@ impl TryFrom<NaiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "chrono")]
-impl TryFrom<DateTime> for NaiveDateTime {
+impl TryFrom<DateTime> for chrono::NaiveDateTime {
     type Error = DateTimeRangeError;
 
     fn try_from(value: DateTime) -> Result<Self, Self::Error> {
-        let date = NaiveDate::from_ymd_opt(
+        let date = chrono::NaiveDate::from_ymd_opt(
             value.year().into(),
             value.month().into(),
             value.day().into(),
         )
         .ok_or(DateTimeRangeError)?;
-        let time = NaiveTime::from_hms_opt(
+        let time = chrono::NaiveTime::from_hms_opt(
             value.hour().into(),
             value.minute().into(),
             value.second().into(),
         )
         .ok_or(DateTimeRangeError)?;
-        Ok(NaiveDateTime::new(date, time))
+        Ok(chrono::NaiveDateTime::new(date, time))
     }
 }
 
 #[cfg(feature = "jiff-02")]
-impl TryFrom<civil::DateTime> for DateTime {
+impl TryFrom<jiff::civil::DateTime> for DateTime {
     type Error = DateTimeRangeError;
 
-    fn try_from(value: civil::DateTime) -> Result<Self, Self::Error> {
+    fn try_from(value: jiff::civil::DateTime) -> Result<Self, Self::Error> {
         Self::from_date_and_time(
             value.year().try_into()?,
             value.month() as u8,
@@ -355,11 +350,11 @@ impl DateTime {
     }
 
     #[cfg(feature = "time")]
-    /// Converts a OffsetDateTime object to a DateTime
+    /// Converts a [`time::OffsetDateTime`] object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
     #[deprecated(since = "0.6.4", note = "use `DateTime::try_from()` instead")]
-    pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
+    pub fn from_time(dt: time::OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
         dt.try_into()
     }
 
@@ -374,9 +369,12 @@ impl DateTime {
     }
 
     #[cfg(feature = "time")]
-    /// Converts the DateTime to a OffsetDateTime structure
-    #[deprecated(since = "1.3.1", note = "use `OffsetDateTime::try_from()` instead")]
-    pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
+    /// Converts the DateTime to a [`time::OffsetDateTime`] structure
+    #[deprecated(
+        since = "1.3.1",
+        note = "use `time::OffsetDateTime::try_from()` instead"
+    )]
+    pub fn to_time(&self) -> Result<time::OffsetDateTime, time::error::ComponentRange> {
         (*self).try_into()
     }
 
@@ -432,19 +430,19 @@ impl DateTime {
 }
 
 #[cfg(feature = "time")]
-impl TryFrom<OffsetDateTime> for DateTime {
+impl TryFrom<time::OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
-    fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
-        Self::try_from(PrimitiveDateTime::new(dt.date(), dt.time()))
+    fn try_from(dt: time::OffsetDateTime) -> Result<Self, Self::Error> {
+        Self::try_from(time::PrimitiveDateTime::new(dt.date(), dt.time()))
     }
 }
 
 #[cfg(feature = "time")]
-impl TryFrom<PrimitiveDateTime> for DateTime {
+impl TryFrom<time::PrimitiveDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
-    fn try_from(dt: PrimitiveDateTime) -> Result<Self, Self::Error> {
+    fn try_from(dt: time::PrimitiveDateTime) -> Result<Self, Self::Error> {
         Self::from_date_and_time(
             dt.year().try_into()?,
             dt.month().into(),
@@ -457,23 +455,24 @@ impl TryFrom<PrimitiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "time")]
-impl TryFrom<DateTime> for OffsetDateTime {
-    type Error = ComponentRange;
+impl TryFrom<DateTime> for time::OffsetDateTime {
+    type Error = time::error::ComponentRange;
 
     fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
-        PrimitiveDateTime::try_from(dt).map(PrimitiveDateTime::assume_utc)
+        time::PrimitiveDateTime::try_from(dt).map(time::PrimitiveDateTime::assume_utc)
     }
 }
 
 #[cfg(feature = "time")]
-impl TryFrom<DateTime> for PrimitiveDateTime {
-    type Error = ComponentRange;
+impl TryFrom<DateTime> for time::PrimitiveDateTime {
+    type Error = time::error::ComponentRange;
 
     fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
+        use time::{Date, Month, Time};
         let date =
             Date::from_calendar_date(dt.year() as i32, Month::try_from(dt.month())?, dt.day())?;
         let time = Time::from_hms(dt.hour(), dt.minute(), dt.second())?;
-        Ok(PrimitiveDateTime::new(date, time))
+        Ok(time::PrimitiveDateTime::new(date, time))
     }
 }
 
@@ -695,7 +694,7 @@ impl ZipFileData {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
         name: S,
-        options: &FileOptions<T>,
+        options: &FileOptions<'_, T>,
         raw_values: ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
@@ -823,10 +822,16 @@ impl ZipFileData {
 
         let file_name: Box<str> = match is_utf8 {
             true => String::from_utf8_lossy(&file_name_raw).into(),
-            false => file_name_raw.clone().from_cp437().into(),
+            false => file_name_raw
+                .clone()
+                .from_cp437()
+                .map_err(std::io::Error::other)?
+                .into(),
         };
 
-        let system: u8 = (version_made_by >> 8).try_into().unwrap();
+        let system: u8 = (version_made_by >> 8)
+            .try_into()
+            .map_err(std::io::Error::other)?;
         Ok(ZipFileData {
             system: System::from(system),
             /* NB: this strips the top 8 bits! */
@@ -889,11 +894,14 @@ impl ZipFileData {
         utf8_bit | using_data_descriptor_bit | encrypted_bit
     }
 
-    fn clamp_size_field(&self, field: u64) -> u32 {
+    fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
-            spec::ZIP64_BYTES_THR as u32
+            Ok(spec::ZIP64_BYTES_THR as u32)
         } else {
-            field.min(spec::ZIP64_BYTES_THR).try_into().unwrap()
+            field
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .map_err(std::io::Error::other)
         }
     }
 
@@ -902,8 +910,8 @@ impl ZipFileData {
             (0, 0)
         } else {
             (
-                self.clamp_size_field(self.compressed_size),
-                self.clamp_size_field(self.uncompressed_size),
+                self.clamp_size_field(self.compressed_size)?,
+                self.clamp_size_field(self.uncompressed_size)?,
             )
         };
         let extra_field_length: u16 = self
@@ -924,14 +932,24 @@ impl ZipFileData {
             crc32: self.crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length: self.file_name_raw.len().try_into().unwrap(),
+            file_name_length: self
+                .file_name_raw
+                .len()
+                .try_into()
+                .map_err(std::io::Error::other)?,
             extra_field_length,
         })
     }
 
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
-        let extra_field_len: u16 = self.extra_field_len().try_into().unwrap();
-        let central_extra_field_len: u16 = self.central_extra_field_len().try_into().unwrap();
+        let extra_field_len: u16 = self
+            .extra_field_len()
+            .try_into()
+            .map_err(std::io::Error::other)?;
+        let central_extra_field_len: u16 = self
+            .central_extra_field_len()
+            .try_into()
+            .map_err(std::io::Error::other)?;
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
@@ -950,17 +968,25 @@ impl ZipFileData {
                 .compressed_size
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
-                .unwrap(),
+                .map_err(std::io::Error::other)?,
             uncompressed_size: self
                 .uncompressed_size
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
-                .unwrap(),
-            file_name_length: self.file_name_raw.len().try_into().unwrap(),
+                .map_err(std::io::Error::other)?,
+            file_name_length: self
+                .file_name_raw
+                .len()
+                .try_into()
+                .map_err(std::io::Error::other)?,
             extra_field_length: extra_field_len.checked_add(central_extra_field_len).ok_or(
                 invalid!("Extra field length in central directory exceeds 64KiB"),
             )?,
-            file_comment_length: self.file_comment.len().try_into().unwrap(),
+            file_comment_length: self
+                .file_comment
+                .len()
+                .try_into()
+                .map_err(std::io::Error::other)?,
             disk_number: 0,
             internal_file_attributes: 0,
             external_file_attributes: self.external_attributes,
@@ -968,7 +994,7 @@ impl ZipFileData {
                 .header_start
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
-                .unwrap(),
+                .map_err(std::io::Error::other)?,
         })
     }
 
@@ -1307,6 +1333,7 @@ impl AesMode {
 
 #[cfg(test)]
 mod test {
+    #![allow(clippy::unwrap_used)]
     #[test]
     fn system() {
         use super::System;
@@ -1510,7 +1537,7 @@ mod test {
     use std::{path::PathBuf, sync::OnceLock};
 
     #[cfg(feature = "time")]
-    use time::{format_description::well_known::Rfc3339, OffsetDateTime, PrimitiveDateTime};
+    use time::format_description::well_known::Rfc3339;
 
     use crate::types::{System, ZipFileData};
 
@@ -1571,6 +1598,7 @@ mod test {
     #[test]
     fn offset_datetime_try_from_datetime() {
         use time::macros::datetime;
+        use time::OffsetDateTime;
 
         use super::DateTime;
 
@@ -1584,6 +1612,7 @@ mod test {
     #[test]
     fn primitive_datetime_try_from_datetime() {
         use time::macros::datetime;
+        use time::PrimitiveDateTime;
 
         use super::DateTime;
 
@@ -1597,6 +1626,7 @@ mod test {
     #[test]
     fn offset_datetime_try_from_bounds() {
         use super::DateTime;
+        use time::OffsetDateTime;
 
         // 1980-00-00 00:00:00
         assert!(OffsetDateTime::try_from(unsafe {
@@ -1615,6 +1645,7 @@ mod test {
     #[test]
     fn primitive_datetime_try_from_bounds() {
         use super::DateTime;
+        use time::PrimitiveDateTime;
 
         // 1980-00-00 00:00:00
         assert!(PrimitiveDateTime::try_from(unsafe {
@@ -1759,6 +1790,7 @@ mod test {
     #[test]
     fn time_at_january() {
         use super::DateTime;
+        use time::{OffsetDateTime, PrimitiveDateTime};
 
         // 2020-01-01 00:00:00
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();

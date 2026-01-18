@@ -334,8 +334,14 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                     // 5.8.8.1 LZMA Version Information & 5.8.8.2 LZMA Properties Size
                     let mut header = [0; 4];
                     reader.read_exact(&mut header)?;
-                    let _version_information = u16::from_le_bytes(header[0..2].try_into().unwrap());
-                    let properties_size = u16::from_le_bytes(header[2..4].try_into().unwrap());
+                    let _version_information =
+                        u16::from_le_bytes(header[0..2].try_into().map_err(|e| {
+                            std::io::Error::other(format!("Cannot transform header to u16: {e}"))
+                        })?);
+                    let properties_size =
+                        u16::from_le_bytes(header[2..4].try_into().map_err(|e| {
+                            std::io::Error::other(format!("Cannot transform header to u16: {e}"))
+                        })?);
                     if properties_size != 5 {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
@@ -346,7 +352,10 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                     let mut props_data = [0; 5];
                     reader.read_exact(&mut props_data)?;
                     let props = props_data[0];
-                    let dict_size = u32::from_le_bytes(props_data[1..5].try_into().unwrap());
+                    let dict_size =
+                        u32::from_le_bytes(props_data[1..5].try_into().map_err(|e| {
+                            std::io::Error::other(format!("Cannot transform header to u32: {e}"))
+                        })?);
 
                     // We don't need to handle the end-of-stream marker here, since the LZMA reader
                     // stops at the end-of-stream marker OR when it has decoded uncompressed_size bytes, whichever comes first.

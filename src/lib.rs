@@ -30,7 +30,15 @@
 //!
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
+#![warn(clippy::all, rust_2018_idioms)]
+#![deny(
+    missing_docs,
+    clippy::all,
+    clippy::missing_panics_doc,
+    clippy::cargo,
+    clippy::unwrap_used,
+    clippy::expect_used
+)]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::HasZipMetadata;
