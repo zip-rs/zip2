@@ -34,7 +34,9 @@ impl FromCp437 for Box<[u8]> {
         let target = if self.iter().all(|c| *c < 0x80) {
             String::from_utf8(self.into())?
         } else {
-            self.iter().copied().filter_map(to_char).collect()
+            self.iter().copied().map(|c| to_char(c).ok_or_else(|| {
+                std::string::FromUtf8Error::from_utf8_error(std::string::String::from_utf8(vec![c]).unwrap_err())
+            })).collect::<Result<String, _>>()?
         }
         .into_boxed_str();
         Ok(target)
