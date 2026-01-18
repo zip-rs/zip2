@@ -1,4 +1,4 @@
-*zip
+zip
 ===
 
 [![Build Status](https://github.com/zip-rs/zip2/actions/workflows/ci.yaml/badge.svg)](https://github.com/zip-rs/zip2/actions?query=branch%3Amaster+workflow%3ACI)
