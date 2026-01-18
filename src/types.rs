@@ -813,11 +813,7 @@ impl ZipFileData {
 
         let file_name: Box<str> = match is_utf8 {
             true => String::from_utf8_lossy(&file_name_raw).into(),
-            false => file_name_raw
-                .clone()
-                .from_cp437()
-                .map_err(std::io::Error::other)?
-                .into(),
+            false => file_name_raw.from_cp437().map_err(std::io::Error::other)?,
         };
 
         let system: u8 = (version_made_by >> 8)
