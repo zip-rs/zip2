@@ -182,7 +182,7 @@ pub(crate) trait FixedSizeBlock: Pod {
     #[allow(clippy::wrong_self_convention)]
     fn from_le(self) -> Self;
 
-    fn parse<R: Read>(reader: &mut R) -> ZipResult<Self> {
+    fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
         let mut block = Self::zeroed();
         reader.read_exact(block.as_bytes_mut())?;
         let block = Self::from_le(block);
@@ -321,7 +321,7 @@ impl Zip32CentralDirectoryEnd {
         (block, zip_file_comment)
     }
 
-    pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
+    pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
         let Zip32CDEBlock {
             // magic,
             disk_number,
@@ -407,7 +407,7 @@ pub(crate) struct Zip64CentralDirectoryEndLocator {
 }
 
 impl Zip64CentralDirectoryEndLocator {
-    pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
+    pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let Zip64CDELocatorBlock {
             // magic,
             disk_with_central_directory,
@@ -496,7 +496,10 @@ pub(crate) struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn parse<T: Read>(reader: &mut T, max_size: u64) -> ZipResult<Zip64CentralDirectoryEnd> {
+    pub fn parse<T: Read + ?Sized>(
+        reader: &mut T,
+        max_size: u64,
+    ) -> ZipResult<Zip64CentralDirectoryEnd> {
         let Zip64CDEBlock {
             record_size,
             version_made_by,
@@ -598,7 +601,7 @@ pub(crate) struct CentralDirectoryEndInfo {
 ///
 /// In the best case scenario (no prepended junk), this function will not backtrack
 /// in the reader.
-pub(crate) fn find_central_directory<R: Read + Seek>(
+pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
     reader: &mut R,
     archive_offset: ArchiveOffset,
     end_exclusive: u64,
@@ -641,7 +644,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
         let zip64_metadata = if eocd.may_be_zip64() {
             fn try_read_eocd64_locator(
-                reader: &mut (impl Read + Seek),
+                reader: &mut (impl Read + Seek + ?Sized),
                 eocd_offset: u64,
             ) -> ZipResult<(u64, Zip64CentralDirectoryEndLocator)> {
                 if eocd_offset < mem::size_of::<Zip64CDELocatorBlock>() as u64 {
@@ -726,7 +729,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
         // This was hidden inside a function to collect errors in a single place.
         // Once try blocks are stabilized, this can go away.
-        fn try_read_eocd64<R: Read + Seek>(
+        fn try_read_eocd64<R: Read + Seek + ?Sized>(
             reader: &mut R,
             locator64: &Zip64CentralDirectoryEndLocator,
             expected_length: u64,

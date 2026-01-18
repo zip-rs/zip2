@@ -142,7 +142,7 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
     }
 
     /// Find the next magic bytes in the direction specified in the type.
-    pub fn next<R: Read + Seek>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
+    pub fn next<R: Read + Seek + ?Sized>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
         loop {
             if self.cursor < self.bounds.0 || self.cursor >= self.bounds.1 {
                 // The finder is consumed
@@ -246,7 +246,7 @@ impl<'a, Direction: FinderDirection<'a>> OptimisticMagicFinder<Direction> {
 
     /// Equivalent to `next_back`, with an optional initial guess attempted before
     /// proceeding with reading from the back of the reader.
-    pub fn next<R: Read + Seek>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
+    pub fn next<R: Read + Seek + ?Sized>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
         if let Some((v, mandatory)) = self.initial_guess {
             reader.seek(SeekFrom::Start(v))?;
 
