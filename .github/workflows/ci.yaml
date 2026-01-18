@@ -170,9 +170,9 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g'  {} \+
-          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g'  {} \+
-          find map -type f -name '*:*' -exec rename 's/:/-/g'  {} \+
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
         uses: actions/upload-artifact@v6
         with:
@@ -222,8 +222,8 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \;
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v6
@@ -270,9 +270,9 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \;
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
         uses: actions/upload-artifact@v6
         with:
@@ -322,8 +322,8 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \;
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v6
