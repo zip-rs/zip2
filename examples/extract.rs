@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
         let comment = file.comment();
         if !comment.is_empty() {
-            println!("File {i} comment: {comment}");
+            println!("File {i} comment: {comment:?}");
         }
         if file.is_dir() {
             if let Err(e) = fs::create_dir_all(&out_path) {
