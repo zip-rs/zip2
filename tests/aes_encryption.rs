@@ -10,9 +10,8 @@ const PASSWORD: &[u8] = b"helloworld";
 
 #[test]
 fn aes256_encrypted_uncompressed_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_256_uncompressed", PASSWORD)
@@ -27,9 +26,8 @@ fn aes256_encrypted_uncompressed_file() {
 
 #[test]
 fn aes256_encrypted_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_256", PASSWORD)
@@ -44,9 +42,8 @@ fn aes256_encrypted_file() {
 
 #[test]
 fn aes192_encrypted_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_192", PASSWORD)
@@ -61,9 +58,8 @@ fn aes192_encrypted_file() {
 
 #[test]
 fn aes128_encrypted_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_128", PASSWORD)
