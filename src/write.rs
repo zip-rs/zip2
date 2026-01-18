@@ -387,7 +387,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         *self.permissions.get_or_insert(0o644) |= ffi::S_IFREG;
     }
 
-    /// Indicates whether this file will be encrypted (whether with AES or ZipCrypto).
+    /// Indicates whether this file will be encrypted (whether with AES or `ZipCrypto`).
     pub const fn has_encryption(&self) -> bool {
         #[cfg(feature = "aes-crypto")]
         {
@@ -550,10 +550,10 @@ impl FileOptions<'static, ()> {
 }
 
 impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
-    /// Construct a new FileOptions object
+    /// Construct a new `FileOptions` object
     fn default() -> Self {
         Self {
-            compression_method: Default::default(),
+            compression_method: CompressionMethod::default(),
             compression_level: None,
             last_modified_time: DateTime::default_for_write(),
             permissions: None,
@@ -628,7 +628,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///
     /// This uses a default configuration to initially read the archive.
     pub fn new_append(readwriter: A) -> ZipResult<ZipWriter<A>> {
-        Self::new_append_with_config(Default::default(), readwriter)
+        Self::new_append_with_config(Config::default(), readwriter)
     }
 
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
@@ -641,7 +641,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
             files: shared.files,
-            stats: Default::default(),
+            stats: ZipWriterStats::default(),
             writing_to_file: false,
             comment: shared.comment,
             zip64_comment: shared.zip64_comment,
@@ -653,15 +653,15 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     }
 
     /// `flush_on_finish_file` is designed to support a streaming `inner` that may unload flushed
-    /// bytes. It flushes a file's header and body once it starts writing another file. A ZipWriter
+    /// bytes. It flushes a file's header and body once it starts writing another file. A `ZipWriter`
     /// will not try to seek back into where a previous file was written unless
     /// either [`ZipWriter::abort_file`] is called while [`ZipWriter::is_writing_file`] returns
     /// false, or [`ZipWriter::deep_copy_file`] is called. In the latter case, it will only need to
     /// read previously-written files and not overwrite them.
     ///
     /// Note: when using an `inner` that cannot overwrite flushed bytes, do not wrap it in a
-    /// [BufWriter], because that has a [Seek::seek] method that implicitly calls
-    /// [BufWriter::flush], and ZipWriter needs to seek backward to update each file's header with
+    /// [`BufWriter`], because that has a [`Seek::seek`] method that implicitly calls
+    /// [`BufWriter::flush`], and `ZipWriter` needs to seek backward to update each file's header with
     /// the size and checksum after writing the body.
     ///
     /// This setting is false by default.
