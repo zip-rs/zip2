@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.2.0](https://github.com/zip-rs/zip2/compare/v7.1.0...v7.2.0) - 2026-01-18
+
+### <!-- 0 -->🚀 Features
+
+- Allow choosing bzip2 rust backend ([#329](https://github.com/zip-rs/zip2/pull/329))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(aes)* Allow AES encryption while streaming ([#463](https://github.com/zip-rs/zip2/pull/463))
+- Default "platform" field in zip files should be set to the local platform, rather than always "Unix" ([#470](https://github.com/zip-rs/zip2/pull/470)) ([#471](https://github.com/zip-rs/zip2/pull/471))
+
+### <!-- 2 -->🚜 Refactor
+
+- Define cfg_if! and cfg_if_expr! internal macros ([#438](https://github.com/zip-rs/zip2/pull/438))
+
+### <!-- 4 -->⚡ Performance
+
+- Change an assert to debug_assert when encrypting/decrypting AES, and eliminate a fallible operation ([#521](https://github.com/zip-rs/zip2/pull/521))
+- eliminate a String clone per new file added to archive, and other related refactors ([#522](https://github.com/zip-rs/zip2/pull/522))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Fix another merge error, this one affecting only builds with flate2 and not zopfli
+- Fix more merge issues
+- Fix merge
+- Fix write_dir build errors on specific feature configs
+- Fix clippy warning
+- Fix --all-features build error
+- Fix merge
+
 ## [7.1.0](https://github.com/zip-rs/zip2/compare/v7.0.0...v7.1.0) - 2026-01-14
 
 ### <!-- 0 -->🚀 Features
