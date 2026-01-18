@@ -55,17 +55,16 @@ bitstream-io = { version = "4.5", optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 getrandom = { version = "0.3", default-features = false, optional = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+getrandom = { version = "0.3", default-features = false }
+
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", default-features = false, features = ["wasm_js"], optional = true }
 
-# native:
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-getrandom = { version = "0.3", default-features = false, features = ["std"] }
-
-# wasm32
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-getrandom = { version = "0.3", default-features = false, features = ["std", "wasm_js"] }
+getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
+wasm-bindgen-test = "^0.3.56"
 
 [dev-dependencies]
 bencher = "0.1"
