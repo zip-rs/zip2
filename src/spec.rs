@@ -678,7 +678,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 
         let Some((locator64_offset, locator64)) = zip64_metadata else {
             // Branch out for zip32
-            let relative_cd_offset = eocd.central_directory_offset as u64;
+            let relative_cd_offset = u64::from(eocd.central_directory_offset);
 
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
             if eocd.number_of_files == 0 {

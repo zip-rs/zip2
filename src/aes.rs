@@ -264,7 +264,7 @@ impl<W: Write> AesWriter<W> {
             writer,
             cipher,
             hmac,
-            buffer: Default::default(),
+            buffer: Zeroizing::default(),
             encrypted_file_header: Some(encrypted_file_header),
         })
     }

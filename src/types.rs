@@ -336,8 +336,9 @@ impl DateTime {
             if day > max_day {
                 return Err(DateTimeRangeError);
             }
-            let datepart = (day as u16) | ((month as u16) << 5) | ((year - 1980) << 9);
-            let timepart = ((second as u16) >> 1) | ((minute as u16) << 5) | ((hour as u16) << 11);
+            let datepart = u16::from(day) | (u16::from(month) << 5) | ((year - 1980) << 9);
+            let timepart =
+                (u16::from(second) >> 1) | (u16::from(minute) << 5) | (u16::from(hour) << 11);
             Ok(DateTime { datepart, timepart })
         } else {
             Err(DateTimeRangeError)
@@ -470,7 +471,7 @@ impl TryFrom<DateTime> for time::PrimitiveDateTime {
     fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
         use time::{Date, Month, Time};
         let date =
-            Date::from_calendar_date(dt.year() as i32, Month::try_from(dt.month())?, dt.day())?;
+            Date::from_calendar_date(i32::from(dt.year()), Month::try_from(dt.month())?, dt.day())?;
         let time = Time::from_hms(dt.hour(), dt.minute(), dt.second())?;
         Ok(time::PrimitiveDateTime::new(date, time))
     }
@@ -652,7 +653,7 @@ impl ZipFileData {
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => 63,
             // APPNOTE doesn't specify a version for Zstandard
-            _ => DEFAULT_VERSION as u16,
+            _ => u16::from(DEFAULT_VERSION),
         };
         let crypto_version: u16 = if self.aes_mode.is_some() {
             51
@@ -954,7 +955,7 @@ impl ZipFileData {
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
         let version_to_extract = self.version_needed();
-        let version_made_by = (self.version_made_by as u16).max(version_to_extract);
+        let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
         Ok(ZipCentralEntryBlock {
             magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: ((self.system as u16) << 8) | version_made_by,
