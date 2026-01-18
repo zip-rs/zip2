@@ -12,10 +12,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "_deflate-any")]
     {
         let filename = &*args[1];
-        // Ensure that the filename has no path separators or parent directory references
-        if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-            return Err("Invalid filename: path separators or '..' are not allowed".into());
+        // Ensure that the filename is non-empty and has no path separators or parent directory references
+        let trimmed = filename.trim();
+        if trimmed.is_empty()
+            || trimmed.contains("..")
+            || trimmed.contains('/')
+            || trimmed.contains('\\')
+        {
+            return Err("Invalid filename: must be a non-empty simple file name without path separators or '..'".into());
         }
+        let filename = trimmed;
         use std::io::Write;
 
         use zip::write::SimpleFileOptions;
