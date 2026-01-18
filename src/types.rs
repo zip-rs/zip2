@@ -542,7 +542,7 @@ pub struct ZipFileData {
 
 impl ZipFileData {
     /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self, reader: &mut (impl Read + Seek + Sized)) -> ZipResult<u64> {
+    pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
             Some(data_start) => Ok(*data_start),
             None => Ok(find_data_start(self, reader)?),
@@ -765,7 +765,7 @@ impl ZipFileData {
         local_block
     }
 
-    pub(crate) fn from_local_block<R: std::io::Read>(
+    pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
         block: ZipLocalEntryBlock,
         reader: &mut R,
     ) -> ZipResult<Self> {
