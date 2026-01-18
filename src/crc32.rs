@@ -110,7 +110,7 @@ mod test {
         let data: &[u8] = b"1234";
         let mut buf = [0; 1];
 
-        let mut reader = Crc32Reader::new(data, 0x9be3e0a3, false);
+        let mut reader = Crc32Reader::new(data, 0x9be_3e0a3, false);
         assert_eq!(reader.read(&mut buf).unwrap(), 1);
         assert_eq!(reader.read(&mut buf).unwrap(), 1);
         assert_eq!(reader.read(&mut buf).unwrap(), 1);
@@ -125,7 +125,7 @@ mod test {
         let data: &[u8] = b"1234";
         let mut buf = [0; 5];
 
-        let mut reader = Crc32Reader::new(data, 0x9be3e0a3, false);
+        let mut reader = Crc32Reader::new(data, 0x9be3_e0a3, false);
         assert_eq!(reader.read(&mut buf[..0]).unwrap(), 0);
         assert_eq!(reader.read(&mut buf).unwrap(), 4);
     }

@@ -8,7 +8,7 @@ use core::num::TryFromIntError;
 use std::borrow::Cow;
 use std::io;
 
-/// Generic result type with ZipError as its error variant
+/// Generic result type with `ZipError` as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
