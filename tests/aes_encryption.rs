@@ -11,7 +11,7 @@ const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 const PASSWORD: &[u8] = b"helloworld";
 
 #[test]
-fn aes256_encrypted_uncompressed_file() {
+pub fn aes256_encrypted_uncompressed_file() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
         .expect("couldn't open test zip file");
 

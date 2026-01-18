@@ -12,32 +12,47 @@
 //! wasm-pack test --node
 //! ```
 //!
-#![cfg(all(target_arch = "wasm32", feature = "aes-crypto"))]
+
+#![cfg(target_arch = "wasm32")]
 
 use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
-use std::io::{self, Read};
-use zip::ZipArchive;
-
-const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
-
-const PASSWORD: &[u8] = b"helloworld";
+mod aes_encryption;
 
 /// wasm-pack test --headless --chrome --features aes-crypto
+#[cfg(feature = "aes-crypto")]
 #[wasm_bindgen_test]
-fn aes256_encrypted_uncompressed_file() {
-    let zip_data = include_bytes!("data/aes_archive.zip").to_vec();
-    let mut archive =
-        ZipArchive::new(io::Cursor::new(zip_data)).expect("couldn't open test zip file");
+fn test_aes256_encrypted_uncompressed_file() {
+    aes_encryption::aes256_encrypted_uncompressed_file();
+}
 
-    let mut file = archive
-        .by_name_decrypt("secret_data_256_uncompressed", PASSWORD)
-        .expect("couldn't find file in archive");
-    assert_eq!("secret_data_256_uncompressed", file.name());
+mod deflate64;
+#[cfg(feature = "deflate64")]
+#[wasm_bindgen_test]
+fn test_decompress_deflate64() {
+    deflate64::decompress_deflate64();
+}
 
-    let mut decrypted_content = String::new();
-    file.read_to_string(&mut decrypted_content)
-        .expect("couldn't read encrypted file");
-    assert_eq!(SECRET_CONTENT, decrypted_content);
+mod xz;
+#[cfg(feature = "xz")]
+#[wasm_bindgen_test]
+fn test_decompress_xz() {
+    xz::decompress_xz();
+}
+
+mod lzma;
+#[cfg(feature = "lzma")]
+#[wasm_bindgen_test]
+fn test_decompress_lzma() {
+    lzma::decompress_lzma();
+}
+
+// time needs the features wasm-bindgen
+// or you get the error
+// time not implemented on this platform
+mod end_to_end;
+#[wasm_bindgen_test]
+fn test_end_to_end() {
+    end_to_end::end_to_end();
 }
