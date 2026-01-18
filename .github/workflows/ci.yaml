@@ -170,9 +170,9 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename -a ':' '-' {} \+
-          find out_cmin -type f -name '*:*' -exec rename -a ':' '-' {} \+
-          find map -type f -name '*:*' -exec rename -a ':' '-' {} \+
+          find out -type f -name '*:*' -exec rename 's/:/-/g'  {} \+
+          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g'  {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g'  {} \+
       - name: Upload updated corpus
         uses: actions/upload-artifact@v6
         with:
