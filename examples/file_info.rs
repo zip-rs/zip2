@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let path = candidate_path
         .canonicalize()
         .with_context(|| format!("Could not open {fname_arg:?}"))?;
-    if !path.starts_with(&base_dir.canonicalize().unwrap_or(base_dir.clone())) {
+    if !path.starts_with(base_dir.canonicalize().unwrap_or(base_dir)) {
         return Err(anyhow!(
             "Error: refusing to open path outside of base directory: {fname_arg:?}"
         ));

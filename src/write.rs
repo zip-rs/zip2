@@ -266,13 +266,10 @@ impl ExtendedFileOptions {
                 &mut self.extra_data
             };
             let vec = Arc::get_mut(field);
-            let vec = match vec {
-                Some(exclusive) => exclusive,
-                None => {
-                    *field = Arc::new(field.to_vec());
-                    Arc::get_mut(field)
-                        .ok_or_else(|| std::io::Error::other("Cannot get field as mutable"))?
-                }
+            let vec = if let Some(exclusive) = vec { exclusive } else {
+                *field = Arc::new(field.to_vec());
+                Arc::get_mut(field)
+                    .ok_or_else(|| std::io::Error::other("Cannot get field as mutable"))?
             };
             Self::add_extra_data_unchecked(vec, header_id, data)?;
             Self::validate_extra_data(vec, true)?;
@@ -350,7 +347,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
             last_modified_time: DateTime::arbitrary(u)?,
             permissions: Option::<u32>::arbitrary(u)?,
             large_file: bool::arbitrary(u)?,
-            encrypt_with: Option::<EncryptWith>::arbitrary(u)?,
+            encrypt_with: Option::<EncryptWith<'_>>::arbitrary(u)?,
             alignment: u16::arbitrary(u)?,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
@@ -528,7 +525,7 @@ impl FileOptions<'_, ExtendedFileOptions> {
     }
 }
 impl FileOptions<'static, ()> {
-    /// Constructs a const FileOptions object.
+    /// Constructs a const `FileOptions` object.
     ///
     /// Note: This value is different than the return value of [`FileOptions::default()`]:
     ///
@@ -672,7 +669,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Adds another copy of a file already in this archive. This will produce a larger but more
-    /// widely-compatible archive compared to [Self::shallow_copy_file]. Does not copy alignment.
+    /// widely-compatible archive compared to [`Self::shallow_copy_file`]. Does not copy alignment.
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         if src_name == dest_name || self.files.contains_key(dest_name) {
@@ -827,7 +824,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<Box<str>>,
     {
-        self.set_raw_comment(comment.into().into_boxed_bytes())
+        self.set_raw_comment(comment.into().into_boxed_bytes());
     }
 
     /// Set ZIP archive comment.
@@ -863,7 +860,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<Box<str>>,
     {
-        self.set_raw_zip64_comment(comment.map(|v| v.into().into_boxed_bytes()))
+        self.set_raw_zip64_comment(comment.map(|v| v.into().into_boxed_bytes()));
     }
 
     /// Set ZIP64 archive comment.
@@ -1160,10 +1157,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish()?));
             }
             Storer(MaybeEncrypted::ZipCrypto(writer)) => {
-                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish()?))
+                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish()?));
             }
             Storer(MaybeEncrypted::Unencrypted(w)) => {
-                self.inner = Storer(MaybeEncrypted::Unencrypted(w))
+                self.inner = Storer(MaybeEncrypted::Unencrypted(w));
             }
             _ => unreachable!(),
         }
@@ -1467,7 +1464,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let name_as_string = name.into();
         // Append a slash to the filename if it does not end with it.
         let name_with_slash = match name_as_string.chars().last() {
-            Some('/') | Some('\\') => name_as_string,
+            Some('/' | '\\') => name_as_string,
             _ => name_as_string + "/",
         };
 
@@ -1645,7 +1642,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Adds another entry to the central directory referring to the same content as an existing
     /// entry. The file's local-file header will still refer to it by its original name, so
-    /// unzipping the file will technically be unspecified behavior. [ZipArchive] ignores the
+    /// unzipping the file will technically be unspecified behavior. [`ZipArchive`] ignores the
     /// filename in the local-file header and treat the central directory as authoritative. However,
     /// some other software (e.g. Minecraft) will refuse to extract a file copied this way.
     pub fn shallow_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
@@ -1654,7 +1651,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             return Err(invalid!("Trying to copy a file to itself"));
         }
         let src_index = self.index_by_name(src_name)?;
-        let mut dest_data = self.files[src_index].to_owned();
+        let mut dest_data = self.files[src_index].clone();
         dest_data.file_name = dest_name.to_string().into();
         dest_data.file_name_raw = dest_name.to_string().into_bytes().into();
         dest_data.central_header_start = 0;

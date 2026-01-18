@@ -146,7 +146,7 @@ impl DateTime {
 
 #[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
-    fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         let year: u16 = u.int_in_range(1980..=2107)?;
         let month: u16 = u.int_in_range(1..=12)?;
         let day: u16 = u.int_in_range(1..=31)?;
@@ -215,7 +215,7 @@ impl TryFrom<jiff::civil::DateTime> for DateTime {
 }
 
 #[cfg(feature = "jiff-02")]
-impl TryFrom<DateTime> for civil::DateTime {
+impl TryFrom<DateTime> for jiff::civil::DateTime {
     type Error = jiff::Error;
 
     fn try_from(value: DateTime) -> Result<Self, Self::Error> {
