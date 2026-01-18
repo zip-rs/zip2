@@ -38,6 +38,7 @@
     clippy::cargo,
     clippy::unwrap_used,
     clippy::expect_used,
+    clippy::panic,
     clippy::cast_lossless
 )]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)

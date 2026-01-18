@@ -40,10 +40,9 @@ impl ExtendedTimestamp {
         // > (1 + 4*(number of set bits in Flags)), as the block is currently
         // > defined.
         if len != 5 && u32::from(len) != 1 + 4 * flags.count_ones() {
-            //panic!("found len {len} and flags {flags:08b}");
-            return Err(ZipError::UnsupportedArchive(
-                "flags and len don't match in extended timestamp field",
-            ));
+            return Err(ZipError::Io(std::io::Error::other(format!(
+                "flags and len don't match in extended timestamp field len={len} flags={flags:08b}"
+            ))));
         }
 
         // allow unsupported/undocumented flags

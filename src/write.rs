@@ -678,22 +678,22 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         if src_name == dest_name || self.files.contains_key(dest_name) {
             return Err(invalid!("That file already exists"));
         }
-        let write_position = self.inner.get_plain().stream_position()?;
+        let write_position = self.inner.inner_mut()?.stream_position()?;
         let src_index = self.index_by_name(src_name)?;
         let src_data = &mut self.files[src_index];
-        let src_data_start = src_data.data_start(self.inner.get_plain())?;
+        let src_data_start = src_data.data_start(self.inner.inner_mut()?)?;
         debug_assert!(src_data_start <= write_position);
         let mut compressed_size = src_data.compressed_size;
         if compressed_size > (write_position - src_data_start) {
             compressed_size = write_position - src_data_start;
             src_data.compressed_size = compressed_size;
         }
-        let mut reader = BufReader::new(self.inner.get_plain());
+        let mut reader = BufReader::new(self.inner.inner_mut()?);
         reader.seek(SeekFrom::Start(src_data_start))?;
         let mut copy = vec![0; compressed_size as usize];
         reader.take(compressed_size).read_exact(&mut copy)?;
         self.inner
-            .get_plain()
+            .inner_mut()?
             .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
         let dest_name_raw = dest_name.as_bytes();
@@ -716,7 +716,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let index = self.insert_file_data(new_data)?;
         let new_data = &self.files[index];
         let result: io::Result<()> = {
-            let plain_writer = self.inner.get_plain();
+            let plain_writer = self.inner.inner_mut()?;
             block.write(plain_writer)?;
             plain_writer.write_all(&new_data.file_name_raw)?;
             if let Some(data) = &new_data.extra_field {
@@ -779,7 +779,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///```
     pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
         let central_start = self.finalize()?;
-        let inner = mem::replace(&mut self.inner, Closed).unwrap();
+        let inner = mem::replace(&mut self.inner, Closed).inner()?;
         let comment = mem::take(&mut self.comment);
         let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
@@ -921,7 +921,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ) -> ZipResult<()> {
         self.finish_file()?;
 
-        let header_start = self.inner.get_plain().stream_position()?;
+        let header_start = self.inner.inner_mut()?.stream_position()?;
         let raw_values = raw_values.unwrap_or(ZipRawValues {
             crc32: 0,
             compressed_size: 0,
@@ -1019,7 +1019,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
             let file = &mut self.files[index];
             let block = file.local_block()?;
-            let writer = self.inner.get_plain();
+            let writer = self.inner.inner_mut()?;
             block.write(writer)?;
             // file name
             writer.write_all(&file.file_name_raw)?;
@@ -1030,13 +1030,13 @@ impl<W: Write + Seek> ZipWriter<W> {
             Ok(())
         };
         self.ok_or_abort_file(result)?;
-        let writer = self.inner.get_plain();
+        let writer = self.inner.inner_mut()?;
         self.stats.start = writer.stream_position()?;
         match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, password }) => {
                 let aeswriter = crate::aes::AesWriter::new(
-                    mem::replace(&mut self.inner, Closed).unwrap(),
+                    mem::replace(&mut self.inner, Closed).inner()?,
                     mode,
                     password.as_bytes(),
                 )?;
@@ -1047,7 +1047,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // With ZipCrypto, we _need_ to use a data descriptor so that
                 // we can initialize the stream properly.
                 let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
-                    writer: mem::replace(&mut self.inner, Closed).unwrap(),
+                    writer: mem::replace(&mut self.inner, Closed).inner()?,
                     keys,
                 };
                 self.stats.start = zipwriter.writer.stream_position()?;
@@ -1109,7 +1109,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         )?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
-        let writer = self.inner.get_plain();
+        let writer = self.inner.inner_mut()?;
 
         if !self.writing_raw {
             let file = match self.files.last_mut() {
@@ -1194,7 +1194,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         if rewind_safe {
             self.inner
-                .get_plain()
+                .inner_mut()?
                 .seek(SeekFrom::Start(last_file.header_start))?;
         }
         self.writing_to_file = false;
@@ -1280,7 +1280,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.writing_to_file = true;
         self.writing_raw = true;
 
-        let writer = self.inner.get_plain();
+        let writer = self.inner.inner_mut()?;
         /* Get the file entries from the source archive. */
         let new_files = source.merge_contents(writer)?;
 
@@ -1497,7 +1497,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn finish(mut self) -> ZipResult<W> {
         let _central_start = self.finalize()?;
         let inner = mem::replace(&mut self.inner, Closed);
-        Ok(inner.unwrap())
+        Ok(inner.inner()?)
     }
 
     /// Add a symlink entry.
@@ -1559,7 +1559,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         let mut central_start = self.write_central_and_footer()?;
-        let writer = self.inner.get_plain();
+        let writer = self.inner.inner_mut()?;
         let footer_end = writer.stream_position()?;
         let archive_end = writer.seek(SeekFrom::End(0))?;
         if footer_end < archive_end {
@@ -1577,14 +1577,14 @@ impl<W: Write + Seek> ZipWriter<W> {
             let central_and_footer_size = footer_end - central_start;
             writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
             central_start = self.write_central_and_footer()?;
-            debug_assert!(self.inner.get_plain().stream_position()? == archive_end);
+            debug_assert!(self.inner.inner_mut()?.stream_position()? == archive_end);
         }
 
         Ok(central_start)
     }
 
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
-        let writer = self.inner.get_plain();
+        let writer = self.inner.inner_mut()?;
 
         let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
@@ -1760,7 +1760,11 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                 iteration_count: core::num::NonZeroU64::try_from(u64::from(
                                     level - $best_non_zopfli,
                                 ))
-                                .unwrap(),
+                                .map_err(|e| {
+                                    std::io::Error::other(format!(
+                                        "Failed to get the iteration count for zopfli : {e}"
+                                    ))
+                                })?,
                                 ..Default::default()
                             };
                             Ok(Box::new(move |bare| {
@@ -1982,17 +1986,21 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         matches!(*self, Closed)
     }
 
-    fn get_plain(&mut self) -> &mut W {
+    fn inner_mut(&mut self) -> Result<&mut W, std::io::Error> {
         match *self {
-            Storer(MaybeEncrypted::Unencrypted(ref mut w)) => w,
-            _ => panic!("Should have switched to stored and unencrypted beforehand"),
+            Storer(MaybeEncrypted::Unencrypted(ref mut w)) => Ok(w),
+            _ => Err(std::io::Error::other(
+                "Should have switched to stored and unencrypted beforehand",
+            )),
         }
     }
 
-    fn unwrap(self) -> W {
+    fn inner(self) -> Result<W, std::io::Error> {
         match self {
-            Storer(MaybeEncrypted::Unencrypted(w)) => w,
-            _ => panic!("Should have switched to stored and unencrypted beforehand"),
+            Storer(MaybeEncrypted::Unencrypted(w)) => Ok(w),
+            _ => Err(std::io::Error::other(
+                "Should have switched to stored and unencrypted beforehand",
+            )),
         }
     }
 }
