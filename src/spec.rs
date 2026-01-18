@@ -3,6 +3,7 @@
 use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::read::ArchiveOffset;
 use crate::result::{invalid, ZipError, ZipResult};
+use core::any::type_name;
 use core::mem;
 use core::slice;
 use std::io::{self, Read, Seek, Write};
@@ -184,7 +185,12 @@ pub(crate) trait FixedSizeBlock: Pod {
 
     fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
         let mut block = Self::zeroed();
-        reader.read_exact(block.as_bytes_mut())?;
+        if let Err(e) = reader.read_exact(block.as_bytes_mut()) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return Err(invalid!("Unexpected end of {}", type_name::<Self>()));
+            }
+            return Err(e.into());
+        }
         let block = Self::from_le(block);
 
         if block.magic() != Self::MAGIC {
@@ -520,7 +526,14 @@ impl Zip64CentralDirectoryEnd {
         }
 
         let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
-        reader.read_exact(&mut zip_file_comment)?;
+        if let Err(e) = reader.read_exact(&mut zip_file_comment) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return Err(invalid!(
+                    "EOCD64 extensible data sector exceeds file boundary"
+                ));
+            }
+            return Err(e.into());
+        }
 
         Ok(Self {
             record_size,
@@ -654,10 +667,8 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                 let locator64_offset = eocd_offset - mem::size_of::<Zip64CDELocatorBlock>() as u64;
 
                 reader.seek(io::SeekFrom::Start(locator64_offset))?;
-                Ok((
-                    locator64_offset,
-                    Zip64CentralDirectoryEndLocator::parse(reader)?,
-                ))
+                let locator64 = Zip64CentralDirectoryEndLocator::parse(reader);
+                Ok((locator64_offset, locator64?))
             }
 
             try_read_eocd64_locator(reader, eocd_offset).ok()

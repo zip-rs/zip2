@@ -807,9 +807,19 @@ impl ZipFileData {
         let extra_field_length: usize = extra_field_length.into();
 
         let mut file_name_raw = vec![0u8; file_name_length];
-        reader.read_exact(&mut file_name_raw)?;
+        if let Err(e) = reader.read_exact(&mut file_name_raw) {
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Err(invalid!("File name extends beyond file boundary"));
+            }
+            return Err(e.into());
+        }
         let mut extra_field = vec![0u8; extra_field_length];
-        reader.read_exact(&mut extra_field)?;
+        if let Err(e) = reader.read_exact(&mut extra_field) {
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Err(invalid!("Extra field extends beyond file boundary"));
+            }
+            return Err(e.into());
+        }
 
         let file_name: Box<str> = match is_utf8 {
             true => String::from_utf8_lossy(&file_name_raw).into(),
