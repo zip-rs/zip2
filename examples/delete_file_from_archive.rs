@@ -1,0 +1,76 @@
+// See this dicussion for further background on why it is done like this:
+// https://github.com/zip-rs/zip/discussions/430
+
+use zip::result::{ZipError, ZipResult};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<_> = std::env::args().collect();
+    if args.len() < 3 {
+        return Err(format!(
+            "Usage: {:?} <filename> <file_within_archive_to_delete>",
+            args[0]
+        )
+        .into());
+    }
+    let filename = &*args[1];
+    let file_to_remove = &*args[2];
+    let base_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    remove_file(&base_dir, filename, file_to_remove, false)?;
+    Ok(())
+}
+
+fn remove_file(
+    base_dir: &std::path::Path,
+    archive_filename: &str,
+    file_to_remove: &str,
+    in_place: bool,
+) -> ZipResult<()> {
+    let unsafe_path = std::path::Path::new(archive_filename);
+    let joined = base_dir.join(unsafe_path);
+    let fname = joined.canonicalize().map_err(|_| ZipError::FileNotFound)?;
+    if !fname.starts_with(base_dir) {
+        return Err(ZipError::FileNotFound);
+    }
+    let zipfile = std::fs::File::open(&fname)?;
+
+    let mut archive = zip::ZipArchive::new(zipfile)?;
+
+    // Open a new, empty archive for writing to
+    let new_filename = replacement_filename(fname.as_path())?;
+    let new_file = std::fs::File::create(&new_filename)?;
+    let mut new_archive = zip::ZipWriter::new(new_file);
+
+    // Loop through the original archive:
+    //  - Skip the target file
+    //  - Copy everything else across as raw, which saves the bother of decoding it
+    // The end effect is to have a new archive, which is a clone of the original,
+    // save for the target file which has been omitted i.e. deleted
+    let target: &std::path::Path = file_to_remove.as_ref();
+    for i in 0..archive.len() {
+        let file = archive.by_index_raw(i)?;
+        match file.enclosed_name() {
+            Some(p) if p == target => (),
+            _ => new_archive.raw_copy_file(file)?,
+        }
+    }
+    new_archive.finish()?;
+
+    drop(archive);
+
+    // If we're doing this in place then overwrite the original with the new
+    if in_place {
+        std::fs::rename(new_filename, &fname)?;
+    }
+
+    Ok(())
+}
+
+fn replacement_filename(source: &std::path::Path) -> ZipResult<std::path::PathBuf> {
+    let mut new = std::path::PathBuf::from(source);
+    let mut stem = source.file_stem().ok_or(ZipError::FileNotFound)?.to_owned();
+    stem.push("_updated");
+    new.set_file_name(stem);
+    let ext = source.extension().ok_or(ZipError::FileNotFound)?;
+    new.set_extension(ext);
+    Ok(new)
+}
