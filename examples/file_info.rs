@@ -5,7 +5,7 @@ use std::io::BufReader;
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        return Err(anyhow!("Usage: {} <filename>", args[0]));
+        return Err(anyhow!("Usage: {:?} <filename>", args[0]));
     }
     let fname_arg = &args[1];
     // Determine a trusted base directory (current working directory).
@@ -34,7 +34,7 @@ fn main() -> Result<()> {
         let outpath = match file.enclosed_name() {
             Some(path) => path,
             None => {
-                println!("Entry {} has a suspicious path", file.name());
+                println!("Entry {:?} has a suspicious path", file.name());
                 continue;
             }
         };
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
             );
         } else {
             println!(
-                "Entry {} is a file with name \"{}\" ({} bytes)",
+                "Entry {} is a file with name {:?} ({} bytes)",
                 i,
                 outpath.display(),
                 file.size()
