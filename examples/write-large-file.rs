@@ -13,20 +13,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let filename = &*args[1];
         // Ensure that the filename is non-empty and has no path separators or parent directory references
-        let trimmed = filename.trim();
-        if trimmed.is_empty()
-            || trimmed.contains("..")
-            || trimmed.contains('/')
-            || trimmed.contains('\\')
+        let trimmed_filename = filename.trim();
+        if trimmed_filename.is_empty()
+            || trimmed_filename.contains("..")
+            || trimmed_filename.contains('/')
+            || trimmed_filename.contains('\\')
         {
             return Err("Invalid filename: must be a non-empty simple file name without path separators or '..'".into());
         }
-        let filename = trimmed;
         use std::io::Write;
 
         use zip::write::SimpleFileOptions;
 
-        let file = std::fs::File::create(filename)?;
+        let file = std::fs::File::create(trimmed_filename)?;
         let mut zip = zip::ZipWriter::new(file);
 
         let options = SimpleFileOptions::default()
