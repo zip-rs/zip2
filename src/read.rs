@@ -1,7 +1,5 @@
 //! Types for reading ZIP archives
 
-#[cfg(feature = "aes-crypto")]
-use crate::aes::{AesReader, AesReaderValid};
 use crate::cfg_if;
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
@@ -111,8 +109,6 @@ pub(crate) mod zip_archive {
     }
 }
 
-#[cfg(feature = "aes-crypto")]
-use crate::aes::PWD_VERIFY_LENGTH;
 use crate::extra_fields::UnicodeExtraField;
 use crate::result::ZipError::InvalidPassword;
 use crate::spec::is_dir;
@@ -126,7 +122,7 @@ pub(crate) enum CryptoReader<'a, R: Read> {
     ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut R>>),
     #[cfg(feature = "aes-crypto")]
     Aes {
-        reader: AesReaderValid<io::Take<&'a mut R>>,
+        reader: crate::aes::AesReaderValid<io::Take<&'a mut R>>,
         vendor_version: AesVendorVersion,
     },
 }
@@ -381,7 +377,15 @@ pub(crate) fn find_data_start(
         // If the value was already set in the meantime, ensure it matches (this is probably
         // unnecessary).
         Err(_) => {
-            debug_assert_eq!(*data.data_start.get().unwrap(), data_start);
+            debug_assert_eq!(
+                *data
+                    .data_start
+                    .get()
+                    .ok_or_else(|| ZipError::Io(std::io::Error::other(
+                        "Cannot get the data start"
+                    )))?,
+                data_start
+            );
         }
     }
 
@@ -411,7 +415,8 @@ pub(crate) fn make_crypto_reader<'a, R: Read>(
         }
         #[cfg(feature = "aes-crypto")]
         (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
-            reader: AesReader::new(reader, aes_mode, data.compressed_size).validate(password)?,
+            reader: crate::aes::AesReader::new(reader, aes_mode, data.compressed_size)
+                .validate(password)?,
             vendor_version,
         },
         (Some(password), None) => {
@@ -434,9 +439,9 @@ pub(crate) fn make_reader<R: Read>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
     crc32: u32,
-    reader: CryptoReader<R>,
+    reader: CryptoReader<'_, R>,
     flags: u16,
-) -> ZipResult<ZipFileReader<R>> {
+) -> ZipResult<ZipFileReader<'_, R>> {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
     Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
@@ -775,7 +780,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             None => Ok(None),
             Some((aes_mode, _, _)) => {
                 let (verification_value, salt) =
-                    AesReader::new(limit_reader, aes_mode, data.compressed_size)
+                    crate::aes::AesReader::new(limit_reader, aes_mode, data.compressed_size)
                         .get_verification_value_and_salt()?;
                 let aes_info = AesInfo {
                     aes_mode,
@@ -1150,7 +1155,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the index of a file entry by path, if it's present.
     #[inline(always)]
     pub fn index_for_path<T: AsRef<Path>>(&self, path: T) -> Option<usize> {
-        self.index_for_name(&path_to_string(path))
+        let path_as_string = &path_to_string(path).ok()?;
+        self.index_for_name(path_as_string)
     }
 
     /// Get the name of a file entry, if it's present.
@@ -1369,13 +1375,13 @@ impl<R: Read + Seek> ZipArchive<R> {
 }
 
 /// Holds the AES information of a file in the zip archive
-#[derive(Debug)]
 #[cfg(feature = "aes-crypto")]
+#[derive(Debug)]
 pub struct AesInfo {
     /// The AES encryption mode
     pub aes_mode: AesMode,
     /// The verification key
-    pub verification_value: [u8; PWD_VERIFY_LENGTH],
+    pub verification_value: [u8; crate::aes::PWD_VERIFY_LENGTH],
     /// The salt
     pub salt: Vec<u8>,
 }
@@ -1451,11 +1457,11 @@ fn central_header_to_zip_file_inner<R: Read>(
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
     let file_name: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_name_raw).into(),
-        false => file_name_raw.clone().from_cp437(),
+        false => file_name_raw.clone().from_cp437()?,
     };
     let file_comment: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_comment_raw).into(),
-        false => file_comment_raw.from_cp437(),
+        false => file_comment_raw.from_cp437()?,
     };
 
     // Construct the result
@@ -1941,8 +1947,8 @@ impl<'a, R: Read> ZipFile<'a, R> {
     }
 
     /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self) -> u64 {
-        *self.data.data_start.get().unwrap()
+    pub fn data_start(&self) -> Option<u64> {
+        Some(*self.data.data_start.get()?)
     }
 
     /// Get the starting offset of the zip header for this file
@@ -2192,6 +2198,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 
 #[cfg(test)]
 mod test {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
     use crate::types::SimpleFileOptions;

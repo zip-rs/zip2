@@ -10,14 +10,12 @@ use core::num::Wrapping;
 
 use crate::cfg_if_expr;
 use crate::result::ZipError;
-#[cfg(feature = "aes-crypto")]
-use crate::AesMode;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
-        mode: AesMode,
+        mode: crate::AesMode,
         password: &'k str,
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
@@ -29,7 +27,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         #[cfg(feature = "aes-crypto")]
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
-                mode: AesMode::arbitrary(u)?,
+                mode: crate::AesMode::arbitrary(u)?,
                 password: u.arbitrary::<&str>()?,
             });
         }

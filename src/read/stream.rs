@@ -208,6 +208,7 @@ impl ZipStreamFileMetadata {
 
 #[cfg(test)]
 mod test {
+    #![allow(clippy::unwrap_used)]
     use tempfile::TempDir;
 
     use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};

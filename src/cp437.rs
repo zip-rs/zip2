@@ -12,31 +12,36 @@ pub trait FromCp437 {
 }
 
 impl<'a> FromCp437 for &'a [u8] {
-    type Target = ::std::borrow::Cow<'a, str>;
+    type Target = Result<std::borrow::Cow<'a, str>, std::str::Utf8Error>;
 
     fn from_cp437(self) -> Self::Target {
-        if self.iter().all(|c| *c < 0x80) {
-            ::std::str::from_utf8(self).unwrap().into()
+        let result = if self.iter().all(|c| *c < 0x80) {
+            std::str::from_utf8(self)?.into()
         } else {
-            self.iter().map(|c| to_char(*c)).collect::<String>().into()
-        }
+            self.iter()
+                .filter_map(|c| to_char(*c))
+                .collect::<String>()
+                .into()
+        };
+        Ok(result)
     }
 }
 
 impl FromCp437 for Box<[u8]> {
-    type Target = Box<str>;
+    type Target = Result<Box<str>, std::string::FromUtf8Error>;
 
     fn from_cp437(self) -> Self::Target {
-        if self.iter().all(|c| *c < 0x80) {
-            String::from_utf8(self.into()).unwrap()
+        let target = if self.iter().all(|c| *c < 0x80) {
+            String::from_utf8(self.into())?
         } else {
-            self.iter().copied().map(to_char).collect()
+            self.iter().copied().filter_map(to_char).collect()
         }
-        .into_boxed_str()
+        .into_boxed_str();
+        Ok(target)
     }
 }
 
-fn to_char(input: u8) -> char {
+fn to_char(input: u8) -> Option<char> {
     let output = match input {
         0x00..=0x7f => input as u32,
         0x80 => 0x00c7,
@@ -168,11 +173,12 @@ fn to_char(input: u8) -> char {
         0xfe => 0x25a0,
         0xff => 0x00a0,
     };
-    ::std::char::from_u32(output).unwrap()
+    std::char::from_u32(output)
 }
 
 #[cfg(test)]
 mod test {
+    #![allow(clippy::unwrap_used)]
     #[test]
     fn to_char_valid() {
         for i in 0x00_u32..0x100 {
@@ -183,7 +189,7 @@ mod test {
     #[test]
     fn ascii() {
         for i in 0x00..0x80 {
-            assert_eq!(super::to_char(i), i as char);
+            assert_eq!(super::to_char(i), Some(i as char));
         }
     }
 
@@ -194,7 +200,7 @@ mod test {
         use super::FromCp437;
         let data = b"Cura\x87ao";
         assert!(::std::str::from_utf8(data).is_err());
-        assert_eq!(data.from_cp437(), "Curaçao");
+        assert_eq!(data.from_cp437().unwrap(), "Curaçao");
     }
 
     #[test]
@@ -202,6 +208,6 @@ mod test {
         use super::FromCp437;
         let data = vec![0xCC, 0xCD, 0xCD, 0xB9];
         assert!(String::from_utf8(data.clone()).is_err());
-        assert_eq!(&*data.from_cp437(), "╠══╣");
+        assert_eq!(&*data.from_cp437().unwrap(), "╠══╣");
     }
 }
