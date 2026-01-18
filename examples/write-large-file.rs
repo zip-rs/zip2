@@ -12,7 +12,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "_deflate-any")]
     {
         let filename = &*args[1];
-        // Ensure that the filename is non-empty and has no path separators or parent directory references
+        // Ensure that the filename is non-empty and has no path separators or parent directory references.
+        // WARNING: This check is not sufficient to prevent TOCTOU (Time-of-check to time-of-use)
+        // race conditions. An attacker could create a symbolic link with a "safe" name that
+        // points to a sensitive file. When `File::create` is called, it will follow the
+        // symlink and may overwrite the target file. This is example code and is not
+        // intended for use in production.
         let trimmed_filename = filename.trim();
         if trimmed_filename.is_empty()
             || trimmed_filename.contains("..")
