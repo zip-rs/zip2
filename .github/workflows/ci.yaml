@@ -26,6 +26,7 @@ jobs:
   build_and_test:
     strategy:
       matrix:
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml', 'cli/Cargo.toml', 'cli/clite/Cargo.toml']
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
         workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
@@ -56,14 +57,18 @@ jobs:
   miri:
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml', 'cli/Cargo.toml', 'cli/clite/Cargo.toml']
         feature_flag:
         - "--all-features"
         - "--no-default-features"
         - ""
-        - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-        - "--no-default-features --features zip/deflate-zopfli"
-    name: 'Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
+        include:
+          # Break out a separate test shard for specific dependencies on their own.
+        - feature_flag: "--no-default-features --features deflate-flate2-zlib-rs"
+          workspace: 'Cargo.toml'
+        - feature_flag: "--no-default-features --features deflate-zopfli"
+          workspace: 'Cargo.toml'
+    name: 'Miri ${{ matrix.feature_flag }}'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
@@ -98,6 +103,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: fmt fuzz
         run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
+      - name: fmt cli
+        run: cargo fmt --all --manifest-path ${{ github.workspace }}/cli/Cargo.toml -- --check
+      - name: fmt clite
+        run: cargo fmt --all --manifest-path ${{ github.workspace }}/cli/clite/Cargo.toml -- --check
 
   check_minimal_versions:
     strategy:
@@ -120,7 +129,7 @@ jobs:
   style_and_docs:
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ['Cargo.toml', 'fuzz/Cargo.toml', 'cli/Cargo.toml', 'cli/clite/Cargo.toml']
         feature_flag: ["--all-features", "--no-default-features", ""]
     name: 'Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
     runs-on: ubuntu-latest
