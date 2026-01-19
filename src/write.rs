@@ -266,7 +266,9 @@ impl ExtendedFileOptions {
                 &mut self.extra_data
             };
             let vec = Arc::get_mut(field);
-            let vec = if let Some(exclusive) = vec { exclusive } else {
+            let vec = if let Some(exclusive) = vec {
+                exclusive
+            } else {
                 *field = Arc::new(field.to_vec());
                 Arc::get_mut(field)
                     .ok_or_else(|| std::io::Error::other("Cannot get field as mutable"))?
