@@ -8,7 +8,7 @@
 //!
 //! # useful commands
 //! wasm-pack test --headless --chrome
-//! wasm-pack test --firefox
+//! wasm-pack test --headless --firefox
 //! wasm-pack test --node
 //! ```
 //!
