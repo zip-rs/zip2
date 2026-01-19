@@ -12,15 +12,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "_deflate-any")]
     {
         let filename = &*args[1];
-        // Ensure that the filename has no path separators or parent directory references
-        if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-            return Err("Invalid filename: path separators or '..' are not allowed".into());
+        // Ensure that the filename is non-empty and has no path separators or parent directory references.
+        // WARNING: This check is not sufficient to prevent TOCTOU (Time-of-check to time-of-use)
+        // race conditions. An attacker could create a symbolic link with a "safe" name that
+        // points to a sensitive file. When `File::create` is called, it will follow the
+        // symlink and may overwrite the target file. This is example code and is not
+        // intended for use in production.
+        let trimmed_filename = filename.trim();
+        if trimmed_filename.is_empty()
+            || trimmed_filename.contains("..")
+            || trimmed_filename.contains('/')
+            || trimmed_filename.contains('\\')
+        {
+            return Err("Invalid filename: must be a non-empty simple file name without path separators or '..'".into());
         }
         use std::io::Write;
 
         use zip::write::SimpleFileOptions;
 
-        let file = std::fs::File::create(filename)?;
+        let file = std::fs::File::create(trimmed_filename)?;
         let mut zip = zip::ZipWriter::new(file);
 
         let options = SimpleFileOptions::default()
