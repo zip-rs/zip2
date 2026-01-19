@@ -25,18 +25,19 @@ fn test_absolute_paths() -> ZipResult<()> {
     println!("ZIP file created with {} entries", archive.len());
 
     // Test individual file access
+    assert_eq!(archive.len(), 3); // directory + 2 files
+    
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        println!("File {}: {}", i, file.name());
-
         let enclosed_name = file.enclosed_name();
+        
+        // Verify that enclosed_name properly handles the paths
         match enclosed_name {
             Some(path) => {
-                println!("  Enclosed name: {:?}", path);
-                println!("  Is absolute: {}", path.is_absolute());
+                assert!(!path.is_absolute(), "Enclosed path should not be absolute: {:?}", path);
             }
             None => {
-                println!("  Enclosed name: None (invalid path)");
+                // This might be expected for certain invalid paths
             }
         }
     }
