@@ -63,7 +63,7 @@ jobs:
     needs: build_and_test
     strategy:
       matrix:
-        browser_flags: ["--headless --chrome", "--firefox", "--node"]
+        browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
         rustalias: [stable, nightly]
         manifest: ["Cargo.toml"]
         feature_flag:
