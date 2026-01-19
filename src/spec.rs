@@ -164,12 +164,22 @@ pub(crate) unsafe trait Pod: Copy + 'static {
 
     #[inline]
     fn as_bytes(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(std::ptr::from_ref::<Self>(self).cast::<u8>(), mem::size_of::<Self>()) }
+        unsafe {
+            slice::from_raw_parts(
+                std::ptr::from_ref::<Self>(self).cast::<u8>(),
+                mem::size_of::<Self>(),
+            )
+        }
     }
 
     #[inline]
     fn as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe { slice::from_raw_parts_mut(std::ptr::from_mut::<Self>(self).cast::<u8>(), mem::size_of::<Self>()) }
+        unsafe {
+            slice::from_raw_parts_mut(
+                std::ptr::from_mut::<Self>(self).cast::<u8>(),
+                mem::size_of::<Self>(),
+            )
+        }
     }
 }
 

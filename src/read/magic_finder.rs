@@ -190,9 +190,10 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
 
             self.mid_buffer_offset = None;
 
-            if let Some(new_cursor) = self
-                .finder
-                .move_cursor(self.cursor, self.bounds, self.buffer.len()) {
+            if let Some(new_cursor) =
+                self.finder
+                    .move_cursor(self.cursor, self.bounds, self.buffer.len())
+            {
                 self.cursor = new_cursor;
             } else {
                 // Destroy the finder when we've reached the end of the bounds.
