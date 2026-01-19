@@ -55,6 +55,9 @@ typed-path = "0.12"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 getrandom = { version = "0.3", default-features = false, optional = true }
+time = { version = "0.3", default-features = false, optional = true, features = [
+    "wasm-bindgen"
+] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 getrandom = { version = "0.3", default-features = false }
@@ -114,7 +117,7 @@ default = [
     "xz",
 ]
 
-[target.'cfg(not(target_arch = "wasm32"))'.features]
+# The following features are not supported on wasm
 bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
 # Pull in flate2 and the zlib backend; only use this if you need a dynamically linked system zlib
 deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
