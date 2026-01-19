@@ -2,14 +2,16 @@
 
 use std::io::{self, Read, Write};
 use zip::write::ZipWriter;
-use zip::{result::ZipError, write::SimpleFileOptions, AesMode, CompressionMethod, ZipArchive};
+#[cfg(feature = "deflate-flate2")]
+use zip::CompressionMethod::Deflated;
+use zip::{result::ZipError, write::SimpleFileOptions, AesMode, ZipArchive};
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 
 const PASSWORD: &[u8] = b"helloworld";
 
 #[test]
-fn aes256_encrypted_uncompressed_file() {
+pub fn aes256_encrypted_uncompressed_file() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
         .expect("couldn't open test zip file");
 
@@ -92,6 +94,7 @@ fn aes128_stored_roundtrip() {
 }
 
 #[test]
+#[cfg(feature = "deflate-flate2")]
 fn aes256_deflated_roundtrip() {
     let cursor = {
         let mut zip = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
@@ -99,7 +102,7 @@ fn aes256_deflated_roundtrip() {
         zip.start_file(
             "test.txt",
             SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Deflated)
+                .compression_method(Deflated)
                 .with_aes_encryption(AesMode::Aes256, "some password"),
         )
         .unwrap();
