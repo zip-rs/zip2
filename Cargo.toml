@@ -45,7 +45,7 @@ time = { version = "0.3", default-features = false, optional = true, features = 
     "std",
 ] }
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
-zstd = { version = "0.13", optional = true, default-features = false }
+zstd = { version = "^0.13.3", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.10", optional = true }
 lzma-rust2 = { version = "0.15", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
