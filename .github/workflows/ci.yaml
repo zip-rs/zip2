@@ -10,10 +10,10 @@ concurrency:
 on:
   pull_request:
     branches:
-      - 'master'
+      - "master"
   push:
     branches-ignore:
-      - 'gh-readonly-queue/**'
+      - "gh-readonly-queue/**"
   workflow_dispatch:
   merge_group:
     types: [checks_requested]
@@ -24,63 +24,101 @@ env:
 
 jobs:
   build_and_test:
+    needs:
+      - cargo_fmt
+      - style_and_docs
+      - miri
+      - check_minimal_versions
+      - cargo_semver
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag:
-        - "--all-features"
-        - "--no-default-features"
-        - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-        - "--no-default-features --features zip/deflate-zopfli"
-        - ""
+          - "--all-features"
+          - "--no-default-features"
+          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+          - "--no-default-features --features zip/deflate-zopfli"
+          - ""
         include:
-        - rustalias: stable
-          rust: stable
-        - rustalias: msrv
-          rust: '1.83'
-        - rustalias: nightly
-          rust: nightly
+          - rustalias: stable
+            rust: stable
+          - rustalias: msrv
+            rust: "1.83"
+          - rustalias: nightly
+            rust: nightly
         exclude:
           - rustalias: msrv
-            workspace: 'fuzz/Cargo.toml'
-    name: 'Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
+            workspace: "fuzz/Cargo.toml"
+    name: "Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v6
-    - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - uses: actions/checkout@v6
+      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
-    - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
-    - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
+      - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
+      - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
+  wasm:
+    needs: build_and_test
+    strategy:
+      matrix:
+        browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
+        rustalias: [stable, nightly]
+        manifest: ["Cargo.toml"]
+        feature_flag:
+          - "" # default features
+          - "--no-default-features"
+          - "--all-features"
+        include:
+          - rustalias: stable
+            rust: stable
+          - rustalias: nightly
+            rust: nightly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo install wasm-pack --locked
+      - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
   miri:
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag:
-        - "--all-features"
-        - "--no-default-features"
-        - ""
-        - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-        - "--no-default-features --features zip/deflate-zopfli"
-    name: 'Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
+          - "--all-features"
+          - "--no-default-features"
+          - ""
+          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+          - "--no-default-features --features zip/deflate-zopfli"
+    name: "Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - run: sudo apt-get update
-    - run: sudo apt-get install crossbuild-essential-s390x
-    - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
-    - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
-    - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
-    - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-    - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: sudo apt update
+      - run: sudo apt install crossbuild-essential-s390x
+      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
+      - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
+      - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
+      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
+      - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
   cargo_semver:
     strategy:
       matrix:
         # Only do semver checks on the released library.
-        workspace: ['Cargo.toml']
-        feature_group: ["all-features", "default-features", "only-explicit-features"]
-    name: 'Semver checks: ${{ matrix.feature_group }}'
+        workspace: ["Cargo.toml"]
+        feature_group:
+          ["all-features", "default-features", "only-explicit-features"]
+    name: "Semver checks: ${{ matrix.feature_group }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -90,9 +128,12 @@ jobs:
           feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
@@ -103,7 +144,7 @@ jobs:
     strategy:
       matrix:
         # Only check minimal versions for the released library.
-        workspace: ['Cargo.toml']
+        workspace: ["Cargo.toml"]
     runs-on: ubuntu-latest
 
     steps:
@@ -120,32 +161,29 @@ jobs:
   style_and_docs:
     strategy:
       matrix:
-        workspace: ['Cargo.toml', 'fuzz/Cargo.toml']
+        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag: ["--all-features", "--no-default-features", ""]
-    name: 'Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}'
+    name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-    - name: Install required cargo
-      run: cargo install clippy-sarif sarif-fmt
-    - run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
-    - name: Upload analysis results to GitHub
-      if: always()
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: rust-clippy-results.sarif
-        wait-for-processing: true
-    - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+      - uses: actions/checkout@v6
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+      - name: Install required cargo
+        run: cargo install clippy-sarif sarif-fmt
+      - run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+      - name: Upload analysis results to GitHub
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: rust-clippy-results.sarif
+          wait-for-processing: true
+      - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   fuzz_read:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
+      - wasm
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -170,9 +208,9 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \;
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
         uses: actions/upload-artifact@v6
         with:
@@ -196,10 +234,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
+      - wasm
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -222,8 +257,8 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \;
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v6
@@ -242,10 +277,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
+      - wasm
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -270,9 +302,9 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \;
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
         uses: actions/upload-artifact@v6
         with:
@@ -296,10 +328,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
-      - cargo_fmt
-      - style_and_docs
-      - miri
-      - check_minimal_versions
+      - wasm
     steps:
       - uses: actions/checkout@v6
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -322,8 +351,8 @@ jobs:
       - name: Rename files
         if: always()
         run: |
-          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \;
-          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \;
+          find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
+          find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v6
