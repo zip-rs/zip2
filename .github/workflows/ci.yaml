@@ -69,7 +69,7 @@ jobs:
         feature_flag:
           - "" # default features
           - "--no-default-features"
-          - "--all-features"
+          - "--features chrono,jiff-02,nt-time,legacy-zip"
         include:
           - rustalias: stable
             rust: stable
