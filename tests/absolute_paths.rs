@@ -29,24 +29,29 @@ fn test_absolute_paths() -> ZipResult<()> {
     
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        let enclosed_name = file.enclosed_name();
-        
+
         // Verify that enclosed_name properly handles the paths
-        match enclosed_name {
-            Some(path) => {
-                assert!(!path.is_absolute(), "Enclosed path should not be absolute: {:?}", path);
-            }
-            None => {
-                // This might be expected for certain invalid paths
-            }
-        }
+        let enclosed_name = file.enclosed_name().expect("enclosed_name should not be None for valid paths");
+        assert!(!enclosed_name.is_absolute(), "enclosed_name for '{}' should be relative, but was: {:?}", file.name(), enclosed_name);
     }
 
     // Try to extract the ZIP file
     let temp_dir = tempfile::TempDir::new()?;
     
     archive.extract(temp_dir.path())?;
-    
+
+    let base_path = temp_dir.path();
+    assert!(base_path.join("_").is_dir());
+    assert!(base_path.join("_/subdir").is_dir());
+
+    let test_file_path = base_path.join("_/test.txt");
+    assert!(test_file_path.is_file());
+    assert_eq!(std::fs::read_to_string(test_file_path)?, "Hello, World!");
+
+    let nested_file_path = base_path.join("_/subdir/nested.txt");
+    assert!(nested_file_path.is_file());
+    assert_eq!(std::fs::read_to_string(nested_file_path)?, "Nested file content");
+
     // Verify extraction results with assertions
     let extracted_files: Vec<_> = std::fs::read_dir(temp_dir.path())?.collect();
     assert!(!extracted_files.is_empty(), "Should have extracted at least one file");
