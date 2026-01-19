@@ -1,7 +1,7 @@
 use std::io::Write;
+use zip::result::ZipResult;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
-use zip::result::ZipResult;
 
 #[test]
 fn test_absolute_paths() -> ZipResult<()> {
@@ -18,17 +18,17 @@ fn test_absolute_paths() -> ZipResult<()> {
     writer.write_all(b"Nested file content")?;
 
     let zip_data = writer.finish()?.into_inner();
-    
+
     // Try to read the ZIP file
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data))?;
-    
+
     println!("ZIP file created with {} entries", archive.len());
-    
+
     // Test individual file access
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
         println!("File {}: {}", i, file.name());
-        
+
         let enclosed_name = file.enclosed_name();
         match enclosed_name {
             Some(path) => {
@@ -40,11 +40,11 @@ fn test_absolute_paths() -> ZipResult<()> {
             }
         }
     }
-    
+
     // Try to extract the ZIP file
     let temp_dir = tempfile::TempDir::new()?;
     println!("Extracting to: {:?}", temp_dir.path());
-    
+
     archive.extract(temp_dir.path())?;
     let extracted_files = std::fs::read_dir(temp_dir.path())?;
     for entry in extracted_files {
