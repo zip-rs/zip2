@@ -1,0 +1,62 @@
+use std::io::Write;
+use zip::write::SimpleFileOptions;
+use zip::{ZipArchive, ZipWriter};
+use zip::result::ZipResult;
+
+#[test]
+fn test_absolute_paths() -> ZipResult<()> {
+    // Create a ZIP file with absolute paths
+    let buf = Vec::new();
+    let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
+    let options = SimpleFileOptions::default();
+
+    // Create entries with absolute paths
+    writer.add_directory("/_/", options)?;
+    writer.start_file("/_/test.txt", options)?;
+    writer.write_all(b"Hello, World!")?;
+    writer.start_file("/_/subdir/nested.txt", options)?;
+    writer.write_all(b"Nested file content")?;
+
+    let zip_data = writer.finish()?.into_inner();
+    
+    // Try to read the ZIP file
+    let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data))?;
+    
+    println!("ZIP file created with {} entries", archive.len());
+    
+    // Test individual file access
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        println!("File {}: {}", i, file.name());
+        
+        let enclosed_name = file.enclosed_name();
+        match enclosed_name {
+            Some(path) => {
+                println!("  Enclosed name: {:?}", path);
+                println!("  Is absolute: {}", path.is_absolute());
+            }
+            None => {
+                println!("  Enclosed name: None (invalid path)");
+            }
+        }
+    }
+    
+    // Try to extract the ZIP file
+    let temp_dir = tempfile::TempDir::new()?;
+    println!("Extracting to: {:?}", temp_dir.path());
+    
+    archive.extract(temp_dir.path())?;
+    let extracted_files = std::fs::read_dir(temp_dir.path())?;
+    for entry in extracted_files {
+        let entry = entry?;
+        println!("  Extracted: {:?}", entry.path());
+    }
+
+    // Check specific files
+    let test_file = temp_dir.path().join("_/test.txt");
+    if test_file.exists() {
+        let content = std::fs::read_to_string(&test_file)?;
+        println!("  Content of _/test.txt: {}", content);
+    }
+    Ok(())
+}
