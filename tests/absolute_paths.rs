@@ -1,7 +1,7 @@
 use std::io::Write;
 use zip::result::ZipResult;
 use zip::write::SimpleFileOptions;
-use zip::{cfg_if, cfg_if_expr, ZipArchive, ZipWriter};
+use zip::{cfg_if_expr, ZipArchive, ZipWriter};
 
 #[test]
 fn test_absolute_paths() -> ZipResult<()> {
@@ -15,7 +15,6 @@ fn test_absolute_paths() -> ZipResult<()> {
         },
         _ => SimpleFileOptions::default()
     );
-
 
     // Create entries with absolute paths
     writer.add_directory("/_/", options)?;
