@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        return Err(format!("Usage: {} <filename>", args[0]).into());
+        return Err(format!("Usage: {:?} <filename>", args[0]).into());
     }
 
     #[cfg(feature = "_deflate-any")]
