@@ -38,11 +38,11 @@ fn read_entry(bench: &mut Bencher) {
 }
 
 fn read_entry_iterable(bench: &mut Bencher) {
-    use zip::read::IterableZipArchive;
+    use zip::read::IterableZip;
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size);
     let mut archive =
-        IterableZipArchive::try_new(Cursor::new(bytes.as_slice()), Config::default()).unwrap();
+        IterableZip::try_new(Cursor::new(bytes.as_slice()), Config::default()).unwrap();
 
     bench.iter(|| {
         let file = archive
