@@ -1,4 +1,9 @@
-use anyhow::{anyhow, Result};
+//! Example to write a zip dir
+//!
+//! ```sh
+//! cargo run --example write_dir src/ dest.zip xz
+//! ```
+
 use clap::{Parser, ValueEnum};
 use walkdir::WalkDir;
 use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
@@ -28,41 +33,46 @@ enum CompressionMethod {
     Zstd,
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let src_dir = &args.source;
-    let dst_file = &args.destination;
-    let method: Result<zip::CompressionMethod> = match args.compression_method {
-        CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
-        CompressionMethod::Deflated => cfg_if_expr! {
-            #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
-            _ => Err(anyhow!("The `deflate-flate2` features are not enabled")),
-        },
-        CompressionMethod::Bzip2 => cfg_if_expr! {
-            #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
-            _ => Err(anyhow!("The `bzip2` features are not enabled")),
-        },
-        CompressionMethod::Xz => cfg_if_expr! {
-            #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
-            _ => Err(anyhow!("The `xz` feature is not enabled")),
-        },
-        CompressionMethod::Zstd => cfg_if_expr! {
-            #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
-            _ => Err(anyhow!("The `zstd` feature is not enabled")),
-        },
-    };
+    let dest_file = &args.destination;
+    let method: Result<zip::CompressionMethod, Box<dyn std::error::Error>> =
+        match args.compression_method {
+            CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
+            CompressionMethod::Deflated => cfg_if_expr! {
+                #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
+                _ => Err("The `deflate-flate2` features are not enabled".into()),
+            },
+            CompressionMethod::Bzip2 => cfg_if_expr! {
+                #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
+                _ => Err("The `bzip2` features are not enabled".into()),
+            },
+            CompressionMethod::Xz => cfg_if_expr! {
+                #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
+                _ => Err("The `xz` feature is not enabled".into()),
+            },
+            CompressionMethod::Zstd => cfg_if_expr! {
+                #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
+                _ => Err("The `zstd` feature is not enabled".into()),
+            },
+        };
     let method = method?;
-    zip_dir(src_dir, dst_file, method)?;
-    println!("done: {src_dir:?} written to {dst_file:?}");
+    zip_dir(src_dir, dest_file, method)?;
+    println!("done: {src_dir:?} written to {dest_file:?}");
     Ok(())
 }
 
-fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> Result<()> {
+fn zip_dir(
+    src_dir: &Path,
+    dest_file: &Path,
+    method: zip::CompressionMethod,
+) -> Result<(), Box<dyn std::error::Error>> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }
 
-    let path = Path::new(dst_file);
+    let path = Path::new(dest_file);
     let file = File::create(path)?;
 
     let walkdir = WalkDir::new(src_dir);
@@ -80,7 +90,7 @@ fn zip_dir(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> R
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
-            .ok_or_else(|| anyhow!("{name:?} is a Non UTF-8 Path"))?;
+            .ok_or_else(|| format!("{name:?} is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!

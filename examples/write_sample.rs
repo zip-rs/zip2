@@ -3,13 +3,14 @@ use std::io::{ErrorKind, Write};
 use std::path::Path;
 use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
-#[cfg(feature = "aes-crypto")]
-use zip::{AesMode, CompressionMethod};
+use zip::CompressionMethod::Stored;
+#[cfg(all(feature = "aes-crypto", feature = "zstd"))]
+use zip::{AesMode, CompressionMethod::Zstd};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <filename>", args[0]);
+        eprintln!("Usage: {:?} <filename>", args[0]);
         return Err("Wrong usage".into());
     }
 
@@ -57,7 +58,7 @@ fn write_zip_file(filename: &str) -> zip::result::ZipResult<()> {
     zip.add_directory("test/", SimpleFileOptions::default())?;
 
     let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
+        .compression_method(Stored)
         .unix_permissions(0o755);
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
@@ -65,12 +66,12 @@ fn write_zip_file(filename: &str) -> zip::result::ZipResult<()> {
     zip.start_file("test/lorem_ipsum.txt", options)?;
     zip.write_all(LOREM_IPSUM)?;
 
-    #[cfg(feature = "aes-crypto")]
+    #[cfg(all(feature = "aes-crypto", feature = "zstd"))]
     {
         zip.start_file(
             "test/lorem_ipsum.aes.txt",
             options
-                .compression_method(CompressionMethod::Zstd)
+                .compression_method(Zstd)
                 .with_aes_encryption(AesMode::Aes256, "password"),
         )?;
         zip.write_all(LOREM_IPSUM)?;

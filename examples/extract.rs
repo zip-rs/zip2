@@ -7,14 +7,14 @@ use zip::ZipArchive;
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <filename>", args[0]);
+        eprintln!("Usage: {:?} <filename>", args[0]);
         return Err("Wrong usage".into());
     }
 
     let file_arg = &args[1];
     if file_arg.contains("..") || file_arg.contains('/') || file_arg.contains('\\') {
         eprintln!(
-            "Error: invalid filename '{}'. Directory separators and \"..\" are not allowed.",
+            "Error: invalid filename {:?}. Directory separators and \"..\" are not allowed.",
             file_arg
         );
         return Err("Invalid filename".into());
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let out_root = candidate_path.components().collect::<std::path::PathBuf>();
     if !out_root.starts_with(&base_dir) {
         eprintln!(
-            "Error: path '{}' escapes the allowed directory.",
+            "Error: path {:?} escapes the allowed directory.",
             candidate_path.display()
         );
         return Err("Invalid path".into());
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Some(path) => path,
             None => {
                 eprintln!(
-                    "Error: unable to extract file {} because it has an invalid path.",
+                    "Error: unable to extract file {:?} because it has an invalid path.",
                     file.name()
                 );
                 some_files_failed = true;
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
         let comment = file.comment();
         if !comment.is_empty() {
-            println!("File {i} comment: {comment}");
+            println!("File {i} comment: {comment:?}");
         }
         if file.is_dir() {
             if let Err(e) = fs::create_dir_all(&out_path) {

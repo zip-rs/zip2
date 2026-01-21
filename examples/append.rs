@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::io::{self, Write};
 use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
@@ -41,7 +40,7 @@ fn gather_files<'a, T: Into<&'a Path>>(path: T, base: &Path, files: &mut Vec<Pat
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
-        eprintln!("Usage: {} <existing archive> <folder_to_append>", args[0]);
+        eprintln!("Usage: {:?} <existing archive> <folder_to_append>", args[0]);
         return Err("Wrong usage".into());
     }
 
@@ -52,12 +51,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(dir) => match dir.canonicalize() {
             Ok(c) => c,
             Err(e) => {
-                let _ = writeln!(io::stderr(), "Failed to canonicalize base directory: {}", e);
+                eprintln!("Failed to canonicalize base directory: {}", e);
                 return Err(e.into());
             }
         },
         Err(e) => {
-            let _ = writeln!(io::stderr(), "Failed to determine current directory: {}", e);
+            eprintln!("Failed to determine current directory: {}", e);
             return Err(e.into());
         }
     };
@@ -76,18 +75,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             base_dir.join(path)
         }
         Err(e) => {
-            let _ = writeln!(io::stderr(), "Invalid path: {}", e);
+            eprintln!("Invalid path: {}", e);
             return Err(e.into());
         }
     };
     let to_append = match to_append.canonicalize() {
         Ok(p) => p,
         Err(e) => {
-            let _ = writeln!(
-                io::stderr(),
-                "Failed to canonicalize append directory: {}",
-                e
-            );
+            eprintln!("Failed to canonicalize append directory: {}", e);
             return Err(e.into());
         }
     };
