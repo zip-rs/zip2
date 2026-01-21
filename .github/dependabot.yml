@@ -17,6 +17,22 @@ updates:
     commit-message:
       prefix: "test(fuzz)"
       include: "scope"
+  - package-ecosystem: cargo
+    directory: "/fuzz/read"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "test(fuzz)"
+      include: "scope"
+  - package-ecosystem: cargo
+    directory: "/fuzz/write"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "test(fuzz)"
+      include: "scope"
   - package-ecosystem: "github-actions" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:

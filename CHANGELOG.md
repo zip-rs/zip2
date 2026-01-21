@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.2.0](https://github.com/zip-rs/zip2/compare/v7.1.0...v7.2.0) - 2026-01-20
+
+### <!-- 0 -->🚀 Features
+
+- add read_zipfile_from_stream_with_compressed_size ([#70](https://github.com/zip-rs/zip2/pull/70))
+- Allow choosing bzip2 rust backend ([#329](https://github.com/zip-rs/zip2/pull/329))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Need to include zip64 extra field in central directory (fix #353) ([#360](https://github.com/zip-rs/zip2/pull/360))
+- Fails to extract file which might or might not be malformed ([#376](https://github.com/zip-rs/zip2/pull/376)) ([#426](https://github.com/zip-rs/zip2/pull/426))
+- *(aes)* Allow AES encryption while streaming ([#463](https://github.com/zip-rs/zip2/pull/463))
+- Default "platform" field in zip files should be set to the local platform, rather than always "Unix" ([#470](https://github.com/zip-rs/zip2/pull/470)) ([#471](https://github.com/zip-rs/zip2/pull/471))
+
+### <!-- 2 -->🚜 Refactor
+
+- Define cfg_if! and cfg_if_expr! internal macros ([#438](https://github.com/zip-rs/zip2/pull/438))
+
+### <!-- 4 -->⚡ Performance
+
+- Change an assert to debug_assert when encrypting/decrypting AES, and eliminate a fallible operation ([#521](https://github.com/zip-rs/zip2/pull/521))
+- eliminate a String clone per new file added to archive, and other related refactors ([#522](https://github.com/zip-rs/zip2/pull/522))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Fix another merge error, this one affecting only builds with flate2 and not zopfli
+- Fix more merge issues
+- Fix merge
+- Fix write_dir build errors on specific feature configs
+- Fix clippy warning
+- Fix --all-features build error
+- Fix merge
+
+## [7.1.0](https://github.com/zip-rs/zip2/compare/v7.0.0...v7.1.0) - 2026-01-14
+
+### <!-- 0 -->🚀 Features
+
+- display the underlying error in Display impl for ZipError::Display ([#483](https://github.com/zip-rs/zip2/pull/483))
+- Enable creation of `ZipArchive` without reparsing ([#485](https://github.com/zip-rs/zip2/pull/485))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Return InvalidPassword rather than panic when AES key is the wrong length ([#457](https://github.com/zip-rs/zip2/pull/457))
+- bench with auto zip64 comment ([#505](https://github.com/zip-rs/zip2/pull/505))
+- add condition for `getrandom` dependency ([#504](https://github.com/zip-rs/zip2/pull/504))
+- *(zipcrypto)* Support streaming ZipCrypto encryption, don't store entire file in memory ([#462](https://github.com/zip-rs/zip2/pull/462))
+
+### <!-- 2 -->🚜 Refactor
+
+- Clean up imports and move types ([#461](https://github.com/zip-rs/zip2/pull/461))
+- Replace handwritten `Ord` and `PartialOrd` for `DateTime` ([#484](https://github.com/zip-rs/zip2/pull/484))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Lock `lzma-rust2` to at least 0.15.5 ([#491](https://github.com/zip-rs/zip2/pull/491))
+
 ## [7.0.0](https://github.com/zip-rs/zip2/compare/v6.0.0...v7.0.0) - 2025-12-05
 
 ### <!-- 9 -->⚠️ Breaking Changes
@@ -35,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deps
 
-- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))*] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
+- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))
 
 ## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
 
@@ -107,6 +163,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
 - Move deprecated annotations to fix a Clippy warning ([#391](https://github.com/zip-rs/zip2/pull/391))
+
 ## [4.3.0](https://github.com/zip-rs/zip2/compare/v4.2.0...v4.3.0) - 2025-07-09
 
 ### <!-- 0 -->🚀 Features

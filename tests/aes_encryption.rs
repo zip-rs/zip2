@@ -2,34 +2,34 @@
 
 use std::io::{self, Read, Write};
 use zip::write::ZipWriter;
-use zip::{result::ZipError, write::SimpleFileOptions, AesMode, CompressionMethod, ZipArchive};
+#[cfg(feature = "deflate-flate2")]
+use zip::CompressionMethod::Deflated;
+use zip::{result::ZipError, write::SimpleFileOptions, AesMode, ZipArchive};
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 
 const PASSWORD: &[u8] = b"helloworld";
 
 #[test]
-fn aes256_encrypted_uncompressed_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+pub fn aes256_encrypted_uncompressed_file() {
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_256_uncompressed", PASSWORD)
         .expect("couldn't find file in archive");
     assert_eq!("secret_data_256_uncompressed", file.name());
 
-    let mut content = String::new();
-    file.read_to_string(&mut content)
+    let mut decrypted_content = String::new();
+    file.read_to_string(&mut decrypted_content)
         .expect("couldn't read encrypted file");
-    assert_eq!(SECRET_CONTENT, content);
+    assert_eq!(SECRET_CONTENT, decrypted_content);
 }
 
 #[test]
 fn aes256_encrypted_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_256", PASSWORD)
@@ -44,9 +44,8 @@ fn aes256_encrypted_file() {
 
 #[test]
 fn aes192_encrypted_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_192", PASSWORD)
@@ -61,9 +60,8 @@ fn aes192_encrypted_file() {
 
 #[test]
 fn aes128_encrypted_file() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
+        .expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name_decrypt("secret_data_128", PASSWORD)
@@ -96,6 +94,7 @@ fn aes128_stored_roundtrip() {
 }
 
 #[test]
+#[cfg(feature = "deflate-flate2")]
 fn aes256_deflated_roundtrip() {
     let cursor = {
         let mut zip = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
@@ -103,7 +102,7 @@ fn aes256_deflated_roundtrip() {
         zip.start_file(
             "test.txt",
             SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Deflated)
+                .compression_method(Deflated)
                 .with_aes_encryption(AesMode::Aes256, "some password"),
         )
         .unwrap();

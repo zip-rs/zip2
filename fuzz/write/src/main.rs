@@ -12,6 +12,7 @@ use std::ops;
 use std::path::PathBuf;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
+use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
@@ -65,6 +66,28 @@ impl FileOperation<'_> {
                 .flat_map(|(op, abort)| if !abort { op.get_path() } else { None })
                 .next(),
             _ => Some(self.path.to_owned()),
+        }
+    }
+
+    fn is_streamable(&self) -> bool {
+        match &self.basic {
+            BasicFileOperation::WriteNormalFile { options, .. }
+            | BasicFileOperation::WriteDirectory(options)
+            | BasicFileOperation::WriteSymlinkWithTarget { options, .. } => {
+                !options.has_encryption()
+            }
+            BasicFileOperation::ShallowCopy(base) => base.is_streamable(),
+            BasicFileOperation::DeepCopy(base) => base.is_streamable(),
+            BasicFileOperation::MergeWithOtherFile {
+                operations,
+                initial_junk,
+            } => {
+                if !initial_junk.is_empty() {
+                    return false;
+                }
+                operations.iter().all(|(op, _)| op.is_streamable())
+            }
+            _ => true,
         }
     }
 }
@@ -302,6 +325,9 @@ impl FuzzTestCase<'_> {
         mut stringifier: impl ops::DerefMut<Target = W>,
         panic_on_error: bool,
     ) -> ZipResult<()> {
+        // Indicates the starting position if we use read_zipfile_from_stream at the end.
+        let junk_len = self.initial_junk.len();
+
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
         let mut writer = zip::ZipWriter::new(initial_junk);
@@ -312,6 +338,7 @@ impl FuzzTestCase<'_> {
         {
             final_reopen = true;
         }
+        let streamable = self.operations.iter().all(|(op, _)| op.is_streamable());
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
         for (operation, abort) in self.operations.into_vec().into_iter() {
@@ -325,7 +352,18 @@ impl FuzzTestCase<'_> {
                 panic_on_error,
             );
         }
-        if final_reopen {
+        if streamable {
+            writeln!(
+                stringifier,
+                "let mut stream = writer.finish()?;\n\
+                    stream.seek(SeekFrom::Start({junk_len}))?;\n\
+                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}"
+            )
+            .map_err(|_| ZipError::InvalidArchive("Failed to read from stream".into()))?;
+            let mut stream = writer.finish()?;
+            stream.seek(SeekFrom::Start(junk_len as u64))?;
+            while read_zipfile_from_stream(&mut stream)?.is_some() {}
+        } else if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
                 .map_err(|_| ZipError::InvalidArchive("".into()))?;
             let _ = writer.finish_into_readable()?;
