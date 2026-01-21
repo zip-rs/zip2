@@ -3,7 +3,7 @@ use bencher::{benchmark_group, benchmark_main};
 use std::io::{Cursor, Read, Write};
 
 use bencher::Bencher;
-use zip::{read::Config, write::SimpleFileOptions, ZipArchive, ZipWriter};
+use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
 
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let data = Vec::new();
@@ -38,6 +38,7 @@ fn read_entry(bench: &mut Bencher) {
 }
 
 fn read_entry_iterable(bench: &mut Bencher) {
+    use zip::read::Config;
     use zip::read::IterableZip;
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size);
