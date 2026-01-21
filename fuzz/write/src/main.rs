@@ -99,7 +99,10 @@ pub struct FuzzTestCase<'k> {
     flush_on_finish_file: bool,
 }
 
-fn deduplicate_paths(copy: &mut PathBuf, original: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn deduplicate_paths(
+    copy: &mut PathBuf,
+    original: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
     if path_to_string(&**copy)? == path_to_string(original)? {
         let new_path = match original.file_name() {
             Some(name) => {
