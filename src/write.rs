@@ -917,6 +917,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         name: S,
         mut options: FileOptions<'_, T>,
         raw_values: Option<ZipRawValues>,
+        file_comment: Option<Box<str>>,
     ) -> ZipResult<()> {
         self.finish_file()?;
 
@@ -1025,6 +1026,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_mode,
             &extra_data,
         );
+        if let Some(comment) = file_comment {
+            if comment.len() > u16::MAX as usize {
+                return Err(invalid!("File comment must be less than 64KiB"));
+            }
+            if !comment.is_ascii() {
+                file.is_utf8 = true;
+            }
+            file.file_comment = comment;
+        }
         file.using_data_descriptor =
             !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
@@ -1233,7 +1243,31 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             options.zopfli_buffer_size,
         )?;
-        self.start_entry(name, options, None)?;
+        self.start_entry(name, options, None, None)?;
+        let result = self.inner.switch_to(make_new_self);
+        self.ok_or_abort_file(result)?;
+        self.writing_raw = false;
+        Ok(())
+    }
+
+    /// Create a file in the archive with a per-file comment and start writing its contents.
+    /// The file must not have the same name as a file already in the archive.
+    ///
+    /// The data should be written using the [`Write`] implementation on this [`ZipWriter`].
+    pub fn start_file_with_comment<S: ToString, T: FileOptionExtension, C: Into<Box<str>>>(
+        &mut self,
+        name: S,
+        mut options: FileOptions<T>,
+        comment: C,
+    ) -> ZipResult<()> {
+        options.normalize();
+        let make_new_self = self.inner.prepare_next_writer(
+            options.compression_method,
+            options.compression_level,
+            #[cfg(feature = "deflate-zopfli")]
+            options.zopfli_buffer_size,
+        )?;
+        self.start_entry(name, options, None, Some(comment.into()))?;
         let result = self.inner.switch_to(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
@@ -1319,6 +1353,24 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.start_file(path_to_string(path)?, options)
     }
 
+    /// Starts a file, taking a Path as argument, with a per-file comment.
+    ///
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
+    pub fn start_file_from_path_with_comment<
+        E: FileOptionExtension,
+        P: AsRef<Path>,
+        C: Into<Box<str>>,
+    >(
+        &mut self,
+        path: P,
+        options: FileOptions<E>,
+        comment: C,
+    ) -> ZipResult<()> {
+        self.start_file_with_comment(path_to_string(path), options, comment)
+    }
+
     /// Add a new file using the already compressed data from a ZIP file being read and renames it, this
     /// allows faster copies of the `ZipFile` since there is no need to decompress and compress it again.
     /// Any `ZipFile` metadata is copied and not checked, for example the file CRC.
@@ -1366,7 +1418,13 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: file.size(),
         };
 
-        self.start_entry(name, options, Some(raw_values))?;
+        let comment = file.comment();
+        let file_comment = if comment.is_empty() {
+            None
+        } else {
+            Some(comment.to_owned().into_boxed_str())
+        };
+        self.start_entry(name, options, Some(raw_values), file_comment)?;
         self.writing_to_file = true;
         self.writing_raw = true;
 
@@ -1487,7 +1545,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(name_with_slash, options, None)?;
+        self.start_entry(name_with_slash, options, None, None)?;
         self.writing_to_file = false;
         self.switch_to_non_encrypting_writer()?;
         Ok(())
@@ -1545,7 +1603,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // likely wastes space. So always store.
         options.compression_method = Stored;
 
-        self.start_entry(name, options, None)?;
+        self.start_entry(name, options, None, None)?;
         self.writing_to_file = true;
         let result = self.write_all(target.to_string().as_bytes());
         self.ok_or_abort_file(result)?;
@@ -2336,6 +2394,26 @@ mod test {
             *result.get_ref(),
             [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 90, 73, 80]
         );
+    }
+
+    #[test]
+    fn write_file_comment_roundtrip() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(Stored);
+        writer.start_file_with_comment("foo.txt", options, "file comment")?;
+        writer.write_all(b"data")?;
+        writer.start_file_with_comment("foo2.txt", options, "file2 comment")?;
+        writer.write_all(b"data2")?;
+
+        let bytes = writer.finish()?.into_inner();
+        let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+        {
+            let file = archive.by_name("foo.txt")?;
+            assert_eq!(file.comment(), "file comment");
+        }
+        let file2 = archive.by_name("foo2.txt")?;
+        assert_eq!(file2.comment(), "file2 comment");
+        Ok(())
     }
 
     #[test]
