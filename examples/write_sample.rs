@@ -10,7 +10,7 @@ use zip::{AesMode, CompressionMethod::Zstd};
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <filename>", args[0]);
+        eprintln!("Usage: {:?} <filename>", args[0]);
         return Err("Wrong usage".into());
     }
 
