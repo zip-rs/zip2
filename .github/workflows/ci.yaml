@@ -25,6 +25,7 @@ env:
 jobs:
   dependency_review:
     name: 'Dependency Review'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     permissions:
       contents: read
     runs-on: ubuntu-latest
