@@ -265,14 +265,7 @@ impl ExtendedFileOptions {
             } else {
                 &mut self.extra_data
             };
-            let vec = Arc::get_mut(field);
-            let vec = if let Some(exclusive) = vec {
-                exclusive
-            } else {
-                *field = Arc::new(field.to_vec());
-                Arc::get_mut(field)
-                    .ok_or_else(|| std::io::Error::other("Cannot get field as mutable"))?
-            };
+            let vec = Arc::make_mut(field);
             Self::add_extra_data_unchecked(vec, header_id, data)?;
             Self::validate_extra_data(vec, true)?;
             Ok(())
