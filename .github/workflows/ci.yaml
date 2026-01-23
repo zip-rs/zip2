@@ -159,7 +159,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-      - uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae # v2.8
+      - uses: obi1kenobi/cargo-semver-checks-action@097412d8f3ec4796504413968df272fedccd2635 # v2.8
         with:
           manifest-path: ${{ github.workspace }}/${{ matrix.workspace }}
           feature-group: ${{ matrix.feature_group }}
