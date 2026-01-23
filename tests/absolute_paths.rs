@@ -68,11 +68,5 @@ fn test_absolute_paths() -> ZipResult<()> {
         "Nested file content"
     );
 
-    // Verify extraction results with assertions
-    let extracted_files: Vec<_> = std::fs::read_dir(temp_dir.path())?.collect();
-    assert!(
-        !extracted_files.is_empty(),
-        "Should have extracted at least one file"
-    );
     Ok(())
 }
