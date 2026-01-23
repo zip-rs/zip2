@@ -101,16 +101,7 @@ fn zip_dir(
             zip.start_file(path_as_string, options)?;
             let mut f = File::open(path)?;
 
-            f.read_to_end(&mut buffer)?;
-            zip.write_all(&buffer)?;
-            buffer.clear();
-
-            // If the buffer has grown very large due to a big file,
-            // shrink its capacity to avoid retaining excessive memory.
-            const MAX_BUFFER_RETAINED_CAPACITY: usize = 8 * 1024 * 1024; // 8 MiB
-            if buffer.capacity() > MAX_BUFFER_RETAINED_CAPACITY {
-                buffer.shrink_to(MAX_BUFFER_RETAINED_CAPACITY);
-            }
+            std::io::copy(&mut f, &mut zip)?;
         } else if !name.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
