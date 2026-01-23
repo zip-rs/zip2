@@ -29,10 +29,15 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
       - name: 'Checkout Repository'
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: 'Dependency Review'
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
   build_and_test:
     needs:
       - cargo_fmt
@@ -65,7 +70,12 @@ jobs:
     name: "Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
       - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
@@ -88,8 +98,13 @@ jobs:
             rust: nightly
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache@v4
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: target
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
@@ -110,8 +125,13 @@ jobs:
     name: "Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache@v4
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: target
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
@@ -132,16 +152,26 @@ jobs:
     name: "Semver checks: ${{ matrix.feature_group }}"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: obi1kenobi/cargo-semver-checks-action@v2
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae # v2.8
         with:
           manifest-path: ${{ github.workspace }}/${{ matrix.workspace }}
           feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache@v4
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: target
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
@@ -159,7 +189,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: rustup toolchain add nightly && rustup default nightly
 
       - name: resolve minimal versions
@@ -177,14 +212,19 @@ jobs:
     name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
       - name: Install required cargo
         run: cargo install clippy-sarif sarif-fmt
       - run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload analysis results to GitHub
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4.31.10
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
@@ -196,7 +236,12 @@ jobs:
       - build_and_test
       - wasm
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -223,20 +268,20 @@ jobs:
           find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_read_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_read_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_read_coverage
           path: map
@@ -247,7 +292,12 @@ jobs:
       - build_and_test
       - wasm
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -272,14 +322,14 @@ jobs:
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_read_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_read_coverage_no_features
           path: map
@@ -290,7 +340,12 @@ jobs:
       - build_and_test
       - wasm
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -317,20 +372,20 @@ jobs:
           find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_write_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_write_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_write_coverage
           path: map
@@ -341,7 +396,12 @@ jobs:
       - build_and_test
       - wasm
     steps:
-      - uses: actions/checkout@v6
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -366,14 +426,14 @@ jobs:
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_write_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fuzz_write_coverage_no_features
           path: map
