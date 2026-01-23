@@ -12,7 +12,7 @@ pub fn decompress_xz() {
     assert_eq!("hello.txt", file.name());
 
     let mut content = Vec::new();
-    file.read_to_end(&mut content).unwrap();
+    file.read_to_end(&mut content).expect("failed to read content from hello.txt");
     assert_eq!(
         "Hello world\n",
         String::from_utf8(content).expect("content from hello.txt should be valid UTF-8")
