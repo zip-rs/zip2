@@ -376,16 +376,8 @@ pub(crate) fn find_data_start(
         Ok(()) => (),
         // If the value was already set in the meantime, ensure it matches (this is probably
         // unnecessary).
-        Err(_) => {
-            debug_assert_eq!(
-                *data
-                    .data_start
-                    .get()
-                    .ok_or_else(|| ZipError::Io(std::io::Error::other(
-                        "Cannot get the data start"
-                    )))?,
-                data_start
-            );
+        Err(existing_value) => {
+            debug_assert_eq!(existing_value, data_start);
         }
     }
 
