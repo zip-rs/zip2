@@ -2226,12 +2226,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     let block = block.serialize();
     writer.write_all(&block)?;
 
-    let extra_field_mut = file
-        .extra_field
-        .as_mut()
-        .ok_or_else(|| std::io::Error::other("Cannot get extra field"))?;
-    let extra_field = Arc::get_mut(extra_field_mut)
-        .ok_or_else(|| std::io::Error::other("Cannot get extra field"))?;
+    let extra_field = Arc::make_mut(file.extra_field);
     extra_field[..block.len()].copy_from_slice(&block);
 
     Ok(())
