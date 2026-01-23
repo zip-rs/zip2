@@ -23,6 +23,16 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "14.5"
 
 jobs:
+  dependency_review:
+    name: 'Dependency Review'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Repository'
+        uses: actions/checkout@v4
+      - name: 'Dependency Review'
+        uses: actions/dependency-review-action@v4
   build_and_test:
     needs:
       - cargo_fmt
@@ -30,6 +40,7 @@ jobs:
       - miri
       - check_minimal_versions
       - cargo_semver
+      - dependency_review
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
