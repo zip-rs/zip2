@@ -83,9 +83,6 @@ fn zip_dir(
         .unix_permissions(0o755);
 
     let prefix = Path::new(src_dir);
-    // Reuse a buffer across files, but avoid retaining unbounded capacity.
-    // Start with a modest capacity and shrink it if it grows too large.
-    let mut buffer: Vec<u8> = Vec::with_capacity(8 * 1024);
     for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         let name = path.strip_prefix(prefix)?;
