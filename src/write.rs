@@ -2117,12 +2117,7 @@ fn update_aes_extra_data<W: Write + Seek>(
     writer.write_all(&buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
-    let extra_field_mut = file
-        .extra_field
-        .as_mut()
-        .ok_or_else(|| std::io::Error::other("Cannot get extra field"))?;
-    let extra_field = Arc::get_mut(extra_field_mut)
-        .ok_or_else(|| std::io::Error::other("Cannot get extra field"))?;
+    let extra_field = Arc::make_mut(file.extra_field);
     extra_field[aes_extra_data_start..aes_extra_data_start + buf.len()].copy_from_slice(&buf);
 
     Ok(())
