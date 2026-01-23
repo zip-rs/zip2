@@ -33,8 +33,8 @@ fn test_absolute_paths() -> ZipResult<()> {
     // Test individual file access
     assert_eq!(archive.len(), 3); // directory + 2 files
 
-    for i in 0..archive.len() {
-        let file = archive.by_index(i)?;
+    for entry_index in 0..archive.len() {
+        let file = archive.by_index(entry_index)?;
 
         // Verify that enclosed_name properly handles the paths
         let enclosed_name = file
