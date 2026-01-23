@@ -83,7 +83,9 @@ fn zip_dir(
         .unix_permissions(0o755);
 
     let prefix = Path::new(src_dir);
-    let mut buffer = Vec::new();
+    // Reuse a buffer across files, but avoid retaining unbounded capacity.
+    // Start with a modest capacity and shrink it if it grows too large.
+    let mut buffer: Vec<u8> = Vec::with_capacity(8 * 1024);
     for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         let name = path.strip_prefix(prefix)?;
@@ -102,6 +104,13 @@ fn zip_dir(
             f.read_to_end(&mut buffer)?;
             zip.write_all(&buffer)?;
             buffer.clear();
+
+            // If the buffer has grown very large due to a big file,
+            // shrink its capacity to avoid retaining excessive memory.
+            const MAX_BUFFER_RETAINED_CAPACITY: usize = 8 * 1024 * 1024; // 8 MiB
+            if buffer.capacity() > MAX_BUFFER_RETAINED_CAPACITY {
+                buffer.shrink_to(MAX_BUFFER_RETAINED_CAPACITY);
+            }
         } else if !name.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
