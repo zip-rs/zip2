@@ -1458,12 +1458,12 @@ fn central_header_to_zip_file_inner<R: Read>(
     let file_name: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_name_raw).into()
     } else {
-        file_name_raw.clone().from_cp437()?
+        file_name_raw.from_cp437()?.into()
     };
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()
     } else {
-        file_comment_raw.from_cp437()?
+        file_comment_raw.from_cp437()?.into()
     };
 
     // Construct the result

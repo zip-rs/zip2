@@ -11,8 +11,8 @@ pub trait FromCp437 {
     fn from_cp437(self) -> Self::Target;
 }
 
-impl FromCp437 for &[u8] {
-    type Target = Result<Box<str>, std::io::Error>;
+impl<'a> FromCp437 for &'a [u8] {
+    type Target = Result<std::borrow::Cow<'a, str>, std::io::Error>;
 
     fn from_cp437(self) -> Self::Target {
         let target = if self.iter().all(|c| *c < 0x80) {
@@ -30,7 +30,7 @@ impl FromCp437 for &[u8] {
                 })
                 .collect::<Result<String, _>>()?
         };
-        Ok(target.into_boxed_str())
+        Ok(std::borrow::Cow::Owned(target))
     }
 }
 
