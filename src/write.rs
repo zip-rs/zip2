@@ -2117,7 +2117,10 @@ fn update_aes_extra_data<W: Write + Seek>(
     writer.write_all(&buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
-    let extra_field = Arc::make_mut(file.extra_field);
+    let Some(extra_field) = file.extra_field else {
+        return Err(invalid!("update_aes_extra_data called on a file that has no extra-data field"));
+    };
+    let extra_field = Arc::make_mut(&mut extra_field);
     extra_field[aes_extra_data_start..aes_extra_data_start + buf.len()].copy_from_slice(&buf);
 
     Ok(())
@@ -2226,7 +2229,10 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     let block = block.serialize();
     writer.write_all(&block)?;
 
-    let extra_field = Arc::make_mut(file.extra_field);
+    let Some(extra_field) = file.extra_field else {
+        return Err(invalid!("update_aes_extra_data called on a file that has no extra-data field"));
+    };
+    let extra_field = Arc::make_mut(&mut extra_field);
     extra_field[..block.len()].copy_from_slice(&block);
 
     Ok(())
