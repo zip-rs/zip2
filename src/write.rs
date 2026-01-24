@@ -1068,7 +1068,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             if !comment.is_ascii() {
                 file.is_utf8 = true;
             }
-            file.file_comment = comment.clone();
+            file.file_comment = comment.to_owned();
         }
         file.using_data_descriptor =
             !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
