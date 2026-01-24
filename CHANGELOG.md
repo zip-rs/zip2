@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix write_dir build errors on specific feature configs
 - Fix clippy warning
 - Fix --all-features build error
-- Fix merge
+- Fix merge issues in release workflow configuration
 
 ## [7.1.0](https://github.com/zip-rs/zip2/compare/v7.0.0...v7.1.0) - 2026-01-14
 
