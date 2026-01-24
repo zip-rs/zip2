@@ -2412,7 +2412,6 @@ mod test {
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
             #[cfg(all(feature = "deflate_zopfli", not(feature = "deflate_flate2")))]
             compression_method: zip::CompressionMethod::Stored,
-
             ..Default::default()
         };
         writer.start_file("foo.txt", options)?;
@@ -2423,6 +2422,9 @@ mod test {
                 central_extra_data: vec![].into(),
                 file_comment: Some("file2 comment".into()),
             },
+            // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
+            #[cfg(all(feature = "deflate_zopfli", not(feature = "deflate_flate2")))]
+            compression_method: zip::CompressionMethod::Stored,
             ..Default::default()
         };
         writer.start_file("foo2.txt", options2)?;
