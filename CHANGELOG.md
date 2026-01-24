@@ -205,7 +205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
 - drop unused crossbeam-utils dependency ([#339](https://github.com/zip-rs/zip2/pull/339))
-- fix typo
+- fix documentation typo in project text
 - remove `deflate-flate2` dependency on specific backend
 - [**breaking**] Drop deprecated `deflate-miniz` feature flag ([#351](https://github.com/zip-rs/zip2/pull/351))
 
