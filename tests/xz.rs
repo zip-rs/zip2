@@ -5,8 +5,9 @@ use zip::ZipArchive;
 
 #[test]
 pub fn decompress_xz() {
-    let v = include_bytes!("data/xz.zip");
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let zip_data = include_bytes!("data/xz.zip");
+    let mut archive =
+        ZipArchive::new(io::Cursor::new(zip_data)).expect("couldn't open test zip file");
 
     let mut file = archive
         .by_name("hello.txt")
