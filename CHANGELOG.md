@@ -30,16 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Change an assert to debug_assert when encrypting/decrypting AES, and eliminate a fallible operation ([#521](https://github.com/zip-rs/zip2/pull/521))
 - eliminate a String clone per new file added to archive, and other related refactors ([#522](https://github.com/zip-rs/zip2/pull/522))
 
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-- Fix another merge error, this one affecting only builds with flate2 and not zopfli ([#XYZ](https://github.com/zip-rs/zip2/pull/XYZ))
-- Fix more merge issues
-- Fix additional merge issues affecting certain feature combinations
-- Fix write_dir build errors on specific feature configs
-- Fix clippy warning
-- Fix --all-features build error
-- Fix merge issues in release workflow configuration
-
 ## [7.1.0](https://github.com/zip-rs/zip2/compare/v7.0.0...v7.1.0) - 2026-01-14
 
 ### <!-- 0 -->🚀 Features
