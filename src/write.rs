@@ -578,9 +578,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                         && !self
                             .files
                             .last()
-                            .ok_or_else(|| {
-                                std::io::Error::other("Cannot get last file")
-                            })?
+                            .ok_or_else(|| std::io::Error::other("Cannot get last file"))?
                             .1
                             .large_file
                     {
