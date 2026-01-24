@@ -16,9 +16,11 @@ impl FromCp437 for &[u8] {
 
     fn from_cp437(self) -> Self::Target {
         let target = if self.iter().all(|c| *c < 0x80) {
-            String::from_utf8(self.into()).map_err(|e| {
-                std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
-            })?
+            std::str::from_utf8(self)
+                .map_err(|e| {
+                    std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
+                })?
+                .to_owned()
         } else {
             self.iter()
                 .copied()
@@ -27,9 +29,8 @@ impl FromCp437 for &[u8] {
                         .ok_or_else(|| std::io::Error::other("Cannot translate path from cp437"))
                 })
                 .collect::<Result<String, _>>()?
-        }
-        .into_boxed_str();
-        Ok(target)
+        };
+        Ok(target.into_boxed_str())
     }
 }
 
