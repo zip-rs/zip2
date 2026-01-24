@@ -217,6 +217,8 @@ mod sealed {
         fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>>;
         /// File Comment
         fn file_comment(&self) -> Option<&Box<str>>;
+        /// Take File Comment (moves ownership)
+        fn take_file_comment(&mut self) -> Option<Box<str>>;
     }
     impl Sealed for () {}
     impl FileOptionExtension for () {
@@ -227,6 +229,9 @@ mod sealed {
             None
         }
         fn file_comment(&self) -> Option<&Box<str>> {
+            None
+        }
+        fn take_file_comment(&mut self) -> Option<Box<str>> {
             None
         }
     }
@@ -241,6 +246,9 @@ mod sealed {
         }
         fn file_comment(&self) -> Option<&Box<str>> {
             self.file_comment.as_ref()
+        }
+        fn take_file_comment(&mut self) -> Option<Box<str>> {
+            self.file_comment.take()
         }
     }
 }
@@ -1061,14 +1069,14 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_mode,
             &extra_data,
         );
-        if let Some(comment) = options.extended_options.file_comment() {
+        if let Some(comment) = options.extended_options.take_file_comment() {
             if comment.len() > u16::MAX as usize {
                 return Err(invalid!("File comment must be less than 64KiB"));
             }
             if !comment.is_ascii() {
                 file.is_utf8 = true;
             }
-            file.file_comment = comment.to_owned();
+            file.file_comment = comment;
         }
         file.using_data_descriptor =
             !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
