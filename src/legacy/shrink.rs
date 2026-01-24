@@ -365,7 +365,6 @@ impl<R: Read> Read for ShrinkDecoder<R> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use crate::legacy::shrink::hwunshrink;
 
     const LZW_FIG5: &[u8; 17] = b"ababcbababaaaaaaa";

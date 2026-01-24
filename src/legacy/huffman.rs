@@ -177,7 +177,6 @@ impl HuffmanDecoder {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use std::io::Cursor;
 
     use bitstream_io::{BitReader, LittleEndian};

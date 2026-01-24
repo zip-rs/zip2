@@ -145,7 +145,6 @@ fn xor(dest: &mut [u8], src: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::{Aes128, Aes192, Aes256, AesCipher, AesCtrZipKeyStream, AesKind};
     use aes::cipher::{BlockEncrypt, KeyInit};
 

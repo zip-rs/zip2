@@ -229,7 +229,6 @@ impl<R: Read> Read for ReduceDecoder<R> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use super::hwexpand;
     use crate::legacy::reduce::{follower_idx_bitlen, lsb, max_dist};
     const HAMLET_2048: &[u8; 1285] =

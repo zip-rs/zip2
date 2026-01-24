@@ -24,7 +24,6 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use super::*;
     use std::path::Path;
 

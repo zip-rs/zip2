@@ -171,7 +171,6 @@ fn to_char(input: u8) -> Option<char> {
 
 #[cfg(test)]
 mod test {
-    #![allow(clippy::unwrap_used)]
     #[test]
     fn to_char_valid() {
         for i in 0x00_u32..0x100 {
