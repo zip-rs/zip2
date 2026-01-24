@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix another merge error, this one affecting only builds with flate2 and not zopfli
 - Fix more merge issues
-- Fix merge
+- Fix additional merge issues affecting certain feature combinations
 - Fix write_dir build errors on specific feature configs
 - Fix clippy warning
 - Fix --all-features build error
