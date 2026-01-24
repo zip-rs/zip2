@@ -9,7 +9,6 @@ use walkdir::WalkDir;
 use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
