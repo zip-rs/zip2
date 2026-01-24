@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
-- Fix another merge error, this one affecting only builds with flate2 and not zopfli
+- Fix another merge error, this one affecting only builds with flate2 and not zopfli ([#XYZ](https://github.com/zip-rs/zip2/pull/XYZ))
 - Fix more merge issues
 - Fix additional merge issues affecting certain feature combinations
 - Fix write_dir build errors on specific feature configs
