@@ -71,8 +71,7 @@ fn zip_dir(
         return Err(ZipError::FileNotFound.into());
     }
 
-    let path = Path::new(dest_file);
-    let file = File::create(path)?;
+    let file = File::create(dest_file)?;
 
     let walkdir = WalkDir::new(src_dir);
 
@@ -81,10 +80,9 @@ fn zip_dir(
         .compression_method(method)
         .unix_permissions(0o755);
 
-    let prefix = Path::new(src_dir);
     for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        let name = path.strip_prefix(prefix)?;
+        let name = path.strip_prefix(src_dir)?;
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
