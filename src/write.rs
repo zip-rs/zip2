@@ -577,9 +577,9 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                     if self.stats.bytes_written > spec::ZIP64_BYTES_THR
                         && !self
                             .files
-                            .last_mut()
+                            .last()
                             .ok_or_else(|| {
-                                std::io::Error::other("Cannot get last file as mutable")
+                                std::io::Error::other("Cannot get last file")
                             })?
                             .1
                             .large_file
