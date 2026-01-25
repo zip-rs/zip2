@@ -16,15 +16,15 @@ impl<'a> FromCp437 for &'a [u8] {
 
     fn from_cp437(self) -> Self::Target {
         let target = if self.iter().all(|c| *c < 0x80) {
-            std::str::from_utf8(self)
-                .map_err(|e| {
-                    std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
-                })?
-                .to_owned()
+            let s = std::str::from_utf8(self).map_err(|e| {
+                std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
+            })?;
+            std::borrow::Cow::Borrowed(s)
         } else {
-            self.iter().copied().map(to_char).collect::<String>()
+            let s = self.iter().copied().map(to_char).collect::<String>();
+            std::borrow::Cow::Owned(s)
         };
-        Ok(std::borrow::Cow::Owned(target))
+        Ok(target)
     }
 }
 fn to_char(input: u8) -> char {
