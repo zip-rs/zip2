@@ -165,7 +165,7 @@ fn to_char(input: u8) -> char {
 mod test {
     #[test]
     fn to_char_valid() {
-        for i in u8::MIN..u8::MAX {
+        for i in u8::MIN..=u8::MAX {
             super::to_char(i);
         }
     }
