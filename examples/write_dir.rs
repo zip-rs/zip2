@@ -80,7 +80,13 @@ fn zip_dir(
         .compression_method(method)
         .unix_permissions(0o755);
 
-    for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
+    for entry_result in walkdir.into_iter() {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(e) => {
+                return Err(format!("Error while traversing directory {src_dir:?}: {e}").into());
+            }
+        };
         let path = entry.path();
         let name = path.strip_prefix(src_dir)?;
         let path_as_string = name
