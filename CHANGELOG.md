@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.3.0](https://github.com/zip-rs/zip2/releases/tag/v7.3.0) - 2026-01-25
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- make zip crate safer and more readable ([#536](https://github.com/zip-rs/zip2/pull/536))
+
 ## [7.2.0](https://github.com/zip-rs/zip2/compare/v7.1.0...v7.2.0) - 2026-01-20
 
 ### <!-- 0 -->🚀 Features
