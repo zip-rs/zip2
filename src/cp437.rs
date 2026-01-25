@@ -11,22 +11,22 @@ pub trait FromCp437 {
     fn from_cp437(self) -> Self::Target;
 }
 
-impl FromCp437 for &[u8] {
-    type Target = Result<Box<str>, std::io::Error>;
+impl<'a> FromCp437 for &'a [u8] {
+    type Target = Result<std::borrow::Cow<'a, str>, std::io::Error>;
 
     fn from_cp437(self) -> Self::Target {
         let target = if self.iter().all(|c| *c < 0x80) {
-            String::from_utf8(self.into()).map_err(|e| {
-                std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
-            })?
+            std::str::from_utf8(self)
+                .map_err(|e| {
+                    std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
+                })?
+                .to_owned()
         } else {
             self.iter().copied().map(to_char).collect::<String>()
-        }
-        .into_boxed_str();
-        Ok(target)
+        };
+        Ok(std::borrow::Cow::Owned(target))
     }
 }
-
 fn to_char(input: u8) -> char {
     match input {
         0x00..=0x7f => input as char,

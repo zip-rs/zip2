@@ -835,7 +835,10 @@ impl ZipFileData {
         let file_name: Box<str> = if is_utf8 {
             String::from_utf8_lossy(&file_name_raw).into()
         } else {
-            file_name_raw.from_cp437().map_err(std::io::Error::other)?
+            file_name_raw
+                .from_cp437()
+                .map_err(std::io::Error::other)?
+                .into()
         };
 
         let system: u8 = (version_made_by >> 8)

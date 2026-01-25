@@ -376,16 +376,8 @@ pub(crate) fn find_data_start(
         Ok(()) => (),
         // If the value was already set in the meantime, ensure it matches (this is probably
         // unnecessary).
-        Err(_) => {
-            debug_assert_eq!(
-                *data
-                    .data_start
-                    .get()
-                    .ok_or_else(|| ZipError::Io(std::io::Error::other(
-                        "Cannot get the data start"
-                    )))?,
-                data_start
-            );
+        Err(existing_value) => {
+            debug_assert_eq!(existing_value, data_start);
         }
     }
 
@@ -1466,12 +1458,12 @@ fn central_header_to_zip_file_inner<R: Read>(
     let file_name: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_name_raw).into()
     } else {
-        file_name_raw.clone().from_cp437()?
+        file_name_raw.from_cp437()?.into()
     };
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()
     } else {
-        file_comment_raw.from_cp437()?
+        file_comment_raw.from_cp437()?.into()
     };
 
     // Construct the result
