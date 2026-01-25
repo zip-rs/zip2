@@ -11,6 +11,9 @@ use core::num::Wrapping;
 use crate::cfg_if_expr;
 use crate::result::ZipError;
 
+/// ZipCrypto header size in bytes.
+const ZIP_CRYPTO_HEADER_SIZE: usize = 12;
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
