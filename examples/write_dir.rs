@@ -80,6 +80,12 @@ fn zip_dir(
         .compression_method(method)
         .unix_permissions(0o755);
 
+    // SECURITY NOTE: Any error after this point may leave a partial or corrupt
+    // zip file.
+    // This can lead to data integrity issues or race conditions (e.g., TOCTOU)
+    // if other processes access the incomplete file. A robust application
+    // should mitigate this, for example by writing to a temporary file and
+    // renaming it on success to ensure atomicity.
     for entry_result in walkdir.into_iter() {
         let entry = match entry_result {
             Ok(entry) => entry,
