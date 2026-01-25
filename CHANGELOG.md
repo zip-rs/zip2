@@ -272,7 +272,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- rewrite the EOCD/EOCD64 detection to fix extreme performance regression (#247)
+- rewrite the EOCD/EOCD64 detection to fix extreme performance regression ([#247](https://github.com/zip-rs/zip2/pull/247))
 
 ## [2.2.1](https://github.com/zip-rs/zip2/compare/v2.2.0...v2.2.1) - 2024-11-20
 
