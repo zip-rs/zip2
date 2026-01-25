@@ -20,7 +20,7 @@ impl<'a> FromCp437 for &'a [u8] {
             std::borrow::Cow::Owned(s)
         } else {
             let s = std::str::from_utf8(self).map_err(|e| {
-                std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
+                std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Cannot translate path from cp437: {e}"))
             })?;
             std::borrow::Cow::Borrowed(s)
         };
