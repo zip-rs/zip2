@@ -32,6 +32,28 @@ enum CompressionMethod {
     Zstd,
 }
 
+/// Used to test with --no-default-features or a specific features
+/// ```sh
+/// cargo run --no-default-features --example write_dir src/ dest.zip xz
+/// # should error because no xz
+///
+/// cargo run --features xz --example write_dir src/ dest.zip xz
+/// # should work
+/// ```
+macro_rules! is_feature {
+    ($feature:literal, $compression:expr) => {{
+        #[cfg(feature = $feature)]
+        {
+            Ok($compression)
+        }
+
+        #[cfg(not(feature = $feature))]
+        {
+            Err(format!("The `{}` feature is not enabled", $feature).into())
+        }
+    }};
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let src_dir = &args.source;
@@ -99,27 +121,3 @@ fn zip_dir(
     zip.finish()?;
     Ok(())
 }
-
-/// Used to test with --no-default-features or a specific features
-/// ```sh
-/// cargo run --no-default-features --example write_dir src/ dest.zip xz
-/// # should error because no xz
-///
-/// cargo run --features xz --example write_dir src/ dest.zip xz
-/// # should work
-/// ```
-macro_rules! is_feature {
-    ($feature:literal, $compression:expr) => {{
-        #[cfg(feature = $feature)]
-        {
-            Ok($compression)
-        }
-
-        #[cfg(not(feature = $feature))]
-        {
-            Err(format!("The `{}` feature is not enabled", $feature).into())
-        }
-    }};
-}
-
-pub(crate) use is_feature;
