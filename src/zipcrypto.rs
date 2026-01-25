@@ -165,7 +165,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         validator: ZipCryptoValidator,
     ) -> Result<ZipCryptoReaderValid<R>, ZipError> {
         // ZipCrypto prefixes a file with a 12 byte header
-        let mut header_buf = [0u8; 12];
+        let mut header_buf = [0u8; ZIP_CRYPTO_HEADER_SIZE];
         self.file.read_exact(&mut header_buf)?;
         for byte in &mut header_buf {
             *byte = self.keys.decrypt_byte(*byte);
