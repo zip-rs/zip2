@@ -2304,7 +2304,6 @@ const EXTRA_FIELD_MAPPING: [u16; 43] = [
 #[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0
 #[allow(clippy::needless_update)] // So we can use the same FileOptions decls with and without zopfli_buffer_size
 #[allow(clippy::octal_escapes)] // many false positives in converted fuzz cases
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod test {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::compression::CompressionMethod;

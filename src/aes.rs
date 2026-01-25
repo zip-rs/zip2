@@ -323,7 +323,6 @@ impl<W: Write> Write for AesWriter<W> {
 
 #[cfg(all(test, feature = "aes-crypto"))]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use std::io::{self, Read, Write};
 
     use crate::{

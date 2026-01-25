@@ -2301,7 +2301,6 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
 
 #[cfg(test)]
 mod test {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
     use crate::types::SimpleFileOptions;
