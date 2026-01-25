@@ -9,7 +9,6 @@ use walkdir::WalkDir;
 use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -42,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
             CompressionMethod::Deflated => cfg_if_expr! {
                 #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
-                _ => Err("The `deflate-flate2` features are not enabled".into()),
+                _ => Err("The `_deflate-any` feature is not enabled".into()),
             },
             CompressionMethod::Bzip2 => cfg_if_expr! {
                 #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
@@ -72,8 +71,7 @@ fn zip_dir(
         return Err(ZipError::FileNotFound.into());
     }
 
-    let path = Path::new(dest_file);
-    let file = File::create(path)?;
+    let file = File::create(dest_file)?;
 
     let walkdir = WalkDir::new(src_dir);
 
@@ -82,11 +80,9 @@ fn zip_dir(
         .compression_method(method)
         .unix_permissions(0o755);
 
-    let prefix = Path::new(src_dir);
-    let mut buffer = Vec::new();
     for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        let name = path.strip_prefix(prefix)?;
+        let name = path.strip_prefix(src_dir)?;
         let path_as_string = name
             .to_str()
             .map(str::to_owned)
@@ -99,9 +95,7 @@ fn zip_dir(
             zip.start_file(path_as_string, options)?;
             let mut f = File::open(path)?;
 
-            f.read_to_end(&mut buffer)?;
-            zip.write_all(&buffer)?;
-            buffer.clear();
+            std::io::copy(&mut f, &mut zip)?;
         } else if !name.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip

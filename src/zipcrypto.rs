@@ -1,6 +1,6 @@
-//! Implementation of the ZipCrypto algorithm
+//! Implementation of the `ZipCrypto` algorithm
 //!
-//! The following paper was used to implement the ZipCrypto algorithm:
+//! The following paper was used to implement the `ZipCrypto` algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
 use core::fmt::{Debug, Formatter};
@@ -10,14 +10,12 @@ use core::num::Wrapping;
 
 use crate::cfg_if_expr;
 use crate::result::ZipError;
-#[cfg(feature = "aes-crypto")]
-use crate::AesMode;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
-        mode: AesMode,
+        mode: crate::AesMode,
         password: &'k str,
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
@@ -29,7 +27,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         #[cfg(feature = "aes-crypto")]
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
-                mode: AesMode::arbitrary(u)?,
+                mode: crate::AesMode::arbitrary(u)?,
                 password: u.arbitrary::<&str>()?,
             });
         }
@@ -119,14 +117,14 @@ impl ZipCryptoKeys {
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
-        for byte in password.iter() {
+        for byte in password {
             keys.update(*byte);
         }
         keys
     }
 }
 
-/// A ZipCrypto reader with unverified password
+/// A `ZipCrypto` reader with unverified password
 pub struct ZipCryptoReader<R> {
     file: R,
     keys: ZipCryptoKeys,
@@ -151,7 +149,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         }
     }
 
-    /// Read the ZipCrypto header bytes and validate the password.
+    /// Read the `ZipCrypto` header bytes and validate the password.
     pub fn validate(
         mut self,
         validator: ZipCryptoValidator,
@@ -159,7 +157,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         // ZipCrypto prefixes a file with a 12 byte header
         let mut header_buf = [0u8; 12];
         self.file.read_exact(&mut header_buf)?;
-        for byte in header_buf.iter_mut() {
+        for byte in &mut header_buf {
             *byte = self.keys.decrypt_byte(*byte);
         }
 
@@ -219,7 +217,7 @@ impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
     }
 }
 
-/// A ZipCrypto reader with verified password
+/// A `ZipCrypto` reader with verified password
 pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }

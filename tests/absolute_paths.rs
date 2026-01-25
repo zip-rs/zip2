@@ -33,8 +33,8 @@ fn test_absolute_paths() -> ZipResult<()> {
     // Test individual file access
     assert_eq!(archive.len(), 3); // directory + 2 files
 
-    for i in 0..archive.len() {
-        let file = archive.by_index(i)?;
+    for entry_index in 0..archive.len() {
+        let file = archive.by_index(entry_index)?;
 
         // Verify that enclosed_name properly handles the paths
         let enclosed_name = file
@@ -68,11 +68,5 @@ fn test_absolute_paths() -> ZipResult<()> {
         "Nested file content"
     );
 
-    // Verify extraction results with assertions
-    let extracted_files: Vec<_> = std::fs::read_dir(temp_dir.path())?.collect();
-    assert!(
-        !extracted_files.is_empty(),
-        "Should have extracted at least one file"
-    );
     Ok(())
 }

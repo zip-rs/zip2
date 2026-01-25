@@ -14,9 +14,9 @@ pub mod write {
     use crate::write::{FileOptionExtension, FileOptions};
     /// Unstable methods for [`FileOptions`].
     pub trait FileOptionsExt {
-        /// Write the file with the given password using the deprecated ZipCrypto algorithm.
+        /// Write the file with the given password using the deprecated `ZipCrypto` algorithm.
         ///
-        /// This is not recommended for new archives, as ZipCrypto is not secure.
+        /// This is not recommended for new archives, as `ZipCrypto` is not secure.
         fn with_deprecated_encryption(self, password: &[u8]) -> Self;
     }
     impl<T: FileOptionExtension> FileOptionsExt for FileOptions<'_, T> {
@@ -71,15 +71,15 @@ pub trait LittleEndianReadExt: Read {
 impl<R: Read> LittleEndianReadExt for R {}
 
 /// Converts a path to the ZIP format (forward-slash-delimited and normalized).
-pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
+pub fn path_to_string<T: AsRef<Path>>(path: T) -> Result<Box<str>, std::io::Error> {
     let mut maybe_original = None;
     if let Some(original) = path.as_ref().to_str() {
         if original.is_empty() || original == "." || original == ".." {
-            return String::new().into_boxed_str();
+            return Ok(String::new().into_boxed_str());
         }
         if original.starts_with(MAIN_SEPARATOR) {
             if original.len() == 1 {
-                return MAIN_SEPARATOR.to_string().into_boxed_str();
+                return Ok(MAIN_SEPARATOR.to_string().into_boxed_str());
             } else if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
                 && !original.ends_with('.')
                 && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
@@ -89,7 +89,7 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
                 maybe_original = Some(&original[1..]);
             }
         } else if !original.contains(MAIN_SEPARATOR) {
-            return original.into();
+            return Ok(original.into());
         }
     }
     let mut recreate = maybe_original.is_none();
@@ -97,13 +97,14 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
 
     for component in path.as_ref().components() {
         match component {
-            Component::Normal(os_str) => match os_str.to_str() {
-                Some(valid_str) => normalized_components.push(Cow::Borrowed(valid_str)),
-                None => {
+            Component::Normal(os_str) => {
+                if let Some(valid_str) = os_str.to_str() {
+                    normalized_components.push(Cow::Borrowed(valid_str))
+                } else {
                     recreate = true;
                     normalized_components.push(os_str.to_string_lossy());
                 }
-            },
+            }
             Component::ParentDir => {
                 recreate = true;
                 normalized_components.pop();
@@ -114,8 +115,10 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Box<str> {
         }
     }
     if recreate {
-        normalized_components.join("/").into()
+        Ok(normalized_components.join("/").into())
     } else {
-        maybe_original.unwrap().into()
+        Ok(maybe_original
+            .ok_or_else(|| std::io::Error::other("Original path is empty"))?
+            .into())
     }
 }
