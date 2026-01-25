@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 0 -->🚀 Features
 
-- display the underlying error in Display impl for ZipError::Display ([#483](https://github.com/zip-rs/zip2/pull/483))
+- display the underlying error in Display impl for `ZipError` ([#483](https://github.com/zip-rs/zip2/pull/483))
 - Enable creation of `ZipArchive` without reparsing ([#485](https://github.com/zip-rs/zip2/pull/485))
 
 ### <!-- 1 -->🐛 Bug Fixes
