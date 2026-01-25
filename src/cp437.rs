@@ -15,14 +15,14 @@ impl<'a> FromCp437 for &'a [u8] {
     type Target = Result<std::borrow::Cow<'a, str>, std::io::Error>;
 
     fn from_cp437(self) -> Self::Target {
-        let target = if self.iter().all(|c| *c < 0x80) {
+        let target = if self.iter().any(|c| *c >= 0x80) {
+            let s = self.iter().copied().map(to_char).collect::<String>();
+            std::borrow::Cow::Owned(s)
+        } else {
             let s = std::str::from_utf8(self).map_err(|e| {
                 std::io::Error::other(format!("Cannot translate path from cp437: {e}"))
             })?;
             std::borrow::Cow::Borrowed(s)
-        } else {
-            let s = self.iter().copied().map(to_char).collect::<String>();
-            std::borrow::Cow::Owned(s)
         };
         Ok(target)
     }
