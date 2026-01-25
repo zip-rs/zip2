@@ -163,7 +163,6 @@ fn to_char(input: u8) -> char {
 
 #[cfg(test)]
 mod test {
-    #![allow(clippy::unwrap_used)]
     #[test]
     fn to_char_valid() {
         for i in u8::MIN..u8::MAX {

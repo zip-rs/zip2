@@ -84,7 +84,6 @@ impl<R: Read> Read for Crc32Reader<R> {
 
 #[cfg(test)]
 mod test {
-    #![allow(clippy::unwrap_used)]
     use std::io::Read;
 
     use super::Crc32Reader;

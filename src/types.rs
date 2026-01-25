@@ -1347,7 +1347,6 @@ impl AesMode {
 
 #[cfg(test)]
 mod test {
-    #![allow(clippy::unwrap_used)]
     #[test]
     fn system() {
         use super::System;

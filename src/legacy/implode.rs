@@ -234,7 +234,6 @@ impl<R: Read> Read for ImplodeDecoder<R> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use super::hwexplode;
 
     const HAMLET_256: &[u8; 249] = include_bytes!("../../tests/data/legacy/implode_hamlet_256.bin");
