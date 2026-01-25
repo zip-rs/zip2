@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use zip::ZipArchive;
 
 #[test]
-pub fn decompress_xz() {
+fn decompress_xz() {
     let zip_data = include_bytes!("data/xz.zip");
     let mut archive =
         ZipArchive::new(io::Cursor::new(zip_data)).expect("couldn't open test zip file");
