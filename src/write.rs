@@ -1414,7 +1414,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         &mut self,
         mut file: ZipFile<'_, R>,
         name: S,
-        options: FileOptions<T>,
+        options: FileOptions<'_, T>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
@@ -2411,7 +2411,7 @@ mod test {
 
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
             #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
-            compression_method: zip::CompressionMethod::Stored,
+            compression_method: crate::CompressionMethod::Stored,
             ..Default::default()
         };
         writer.start_file("foo.txt", options)?;
@@ -2424,7 +2424,7 @@ mod test {
             },
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
             #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
-            compression_method: zip::CompressionMethod::Stored,
+            compression_method: crate::CompressionMethod::Stored,
             ..Default::default()
         };
         writer.start_file("foo2.txt", options2)?;
