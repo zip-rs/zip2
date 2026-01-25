@@ -70,11 +70,18 @@ impl Debug for ZipCryptoKeys {
 }
 
 impl ZipCryptoKeys {
+    /// Initial value of `key_0` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_0: u32 = 0x12345678;
+    /// Initial value of `key_1` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_1: u32 = 0x23456789;
+    /// Initial value of `key_2` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_2: u32 = 0x34567890;
+
     const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
-            key_0: Wrapping(0x12345678),
-            key_1: Wrapping(0x23456789),
-            key_2: Wrapping(0x34567890),
+            key_0: Wrapping(Self::INITIAL_KEY_0),
+            key_1: Wrapping(Self::INITIAL_KEY_1),
+            key_2: Wrapping(Self::INITIAL_KEY_2),
         }
     }
 
