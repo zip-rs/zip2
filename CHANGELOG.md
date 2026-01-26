@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 0 -->🚀 Features
 
-- display the underlying error in Display impl for ZipError::Display ([#483](https://github.com/zip-rs/zip2/pull/483))
+- display the underlying error in Display impl for `ZipError` ([#483](https://github.com/zip-rs/zip2/pull/483))
 - Enable creation of `ZipArchive` without reparsing ([#485](https://github.com/zip-rs/zip2/pull/485))
 
 ### <!-- 1 -->🐛 Bug Fixes
@@ -219,7 +219,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- `deep_copy_file` produced a mangled file header on big-endian platforms (#309)
+- `deep_copy_file` produced a mangled file header on big-endian platforms ([#309](https://github.com/zip-rs/zip2/pull/309))
 
 ## [2.4.1](https://github.com/zip-rs/zip2/compare/v2.4.0...v2.4.1) - 2025-03-17
 
@@ -272,7 +272,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- rewrite the EOCD/EOCD64 detection to fix extreme performance regression (#247)
+- rewrite the EOCD/EOCD64 detection to fix extreme performance regression ([#247](https://github.com/zip-rs/zip2/pull/247))
 
 ## [2.2.1](https://github.com/zip-rs/zip2/compare/v2.2.0...v2.2.1) - 2024-11-20
 
