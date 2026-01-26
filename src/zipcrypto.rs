@@ -127,8 +127,15 @@ impl ZipCryptoKeys {
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
-        for byte in password {
-            keys.update(*byte);
+        if password.is_empty() {
+            // Avoid using the initial key values unchanged for an empty password.
+            // Feed a fixed byte into the key update so that the derived keys differ
+            // from the public initial constants while keeping the same API.
+            keys.update(0u8);
+        } else {
+            for byte in password {
+                keys.update(*byte);
+            }
         }
         keys
     }
