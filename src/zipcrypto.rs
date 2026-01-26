@@ -52,7 +52,6 @@ pub(crate) struct ZipCryptoKeys {
 }
 
 impl Debug for ZipCryptoKeys {
-    #[allow(unreachable_code)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         cfg_if_expr! {
             #[cfg(any(test, fuzzing))] => {
