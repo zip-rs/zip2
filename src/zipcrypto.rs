@@ -11,6 +11,9 @@ use core::num::Wrapping;
 use crate::cfg_if_expr;
 use crate::result::ZipError;
 
+/// ZipCrypto header size in bytes.
+const ZIP_CRYPTO_HEADER_SIZE: usize = 12;
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
@@ -70,11 +73,18 @@ impl Debug for ZipCryptoKeys {
 }
 
 impl ZipCryptoKeys {
+    /// Initial value of `key_0` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_0: u32 = 0x12345678;
+    /// Initial value of `key_1` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_1: u32 = 0x23456789;
+    /// Initial value of `key_2` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_2: u32 = 0x34567890;
+
     const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
-            key_0: Wrapping(0x12345678),
-            key_1: Wrapping(0x23456789),
-            key_2: Wrapping(0x34567890),
+            key_0: Wrapping(Self::INITIAL_KEY_0),
+            key_1: Wrapping(Self::INITIAL_KEY_1),
+            key_2: Wrapping(Self::INITIAL_KEY_2),
         }
     }
 
@@ -155,7 +165,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         validator: ZipCryptoValidator,
     ) -> Result<ZipCryptoReaderValid<R>, ZipError> {
         // ZipCrypto prefixes a file with a 12 byte header
-        let mut header_buf = [0u8; 12];
+        let mut header_buf = [0u8; ZIP_CRYPTO_HEADER_SIZE];
         self.file.read_exact(&mut header_buf)?;
         for byte in &mut header_buf {
             *byte = self.keys.decrypt_byte(*byte);
@@ -242,6 +252,8 @@ impl<R: std::io::Read> ZipCryptoReaderValid<R> {
     }
 }
 
+/// Standard CRC-32 lookup table used by the ZipCrypto encryption algorithm
+/// to update the internal keys during encryption and decryption.
 static CRCTABLE: [u32; 256] = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
     0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
