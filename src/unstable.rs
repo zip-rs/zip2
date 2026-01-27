@@ -11,17 +11,26 @@ pub mod stream {
 }
 /// Types for creating ZIP archives.
 pub mod write {
+    use crate::result::{ZipError, ZipResult};
     use crate::write::{FileOptionExtension, FileOptions};
     /// Unstable methods for [`FileOptions`].
     pub trait FileOptionsExt {
         /// Write the file with the given password using the deprecated `ZipCrypto` algorithm.
         ///
         /// This is not recommended for new archives, as `ZipCrypto` is not secure.
-        fn with_deprecated_encryption(self, password: &[u8]) -> Self;
+        fn with_deprecated_encryption(self, password: &[u8]) -> ZipResult<Self> where Self: Sized;
     }
     impl<T: FileOptionExtension> FileOptionsExt for FileOptions<'_, T> {
-        fn with_deprecated_encryption(self, password: &[u8]) -> FileOptions<'static, T> {
-            self.with_deprecated_encryption(password)
+        fn with_deprecated_encryption(self, password: &[u8]) -> ZipResult<FileOptions<'static, T>> {
+            if password.is_empty() {
+                // Forbid empty passwords to avoid deriving a predictable key from a
+                // fixed, public value. Callers must ensure passwords are non-empty.
+                // This check isn't in with_deprecated_encryption itself because that would also
+                // affect reading.
+                Err(ZipError::InvalidPassword)
+            } else {
+                Ok(self.with_deprecated_encryption(password))
+            }
         }
     }
 }
