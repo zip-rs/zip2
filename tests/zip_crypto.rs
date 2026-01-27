@@ -33,11 +33,11 @@ const ZIP_CRYPTO_FILE: &[u8] = &[
 ];
 
 use std::io::Cursor;
-use zip::result::{ZipError, ZipResult};
+use zip::result::ZipError;
 
 #[test]
 #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
-fn encrypting_file() -> ZipResult<()> {
+fn encrypting_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
