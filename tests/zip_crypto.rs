@@ -98,7 +98,10 @@ fn encrypted_file() {
 
         let mut decrypted_data = Vec::new();
         file.read_to_end(&mut decrypted_data).unwrap();
-        assert_eq!(decrypted_data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
+        assert_eq!(
+            decrypted_data,
+            "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
+        );
     }
 
     // Again, but with the options API.
@@ -114,7 +117,10 @@ fn encrypted_file() {
 
         let mut file_contents = Vec::new();
         file.read_to_end(&mut file_contents).unwrap();
-        assert_eq!(file_contents, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
+        assert_eq!(
+            file_contents,
+            "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
+        );
     }
 }
 
