@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.3.0-pre1](https://github.com/zip-rs/zip2/compare/v7.2.0...v7.3.0-pre1) - 2026-01-27
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Treat empty ZipCrypto password as "\0" so that key is slightly harder to guess ([#570](https://github.com/zip-rs/zip2/pull/570))
+- make zip crate safer and more readable ([#536](https://github.com/zip-rs/zip2/pull/536))
+
+### <!-- 4 -->⚡ Performance
+
+- Optimizations for CP437 conversion ([#559](https://github.com/zip-rs/zip2/pull/559))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Trigger release 7.3.0-pre1 to reset cargo-semver-checks baseline
+
 ## [7.2.0](https://github.com/zip-rs/zip2/compare/v7.1.0...v7.2.0) - 2026-01-20
 
 ### <!-- 0 -->🚀 Features
