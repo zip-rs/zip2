@@ -52,7 +52,6 @@ pub(crate) struct ZipCryptoKeys {
 }
 
 impl Debug for ZipCryptoKeys {
-    #[allow(unreachable_code)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         cfg_if_expr! {
             #[cfg(any(test, fuzzing))] => {
@@ -123,12 +122,20 @@ impl ZipCryptoKeys {
     }
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
-        (crc >> 8) ^ Wrapping(CRCTABLE[((crc & Wrapping(0xff)).0 as u8 ^ input) as usize])
+        let idx: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
+        (crc >> 8) ^ Wrapping(CRCTABLE[usize::from(idx)])
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
-        for byte in password {
-            keys.update(*byte);
+        if password.is_empty() {
+            // Avoid using the initial key values unchanged for an empty password.
+            // Feed a fixed byte into the key update so that the derived keys differ
+            // from the public initial constants while keeping the same API.
+            keys.update(0u8);
+        } else {
+            for byte in password {
+                keys.update(*byte);
+            }
         }
         keys
     }
