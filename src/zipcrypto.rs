@@ -209,6 +209,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
     pub(crate) keys: ZipCryptoKeys,
+    buffer: Vec<u8>,
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
     #[allow(unused)]
@@ -219,9 +220,11 @@ impl<W: std::io::Write> ZipCryptoWriter<W> {
 impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         const CHUNK_SIZE: usize = 4096;
-        let mut temp_buf = [0u8; CHUNK_SIZE];
+        if self.buffer.len() < CHUNK_SIZE {
+            self.buffer.resize(CHUNK_SIZE, 0u8);
+        }
         for chunk in buf.chunks(CHUNK_SIZE) {
-            let encrypted_chunk = &mut temp_buf[..chunk.len()];
+            let encrypted_chunk = &mut self.buffer[..chunk.len()];
             for (i, &byte) in chunk.iter().enumerate() {
                 encrypted_chunk[i] = self.keys.encrypt_byte(byte);
             }
