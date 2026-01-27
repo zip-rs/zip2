@@ -4,7 +4,7 @@ permissions:
   security-events: write
 
 concurrency:
-  group: ${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
+  group: ci-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
   cancel-in-progress: false
 
 on:
