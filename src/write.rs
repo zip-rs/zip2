@@ -191,7 +191,7 @@ use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
 use crate::write::GenericZipWriter::{Closed, Storer};
-use crate::zipcrypto::{EncryptWith, ZipCryptoKeys};
+use crate::zipcrypto::{EncryptWith, ZipCryptoKeys, CHUNK_SIZE};
 use crate::CompressionMethod::Stored;
 pub use zip_writer::ZipWriter;
 
@@ -1118,6 +1118,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
                     writer: mem::replace(&mut self.inner, Closed).try_inner()?,
                     keys,
+                    buffer: [0u8; CHUNK_SIZE],
                 };
                 self.stats.start = zipwriter.writer.stream_position()?;
                 // crypto_header is counted as part of the data

@@ -37,24 +37,23 @@ use zip::result::ZipError;
 
 #[test]
 #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
-fn encrypting_file() {
+fn encrypting_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
     let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buf));
-    archive
-        .start_file(
-            "name",
-            zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password"),
-        )
-        .unwrap();
-    archive.write_all(b"test").unwrap();
-    archive.finish().unwrap();
+    archive.start_file(
+        "name",
+        zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
+    )?;
+    archive.write_all(b"test")?;
+    archive.finish()?;
     let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut buf = Vec::new();
-    file.read_to_end(&mut buf).unwrap();
+    file.read_to_end(&mut buf)?;
     assert_eq!(buf, b"test");
+    Ok(())
 }
 #[test]
 fn encrypted_file() {
