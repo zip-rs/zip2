@@ -127,15 +127,8 @@ impl ZipCryptoKeys {
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
-        if password.is_empty() {
-            // Avoid using the initial key values unchanged for an empty password.
-            // Feed a fixed byte into the key update so that the derived keys differ
-            // from the public initial constants while keeping the same API.
-            keys.update(0u8);
-        } else {
-            for byte in password {
-                keys.update(*byte);
-            }
+        for byte in password {
+            keys.update(*byte);
         }
         keys
     }
@@ -205,10 +198,12 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
+pub(crate) const CHUNK_SIZE: usize = 4096;
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
     pub(crate) keys: ZipCryptoKeys,
+    pub(crate) buffer: [u8; CHUNK_SIZE],
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
     #[allow(unused)]
@@ -218,10 +213,8 @@ impl<W: std::io::Write> ZipCryptoWriter<W> {
 }
 impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        const CHUNK_SIZE: usize = 4096;
-        let mut temp_buf = [0u8; CHUNK_SIZE];
         for chunk in buf.chunks(CHUNK_SIZE) {
-            let encrypted_chunk = &mut temp_buf[..chunk.len()];
+            let encrypted_chunk = &mut self.buffer[..chunk.len()];
             for (i, &byte) in chunk.iter().enumerate() {
                 encrypted_chunk[i] = self.keys.encrypt_byte(byte);
             }
