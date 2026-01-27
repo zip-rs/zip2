@@ -1065,7 +1065,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
                     writer: mem::replace(&mut self.inner, Closed).try_inner()?,
                     keys,
-                    buffer: [0u8; CHUNK_SIZE]
+                    buffer: [0u8; CHUNK_SIZE],
                 };
                 self.stats.start = zipwriter.writer.stream_position()?;
                 // crypto_header is counted as part of the data
