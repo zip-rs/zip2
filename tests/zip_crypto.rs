@@ -50,9 +50,9 @@ fn encrypting_file() -> zip::result::ZipResult<()> {
     archive.finish()?;
     let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
-    assert_eq!(buf, b"test");
+    let mut file_contents = Vec::new();
+    file.read_to_end(&mut file_contents)?;
+    assert_eq!(file_contents, b"test");
     Ok(())
 }
 #[test]
