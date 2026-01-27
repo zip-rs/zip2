@@ -61,6 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let method: Result<zip::CompressionMethod, Box<dyn std::error::Error>> =
         match args.compression_method {
             CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
+            // _deflate-any and _bzip2_any are enabled by their respective implementations
             CompressionMethod::Deflated => {
                 is_feature!("_deflate-any", zip::CompressionMethod::Deflated)
             }
@@ -95,7 +96,19 @@ fn zip_dir(
         .compression_method(method)
         .unix_permissions(0o755);
 
-    for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
+    // SECURITY NOTE: Any error after this point may leave a partial or corrupt
+    // zip file.
+    // This can lead to data integrity issues or race conditions (e.g., TOCTOU)
+    // if other processes access the incomplete file. A robust application
+    // should mitigate this, for example by writing to a temporary file and
+    // renaming it on success to ensure atomicity.
+    for entry_result in walkdir.into_iter() {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(e) => {
+                return Err(format!("Error while traversing directory {src_dir:?}: {e}").into());
+            }
+        };
         let path = entry.path();
         let name = path.strip_prefix(src_dir)?;
         let path_as_string = name
