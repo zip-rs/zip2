@@ -9,7 +9,7 @@ use core::marker::PhantomData;
 use core::num::Wrapping;
 
 use crate::cfg_if_expr;
-use crate::result::{ZipError, ZipResult};
+use crate::result::ZipError;
 
 /// ZipCrypto header size in bytes.
 const ZIP_CRYPTO_HEADER_SIZE: usize = 12;

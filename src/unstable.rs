@@ -18,7 +18,9 @@ pub mod write {
         /// Write the file with the given password using the deprecated `ZipCrypto` algorithm.
         ///
         /// This is not recommended for new archives, as `ZipCrypto` is not secure.
-        fn with_deprecated_encryption(self, password: &[u8]) -> ZipResult<Self> where Self: Sized;
+        fn with_deprecated_encryption(self, password: &[u8]) -> ZipResult<Self>
+        where
+            Self: Sized;
     }
     impl<T: FileOptionExtension> FileOptionsExt for FileOptions<'_, T> {
         fn with_deprecated_encryption(self, password: &[u8]) -> ZipResult<FileOptions<'static, T>> {

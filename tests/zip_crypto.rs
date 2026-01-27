@@ -42,11 +42,10 @@ fn encrypting_file() -> ZipResult<()> {
     use zip::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
     let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buf));
-    archive
-        .start_file(
-            "name",
-            zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
-        )?;
+    archive.start_file(
+        "name",
+        zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
+    )?;
     archive.write_all(b"test")?;
     archive.finish()?;
     let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
