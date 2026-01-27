@@ -112,9 +112,9 @@ fn encrypted_file() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut data = Vec::new();
-        file.read_to_end(&mut data).unwrap();
-        assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
+        let mut file_contents = Vec::new();
+        file.read_to_end(&mut file_contents).unwrap();
+        assert_eq!(file_contents, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
     }
 }
 
