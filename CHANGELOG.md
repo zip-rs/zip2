@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- Treat empty ZipCrypto password as "\0" so that key is slightly harder to guess ([#570](https://github.com/zip-rs/zip2/pull/570))
+- Reject empty ZipCrypto password when encrypting files (can still be used when decrypting)
 - make zip crate safer and more readable ([#536](https://github.com/zip-rs/zip2/pull/536))
 
 ### <!-- 4 -->⚡ Performance
