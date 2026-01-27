@@ -41,11 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
             CompressionMethod::Deflated => cfg_if_expr! {
                 #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
-                _ => Err("The `_deflate-any` feature is not enabled".into()),
+                _ => Err("The `deflate-*` features are not enabled".into()),
             },
             CompressionMethod::Bzip2 => cfg_if_expr! {
                 #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
-                _ => Err("The `bzip2` features are not enabled".into()),
+                _ => Err("The `bzip2-*` features are not enabled".into()),
             },
             CompressionMethod::Xz => cfg_if_expr! {
                 #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
@@ -80,7 +80,19 @@ fn zip_dir(
         .compression_method(method)
         .unix_permissions(0o755);
 
-    for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
+    // SECURITY NOTE: Any error after this point may leave a partial or corrupt
+    // zip file.
+    // This can lead to data integrity issues or race conditions (e.g., TOCTOU)
+    // if other processes access the incomplete file. A robust application
+    // should mitigate this, for example by writing to a temporary file and
+    // renaming it on success to ensure atomicity.
+    for entry_result in walkdir.into_iter() {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(e) => {
+                return Err(format!("Error while traversing directory {src_dir:?}: {e}").into());
+            }
+        };
         let path = entry.path();
         let name = path.strip_prefix(src_dir)?;
         let path_as_string = name
