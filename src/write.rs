@@ -2191,6 +2191,9 @@ fn update_local_file_header<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
+    // Offset (in bytes) from the start of the local file header to the CRC-32 field.
+    // Layout (sizes in bytes): signature(4) + version(2) + flags(2) + compression(2)
+    // + last_mod_time(2) + last_mod_date(2) = 14 bytes before the CRC-32 field.
     const CRC32_OFFSET: u64 = 14;
     writer.seek(SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
     writer.write_u32_le(file.crc32)?;
