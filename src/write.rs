@@ -1531,8 +1531,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
+        const DEFAULT_DIR_PERMISSIONS: u32 = 0o755;
         if options.permissions.is_none() {
-            options.permissions = Some(0o755);
+            options.permissions = Some(DEFAULT_DIR_PERMISSIONS);
         }
         *options
             .permissions
