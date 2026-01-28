@@ -29,8 +29,6 @@ fn test_absolute_paths() -> ZipResult<()> {
     // Try to read the ZIP file
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data))?;
 
-    println!("ZIP file created with {} entries", archive.len());
-
     // Test individual file access
     assert_eq!(archive.len(), 3); // directory + 2 files
 
