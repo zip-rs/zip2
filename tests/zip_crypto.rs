@@ -50,9 +50,9 @@ fn encrypting_file() -> zip::result::ZipResult<()> {
     archive.finish()?;
     let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
-    assert_eq!(buf, b"test");
+    let mut file_contents = Vec::new();
+    file.read_to_end(&mut file_contents)?;
+    assert_eq!(file_contents, b"test");
     Ok(())
 }
 #[test]
@@ -96,9 +96,12 @@ fn encrypted_file() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut data = Vec::new();
-        file.read_to_end(&mut data).unwrap();
-        assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
+        let mut decrypted_data = Vec::new();
+        file.read_to_end(&mut decrypted_data).unwrap();
+        assert_eq!(
+            decrypted_data,
+            "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
+        );
     }
 
     // Again, but with the options API.
@@ -112,9 +115,12 @@ fn encrypted_file() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut data = Vec::new();
-        file.read_to_end(&mut data).unwrap();
-        assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
+        let mut file_contents = Vec::new();
+        file.read_to_end(&mut file_contents).unwrap();
+        assert_eq!(
+            file_contents,
+            "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
+        );
     }
 }
 
