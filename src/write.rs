@@ -387,13 +387,15 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     }
 }
 
+const DEFAULT_FILE_PERMISSIONS: u32 = 0o644;
+
 impl<T: FileOptionExtension> FileOptions<'_, T> {
     pub(crate) fn normalize(&mut self) {
         if !self.last_modified_time.is_valid() {
             self.last_modified_time = FileOptions::<T>::default().last_modified_time;
         }
 
-        *self.permissions.get_or_insert(0o644) |= ffi::S_IFREG;
+        *self.permissions.get_or_insert(DEFAULT_FILE_PERMISSIONS) |= ffi::S_IFREG;
     }
 
     /// Indicates whether this file will be encrypted (whether with AES or `ZipCrypto`).
