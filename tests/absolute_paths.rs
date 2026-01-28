@@ -1,20 +1,21 @@
 use std::io::Write;
 use zip::result::ZipResult;
 use zip::write::SimpleFileOptions;
-use zip::{cfg_if_expr, ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipWriter};
 
 #[test]
 fn test_absolute_paths() -> ZipResult<()> {
     // Create a ZIP file with absolute paths
     let buf = Vec::new();
     let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
-    let options = cfg_if_expr!(
-        SimpleFileOptions:
-        #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))] => {
+    let options = {
+        #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+        {
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)
-        },
-        _ => SimpleFileOptions::default()
-    );
+        }
+        #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
+        SimpleFileOptions::default()
+    };
 
     // Create entries with absolute paths
     writer.add_directory("/_/", options)?;

@@ -6,7 +6,7 @@
 
 use clap::{Parser, ValueEnum};
 use walkdir::WalkDir;
-use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
+use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -32,6 +32,28 @@ enum CompressionMethod {
     Zstd,
 }
 
+/// Used to test with --no-default-features or a specific features
+/// ```sh
+/// cargo run --no-default-features --example write_dir src/ dest.zip xz
+/// # should error because no xz
+///
+/// cargo run --features xz --example write_dir src/ dest.zip xz
+/// # should work
+/// ```
+macro_rules! is_feature {
+    ($feature:literal, $compression:expr) => {{
+        #[cfg(feature = $feature)]
+        {
+            Ok($compression)
+        }
+
+        #[cfg(not(feature = $feature))]
+        {
+            Err(format!("The `{}` feature is not enabled", $feature).into())
+        }
+    }};
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let src_dir = &args.source;
@@ -39,22 +61,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let method: Result<zip::CompressionMethod, Box<dyn std::error::Error>> =
         match args.compression_method {
             CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
-            CompressionMethod::Deflated => cfg_if_expr! {
-                #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
-                _ => Err("The `deflate-*` features are not enabled".into()),
-            },
-            CompressionMethod::Bzip2 => cfg_if_expr! {
-                #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
-                _ => Err("The `bzip2-*` features are not enabled".into()),
-            },
-            CompressionMethod::Xz => cfg_if_expr! {
-                #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
-                _ => Err("The `xz` feature is not enabled".into()),
-            },
-            CompressionMethod::Zstd => cfg_if_expr! {
-                #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
-                _ => Err("The `zstd` feature is not enabled".into()),
-            },
+            // _deflate-any and _bzip2_any are enabled by their respective implementations
+            CompressionMethod::Deflated => {
+                is_feature!("_deflate-any", zip::CompressionMethod::Deflated)
+            }
+            CompressionMethod::Bzip2 => is_feature!("_bzip2_any", zip::CompressionMethod::Bzip2),
+            CompressionMethod::Xz => is_feature!("xz", zip::CompressionMethod::Xz),
+            CompressionMethod::Zstd => is_feature!("zstd", zip::CompressionMethod::Zstd),
         };
     let method = method?;
     zip_dir(src_dir, dest_file, method)?;
@@ -71,6 +84,9 @@ fn zip_dir(
         return Err(ZipError::FileNotFound.into());
     }
 
+    if dest_file.exists() {
+        return Err(format!("File {} already exists", dest_file.display()).into());
+    }
     let file = File::create(dest_file)?;
 
     let walkdir = WalkDir::new(src_dir);
