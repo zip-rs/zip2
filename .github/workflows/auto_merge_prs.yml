@@ -14,11 +14,10 @@ jobs:
         uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
         with:
           egress-policy: audit
-
       - name: Dependabot metadata
         id: metadata
         if: ${{ github.actor == 'dependabot[bot]' }}
-        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+        uses: dependabot/fetch-metadata@v2.5.0
         with:
           github-token: "${{ github.token }}"
       - name: Enable auto-merge
