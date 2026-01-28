@@ -115,7 +115,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             #[cfg(feature = "xz")]
             Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.inner())),
             #[cfg(feature = "ppmd")]
-            Ppmd(_) => f.write_fmt(format_args!("Ppmd8Encoder")),
+            Ppmd(w) => f.write_fmt(format_args!("Ppmd8Encoder({w:?})")),
         }
     }
 }
