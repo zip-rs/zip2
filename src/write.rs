@@ -12,7 +12,7 @@ use crate::types::{
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
-use core::mem::{self, size_of, offset_of};
+use core::mem::{self, offset_of, size_of};
 use core::str::{from_utf8, Utf8Error};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
@@ -2194,7 +2194,9 @@ fn update_local_file_header<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    writer.seek(SeekFrom::Start(file.header_start + u64::from(offset_of!(ZipLocalEntryBlock, crc32))))?;
+    writer.seek(SeekFrom::Start(
+        file.header_start + offset_of!(ZipLocalEntryBlock, crc32) as u64,
+    ))?;
     writer.write_u32_le(file.crc32)?;
     if file.large_file {
         writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
