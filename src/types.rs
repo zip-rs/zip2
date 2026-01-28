@@ -885,7 +885,7 @@ impl ZipFileData {
     }
 
     fn is_ascii(&self) -> bool {
-        self.file_name_raw.is_ascii()
+        self.file_name_raw.is_ascii() && self.file_comment.is_ascii()
     }
 
     fn flags(&self) -> u16 {

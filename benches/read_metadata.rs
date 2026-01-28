@@ -21,7 +21,7 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> ZipResult<Ve
     for i in 0..count_files {
         let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
         writer.start_file(name, options)?;
-        getrandom::fill(&mut bytes).map_err(io::Error::from)?;
+        getrandom::fill(&mut bytes).map_err(io::Error::other)?;
         writer.write_all(&bytes)?;
     }
 

@@ -215,6 +215,10 @@ mod sealed {
         fn extra_data(&self) -> Option<&Arc<Vec<u8>>>;
         /// Central Extra Data
         fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>>;
+        /// File Comment
+        fn file_comment(&self) -> Option<&Box<str>>;
+        /// Take File Comment (moves ownership)
+        fn take_file_comment(&mut self) -> Option<Box<str>>;
     }
     impl Sealed for () {}
     impl FileOptionExtension for () {
@@ -222,6 +226,12 @@ mod sealed {
             None
         }
         fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
+            None
+        }
+        fn file_comment(&self) -> Option<&Box<str>> {
+            None
+        }
+        fn take_file_comment(&mut self) -> Option<Box<str>> {
             None
         }
     }
@@ -234,6 +244,12 @@ mod sealed {
         fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
             Some(&self.central_extra_data)
         }
+        fn file_comment(&self) -> Option<&Box<str>> {
+            self.file_comment.as_ref()
+        }
+        fn take_file_comment(&mut self) -> Option<Box<str>> {
+            self.file_comment.take()
+        }
     }
 }
 
@@ -245,6 +261,7 @@ pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
 pub struct ExtendedFileOptions {
     extra_data: Arc<Vec<u8>>,
     central_extra_data: Arc<Vec<u8>>,
+    file_comment: Option<Box<str>>,
 }
 
 impl ExtendedFileOptions {
@@ -496,6 +513,13 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     }
 }
 impl FileOptions<'_, ExtendedFileOptions> {
+    /// Set the file comment.
+    #[must_use]
+    pub fn with_file_comment<S: Into<Box<str>>>(mut self, comment: S) -> Self {
+        self.extended_options.file_comment = Some(comment.into());
+        self
+    }
+
     /// Adds an extra data field.
     pub fn add_extra_data<D: AsRef<[u8]>>(
         &mut self,
@@ -539,6 +563,26 @@ impl FileOptions<'static, ()> {
         #[cfg(feature = "aes-crypto")]
         aes_mode: None,
     };
+}
+
+impl<'k> FileOptions<'k, ()> {
+    /// Convert to FullFileOptions.
+    pub fn into_full_options(self) -> FullFileOptions<'k> {
+        FileOptions {
+            compression_method: self.compression_method,
+            compression_level: self.compression_level,
+            last_modified_time: self.last_modified_time,
+            permissions: self.permissions,
+            large_file: self.large_file,
+            encrypt_with: self.encrypt_with,
+            extended_options: ExtendedFileOptions::default(),
+            alignment: self.alignment,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: self.zopfli_buffer_size,
+            #[cfg(feature = "aes-crypto")]
+            aes_mode: self.aes_mode,
+        }
+    }
 }
 
 impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
@@ -1025,6 +1069,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_mode,
             &extra_data,
         );
+        if let Some(comment) = options.extended_options.take_file_comment() {
+            if comment.len() > u16::MAX as usize {
+                return Err(invalid!("File comment must be less than 64KiB"));
+            }
+            if !comment.is_ascii() {
+                file.is_utf8 = true;
+            }
+            file.file_comment = comment;
+        }
         file.using_data_descriptor =
             !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
@@ -1351,15 +1404,18 @@ impl<W: Write + Seek> ZipWriter<W> {
         file: ZipFile<'_, R>,
         name: S,
     ) -> ZipResult<()> {
-        let options = file.options();
+        let mut options = file.options().into_full_options();
+        if !file.comment().is_empty() {
+            options = options.with_file_comment(file.comment());
+        }
         self.raw_copy_file_rename_internal(file, name, options)
     }
 
-    fn raw_copy_file_rename_internal<R: Read, S: ToString>(
+    fn raw_copy_file_rename_internal<R: Read, S: ToString, T: FileOptionExtension>(
         &mut self,
         mut file: ZipFile<'_, R>,
         name: S,
-        options: SimpleFileOptions,
+        options: FileOptions<'_, T>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
@@ -1447,12 +1503,16 @@ impl<W: Write + Seek> ZipWriter<W> {
     ) -> ZipResult<()> {
         let name = file.name().to_owned();
 
-        let mut options = file.options();
+        let mut options = file.options().into_full_options();
 
         options = options.last_modified_time(last_modified_time);
 
         if let Some(perms) = unix_mode {
             options = options.unix_permissions(perms);
+        }
+
+        if !file.comment().is_empty() {
+            options = options.with_file_comment(file.comment());
         }
 
         options.normalize();
@@ -2340,6 +2400,49 @@ mod test {
     }
 
     #[test]
+    fn write_file_comment_roundtrip() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        // let options = SimpleFileOptions::default().compression_method(Stored);
+        let options = FileOptions {
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+                file_comment: Some("file comment".into()),
+            },
+
+            // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
+            #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+            compression_method: crate::CompressionMethod::Stored,
+            ..Default::default()
+        };
+        writer.start_file("foo.txt", options)?;
+        writer.write_all(b"data")?;
+        let options2 = FileOptions {
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![].into(),
+                file_comment: Some("file2 comment".into()),
+            },
+            // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
+            #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+            compression_method: crate::CompressionMethod::Stored,
+            ..Default::default()
+        };
+        writer.start_file("foo2.txt", options2)?;
+        writer.write_all(b"data2")?;
+
+        let bytes = writer.finish()?.into_inner();
+        let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+        {
+            let file = archive.by_name("foo.txt")?;
+            assert_eq!(file.comment(), "file comment");
+        }
+        let file2 = archive.by_name("foo2.txt")?;
+        assert_eq!(file2.comment(), "file2 comment");
+        Ok(())
+    }
+
+    #[test]
     fn unix_permissions_bitmask() {
         // unix_permissions() throws away upper bits.
         let options = SimpleFileOptions::default().unix_permissions(0o120777);
@@ -2974,6 +3077,7 @@ mod test {
                 extended_options: ExtendedFileOptions {
                     extra_data: vec![].into(),
                     central_extra_data: vec![].into(),
+                    file_comment: None,
                 },
                 alignment: 2048,
                 ..Default::default()
@@ -3000,6 +3104,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![99, 0, 15, 0, 207].into(),
+                file_comment: None,
             },
             ..Default::default()
         };
@@ -3026,6 +3131,7 @@ mod test {
                     185,
                 ]
                 .into(),
+                file_comment: None,
             },
             alignment: 32787,
             ..Default::default()
@@ -3052,6 +3158,7 @@ mod test {
                     1, 41, 4, 0, 1, 255, 245, 117, 117, 112, 5, 0, 80, 255, 149, 255, 247,
                 ]
                 .into(),
+                file_comment: None,
             },
             alignment: 4103,
             ..Default::default()
@@ -3077,6 +3184,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 4,
             ..Default::default()
@@ -3104,6 +3212,7 @@ mod test {
                 extended_options: ExtendedFileOptions {
                     extra_data: vec![].into(),
                     central_extra_data: vec![].into(),
+                    file_comment: None,
                 },
                 alignment: 185,
                 ..Default::default()
@@ -3155,6 +3264,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 2565,
             ..Default::default()
@@ -3171,6 +3281,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 0,
             ..Default::default()
@@ -3195,6 +3306,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 65521,
             ..Default::default()
@@ -3212,6 +3324,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![255, 255, 1, 0, 255, 0, 0, 0, 0].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 65535,
             ..Default::default()
@@ -3238,6 +3351,7 @@ mod test {
                 extended_options: ExtendedFileOptions {
                     extra_data: vec![].into(),
                     central_extra_data: vec![].into(),
+                    file_comment: None,
                 },
                 alignment: 0,
                 ..Default::default()
@@ -3279,6 +3393,7 @@ mod test {
                     255, 3, 0, 2, 0, 26, 154, 38, 251, 0, 0,
                 ]
                 .into(),
+                file_comment: None,
             },
             alignment: 65535,
             ..Default::default()
@@ -3305,6 +3420,7 @@ mod test {
                     76, 149, 2, 0, 149, 149, 67, 149, 0, 0,
                 ]
                 .into(),
+                file_comment: None,
             },
             alignment: 65535,
             ..Default::default()
@@ -3366,6 +3482,7 @@ mod test {
                                                 extended_options: ExtendedFileOptions {
                                                     extra_data: vec![].into(),
                                                     central_extra_data: vec![].into(),
+                                                    file_comment: None,
                                                 },
                                                 alignment: 255,
                                                 ..Default::default()
@@ -3392,6 +3509,7 @@ mod test {
                                             extended_options: ExtendedFileOptions {
                                                 extra_data: vec![].into(),
                                                 central_extra_data: vec![].into(),
+                                                file_comment: None,
                                             },
                                             alignment: 43,
                                             ..Default::default()
@@ -3412,6 +3530,7 @@ mod test {
                                             extended_options: ExtendedFileOptions {
                                                 extra_data: vec![].into(),
                                                 central_extra_data: vec![].into(),
+                                                file_comment: None,
                                             },
                                             alignment: 26,
                                             ..Default::default()
@@ -3438,6 +3557,7 @@ mod test {
                                                 extra_data: vec![3, 0, 1, 0, 255, 144, 136, 0, 0]
                                                     .into(),
                                                 central_extra_data: vec![].into(),
+                                                file_comment: None,
                                             },
                                             alignment: 65535,
                                             ..Default::default()
@@ -3475,6 +3595,7 @@ mod test {
                                 extended_options: ExtendedFileOptions {
                                     extra_data: vec![].into(),
                                     central_extra_data: vec![].into(),
+                                    file_comment: None,
                                 },
                                 alignment: 0,
                                 ..Default::default()
@@ -3528,6 +3649,7 @@ mod test {
                     extended_options: ExtendedFileOptions {
                         extra_data: vec![].into(),
                         central_extra_data: vec![].into(),
+                        file_comment: None,
                     },
                     alignment: 20555,
                     ..Default::default()
@@ -3563,6 +3685,7 @@ mod test {
                 extended_options: ExtendedFileOptions {
                     extra_data: vec![].into(),
                     central_extra_data: vec![].into(),
+                    file_comment: None,
                 },
                 alignment: 0,
                 ..Default::default()
@@ -3623,6 +3746,7 @@ mod test {
                                             extended_options: ExtendedFileOptions {
                                                 extra_data: vec![].into(),
                                                 central_extra_data: vec![].into(),
+                                                file_comment: None,
                                             },
                                             alignment: 20555,
                                             ..Default::default()
@@ -3643,6 +3767,7 @@ mod test {
                                         extended_options: ExtendedFileOptions {
                                             extra_data: vec![].into(),
                                             central_extra_data: vec![].into(),
+                                            file_comment: None,
                                         },
                                         alignment: 0,
                                         ..Default::default()
@@ -3729,6 +3854,7 @@ mod test {
                             ]
                             .into(),
                             central_extra_data: vec![].into(),
+                            file_comment: None,
                         },
                         alignment: 1542,
                         ..Default::default()
@@ -3795,6 +3921,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 255,
             ..Default::default()
@@ -3830,6 +3957,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 256,
             ..Default::default()
@@ -3863,6 +3991,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             ..Default::default()
         };
@@ -3915,6 +4044,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![117, 99, 6, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 2, 0, 0, 0].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 65535,
             ..Default::default()
@@ -3940,6 +4070,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 45232,
             ..Default::default()
@@ -3972,6 +4103,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![3, 0, 4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 65535,
             ..Default::default()
@@ -3995,6 +4127,7 @@ mod test {
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![].into(),
+                file_comment: None,
             },
             alignment: 0,
             ..Default::default()
@@ -4013,6 +4146,7 @@ mod test {
                 extended_options: ExtendedFileOptions {
                     extra_data: vec![].into(),
                     central_extra_data: vec![].into(),
+                    file_comment: None,
                 },
                 alignment: 4,
                 ..Default::default()
@@ -4030,6 +4164,7 @@ mod test {
                 extended_options: ExtendedFileOptions {
                     extra_data: vec![].into(),
                     central_extra_data: vec![].into(),
+                    file_comment: None,
                 },
                 alignment: 32256,
                 ..Default::default()
@@ -4060,6 +4195,7 @@ mod test {
                     extended_options: ExtendedFileOptions {
                         extra_data: vec![].into(),
                         central_extra_data: vec![].into(),
+                        file_comment: None,
                     },
                     alignment: 0,
                     ..Default::default()
@@ -4079,6 +4215,7 @@ mod test {
                     extended_options: ExtendedFileOptions {
                         extra_data: vec![].into(),
                         central_extra_data: vec![].into(),
+                        file_comment: None,
                     },
                     alignment: 16,
                     ..Default::default()
