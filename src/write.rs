@@ -12,7 +12,7 @@ use crate::types::{
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
-use core::mem::{self, size_of};
+use core::mem::{self, offset_of, size_of};
 use core::str::{from_utf8, Utf8Error};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
@@ -387,13 +387,16 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     }
 }
 
+const DEFAULT_FILE_PERMISSIONS: u32 = 0o644;
+const DEFAULT_DIR_PERMISSIONS: u32 = 0o755;
+
 impl<T: FileOptionExtension> FileOptions<'_, T> {
     pub(crate) fn normalize(&mut self) {
         if !self.last_modified_time.is_valid() {
             self.last_modified_time = FileOptions::<T>::default().last_modified_time;
         }
 
-        *self.permissions.get_or_insert(0o644) |= ffi::S_IFREG;
+        *self.permissions.get_or_insert(DEFAULT_FILE_PERMISSIONS) |= ffi::S_IFREG;
     }
 
     /// Indicates whether this file will be encrypted (whether with AES or `ZipCrypto`).
@@ -1532,7 +1535,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         S: Into<String>,
     {
         if options.permissions.is_none() {
-            options.permissions = Some(0o755);
+            options.permissions = Some(DEFAULT_DIR_PERMISSIONS);
         }
         *options
             .permissions
@@ -2191,8 +2194,9 @@ fn update_local_file_header<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    const CRC32_OFFSET: u64 = 14;
-    writer.seek(SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
+    writer.seek(SeekFrom::Start(
+        file.header_start + offset_of!(ZipLocalEntryBlock, crc32) as u64,
+    ))?;
     writer.write_u32_le(file.crc32)?;
     if file.large_file {
         writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
