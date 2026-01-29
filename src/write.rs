@@ -1093,11 +1093,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, password }) => {
-                let aeswriter = crate::aes::AesWriter::new(
-                    writer,
-                    mode,
-                    password.as_bytes(),
-                )?;
+                let aeswriter = crate::aes::AesWriter::new(writer, mode, password.as_bytes())?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
@@ -1215,15 +1211,19 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn switch_to_non_encrypting_writer(&mut self) -> Result<(), ZipError> {
         self.inner = GenericZipWriter::Storer(
             match mem::replace(&mut self.inner, GenericZipWriter::Closed) {
-            #[cfg(feature = "aes-crypto")]
-            GenericZipWriter::Storer(MaybeEncrypted::Aes(writer)) =>
-                MaybeEncrypted::Unencrypted(writer.finish()?),
-            GenericZipWriter::Storer(MaybeEncrypted::ZipCrypto(writer)) =>
-                MaybeEncrypted::Unencrypted(writer.finish()?),
-            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) =>
-                MaybeEncrypted::Unencrypted(w),
-            _ => unreachable!(),
-        });
+                #[cfg(feature = "aes-crypto")]
+                GenericZipWriter::Storer(MaybeEncrypted::Aes(writer)) => {
+                    MaybeEncrypted::Unencrypted(writer.finish()?)
+                }
+                GenericZipWriter::Storer(MaybeEncrypted::ZipCrypto(writer)) => {
+                    MaybeEncrypted::Unencrypted(writer.finish()?)
+                }
+                GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => {
+                    MaybeEncrypted::Unencrypted(w)
+                }
+                _ => unreachable!(),
+            },
+        );
         Ok(())
     }
 
@@ -1842,21 +1842,23 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             };
                             Ok(Box::new(move |bare| {
                                 Ok(match zopfli_buffer_size {
-                                    Some(size) => {
-                                        GenericZipWriter::BufferedZopfliDeflater(std::io::BufWriter::with_capacity(
+                                    Some(size) => GenericZipWriter::BufferedZopfliDeflater(
+                                        std::io::BufWriter::with_capacity(
                                             size,
                                             zopfli::DeflateEncoder::new(
                                                 options,
                                                 Default::default(),
                                                 bare,
                                             ),
-                                        ))
-                                    }
-                                    None => GenericZipWriter::ZopfliDeflater(zopfli::DeflateEncoder::new(
-                                        options,
-                                        Default::default(),
-                                        bare,
-                                    )),
+                                        ),
+                                    ),
+                                    None => GenericZipWriter::ZopfliDeflater(
+                                        zopfli::DeflateEncoder::new(
+                                            options,
+                                            Default::default(),
+                                            bare,
+                                        ),
+                                    ),
                                 })
                             }))
                         }};
