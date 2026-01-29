@@ -825,7 +825,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ///```
     pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
         let central_start = self.finalize()?;
-        let inner = mem::replace(&mut self.inner, Closed).try_inner()?;
+        let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed).try_inner()?;
         let comment = mem::take(&mut self.comment);
         let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
