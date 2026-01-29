@@ -100,22 +100,22 @@ enum GenericZipWriter<W: Write + Seek> {
 impl<W: Write + Seek> Debug for GenericZipWriter<W> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Closed => f.write_str("Closed"),
-            Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
+            Self::Closed => f.write_str("Closed"),
+            Self::Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
             #[cfg(feature = "deflate-flate2")]
-            Deflater(w) => f.write_fmt(format_args!("Deflater({:?})", w.get_ref())),
+            Self::Deflater(w) => f.write_fmt(format_args!("Deflater({:?})", w.get_ref())),
             #[cfg(feature = "deflate-zopfli")]
-            ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
+            Self::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
             #[cfg(feature = "deflate-zopfli")]
-            BufferedZopfliDeflater(_) => f.write_str("BufferedZopfliDeflater"),
+            Self::BufferedZopfliDeflater(_) => f.write_str("BufferedZopfliDeflater"),
             #[cfg(feature = "_bzip2_any")]
-            Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
+            Self::Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
             #[cfg(feature = "zstd")]
-            Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
+            Self::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
             #[cfg(feature = "xz")]
-            Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.inner())),
+            Self::Xz(w) => f.write_fmt(format_args!("Xz({:?})", w.inner())),
             #[cfg(feature = "ppmd")]
-            Ppmd(_) => f.write_fmt(format_args!("Ppmd8Encoder")),
+            Self::Ppmd(_) => f.write_fmt(format_args!("Ppmd8Encoder")),
         }
     }
 }
