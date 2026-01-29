@@ -92,7 +92,7 @@ fn encrypted_file() {
 
     {
         // Correct password, read contents
-        let mut file = archive.by_index_decrypt(0, "test".as_bytes()).unwrap();
+        let mut file = archive.by_index_decrypt(0, b"test").unwrap();
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
