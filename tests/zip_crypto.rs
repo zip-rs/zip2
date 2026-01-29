@@ -127,8 +127,11 @@ fn encrypted_file() {
 #[test]
 fn buffered_read() {
     use std::io::{BufReader, Read};
-    // deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens, it's not going to take entire buffer,
-    // for this file it needs to be between 13..=46 bytes (with exception of 44 bytes)
+    // Deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens,
+    // it's not going to take the entire buffer. For this specific test file, the capacity needs to
+    // be between 13..=46 bytes (with exception of 44 bytes) to exercise the intended code path.
+    // We choose 13 here as the smallest value in that valid range to keep the buffer as small as
+    // possible while still triggering the partial-buffer read behavior we want to test.
     const TEST_BUFFER_CAPACITY: usize = 13;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
