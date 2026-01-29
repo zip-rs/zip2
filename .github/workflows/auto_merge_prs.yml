@@ -17,7 +17,7 @@ jobs:
       - name: Dependabot metadata
         id: metadata
         if: ${{ github.actor == 'dependabot[bot]' }}
-        uses: dependabot/fetch-metadata@v2.5.0
+        uses: step-security/dependabot-fetch-metadata@38d404f7e1742ae1cfa9b25ade9afa0c7a288e77 # v2.5.0
         with:
           github-token: "${{ github.token }}"
       - name: Enable auto-merge
