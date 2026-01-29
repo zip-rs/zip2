@@ -40,15 +40,15 @@ use zip::result::ZipError;
 fn encrypting_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
-    let mut buf = vec![0; 2048];
-    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buf));
+    let mut archive_buf = vec![0; 2048];
+    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut archive_buf));
     archive.start_file(
         "name",
         zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
     )?;
     archive.write_all(b"test")?;
     archive.finish()?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(&mut archive_buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut file_contents = Vec::new();
     file.read_to_end(&mut file_contents)?;
