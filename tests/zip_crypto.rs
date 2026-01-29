@@ -127,11 +127,12 @@ fn encrypted_file() {
 #[test]
 fn buffered_read() {
     use std::io::{BufReader, Read};
-
     // deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens, it's not going to take entire buffer,
     // for this file it needs to be between 13..=46 bytes (with exception of 44 bytes)
+    const TEST_BUFFER_CAPACITY: usize = 13;
+
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
-    let buffered = BufReader::with_capacity(13, zip_file_bytes);
+    let buffered = BufReader::with_capacity(TEST_BUFFER_CAPACITY, zip_file_bytes);
     let mut archive = zip::ZipArchive::new(buffered).unwrap();
 
     let mut file = archive.by_index_decrypt(0, b"test").unwrap();
