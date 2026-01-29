@@ -277,7 +277,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 2 -->🚜 Refactor
 
-- Change the inner structure of `DateTime` (#267)
+- Change the inner structure of `DateTime` ([#267](https://github.com/zip-rs/zip2/pull/267))
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
