@@ -1088,15 +1088,16 @@ impl<W: Write + Seek> ZipWriter<W> {
             Ok(())
         };
         self.ok_or_abort_file(result)?;
-        let mut writer = self.close_writer()?;
-        self.stats.start = writer.stream_position()?;
+        self.stats.start = self.inner.try_inner_mut()?.stream_position()?;
         match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, password }) => {
+                let writer = self.close_writer()?;
                 let aeswriter = crate::aes::AesWriter::new(writer, mode, password.as_bytes())?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
+                let writer = self.close_writer()?;
                 let file = &mut self.files[index];
                 // With ZipCrypto, we _need_ to use a data descriptor so that
                 // we can initialize the stream properly.
@@ -1566,7 +1567,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn close_writer(&mut self) -> ZipResult<W> {
         let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
         match inner {
-            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => w.try_inner(),
+            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => Ok(w),
             _ => Err(invalid!(
                 "Should have switched to stored and unencrypted beforehand",
             )),
