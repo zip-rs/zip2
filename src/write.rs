@@ -1566,7 +1566,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn close_writer(&mut self) -> ZipResult<W> {
         let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
         match inner {
-            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => Ok(w),
+            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => w.try_inner(),
             _ => Err(invalid!(
                 "Should have switched to stored and unencrypted beforehand",
             )),
