@@ -202,7 +202,7 @@ mod sealed {
         /// Central Extra Data
         fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>>;
         /// File Comment
-        fn file_comment(&self) -> Option<&Box<str>>;
+        fn file_comment(&self) -> Option<&str>;
         /// Take File Comment (moves ownership)
         fn take_file_comment(&mut self) -> Option<Box<str>>;
     }
@@ -214,7 +214,7 @@ mod sealed {
         fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
             None
         }
-        fn file_comment(&self) -> Option<&Box<str>> {
+        fn file_comment(&self) -> Option<&str> {
             None
         }
         fn take_file_comment(&mut self) -> Option<Box<str>> {
@@ -230,8 +230,8 @@ mod sealed {
         fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
             Some(&self.central_extra_data)
         }
-        fn file_comment(&self) -> Option<&Box<str>> {
-            self.file_comment.as_ref()
+        fn file_comment(&self) -> Option<&str> {
+            self.file_comment.as_ref().map(Box::as_ref)
         }
         fn take_file_comment(&mut self) -> Option<Box<str>> {
             self.file_comment.take()
