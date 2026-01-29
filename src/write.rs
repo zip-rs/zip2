@@ -190,7 +190,7 @@ pub use self::sealed::FileOptionExtension;
 use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
-use crate::write::GenericZipWriter::{Closed, Storer};
+use crate::write::GenericZipWriter;
 use crate::zipcrypto::{EncryptWith, ZipCryptoKeys, CHUNK_SIZE};
 use crate::CompressionMethod::Stored;
 pub use zip_writer::ZipWriter;
