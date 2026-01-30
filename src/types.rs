@@ -353,15 +353,6 @@ impl DateTime {
         Self::try_from_msdos(self.datepart, self.timepart).is_ok()
     }
 
-    #[cfg(feature = "time")]
-    /// Converts a [`time::OffsetDateTime`] object to a `DateTime`
-    ///
-    /// Returns `Err` when this object is out of bounds
-    #[deprecated(since = "0.6.4", note = "use `DateTime::try_from()` instead")]
-    pub fn from_time(dt: time::OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
-        dt.try_into()
-    }
-
     /// Gets the time portion of this datetime in the msdos representation
     #[must_use]
     pub const fn timepart(&self) -> u16 {
@@ -372,16 +363,6 @@ impl DateTime {
     #[must_use]
     pub const fn datepart(&self) -> u16 {
         self.datepart
-    }
-
-    #[cfg(feature = "time")]
-    /// Converts the `DateTime` to a [`time::OffsetDateTime`] structure
-    #[deprecated(
-        since = "1.3.1",
-        note = "use `time::OffsetDateTime::try_from()` instead"
-    )]
-    pub fn to_time(&self) -> Result<time::OffsetDateTime, time::error::ComponentRange> {
-        (*self).try_into()
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -442,15 +423,6 @@ impl DateTime {
 }
 
 #[cfg(feature = "time")]
-impl TryFrom<time::OffsetDateTime> for DateTime {
-    type Error = DateTimeRangeError;
-
-    fn try_from(dt: time::OffsetDateTime) -> Result<Self, Self::Error> {
-        Self::try_from(time::PrimitiveDateTime::new(dt.date(), dt.time()))
-    }
-}
-
-#[cfg(feature = "time")]
 impl TryFrom<time::PrimitiveDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
@@ -463,15 +435,6 @@ impl TryFrom<time::PrimitiveDateTime> for DateTime {
             dt.minute(),
             dt.second(),
         )
-    }
-}
-
-#[cfg(feature = "time")]
-impl TryFrom<DateTime> for time::OffsetDateTime {
-    type Error = time::error::ComponentRange;
-
-    fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
-        time::PrimitiveDateTime::try_from(dt).map(time::PrimitiveDateTime::assume_utc)
     }
 }
 
@@ -1549,27 +1512,7 @@ mod test {
 
     use std::{path::PathBuf, sync::OnceLock};
 
-    #[cfg(feature = "time")]
-    use time::format_description::well_known::Rfc3339;
-
     use crate::types::{System, ZipFileData};
-
-    #[cfg(feature = "time")]
-    #[test]
-    fn datetime_try_from_offset_datetime() {
-        use time::macros::datetime;
-
-        use super::DateTime;
-
-        // 2018-11-17 10:38:30
-        let dt = DateTime::try_from(datetime!(2018-11-17 10:38:30 UTC)).unwrap();
-        assert_eq!(dt.year(), 2018);
-        assert_eq!(dt.month(), 11);
-        assert_eq!(dt.day(), 17);
-        assert_eq!(dt.hour(), 10);
-        assert_eq!(dt.minute(), 38);
-        assert_eq!(dt.second(), 30);
-    }
 
     #[cfg(feature = "time")]
     #[test]
@@ -1609,20 +1552,6 @@ mod test {
 
     #[cfg(feature = "time")]
     #[test]
-    fn offset_datetime_try_from_datetime() {
-        use time::macros::datetime;
-        use time::OffsetDateTime;
-
-        use super::DateTime;
-
-        // 2018-11-17 10:38:30 UTC
-        let dt =
-            OffsetDateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
-        assert_eq!(dt, datetime!(2018-11-17 10:38:30 UTC));
-    }
-
-    #[cfg(feature = "time")]
-    #[test]
     fn primitive_datetime_try_from_datetime() {
         use time::macros::datetime;
         use time::PrimitiveDateTime;
@@ -1633,25 +1562,6 @@ mod test {
         let dt =
             PrimitiveDateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
         assert_eq!(dt, datetime!(2018-11-17 10:38:30));
-    }
-
-    #[cfg(feature = "time")]
-    #[test]
-    fn offset_datetime_try_from_bounds() {
-        use super::DateTime;
-        use time::OffsetDateTime;
-
-        // 1980-00-00 00:00:00
-        assert!(OffsetDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0x0000, 0x0000)
-        })
-        .is_err());
-
-        // 2107-15-31 31:63:62
-        assert!(OffsetDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
-        })
-        .is_err());
     }
 
     #[cfg(feature = "time")]
@@ -1744,7 +1654,6 @@ mod test {
     }
 
     #[test]
-    #[allow(deprecated)]
     fn time_conversion() {
         use super::DateTime;
         let dt = DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap();
@@ -1763,17 +1672,10 @@ mod test {
         assert_eq!(dt.minute(), 38);
         assert_eq!(dt.second(), 30);
 
-        #[cfg(feature = "time")]
-        assert_eq!(
-            dt.to_time().unwrap().format(&Rfc3339).unwrap(),
-            "2018-11-17T10:38:30Z"
-        );
-
         assert_eq!(<(u16, u16)>::from(dt), (0x4D71, 0x54CF));
     }
 
     #[test]
-    #[allow(deprecated)]
     fn time_out_of_bounds() {
         use super::DateTime;
         let dt = unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) };
@@ -1784,9 +1686,6 @@ mod test {
         assert_eq!(dt.minute(), 63);
         assert_eq!(dt.second(), 62);
 
-        #[cfg(feature = "time")]
-        assert!(dt.to_time().is_err());
-
         let dt = unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) };
         assert_eq!(dt.year(), 1980);
         assert_eq!(dt.month(), 0);
@@ -1794,9 +1693,6 @@ mod test {
         assert_eq!(dt.hour(), 0);
         assert_eq!(dt.minute(), 0);
         assert_eq!(dt.second(), 0);
-
-        #[cfg(feature = "time")]
-        assert!(dt.to_time().is_err());
     }
 
     #[cfg(feature = "time")]
