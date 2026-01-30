@@ -17,7 +17,7 @@ To report a vulnerability, please go to https://github.com/zip-rs/zip2/security/
 A vulnerability will only be publicly disclosed once a fix is released. At that point, the delay before full public disclosure
 will be determined as follows:
 
-* If the proof-of-concept is very simple, or an exploit is already in the wild (whether or not it specifically targets `zip`,
+* If the proof-of-concept is very simple, or an exploit is already in the wild (whether or not it specifically targets `zip`),
   all details will be made public right away.
 * If the vulnerability is specific to `zip` and cannot easily be reverse-engineered from the code history, then the
   proof-of-concept and most of the details will be withheld until 14 days after the fix is released and all vulnerable

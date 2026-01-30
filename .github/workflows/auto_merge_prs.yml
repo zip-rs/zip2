@@ -8,7 +8,7 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'github-actions' }}
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || github.actor == 'github-actions' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
@@ -20,7 +20,7 @@ jobs:
           private-key: ${{ secrets.ACTIONS_RECURSIVE_PRIVATE_KEY }}
       - name: Dependabot metadata
         id: metadata
-        if: ${{ github.actor == 'dependabot[bot]' }}
+        if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
         uses: step-security/dependabot-fetch-metadata@38d404f7e1742ae1cfa9b25ade9afa0c7a288e77 # v2.5.0
         with:
           github-token: ${{ steps.app-token.outputs.token }}
