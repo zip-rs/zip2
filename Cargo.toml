@@ -89,6 +89,8 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
+# This feature should be removed when version 9.0.0 is released
+deprecated-time = []
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
