@@ -373,8 +373,8 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     }
 }
 
-const DEFAULT_FILE_PERMISSIONS: u32 = 0o644;
-const DEFAULT_DIR_PERMISSIONS: u32 = 0o755;
+const DEFAULT_FILE_PERMISSIONS: u32 = 0o644; // rw-r--r-- default for regular files
+const DEFAULT_DIR_PERMISSIONS: u32 = 0o755; // rwxr-xr-x default for directories
 
 impl<T: FileOptionExtension> FileOptions<'_, T> {
     pub(crate) fn normalize(&mut self) {
@@ -615,8 +615,15 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                             .1
                             .large_file
                     {
-                        let _ = self.abort_file();
-                        return Err(io::Error::other("Large file option has not been set"));
+                        return Err(if let Err(e) = self.abort_file() {
+                            let abort_io_err: io::Error = e.into();
+                            io::Error::new(
+                                abort_io_err.kind(),
+                                format!("Large file option has not been set and abort_file() failed: {abort_io_err}")
+                            )
+                        } else {
+                            io::Error::other("Large file option has not been set")
+                        });
                     }
                 }
                 write_result
