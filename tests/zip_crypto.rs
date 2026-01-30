@@ -40,15 +40,15 @@ use zip::result::ZipError;
 fn encrypting_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
-    let mut buf = vec![0; 2048];
-    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buf));
+    let mut archive_buf = vec![0; 2048];
+    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut archive_buf));
     archive.start_file(
         "name",
         zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
     )?;
     archive.write_all(b"test")?;
     archive.finish()?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(&mut archive_buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut file_contents = Vec::new();
     file.read_to_end(&mut file_contents)?;
@@ -92,7 +92,7 @@ fn encrypted_file() {
 
     {
         // Correct password, read contents
-        let mut file = archive.by_index_decrypt(0, "test".as_bytes()).unwrap();
+        let mut file = archive.by_index_decrypt(0, b"test").unwrap();
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
@@ -127,8 +127,11 @@ fn encrypted_file() {
 #[test]
 fn buffered_read() {
     use std::io::{BufReader, Read};
-    // deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens, it's not going to take entire buffer,
-    // for this file it needs to be between 13..=46 bytes (with exception of 44 bytes)
+    // Deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens,
+    // it's not going to take the entire buffer. For this specific test file, the capacity needs to
+    // be between 13..=46 bytes (with exception of 44 bytes) to exercise the intended code path.
+    // We choose 13 here as the smallest value in that valid range to keep the buffer as small as
+    // possible while still triggering the partial-buffer read behavior we want to test.
     const TEST_BUFFER_CAPACITY: usize = 13;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
