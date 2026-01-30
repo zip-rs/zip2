@@ -267,7 +267,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix failing tests, remove symlink loop check
 - Canonicalize output path to avoid false negatives
 - Symlink handling in stream extraction
-- Canonicalize output paths and symlink targets, and ensure they descend from the destination
+- Canonicalize output paths and symlink targets, and ensure they descend from the destination ([CVE-2025-29787](https://github.com/zip-rs/zip2/security/advisories/GHSA-94vh-gphv-8pm8))
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
