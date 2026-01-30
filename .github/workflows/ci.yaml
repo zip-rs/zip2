@@ -37,6 +37,8 @@ jobs:
 
       - name: 'Checkout Repository'
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
   build_and_test:
@@ -77,6 +79,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
       - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
@@ -105,6 +109,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: target
@@ -132,6 +138,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: target
@@ -159,6 +167,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae # v2.8
         with:
           manifest-path: ${{ github.workspace }}/${{ matrix.workspace }}
@@ -173,6 +183,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: target
@@ -197,6 +209,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
 
       - name: resolve minimal versions
@@ -220,6 +234,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
       - name: Install required cargo
         run: cargo install clippy-sarif sarif-fmt
@@ -244,6 +260,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -300,6 +318,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -348,6 +368,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
@@ -404,6 +426,8 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
 
       - run: cargo install cargo-afl --version 0.15.19
