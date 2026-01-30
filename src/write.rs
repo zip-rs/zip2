@@ -615,13 +615,15 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                             .1
                             .large_file
                     {
-                        if let Err(e) = self.abort_file() {
+                        return Err(if let Err(e) = self.abort_file() {
                             let abort_io_err: io::Error = e.into();
-                            return Err(io::Error::new(
+                            io::Error::new(
                                 abort_io_err.kind(),
                                 format!("Large file option has not been set and abort_file() failed: {abort_io_err}")
-                            ));
-                        }
+                            )
+                        } else {
+                            io::Error::other("Large file option has not been set")
+                        });
                     }
                 }
                 write_result
