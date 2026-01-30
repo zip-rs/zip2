@@ -373,8 +373,8 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
     }
 }
 
-const DEFAULT_FILE_PERMISSIONS: u32 = 0o644;
-const DEFAULT_DIR_PERMISSIONS: u32 = 0o755;
+const DEFAULT_FILE_PERMISSIONS: u32 = 0o644; // rw-r--r-- default for regular files
+const DEFAULT_DIR_PERMISSIONS: u32 = 0o755;  // rwxr-xr-x default for directories
 
 impl<T: FileOptionExtension> FileOptions<'_, T> {
     pub(crate) fn normalize(&mut self) {
