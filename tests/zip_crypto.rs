@@ -35,12 +35,14 @@ const ZIP_CRYPTO_FILE: &[u8] = &[
 use std::io::Cursor;
 use zip::result::ZipError;
 
+const ARCHIVE_BUFFER_SIZE: usize = 2048;
+
 #[test]
 #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
 fn encrypting_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
-    let mut archive_buf = vec![0; 2048];
+    let mut archive_buf = vec![0; ARCHIVE_BUFFER_SIZE];
     let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut archive_buf));
     archive.start_file(
         "name",
