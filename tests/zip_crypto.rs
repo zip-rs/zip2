@@ -40,7 +40,10 @@ use zip::result::ZipError;
 fn encrypting_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
-    let mut archive_buf = vec![0; 2048];
+
+    const ARCHIVE_BUFFER_SIZE: usize = 2048;
+
+    let mut archive_buf = vec![0; ARCHIVE_BUFFER_SIZE];
     let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut archive_buf));
     archive.start_file(
         "name",
@@ -132,10 +135,10 @@ fn buffered_read() {
     // be between 13..=46 bytes (with exception of 44 bytes) to exercise the intended code path.
     // We choose 13 here as the smallest value in that valid range to keep the buffer as small as
     // possible while still triggering the partial-buffer read behavior we want to test.
-    const TEST_BUFFER_CAPACITY: usize = 13;
+    const PARTIAL_READ_BUFFER_SIZE: usize = 13;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
-    let buffered = BufReader::with_capacity(TEST_BUFFER_CAPACITY, zip_file_bytes);
+    let buffered = BufReader::with_capacity(PARTIAL_READ_BUFFER_SIZE, zip_file_bytes);
     let mut archive = zip::ZipArchive::new(buffered).unwrap();
 
     let mut file = archive.by_index_decrypt(0, b"test").unwrap();
