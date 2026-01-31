@@ -53,9 +53,9 @@ fn test_encrypt_and_decrypt_file() -> zip::result::ZipResult<()> {
     archive.finish()?;
     let mut archive = zip::ZipArchive::new(Cursor::new(&mut buffer))?;
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
-    let mut file_contents = Vec::new();
-    file.read_to_end(&mut file_contents)?;
-    assert_eq!(file_contents, b"test");
+    let mut decrypted_file = Vec::new();
+    file.read_to_end(&mut decrypted_file)?;
+    assert_eq!(decrypted_file, b"test");
     Ok(())
 }
 #[test]
@@ -99,10 +99,10 @@ fn test_encrypted_file_operations() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut file_contents = Vec::new();
-        file.read_to_end(&mut file_contents).unwrap();
+        let mut decrypted_file = Vec::new();
+        file.read_to_end(&mut decrypted_file).unwrap();
         assert_eq!(
-            file_contents,
+            decrypted_file,
             "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
         );
     }
@@ -118,10 +118,10 @@ fn test_encrypted_file_operations() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut file_contents = Vec::new();
-        file.read_to_end(&mut file_contents).unwrap();
+        let mut decrypted_file = Vec::new();
+        file.read_to_end(&mut decrypted_file).unwrap();
         assert_eq!(
-            file_contents,
+            decrypted_file,
             "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
         );
     }
