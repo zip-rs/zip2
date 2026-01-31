@@ -51,7 +51,7 @@ fn test_encrypt_and_decrypt_file() -> zip::result::ZipResult<()> {
     )?;
     archive.write_all(b"test")?;
     archive.finish()?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(&mut archive_buffer)).unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(&mut archive_buffer))?;
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut file_contents = Vec::new();
     file.read_to_end(&mut file_contents)?;
