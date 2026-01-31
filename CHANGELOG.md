@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.3.0](https://github.com/zip-rs/zip2/compare/v7.3.0-pre1...v7.3.0) - 2026-01-31
+
+### <!-- 0 -->🚀 Features
+
+- Add support for per-file comments ([#543](https://github.com/zip-rs/zip2/pull/543))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Return an error if abort_file() fails when exceeding non-large-file limit ([#598](https://github.com/zip-rs/zip2/pull/598))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Bump version to 7.3.0 (semver checks fail if it's still 7.3.0-pre1)
+
 ## [7.3.0-pre1](https://github.com/zip-rs/zip2/compare/v7.2.0...v7.3.0-pre1) - 2026-01-27
 
 ### <!-- 1 -->🐛 Bug Fixes
