@@ -37,7 +37,7 @@ use zip::result::ZipError;
 
 #[test]
 #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
-fn encrypting_file() -> zip::result::ZipResult<()> {
+fn test_encrypt_and_decrypt_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
 
