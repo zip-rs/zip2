@@ -137,11 +137,9 @@ fn test_partial_buffer_read_crypto() {
     // buffer as small as possible while still triggering the partial-buffer read behavior we want to
     // test.
     const MIN_PARTIAL_READ_BUFFER_SIZE: usize = 13;
-    const MAX_PARTIAL_READ_BUFFER_SIZE: usize = 46;
-    const PARTIAL_READ_BUFFER_SIZE: usize = MIN_PARTIAL_READ_BUFFER_SIZE;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
-    let buffered = BufReader::with_capacity(PARTIAL_READ_BUFFER_SIZE, zip_file_bytes);
+    let buffered = BufReader::with_capacity(MIN_PARTIAL_READ_BUFFER_SIZE, zip_file_bytes);
     let mut archive = zip::ZipArchive::new(buffered).unwrap();
 
     let mut file = archive.by_index_decrypt(0, b"test").unwrap();
