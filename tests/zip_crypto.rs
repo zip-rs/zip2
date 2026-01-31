@@ -128,7 +128,7 @@ fn encrypted_file() {
 }
 
 #[test]
-fn buffered_read() {
+fn test_partial_buffer_read_crypto() {
     use std::io::{BufReader, Read};
     // Deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens,
     // it's not going to take the entire buffer. For this specific test file, the capacity needs to
