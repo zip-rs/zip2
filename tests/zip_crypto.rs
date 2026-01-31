@@ -99,10 +99,10 @@ fn test_encrypted_file_operations() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut decrypted_data = Vec::new();
-        file.read_to_end(&mut decrypted_data).unwrap();
+        let mut file_contents = Vec::new();
+        file.read_to_end(&mut file_contents).unwrap();
         assert_eq!(
-            decrypted_data,
+            file_contents,
             "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
         );
     }
