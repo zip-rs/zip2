@@ -43,19 +43,19 @@ fn test_encrypt_and_decrypt_file() -> zip::result::ZipResult<()> {
 
     const ARCHIVE_BUFFER_SIZE: usize = 2048;
 
-    let mut archive_buffer = vec![0; ARCHIVE_BUFFER_SIZE];
-    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut archive_buffer));
+    let mut buffer = vec![0; ARCHIVE_BUFFER_SIZE];
+    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buffer));
     archive.start_file(
         "name",
         zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
     )?;
     archive.write_all(b"test")?;
     archive.finish()?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(&mut archive_buffer))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(&mut buffer))?;
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
-    let mut file_contents = Vec::new();
-    file.read_to_end(&mut file_contents)?;
-    assert_eq!(file_contents, b"test");
+    let mut decrypted_file = Vec::new();
+    file.read_to_end(&mut decrypted_file)?;
+    assert_eq!(decrypted_file, b"test");
     Ok(())
 }
 #[test]
@@ -65,7 +65,7 @@ fn test_encrypted_file_operations() {
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
     let mut archive = zip::ZipArchive::new(zip_file_bytes).unwrap();
 
-    assert_eq!(archive.len(), 1); //Only one file inside archive: `test.txt`
+    assert_eq!(archive.len(), 1); // Only one file inside archive: `test.txt`
 
     {
         // No password
@@ -99,10 +99,10 @@ fn test_encrypted_file_operations() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut decrypted_data = Vec::new();
-        file.read_to_end(&mut decrypted_data).unwrap();
+        let mut decrypted_file = Vec::new();
+        file.read_to_end(&mut decrypted_file).unwrap();
         assert_eq!(
-            decrypted_data,
+            decrypted_file,
             "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
         );
     }
@@ -118,10 +118,10 @@ fn test_encrypted_file_operations() {
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
-        let mut file_contents = Vec::new();
-        file.read_to_end(&mut file_contents).unwrap();
+        let mut decrypted_file = Vec::new();
+        file.read_to_end(&mut decrypted_file).unwrap();
         assert_eq!(
-            file_contents,
+            decrypted_file,
             "abcdefghijklmnopqrstuvwxyz123456789".as_bytes()
         );
     }
@@ -132,13 +132,13 @@ fn test_partial_buffer_read_crypto() {
     use std::io::{BufReader, Read};
     // Deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens,
     // it's not going to take the entire buffer. For this specific test file, the capacity needs to
-    // be between 13..=46 bytes (with exception of 44 bytes) to exercise the intended code path.
-    // We choose 13 here as the smallest value in that valid range to keep the buffer as small as
-    // possible while still triggering the partial-buffer read behavior we want to test.
-    const PARTIAL_READ_BUFFER_SIZE: usize = 13;
+    // be between 13..=46 bytes (and not exactly 44 bytes) to exercise the intended code path. We
+    // choose the minimum value here to keep the buffer as small as possible while still triggering
+    // the partial-buffer read behavior we want to test.
+    const MIN_PARTIAL_READ_BUFFER_SIZE: usize = 13;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
-    let buffered = BufReader::with_capacity(PARTIAL_READ_BUFFER_SIZE, zip_file_bytes);
+    let buffered = BufReader::with_capacity(MIN_PARTIAL_READ_BUFFER_SIZE, zip_file_bytes);
     let mut archive = zip::ZipArchive::new(buffered).unwrap();
 
     let mut file = archive.by_index_decrypt(0, b"test").unwrap();
