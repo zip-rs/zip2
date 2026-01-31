@@ -6,7 +6,7 @@ Only the latest released version is supported.
 
 ## Reporting a Vulnerability
 
-To report a vulnerability, please go to https://github.com/zip-rs/zip2/security/advisories/new. If you cannot or prefer not to use GitHub, you can instead email the maintainers at security@zip-rs.dev with details of the issue. We'll attempt to:
+To report a vulnerability, please go to https://github.com/zip-rs/zip2/security/advisories/new. We'll attempt to:
 
 * Close the report within 7 days if it's invalid, or if a fix has already been released but some old versions needed to be yanked.
 * Provide progress reports at least every 7 days to the original reporter.
