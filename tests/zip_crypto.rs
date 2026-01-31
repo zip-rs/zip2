@@ -65,7 +65,7 @@ fn test_encrypted_file_operations() {
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
     let mut archive = zip::ZipArchive::new(zip_file_bytes).unwrap();
 
-    assert_eq!(archive.len(), 1); //Only one file inside archive: `test.txt`
+    assert_eq!(archive.len(), 1); // Only one file inside archive: `test.txt`
 
     {
         // No password
