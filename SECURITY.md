@@ -10,7 +10,7 @@ To report a vulnerability, please go to https://github.com/zip-rs/zip2/security/
 
 * Close the report within 7 days if it's invalid, or if a fix has already been released but some old versions needed to be yanked.
 * Provide progress reports at least every 7 days to the original reporter.
-* Fix vulnerabilities within 30 days of the initial report.
+* Aim to provide a fix within 30 days of the initial report. If a complete fix is not feasible in that timeframe (for example, due to complexity or external dependencies), we will communicate this to the reporter, share any available mitigations or workarounds, and adjust the expected timeline accordingly.
 
 ## Disclosure
 
