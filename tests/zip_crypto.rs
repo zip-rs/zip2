@@ -59,7 +59,7 @@ fn encrypting_file() -> zip::result::ZipResult<()> {
     Ok(())
 }
 #[test]
-fn encrypted_file() {
+fn test_encrypted_file_operations() {
     use std::io::Read;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
