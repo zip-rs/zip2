@@ -133,8 +133,9 @@ fn test_partial_buffer_read_crypto() {
     // Deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens,
     // it's not going to take the entire buffer. For this specific test file, the capacity needs to
     // be between 13..=46 bytes (and not exactly 44 bytes) to exercise the intended code path. We
-    // choose the minimum value here to keep the buffer as small as possible while still triggering
-    // the partial-buffer read behavior we want to test.
+    // choose the minimum value here (13 bytes) to use the smallest capacity that still triggers
+    // the intended partial-buffer read behavior for this ZIP fixture; smaller values would not
+    // exercise that code path, and larger values might cause the entire block to be read at once.
     const MIN_PARTIAL_READ_BUFFER_SIZE: usize = 13;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
