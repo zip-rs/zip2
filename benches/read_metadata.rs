@@ -1,7 +1,7 @@
 use bencher::{benchmark_group, benchmark_main};
 
 use std::fs;
-use std::io::{self, Cursor, Write};
+use std::io::{Cursor, Write};
 
 use bencher::Bencher;
 use tempfile::TempDir;
@@ -21,7 +21,8 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> ZipResult<Ve
     for i in 0..count_files {
         let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
         writer.start_file(name, options)?;
-        getrandom::fill(&mut bytes).map_err(io::Error::other)?;
+        getrandom::fill(&mut bytes)
+            .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
         writer.write_all(&bytes)?;
     }
 
@@ -46,7 +47,8 @@ fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResul
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes).unwrap();
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
     writer.set_raw_comment(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
@@ -75,7 +77,8 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
         .large_file(true);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes).unwrap();
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
     // should use the line below but still works
     // writer.set_raw_zip64_comment(Some(comment));
     writer.set_raw_comment(bytes.into_boxed_slice());
