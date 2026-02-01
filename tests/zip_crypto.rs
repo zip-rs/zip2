@@ -46,9 +46,9 @@ fn test_encrypt_and_decrypt_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
 
-    const TEST_ARCHIVE_SIZE: usize = 2048;
+    const ARCHIVE_BUFFER_SIZE: usize = 2048;
 
-    let mut buffer = vec![0; TEST_ARCHIVE_SIZE];
+    let mut buffer = vec![0; ARCHIVE_BUFFER_SIZE];
     let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut buffer));
     archive.start_file(
         "name",
