@@ -1,5 +1,8 @@
 name: Cargo hack
 
+permissions:
+  contents: read
+
 concurrency:
   group: cargo-hack-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
   cancel-in-progress: false
