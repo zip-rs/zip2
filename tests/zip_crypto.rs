@@ -2,6 +2,11 @@
 // ZipCrypto encrypted file:
 // test.txt: 35 bytes, contents: `abcdefghijklmnopqrstuvwxyz123456789`, password: `test`
 //
+// This file can be regenerated with a standard `zip` implementation, e.g.:
+//   printf 'abcdefghijklmnopqrstuvwxyz123456789' > test.txt
+//   zip -P test -e zip_crypto.zip test.txt   # uses ZipCrypto with password `test`
+// Then run `hexdump -Cv zip_crypto.zip` to obtain the bytes below.
+//
 // 00000000  50 4b 03 04 14 00 01 00  00 00 54 bd b5 50 2f 20  |PK........T..P/ |
 // 00000010  79 55 2f 00 00 00 23 00  00 00 08 00 00 00 74 65  |yU/...#.......te|
 // 00000020  73 74 2e 74 78 74 ca 2d  1d 27 19 19 63 43 77 9a  |st.txt.-.'..cCw.|
