@@ -37,21 +37,21 @@ use zip::result::ZipError;
 
 #[test]
 #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
-fn encrypting_file() -> zip::result::ZipResult<()> {
+fn test_encrypt_and_decrypt_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
 
     const ARCHIVE_BUFFER_SIZE: usize = 2048;
 
-    let mut archive_buf = vec![0; ARCHIVE_BUFFER_SIZE];
-    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut archive_buf));
+    let mut archive_buffer = vec![0; ARCHIVE_BUFFER_SIZE];
+    let mut archive = zip::write::ZipWriter::new_stream(Cursor::new(&mut archive_buffer));
     archive.start_file(
         "name",
         zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
     )?;
     archive.write_all(b"test")?;
     archive.finish()?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(&mut archive_buf)).unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(&mut archive_buffer))?;
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut file_contents = Vec::new();
     file.read_to_end(&mut file_contents)?;
@@ -59,7 +59,7 @@ fn encrypting_file() -> zip::result::ZipResult<()> {
     Ok(())
 }
 #[test]
-fn encrypted_file() {
+fn test_encrypted_file_operations() {
     use std::io::Read;
 
     let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
@@ -128,7 +128,7 @@ fn encrypted_file() {
 }
 
 #[test]
-fn buffered_read() {
+fn test_partial_buffer_read_crypto() {
     use std::io::{BufReader, Read};
     // Deliberately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens,
     // it's not going to take the entire buffer. For this specific test file, the capacity needs to
