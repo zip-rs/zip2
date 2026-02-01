@@ -9,7 +9,7 @@ on:
 
 # this file is used to test all feature combinations using cargo-hack
 # but only on workflow dispatch to avoid overloading CI on every push/PR
-# since this CI takes a very long
+# since this CI takes a very long time
 
 jobs:
   cargo-hack-all-features:
