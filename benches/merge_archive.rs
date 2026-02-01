@@ -17,7 +17,8 @@ fn generate_random_archive(
     for i in 0..num_entries {
         let name = format!("random{i}.dat");
         zip.start_file(name, options)?;
-        getrandom::fill(&mut bytes).map_err(| e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+        getrandom::fill(&mut bytes)
+            .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
         zip.write_all(&bytes)?;
     }
 
