@@ -15,8 +15,7 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use wasm_bindgen_test::*;
-wasm_bindgen_test_configure!(run_in_browser);
+use wasm_bindgen_test::wasm_bindgen_test;
 
 mod aes_encryption;
 
