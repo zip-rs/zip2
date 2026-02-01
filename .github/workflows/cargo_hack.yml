@@ -1,0 +1,29 @@
+name: Cargo hack
+
+concurrency:
+  group: cargo-hack-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+
+# this file is used to test all feature combinations using cargo-hack
+# but only on workflow dispatch to avoid overloading CI on every push/PR
+# since this CI takes a very long
+
+jobs:
+  cargo-hack-all-features:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-cargo-hack-${{ hashFiles('Cargo.toml') }}
+      - run: cargo hack test --feature-powerset --all-targets --exclude-features _bzip2_any,_arbitrary,_deflate-any,_all-features
