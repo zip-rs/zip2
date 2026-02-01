@@ -32,7 +32,6 @@ chrono = { version = "^0.4.27", optional = true, default-features = false, featu
 constant_time_eq = { version = "0.3", optional = true }
 crc32fast = "1.5"
 flate2 = { version = "1.1", default-features = false, optional = true }
-generic-array = { version = "=0.14.7", optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
@@ -76,7 +75,7 @@ wasm-bindgen-test = "^0.3.56"
 
 [dev-dependencies]
 bencher = "0.1"
-getrandom = { version = "0.3", default-features = false, features = [] }
+getrandom = { version = "0.3", default-features = false }
 walkdir = "2.5"
 time = { version = "=0.3.45", features = ["formatting", "macros"] }
 clap = { version = "=4.4.18", features = ["derive"] }
@@ -85,7 +84,7 @@ rayon = "1.11"
 
 [features]
 _arbitrary = ["dep:arbitrary"]
-aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
+aes-crypto = ["dep:aes", "dep:constant_time_eq", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
 chrono = ["dep:chrono"]
 _deflate-any = []
 _all-features = [] # Detect when --all-features is used
