@@ -7,10 +7,12 @@
 //! cargo install wasm-pack
 //!
 //! # useful commands
-//! wasm-pack test --headless --chrome
-//! wasm-pack test --headless --firefox
+//! WASM_BINDGEN_USE_BROWSER=1 wasm-pack test --headless --chrome
+//! WASM_BINDGEN_USE_BROWSER=1 wasm-pack test --headless --firefox
 //! wasm-pack test --node
 //! ```
+//!
+//! For testing within a browser, you will need the `WASM_BINDGEN_USE_BROWSER=1` env variable
 //!
 
 #![cfg(target_arch = "wasm32")]
