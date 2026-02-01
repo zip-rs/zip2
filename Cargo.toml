@@ -18,7 +18,7 @@ description = """
 Library to support the reading and writing of zip files.
 """
 edition = "2021"
-exclude = ["tests/**", "examples/**", ".github/**", "fuzz_read/**", "fuzz_write/**"]
+exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**", ".amazonq/**", "benches/**"]
 
 [package.metadata.docs.rs]
 all-features = true
