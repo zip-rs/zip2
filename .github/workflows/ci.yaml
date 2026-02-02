@@ -36,7 +36,7 @@ jobs:
           egress-policy: audit
 
       - name: 'Checkout Repository'
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - name: 'Dependency Review'
@@ -78,7 +78,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
@@ -110,7 +110,7 @@ jobs:
       - name: Conditionally set env
         if: matrix.browser_flags != '--node' # if browser testing
         run: echo "WASM_BINDGEN_USE_BROWSER=1" >> $GITHUB_ENV
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
@@ -139,7 +139,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
@@ -168,7 +168,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae # v2.8
@@ -184,7 +184,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
@@ -210,7 +210,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
@@ -235,7 +235,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -261,7 +261,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -319,7 +319,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -369,7 +369,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -427,7 +427,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
