@@ -49,7 +49,7 @@ fn test_decompress_lzma() {
     lzma::decompress_lzma();
 }
 
-// time needs the features wasm-bindgen
+// time needs the wasm-bindgen feature
 // or you get the error
 // time not implemented on this platform
 mod end_to_end;
