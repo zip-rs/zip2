@@ -18,8 +18,8 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> ZipResult<Ve
 
     let mut bytes = vec![0u8; file_size];
 
-    for i in 0..count_files {
-        let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
+    for file_index in 0..count_files {
+        let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{file_index}.dat");
         writer.start_file(name, options)?;
         getrandom::fill(&mut bytes)
             .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
