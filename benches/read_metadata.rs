@@ -121,13 +121,13 @@ fn parse_stream_archive(bench: &mut Bencher) {
 }
 
 fn parse_large_non_zip(bench: &mut Bencher) {
-    const FILE_SIZE: usize = 17_000_000;
+    const LARGE_FILE_SIZE: usize = 17_000_000;
 
     // Create a large file that doesn't have a zip header (generating random data _might_ make a zip magic
     // number somewhere which is _not_ what we're trying to test).
     let dir = TempDir::with_prefix("large-non-zip-bench").unwrap();
     let file = dir.path().join("zeros");
-    let buf = vec![0u8; FILE_SIZE];
+    let buf = vec![0u8; LARGE_FILE_SIZE];
     fs::write(&file, &buf).unwrap();
 
     bench.iter(|| {
