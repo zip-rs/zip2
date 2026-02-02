@@ -21,7 +21,7 @@ use wasm_bindgen_test::wasm_bindgen_test;
 
 mod aes_encryption;
 
-/// wasm-pack test --headless --chrome --features aes-crypto
+/// Test AES encryption functionality - run with: wasm-pack test --headless --chrome --features aes-crypto
 #[cfg(feature = "aes-crypto")]
 #[wasm_bindgen_test]
 fn test_aes256_encrypted_uncompressed_file() {
