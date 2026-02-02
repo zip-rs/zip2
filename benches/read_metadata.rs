@@ -19,7 +19,9 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> ZipResult<Ve
     let mut bytes = vec![0u8; file_size];
 
     for file_index in 0..count_files {
-        let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{file_index}.dat");
+        let name = format!(
+            "file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{file_index}.dat"
+        );
         writer.start_file(name, options)?;
         getrandom::fill(&mut bytes)
             .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
@@ -103,7 +105,7 @@ fn parse_stream_archive(bench: &mut Bencher) {
 
     let bytes = generate_random_archive(STREAM_ZIP_ENTRIES, STREAM_FILE_SIZE).unwrap();
 
-    /* Write to a temporary file path to incur some filesystem overhead from repeated reads */
+    // Write to a temporary file path to incur some filesystem overhead from repeated reads
     let dir = TempDir::with_prefix("stream-bench").unwrap();
     let out = dir.path().join("bench-out.zip");
     fs::write(&out, &bytes).unwrap();
