@@ -79,9 +79,7 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
     let mut bytes = vec![0u8; comment_length];
     getrandom::fill(&mut bytes)
         .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
-    // should use the line below but still works
-    // writer.set_raw_zip64_comment(Some(comment));
-    writer.set_raw_comment(bytes.into_boxed_slice());
+    writer.set_raw_zip64_comment(Some(bytes.into_boxed_slice()));
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
