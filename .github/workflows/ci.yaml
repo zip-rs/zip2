@@ -107,7 +107,9 @@ jobs:
         uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
         with:
           egress-policy: audit
-
+      - name: Conditionally set env
+        if: matrix.browser_flags != '--node' # if browser testing
+        run: echo "WASM_BINDGEN_USE_BROWSER=1" >> $GITHUB_ENV
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
