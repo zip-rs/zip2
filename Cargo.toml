@@ -88,7 +88,6 @@ _arbitrary = ["dep:arbitrary"]
 aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:generic-array", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
 chrono = ["dep:chrono"]
 _deflate-any = []
-_all-features = [] # Detect when --all-features is used
 deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
 # Pull in flate2, but don't choose a backend; useful if you want to choose your own flate2 backend
 deflate-flate2 = ["_deflate-any", "dep:flate2"]
