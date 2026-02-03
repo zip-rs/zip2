@@ -4,7 +4,7 @@ use crate::cfg_if;
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
-use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs};
+use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{
     self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR,
@@ -1573,9 +1573,9 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         }
         Err(e) => return Err(e.into()),
     };
-    match kind {
+    match UsedExtraField::try_from(kind) {
         // Zip64 extended information extra field
-        0x0001 => {
+        Ok(UsedExtraField::Zip64ExtendedInfo) => {
             if disallow_zip64 {
                 return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
             }
@@ -1622,12 +1622,12 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             }
             return Ok(true);
         }
-        0x000a => {
+        Ok(UsedExtraField::Ntfs) => {
             // NTFS extra field
             file.extra_fields
                 .push(ExtraField::Ntfs(Ntfs::try_from_reader(reader, len)?));
         }
-        0x9901 => {
+        Ok(UsedExtraField::ExtraFieldAeX) => {
             // AES
             if len != 7 {
                 return Err(ZipError::UnsupportedArchive(
@@ -1663,15 +1663,12 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             file.compression_method = compression_method;
             file.aes_extra_data_start = bytes_already_read;
         }
-        0x5455 => {
-            // extended timestamp
-            // https://libzip.org/specifications/extrafld.txt
-
+        Ok(UsedExtraField::ExtendedTimestamp) => {
             file.extra_fields.push(ExtraField::ExtendedTimestamp(
                 ExtendedTimestamp::try_from_reader(reader, len)?,
             ));
         }
-        0x6375 => {
+        Ok(UsedExtraField::UnicodeComment) => {
             // Info-ZIP Unicode Comment Extra Field
             // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
             file.file_comment = String::from_utf8(
@@ -1681,7 +1678,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             )?
             .into();
         }
-        0x7075 => {
+        Ok(UsedExtraField::UnicodePath) => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
             file.file_name_raw = UnicodeExtraField::try_from_reader(reader, len)?

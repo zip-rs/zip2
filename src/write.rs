@@ -1,6 +1,7 @@
 //! Writing a ZIP archive
 
 use crate::compression::CompressionMethod;
+use crate::extra_fields::UsedExtraField;
 use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
@@ -307,14 +308,23 @@ impl ExtendedFileOptions {
             }
             #[cfg(not(feature = "unreserved"))]
             {
-                use crate::{extra_fields::EXTRA_FIELD_MAPPING, unstable::LittleEndianReadExt};
+                use crate::{
+                    extra_fields::{UsedExtraField, EXTRA_FIELD_MAPPING},
+                    unstable::LittleEndianReadExt,
+                };
                 let header_id = data.read_u16_le()?;
-                if EXTRA_FIELD_MAPPING.contains(&header_id) {
-                    return Err(ZipError::Io(io::Error::other(
-                        format!(
-                            "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
-                        ),
-                    )));
+                // Some extra fields are authorized
+                if let Err(()) = UsedExtraField::try_from(header_id) {
+                    if EXTRA_FIELD_MAPPING.contains(&header_id) {
+                        return Err(ZipError::Io(io::Error::other(format!(
+                            // we use concat to not fail the cargo fmt with long line
+                            concat!(
+                                "Extra data header ID {:#06} (0x{:x})",
+                                "requires crate feature \"unreserved\"",
+                            ),
+                            header_id, header_id,
+                        ))));
+                    }
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
@@ -1038,7 +1048,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                     ExtendedFileOptions::add_extra_data_unchecked(
                         &mut extra_data,
-                        0xa11e,
+                        UsedExtraField::DataStreamAlignement as u16,
                         &pad_body,
                     )?;
                     debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
@@ -2260,7 +2270,7 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
             break;
         }
 
-        if tag != 0xa11e {
+        if tag != UsedExtraField::DataStreamAlignement as u16 {
             new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
         }
         cursor += 4 + len;

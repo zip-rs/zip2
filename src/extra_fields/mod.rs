@@ -35,12 +35,58 @@ pub enum ExtraField {
     ExtendedTimestamp(ExtendedTimestamp),
 }
 
+#[repr(u16)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum UsedExtraField {
+    /// ZIP64 extended information extra field
+    Zip64ExtendedInfo = 0x0001,
+    /// NTFS
+    Ntfs = 0x000a,
+    /// extended timestamp
+    /// from https://libzip.org/specifications/extrafld.txt
+    ExtendedTimestamp = 0x5455,
+    /// Info-ZIP Unicode Comment Extra Field
+    UnicodeComment = 0x6375,
+    /// Info-ZIP Unicode Path Extra Field
+    UnicodePath = 0x7075,
+    /// Data Stream Alignment (Apache Commons-Compress)
+    DataStreamAlignement = 0xa11e,
+    /// AE-x encryption structure
+    ExtraFieldAeX = 0x9901,
+}
+
+impl std::convert::TryFrom<u16> for UsedExtraField {
+    type Error = ();
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            x if x == UsedExtraField::Zip64ExtendedInfo as u16 => {
+                Ok(UsedExtraField::Zip64ExtendedInfo)
+            }
+            x if x == UsedExtraField::Ntfs as u16 => Ok(UsedExtraField::Ntfs),
+            x if x == UsedExtraField::ExtendedTimestamp as u16 => {
+                Ok(UsedExtraField::ExtendedTimestamp)
+            }
+            x if x == UsedExtraField::UnicodeComment as u16 => Ok(UsedExtraField::UnicodeComment),
+            x if x == UsedExtraField::UnicodePath as u16 => Ok(UsedExtraField::UnicodePath),
+            x if x == UsedExtraField::DataStreamAlignement as u16 => {
+                Ok(UsedExtraField::DataStreamAlignement)
+            }
+            x if x == UsedExtraField::ExtraFieldAeX as u16 => Ok(UsedExtraField::ExtraFieldAeX),
+            _ => Err(()),
+        }
+    }
+}
+
+// AE-x encryption structure
+
 /// Known Extra fields (PKWARE and Third party) mappings
-pub const EXTRA_FIELD_MAPPING: [u16; 57] = [
+pub const EXTRA_FIELD_MAPPING: [u16; 58] = [
+    UsedExtraField::Zip64ExtendedInfo as u16,
     0x0007, // AV Info
     0x0008, // Reserved for extended language encoding data (PFS)
     0x0009, // OS/2
-    0x000a, // NTFS
+    UsedExtraField::Ntfs as u16,
     0x000c, // OpenVMS
     0x000d, // UNIX
     0x000e, // Reserved for file stream and fork descriptors
@@ -79,20 +125,20 @@ pub const EXTRA_FIELD_MAPPING: [u16; 57] = [
     0x5356, // AOS/VS (ACL)
     0x5855, // extended timestamp
     0x554e, // Xceed unicode extra field
-    0x6375, // Info-ZIP Unicode Comment Extra Field
+    UsedExtraField::UnicodeComment as u16,
     0x6542, // BeOS/BeBox
     0x6854, // THEOS
-    0x7075, // Info-ZIP Unicode Path Extra Field
+    UsedExtraField::UnicodePath as u16,
     0x7441, // AtheOS/Syllable
     0x756e, // ASi UNIX
     0x7855, // Info-ZIP UNIX (new)
     0x7875, // Info-ZIP UNIX (newer UID/GID)
-    0xa11e, // Data Stream Alignment (Apache Commons-Compress)
+    UsedExtraField::DataStreamAlignement as u16,
     0xa220, // Microsoft Open Packaging Growth Hint
     0xcafe, // Java JAR file Extra Field Header ID
     0xd935, // Android ZIP Alignment Extra Field
     0xe57a, // Korean ZIP code page info
     0xfd4a, // SMS/QDOS
-    0x9901, // AE-x encryption structure
+    UsedExtraField::ExtraFieldAeX as u16,
     0x9902, // unknown
 ];
