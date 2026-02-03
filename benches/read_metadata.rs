@@ -61,7 +61,7 @@ fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResul
 fn parse_archive_with_comment(bench: &mut Bencher) {
     let bytes = generate_zip32_archive_with_random_comment(COMMENT_SIZE).unwrap();
 
-    bench.bench_n(1, |_| {
+    bench.iter(|| {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
         let _ = archive.comment().len();
     });
