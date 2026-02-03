@@ -41,6 +41,8 @@ fn test_encrypt_and_decrypt_file() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
     use zip::unstable::write::FileOptionsExt;
 
+    // Buffer size chosen to be comfortably larger than the small test archive; exact value is not
+    // significant as long as it can hold the generated ZIP data.
     const ARCHIVE_BUFFER_SIZE: usize = 2048;
 
     let mut buffer = vec![0; ARCHIVE_BUFFER_SIZE];
