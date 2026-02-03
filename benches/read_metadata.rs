@@ -48,8 +48,6 @@ fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResul
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
     writer.set_raw_comment(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
