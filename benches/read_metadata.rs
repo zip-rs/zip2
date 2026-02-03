@@ -78,8 +78,8 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
         .large_file(true);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+    // Random data is unnecessary for benchmark comments; use a simple, fast pattern instead.
+    bytes.fill(0xAB);
     writer.set_raw_zip64_comment(Some(bytes.into_boxed_slice()));
 
     writer.start_file("asdf.txt", options)?;
