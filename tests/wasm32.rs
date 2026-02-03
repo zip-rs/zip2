@@ -21,7 +21,7 @@ use wasm_bindgen_test::wasm_bindgen_test;
 
 mod aes_encryption;
 
-/// wasm-pack test --headless --chrome --features aes-crypto
+/// Test AES encryption functionality - run with: wasm-pack test --headless --chrome --features aes-crypto
 #[cfg(feature = "aes-crypto")]
 #[wasm_bindgen_test]
 fn test_aes256_encrypted_uncompressed_file() {
@@ -49,7 +49,7 @@ fn test_decompress_lzma() {
     lzma::decompress_lzma();
 }
 
-// time needs the features wasm-bindgen
+// time needs the wasm-bindgen feature
 // or you get the error
 // time not implemented on this platform
 mod end_to_end;
