@@ -1023,7 +1023,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             body[4] = mode as u8; // strength
             [body[5], body[6]] = underlying.serialize_to_u16().to_le_bytes(); // real compression method
             aes_extra_data_start = extra_data.len() as u64;
-            ExtendedFileOptions::add_extra_data_unchecked(&mut extra_data, 0x9901, &body)?;
+            ExtendedFileOptions::add_extra_data_unchecked(
+                &mut extra_data,
+                UsedExtraField::AeXEncryption as u16,
+                &body,
+            )?;
         }
         let header_end =
             header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
@@ -2167,7 +2171,7 @@ fn update_aes_extra_data<W: Write + Seek>(
 
     /* TODO: implement this using the Block trait! */
     // Extra field header ID.
-    buf.write_u16_le(0x9901)?;
+    buf.write_u16_le(UsedExtraField::AeXEncryption as u16)?;
     // Data size.
     buf.write_u16_le(7)?;
     // Integer version number.

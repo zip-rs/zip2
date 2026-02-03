@@ -1,5 +1,6 @@
 #![macro_use]
 
+use crate::extra_fields::UsedExtraField;
 use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::read::ArchiveOffset;
 use crate::result::{invalid, ZipError, ZipResult};
@@ -86,7 +87,7 @@ impl ExtraFieldMagic {
         Self(u16::to_le(self.0))
     }
 
-    pub const ZIP64_EXTRA_FIELD_TAG: Self = Self::literal(0x0001);
+    pub const ZIP64_EXTRA_FIELD_TAG: Self = Self::literal(UsedExtraField::Zip64ExtendedInfo as u16);
 }
 
 /// The file size at which a ZIP64 record becomes necessary.

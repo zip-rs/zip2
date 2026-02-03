@@ -274,6 +274,9 @@ fn test_extra_field_access() {
     // just a test to access the variable in the crate
     use zip::extra_fields::EXTRA_FIELD_MAPPING;
 
+    assert_eq!(EXTRA_FIELD_MAPPING[0], 0x0001);
+    assert_eq!(EXTRA_FIELD_MAPPING[0], 0x0001); // ZIP64 extended information extra field
+
     assert_eq!(EXTRA_FIELD_MAPPING[12], 23);
-    assert_eq!(EXTRA_FIELD_MAPPING[12], 0x0017);
+    assert_eq!(EXTRA_FIELD_MAPPING[12], 0x0017); // Strong Encryption Header
 }

@@ -53,7 +53,7 @@ pub(crate) enum UsedExtraField {
     /// Data Stream Alignment (Apache Commons-Compress)
     DataStreamAlignement = 0xa11e,
     /// AE-x encryption structure
-    ExtraFieldAeX = 0x9901,
+    AeXEncryption = 0x9901,
 }
 
 impl std::convert::TryFrom<u16> for UsedExtraField {
@@ -73,7 +73,7 @@ impl std::convert::TryFrom<u16> for UsedExtraField {
             x if x == UsedExtraField::DataStreamAlignement as u16 => {
                 Ok(UsedExtraField::DataStreamAlignement)
             }
-            x if x == UsedExtraField::ExtraFieldAeX as u16 => Ok(UsedExtraField::ExtraFieldAeX),
+            x if x == UsedExtraField::AeXEncryption as u16 => Ok(UsedExtraField::AeXEncryption),
             _ => Err(()),
         }
     }
@@ -124,8 +124,8 @@ pub const EXTRA_FIELD_MAPPING: [u16; 58] = [
     0x4d63, // Macintosh Smartzip (??)
     0x4f4c, // Xceed original location extra field
     0x5356, // AOS/VS (ACL)
-    0x5855, // extended timestamp
     0x554e, // Xceed unicode extra field
+    0x5855, // Info-ZIP UNIX (original, also OS/2, NT, etc)
     UsedExtraField::UnicodeComment as u16,
     0x6542, // BeOS/BeBox
     0x6854, // THEOS
@@ -140,6 +140,6 @@ pub const EXTRA_FIELD_MAPPING: [u16; 58] = [
     0xd935, // Android ZIP Alignment Extra Field
     0xe57a, // Korean ZIP code page info
     0xfd4a, // SMS/QDOS
-    UsedExtraField::ExtraFieldAeX as u16,
+    UsedExtraField::AeXEncryption as u16,
     0x9902, // unknown
 ];

@@ -1627,7 +1627,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             file.extra_fields
                 .push(ExtraField::Ntfs(Ntfs::try_from_reader(reader, len)?));
         }
-        Ok(UsedExtraField::ExtraFieldAeX) => {
+        Ok(UsedExtraField::AeXEncryption) => {
             // AES
             if len != 7 {
                 return Err(ZipError::UnsupportedArchive(
