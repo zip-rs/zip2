@@ -35,6 +35,7 @@ pub enum ExtraField {
     ExtendedTimestamp(ExtendedTimestamp),
 }
 
+/// Extra field used in this crate
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum UsedExtraField {

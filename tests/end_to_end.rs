@@ -268,3 +268,12 @@ const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
 
 const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";
+
+#[test]
+fn test_extra_field_access() {
+    // just a test to access the variable in the crate
+    use zip::extra_fields::EXTRA_FIELD_MAPPING;
+
+    assert_eq!(EXTRA_FIELD_MAPPING[12], 23);
+    assert_eq!(EXTRA_FIELD_MAPPING[12], 0x0017);
+}
