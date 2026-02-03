@@ -317,13 +317,10 @@ impl ExtendedFileOptions {
                 if let Err(()) = UsedExtraField::try_from(header_id) {
                     if EXTRA_FIELD_MAPPING.contains(&header_id) {
                         return Err(ZipError::Io(io::Error::other(format!(
-                            // we use concat to not fail the cargo fmt with long line
-                            concat!(
-                                "Extra data header ID {:#06} (0x{:x})",
-                                "requires crate feature \"unreserved\"",
-                            ),
+                            "Extra data header ID {:#06} (0x{:x}) \
+                            requires crate feature \"unreserved\"",
                             header_id, header_id,
-                        ))));
+                        )));
                     }
                 }
                 data.seek(SeekFrom::Current(-2))?;
