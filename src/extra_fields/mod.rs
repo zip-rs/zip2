@@ -50,35 +50,39 @@ pub(crate) enum UsedExtraField {
     UnicodeComment = 0x6375,
     /// Info-ZIP Unicode Path Extra Field
     UnicodePath = 0x7075,
-    /// Data Stream Alignment (Apache Commons-Compress)
-    DataStreamAlignement = 0xa11e,
     /// AE-x encryption structure
     AeXEncryption = 0x9901,
+    /// Data Stream Alignment (Apache Commons-Compress)
+    DataStreamAlignement = 0xa11e,
 }
 
-impl std::convert::TryFrom<u16> for UsedExtraField {
+macro_rules! extra_field_match {
+    ($x:expr, $( $variant:path ),+ $(,)?) => {
+        match $x {
+            $(
+                v if v == $variant as u16 => Ok($variant),
+            )+
+            _ => Err(()),
+        }
+    };
+}
+
+impl TryFrom<u16> for UsedExtraField {
     type Error = ();
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            x if x == UsedExtraField::Zip64ExtendedInfo as u16 => {
-                Ok(UsedExtraField::Zip64ExtendedInfo)
-            }
-            x if x == UsedExtraField::Ntfs as u16 => Ok(UsedExtraField::Ntfs),
-            x if x == UsedExtraField::ExtendedTimestamp as u16 => {
-                Ok(UsedExtraField::ExtendedTimestamp)
-            }
-            x if x == UsedExtraField::UnicodeComment as u16 => Ok(UsedExtraField::UnicodeComment),
-            x if x == UsedExtraField::UnicodePath as u16 => Ok(UsedExtraField::UnicodePath),
-            x if x == UsedExtraField::DataStreamAlignement as u16 => {
-                Ok(UsedExtraField::DataStreamAlignement)
-            }
-            x if x == UsedExtraField::AeXEncryption as u16 => Ok(UsedExtraField::AeXEncryption),
-            _ => Err(()),
-        }
+        extra_field_match!(
+            value,
+            UsedExtraField::Zip64ExtendedInfo,
+            UsedExtraField::Ntfs,
+            UsedExtraField::ExtendedTimestamp,
+            UsedExtraField::UnicodeComment,
+            UsedExtraField::UnicodePath,
+            UsedExtraField::DataStreamAlignement,
+            UsedExtraField::AeXEncryption,
+        )
     }
 }
-
 // AE-x encryption structure
 
 /// Known Extra fields (PKWARE and Third party) mappings

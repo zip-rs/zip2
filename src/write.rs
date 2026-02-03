@@ -320,7 +320,7 @@ impl ExtendedFileOptions {
                             "Extra data header ID {:#06} (0x{:x}) \
                             requires crate feature \"unreserved\"",
                             header_id, header_id,
-                        )));
+                        ))));
                     }
                 }
                 data.seek(SeekFrom::Current(-2))?;
