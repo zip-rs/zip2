@@ -307,7 +307,7 @@ impl ExtendedFileOptions {
             }
             #[cfg(not(feature = "unreserved"))]
             {
-                use crate::unstable::LittleEndianReadExt;
+                use crate::{extra_fields::EXTRA_FIELD_MAPPING, unstable::LittleEndianReadExt};
                 let header_id = data.read_u16_le()?;
                 if EXTRA_FIELD_MAPPING.contains(&header_id) {
                     return Err(ZipError::Io(io::Error::other(
@@ -2349,14 +2349,6 @@ impl<W: Write> Seek for StreamWriter<W> {
         ))
     }
 }
-
-#[cfg(not(feature = "unreserved"))]
-const EXTRA_FIELD_MAPPING: [u16; 43] = [
-    0x0007, 0x0008, 0x0009, 0x000a, 0x000c, 0x000d, 0x000e, 0x000f, 0x0014, 0x0015, 0x0016, 0x0017,
-    0x0018, 0x0019, 0x0020, 0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690, 0x07c8, 0x2605, 0x2705,
-    0x2805, 0x334d, 0x4341, 0x4453, 0x4704, 0x470f, 0x4b46, 0x4c41, 0x4d49, 0x4f4c, 0x5356, 0x554e,
-    0x5855, 0x6542, 0x756e, 0x7855, 0xa220, 0xfd4a, 0x9902,
-];
 
 #[cfg(test)]
 #[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0

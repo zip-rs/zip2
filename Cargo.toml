@@ -98,6 +98,7 @@ jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
 ppmd = ["dep:ppmd-rust"]
+# This feature is used to allow the usage of custom Extra data header ID
 unreserved = []
 xz = ["dep:lzma-rust2"]
 _bzip2_any = []
