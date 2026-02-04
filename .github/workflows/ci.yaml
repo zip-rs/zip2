@@ -175,7 +175,6 @@ jobs:
         with:
           manifest-path: ${{ github.workspace }}/${{ matrix.workspace }}
           feature-group: ${{ matrix.feature_group }}
-          baseline-version: 7.3.0-pre1
   cargo_fmt:
     runs-on: ubuntu-latest
     steps:
