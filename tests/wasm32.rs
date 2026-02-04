@@ -54,6 +54,7 @@ fn test_decompress_lzma() {
 // Without that feature enabled, running these tests will fail with "time not implemented on this platform".
 mod end_to_end;
 #[wasm_bindgen_test]
+/// Runs the end-to-end integration test suite for wasm32, covering time-dependent behavior.
 fn test_end_to_end() {
     end_to_end::end_to_end();
 }
