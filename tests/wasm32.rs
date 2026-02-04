@@ -29,6 +29,7 @@ fn test_aes256_encrypted_uncompressed_file() {
 }
 
 mod deflate64;
+/// Test Deflate64 decompression functionality.
 #[cfg(feature = "deflate64")]
 #[wasm_bindgen_test]
 fn test_decompress_deflate64() {
