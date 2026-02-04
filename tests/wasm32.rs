@@ -21,7 +21,11 @@ use wasm_bindgen_test::wasm_bindgen_test;
 
 mod aes_encryption;
 
-/// Test AES encryption functionality - run with: wasm-pack test --headless --chrome --features aes-crypto
+/// Verifies AES-256 encryption and decryption of an uncompressed file in the `wasm32` environment.
+/// The test ensures that data encrypted with AES-256 can be correctly decrypted back to its original
+/// contents using the WebAssembly build of the library.
+///
+/// Run with: `wasm-pack test --headless --chrome --features aes-crypto`
 #[cfg(feature = "aes-crypto")]
 #[wasm_bindgen_test]
 fn test_aes256_encrypted_uncompressed_file() {
