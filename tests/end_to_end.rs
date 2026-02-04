@@ -270,7 +270,7 @@ const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
 const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";
 
 #[test]
-fn test_extra_field_access() {
+fn test_extra_field_mapping_constants() {
     // just a test to access the variable in the crate
     use zip::extra_fields::EXTRA_FIELD_MAPPING;
 
