@@ -43,6 +43,7 @@ fn test_decompress_xz() {
 }
 
 mod lzma;
+/// Test LZMA decompression functionality in the wasm32 environment.
 #[cfg(feature = "lzma")]
 #[wasm_bindgen_test]
 fn test_decompress_lzma() {
