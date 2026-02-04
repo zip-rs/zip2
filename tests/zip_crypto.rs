@@ -73,9 +73,9 @@ fn test_encrypted_file_operations() {
         // No password
         let file = archive.by_index(0);
         match file {
-            Err(zip::result::ZipError::UnsupportedArchive(
-                zip::result::ZipError::PASSWORD_REQUIRED,
-            )) => (),
+            Err(zip::result::ZipError::UnsupportedArchive(msg)) => {
+                assert_eq!(msg, zip::result::ZipError::PASSWORD_REQUIRED);
+            }
             Err(_) => panic!(
                 "Expected PasswordRequired error when opening encrypted file without password"
             ),
