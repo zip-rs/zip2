@@ -1,6 +1,7 @@
 //! Writing a ZIP archive
 
 use crate::compression::CompressionMethod;
+use crate::extra_fields::UsedExtraField;
 use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
@@ -307,14 +308,20 @@ impl ExtendedFileOptions {
             }
             #[cfg(not(feature = "unreserved"))]
             {
-                use crate::unstable::LittleEndianReadExt;
+                use crate::{
+                    extra_fields::{UsedExtraField, EXTRA_FIELD_MAPPING},
+                    unstable::LittleEndianReadExt,
+                };
                 let header_id = data.read_u16_le()?;
-                if EXTRA_FIELD_MAPPING.contains(&header_id) {
-                    return Err(ZipError::Io(io::Error::other(
-                        format!(
-                            "Extra data header ID {header_id:#06} requires crate feature \"unreserved\"",
-                        ),
-                    )));
+                // Some extra fields are authorized
+                if let Err(()) = UsedExtraField::try_from(header_id) {
+                    if EXTRA_FIELD_MAPPING.contains(&header_id) {
+                        return Err(ZipError::Io(io::Error::other(format!(
+                            "Extra data header ID {:#06} (0x{:x}) \
+                            requires crate feature \"unreserved\"",
+                            header_id, header_id,
+                        ))));
+                    }
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
@@ -1013,7 +1020,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             body[4] = mode as u8; // strength
             [body[5], body[6]] = underlying.serialize_to_u16().to_le_bytes(); // real compression method
             aes_extra_data_start = extra_data.len() as u64;
-            ExtendedFileOptions::add_extra_data_unchecked(&mut extra_data, 0x9901, &body)?;
+            ExtendedFileOptions::add_extra_data_unchecked(
+                &mut extra_data,
+                UsedExtraField::AeXEncryption as u16,
+                &body,
+            )?;
         }
         let header_end =
             header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
@@ -1038,7 +1049,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                     ExtendedFileOptions::add_extra_data_unchecked(
                         &mut extra_data,
-                        0xa11e,
+                        UsedExtraField::DataStreamAlignement as u16,
                         &pad_body,
                     )?;
                     debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
@@ -2157,7 +2168,7 @@ fn update_aes_extra_data<W: Write + Seek>(
 
     /* TODO: implement this using the Block trait! */
     // Extra field header ID.
-    buf.write_u16_le(0x9901)?;
+    buf.write_u16_le(UsedExtraField::AeXEncryption as u16)?;
     // Data size.
     buf.write_u16_le(7)?;
     // Integer version number.
@@ -2260,7 +2271,7 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
             break;
         }
 
-        if tag != 0xa11e {
+        if tag != UsedExtraField::DataStreamAlignement as u16 {
             new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
         }
         cursor += 4 + len;
@@ -2349,14 +2360,6 @@ impl<W: Write> Seek for StreamWriter<W> {
         ))
     }
 }
-
-#[cfg(not(feature = "unreserved"))]
-const EXTRA_FIELD_MAPPING: [u16; 43] = [
-    0x0007, 0x0008, 0x0009, 0x000a, 0x000c, 0x000d, 0x000e, 0x000f, 0x0014, 0x0015, 0x0016, 0x0017,
-    0x0018, 0x0019, 0x0020, 0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690, 0x07c8, 0x2605, 0x2705,
-    0x2805, 0x334d, 0x4341, 0x4453, 0x4704, 0x470f, 0x4b46, 0x4c41, 0x4d49, 0x4f4c, 0x5356, 0x554e,
-    0x5855, 0x6542, 0x756e, 0x7855, 0xa220, 0xfd4a, 0x9902,
-];
 
 #[cfg(test)]
 #[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0
