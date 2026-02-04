@@ -49,9 +49,9 @@ fn test_decompress_lzma() {
     lzma::decompress_lzma();
 }
 
-// time needs the wasm-bindgen feature
-// or you get the error
-// time not implemented on this platform
+// The end_to_end tests depend on a time implementation (e.g. the `time` crate or similar)
+// that must be compiled with its `wasm-bindgen` feature when targeting `wasm32`.
+// Without that feature enabled, running these tests will fail with "time not implemented on this platform".
 mod end_to_end;
 #[wasm_bindgen_test]
 fn test_end_to_end() {
