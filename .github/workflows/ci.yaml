@@ -64,7 +64,7 @@ jobs:
           - rustalias: stable
             rust: stable
           - rustalias: msrv
-            rust: "1.85.0"
+            rust: "1.88.0"
           - rustalias: nightly
             rust: nightly
         exclude:
