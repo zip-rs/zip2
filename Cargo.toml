@@ -40,9 +40,6 @@ nt-time = { version = "0.13", default-features = false, optional = true }
 ppmd-rust = { version = "1.4", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
-time = { version = "0.3.47", default-features = false, optional = true, features = [
-    "std",
-] }
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "^0.13.3", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
@@ -54,7 +51,7 @@ typed-path = "0.12"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 getrandom = { version = "0.4", default-features = false, optional = true }
-time = { version = "0.3.47", default-features = false, optional = true }
+time = { version = "0.3.47", default-features = false, optional = true, features = ["std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 getrandom = { version = "0.4", default-features = false }
