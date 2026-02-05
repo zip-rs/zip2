@@ -104,6 +104,7 @@ xz = ["dep:lzma-rust2"]
 _bzip2_any = []
 bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any"]
 legacy-zip = ["bitstream-io"]
+time = ["dep:time"]
 default = [
     "aes-crypto",
     "bzip2",
