@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 0 -->🚀 Features
 
-- cleanup the benchs and Cargo.toml ([#606](https://github.com/zip-rs/zip2/pull/606))
+- cleanup the benchmarks and Cargo.toml ([#606](https://github.com/zip-rs/zip2/pull/606))
 - Add support for per-file comments ([#543](https://github.com/zip-rs/zip2/pull/543))
 
 ### <!-- 1 -->🐛 Bug Fixes
