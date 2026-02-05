@@ -41,8 +41,8 @@ fn test_decompress_deflate64() {
 }
 
 mod xz;
-#[cfg(feature = "xz")]
 /// Test XZ decompression functionality.
+#[cfg(feature = "xz")]
 #[wasm_bindgen_test]
 fn test_decompress_xz() {
     xz::decompress_xz();
