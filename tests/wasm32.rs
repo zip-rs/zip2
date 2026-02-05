@@ -21,7 +21,11 @@ use wasm_bindgen_test::wasm_bindgen_test;
 
 mod aes_encryption;
 
-/// Test AES encryption functionality - run with: wasm-pack test --headless --chrome --features aes-crypto
+/// Verifies AES-256 encryption and decryption of an uncompressed file in the `wasm32` environment.
+/// The test ensures that data encrypted with AES-256 can be correctly decrypted back to its original
+/// contents using the WebAssembly build of the library.
+///
+/// Run with: `wasm-pack test --headless --chrome --features aes-crypto`
 #[cfg(feature = "aes-crypto")]
 #[wasm_bindgen_test]
 fn test_aes256_encrypted_uncompressed_file() {
@@ -29,6 +33,7 @@ fn test_aes256_encrypted_uncompressed_file() {
 }
 
 mod deflate64;
+/// Test Deflate64 decompression functionality.
 #[cfg(feature = "deflate64")]
 #[wasm_bindgen_test]
 fn test_decompress_deflate64() {
@@ -36,6 +41,7 @@ fn test_decompress_deflate64() {
 }
 
 mod xz;
+/// Test XZ decompression functionality.
 #[cfg(feature = "xz")]
 #[wasm_bindgen_test]
 fn test_decompress_xz() {
@@ -43,6 +49,7 @@ fn test_decompress_xz() {
 }
 
 mod lzma;
+/// Test LZMA decompression functionality in the wasm32 environment.
 #[cfg(feature = "lzma")]
 #[wasm_bindgen_test]
 fn test_decompress_lzma() {
@@ -53,6 +60,7 @@ fn test_decompress_lzma() {
 // that must be compiled with its `wasm-bindgen` feature when targeting `wasm32`.
 // Without that feature enabled, running these tests will fail with "time not implemented on this platform".
 mod end_to_end;
+/// Runs the end-to-end integration test suite for wasm32, covering time-dependent behavior.
 #[wasm_bindgen_test]
 fn test_end_to_end() {
     end_to_end::end_to_end();
