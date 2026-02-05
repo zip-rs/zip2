@@ -274,9 +274,9 @@ fn test_extra_field_mapping_constants() {
     // just a test to access the variable in the crate
     use zip::extra_fields::EXTRA_FIELD_MAPPING;
 
-    assert_eq!(EXTRA_FIELD_MAPPING[0], 0x0001); // ZIP64 extended information extra field
+    // ZIP64 extended information extra field - 0x0001 which is 1
+    assert_eq!(EXTRA_FIELD_MAPPING[0], 0x0001);
 
-    assert_eq!(EXTRA_FIELD_MAPPING[12], 0x0017); // Strong Encryption Header
+    // Strong Encryption Header - 0x0017 which is 23
+    assert_eq!(EXTRA_FIELD_MAPPING[12], 0x0017);
 }
-
-
