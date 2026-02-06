@@ -33,7 +33,7 @@ fn test_aes256_encrypted_uncompressed_file() {
 }
 
 mod deflate64;
-/// Test Deflate64 decompression functionality.
+/// Test Deflate64 decompression functionality in the wasm32 environment.
 #[cfg(feature = "deflate64")]
 #[wasm_bindgen_test]
 fn test_decompress_deflate64() {
@@ -41,7 +41,7 @@ fn test_decompress_deflate64() {
 }
 
 mod xz;
-/// Test XZ decompression functionality.
+/// Test XZ decompression functionality in the wasm32 environment.
 #[cfg(feature = "xz")]
 #[wasm_bindgen_test]
 fn test_decompress_xz() {
