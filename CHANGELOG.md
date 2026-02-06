@@ -593,7 +593,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 1 -->🐛 Bug Fixes
 - Rare bug where find_and_parse would give up prematurely on detecting a false end-of-CDR header
 
-## [1.1.2](https://github.com/Pr0methean/zip/compare/v1.1.1...v1.1.2) - 2024-04-28
+## [1.1.2](https://github.com/zip-rs/zip2/compare/v1.1.1...v1.1.2) - 2024-04-28
 
 ### <!-- 1 -->🐛 Bug Fixes
 - Alignment was previously handled incorrectly ([#33](https://github.com/Pr0methean/zip/pull/33))
