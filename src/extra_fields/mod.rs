@@ -53,7 +53,7 @@ pub(crate) enum UsedExtraField {
     /// AE-x encryption structure
     AeXEncryption = 0x9901,
     /// Data Stream Alignment (Apache Commons-Compress)
-    DataStreamAlignement = 0xa11e,
+    DataStreamAlignment = 0xa11e,
 }
 
 macro_rules! extra_field_match {
@@ -78,7 +78,7 @@ impl TryFrom<u16> for UsedExtraField {
             UsedExtraField::ExtendedTimestamp,
             UsedExtraField::UnicodeComment,
             UsedExtraField::UnicodePath,
-            UsedExtraField::DataStreamAlignement,
+            UsedExtraField::DataStreamAlignment,
             UsedExtraField::AeXEncryption,
         )
     }
@@ -137,7 +137,7 @@ pub const EXTRA_FIELD_MAPPING: [u16; 58] = [
     0x756e, // ASi UNIX
     0x7855, // Info-ZIP UNIX (new)
     0x7875, // Info-ZIP UNIX (newer UID/GID)
-    UsedExtraField::DataStreamAlignement as u16,
+    UsedExtraField::DataStreamAlignment as u16,
     0xa220, // Microsoft Open Packaging Growth Hint
     0xcafe, // Java JAR file Extra Field Header ID
     0xd935, // Android ZIP Alignment Extra Field
