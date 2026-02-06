@@ -89,6 +89,11 @@ fn copy() {
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
 // both the prior data and the appended data will be exactly the same as their originals.
     });
+}
+
+// This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
+// both the prior data and the appended data will be exactly the same as their originals.
+#[test]
 fn append() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
         if method == CompressionMethod::DEFLATE
