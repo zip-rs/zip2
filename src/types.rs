@@ -953,7 +953,46 @@ impl ZipFileData {
         })
     }
 
+    pub(crate) fn is_zip_64(&self) -> bool {
+        if self.compressed_size > spec::ZIP64_BYTES_THR {
+            return true;
+        }
+        if self.uncompressed_size > spec::ZIP64_BYTES_THR {
+            return true;
+        }
+        if self.header_start > spec::ZIP64_BYTES_THR {
+            return true;
+        }
+        // TODO: Also disk number (unsupported for now)
+        false
+    }
+
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
+        let is_zip_64 = self.is_zip_64();
+        let compressed_size = if is_zip_64 {
+            spec::ZIP64_BYTES_THR as u32
+        } else {
+            self.compressed_size
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .map_err(std::io::Error::other)?
+        };
+        let uncompressed_size = if is_zip_64 {
+            spec::ZIP64_BYTES_THR as u32
+        } else {
+            self.uncompressed_size
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .map_err(std::io::Error::other)?
+        };
+        let offset = if is_zip_64 {
+            spec::ZIP64_BYTES_THR as u32
+        } else {
+            self.header_start
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .map_err(std::io::Error::other)?
+        };
         let extra_field_len: u16 = self
             .extra_field_len()
             .try_into()
@@ -976,16 +1015,8 @@ impl ZipFileData {
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
-            compressed_size: self
-                .compressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            uncompressed_size: self
-                .uncompressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?,
+            compressed_size,
+            uncompressed_size,
             file_name_length: self
                 .file_name_raw
                 .len()
@@ -1002,11 +1033,7 @@ impl ZipFileData {
             disk_number: 0,
             internal_file_attributes: 0,
             external_file_attributes: self.external_attributes,
-            offset: self
-                .header_start
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?,
+            offset,
         })
     }
 

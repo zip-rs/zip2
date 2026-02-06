@@ -2232,12 +2232,13 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         Vec::new()
     };
     let central_len = file.central_extra_field_len();
-    let zip64_len = if let Some(zip64) = file.zip64_extra_field_block() {
+    let zip64_extra_field_block = file.zip64_extra_field_block();
+    let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
         zip64.full_size()
     } else {
         0
     };
-    block.extra_field_length = (zip64_len + stripped_extra.len() + central_len)
+    block.extra_field_length = (zip64_block_len + stripped_extra.len() + central_len)
         .try_into()
         .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
 
@@ -2245,7 +2246,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name
     writer.write_all(&file.file_name_raw)?;
     // extra field
-    if let Some(zip64_extra_field) = &file.zip64_extra_field_block() {
+    if let Some(zip64_extra_field) = zip64_extra_field_block {
         writer.write_all(&zip64_extra_field.serialize())?;
     }
     if !stripped_extra.is_empty() {
@@ -2286,6 +2287,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
+    println!("UPDATE LOCAL");
     let block = file.zip64_extra_field_block().ok_or(invalid!(
         "Attempted to update a nonexistent ZIP64 extra field"
     ))?;
