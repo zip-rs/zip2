@@ -41,7 +41,7 @@ fn test_decompress_deflate64() {
 }
 
 mod xz;
-/// Test XZ decompression functionality.
+/// Test XZ decompression functionality in the wasm32 environment.
 #[cfg(feature = "xz")]
 #[wasm_bindgen_test]
 fn test_decompress_xz() {
