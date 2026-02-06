@@ -27,7 +27,6 @@ fn test_ntfs_extra_field_timestamp_parsing() {
             assert_eq!(ts.ctime(), 0);
             #[cfg(feature = "nt-time")]
             assert_eq!(ts.created_file_time(), nt_time::FileTime::NT_TIME_EPOCH);
-
         }
     }
     assert!(found_ntfs, "Expected NTFS extra field in test.txt");
