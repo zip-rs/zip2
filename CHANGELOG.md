@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.4.0](https://github.com/zip-rs/zip2/compare/v7.3.0...v7.4.0) - 2026-02-05
+
+### <!-- 0 -->🚀 Features
+
+- Increase MSRV to 1.88 and update dependencies ([#626](https://github.com/zip-rs/zip2/pull/626))
+
 ## [7.3.0](https://github.com/zip-rs/zip2/compare/v7.3.0-pre1...v7.3.0) - 2026-02-04
 
 ### <!-- 0 -->🚀 Features
