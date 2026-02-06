@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.4.0](https://github.com/zip-rs/zip2/compare/v7.3.0...v7.4.0) - 2026-02-05
+
+### <!-- 0 -->🚀 Features
+
+- Increase MSRV to 1.88 and update dependencies ([#626](https://github.com/zip-rs/zip2/pull/626))
+
+## [7.3.0](https://github.com/zip-rs/zip2/compare/v7.3.0-pre1...v7.3.0) - 2026-02-04
+
+### <!-- 0 -->🚀 Features
+
+- cleanup the benchmarks and Cargo.toml ([#606](https://github.com/zip-rs/zip2/pull/606))
+- Add support for per-file comments ([#543](https://github.com/zip-rs/zip2/pull/543))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Document feature `unreserved` and make the mapping of extra fields public ([#616](https://github.com/zip-rs/zip2/pull/616))
+- Return an error if abort_file() fails when exceeding non-large-file limit ([#598](https://github.com/zip-rs/zip2/pull/598))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Bump version to 7.3.0 (semver checks fail if it's still 7.3.0-pre1)
+
 ## [7.3.0-pre1](https://github.com/zip-rs/zip2/compare/v7.2.0...v7.3.0-pre1) - 2026-01-27
 
 ### <!-- 1 -->🐛 Bug Fixes
@@ -219,6 +241,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - avoid scanning through all local file headers while opening an archive ([#281](https://github.com/zip-rs/zip2/pull/281))
 
+## [2.6.0](https://github.com/zip-rs/zip2/compare/v2.5.0...v2.6.0) - 2025-03-30
+
+- No documented changes.
+
 ## [2.5.0](https://github.com/zip-rs/zip2/compare/v2.4.2...v2.5.0) - 2025-03-23
 
 ### <!-- 0 -->🚀 Features
@@ -277,7 +303,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 2 -->🚜 Refactor
 
-- Change the inner structure of `DateTime` (#267)
+- Change the inner structure of `DateTime` ([#267](https://github.com/zip-rs/zip2/pull/267))
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 

@@ -30,7 +30,8 @@ fn test_absolute_paths() -> ZipResult<()> {
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data))?;
 
     // Test individual file access
-    assert_eq!(archive.len(), 3); // directory + 2 files
+    const EXPECTED_ENTRY_COUNT: usize = 3; // directory + 2 files
+    assert_eq!(archive.len(), EXPECTED_ENTRY_COUNT);
 
     for entry_index in 0..archive.len() {
         let file = archive.by_index(entry_index)?;

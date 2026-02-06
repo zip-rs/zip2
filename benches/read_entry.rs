@@ -5,22 +5,26 @@ use std::io::{Cursor, Read, Write};
 use bencher::Bencher;
 use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
 
-fn generate_random_archive(size: usize) -> Vec<u8> {
+fn generate_random_archive(size: usize) -> Result<Vec<u8>, std::io::Error> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
-    writer.start_file("random.dat", options).unwrap();
+    writer.start_file("random.dat", options)?;
     let mut bytes = vec![0u8; size];
-    getrandom::fill(&mut bytes).unwrap();
-    writer.write_all(&bytes).unwrap();
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+    writer.write_all(&bytes)?;
 
-    writer.finish().unwrap().into_inner()
+    let w = writer.finish()?;
+
+    Ok(w.into_inner())
 }
 
 fn read_entry(bench: &mut Bencher) {
     let size = 1024 * 1024;
-    let bytes = generate_random_archive(size);
+    let bytes = generate_random_archive(size)
+        .expect("Failed to create a random archive for the bench read_entry()");
     let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
 
     bench.iter(|| {
