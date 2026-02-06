@@ -969,30 +969,18 @@ impl ZipFileData {
 
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
         let is_zip_64 = self.was_large_file();
-        let compressed_size = if is_zip_64 {
-            spec::ZIP64_BYTES_THR as u32
-        } else {
-            self.compressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?
-        };
-        let uncompressed_size = if is_zip_64 {
-            spec::ZIP64_BYTES_THR as u32
-        } else {
-            self.uncompressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?
-        };
-        let offset = if is_zip_64 {
-            spec::ZIP64_BYTES_THR as u32
-        } else {
-            self.header_start
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?
-        };
+        let compressed_size = self.compressed_size
+            .min(spec::ZIP64_BYTES_THR)
+            .try_into()
+            .map_err(std::io::Error::other)?;
+        let uncompressed_size = self.uncompressed_size
+            .min(spec::ZIP64_BYTES_THR)
+            .try_into()
+            .map_err(std::io::Error::other)?;
+        let offset = self.header_start
+            .min(spec::ZIP64_BYTES_THR)
+            .try_into()
+            .map_err(std::io::Error::other)?;
         let extra_field_len: u16 = self
             .extra_field_len()
             .try_into()
