@@ -54,7 +54,7 @@ fn copy() {
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method, false);
 
-        let mut tgt_file = &mut Cursor::new(Vec::new());
+        let mut tgt_file = Cursor::new(Vec::new());
 
         {
             let mut src_archive = zip::ZipArchive::new(src_file).unwrap();
@@ -78,7 +78,7 @@ fn copy() {
             }
         }
 
-        let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
+        let mut tgt_archive = zip::ZipArchive::new(&mut tgt_file).unwrap();
 
         check_archive_file_contents(&mut tgt_archive, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut tgt_archive, COPY_ENTRY_NAME, LOREM_IPSUM);
