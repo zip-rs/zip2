@@ -7,10 +7,10 @@ use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
 
-// This test asserts that after creating a zip file, then reading its contents back out,
-// the extracted data will *always* be exactly the same as the original data.
-#[test]
-pub fn end_to_end() {
+fn for_each_supported_method<F>(mut f: F)
+where
+    F: FnMut(CompressionMethod),
+{
     for &method in SUPPORTED_COMPRESSION_METHODS {
         if method == CompressionMethod::DEFLATE
             && cfg!(all(
@@ -26,6 +26,15 @@ pub fn end_to_end() {
             continue;
         }
 
+        f(method);
+    }
+}
+
+// This test asserts that after creating a zip file, then reading its contents back out,
+// the extracted data will *always* be exactly the same as the original data.
+#[test]
+pub fn end_to_end() {
+    for_each_supported_method(|method| {
         let file = &mut Cursor::new(Vec::new());
 
         println!("Writing file with {method} compression");
@@ -34,28 +43,14 @@ pub fn end_to_end() {
         println!("Checking file contents");
         check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
         check_archive_file(file, INTERNAL_COPY_ENTRY_NAME, Some(method), LOREM_IPSUM);
-    }
+    });
 }
 
 // This test asserts that after copying a `ZipFile` to a new `ZipWriter`, then reading its
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn copy() {
-    for &method in SUPPORTED_COMPRESSION_METHODS {
-        if method == CompressionMethod::DEFLATE
-            && cfg!(all(
-                feature = "deflate-zopfli",
-                not(feature = "deflate-flate2")
-            ))
-        {
-            // We do not support DEFLATE decompression without the `flate2` feature.
-            continue;
-        }
-
-        if method == CompressionMethod::DEFLATE64 {
-            continue;
-        }
-
+    for_each_supported_method(|method| {
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method, false);
 
@@ -87,7 +82,7 @@ fn copy() {
 
         check_archive_file_contents(&mut tgt_archive, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut tgt_archive, COPY_ENTRY_NAME, LOREM_IPSUM);
-    }
+    });
 }
 
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
@@ -254,7 +249,7 @@ fn check_archive_file_contents<R: Read + Seek>(
     assert_eq!(file_contents.as_bytes(), expected);
 }
 
-const LOREM_IPSUM : &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
+const LOREM_IPSUM: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
 molestie. Proin blandit ornare dui, a tempor nisl accumsan in. Praesent a consequat felis. Morbi metus diam, auctor in auctor vel, feugiat id odio. Curabitur ex ex,
 dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim vehicula, porta tristique augue tincidunt. Vivamus ut gravida est. Sed pellentesque, dolor
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
