@@ -4,12 +4,12 @@ use zip::ZipArchive;
 
 #[test]
 fn test_ntfs() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("../tests/data/ntfs.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("../tests/data/ntfs.zip")))
+        .expect("couldn't open test zip file");
 
     for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
         if let zip::ExtraField::Ntfs(ts) = field {
+            // Expected NTFS modification time of test.txt from ntfs.zip in Windows FILETIME units.
             assert_eq!(ts.mtime(), 133_813_273_144_169_390);
             #[cfg(feature = "nt-time")]
             assert_eq!(
