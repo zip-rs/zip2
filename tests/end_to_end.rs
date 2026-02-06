@@ -35,7 +35,14 @@ where
 #[test]
 pub fn end_to_end() {
     for_each_supported_method(|method| {
-        f(method);
+        let file = &mut Cursor::new(Vec::new());
+
+        println!("Writing file with {method} compression");
+        write_test_archive(file, method, true);
+
+        println!("Checking file contents");
+        check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
+        check_archive_file(file, INTERNAL_COPY_ENTRY_NAME, Some(method), LOREM_IPSUM);
     }
 }
 
