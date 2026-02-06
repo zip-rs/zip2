@@ -254,7 +254,7 @@ molestie. Proin blandit ornare dui, a tempor nisl accumsan in. Praesent a conseq
 dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim vehicula, porta tristique augue tincidunt. Vivamus ut gravida est. Sed pellentesque, dolor
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
 inceptos himenaeos. Maecenas feugiat velit in ex ultrices scelerisque id id neque.
-";
+const LOREM_IPSUM: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
 
 const EXTRA_DATA: &[u8] = b"Extra Data";
 
