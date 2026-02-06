@@ -28,4 +28,5 @@ jobs:
           submodules: "true"
           persist-credentials: false
       - name: typos-action
-        uses: crate-ci/typos@v1.29.0
+        uses: crate-ci/typos@ad3053d3adbcce7f2e3c60fd4ddfc239787d1eff # v1.43.2
+
