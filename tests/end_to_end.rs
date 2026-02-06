@@ -107,7 +107,7 @@ fn append() {
         for shallow_copy in &[false, true] {
             println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
             let mut file = Cursor::new(Vec::new());
-            write_test_archive(file, method, *shallow_copy);
+            write_test_archive(&mut file, method, *shallow_copy);
 
             {
                 let mut zip = ZipWriter::new_append(&mut file).unwrap();
