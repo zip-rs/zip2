@@ -2287,7 +2287,6 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    println!("UPDATE LOCAL");
     let block = file.zip64_extra_field_block().ok_or(invalid!(
         "Attempted to update a nonexistent ZIP64 extra field"
     ))?;
