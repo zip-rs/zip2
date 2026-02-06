@@ -10,6 +10,7 @@ fn test_ntfs() {
 
     for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
         if let zip::ExtraField::Ntfs(ts) = field {
+            // Expected NTFS modification time of test.txt from ntfs.zip in Windows FILETIME units.
             assert_eq!(ts.mtime(), 133_813_273_144_169_390);
             #[cfg(feature = "nt-time")]
             assert_eq!(
