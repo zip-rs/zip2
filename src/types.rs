@@ -1203,13 +1203,22 @@ impl Zip64ExtraFieldBlock {
         header_start: u64,
     ) -> Option<Zip64ExtraFieldBlock> {
         let mut size: u16 = 0;
-        let uncompressed_size = if uncompressed_size >= ZIP64_BYTES_THR || large_file {
+        // we need this field if others fields are (compressed_size, header_start) present
+        let uncompressed_size = if uncompressed_size >= ZIP64_BYTES_THR
+            || compressed_size >= ZIP64_BYTES_THR
+            || header_start >= ZIP64_BYTES_THR
+            || large_file
+        {
             size += mem::size_of::<u64>() as u16;
             Some(uncompressed_size)
         } else {
             None
         };
-        let compressed_size = if compressed_size >= ZIP64_BYTES_THR || large_file {
+        // we need this field if other field (header_start) ais present
+        let compressed_size = if compressed_size >= ZIP64_BYTES_THR
+            || header_start >= ZIP64_BYTES_THR
+            || large_file
+        {
             size += mem::size_of::<u64>() as u16;
             Some(compressed_size)
         } else {
@@ -1221,6 +1230,8 @@ impl Zip64ExtraFieldBlock {
         } else {
             None
         };
+        // TODO: (unsopported for now)
+        // Disk Start Number  4 bytes    Number of the disk on which this file starts
         if size == 0 {
             return None;
         }
