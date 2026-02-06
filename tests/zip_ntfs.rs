@@ -4,7 +4,8 @@ use zip::ZipArchive;
 
 #[test]
 fn test_ntfs() {
-    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("../tests/data/ntfs.zip"))).expect("couldn't open test zip file");
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("../tests/data/ntfs.zip")))
+        .expect("couldn't open test zip file");
 
     for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
         if let zip::ExtraField::Ntfs(ts) = field {
