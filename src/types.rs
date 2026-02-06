@@ -953,14 +953,14 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn is_zip_64(&self) -> bool {
-        if self.compressed_size > spec::ZIP64_BYTES_THR {
-            return true;
-        }
-        if self.uncompressed_size > spec::ZIP64_BYTES_THR {
-            return true;
-        }
-        if self.header_start > spec::ZIP64_BYTES_THR {
+    pub(crate) fn was_large_file(&self) -> bool {
+        // if self.compressed_size > spec::ZIP64_BYTES_THR {
+        //     return true;
+        // }
+        // if self.uncompressed_size > spec::ZIP64_BYTES_THR {
+        //     return true;
+        // }
+        if self.header_start >= spec::ZIP64_BYTES_THR {
             return true;
         }
         // TODO: Also disk number (unsupported for now)
@@ -968,7 +968,7 @@ impl ZipFileData {
     }
 
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
-        let is_zip_64 = self.is_zip_64();
+        let is_zip_64 = self.was_large_file();
         let compressed_size = if is_zip_64 {
             spec::ZIP64_BYTES_THR as u32
         } else {
@@ -1203,28 +1203,21 @@ impl Zip64ExtraFieldBlock {
         header_start: u64,
     ) -> Option<Zip64ExtraFieldBlock> {
         let mut size: u16 = 0;
-        // we need this field if others fields are (compressed_size, header_start) present
-        let uncompressed_size = if uncompressed_size >= ZIP64_BYTES_THR
-            || compressed_size >= ZIP64_BYTES_THR
-            || header_start >= ZIP64_BYTES_THR
-            || large_file
-        {
-            size += mem::size_of::<u64>() as u16;
-            Some(uncompressed_size)
-        } else {
-            None
-        };
-        // we need this field if other field (header_start) ais present
-        let compressed_size = if compressed_size >= ZIP64_BYTES_THR
-            || header_start >= ZIP64_BYTES_THR
-            || large_file
-        {
-            size += mem::size_of::<u64>() as u16;
-            Some(compressed_size)
-        } else {
-            None
-        };
-        let header_start = if header_start >= ZIP64_BYTES_THR {
+        let uncompressed_size =
+            if (uncompressed_size != 0 && uncompressed_size >= ZIP64_BYTES_THR) || large_file {
+                size += mem::size_of::<u64>() as u16;
+                Some(uncompressed_size)
+            } else {
+                None
+            };
+        let compressed_size =
+            if (compressed_size != 0 && compressed_size >= ZIP64_BYTES_THR) || large_file {
+                size += mem::size_of::<u64>() as u16;
+                Some(compressed_size)
+            } else {
+                None
+            };
+        let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
             size += mem::size_of::<u64>() as u16;
             Some(header_start)
         } else {
@@ -1263,6 +1256,7 @@ impl Zip64ExtraFieldBlock {
 
         let full_size = self.full_size();
 
+        println!("{self:?}");
         let mut ret = Vec::with_capacity(full_size);
         ret.extend(magic.to_le_bytes());
         ret.extend(u16::to_le_bytes(size));
@@ -1278,6 +1272,7 @@ impl Zip64ExtraFieldBlock {
         }
         debug_assert_eq!(ret.len(), full_size);
 
+        println!("{ret:?} = {}, {}", ret.len(), ret.len() - 4);
         ret.into_boxed_slice()
     }
 }

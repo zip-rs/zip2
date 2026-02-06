@@ -2208,8 +2208,8 @@ fn update_local_file_header<T: Write + Seek>(
 
         update_local_zip64_extra_field(writer, file)?;
 
-        file.compressed_size = spec::ZIP64_BYTES_THR;
-        file.uncompressed_size = spec::ZIP64_BYTES_THR;
+        // file.compressed_size = spec::ZIP64_BYTES_THR;
+        // file.uncompressed_size = spec::ZIP64_BYTES_THR;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
