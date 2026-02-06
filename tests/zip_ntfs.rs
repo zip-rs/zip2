@@ -4,9 +4,9 @@ use zip::ZipArchive;
 
 #[test]
 fn test_ntfs() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("../tests/data/ntfs.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+    let mut zip_data = Vec::new();
+    zip_data.extend_from_slice(include_bytes!("../tests/data/ntfs.zip"));
+    let mut archive = ZipArchive::new(io::Cursor::new(zip_data)).expect("couldn't open test zip file");
 
     for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
         if let zip::ExtraField::Ntfs(ts) = field {
