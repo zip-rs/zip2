@@ -1204,7 +1204,7 @@ impl Zip64ExtraFieldBlock {
         } else {
             None
         };
-        // TODO: (unsopported for now)
+        // TODO: (unsupported for now)
         // Disk Start Number  4 bytes    Number of the disk on which this file starts
         if size == 0 {
             return None;
@@ -1243,7 +1243,7 @@ impl Zip64ExtraFieldBlock {
         } else {
             None
         };
-        // TODO: (unsopported for now)
+        // TODO: (unsupported for now)
         // Disk Start Number  4 bytes    Number of the disk on which this file starts
         if size == 0 {
             return None;
