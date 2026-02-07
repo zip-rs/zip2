@@ -72,7 +72,7 @@ pub(crate) enum Flags {
     /// If this bit is set, this indicates that the file is compressed patched data.
     CompressedPatchedData       = 0b0000_0000_0010_0000,
     /// Strong encryption.
-    /// If this bit is set, you MUST sett the version needed to extract value to at least 50 and you MUST also set bit 0.
+    /// If this bit is set, you MUST set the version needed to extract value to at least 50 and you MUST also set bit 0.
     /// If AES encryption is used, the version needed to extract value MUST be at least 51.
     StrongEncryption            = 0b0000_0000_0100_0000,
     // bit 7 Currently unused   = 0b0000_0000_1000_0000;
