@@ -968,16 +968,18 @@ impl ZipFileData {
     }
 
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
-        let is_zip_64 = self.was_large_file();
-        let compressed_size = self.compressed_size
+        let compressed_size = self
+            .compressed_size
             .min(spec::ZIP64_BYTES_THR)
             .try_into()
             .map_err(std::io::Error::other)?;
-        let uncompressed_size = self.uncompressed_size
+        let uncompressed_size = self
+            .uncompressed_size
             .min(spec::ZIP64_BYTES_THR)
             .try_into()
             .map_err(std::io::Error::other)?;
-        let offset = self.header_start
+        let offset = self
+            .header_start
             .min(spec::ZIP64_BYTES_THR)
             .try_into()
             .map_err(std::io::Error::other)?;
@@ -1023,15 +1025,6 @@ impl ZipFileData {
             external_file_attributes: self.external_attributes,
             offset,
         })
-    }
-
-    pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
-        Zip64ExtraFieldBlock::maybe_new(
-            self.large_file,
-            self.uncompressed_size,
-            self.compressed_size,
-            self.header_start,
-        )
     }
 
     pub(crate) fn write_data_descriptor<W: std::io::Write>(
@@ -1184,27 +1177,27 @@ pub(crate) struct Zip64ExtraFieldBlock {
 }
 
 impl Zip64ExtraFieldBlock {
-    pub(crate) fn maybe_new(
-        large_file: bool,
+    /// This entry in the Local header MUST include BOTH original and compressed file size fields
+    pub(crate) fn local_header(
         uncompressed_size: u64,
         compressed_size: u64,
         header_start: u64,
     ) -> Option<Zip64ExtraFieldBlock> {
         let mut size: u16 = 0;
-        let uncompressed_size =
-            if (uncompressed_size != 0 && uncompressed_size >= ZIP64_BYTES_THR) || large_file {
-                size += mem::size_of::<u64>() as u16;
-                Some(uncompressed_size)
-            } else {
-                None
-            };
-        let compressed_size =
-            if (compressed_size != 0 && compressed_size >= ZIP64_BYTES_THR) || large_file {
-                size += mem::size_of::<u64>() as u16;
-                Some(compressed_size)
-            } else {
-                None
-            };
+        let should_add_size =
+            uncompressed_size >= ZIP64_BYTES_THR || compressed_size >= ZIP64_BYTES_THR;
+        let uncompressed_size = if should_add_size {
+            size += mem::size_of::<u64>() as u16;
+            Some(uncompressed_size)
+        } else {
+            None
+        };
+        let compressed_size = if should_add_size {
+            size += mem::size_of::<u64>() as u16;
+            Some(compressed_size)
+        } else {
+            None
+        };
         let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
             size += mem::size_of::<u64>() as u16;
             Some(header_start)
@@ -1225,9 +1218,46 @@ impl Zip64ExtraFieldBlock {
             header_start,
         })
     }
-}
 
-impl Zip64ExtraFieldBlock {
+    pub(crate) fn central_header(
+        uncompressed_size: u64,
+        compressed_size: u64,
+        header_start: u64,
+    ) -> Option<Zip64ExtraFieldBlock> {
+        let mut size: u16 = 0;
+        let uncompressed_size = if uncompressed_size != 0 && uncompressed_size >= ZIP64_BYTES_THR {
+            size += mem::size_of::<u64>() as u16;
+            Some(uncompressed_size)
+        } else {
+            None
+        };
+        let compressed_size = if compressed_size != 0 && compressed_size >= ZIP64_BYTES_THR {
+            size += mem::size_of::<u64>() as u16;
+            Some(compressed_size)
+        } else {
+            None
+        };
+        let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
+            size += mem::size_of::<u64>() as u16;
+            Some(header_start)
+        } else {
+            None
+        };
+        // TODO: (unsopported for now)
+        // Disk Start Number  4 bytes    Number of the disk on which this file starts
+        if size == 0 {
+            return None;
+        }
+
+        Some(Zip64ExtraFieldBlock {
+            magic: spec::ExtraFieldMagic::ZIP64_EXTRA_FIELD_TAG,
+            size,
+            uncompressed_size,
+            compressed_size,
+            header_start,
+        })
+    }
+
     pub fn full_size(&self) -> usize {
         assert!(self.size > 0);
         self.size as usize + mem::size_of::<spec::ExtraFieldMagic>() + mem::size_of::<u16>()

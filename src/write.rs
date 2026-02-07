@@ -986,9 +986,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-        if let Some(zip64_block) =
-            Zip64ExtraFieldBlock::maybe_new(options.large_file, 0, 0, header_start)
-        {
+        if let Some(zip64_block) = Zip64ExtraFieldBlock::local_header(0, 0, header_start) {
             let mut new_extra_data = zip64_block.serialize().into_vec();
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
@@ -2232,7 +2230,11 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         Vec::new()
     };
     let central_len = file.central_extra_field_len();
-    let zip64_extra_field_block = file.zip64_extra_field_block();
+    let zip64_extra_field_block = Zip64ExtraFieldBlock::central_header(
+        file.uncompressed_size,
+        file.compressed_size,
+        file.header_start,
+    );
     let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
         zip64.full_size()
     } else {
@@ -2287,7 +2289,12 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    let block = file.zip64_extra_field_block().ok_or(invalid!(
+    let block = Zip64ExtraFieldBlock::central_header(
+        file.uncompressed_size,
+        file.compressed_size,
+        file.header_start,
+    )
+    .ok_or(invalid!(
         "Attempted to update a nonexistent ZIP64 extra field"
     ))?;
 
