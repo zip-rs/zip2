@@ -2918,7 +2918,7 @@ mod test {
     fn remove_encrypted_file() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let first_file_options = SimpleFileOptions::default()
-            .with_alignment(65535)
+            .with_alignment(0xFFFF)
             .with_deprecated_encryption(b"Password");
         writer.start_file("", first_file_options).unwrap();
         writer.abort_file().unwrap();
@@ -2932,7 +2932,7 @@ mod test {
     fn remove_encrypted_aligned_symlink() -> ZipResult<()> {
         let mut options = SimpleFileOptions::default();
         options = options.with_deprecated_encryption(b"Password");
-        options.alignment = 65535;
+        options.alignment = 0xFFFF;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.add_symlink("", "s\t\0\0ggggg\0\0", options).unwrap();
         writer.abort_file().unwrap();
@@ -3308,14 +3308,14 @@ mod test {
                 central_extra_data: vec![].into(),
                 file_comment: None,
             },
-            alignment: 65521,
+            alignment: 0xFFF1,
             ..Default::default()
         };
         writer.start_file_from_path("\u{4}\0@\n//\u{c}", options)?;
         writer = ZipWriter::new_append(writer.finish()?)?;
         writer.abort_file()?;
         let options = FileOptions {
-            compression_method: CompressionMethod::Unsupported(65535),
+            compression_method: CompressionMethod::Unsupported(0xFFFF),
             compression_level: None,
             last_modified_time: DateTime::from_date_and_time(2055, 10, 2, 11, 48, 49)?,
             permissions: None,
@@ -3326,7 +3326,7 @@ mod test {
                 central_extra_data: vec![].into(),
                 file_comment: None,
             },
-            alignment: 65535,
+            alignment: 0xFFFF,
             ..Default::default()
         };
         writer.add_directory_from_path("", options)?;
@@ -3395,7 +3395,7 @@ mod test {
                 .into(),
                 file_comment: None,
             },
-            alignment: 65535,
+            alignment: 0xFFFF,
             ..Default::default()
         };
         assert!(writer.add_directory_from_path("", options).is_err());
@@ -3422,7 +3422,7 @@ mod test {
                 .into(),
                 file_comment: None,
             },
-            alignment: 65535,
+            alignment: 0xFFFF,
             ..Default::default()
         };
         assert!(writer.add_directory_from_path("", options).is_err());
@@ -3465,7 +3465,7 @@ mod test {
                                             writer.set_flush_on_finish_file(false);
                                             let options = FileOptions {
                                                 compression_method: CompressionMethod::Unsupported(
-                                                    65535,
+                                                    0xFFFF,
                                                 ),
                                                 compression_level: Some(5),
                                                 last_modified_time: DateTime::from_date_and_time(
@@ -3559,7 +3559,7 @@ mod test {
                                                 central_extra_data: vec![].into(),
                                                 file_comment: None,
                                             },
-                                            alignment: 65535,
+                                            alignment: 0xFFFF,
                                             ..Default::default()
                                         };
                                         writer.add_symlink_from_path("", "\nu", options)?;
@@ -4046,7 +4046,7 @@ mod test {
                 central_extra_data: vec![].into(),
                 file_comment: None,
             },
-            alignment: 65535,
+            alignment: 0xFFFF,
             ..Default::default()
         };
         writer.start_file_from_path("", options)?;
@@ -4105,7 +4105,7 @@ mod test {
                 central_extra_data: vec![].into(),
                 file_comment: None,
             },
-            alignment: 65535,
+            alignment: 0xFFFF,
             ..Default::default()
         };
         writer.start_file_from_path("", options)?;

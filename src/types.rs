@@ -11,7 +11,7 @@ use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 use crate::result::{invalid, ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Pod};
+use crate::spec::{self, FixedSizeBlock, Flags, Pod};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -317,7 +317,7 @@ impl DateTime {
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
         fn is_leap_year(year: u16) -> bool {
-            (year % 4 == 0) && ((year % 25 != 0) || (year % 16 == 0))
+            year.is_multiple_of(4) && (!year.is_multiple_of(25) || year.is_multiple_of(16))
         }
 
         if (1980..=2107).contains(&year)
@@ -795,7 +795,7 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = flags & 1 == 1;
+        let encrypted: bool = flags & (Flags::Encrypted as u16) != 0;
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
                 "Encrypted files are not supported",
@@ -803,16 +803,14 @@ impl ZipFileData {
         }
 
         /* FIXME: these were previously incorrect: add testing! */
-        /* flags & (1 << 3) != 0 */
-        let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
+        let using_data_descriptor: bool = flags & (Flags::UsingDataDescriptor as u16) == 1 << 3;
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
             ));
         }
 
-        /* flags & (1 << 1) != 0 */
-        let is_utf8: bool = flags & (1 << 11) != 0;
+        let is_utf8: bool = flags & (Flags::LanguageEncoding as u16) != 0;
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -890,13 +888,13 @@ impl ZipFileData {
 
     fn flags(&self) -> u16 {
         let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
-            1u16 << 11
+            Flags::LanguageEncoding as u16
         } else {
             0
         };
 
         let using_data_descriptor_bit = if self.using_data_descriptor {
-            1u16 << 3
+            Flags::UsingDataDescriptor as u16
         } else {
             0
         };
