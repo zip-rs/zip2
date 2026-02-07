@@ -803,7 +803,7 @@ impl ZipFileData {
         }
 
         /* FIXME: these were previously incorrect: add testing! */
-        let using_data_descriptor: bool = flags & (Flags::UsingDataDescriptor as u16) == 1 << 3;
+        let using_data_descriptor: bool = flags & (Flags::UsingDataDescriptor as u16) != 0;
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
