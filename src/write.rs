@@ -1047,7 +1047,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                     ExtendedFileOptions::add_extra_data_unchecked(
                         &mut extra_data,
-                        UsedExtraField::DataStreamAlignement as u16,
+                        UsedExtraField::DataStreamAlignment as u16,
                         &pad_body,
                     )?;
                     debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
@@ -2274,7 +2274,7 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
             break;
         }
 
-        if tag != UsedExtraField::DataStreamAlignement as u16 {
+        if tag != UsedExtraField::DataStreamAlignment as u16 {
             new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
         }
         cursor += 4 + len;
