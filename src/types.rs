@@ -11,7 +11,7 @@ use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 use crate::result::{invalid, ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Flags, Pod};
+use crate::spec::{self, FixedSizeBlock, Pod, ZipFlags};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -795,7 +795,7 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = flags & (Flags::Encrypted as u16) != 0;
+        let encrypted: bool = flags & (ZipFlags::Encrypted as u16) != 0;
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
                 "Encrypted files are not supported",
@@ -803,14 +803,14 @@ impl ZipFileData {
         }
 
         /* FIXME: these were previously incorrect: add testing! */
-        let using_data_descriptor: bool = flags & (Flags::UsingDataDescriptor as u16) != 0;
+        let using_data_descriptor: bool = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
             ));
         }
 
-        let is_utf8: bool = flags & (Flags::LanguageEncoding as u16) != 0;
+        let is_utf8: bool = flags & (ZipFlags::LanguageEncoding as u16) != 0;
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -888,13 +888,13 @@ impl ZipFileData {
 
     fn flags(&self) -> u16 {
         let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
-            Flags::LanguageEncoding as u16
+            ZipFlags::LanguageEncoding as u16
         } else {
             0
         };
 
         let using_data_descriptor_bit = if self.using_data_descriptor {
-            Flags::UsingDataDescriptor as u16
+            ZipFlags::UsingDataDescriptor as u16
         } else {
             0
         };

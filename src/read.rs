@@ -7,7 +7,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{
-    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Flags, Pod, ZIP64_BYTES_THR,
+    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZipFlags, ZIP64_BYTES_THR,
 };
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
@@ -1448,9 +1448,9 @@ fn central_header_to_zip_file_inner<R: Read>(
         ..
     } = block;
 
-    let encrypted = (flags & Flags::Encrypted as u16) != 0;
-    let is_utf8 = flags & (Flags::LanguageEncoding as u16) != 0;
-    let using_data_descriptor = flags & (Flags::UsingDataDescriptor as u16) != 0;
+    let encrypted = flags & (ZipFlags::Encrypted as u16) != 0;
+    let is_utf8 = flags & (ZipFlags::LanguageEncoding as u16) != 0;
+    let using_data_descriptor = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
 
     let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
