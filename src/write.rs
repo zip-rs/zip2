@@ -2166,19 +2166,39 @@ fn update_aes_extra_data<W: Write + Seek>(
 
     let mut buf = Vec::new();
 
-    /* TODO: implement this using the Block trait! */
+    // Serialize the AE-X extra field in a structured way instead of manual buffer construction.
     // Extra field header ID.
     buf.write_u16_le(UsedExtraField::AeXEncryption as u16)?;
-    // Data size.
+    // Data size (fixed at 7 bytes for this field).
     buf.write_u16_le(7)?;
-    // Integer version number.
-    buf.write_u16_le(*version as u16)?;
-    // Vendor ID.
-    buf.write_all(b"AE")?;
-    // AES encryption strength.
-    buf.write_all(&[*aes_mode as u8])?;
-    // Real compression method.
-    buf.write_u16_le(compression_method.serialize_to_u16())?;
+
+    struct AesExtraField<'a> {
+        version: AesVendorVersion,
+        aes_mode: &'a AesMode,
+        compression_method: CompressionMethod,
+    }
+
+    impl<'a> AesExtraField<'a> {
+        fn write_to<W: std::io::Write>(&self, mut w: W) -> std::io::Result<()> {
+            // Integer version number.
+            w.write_u16_le(self.version as u16)?;
+            // Vendor ID ("AE").
+            w.write_all(b"AE")?;
+            // AES encryption strength.
+            w.write_all(&[*self.aes_mode as u8])?;
+            // Real compression method.
+            w.write_u16_le(self.compression_method.serialize_to_u16())?;
+            Ok(())
+        }
+    }
+
+    let aes_extra_field = AesExtraField {
+        version: *version,
+        aes_mode,
+        compression_method,
+    };
+
+    aes_extra_field.write_to(&mut buf)?;
 
     writer.write_all(&buf)?;
 
