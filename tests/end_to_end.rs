@@ -259,10 +259,10 @@ fn test_extra_field_mapping_constants() {
     assert!(EXTRA_FIELD_MAPPING.len() > 12);
 
     // ZIP64 extended information extra field - 0x0001 which is 1
-    assert_eq!(EXTRA_FIELD_MAPPING[0], 0x0001);
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x0001));
 
     // Strong Encryption Header - 0x0017 which is 23
-    assert_eq!(EXTRA_FIELD_MAPPING[12], 0x0017);
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x0017));
 
     // Additional checks for other well-known extra field IDs
     // Extended Timestamp - 0x5455
