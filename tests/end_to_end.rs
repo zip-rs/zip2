@@ -269,9 +269,19 @@ fn test_extra_field_mapping_constants() {
     // just a test to access the variable in the crate
     use zip::extra_fields::EXTRA_FIELD_MAPPING;
 
+    // Ensure we can safely access the indices used in this test
+    assert!(EXTRA_FIELD_MAPPING.len() > 12);
+
     // ZIP64 extended information extra field - 0x0001 which is 1
     assert_eq!(EXTRA_FIELD_MAPPING[0], 0x0001);
 
     // Strong Encryption Header - 0x0017 which is 23
     assert_eq!(EXTRA_FIELD_MAPPING[12], 0x0017);
+
+    // Additional checks for other well-known extra field IDs
+    // Extended Timestamp - 0x5455
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x5455));
+
+    // Info-ZIP Unix (UID/GID) - 0x7875
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x7875));
 }
