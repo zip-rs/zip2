@@ -41,7 +41,11 @@ fn test_decompress_deflate64() {
 }
 
 mod xz;
-/// Test XZ decompression functionality in the wasm32 environment.
+/// Verifies XZ decompression functionality in the `wasm32` environment.
+/// This test ensures that data compressed with XZ can be correctly decompressed
+/// using the WebAssembly build of the library.
+///
+/// Run with: `wasm-pack test --headless --chrome --features xz`
 #[cfg(feature = "xz")]
 #[wasm_bindgen_test]
 fn test_decompress_xz() {
