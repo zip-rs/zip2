@@ -253,6 +253,28 @@ pub struct ExtendedFileOptions {
 
 impl ExtendedFileOptions {
     /// Adds an extra data field, unless we detect that it's invalid.
+    ///
+    /// # Parameters
+    ///
+    /// * `header_id` – The 2‑byte identifier of the ZIP extra field to add.
+    ///   This value determines the type/format of `data` and should either be
+    ///   one of the standard ZIP extra field IDs defined by the ZIP
+    ///   specification or an application‑specific (vendor) ID.
+    /// * `data` – The raw payload for the extra field, without the leading
+    ///   header ID or length; those are derived from `header_id` and
+    ///   `data.len()` and written automatically.
+    /// * `central_only` – Controls where the extra field is stored:
+    ///   * When `true`, the field is appended only to the central directory
+    ///     extra data (`central_extra_data`), and the corresponding local file
+    ///     header is left unchanged.
+    ///   * When `false`, the field is appended to the local file header extra
+    ///     data (`extra_data`) and may also be reflected in the central
+    ///     directory, depending on how the ZIP is written.
+    ///
+    /// The combined size of all extra data (local + central) must not exceed
+    /// `u16::MAX`. If adding this field would exceed that limit or produce an
+    /// invalid extra data structure, an error is returned and no data is
+    /// added.
     pub fn add_extra_data<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
