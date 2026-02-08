@@ -33,9 +33,8 @@ fn test_aes256_encrypted_uncompressed_file() {
 }
 
 mod deflate64;
-/// Verifies Deflate64 decompression functionality in the `wasm32` environment.
-/// This test ensures that data compressed using the Deflate64 algorithm can be correctly
-/// decompressed using the WebAssembly build of the library.
+/// Verifies that data compressed using the Deflate64 algorithm can be correctly
+/// decompressed in the `wasm32` environment.
 ///
 /// Run with: `wasm-pack test --headless --chrome --features deflate64`
 #[cfg(feature = "deflate64")]
