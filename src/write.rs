@@ -1300,8 +1300,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /* TODO: link to/use Self::finish_into_readable() from https://github.com/zip-rs/zip/pull/400 in
-     * this docstring. */
     /// Copy over the entire contents of another archive verbatim.
     ///
     /// This method extracts file metadata from the `source` archive, then simply performs a single
