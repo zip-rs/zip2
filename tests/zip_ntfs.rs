@@ -3,7 +3,7 @@ use std::io;
 use zip::ZipArchive;
 
 #[test]
-fn test_ntfs() {
+fn test_ntfs_extra_field_timestamp_parsing() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("../tests/data/ntfs.zip")))
         .expect("couldn't open test zip file");
 
