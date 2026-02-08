@@ -72,13 +72,10 @@ mod end_to_end;
 /// Runs the end-to-end integration test suite for the `wasm32` target, including
 /// checks for time-dependent behavior.
 ///
-/// These tests require a time implementation (for example, the `time` crate or a
-/// compatible alternative) that is compiled with its `wasm-bindgen` feature when
-/// targeting `wasm32`. Without that feature enabled, running this test will fail
-/// at runtime with "time not implemented on this platform".
+/// Run with: `wasm-pack test --headless --chrome`
 ///
-/// Run with: `wasm-pack test --headless --chrome` (ensure the appropriate time
-/// implementation and its `wasm-bindgen` feature are enabled for `wasm32`).
+/// **Note**: This test requires `time`, `chrono` or `nt-time` with its `wasm-bindgen`
+/// feature enabled for `wasm32` targets.
 #[wasm_bindgen_test]
 fn test_end_to_end() {
     end_to_end::end_to_end();
