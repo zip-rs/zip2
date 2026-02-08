@@ -89,21 +89,7 @@ fn copy() {
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
 fn append() {
-    for &method in SUPPORTED_COMPRESSION_METHODS {
-        if method == CompressionMethod::DEFLATE
-            && cfg!(all(
-                feature = "deflate-zopfli",
-                not(feature = "deflate-flate2")
-            ))
-        {
-            // We do not support DEFLATE decompression without the `flate2` feature.
-            continue;
-        }
-
-        if method == CompressionMethod::DEFLATE64 {
-            continue;
-        }
-
+    for_each_supported_method(|method| {
         for shallow_copy in &[false, true] {
             println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
             let mut file = Cursor::new(Vec::new());
@@ -127,7 +113,7 @@ fn append() {
             check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
             check_archive_file_contents(&mut zip, INTERNAL_COPY_ENTRY_NAME, LOREM_IPSUM);
         }
-    }
+    });
 }
 
 // Write a test zip archive to buffer.
