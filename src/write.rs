@@ -276,6 +276,17 @@ impl ExtendedFileOptions {
         }
     }
 
+    /// Appends an extra data field to the given buffer without enforcing global size limits.
+    ///
+    /// Unlike [`ExtendedFileOptions::add_extra_data`], this function:
+    /// - Does **not** check that the combined size of local and central extra data fits into
+    ///   `u16::MAX` bytes as required by the ZIP format.
+    /// - Does **not** re-validate the entire extra-data block after appending.
+    ///
+    /// Callers must ensure that:
+    /// - Using this function will not cause the overall extra-data length to exceed `u16::MAX`.
+    /// - The resulting buffer remains a well-formed sequence of extra fields (or is validated
+    ///   later with [`Self::validate_extra_data`]).
     pub(crate) fn add_extra_data_unchecked(
         vec: &mut Vec<u8>,
         header_id: u16,
