@@ -2241,7 +2241,7 @@ fn update_aes_extra_data<W: Write + Seek>(
     let aes_extra_field = AesExtraField {
         version: *version,
         aes_mode,
-        compression_method,
+        compression_method: *compression_method,
     };
 
     aes_extra_field.write_to(&mut buf)?;
