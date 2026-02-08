@@ -49,7 +49,11 @@ fn test_decompress_xz() {
 }
 
 mod lzma;
-/// Test LZMA decompression functionality in the wasm32 environment.
+/// Verifies LZMA decompression functionality in the `wasm32` environment.
+/// The test ensures that data compressed with LZMA can be correctly decompressed
+/// using the WebAssembly build of the library.
+///
+/// Run with: `wasm-pack test --headless --chrome --features lzma`
 #[cfg(feature = "lzma")]
 #[wasm_bindgen_test]
 fn test_decompress_lzma() {
