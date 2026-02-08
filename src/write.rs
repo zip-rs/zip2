@@ -937,6 +937,21 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// # Safety
     ///
+    /// This function assumes that `length` and `crc32` accurately describe the data that has
+    /// been (or will be) written for the currently open file entry.
+    ///
+    /// The caller must ensure that:
+    /// - A file entry is currently being written (that is, [`start_file`] or equivalent has
+    ///   been called successfully and `abort_file` has not been called since).
+    /// - `length` is the exact uncompressed size, in bytes, of the file data written to the
+    ///   underlying [`Write`] implementation for this entry.
+    /// - `crc32` is the correct CRC-32 checksum for that same data, in the format expected by
+    ///   the ZIP specification.
+    ///
+    /// If these requirements are not met, the generated ZIP archive may contain inconsistent
+    /// or corrupt metadata, which can cause readers to report errors, skip data, or accept
+    /// data whose integrity cannot be verified.
+    ///
     /// This overwrites the internal crc32 calculation. It should only be used in case
     /// the underlying [Write] is written independently and you need to adjust the zip metadata.
     pub unsafe fn set_file_metadata(&mut self, length: u64, crc32: u32) -> ZipResult<()> {
