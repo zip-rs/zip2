@@ -2220,7 +2220,7 @@ fn update_aes_extra_data<W: Write + Seek>(
 
     struct AesExtraField<'a> {
         version: AesVendorVersion,
-        aes_mode: &'a AesMode,
+        aes_mode: &'a crate::AesMode,
         compression_method: CompressionMethod,
     }
 
