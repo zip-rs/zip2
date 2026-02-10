@@ -14,12 +14,6 @@ jobs:
         uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
         with:
           egress-policy: audit
-      - name: Check that private key is set
-        run: |
-          if [ -z "${{ secrets.ACTIONS_RECURSIVE_PRIVATE_KEY }}" ]; then
-            echo "Error: ACTIONS_RECURSIVE_PRIVATE_KEY secret is not set!"
-            exit 1
-          fi
       - uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
         id: app-token
         with:
