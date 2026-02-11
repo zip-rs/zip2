@@ -107,7 +107,6 @@ pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
     0x0023, // Smartcrypt Policy Key Data Record
     0x0065, // IBM S/390 (Z390), AS/400 (I400) attributes - uncompressed
     0x0066, // Reserved for IBM S/390 (Z390), AS/400 (I400) attributes - compressed
-
     // Third party mappings commonly used
     0x07c8, // Macintosh
     0x1986, // Pixar USD header ID
