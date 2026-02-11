@@ -6,10 +6,7 @@ use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
-use crate::types::{
-    ffi, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock,
-    ZipRawValues, MIN_VERSION,
-};
+use crate::types::{ffi, AesExtraField, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock, ZipRawValues, MIN_VERSION};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
@@ -2210,42 +2207,11 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let mut buf = Vec::new();
+    let mut buf = [0u8; size_of::<AesExtraField>()];
 
-    // Serialize the AE-X extra field in a structured way instead of manual buffer construction.
-    // Extra field header ID.
-    buf.write_u16_le(UsedExtraField::AeXEncryption as u16)?;
-    // Data size (fixed at 7 bytes for this field).
-    buf.write_u16_le(7)?;
+    let aes_extra_field = AesExtraField::new(*version, *aes_mode, *compression_method);
 
-    struct AesExtraField<'a> {
-        version: AesVendorVersion,
-        aes_mode: &'a crate::AesMode,
-        compression_method: CompressionMethod,
-    }
-
-    impl<'a> AesExtraField<'a> {
-        fn write_to<W: std::io::Write>(&self, mut w: W) -> std::io::Result<()> {
-            // Integer version number.
-            w.write_u16_le(self.version as u16)?;
-            // Vendor ID ("AE").
-            w.write_all(b"AE")?;
-            // AES encryption strength.
-            w.write_all(&[*self.aes_mode as u8])?;
-            // Real compression method.
-            w.write_u16_le(self.compression_method.serialize_to_u16())?;
-            Ok(())
-        }
-    }
-
-    let aes_extra_field = AesExtraField {
-        version: *version,
-        aes_mode,
-        compression_method: *compression_method,
-    };
-
-    aes_extra_field.write_to(&mut buf)?;
-
+    aes_extra_field.write(&mut buf.as_mut())?;
     writer.write_all(&buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
@@ -2255,7 +2221,7 @@ fn update_aes_extra_data<W: Write + Seek>(
         ));
     };
     let extra_field = Arc::make_mut(extra_field);
-    extra_field[aes_extra_data_start..aes_extra_data_start + buf.len()].copy_from_slice(&buf);
+    extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AesExtraField>()].copy_from_slice(&buf);
 
     Ok(())
 }
