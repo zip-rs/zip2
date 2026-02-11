@@ -6,7 +6,10 @@ use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
 use crate::result::{invalid, ZipError, ZipResult};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
-use crate::types::{ffi, AesExtraField, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock, ZipRawValues, MIN_VERSION};
+use crate::types::{
+    ffi, AesExtraField, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData,
+    ZipLocalEntryBlock, ZipRawValues, MIN_VERSION,
+};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
@@ -2221,7 +2224,8 @@ fn update_aes_extra_data<W: Write + Seek>(
         ));
     };
     let extra_field = Arc::make_mut(extra_field);
-    extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AesExtraField>()].copy_from_slice(&buf);
+    extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AesExtraField>()]
+        .copy_from_slice(&buf);
 
     Ok(())
 }

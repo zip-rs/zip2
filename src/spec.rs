@@ -251,7 +251,8 @@ macro_rules! to_le {
 /* TODO: derive macro to generate these fields? */
 /// Implement `from_le()` and `to_le()`, providing the field specification to both macros
 /// and methods.
-#[macro_export] macro_rules! to_and_from_le {
+#[macro_export]
+macro_rules! to_and_from_le {
     ($($args:tt),+ $(,)?) => {
         #[inline(always)]
         fn from_le(mut self) -> Self {

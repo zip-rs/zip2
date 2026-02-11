@@ -1385,14 +1385,18 @@ impl FixedSizeBlock for AesExtraField {
 
 #[cfg(feature = "aes-crypto")]
 impl AesExtraField {
-    pub(crate) fn new(version: AesVendorVersion, aes_mode: AesMode, compression_method: CompressionMethod) -> Self {
+    pub(crate) fn new(
+        version: AesVendorVersion,
+        aes_mode: AesMode,
+        compression_method: CompressionMethod,
+    ) -> Self {
         Self {
             header_id: UsedExtraField::AeXEncryption as u16,
             data_size: 7,
             version: version as u16,
             vendor_id: u16::from_le_bytes(*b"AE"),
             aes_mode: aes_mode as u8,
-            compression_method: compression_method.serialize_to_u16()
+            compression_method: compression_method.serialize_to_u16(),
         }
     }
 }
