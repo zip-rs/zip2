@@ -1997,8 +1997,11 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     }
 
     /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self) -> Option<u64> {
-        self.data.data_start.get().copied()
+    /// # Panics
+    /// `data_start` should be initialized
+    #[allow(clippy::unwrap_used)]
+    pub fn data_start(&self) -> u64 {
+        *self.data.data_start.get().unwrap()
     }
 
     /// Get the starting offset of the zip header for this file

@@ -2983,7 +2983,7 @@ mod test {
         let mut zip = zip.finish_into_readable().unwrap();
         let file = zip.by_index(0).unwrap();
         assert_eq!(file.name(), "sleep");
-        let data_start = file.data_start().unwrap();
+        let data_start = file.data_start();
         assert_eq!(data_start, u64::from(page_size));
     }
 
@@ -3005,7 +3005,7 @@ mod test {
             let mut zip = ZipArchive::new(Cursor::new(&mut data)).unwrap();
             let file = zip.by_index(0).unwrap();
             assert_eq!(file.name(), "sleep");
-            let data_start = file.data_start().unwrap();
+            let data_start = file.data_start();
             assert_eq!(data_start, u64::from(page_size));
         }
     }
