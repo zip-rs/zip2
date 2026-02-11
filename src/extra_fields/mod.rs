@@ -85,7 +85,7 @@ impl TryFrom<u16> for UsedExtraField {
 }
 
 /// Known Extra fields (PKWARE and Third party) mappings, sorted
-pub const EXTRA_FIELD_MAPPING: [u16; 58] = [
+pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
     UsedExtraField::Zip64ExtendedInfo as u16,
     0x0007, // AV Info
     0x0008, // Reserved for extended language encoding data (PFS)
@@ -128,6 +128,7 @@ pub const EXTRA_FIELD_MAPPING: [u16; 58] = [
     0x4d63, // Macintosh Smartzip (??)
     0x4f4c, // Xceed original location extra field
     0x5356, // AOS/VS (ACL)
+    UsedExtraField::ExtendedTimestamp as u16,
     0x554e, // Xceed unicode extra field
     0x5855, // Info-ZIP UNIX (original, also OS/2, NT, etc)
     UsedExtraField::UnicodeComment as u16,
