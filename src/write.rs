@@ -315,7 +315,7 @@ impl ExtendedFileOptions {
                 let header_id = data.read_u16_le()?;
                 // Some extra fields are authorized
                 if let Err(()) = UsedExtraField::try_from(header_id) {
-                    if EXTRA_FIELD_MAPPING.contains(&header_id) {
+                    if EXTRA_FIELD_MAPPING.binary_search(&header_id).is_ok() {
                         return Err(ZipError::Io(io::Error::other(format!(
                             "Extra data header ID {:#06} (0x{:x}) \
                             requires crate feature \"unreserved\"",
