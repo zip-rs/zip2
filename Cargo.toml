@@ -37,6 +37,7 @@ indexmap = "2"
 jiff = { version = "0.2.4", optional = true }
 memchr = "2.7"
 nt-time = { version = "0.13", default-features = false, optional = true }
+object-pool = { version = "0.6", optional = true }
 ppmd-rust = { version = "1.4", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
@@ -84,7 +85,7 @@ chrono = ["dep:chrono"]
 _deflate-any = []
 deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
 # Pull in flate2, but don't choose a backend; useful if you want to choose your own flate2 backend
-deflate-flate2 = ["_deflate-any", "dep:flate2"]
+deflate-flate2 = ["_deflate-any", "dep:flate2", "dep:object-pool"]
 # Pull in flate2 and the fast zlib-rs backend; this is what most users will want
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)

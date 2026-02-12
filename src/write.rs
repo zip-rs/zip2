@@ -18,12 +18,14 @@ use core::str::{from_utf8, Utf8Error};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
 use std::borrow::ToOwned;
+use std::convert::TryInto;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
 use std::path::Path;
-use std::sync::Arc;
-
+use std::sync::{Arc, LazyLock};
+use flate2::Status;
+use object_pool::ReusableOwned;
 // re-export from types
 pub use crate::types::{FileOptions, SimpleFileOptions};
 
@@ -66,11 +68,54 @@ impl<W: Write> Write for MaybeEncrypted<W> {
     }
 }
 
+#[cfg(feature = "deflate-flate2")]
+const MAX_FLATE2_COMPRESSION_LEVEL: usize = 9;
+
+#[allow(clippy::panic)]
+#[cfg(feature = "deflate-flate2")]
+static COMPRESSORS: LazyLock<[Arc<object_pool::Pool<flate2::Compress>>; MAX_FLATE2_COMPRESSION_LEVEL + 1]>
+    = LazyLock::new(|| (0..=MAX_FLATE2_COMPRESSION_LEVEL)
+        .map(|level| Arc::new(object_pool::Pool::new(1, || flate2::Compress::new(flate2::Compression::new(level as u32), false))))
+        .collect::<Vec<_>>()
+        .try_into().unwrap_or_else(|_| panic!("Failed to initialize compressors pool")));
+
+#[cfg(feature = "deflate-flate2")]
+struct DeflateCompressor(ReusableOwned<flate2::Compress>);
+
+#[cfg(feature = "deflate-flate2")]
+fn get_compressor<'a>(level: u32) -> DeflateCompressor {
+    let mut inner = COMPRESSORS.get(level as usize).unwrap().pull_owned(|| flate2::Compress::new(flate2::Compression::new(level), false));
+    inner.reset();
+    DeflateCompressor(inner)
+}
+
+#[cfg(feature = "deflate-flate2")]
+impl flate2::zio::Ops for DeflateCompressor {
+    type Error = flate2::CompressError;
+    type Flush = flate2::FlushCompress;
+
+    fn total_in(&self) -> u64 {
+        self.0.total_in()
+    }
+
+    fn total_out(&self) -> u64 {
+        self.0.total_out()
+    }
+
+    fn run(&mut self, input: &[u8], output: &mut [u8], flush: Self::Flush) -> Result<Status, Self::Error> {
+        self.0.run(input, output, flush)
+    }
+
+    fn run_vec(&mut self, input: &[u8], output: &mut Vec<u8>, flush: Self::Flush) -> Result<Status, Self::Error> {
+        self.0.run_vec(input, output, flush)
+    }
+}
+
 enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
     #[cfg(feature = "deflate-flate2")]
-    Deflater(flate2::write::DeflateEncoder<MaybeEncrypted<W>>),
+    Deflater(flate2::zio::Writer<MaybeEncrypted<W>, DeflateCompressor>),
     #[cfg(feature = "deflate-zopfli")]
     ZopfliDeflater(zopfli::DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
@@ -91,7 +136,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             Self::Closed => f.write_str("Closed"),
             Self::Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
             #[cfg(feature = "deflate-flate2")]
-            Self::Deflater(w) => f.write_fmt(format_args!("Deflater({:?})", w.get_ref())),
+            Self::Deflater(_) => f.write_str("Deflater"),
             #[cfg(feature = "deflate-zopfli")]
             Self::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
             #[cfg(feature = "deflate-zopfli")]
@@ -1897,10 +1942,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 crate::cfg_if_expr! {
                     ZipResult<SwitchWriterFunction<W>>:
                     #[cfg(feature = "deflate-flate2")] => Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Deflater(flate2::write::DeflateEncoder::new(
-                            bare,
-                            flate2::Compression::new(level),
-                        )))
+                        let mut compressor = get_compressor(level);
+                        Ok(GenericZipWriter::Deflater(flate2::zio::Writer::new(bare, compressor)))
                     })),
                     _ => unreachable!("deflate writer: have no fallback for this case")
                 }
@@ -2023,7 +2066,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         let bare = match mem::replace(self, GenericZipWriter::Closed) {
             GenericZipWriter::Storer(w) => w,
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(w) => w.finish()?,
+            GenericZipWriter::Deflater(mut w) => {
+                w.finish()?;
+                w.take_inner()
+            },
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
