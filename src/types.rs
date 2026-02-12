@@ -888,7 +888,12 @@ impl ZipFileData {
     }
     fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
-            Ok(spec::ZIP64_BYTES_THR as u32)
+            Ok(spec::ZIP64_BYTES_THR.try_into().map_err(|_| {
+                std::io::Error::other(format!(
+                    "ZIP64_BYTES_THR constant value {} exceeds u32 range",
+                    spec::ZIP64_BYTES_THR
+                ))
+            })?)
         } else {
             field.min(spec::ZIP64_BYTES_THR).try_into().map_err(|_| {
                 std::io::Error::other(format!(
