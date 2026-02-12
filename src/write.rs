@@ -136,7 +136,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             Self::Closed => f.write_str("Closed"),
             Self::Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
             #[cfg(feature = "deflate-flate2")]
-            Self::Deflater(_) => f.write_str("Deflater"),
+            Self::Deflater(w) => f.write_fmt(format_args!("Deflater({:?})", w.get_ref())),
             #[cfg(feature = "deflate-zopfli")]
             Self::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
             #[cfg(feature = "deflate-zopfli")]
