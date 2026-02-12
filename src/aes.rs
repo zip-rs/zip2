@@ -232,6 +232,18 @@ pub struct AesWriter<W> {
     encrypted_file_header: Option<Vec<u8>>,
 }
 
+impl<W: Write + Send + 'static> AesWriter<W> {
+    pub(crate) fn into_dyn(self) -> AesWriter<Box<dyn Write + Send>> {
+        AesWriter {
+            writer: Box::new(self.writer),
+            cipher: self.cipher,
+            hmac: self.hmac,
+            buffer: self.buffer,
+            encrypted_file_header: self.encrypted_file_header,
+        }
+    }
+}
+
 impl<W: Write> AesWriter<W> {
     pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> ZipResult<Self> {
         let salt_length = aes_mode.salt_length();

@@ -24,8 +24,6 @@ use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
 use std::path::Path;
 use std::sync::{Arc, LazyLock};
-use flate2::Status;
-use object_pool::ReusableOwned;
 // re-export from types
 pub use crate::types::{FileOptions, SimpleFileOptions};
 
@@ -35,6 +33,21 @@ enum MaybeEncrypted<W> {
     #[cfg(feature = "aes-crypto")]
     Aes(crate::aes::AesWriter<W>),
     ZipCrypto(crate::zipcrypto::ZipCryptoWriter<W>),
+}
+
+impl<W: Write + Send + 'static> MaybeEncrypted<W> {
+    fn into_dyn(self) -> MaybeEncrypted<Box<dyn Write + Send>> {
+        match self {
+            MaybeEncrypted::Unencrypted(w) => MaybeEncrypted::Unencrypted(Box::new(w)),
+            #[cfg(feature = "aes-crypto")]
+            MaybeEncrypted::Aes(w) => MaybeEncrypted::Aes(w.into_dyn()),
+            ZipCrypto(w) => ZipCrypto(ZipCryptoWriter {
+                writer: Box::new(w.writer),
+                keys: w.keys,
+                buffer: w.buffer
+            })
+        }
+    }
 }
 
 impl<W> Debug for MaybeEncrypted<W> {
@@ -71,51 +84,31 @@ impl<W: Write> Write for MaybeEncrypted<W> {
 #[cfg(feature = "deflate-flate2")]
 const MAX_FLATE2_COMPRESSION_LEVEL: usize = 9;
 
+#[cfg(feature = "deflate-flate2")]
+type DeflateEncoder = flate2::write::DeflateEncoder<MaybeEncrypted<Box<dyn Write + Send>>>;
+
 #[allow(clippy::panic)]
 #[cfg(feature = "deflate-flate2")]
-static COMPRESSORS: LazyLock<[Arc<object_pool::Pool<flate2::Compress>>; MAX_FLATE2_COMPRESSION_LEVEL + 1]>
+static COMPRESSORS: LazyLock<[Arc<object_pool::Pool<DeflateEncoder>>; MAX_FLATE2_COMPRESSION_LEVEL + 1]>
     = LazyLock::new(|| (0..=MAX_FLATE2_COMPRESSION_LEVEL)
-        .map(|level| Arc::new(object_pool::Pool::new(0, || flate2::Compress::new(flate2::Compression::new(level as u32), false))))
+        .map(|level| Arc::new(object_pool::Pool::<DeflateEncoder>::new(0, ||
+            flate2::write::DeflateEncoder::new(MaybeEncrypted::Unencrypted(Box::new(io::sink())), flate2::Compression::new(level as u32)))))
         .collect::<Vec<_>>()
         .try_into().unwrap_or_else(|_| panic!("Failed to initialize compressors pool")));
 
 #[cfg(feature = "deflate-flate2")]
-struct DeflateCompressor(ReusableOwned<flate2::Compress>);
-
-#[cfg(feature = "deflate-flate2")]
-fn get_compressor<'a>(level: u32) -> DeflateCompressor {
-    let mut inner = COMPRESSORS.get(level as usize).unwrap().pull_owned(|| flate2::Compress::new(flate2::Compression::new(level), false));
-    inner.reset();
-    DeflateCompressor(inner)
-}
-
-#[cfg(feature = "deflate-flate2")]
-impl flate2::zio::Ops for DeflateCompressor {
-    type Error = flate2::CompressError;
-    type Flush = flate2::FlushCompress;
-
-    fn total_in(&self) -> u64 {
-        self.0.total_in()
-    }
-
-    fn total_out(&self) -> u64 {
-        self.0.total_out()
-    }
-
-    fn run(&mut self, input: &[u8], output: &mut [u8], flush: Self::Flush) -> Result<Status, Self::Error> {
-        self.0.run(input, output, flush)
-    }
-
-    fn run_vec(&mut self, input: &[u8], output: &mut Vec<u8>, flush: Self::Flush) -> Result<Status, Self::Error> {
-        self.0.run_vec(input, output, flush)
-    }
+fn get_compressor<'a, T: Write + Send>(level: u32, new_inner: MaybeEncrypted<Box<dyn Write + Send>>) -> io::Result<object_pool::ReusableOwned<DeflateEncoder>> {
+    let mut encoder = COMPRESSORS.get(level as usize).unwrap().pull_owned(||
+        flate2::write::DeflateEncoder::new(MaybeEncrypted::Unencrypted(Box::new(io::sink())), flate2::Compression::new(level)));
+    encoder.reset(new_inner)?;
+    Ok(encoder)
 }
 
 enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
     #[cfg(feature = "deflate-flate2")]
-    Deflater(flate2::zio::Writer<MaybeEncrypted<W>, DeflateCompressor>),
+    Deflater(object_pool::ReusableOwned<DeflateEncoder>),
     #[cfg(feature = "deflate-zopfli")]
     ZopfliDeflater(zopfli::DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
@@ -223,9 +216,10 @@ pub use self::sealed::FileOptionExtension;
 use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::path_to_string;
 use crate::unstable::LittleEndianWriteExt;
-use crate::zipcrypto::{EncryptWith, ZipCryptoKeys, CHUNK_SIZE};
+use crate::zipcrypto::{EncryptWith, ZipCryptoKeys, ZipCryptoWriter, CHUNK_SIZE};
 use crate::CompressionMethod::Stored;
 pub use zip_writer::ZipWriter;
+use crate::write::MaybeEncrypted::{Aes, ZipCrypto};
 
 #[derive(Default, Debug)]
 struct ZipWriterStats {
@@ -1851,7 +1845,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
 
 type SwitchWriterFunction<W> = Box<dyn FnOnce(MaybeEncrypted<W>) -> ZipResult<GenericZipWriter<W>>>;
 
-impl<W: Write + Seek> GenericZipWriter<W> {
+impl<W: Write + Seek + Send> GenericZipWriter<W> {
     fn prepare_next_writer(
         &self,
         compression: CompressionMethod,
@@ -1886,7 +1880,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(default),
                     deflate_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
 
                 #[cfg(feature = "deflate-zopfli")]
@@ -1942,8 +1936,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 crate::cfg_if_expr! {
                     ZipResult<SwitchWriterFunction<W>>:
                     #[cfg(feature = "deflate-flate2")] => Ok(Box::new(move |bare| {
-                        let mut compressor = get_compressor(level);
-                        Ok(GenericZipWriter::Deflater(flate2::zio::Writer::new(bare, compressor)))
+                        get_compressor(level, bare.into_dyn()).map(GenericZipWriter::Deflater)
+                        .map_err(ZipError::from)
                     })),
                     _ => unreachable!("deflate writer: have no fallback for this case")
                 }
@@ -1958,7 +1952,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(i64::from(bzip2::Compression::default().level())),
                     bzip2_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
                 Ok(Box::new(move |bare| {
                     Ok(GenericZipWriter::Bzip2(bzip2::write::BzEncoder::new(
@@ -1976,7 +1970,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(i64::from(zstd::DEFAULT_COMPRESSION_LEVEL)),
                     zstd::compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?;
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                 Ok(Box::new(move |bare| {
                     Ok(GenericZipWriter::Zstd(
                         zstd::stream::write::Encoder::new(bare, level as i32)
@@ -2038,19 +2032,19 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         memory_size,
                         ppmd_rust::RestoreMethod::Restart,
                     )
-                    .map_err(|error| match error {
-                        ppmd_rust::Error::RangeDecoderInitialization => ZipError::InvalidArchive(
-                            "PPMd range coder initialization failed".into(),
-                        ),
-                        ppmd_rust::Error::InvalidParameter => {
-                            ZipError::InvalidArchive("Invalid PPMd parameter".into())
-                        }
-                        ppmd_rust::Error::IoError(io_error) => ZipError::Io(io_error),
-                        ppmd_rust::Error::MemoryAllocation => ZipError::Io(io::Error::new(
-                            ErrorKind::OutOfMemory,
-                            "PPMd could not allocate memory",
-                        )),
-                    })?;
+                        .map_err(|error| match error {
+                            ppmd_rust::Error::RangeDecoderInitialization => ZipError::InvalidArchive(
+                                "PPMd range coder initialization failed".into(),
+                            ),
+                            ppmd_rust::Error::InvalidParameter => {
+                                ZipError::InvalidArchive("Invalid PPMd parameter".into())
+                            }
+                            ppmd_rust::Error::IoError(io_error) => ZipError::Io(io_error),
+                            ppmd_rust::Error::MemoryAllocation => ZipError::Io(io::Error::new(
+                                ErrorKind::OutOfMemory,
+                                "PPMd could not allocate memory",
+                            )),
+                        })?;
 
                     Ok(GenericZipWriter::Ppmd(Box::new(encoder)))
                 }))
@@ -2061,14 +2055,16 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             }
         }
     }
+}
 
+impl<W: Write + Seek> GenericZipWriter<W> {
     fn switch_to(&mut self, make_new_self: SwitchWriterFunction<W>) -> ZipResult<()> {
         let bare = match mem::replace(self, GenericZipWriter::Closed) {
             GenericZipWriter::Storer(w) => w,
             #[cfg(feature = "deflate-flate2")]
             GenericZipWriter::Deflater(mut w) => {
                 w.finish()?;
-                w.take_inner()
+                w.reset(MaybeEncrypted::Unencrypted(Box::new(io::sink())))?
             },
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
@@ -2104,7 +2100,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         match self {
             GenericZipWriter::Storer(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
+            GenericZipWriter::Deflater(ref mut w) => Some(w.get_mut() as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
