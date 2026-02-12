@@ -327,7 +327,8 @@ impl DateTime {
             && minute <= 59
             && second <= 60
         {
-            let second = second.min(58); // exFAT can't store leap seconds
+            // DOS/ZIP timestamp stores seconds/2 in 5 bits and cannot represent 59 or 60 seconds (incl. leap seconds)
+            let second = second.min(58);
             let max_day = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
                 4 | 6 | 9 | 11 => 30,
