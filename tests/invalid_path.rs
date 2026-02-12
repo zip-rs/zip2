@@ -112,10 +112,12 @@ pub mod tests {
         assert!(temp_dir.path().join("_").exists());
         assert!(temp_dir.path().join("_/forge-std").exists());
         assert!(temp_dir.path().join("_/forge-std/src/Test.sol").exists());
-        assert!(temp_dir
-            .path()
-            .join("_/forge-std/lib/ds-test/src/test.sol")
-            .exists());
+        assert!(
+            temp_dir
+                .path()
+                .join("_/forge-std/lib/ds-test/src/test.sol")
+                .exists()
+        );
 
         // Verify file contents
         let content =

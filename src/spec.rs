@@ -1,9 +1,9 @@
 #![macro_use]
 
 use crate::extra_fields::UsedExtraField;
-use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::read::ArchiveOffset;
-use crate::result::{invalid, ZipError, ZipResult};
+use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
+use crate::result::{ZipError, ZipResult, invalid};
 use core::any::type_name;
 use core::mem;
 use core::slice;
@@ -843,7 +843,7 @@ mod test {
     use std::io::Cursor;
 
     use crate::{
-        result::{invalid, ZipError},
+        result::{ZipError, invalid},
         spec::{FixedSizeBlock, Magic, Pod},
     };
 

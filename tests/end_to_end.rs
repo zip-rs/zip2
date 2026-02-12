@@ -5,7 +5,7 @@ use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
+use zip::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS, ZipWriter};
 
 fn for_each_supported_method<F>(mut f: F)
 where

@@ -3,7 +3,7 @@ use bencher::{benchmark_group, benchmark_main};
 use std::io::{Cursor, Read, Seek, Write};
 
 use bencher::Bencher;
-use zip::{result::ZipResult, write::SimpleFileOptions, ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 fn generate_random_archive(
     num_entries: usize,

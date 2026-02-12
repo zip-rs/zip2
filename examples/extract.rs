@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::fs;
 use std::io;
-use zip::result::ZipError;
 use zip::ZipArchive;
+use zip::result::ZipError;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
@@ -92,17 +92,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!("Directory {i} extracted to {:?}", out_path.display());
             }
         } else {
-            if let Some(p) = out_path.parent() {
-                if !p.exists() {
-                    if let Err(e) = fs::create_dir_all(p) {
-                        eprintln!(
-                            "Error: unable to create parent directory {p:?} of file {}: {e}",
-                            p.display()
-                        );
-                        some_files_failed = true;
-                        continue;
-                    }
-                }
+            if let Some(p) = out_path.parent()
+                && !p.exists()
+                && let Err(e) = fs::create_dir_all(p)
+            {
+                eprintln!(
+                    "Error: unable to create parent directory {p:?} of file {}: {e}",
+                    p.display()
+                );
+                some_files_failed = true;
+                continue;
             }
             match fs::File::create(&out_path)
                 .and_then(|mut outfile| io::copy(&mut file, &mut outfile))
@@ -130,14 +129,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         {
             use std::os::unix::fs::PermissionsExt;
 
-            if let Some(mode) = file.unix_mode() {
-                if let Err(e) = fs::set_permissions(&out_path, fs::Permissions::from_mode(mode)) {
-                    eprintln!(
-                        "Error: unable to change permissions of file {i} ({:?}): {e}",
-                        out_path.display()
-                    );
-                    some_files_failed = true;
-                }
+            if let Some(mode) = file.unix_mode()
+                && let Err(e) = fs::set_permissions(&out_path, fs::Permissions::from_mode(mode))
+            {
+                eprintln!(
+                    "Error: unable to change permissions of file {i} ({:?}): {e}",
+                    out_path.display()
+                );
+                some_files_failed = true;
             }
         }
     }

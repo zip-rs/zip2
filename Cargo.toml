@@ -17,7 +17,7 @@ categories = ["compression", "filesystem", "parser-implementations"]
 description = """
 Library to support the reading and writing of zip files.
 """
-edition = "2021"
+edition = "2024"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**", ".amazonq/**", "benches/**"]
 
 [package.metadata.docs.rs]

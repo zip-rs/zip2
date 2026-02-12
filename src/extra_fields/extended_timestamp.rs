@@ -113,9 +113,11 @@ mod test {
         use crate::ZipArchive;
         use std::io::Cursor;
 
-        assert!(ZipArchive::new(Cursor::new(include_bytes!(
-            "../../tests/data/extended_timestamp_bad.zip"
-        )))
-        .is_err());
+        assert!(
+            ZipArchive::new(Cursor::new(include_bytes!(
+                "../../tests/data/extended_timestamp_bad.zip"
+            )))
+            .is_err()
+        );
     }
 }

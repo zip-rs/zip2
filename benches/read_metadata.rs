@@ -6,7 +6,7 @@ use std::io::{Cursor, Write};
 use bencher::Bencher;
 use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
-use zip::{result::ZipResult, CompressionMethod, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult};
 
 const FILE_COUNT: usize = 15_000;
 const FILE_SIZE: usize = 1024;
