@@ -1349,7 +1349,6 @@ impl AesMode {
     }
 }
 
-#[cfg(feature = "aes-crypto")]
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
 pub(crate) struct AesExtraField {
@@ -1363,7 +1362,6 @@ pub(crate) struct AesExtraField {
 
 unsafe impl Pod for AesExtraField {}
 
-#[cfg(feature = "aes-crypto")]
 impl FixedSizeBlock for AesExtraField {
     type Magic = u16;
     const MAGIC: Self::Magic = UsedExtraField::AeXEncryption as u16;
@@ -1384,7 +1382,6 @@ impl FixedSizeBlock for AesExtraField {
     ];
 }
 
-#[cfg(feature = "aes-crypto")]
 impl AesExtraField {
     pub(crate) fn new(
         version: AesVendorVersion,
