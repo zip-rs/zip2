@@ -1351,9 +1351,9 @@ impl AesMode {
 
 #[cfg(feature = "aes-crypto")]
 #[derive(Copy, Clone)]
-pub(crate) struct AesExtraField {
 #[repr(packed, C)]
-    pub(crate) header_id: u16,
+pub(crate) struct AesExtraField {
+    header_id: u16,
     data_size: u16,
     version: u16,
     vendor_id: u16,
