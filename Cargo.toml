@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "7.4.0"
+version = "8.0.0"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -89,6 +89,9 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
+# Enables conversion to/from time::OffsetDateTime if `time` is also enabled, even though ZIP-file timestamps don't include a time zone.
+# This feature will be removed in version 9.0.0.
+deprecated-time = []
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
