@@ -75,7 +75,7 @@ const MAX_FLATE2_COMPRESSION_LEVEL: usize = 9;
 #[cfg(feature = "deflate-flate2")]
 static COMPRESSORS: LazyLock<[Arc<object_pool::Pool<flate2::Compress>>; MAX_FLATE2_COMPRESSION_LEVEL + 1]>
     = LazyLock::new(|| (0..=MAX_FLATE2_COMPRESSION_LEVEL)
-        .map(|level| Arc::new(object_pool::Pool::new(1, || flate2::Compress::new(flate2::Compression::new(level as u32), false))))
+        .map(|level| Arc::new(object_pool::Pool::new(0, || flate2::Compress::new(flate2::Compression::new(level as u32), false))))
         .collect::<Vec<_>>()
         .try_into().unwrap_or_else(|_| panic!("Failed to initialize compressors pool")));
 
