@@ -31,9 +31,15 @@ fn test_ntfs_extra_field_timestamp_parsing() {
 
     assert_eq!(timestamp.atime(), 0);
     #[cfg(feature = "nt-time")]
-    assert_eq!(timestamp.accessed_file_time(), nt_time::FileTime::NT_TIME_EPOCH);
+    assert_eq!(
+        timestamp.accessed_file_time(),
+        nt_time::FileTime::NT_TIME_EPOCH
+    );
 
     assert_eq!(timestamp.ctime(), 0);
     #[cfg(feature = "nt-time")]
-    assert_eq!(timestamp.created_file_time(), nt_time::FileTime::NT_TIME_EPOCH);
+    assert_eq!(
+        timestamp.created_file_time(),
+        nt_time::FileTime::NT_TIME_EPOCH
+    );
 }
