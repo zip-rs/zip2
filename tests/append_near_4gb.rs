@@ -1,6 +1,6 @@
 use std::{fs::File, io::Write};
 use tempfile::tempdir;
-use zip::{write::SimpleFileOptions, ZipWriter};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 fn write_data(w: &mut dyn Write, size: usize) {
     let chunks = 1 << 20; // 1MB chunks
