@@ -2,19 +2,19 @@
 
 use crate::compression::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
-use crate::read::{parse_single_extra_field, Config, ZipArchive, ZipFile};
-use crate::result::{invalid, ZipError, ZipResult};
+use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
+use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    ffi, AesExtraField, AesVendorVersion, DateTime, Zip64ExtraFieldBlock, ZipFileData,
-    ZipLocalEntryBlock, ZipRawValues, MIN_VERSION,
+    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, Zip64ExtraFieldBlock, ZipFileData,
+    ZipLocalEntryBlock, ZipRawValues, ffi,
 };
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
 use core::mem::{self, offset_of, size_of};
-use core::str::{from_utf8, Utf8Error};
+use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
 use std::borrow::ToOwned;
@@ -175,11 +175,11 @@ pub(crate) mod zip_writer {
 }
 #[doc(inline)]
 pub use self::sealed::FileOptionExtension;
-use crate::result::ZipError::UnsupportedArchive;
-use crate::unstable::path_to_string;
-use crate::unstable::LittleEndianWriteExt;
-use crate::zipcrypto::{EncryptWith, ZipCryptoKeys, CHUNK_SIZE};
 use crate::CompressionMethod::Stored;
+use crate::result::ZipError::UnsupportedArchive;
+use crate::unstable::LittleEndianWriteExt;
+use crate::unstable::path_to_string;
+use crate::zipcrypto::{CHUNK_SIZE, EncryptWith, ZipCryptoKeys};
 pub use zip_writer::ZipWriter;
 
 #[derive(Default, Debug)]
@@ -342,19 +342,19 @@ impl ExtendedFileOptions {
             #[cfg(not(feature = "unreserved"))]
             {
                 use crate::{
-                    extra_fields::{UsedExtraField, EXTRA_FIELD_MAPPING},
+                    extra_fields::{EXTRA_FIELD_MAPPING, UsedExtraField},
                     unstable::LittleEndianReadExt,
                 };
                 let header_id = data.read_u16_le()?;
                 // Some extra fields are authorized
-                if let Err(()) = UsedExtraField::try_from(header_id) {
-                    if EXTRA_FIELD_MAPPING.contains(&header_id) {
-                        return Err(ZipError::Io(io::Error::other(format!(
-                            "Extra data header ID {:#06} (0x{:x}) \
+                if let Err(()) = UsedExtraField::try_from(header_id)
+                    && EXTRA_FIELD_MAPPING.contains(&header_id)
+                {
+                    return Err(ZipError::Io(io::Error::other(format!(
+                        "Extra data header ID {:#06} (0x{:x}) \
                             requires crate feature \"unreserved\"",
-                            header_id, header_id,
-                        ))));
-                    }
+                        header_id, header_id,
+                    ))));
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
@@ -659,7 +659,9 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                             let abort_io_err: io::Error = e.into();
                             io::Error::new(
                                 abort_io_err.kind(),
-                                format!("Large file option has not been set and abort_file() failed: {abort_io_err}")
+                                format!(
+                                    "Large file option has not been set and abort_file() failed: {abort_io_err}"
+                                ),
                             )
                         } else {
                             io::Error::other("Large file option has not been set")
@@ -1839,13 +1841,13 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
 
 impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
-        if !self.inner.is_closed() {
-            if let Err(e) = self.finalize() {
-                let _ = write!(
-                    io::stderr(),
-                    "ZipWriter::drop: failed to finalize archive: {e:?}"
-                );
-            }
+        if !self.inner.is_closed()
+            && let Err(e) = self.finalize()
+        {
+            let _ = write!(
+                io::stderr(),
+                "ZipWriter::drop: failed to finalize archive: {e:?}"
+            );
         }
     }
 }
@@ -2102,21 +2104,21 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
     fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match self {
-            GenericZipWriter::Storer(ref mut w) => Some(w as &mut dyn Write),
+            GenericZipWriter::Storer(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
+            GenericZipWriter::Deflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::BufferedZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "_bzip2_any")]
-            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
+            GenericZipWriter::Bzip2(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
-            GenericZipWriter::Zstd(ref mut w) => Some(w as &mut dyn Write),
+            GenericZipWriter::Zstd(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "xz")]
-            GenericZipWriter::Xz(ref mut w) => Some(w as &mut dyn Write),
+            GenericZipWriter::Xz(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "ppmd")]
-            GenericZipWriter::Ppmd(ref mut w) => Some(w as &mut dyn Write),
+            GenericZipWriter::Ppmd(w) => Some(w as &mut dyn Write),
             GenericZipWriter::Closed => None,
         }
     }
@@ -2403,14 +2405,14 @@ impl<W: Write> Seek for StreamWriter<W> {
 #[allow(clippy::octal_escapes)] // many false positives in converted fuzz cases
 mod test {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
+    use crate::CompressionMethod::Stored;
+    use crate::ZipArchive;
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::{DateTime, System};
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
-    use crate::CompressionMethod::Stored;
-    use crate::ZipArchive;
     #[cfg(feature = "deflate-flate2")]
     use std::io::Read;
     use std::io::{Cursor, Write};
@@ -2431,7 +2433,9 @@ mod test {
         assert_eq!(result.get_ref().len(), 25);
         assert_eq!(
             *result.get_ref(),
-            [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 90, 73, 80]
+            [
+                80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 90, 73, 80
+            ]
         );
     }
 
@@ -2496,9 +2500,11 @@ mod test {
                 ),
             )
             .unwrap();
-        assert!(writer
-            .write(b"writing to a directory is not allowed, and will not write any data")
-            .is_err());
+        assert!(
+            writer
+                .write(b"writing to a directory is not allowed, and will not write any data")
+                .is_err()
+        );
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 108);
         const DOS_DIR_ATTRIBUTES_BYTE: u8 = if cfg!(windows) { 0x10 } else { 0 };
@@ -2527,9 +2533,11 @@ mod test {
                 ),
             )
             .unwrap();
-        assert!(writer
-            .write(b"writing to a symlink is not allowed and will not write any data")
-            .is_err());
+        assert!(
+            writer
+                .write(b"writing to a symlink is not allowed and will not write any data")
+                .is_err()
+        );
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 112);
         #[rustfmt::skip]
@@ -2573,9 +2581,11 @@ mod test {
                 ),
             )
             .unwrap();
-        assert!(writer
-            .write(b"writing to a symlink is not allowed and will not write any data")
-            .is_err());
+        assert!(
+            writer
+                .write(b"writing to a symlink is not allowed and will not write any data")
+                .is_err()
+        );
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 162);
         #[rustfmt::skip]
@@ -3407,8 +3417,8 @@ mod test {
     #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
     #[test]
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
-        use crate::write::EncryptWith::Aes;
         use crate::AesMode::Aes256;
+        use crate::write::EncryptWith::Aes;
         use CompressionMethod::Deflated;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -4122,8 +4132,8 @@ mod test {
     #[test]
     #[cfg(feature = "aes-crypto")]
     fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
-        use crate::write::EncryptWith::Aes;
         use crate::AesMode::Aes128;
+        use crate::write::EncryptWith::Aes;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {

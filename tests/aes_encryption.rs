@@ -1,10 +1,10 @@
 #![cfg(feature = "aes-crypto")]
 
 use std::io::{self, Read, Write};
-use zip::write::ZipWriter;
 #[cfg(feature = "deflate-flate2")]
 use zip::CompressionMethod::Deflated;
-use zip::{result::ZipError, write::SimpleFileOptions, AesMode, ZipArchive};
+use zip::write::ZipWriter;
+use zip::{AesMode, ZipArchive, result::ZipError, write::SimpleFileOptions};
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 

@@ -63,7 +63,7 @@ impl HuffmanDecoder {
             count[lengths[i] as usize] += 1;
         }
         count[0] = 0; // Ignore zero-length codewords.
-                      // Compute sentinel_bits and offset_first_sym_idx for each length.
+        // Compute sentinel_bits and offset_first_sym_idx for each length.
         code[0] = 0;
         sym_idx[0] = 0;
         for l in 1..=MAX_HUFFMAN_BITS {
@@ -250,11 +250,12 @@ mod tests {
         );
 
         /* 1111111 (msb-first) -> 1111111 (lsb-first)*/
-        assert!(d
-            .huffman_decode(
+        assert!(
+            d.huffman_decode(
                 8,
                 &mut BitReader::endian(&mut Cursor::new(&[!0x7f]), LittleEndian)
             )
-            .is_err());
+            .is_err()
+        );
     }
 }

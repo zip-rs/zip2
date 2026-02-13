@@ -204,12 +204,10 @@ impl<R: Read> Read for AesReaderValid<R> {
 
             // use constant time comparison to mitigate timing attacks
             if !constant_time_eq(computed_auth_code, &read_auth_code) {
-                return Err(
-                    Error::new(
-                        ErrorKind::InvalidData,
-                        "Invalid authentication code, this could be due to an invalid password or errors in the data"
-                    )
-                );
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Invalid authentication code, this could be due to an invalid password or errors in the data",
+                ));
             }
         }
 
@@ -359,7 +357,9 @@ mod tests {
     fn crypt_aes_256_0_byte() {
         let plaintext = &[];
         let password = b"some super secret password";
-        assert!(roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -367,7 +367,9 @@ mod tests {
         let plaintext = b"asdf\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -375,7 +377,9 @@ mod tests {
         let plaintext = b"asdf\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -383,7 +387,9 @@ mod tests {
         let plaintext = b"asdf\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -391,7 +397,9 @@ mod tests {
         let plaintext = b"Lorem ipsum dolor sit amet, consectetur\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -399,7 +407,9 @@ mod tests {
         let plaintext = b"Lorem ipsum dolor sit amet, consectetur\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -407,6 +417,8 @@ mod tests {
         let plaintext = b"Lorem ipsum dolor sit amet, consectetur\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 }
