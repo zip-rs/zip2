@@ -7,7 +7,7 @@ fn test_ntfs_extra_field_timestamp_parsing() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("../tests/data/ntfs.zip")))
         .expect("couldn't open test zip file");
 
-    let mut found_ntfs = false;
+    let mut has_ntfs_extra_field = false;
 
     let file = archive
         .by_name("test.txt")
@@ -15,7 +15,7 @@ fn test_ntfs_extra_field_timestamp_parsing() {
 
     for field in file.extra_data_fields() {
         if let zip::ExtraField::Ntfs(ts) = field {
-            found_ntfs = true;
+            has_ntfs_extra_field = true;
             // Expected NTFS modification time of test.txt from ntfs.zip in Windows FILETIME units.
             assert_eq!(ts.mtime(), 133_813_273_144_169_390);
             #[cfg(feature = "nt-time")]
@@ -33,5 +33,5 @@ fn test_ntfs_extra_field_timestamp_parsing() {
             assert_eq!(ts.created_file_time(), nt_time::FileTime::NT_TIME_EPOCH);
         }
     }
-    assert!(found_ntfs, "Expected NTFS extra field in test.txt");
+    assert!(has_ntfs_extra_field, "Expected NTFS extra field in test.txt");
 }
