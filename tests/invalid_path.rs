@@ -63,7 +63,6 @@ pub mod tests {
             .add_directory("/_/forge-std/", options)
             .expect("creating 'forge-std' directory with absolute path should succeed");
         writer
-        writer
             .start_file("/_/forge-std/src/Test.sol", options)
             .expect("starting Test.sol file with absolute path should succeed");
         writer
