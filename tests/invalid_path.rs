@@ -56,6 +56,7 @@ pub mod tests {
         let options = SimpleFileOptions::default();
 
         // Simulate the soldeer registry structure with absolute paths; creation is expected to succeed
+        writer
             .add_directory("/_/", options)
             .expect("creating root '_' directory with absolute path should succeed");
         writer
