@@ -14,11 +14,17 @@ pub mod tests {
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
         let options = SimpleFileOptions::default();
 
-        // Create entries with absolute paths - this should cause "Invalid file path" error
-        writer.add_directory("/_/", options).unwrap();
-        writer.start_file("/_/file1.txt", options).unwrap();
+        // Create entries with absolute paths to simulate problematic ZIPs; creation is expected to succeed
+        writer
+            .add_directory("/_/", options)
+            .expect("creating directory with absolute path should succeed");
+        writer
+            .start_file("/_/file1.txt", options)
+            .expect("starting file with absolute path should succeed");
         writer.write_all(b"File 1 content").unwrap();
-        writer.start_file("/_/subdir/file2.txt", options).unwrap();
+        writer
+            .start_file("/_/subdir/file2.txt", options)
+            .expect("starting nested file with absolute path should succeed");
         writer.write_all(b"File 2 content").unwrap();
 
         writer.finish().unwrap().into_inner()
@@ -30,9 +36,13 @@ pub mod tests {
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
         let options = SimpleFileOptions::default();
 
-        // Create entries with Windows absolute paths
-        writer.add_directory("C:\\temp\\", options).unwrap();
-        writer.start_file("C:\\temp\\file1.txt", options).unwrap();
+        // Create entries with Windows absolute paths; creation is expected to succeed
+        writer
+            .add_directory("C:\\temp\\", options)
+            .expect("creating directory with Windows absolute path should succeed");
+        writer
+            .start_file("C:\\temp\\file1.txt", options)
+            .expect("starting file with Windows absolute path should succeed");
         writer.write_all(b"File 1 content").unwrap();
 
         writer.finish().unwrap().into_inner()
@@ -45,18 +55,22 @@ pub mod tests {
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
         let options = SimpleFileOptions::default();
 
-        // Simulate the soldeer registry structure with absolute paths
-        writer.add_directory("/_/", options).unwrap();
-        writer.add_directory("/_/forge-std/", options).unwrap();
+        // Simulate the soldeer registry structure with absolute paths; creation is expected to succeed
+            .add_directory("/_/", options)
+            .expect("creating root '_' directory with absolute path should succeed");
+        writer
+            .add_directory("/_/forge-std/", options)
+            .expect("creating 'forge-std' directory with absolute path should succeed");
+        writer
         writer
             .start_file("/_/forge-std/src/Test.sol", options)
-            .unwrap();
+            .expect("starting Test.sol file with absolute path should succeed");
         writer
             .write_all(b"// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n")
             .unwrap();
         writer
             .start_file("/_/forge-std/lib/ds-test/src/test.sol", options)
-            .unwrap();
+            .expect("starting nested ds-test file with absolute path should succeed");
         writer.write_all(b"// Test contract\n").unwrap();
 
         writer.finish().unwrap().into_inner()
