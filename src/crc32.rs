@@ -97,11 +97,13 @@ mod test {
         assert_eq!(reader.read(&mut buf).unwrap(), 0);
 
         let mut reader = Crc32Reader::new(data, 1, false);
-        assert!(reader
-            .read(&mut buf)
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid checksum"));
+        assert!(
+            reader
+                .read(&mut buf)
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid checksum")
+        );
     }
 
     #[test]

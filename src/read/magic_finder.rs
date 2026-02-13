@@ -41,11 +41,7 @@ impl<'a> FinderDirection<'a> for Forward<'a> {
         let magic_overlap = self.needle().len().saturating_sub(1) as u64;
         let next = cursor.saturating_add(window_size as u64 - magic_overlap);
 
-        if next >= bounds.1 {
-            None
-        } else {
-            Some(next)
-        }
+        if next >= bounds.1 { None } else { Some(next) }
     }
 
     fn move_scope(&self, offset: usize) -> usize {

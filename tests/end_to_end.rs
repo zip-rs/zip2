@@ -5,7 +5,7 @@ use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
+use zip::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS, ZipWriter};
 
 fn for_each_supported_method<F>(mut f: F)
 where
@@ -251,14 +251,12 @@ const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
 const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";
 
 #[test]
-fn test_extra_field_mapping_constants() {
+fn test_extra_field_mapping_contains_expected_values() {
     // just a test to access the variable in the crate
     use zip::extra_fields::EXTRA_FIELD_MAPPING;
     assert!(EXTRA_FIELD_MAPPING.is_sorted());
 
-    // Ensure we can safely access the indices used in this test
-    assert!(EXTRA_FIELD_MAPPING.len() > 12);
-
+    // The following assertions ensure required extra field IDs are present.
     // ZIP64 extended information extra field - 0x0001 which is 1
     assert!(EXTRA_FIELD_MAPPING.contains(&0x0001));
 

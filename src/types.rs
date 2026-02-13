@@ -1,6 +1,8 @@
 //! Types that specify what is contained in a ZIP.
 use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
+use crate::result::{ZipError, ZipResult, invalid};
+use crate::spec::{self, FixedSizeBlock, Pod, ZipFlags};
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
@@ -9,9 +11,6 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
-
-use crate::result::{invalid, ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Pod, ZipFlags};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -147,13 +146,17 @@ impl DateTime {
 #[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        // DOS time format stores seconds divided by 2 in a 5-bit field (0..=29),
+        // so the maximum representable second value is 58.
+        const MAX_DOS_SECONDS: u16 = 58;
+
         let year: u16 = u.int_in_range(1980..=2107)?;
         let month: u16 = u.int_in_range(1..=12)?;
         let day: u16 = u.int_in_range(1..=31)?;
         let datepart = day | (month << 5) | ((year - 1980) << 9);
         let hour: u16 = u.int_in_range(0..=23)?;
         let minute: u16 = u.int_in_range(0..=59)?;
-        let second: u16 = u.int_in_range(0..=58)?;
+        let second: u16 = u.int_in_range(0..=MAX_DOS_SECONDS)?;
         let timepart = (second >> 1) | (minute << 5) | (hour << 11);
         Ok(DateTime { datepart, timepart })
     }
@@ -327,7 +330,8 @@ impl DateTime {
             && minute <= 59
             && second <= 60
         {
-            let second = second.min(58); // exFAT can't store leap seconds
+            // DOS/ZIP timestamp stores seconds/2 in 5 bits and cannot represent 59 or 60 seconds (incl. leap seconds)
+            let second = second.min(58);
             let max_day = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
                 4 | 6 | 9 | 11 => 30,
@@ -1586,8 +1590,8 @@ mod test {
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
     fn offset_datetime_try_from_datetime() {
-        use time::macros::datetime;
         use time::OffsetDateTime;
+        use time::macros::datetime;
 
         use super::DateTime;
 
@@ -1600,8 +1604,8 @@ mod test {
     #[cfg(feature = "time")]
     #[test]
     fn primitive_datetime_try_from_datetime() {
-        use time::macros::datetime;
         use time::PrimitiveDateTime;
+        use time::macros::datetime;
 
         use super::DateTime;
 
@@ -1618,16 +1622,16 @@ mod test {
         use time::OffsetDateTime;
 
         // 1980-00-00 00:00:00
-        assert!(OffsetDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0x0000, 0x0000)
-        })
-        .is_err());
+        assert!(
+            OffsetDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
+                .is_err()
+        );
 
         // 2107-15-31 31:63:62
-        assert!(OffsetDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
-        })
-        .is_err());
+        assert!(
+            OffsetDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
+                .is_err()
+        );
     }
 
     #[cfg(feature = "time")]
@@ -1637,16 +1641,16 @@ mod test {
         use time::PrimitiveDateTime;
 
         // 1980-00-00 00:00:00
-        assert!(PrimitiveDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0x0000, 0x0000)
-        })
-        .is_err());
+        assert!(
+            PrimitiveDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
+                .is_err()
+        );
 
         // 2107-15-31 31:63:62
-        assert!(PrimitiveDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
-        })
-        .is_err());
+        assert!(
+            PrimitiveDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
+                .is_err()
+        );
     }
 
     #[cfg(feature = "jiff-02")]
@@ -1707,16 +1711,16 @@ mod test {
         use super::DateTime;
 
         // 1980-00-00 00:00:00
-        assert!(civil::DateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0x0000, 0x0000)
-        })
-        .is_err());
+        assert!(
+            civil::DateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
+                .is_err()
+        );
 
         // 2107-15-31 31:63:62
-        assert!(civil::DateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
-        })
-        .is_err());
+        assert!(
+            civil::DateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
+                .is_err()
+        );
     }
 
     #[test]

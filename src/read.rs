@@ -5,7 +5,7 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
-use crate::result::{invalid, ZipError, ZipResult};
+use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
     self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZipFlags, ZIP64_BYTES_THR,
 };
@@ -19,7 +19,7 @@ use core::ops::{Deref, Range};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::io::{self, copy, sink, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write, copy, sink};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -113,7 +113,7 @@ use crate::extra_fields::UnicodeExtraField;
 use crate::result::ZipError::InvalidPassword;
 use crate::spec::is_dir;
 use crate::types::ffi::{S_IFLNK, S_IFREG};
-use crate::unstable::{path_to_string, LittleEndianReadExt};
+use crate::unstable::{LittleEndianReadExt, path_to_string};
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
@@ -403,7 +403,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
         (Some(_), Some(_)) => {
             return Err(ZipError::UnsupportedArchive(
                 "AES encrypted files cannot be decrypted without the aes-crypto feature.",
-            ))
+            ));
         }
         #[cfg(feature = "aes-crypto")]
         (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
@@ -505,7 +505,9 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
             match &value.eocd64 {
                 Some(DataAndPosition { data: eocd64, .. }) => {
                     if eocd64.number_of_files_on_this_disk > eocd64.number_of_files {
-                        return Err(invalid!("ZIP64 footer indicates more files on this disk than in the whole archive"));
+                        return Err(invalid!(
+                            "ZIP64 footer indicates more files on this disk than in the whole archive"
+                        ));
                     }
                     (
                         eocd64.central_directory_offset,
@@ -1010,10 +1012,10 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             // Set original timestamp.
             #[cfg(feature = "chrono")]
-            if let Some(last_modified) = file.last_modified() {
-                if let Some(t) = datetime_to_systemtime(&last_modified) {
-                    outfile.set_modified(t)?;
-                }
+            if let Some(last_modified) = file.last_modified()
+                && let Some(t) = datetime_to_systemtime(&last_modified)
+            {
+                outfile.set_modified(t)?;
             }
         }
 
@@ -1182,7 +1184,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     _ => {
                         return Err(ZipError::UnsupportedArchive(
                             "Seekable compressed files are not yet supported",
-                        ))
+                        ));
                     }
                 };
                 Ok(ZipFileSeek {
@@ -1262,7 +1264,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             // Require and use the password only if the file is encrypted.
             match (options.password, data.encrypted) {
                 (None, true) => {
-                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED))
+                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
                 }
                 // Password supplied, but none needed! Discard.
                 (Some(_), false) => options.password = None,
@@ -1569,7 +1571,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     let len = match reader.read_u16_le() {
         Ok(len) => len,
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-            return Err(invalid!("Extra field header truncated"))
+            return Err(invalid!("Extra field header truncated"));
         }
         Err(e) => return Err(e.into()),
     };
@@ -1585,7 +1587,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 file.uncompressed_size = match reader.read_u64_le() {
                     Ok(v) => v,
                     Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                        return Err(invalid!("ZIP64 extra field truncated"))
+                        return Err(invalid!("ZIP64 extra field truncated"));
                     }
                     Err(e) => return Err(e.into()),
                 };
@@ -1595,7 +1597,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 file.compressed_size = match reader.read_u64_le() {
                     Ok(v) => v,
                     Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                        return Err(invalid!("ZIP64 extra field truncated"))
+                        return Err(invalid!("ZIP64 extra field truncated"));
                     }
                     Err(e) => return Err(e.into()),
                 };
@@ -1605,7 +1607,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 file.header_start = match reader.read_u64_le() {
                     Ok(v) => v,
                     Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                        return Err(invalid!("ZIP64 extra field truncated"))
+                        return Err(invalid!("ZIP64 extra field truncated"));
                     }
                     Err(e) => return Err(e.into()),
                 };
@@ -2236,14 +2238,12 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
         datetime.year().into(),
         datetime.month().into(),
         datetime.day().into(),
+    ) && let Some(d) = d.and_hms_opt(
+        datetime.hour().into(),
+        datetime.minute().into(),
+        datetime.second().into(),
     ) {
-        if let Some(d) = d.and_hms_opt(
-            datetime.hour().into(),
-            datetime.minute().into(),
-            datetime.second().into(),
-        ) {
-            return Some(d);
-        }
+        return Some(d);
     }
     None
 }
@@ -2298,10 +2298,10 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
 
 #[cfg(test)]
 mod test {
+    use crate::CompressionMethod::Stored;
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
     use crate::types::SimpleFileOptions;
-    use crate::CompressionMethod::Stored;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Read, Write};
     use tempfile::TempDir;

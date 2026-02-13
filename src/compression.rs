@@ -481,7 +481,7 @@ impl<R: io::BufRead> Decompressor<R> {
             _ => {
                 return Err(crate::result::ZipError::UnsupportedArchive(
                     "Compression method not supported",
-                ))
+                ));
             }
         })
     }

@@ -1,6 +1,6 @@
 use super::{
-    central_header_to_zip_file_inner, make_symlink, read_zipfile_from_stream, ZipCentralEntryBlock,
-    ZipFile, ZipFileData, ZipResult,
+    ZipCentralEntryBlock, ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner,
+    make_symlink, read_zipfile_from_stream,
 };
 use crate::spec::FixedSizeBlock;
 use indexmap::IndexMap;
@@ -210,11 +210,11 @@ impl ZipStreamFileMetadata {
 mod test {
     use tempfile::TempDir;
 
-    use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
+    use crate::ZipWriter;
     use crate::read::ZipFile;
+    use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
     use crate::result::ZipResult;
     use crate::write::SimpleFileOptions;
-    use crate::ZipWriter;
     use std::collections::BTreeSet;
     use std::io::{Cursor, Read};
 
