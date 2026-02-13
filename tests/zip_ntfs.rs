@@ -9,7 +9,11 @@ fn test_ntfs_extra_field_timestamp_parsing() {
 
     let mut found_ntfs = false;
 
-    for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
+    let file = archive
+        .by_name("test.txt")
+        .expect("expected file 'test.txt' to be present in ntfs.zip test archive");
+
+    for field in file.extra_data_fields() {
         if let zip::ExtraField::Ntfs(ts) = field {
             found_ntfs = true;
             // Expected NTFS modification time of test.txt from ntfs.zip in Windows FILETIME units.
