@@ -137,7 +137,6 @@ pub mod tests {
 
             // After our fix, enclosed_name should return a safe relative path
             let enclosed_name = file.enclosed_name();
-            println!("Enclosed name: {:?}", enclosed_name);
 
             // Should now return Some with the absolute prefix stripped
             assert!(enclosed_name.is_some());
