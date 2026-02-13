@@ -7,7 +7,7 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZipFlags, ZIP64_BYTES_THR,
+    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR, ZipFlags,
 };
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
