@@ -154,7 +154,7 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
 
 // Load an archive from buffer and check for test data.
 fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<R>> {
-    let mut archive = zip::ZipArchive::new(zip_file).unwrap();
+    let mut archive = zip::ZipArchive::new(zip_file)?;
 
     // Check archive contains expected file names.
     {
