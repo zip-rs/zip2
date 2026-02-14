@@ -2,7 +2,7 @@
 use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Magic, Pod};
+use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
@@ -780,7 +780,7 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = flags & 1 == 1;
+        let encrypted: bool = flags & (ZipFlags::Encrypted as u16) != 0;
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
                 "Encrypted files are not supported",
@@ -788,16 +788,14 @@ impl ZipFileData {
         }
 
         /* FIXME: these were previously incorrect: add testing! */
-        /* flags & (1 << 3) != 0 */
-        let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
+        let using_data_descriptor: bool = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
             ));
         }
 
-        /* flags & (1 << 1) != 0 */
-        let is_utf8: bool = flags & (1 << 11) != 0;
+        let is_utf8: bool = flags & (ZipFlags::LanguageEncoding as u16) != 0;
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -875,13 +873,13 @@ impl ZipFileData {
 
     fn flags(&self) -> u16 {
         let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
-            1u16 << 11
+            ZipFlags::LanguageEncoding as u16
         } else {
             0
         };
 
         let using_data_descriptor_bit = if self.using_data_descriptor {
-            1u16 << 3
+            ZipFlags::UsingDataDescriptor as u16
         } else {
             0
         };
