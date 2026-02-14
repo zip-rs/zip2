@@ -144,6 +144,9 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
 /// Simple File Options. Can be copied and good for simple writing zip files
 pub type SimpleFileOptions = FileOptions<'static, ()>;
 
+impl FileOptions<'static, ()> {
+    const DEFAULT_FILE_PERMISSION: u32 = 0o100644;
+}
 /// Representation of a moment in time.
 ///
 /// Zip files use an old format from DOS to store timestamps,
@@ -767,7 +770,9 @@ impl ZipFileData {
     where
         S: ToString,
     {
-        let permissions = options.permissions.unwrap_or(0o100644);
+        let permissions = options
+            .permissions
+            .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
         let mut external_attributes = permissions << 16;
