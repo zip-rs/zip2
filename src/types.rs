@@ -32,6 +32,8 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
+/// System inside `version made by` (upper byte)
+/// Reference: 4.4.2.2
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
@@ -75,6 +77,13 @@ pub enum System {
     /// unused
     #[default]
     Unknown = 255,
+}
+
+impl System {
+    pub fn from_version_made_by(version_made_by: u16) -> Self {
+        let upper_byte = (version_made_by >> 8) as u8;
+        System::from(upper_byte) // from u8
+    }
 }
 
 impl From<u8> for System {
@@ -884,11 +893,8 @@ impl ZipFileData {
                 .into()
         };
 
-        let system: u8 = (version_made_by >> 8)
-            .try_into()
-            .map_err(std::io::Error::other)?;
         Ok(ZipFileData {
-            system: System::from(system),
+            system: System::from_version_made_by(version_made_by),
             /* NB: this strips the top 8 bits! */
             version_made_by: version_made_by as u8,
             flags,
@@ -1453,8 +1459,8 @@ mod test {
         assert_eq!(u8::from(System::Unix), 3u8);
         assert_eq!(System::from(0), System::Dos);
         assert_eq!(System::from(3), System::Unix);
-        assert_eq!(u8::from(System::Unknown), 4u8);
-        assert_eq!(System::Unknown as u8, 4u8);
+        assert_eq!(u8::from(System::Unknown), 255u8);
+        assert_eq!(System::Unknown as u8, 255u8);
     }
 
     #[test]
