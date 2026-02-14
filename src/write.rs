@@ -7,8 +7,8 @@ use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesVendorVersion, DateTime, MIN_VERSION, Zip64ExtraFieldBlock, ZipFileData, ZipLocalEntryBlock,
-    ZipRawValues, ffi,
+    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, Zip64ExtraFieldBlock, ZipFileData,
+    ZipLocalEntryBlock, ZipRawValues, ffi,
 };
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -253,6 +253,28 @@ pub struct ExtendedFileOptions {
 
 impl ExtendedFileOptions {
     /// Adds an extra data field, unless we detect that it's invalid.
+    ///
+    /// # Parameters
+    ///
+    /// * `header_id` – The 2‑byte identifier of the ZIP extra field to add.
+    ///   This value determines the type/format of `data` and should either be
+    ///   one of the standard ZIP extra field IDs defined by the ZIP
+    ///   specification or an application‑specific (vendor) ID.
+    /// * `data` – The raw payload for the extra field, without the leading
+    ///   header ID or length; those are derived from `header_id` and
+    ///   `data.len()` and written automatically.
+    /// * `central_only` – Controls where the extra field is stored:
+    ///   * When `true`, the field is appended only to the central directory
+    ///     extra data (`central_extra_data`), and the corresponding local file
+    ///     header is left unchanged.
+    ///   * When `false`, the field is appended to the local file header extra
+    ///     data (`extra_data`) and may also be reflected in the central
+    ///     directory, depending on how the ZIP is written.
+    ///
+    /// The combined size of all extra data (local + central) must not exceed
+    /// `u16::MAX`. If adding this field would exceed that limit or produce an
+    /// invalid extra data structure, an error is returned and no data is
+    /// added.
     pub fn add_extra_data<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
@@ -276,6 +298,17 @@ impl ExtendedFileOptions {
         }
     }
 
+    /// Appends an extra data field to the given buffer without enforcing global size limits.
+    ///
+    /// Unlike [`ExtendedFileOptions::add_extra_data`], this function:
+    /// - Does **not** check that the combined size of local and central extra data fits into
+    ///   `u16::MAX` bytes as required by the ZIP format.
+    /// - Does **not** re-validate the entire extra-data block after appending.
+    ///
+    /// Callers must ensure that:
+    /// - Using this function will not cause the overall extra-data length to exceed `u16::MAX`.
+    /// - The resulting buffer remains a well-formed sequence of extra fields (or is validated
+    ///   later with [`Self::validate_extra_data`]).
     pub(crate) fn add_extra_data_unchecked(
         vec: &mut Vec<u8>,
         header_id: u16,
@@ -939,6 +972,21 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// # Safety
     ///
+    /// This function assumes that `length` and `crc32` accurately describe the data that has
+    /// been (or will be) written for the currently open file entry.
+    ///
+    /// The caller must ensure that:
+    /// - A file entry is currently being written (that is, [`start_file`] or equivalent has
+    ///   been called successfully and `abort_file` has not been called since).
+    /// - `length` is the exact uncompressed size, in bytes, of the file data written to the
+    ///   underlying [`Write`] implementation for this entry.
+    /// - `crc32` is the correct CRC-32 checksum for that same data, in the format expected by
+    ///   the ZIP specification.
+    ///
+    /// If these requirements are not met, the generated ZIP archive may contain inconsistent
+    /// or corrupt metadata, which can cause readers to report errors, skip data, or accept
+    /// data whose integrity cannot be verified.
+    ///
     /// This overwrites the internal crc32 calculation. It should only be used in case
     /// the underlying [Write] is written independently and you need to adjust the zip metadata.
     pub unsafe fn set_file_metadata(&mut self, length: u64, crc32: u32) -> ZipResult<()> {
@@ -1302,8 +1350,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /* TODO: link to/use Self::finish_into_readable() from https://github.com/zip-rs/zip/pull/400 in
-     * this docstring. */
     /// Copy over the entire contents of another archive verbatim.
     ///
     /// This method extracts file metadata from the `source` archive, then simply performs a single
@@ -2166,22 +2212,11 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let mut buf = Vec::new();
+    let mut buf = [0u8; size_of::<AesExtraField>()];
 
-    /* TODO: implement this using the Block trait! */
-    // Extra field header ID.
-    buf.write_u16_le(UsedExtraField::AeXEncryption as u16)?;
-    // Data size.
-    buf.write_u16_le(7)?;
-    // Integer version number.
-    buf.write_u16_le(*version as u16)?;
-    // Vendor ID.
-    buf.write_all(b"AE")?;
-    // AES encryption strength.
-    buf.write_all(&[*aes_mode as u8])?;
-    // Real compression method.
-    buf.write_u16_le(compression_method.serialize_to_u16())?;
+    let aes_extra_field = AesExtraField::new(*version, *aes_mode, *compression_method);
 
+    aes_extra_field.write(&mut buf.as_mut())?;
     writer.write_all(&buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
@@ -2191,7 +2226,8 @@ fn update_aes_extra_data<W: Write + Seek>(
         ));
     };
     let extra_field = Arc::make_mut(extra_field);
-    extra_field[aes_extra_data_start..aes_extra_data_start + buf.len()].copy_from_slice(&buf);
+    extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AesExtraField>()]
+        .copy_from_slice(&buf);
 
     Ok(())
 }

@@ -225,9 +225,10 @@ pub(crate) unsafe trait Pod: Copy + 'static {
 }
 
 pub(crate) trait FixedSizeBlock: Pod {
-    const MAGIC: Magic;
+    type Magic: Copy + Eq;
+    const MAGIC: Self::Magic;
 
-    fn magic(self) -> Magic;
+    fn magic(self) -> Self::Magic;
 
     const WRONG_MAGIC_ERROR: ZipError;
 
@@ -252,7 +253,7 @@ pub(crate) trait FixedSizeBlock: Pod {
 
     fn to_le(self) -> Self;
 
-    fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
         let block = self.to_le();
         writer.write_all(block.as_bytes())?;
         Ok(())
@@ -290,6 +291,7 @@ macro_rules! to_le {
 /* TODO: derive macro to generate these fields? */
 /// Implement `from_le()` and `to_le()`, providing the field specification to both macros
 /// and methods.
+#[macro_export]
 macro_rules! to_and_from_le {
     ($($args:tt),+ $(,)?) => {
         #[inline(always)]
@@ -321,6 +323,7 @@ pub(crate) struct Zip32CDEBlock {
 unsafe impl Pod for Zip32CDEBlock {}
 
 impl FixedSizeBlock for Zip32CDEBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
     #[inline(always)]
@@ -440,6 +443,7 @@ pub(crate) struct Zip64CDELocatorBlock {
 unsafe impl Pod for Zip64CDELocatorBlock {}
 
 impl FixedSizeBlock for Zip64CDELocatorBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
     #[inline(always)]
@@ -517,6 +521,7 @@ pub(crate) struct Zip64CDEBlock {
 unsafe impl Pod for Zip64CDEBlock {}
 
 impl FixedSizeBlock for Zip64CDEBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
 
     fn magic(self) -> Magic {
@@ -897,6 +902,7 @@ mod test {
     unsafe impl Pod for TestBlock {}
 
     impl FixedSizeBlock for TestBlock {
+        type Magic = Magic;
         const MAGIC: Magic = Magic::literal(0x01111);
 
         fn magic(self) -> Magic {

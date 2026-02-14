@@ -2,7 +2,7 @@
 use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Pod, ZipFlags};
+use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
@@ -18,7 +18,7 @@ pub(crate) mod ffi {
     pub const S_IFLNK: u32 = 0o0120000;
 }
 
-use crate::extra_fields::ExtraField;
+use crate::extra_fields::{ExtraField, UsedExtraField};
 use crate::read::find_data_start;
 use crate::result::DateTimeRangeError;
 use crate::spec::is_dir;
@@ -1067,17 +1067,18 @@ pub(crate) struct ZipCentralEntryBlock {
 unsafe impl Pod for ZipCentralEntryBlock {}
 
 impl FixedSizeBlock for ZipCentralEntryBlock {
-    const MAGIC: spec::Magic = spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
     #[inline(always)]
-    fn magic(self) -> spec::Magic {
+    fn magic(self) -> Magic {
         self.magic
     }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid Central Directory header");
 
     to_and_from_le![
-        (magic, spec::Magic),
+        (magic, Magic),
         (version_made_by, u16),
         (version_to_extract, u16),
         (flags, u16),
@@ -1116,17 +1117,18 @@ pub(crate) struct ZipLocalEntryBlock {
 unsafe impl Pod for ZipLocalEntryBlock {}
 
 impl FixedSizeBlock for ZipLocalEntryBlock {
-    const MAGIC: spec::Magic = spec::Magic::LOCAL_FILE_HEADER_SIGNATURE;
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
 
     #[inline(always)]
-    fn magic(self) -> spec::Magic {
+    fn magic(self) -> Magic {
         self.magic
     }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid local file header");
 
     to_and_from_le![
-        (magic, spec::Magic),
+        (magic, Magic),
         (version_made_by, u16),
         (flags, u16),
         (compression_method, u16),
@@ -1239,17 +1241,18 @@ pub(crate) struct ZipDataDescriptorBlock {
 unsafe impl Pod for ZipDataDescriptorBlock {}
 
 impl FixedSizeBlock for ZipDataDescriptorBlock {
-    const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
 
     #[inline(always)]
-    fn magic(self) -> spec::Magic {
+    fn magic(self) -> Magic {
         self.magic
     }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid data descriptor header");
 
     to_and_from_le![
-        (magic, spec::Magic),
+        (magic, Magic),
         (crc32, u32),
         (compressed_size, u32),
         (uncompressed_size, u32),
@@ -1268,6 +1271,7 @@ pub(crate) struct Zip64DataDescriptorBlock {
 unsafe impl Pod for Zip64DataDescriptorBlock {}
 
 impl FixedSizeBlock for Zip64DataDescriptorBlock {
+    type Magic = Magic;
     const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
 
     #[inline(always)]
@@ -1324,6 +1328,56 @@ impl AesMode {
             Self::Aes128 => 16,
             Self::Aes192 => 24,
             Self::Aes256 => 32,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+#[repr(packed, C)]
+pub(crate) struct AesExtraField {
+    header_id: u16,
+    data_size: u16,
+    version: u16,
+    vendor_id: u16,
+    aes_mode: u8,
+    compression_method: u16,
+}
+
+unsafe impl Pod for AesExtraField {}
+
+impl FixedSizeBlock for AesExtraField {
+    type Magic = u16;
+    const MAGIC: Self::Magic = UsedExtraField::AeXEncryption as u16;
+
+    fn magic(self) -> Self::Magic {
+        Self::MAGIC
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Wrong AES header ID");
+
+    to_and_from_le![
+        (header_id, u16),
+        (data_size, u16),
+        (version, u16),
+        (vendor_id, u16),
+        (aes_mode, u8),
+        (compression_method, u16)
+    ];
+}
+
+impl AesExtraField {
+    pub(crate) fn new(
+        version: AesVendorVersion,
+        aes_mode: AesMode,
+        compression_method: CompressionMethod,
+    ) -> Self {
+        Self {
+            header_id: UsedExtraField::AeXEncryption as u16,
+            data_size: 7,
+            version: version as u16,
+            vendor_id: u16::from_le_bytes(*b"AE"),
+            aes_mode: aes_mode as u8,
+            compression_method: compression_method.serialize_to_u16(),
         }
     }
 }
