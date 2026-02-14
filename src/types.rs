@@ -52,11 +52,11 @@ pub enum System {
     Macintosh = 7,
     /// Z-System
     ZSystemO = 8,
-    /// CP/M       
+    /// CP/M
     CPM = 9,
     /// Windows NTFS
     WindowsNTFS = 10,
-    /// MVS (OS/390 - Z/OS)   
+    /// MVS (OS/390 - Z/OS)
     MVS = 11,
     /// VSE
     VSE = 12,
@@ -89,38 +89,34 @@ impl System {
 impl From<u8> for System {
     fn from(system: u8) -> Self {
         match system {
-            0 => Self::Dos,
-            3 => Self::Unix,
-            _ => Self::Unknown,
+            0 => System::Dos,
+            1 => System::Amiga,
+            2 => System::OpenVMS,
+            3 => System::Unix,
+            4 => System::VmCms,
+            5 => System::AtariSt,
+            6 => System::Os2,
+            7 => System::Macintosh,
+            8 => System::ZSystemO,
+            9 => System::CPM,
+            10 => System::WindowsNTFS,
+            11 => System::MVS,
+            12 => System::VSE,
+            13 => System::AcornRisc,
+            14 => System::VFAT,
+            15 => System::AlternateMVS,
+            16 => System::BeOS,
+            17 => System::Tandem,
+            18 => System::Os400,
+            19 => System::OsDarwin,
+            _ => System::Unknown,
         }
     }
 }
 
 impl From<System> for u8 {
     fn from(system: System) -> Self {
-        match system {
-            System::Dos => 0,
-            System::Amiga => 1,
-            System::OpenVMS => 2,
-            System::Unix => 3,
-            System::VmCms => 4,
-            System::AtariSt => 5,
-            System::Os2 => 6,
-            System::Macintosh => 7,
-            System::ZSystemO => 8,
-            System::CPM => 9,
-            System::WindowsNTFS => 10,
-            System::MVS => 11,
-            System::VSE => 12,
-            System::AcornRisc => 13,
-            System::VFAT => 14,
-            System::AlternateMVS => 15,
-            System::BeOS => 16,
-            System::Tandem => 17,
-            System::Os400 => 18,
-            System::OsDarwin => 19,
-            _ => 255,
-        }
+        system as u8
     }
 }
 
