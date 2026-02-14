@@ -37,8 +37,10 @@
     clippy::missing_panics_doc,
     clippy::cargo,
     clippy::panic,
-    clippy::cast_lossless
+    clippy::cast_lossless,
+    clippy::decimal_literal_representation
 )]
+#![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};

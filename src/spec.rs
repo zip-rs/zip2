@@ -53,6 +53,46 @@ impl Magic {
     pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x08074b50);
 }
 
+/// Zip flags
+/// Stored as Little endian
+#[allow(unused)]
+#[rustfmt::skip]
+#[repr(u16)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum ZipFlags {
+    /// If set, indicates that the file is encrypted.
+    Encrypted                   = 0b0000_0000_0000_0001,
+    CompressionSetting          = 0b0000_0000_0000_0010,
+    CompressionSetting2         = 0b0000_0000_0000_0100,
+    /// If this bit is set, the fields crc-32, compressed size and uncompressed size are set to zero in the  local header.
+    /// The correct values are put in the data descriptor immediately following the compressed data.
+    UsingDataDescriptor         = 0b0000_0000_0000_1000,
+    /// Reserved for use with method 8, for enhanced deflating.
+    ReservedEnhancedDeflating   = 0b0000_0000_0001_0000,
+    /// If this bit is set, this indicates that the file is compressed patched data.
+    CompressedPatchedData       = 0b0000_0000_0010_0000,
+    /// Strong encryption.
+    /// If this bit is set, you MUST set the version needed to extract value to at least 50 and you MUST also set bit 0.
+    /// If AES encryption is used, the version needed to extract value MUST be at least 51.
+    StrongEncryption            = 0b0000_0000_0100_0000,
+    // bit 7 Currently unused   = 0b0000_0000_1000_0000;
+    // bit 8 Currently unused   = 0b0000_0001_0000_0000;
+    // bit 9 Currently unused   = 0b0000_0010_0000_0000;
+    // bit 10 Currently unused  = 0b0000_0100_0000_0000;
+
+    /// Language encoding flag (EFS).
+    /// If this bit is set, the filename and comment fields for this file MUST be encoded using UTF-8.
+    LanguageEncoding            = 0b0000_1000_0000_0000,
+    /// Reserved by PKWARE for enhanced compression.
+    ReservedEnhancedCompression = 0b0001_0000_0000_0000,
+    /// Set when encrypting the Central Directory to indicate selected data values in the Local Header are masked to hide their actual values.
+    Masked                      = 0b0010_0000_0000_0000,
+    /// Reserved by PKWARE for alternate streams.
+    ReservedAlternateStream     = 0b0100_0000_0000_0000,
+    /// Reserved by PKWARE.
+    Reserved                    = 0b1000_0000_0000_0000,
+}
+
 /// Similar to [`Magic`], but used for extra field tags as per section 4.5.3 of APPNOTE.TXT.
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 #[repr(transparent)]
