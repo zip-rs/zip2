@@ -121,6 +121,7 @@ impl From<System> for u8 {
 }
 
 /// Metadata for a file to be written
+#[non_exhaustive]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
