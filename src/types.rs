@@ -771,11 +771,11 @@ impl ZipFileData {
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
         let mut external_attributes = permissions << 16;
-        let system = if let Some(system_option) = options.system {
+        let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
+            System::Unix
+        } else if let Some(system_option) = options.system {
             // user provided
             system_option
-        } else if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
-            System::Unix
         } else if cfg!(windows) {
             System::Dos
         } else {
