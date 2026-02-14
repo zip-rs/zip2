@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.0.0](https://github.com/zip-rs/zip2/compare/v7.4.0...v8.0.0) - 2026-02-14
+
+### <!-- 0 -->🚀 Features
+
+- document zip flags as enum ([#639](https://github.com/zip-rs/zip2/pull/639))
+- Migrate to Rust 2024 ([#650](https://github.com/zip-rs/zip2/pull/650))
+- [**breaking**] Remove deprecated methods of `DateTime` ([#597](https://github.com/zip-rs/zip2/pull/597))
+
 ## [7.4.0](https://github.com/zip-rs/zip2/compare/v7.3.0...v7.4.0) - 2026-02-05
 
 ### <!-- 0 -->🚀 Features
