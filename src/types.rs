@@ -33,12 +33,48 @@ pub(crate) struct ZipRawValues {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 pub enum System {
+    /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems)
     Dos = 0,
+    Amiga = 1,
+    OpenVMS = 2,
     Unix = 3,
+    /// VM/CMS
+    VmCms = 4,
+    /// Atari ST
+    AtariSt = 5,
+    /// OS/2 H.P.F.S.
+    Os2 = 6,
+    Macintosh = 7,
+    /// Z-System
+    ZSystemO = 8,
+    /// CP/M       
+    CPM = 9,
+    /// Windows NTFS
+    WindowsNTFS = 10,
+    /// MVS (OS/390 - Z/OS)   
+    MVS = 11,
+    /// VSE
+    VSE = 12,
+    /// Acorn Risc
+    AcornRisc = 13,
+    /// VFAT
+    VFAT = 14,
+    /// alternate MVS
+    AlternateMVS = 15,
+    /// BeOS
+    BeOS = 16,
+    /// Tandem
+    Tandem = 17,
+    /// OS/400
+    Os400 = 18,
+    /// OS X (Darwin)
+    OsDarwin = 19,
+    /// unused
     #[default]
-    Unknown,
+    Unknown = 255,
 }
 
 impl From<u8> for System {
@@ -55,8 +91,26 @@ impl From<System> for u8 {
     fn from(system: System) -> Self {
         match system {
             System::Dos => 0,
+            System::Amiga => 1,
+            System::OpenVMS => 2,
             System::Unix => 3,
-            System::Unknown => 4,
+            System::VmCms => 4,
+            System::AtariSt => 5,
+            System::Os2 => 6,
+            System::Macintosh => 7,
+            System::ZSystemO => 8,
+            System::CPM => 9,
+            System::WindowsNTFS => 10,
+            System::MVS => 11,
+            System::VSE => 12,
+            System::AcornRisc => 13,
+            System::VFAT => 14,
+            System::AlternateMVS => 15,
+            System::BeOS => 16,
+            System::Tandem => 17,
+            System::Os400 => 18,
+            System::OsDarwin => 19,
+            _ => 255,
         }
     }
 }
@@ -714,6 +768,11 @@ impl ZipFileData {
         } else if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
         } else if cfg!(windows) {
+            System::Dos
+        } else {
+            System::Unix
+        };
+        if system == System::Dos {
             if is_dir(&file_name) {
                 // DOS directory bit
                 external_attributes |= 0x10;
@@ -725,10 +784,7 @@ impl ZipFileData {
                 // DOS read-only bit
                 external_attributes |= 0x01;
             }
-            System::Dos
-        } else {
-            System::Unix
-        };
+        }
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
