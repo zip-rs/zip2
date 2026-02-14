@@ -76,6 +76,7 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(super) zopfli_buffer_size: Option<usize>,
     #[cfg(feature = "aes-crypto")]
     pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    pub(crate) system: Option<System>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
 pub type SimpleFileOptions = FileOptions<'static, ()>;
@@ -707,7 +708,10 @@ impl ZipFileData {
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
         let mut external_attributes = permissions << 16;
-        let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
+        let system = if let Some(system_option) = options.system {
+            // user provided
+            system_option
+        } else if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
         } else if cfg!(windows) {
             if is_dir(&file_name) {

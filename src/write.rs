@@ -7,7 +7,7 @@ use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, Zip64ExtraFieldBlock, ZipFileData,
+    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, Zip64ExtraFieldBlock, ZipFileData,
     ZipLocalEntryBlock, ZipRawValues, ffi,
 };
 use core::default::Default;
@@ -448,6 +448,15 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         self
     }
 
+    /// Set the `system` field for the new file
+    ///
+    /// If not set, the `zip` crate will use the current system
+    #[must_use]
+    pub const fn system(mut self, system: System) -> Self {
+        self.system = Some(system);
+        self
+    }
+
     /// Set the compression level for the new file
     ///
     /// `None` value specifies default compression level.
@@ -591,6 +600,7 @@ impl FileOptions<'static, ()> {
         zopfli_buffer_size: Some(1 << 15),
         #[cfg(feature = "aes-crypto")]
         aes_mode: None,
+        system: None,
     };
 }
 
@@ -610,6 +620,7 @@ impl<'k> FileOptions<'k, ()> {
             zopfli_buffer_size: self.zopfli_buffer_size,
             #[cfg(feature = "aes-crypto")]
             aes_mode: self.aes_mode,
+            system: self.system,
         }
     }
 }
@@ -630,6 +641,7 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
             zopfli_buffer_size: Some(1 << 15),
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         }
     }
 }
@@ -2620,6 +2632,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
         writer.start_file("mimetype", options).unwrap();
         writer
@@ -2669,6 +2682,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
 
         // GB18030
@@ -2730,6 +2744,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -2783,6 +2798,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
