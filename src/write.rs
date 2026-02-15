@@ -283,12 +283,14 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let data = data.as_ref();
         let len = data.len() + 4;
+        let local_extra_data_len = self.extra_data.len();
+        let central_extra_data_len = self.central_extra_data.len();
         let field = if central_only {
             &mut self.central_extra_data
         } else {
             &mut self.extra_data
         };
-        if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
+        if local_extra_data_len + central_extra_data_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {
             let vec = Arc::make_mut(field);
