@@ -88,7 +88,7 @@ fn copy() {
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
-fn append() {
+fn test_append_to_zip() {
     for_each_supported_method(|method| {
         for shallow_copy in &[false, true] {
             if std::env::var("ZIP_TEST_DEBUG").is_ok() {
