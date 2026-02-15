@@ -647,25 +647,27 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 let write_result = w.write(buf);
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[..count]);
-                    if self.stats.bytes_written > spec::ZIP64_BYTES_THR
-                        && !self
+                    // Only perform the expensive large-file check when we first cross the threshold.
+                    if self.stats.bytes_written > spec::ZIP64_BYTES_THR {
+                        let is_large_file = self
                             .files
                             .last()
                             .ok_or_else(|| std::io::Error::other("Cannot get last file"))?
                             .1
-                            .large_file
-                    {
-                        return Err(if let Err(e) = self.abort_file() {
-                            let abort_io_err: io::Error = e.into();
-                            io::Error::new(
-                                abort_io_err.kind(),
-                                format!(
-                                    "Large file option has not been set and abort_file() failed: {abort_io_err}"
-                                ),
-                            )
-                        } else {
-                            io::Error::other("Large file option has not been set")
-                        });
+                            .large_file;
+                        if !is_large_file {
+                            return Err(if let Err(e) = self.abort_file() {
+                                let abort_io_err: io::Error = e.into();
+                                io::Error::new(
+                                    abort_io_err.kind(),
+                                    format!(
+                                        "Large file option has not been set and abort_file() failed: {abort_io_err}"
+                                    ),
+                                )
+                            } else {
+                                io::Error::other("Large file option has not been set")
+                            });
+                        }
                     }
                 }
                 write_result
