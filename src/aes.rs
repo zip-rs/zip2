@@ -268,12 +268,14 @@ impl<W: Write> AesWriter<W> {
     }
 
     /// Gets a reference to the underlying writer.
-    pub fn get_ref(&self) -> &W {
+    pub fn inner_ref(&self) -> &W {
         &self.writer
     }
 
     /// Gets a mutable reference to the underlying writer.
-    pub fn get_mut(&mut self) -> &mut W {
+    /// SAFETY: The caller must not corrupt the archive, and must leave it in the same
+    /// cursor position as it was when obtained.
+    pub unsafe fn get_mut(&mut self) -> &mut W {
         &mut self.writer
     }
 
