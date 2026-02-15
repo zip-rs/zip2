@@ -38,10 +38,11 @@ pub(crate) struct ZipRawValues {
 #[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 pub enum System {
-    /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems)
+    /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems; default on Windows)
     Dos = 0,
     Amiga = 1,
     OpenVMS = 2,
+    /// Default on Unix; default for symlinks on all platforms
     Unix = 3,
     /// VM/CMS
     VmCms = 4,
@@ -54,7 +55,7 @@ pub enum System {
     ZSystemO = 8,
     /// CP/M
     CPM = 9,
-    /// Windows NTFS
+    /// Windows NTFS (with extra attributes; not used by default)
     WindowsNTFS = 10,
     /// MVS (OS/390 - Z/OS)
     MVS = 11,
@@ -72,7 +73,7 @@ pub enum System {
     Tandem = 17,
     /// OS/400
     Os400 = 18,
-    /// OS X (Darwin)
+    /// OS X (Darwin) (with extra attributes; not used by default)
     OsDarwin = 19,
     /// unused
     #[default]
