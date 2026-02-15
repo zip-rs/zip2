@@ -288,7 +288,7 @@ impl ExtendedFileOptions {
         } else {
             &mut self.extra_data
         };
-        if field.len() + len > u16::MAX as usize {
+        if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {
             let vec = Arc::make_mut(field);
