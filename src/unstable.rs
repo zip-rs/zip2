@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::io;
 use std::io::{Read, Write};
-use std::path::{Component, Path, MAIN_SEPARATOR};
+use std::path::{Component, MAIN_SEPARATOR, Path};
 
 /// Provides high level API for reading from a stream.
 pub mod stream {

@@ -3,7 +3,7 @@ use bencher::{benchmark_group, benchmark_main};
 use std::io::{Cursor, Read, Write};
 
 use bencher::Bencher;
-use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 fn generate_random_archive(size: usize) -> Result<Vec<u8>, std::io::Error> {
     let data = Vec::new();

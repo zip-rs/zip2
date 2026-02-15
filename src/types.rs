@@ -1,6 +1,8 @@
 //! Types that specify what is contained in a ZIP.
 use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
+use crate::result::{ZipError, ZipResult, invalid};
+use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
@@ -10,16 +12,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
-use crate::result::{invalid, ZipError, ZipResult};
-use crate::spec::{self, FixedSizeBlock, Pod};
-
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
     pub const S_IFLNK: u32 = 0o0120000;
 }
 
-use crate::extra_fields::ExtraField;
+use crate::extra_fields::{ExtraField, UsedExtraField};
 use crate::read::find_data_start;
 use crate::result::DateTimeRangeError;
 use crate::spec::is_dir;
@@ -147,13 +146,17 @@ impl DateTime {
 #[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        // DOS time format stores seconds divided by 2 in a 5-bit field (0..=29),
+        // so the maximum representable second value is 58.
+        const MAX_DOS_SECONDS: u16 = 58;
+
         let year: u16 = u.int_in_range(1980..=2107)?;
         let month: u16 = u.int_in_range(1..=12)?;
         let day: u16 = u.int_in_range(1..=31)?;
         let datepart = day | (month << 5) | ((year - 1980) << 9);
         let hour: u16 = u.int_in_range(0..=23)?;
         let minute: u16 = u.int_in_range(0..=59)?;
-        let second: u16 = u.int_in_range(0..=58)?;
+        let second: u16 = u.int_in_range(0..=MAX_DOS_SECONDS)?;
         let timepart = (second >> 1) | (minute << 5) | (hour << 11);
         Ok(DateTime { datepart, timepart })
     }
@@ -317,7 +320,7 @@ impl DateTime {
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
         fn is_leap_year(year: u16) -> bool {
-            (year % 4 == 0) && ((year % 25 != 0) || (year % 16 == 0))
+            year.is_multiple_of(4) && (!year.is_multiple_of(25) || year.is_multiple_of(16))
         }
 
         if (1980..=2107).contains(&year)
@@ -327,7 +330,8 @@ impl DateTime {
             && minute <= 59
             && second <= 60
         {
-            let second = second.min(58); // exFAT can't store leap seconds
+            // DOS/ZIP timestamp stores seconds/2 in 5 bits and cannot represent 59 or 60 seconds (incl. leap seconds)
+            let second = second.min(58);
             let max_day = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
                 4 | 6 | 9 | 11 => 30,
@@ -353,15 +357,6 @@ impl DateTime {
         Self::try_from_msdos(self.datepart, self.timepart).is_ok()
     }
 
-    #[cfg(feature = "time")]
-    /// Converts a [`time::OffsetDateTime`] object to a `DateTime`
-    ///
-    /// Returns `Err` when this object is out of bounds
-    #[deprecated(since = "0.6.4", note = "use `DateTime::try_from()` instead")]
-    pub fn from_time(dt: time::OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
-        dt.try_into()
-    }
-
     /// Gets the time portion of this datetime in the msdos representation
     #[must_use]
     pub const fn timepart(&self) -> u16 {
@@ -372,16 +367,6 @@ impl DateTime {
     #[must_use]
     pub const fn datepart(&self) -> u16 {
         self.datepart
-    }
-
-    #[cfg(feature = "time")]
-    /// Converts the `DateTime` to a [`time::OffsetDateTime`] structure
-    #[deprecated(
-        since = "1.3.1",
-        note = "use `time::OffsetDateTime::try_from()` instead"
-    )]
-    pub fn to_time(&self) -> Result<time::OffsetDateTime, time::error::ComponentRange> {
-        (*self).try_into()
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -441,7 +426,7 @@ impl DateTime {
     }
 }
 
-#[cfg(feature = "time")]
+#[cfg(all(feature = "time", feature = "deprecated-time"))]
 impl TryFrom<time::OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
@@ -466,7 +451,7 @@ impl TryFrom<time::PrimitiveDateTime> for DateTime {
     }
 }
 
-#[cfg(feature = "time")]
+#[cfg(all(feature = "time", feature = "deprecated-time"))]
 impl TryFrom<DateTime> for time::OffsetDateTime {
     type Error = time::error::ComponentRange;
 
@@ -795,7 +780,7 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = flags & 1 == 1;
+        let encrypted: bool = flags & (ZipFlags::Encrypted as u16) != 0;
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
                 "Encrypted files are not supported",
@@ -803,16 +788,14 @@ impl ZipFileData {
         }
 
         /* FIXME: these were previously incorrect: add testing! */
-        /* flags & (1 << 3) != 0 */
-        let using_data_descriptor: bool = flags & (1 << 3) == 1 << 3;
+        let using_data_descriptor: bool = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
             ));
         }
 
-        /* flags & (1 << 1) != 0 */
-        let is_utf8: bool = flags & (1 << 11) != 0;
+        let is_utf8: bool = flags & (ZipFlags::LanguageEncoding as u16) != 0;
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -890,13 +873,13 @@ impl ZipFileData {
 
     fn flags(&self) -> u16 {
         let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
-            1u16 << 11
+            ZipFlags::LanguageEncoding as u16
         } else {
             0
         };
 
         let using_data_descriptor_bit = if self.using_data_descriptor {
-            1u16 << 3
+            ZipFlags::UsingDataDescriptor as u16
         } else {
             0
         };
@@ -1092,17 +1075,18 @@ pub(crate) struct ZipCentralEntryBlock {
 unsafe impl Pod for ZipCentralEntryBlock {}
 
 impl FixedSizeBlock for ZipCentralEntryBlock {
-    const MAGIC: spec::Magic = spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
     #[inline(always)]
-    fn magic(self) -> spec::Magic {
+    fn magic(self) -> Magic {
         self.magic
     }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid Central Directory header");
 
     to_and_from_le![
-        (magic, spec::Magic),
+        (magic, Magic),
         (version_made_by, u16),
         (version_to_extract, u16),
         (flags, u16),
@@ -1141,17 +1125,18 @@ pub(crate) struct ZipLocalEntryBlock {
 unsafe impl Pod for ZipLocalEntryBlock {}
 
 impl FixedSizeBlock for ZipLocalEntryBlock {
-    const MAGIC: spec::Magic = spec::Magic::LOCAL_FILE_HEADER_SIGNATURE;
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
 
     #[inline(always)]
-    fn magic(self) -> spec::Magic {
+    fn magic(self) -> Magic {
         self.magic
     }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid local file header");
 
     to_and_from_le![
-        (magic, spec::Magic),
+        (magic, Magic),
         (version_made_by, u16),
         (flags, u16),
         (compression_method, u16),
@@ -1307,17 +1292,18 @@ pub(crate) struct ZipDataDescriptorBlock {
 unsafe impl Pod for ZipDataDescriptorBlock {}
 
 impl FixedSizeBlock for ZipDataDescriptorBlock {
-    const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
 
     #[inline(always)]
-    fn magic(self) -> spec::Magic {
+    fn magic(self) -> Magic {
         self.magic
     }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid data descriptor header");
 
     to_and_from_le![
-        (magic, spec::Magic),
+        (magic, Magic),
         (crc32, u32),
         (compressed_size, u32),
         (uncompressed_size, u32),
@@ -1336,6 +1322,7 @@ pub(crate) struct Zip64DataDescriptorBlock {
 unsafe impl Pod for Zip64DataDescriptorBlock {}
 
 impl FixedSizeBlock for Zip64DataDescriptorBlock {
+    type Magic = Magic;
     const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
 
     #[inline(always)]
@@ -1392,6 +1379,56 @@ impl AesMode {
             Self::Aes128 => 16,
             Self::Aes192 => 24,
             Self::Aes256 => 32,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+#[repr(packed, C)]
+pub(crate) struct AesExtraField {
+    header_id: u16,
+    data_size: u16,
+    version: u16,
+    vendor_id: u16,
+    aes_mode: u8,
+    compression_method: u16,
+}
+
+unsafe impl Pod for AesExtraField {}
+
+impl FixedSizeBlock for AesExtraField {
+    type Magic = u16;
+    const MAGIC: Self::Magic = UsedExtraField::AeXEncryption as u16;
+
+    fn magic(self) -> Self::Magic {
+        Self::MAGIC
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Wrong AES header ID");
+
+    to_and_from_le![
+        (header_id, u16),
+        (data_size, u16),
+        (version, u16),
+        (vendor_id, u16),
+        (aes_mode, u8),
+        (compression_method, u16)
+    ];
+}
+
+impl AesExtraField {
+    pub(crate) fn new(
+        version: AesVendorVersion,
+        aes_mode: AesMode,
+        compression_method: CompressionMethod,
+    ) -> Self {
+        Self {
+            header_id: UsedExtraField::AeXEncryption as u16,
+            data_size: 7,
+            version: version as u16,
+            vendor_id: u16::from_le_bytes(*b"AE"),
+            aes_mode: aes_mode as u8,
+            compression_method: compression_method.serialize_to_u16(),
         }
     }
 }
@@ -1600,12 +1637,9 @@ mod test {
 
     use std::{path::PathBuf, sync::OnceLock};
 
-    #[cfg(feature = "time")]
-    use time::format_description::well_known::Rfc3339;
-
     use crate::types::{System, ZipFileData};
 
-    #[cfg(feature = "time")]
+    #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
     fn datetime_try_from_offset_datetime() {
         use time::macros::datetime;
@@ -1658,11 +1692,11 @@ mod test {
         assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00)).is_err());
     }
 
-    #[cfg(feature = "time")]
+    #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
     fn offset_datetime_try_from_datetime() {
-        use time::macros::datetime;
         use time::OffsetDateTime;
+        use time::macros::datetime;
 
         use super::DateTime;
 
@@ -1675,8 +1709,8 @@ mod test {
     #[cfg(feature = "time")]
     #[test]
     fn primitive_datetime_try_from_datetime() {
-        use time::macros::datetime;
         use time::PrimitiveDateTime;
+        use time::macros::datetime;
 
         use super::DateTime;
 
@@ -1686,23 +1720,23 @@ mod test {
         assert_eq!(dt, datetime!(2018-11-17 10:38:30));
     }
 
-    #[cfg(feature = "time")]
+    #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
     fn offset_datetime_try_from_bounds() {
         use super::DateTime;
         use time::OffsetDateTime;
 
         // 1980-00-00 00:00:00
-        assert!(OffsetDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0x0000, 0x0000)
-        })
-        .is_err());
+        assert!(
+            OffsetDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
+                .is_err()
+        );
 
         // 2107-15-31 31:63:62
-        assert!(OffsetDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
-        })
-        .is_err());
+        assert!(
+            OffsetDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
+                .is_err()
+        );
     }
 
     #[cfg(feature = "time")]
@@ -1712,16 +1746,16 @@ mod test {
         use time::PrimitiveDateTime;
 
         // 1980-00-00 00:00:00
-        assert!(PrimitiveDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0x0000, 0x0000)
-        })
-        .is_err());
+        assert!(
+            PrimitiveDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
+                .is_err()
+        );
 
         // 2107-15-31 31:63:62
-        assert!(PrimitiveDateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
-        })
-        .is_err());
+        assert!(
+            PrimitiveDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
+                .is_err()
+        );
     }
 
     #[cfg(feature = "jiff-02")]
@@ -1782,20 +1816,19 @@ mod test {
         use super::DateTime;
 
         // 1980-00-00 00:00:00
-        assert!(civil::DateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0x0000, 0x0000)
-        })
-        .is_err());
+        assert!(
+            civil::DateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
+                .is_err()
+        );
 
         // 2107-15-31 31:63:62
-        assert!(civil::DateTime::try_from(unsafe {
-            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
-        })
-        .is_err());
+        assert!(
+            civil::DateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
+                .is_err()
+        );
     }
 
     #[test]
-    #[allow(deprecated)]
     fn time_conversion() {
         use super::DateTime;
         let dt = DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap();
@@ -1814,17 +1847,10 @@ mod test {
         assert_eq!(dt.minute(), 38);
         assert_eq!(dt.second(), 30);
 
-        #[cfg(feature = "time")]
-        assert_eq!(
-            dt.to_time().unwrap().format(&Rfc3339).unwrap(),
-            "2018-11-17T10:38:30Z"
-        );
-
         assert_eq!(<(u16, u16)>::from(dt), (0x4D71, 0x54CF));
     }
 
     #[test]
-    #[allow(deprecated)]
     fn time_out_of_bounds() {
         use super::DateTime;
         let dt = unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) };
@@ -1835,9 +1861,6 @@ mod test {
         assert_eq!(dt.minute(), 63);
         assert_eq!(dt.second(), 62);
 
-        #[cfg(feature = "time")]
-        assert!(dt.to_time().is_err());
-
         let dt = unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) };
         assert_eq!(dt.year(), 1980);
         assert_eq!(dt.month(), 0);
@@ -1845,9 +1868,6 @@ mod test {
         assert_eq!(dt.hour(), 0);
         assert_eq!(dt.minute(), 0);
         assert_eq!(dt.second(), 0);
-
-        #[cfg(feature = "time")]
-        assert!(dt.to_time().is_err());
     }
 
     #[cfg(feature = "time")]

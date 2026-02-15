@@ -33,7 +33,10 @@ fn test_aes256_encrypted_uncompressed_file() {
 }
 
 mod deflate64;
-/// Test Deflate64 decompression functionality in the wasm32 environment.
+/// Verifies that data compressed using the Deflate64 algorithm can be correctly
+/// decompressed in the `wasm32` environment.
+///
+/// Run with: `wasm-pack test --headless --chrome --features deflate64`
 #[cfg(feature = "deflate64")]
 #[wasm_bindgen_test]
 fn test_decompress_deflate64() {
@@ -41,7 +44,10 @@ fn test_decompress_deflate64() {
 }
 
 mod xz;
-/// Test XZ decompression functionality in the wasm32 environment.
+/// Verifies that data compressed with XZ can be correctly decompressed
+/// in the `wasm32` environment.
+///
+/// Run with: `wasm-pack test --headless --chrome --features xz`
 #[cfg(feature = "xz")]
 #[wasm_bindgen_test]
 fn test_decompress_xz() {
@@ -49,7 +55,10 @@ fn test_decompress_xz() {
 }
 
 mod lzma;
-/// Test LZMA decompression functionality in the wasm32 environment.
+/// Verifies that data compressed with LZMA can be correctly decompressed
+/// in the `wasm32` environment.
+///
+/// Run with: `wasm-pack test --headless --chrome --features lzma`
 #[cfg(feature = "lzma")]
 #[wasm_bindgen_test]
 fn test_decompress_lzma() {
@@ -60,7 +69,13 @@ fn test_decompress_lzma() {
 // that must be compiled with its `wasm-bindgen` feature when targeting `wasm32`.
 // Without that feature enabled, running these tests will fail with "time not implemented on this platform".
 mod end_to_end;
-/// Runs the end-to-end integration test suite for wasm32, covering time-dependent behavior.
+/// Runs the end-to-end integration test suite for the `wasm32` target, including
+/// checks for time-dependent behavior.
+///
+/// Run with: `wasm-pack test --headless --chrome`
+///
+/// **Note**: This test requires `time`, `chrono` or `nt-time` with its `wasm-bindgen`
+/// feature enabled for `wasm32` targets.
 #[wasm_bindgen_test]
 fn test_end_to_end() {
     end_to_end::end_to_end();

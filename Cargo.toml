@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "7.4.0"
+version = "8.0.0"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -17,7 +17,7 @@ categories = ["compression", "filesystem", "parser-implementations"]
 description = """
 Library to support the reading and writing of zip files.
 """
-edition = "2021"
+edition = "2024"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**", ".amazonq/**", "benches/**"]
 
 [package.metadata.docs.rs]
@@ -44,7 +44,7 @@ zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "^0.13.3", optional = true, default-features = false }
 zopfli = { version = "0.8", optional = true }
 deflate64 = { version = "0.1.10", optional = true }
-lzma-rust2 = { version = "0.15", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+lzma-rust2 = { version = "^0.16.1", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.9", optional = true }
 typed-path = "0.12"
 
@@ -89,6 +89,9 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
+# Enables conversion to/from time::OffsetDateTime if `time` is also enabled, even though ZIP-file timestamps don't include a time zone.
+# This feature will be removed in version 9.0.0.
+deprecated-time = []
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
