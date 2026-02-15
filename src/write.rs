@@ -283,14 +283,16 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let data = data.as_ref();
         let len = data.len() + 4;
-        if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
+        let local_extra_data_len = self.extra_data.len();
+        let central_extra_data_len = self.central_extra_data.len();
+        let field = if central_only {
+            &mut self.central_extra_data
+        } else {
+            &mut self.extra_data
+        };
+        if local_extra_data_len + central_extra_data_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {
-            let field = if central_only {
-                &mut self.central_extra_data
-            } else {
-                &mut self.extra_data
-            };
             let vec = Arc::make_mut(field);
             Self::add_extra_data_unchecked(vec, header_id, data)?;
             Self::validate_extra_data(vec, true)?;
@@ -659,25 +661,27 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 let write_result = w.write(buf);
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[..count]);
-                    if self.stats.bytes_written > spec::ZIP64_BYTES_THR
-                        && !self
+                    // Only perform the expensive large-file check when we first cross the threshold.
+                    if self.stats.bytes_written > spec::ZIP64_BYTES_THR {
+                        let is_large_file = self
                             .files
                             .last()
                             .ok_or_else(|| std::io::Error::other("Cannot get last file"))?
                             .1
-                            .large_file
-                    {
-                        return Err(if let Err(e) = self.abort_file() {
-                            let abort_io_err: io::Error = e.into();
-                            io::Error::new(
-                                abort_io_err.kind(),
-                                format!(
-                                    "Large file option has not been set and abort_file() failed: {abort_io_err}"
-                                ),
-                            )
-                        } else {
-                            io::Error::other("Large file option has not been set")
-                        });
+                            .large_file;
+                        if !is_large_file {
+                            return Err(if let Err(e) = self.abort_file() {
+                                let abort_io_err: io::Error = e.into();
+                                io::Error::new(
+                                    abort_io_err.kind(),
+                                    format!(
+                                        "Large file option has not been set and abort_file() failed: {abort_io_err}"
+                                    ),
+                                )
+                            } else {
+                                io::Error::other("Large file option has not been set")
+                            });
+                        }
                     }
                 }
                 write_result
@@ -1302,7 +1306,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => {
                     MaybeEncrypted::Unencrypted(w)
                 }
-                _ => unreachable!(),
+                _ => unreachable!(
+                    "switch_to_non_encrypting_writer called with incompatible GenericZipWriter variant"
+                ),
             },
         );
         Ok(())
@@ -2287,8 +2293,8 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     } else {
         0
     };
-    block.extra_field_length = (zip64_len + stripped_extra.len() + central_len)
-        .try_into()
+    let total_extra_len = zip64_len + stripped_extra.len() + central_len;
+    block.extra_field_length = u16::try_from(total_extra_len)
         .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
 
     block.write(writer)?;
