@@ -1275,6 +1275,8 @@ impl Zip64ExtraFieldBlock {
         debug_assert_eq!(ret.len(), full_size);
 
         println!("{ret:?} = {}, {}", ret.len(), ret.len() - 4);
+        ret.into_boxed_slice()
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
