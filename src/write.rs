@@ -195,7 +195,7 @@ pub(crate) mod zip_writer {
         pub fn get_ref(&self) -> Option<&W> {
             use GenericZipWriter::*;
             match &self.inner {
-                Closed => panic!("Can't get underlying writer of closed archive"),
+                Closed => None,
                 Storer(w) => Some(w.get_ref()),
                 #[cfg(feature = "deflate-flate2")]
                 Deflater(w) => Some(w.get_ref().get_ref()),
@@ -221,7 +221,7 @@ pub(crate) mod zip_writer {
             use GenericZipWriter::*;
             unsafe {
                 match &mut self.inner {
-                    Closed => panic!("Can't get underlying writer of closed archive"),
+                    Closed => None,
                     Storer(w) => Some(w.get_mut()),
                     #[cfg(feature = "deflate-flate2")]
                     Deflater(w) => Some(w.get_mut().get_mut()),
