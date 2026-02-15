@@ -7,8 +7,8 @@ use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, Zip64ExtraFieldBlock, ZipFileData,
-    ZipLocalEntryBlock, ZipRawValues, ffi,
+    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, Zip64ExtraFieldBlock,
+    ZipFileData, ZipLocalEntryBlock, ZipRawValues, ffi,
 };
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -2418,13 +2418,13 @@ impl<W: Write> Seek for StreamWriter<W> {
 mod test {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::CompressionMethod::Stored;
-    use crate::{HasZipMetadata, ZipArchive};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::{DateTime, System};
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
+    use crate::{HasZipMetadata, ZipArchive};
     #[cfg(feature = "deflate-flate2")]
     use std::io::Read;
     use std::io::{Cursor, Write};
@@ -4296,21 +4296,21 @@ mod test {
     fn test_explicit_system_roundtrip() -> ZipResult<()> {
         // Test round-trip: write with various systems, read back and verify
         let systems = vec![System::Unix, System::Dos, System::WindowsNTFS];
-        
+
         for system in systems {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             let options = SimpleFileOptions::default()
                 .compression_method(Stored)
                 .system(system);
-            
+
             let filename = format!("test_{:?}.txt", system);
             writer.start_file(&filename, options)?;
             writer.write_all(b"content")?;
-            
+
             // Write and read back
             let bytes = writer.finish()?.into_inner();
             let mut reader = ZipArchive::new(Cursor::new(bytes))?;
-            
+
             let file = reader.by_index(0)?;
             assert_eq!(
                 file.get_metadata().system,
@@ -4319,7 +4319,7 @@ mod test {
                 system
             );
         }
-        
+
         Ok(())
     }
 
@@ -4328,13 +4328,13 @@ mod test {
         // Test that when system is not set, default behavior is preserved
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(Stored);
-        
+
         writer.start_file("test.txt", options)?;
         writer.write_all(b"test")?;
-        
+
         let bytes = writer.finish()?.into_inner();
         let mut reader = ZipArchive::new(Cursor::new(bytes))?;
-        
+
         let file = reader.by_index(0)?;
         let expected_system = if cfg!(windows) {
             System::Dos
@@ -4342,7 +4342,7 @@ mod test {
             System::Unix
         };
         assert_eq!(file.get_metadata().system, expected_system);
-        
+
         Ok(())
     }
 }
