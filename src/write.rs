@@ -2275,8 +2275,8 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     } else {
         0
     };
-    block.extra_field_length = (zip64_len + stripped_extra.len() + central_len)
-        .try_into()
+    let total_extra_len = zip64_len + stripped_extra.len() + central_len;
+    block.extra_field_length = u16::try_from(total_extra_len)
         .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
 
     block.write(writer)?;
