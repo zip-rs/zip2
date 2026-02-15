@@ -37,7 +37,6 @@ pub fn end_to_end() {
     for_each_supported_method(|method| {
         let file = &mut Cursor::new(Vec::new());
 
-        println!("Writing file with {method} compression");
         write_test_archive(file, method, true);
 
         check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
