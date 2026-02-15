@@ -22,6 +22,7 @@ fn test_ntfs_extra_field_timestamp_parsing() {
         })
         .expect("Expected NTFS extra field in test.txt");
 
+    // Expected NTFS mtime for "test.txt" in ntfs.zip (2025-01-14 11:21:54.416939 UTC)
     assert_eq!(timestamp.mtime(), 133_813_273_144_169_390);
     #[cfg(feature = "nt-time")]
     assert_eq!(
