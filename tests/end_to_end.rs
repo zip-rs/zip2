@@ -47,7 +47,7 @@ pub fn end_to_end() {
 // This test asserts that after copying a `ZipFile` to a new `ZipWriter`, then reading its
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
-fn copy_zip_entries() {
+fn test_copy_zip_entries() {
     for_each_supported_method(|method| {
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method, false);
