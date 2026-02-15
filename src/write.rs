@@ -2418,7 +2418,7 @@ impl<W: Write> Seek for StreamWriter<W> {
 mod test {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::CompressionMethod::Stored;
-    use crate::ZipArchive;
+    use crate::{HasZipMetadata, ZipArchive};
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::{DateTime, System};
