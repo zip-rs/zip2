@@ -120,7 +120,7 @@ fn zip_dir(
         // Some unzip tools unzip files with directory paths correctly, some do not!
         if path.is_file() {
             println!(
-                "adding file '{}' as '{}' ...",
+                "adding file {:?} as {:?} ...",
                 path.display(),
                 path_stripped.display()
             );
