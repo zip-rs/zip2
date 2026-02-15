@@ -147,7 +147,6 @@ pub mod tests {
         // Test accessing individual files
         for i in 0..archive.len() {
             let file = archive.by_index(i).unwrap();
-            println!("File name: {}", file.name());
 
             // After our fix, enclosed_name should return a safe relative path
             let enclosed_name = file.enclosed_name();
