@@ -32,36 +32,97 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
+/// System inside `version made by` (upper byte)
+/// Reference: 4.4.2.2
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 pub enum System {
+    /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems; default on Windows)
     Dos = 0,
+    Amiga = 1,
+    OpenVMS = 2,
+    /// Default on Unix; default for symlinks on all platforms
     Unix = 3,
+    /// VM/CMS
+    VmCms = 4,
+    /// Atari ST
+    AtariSt = 5,
+    /// OS/2 H.P.F.S.
+    Os2 = 6,
+    Macintosh = 7,
+    /// Z-System
+    ZSystemO = 8,
+    /// CP/M
+    CPM = 9,
+    /// Windows NTFS (with extra attributes; not used by default)
+    WindowsNTFS = 10,
+    /// MVS (OS/390 - Z/OS)
+    MVS = 11,
+    /// VSE
+    VSE = 12,
+    /// Acorn Risc
+    AcornRisc = 13,
+    /// VFAT
+    VFAT = 14,
+    /// alternate MVS
+    AlternateMVS = 15,
+    /// BeOS
+    BeOS = 16,
+    /// Tandem
+    Tandem = 17,
+    /// OS/400
+    Os400 = 18,
+    /// OS X (Darwin) (with extra attributes; not used by default)
+    OsDarwin = 19,
+    /// unused
     #[default]
-    Unknown,
+    Unknown = 255,
+}
+
+impl System {
+    pub fn from_version_made_by(version_made_by: u16) -> Self {
+        let upper_byte = (version_made_by >> 8) as u8;
+        System::from(upper_byte) // from u8
+    }
 }
 
 impl From<u8> for System {
     fn from(system: u8) -> Self {
         match system {
-            0 => Self::Dos,
-            3 => Self::Unix,
-            _ => Self::Unknown,
+            0 => System::Dos,
+            1 => System::Amiga,
+            2 => System::OpenVMS,
+            3 => System::Unix,
+            4 => System::VmCms,
+            5 => System::AtariSt,
+            6 => System::Os2,
+            7 => System::Macintosh,
+            8 => System::ZSystemO,
+            9 => System::CPM,
+            10 => System::WindowsNTFS,
+            11 => System::MVS,
+            12 => System::VSE,
+            13 => System::AcornRisc,
+            14 => System::VFAT,
+            15 => System::AlternateMVS,
+            16 => System::BeOS,
+            17 => System::Tandem,
+            18 => System::Os400,
+            19 => System::OsDarwin,
+            _ => System::Unknown,
         }
     }
 }
 
 impl From<System> for u8 {
     fn from(system: System) -> Self {
-        match system {
-            System::Dos => 0,
-            System::Unix => 3,
-            System::Unknown => 4,
-        }
+        system as u8
     }
 }
 
 /// Metadata for a file to be written
+#[non_exhaustive]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
@@ -76,10 +137,14 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(super) zopfli_buffer_size: Option<usize>,
     #[cfg(feature = "aes-crypto")]
     pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    pub(crate) system: Option<System>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
 pub type SimpleFileOptions = FileOptions<'static, ()>;
 
+impl FileOptions<'static, ()> {
+    const DEFAULT_FILE_PERMISSION: u32 = 0o100644;
+}
 /// Representation of a moment in time.
 ///
 /// Zip files use an old format from DOS to store timestamps,
@@ -703,13 +768,23 @@ impl ZipFileData {
     where
         S: ToString,
     {
-        let permissions = options.permissions.unwrap_or(0o100644);
+        let permissions = options
+            .permissions
+            .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let file_name: Box<str> = name.to_string().into_boxed_str();
         let file_name_raw: Box<[u8]> = file_name.bytes().collect();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
+        } else if let Some(system_option) = options.system {
+            // user provided
+            system_option
         } else if cfg!(windows) {
+            System::Dos
+        } else {
+            System::Unix
+        };
+        if system == System::Dos {
             if is_dir(&file_name) {
                 // DOS directory bit
                 external_attributes |= 0x10;
@@ -721,10 +796,7 @@ impl ZipFileData {
                 // DOS read-only bit
                 external_attributes |= 0x01;
             }
-            System::Dos
-        } else {
-            System::Unix
-        };
+        }
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
@@ -824,11 +896,8 @@ impl ZipFileData {
                 .into()
         };
 
-        let system: u8 = (version_made_by >> 8)
-            .try_into()
-            .map_err(std::io::Error::other)?;
         Ok(ZipFileData {
-            system: System::from(system),
+            system: System::from_version_made_by(version_made_by),
             /* NB: this strips the top 8 bits! */
             version_made_by: version_made_by as u8,
             flags,
@@ -1393,8 +1462,8 @@ mod test {
         assert_eq!(u8::from(System::Unix), 3u8);
         assert_eq!(System::from(0), System::Dos);
         assert_eq!(System::from(3), System::Unix);
-        assert_eq!(u8::from(System::Unknown), 4u8);
-        assert_eq!(System::Unknown as u8, 4u8);
+        assert_eq!(u8::from(System::Unknown), 255u8);
+        assert_eq!(System::Unknown as u8, 255u8);
     }
 
     #[test]

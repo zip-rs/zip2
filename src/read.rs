@@ -1470,7 +1470,7 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     // Construct the result
     let mut result = ZipFileData {
-        system: System::from((version_made_by >> 8) as u8),
+        system: System::from_version_made_by(version_made_by),
         /* NB: this strips the top 8 bits! */
         version_made_by: version_made_by as u8,
         encrypted,
