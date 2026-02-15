@@ -4293,47 +4293,7 @@ mod test {
     }
 
     #[test]
-    fn test_custom_system_unix() -> ZipResult<()> {
-        // Test writing a file with System::Unix explicitly set
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default()
-            .compression_method(Stored)
-            .system(System::Unix);
-        
-        writer.start_file("test.txt", options)?;
-        writer.write_all(b"test content")?;
-        
-        let bytes = writer.finish()?.into_inner();
-        let mut reader = ZipArchive::new(Cursor::new(bytes))?;
-        
-        let file = reader.by_index(0)?;
-        assert_eq!(file.get_metadata().system, System::Unix);
-        
-        Ok(())
-    }
-
-    #[test]
-    fn test_custom_system_dos() -> ZipResult<()> {
-        // Test writing a file with System::Dos explicitly set
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default()
-            .compression_method(Stored)
-            .system(System::Dos);
-        
-        writer.start_file("test.txt", options)?;
-        writer.write_all(b"test content")?;
-        
-        let bytes = writer.finish()?.into_inner();
-        let mut reader = ZipArchive::new(Cursor::new(bytes))?;
-        
-        let file = reader.by_index(0)?;
-        assert_eq!(file.get_metadata().system, System::Dos);
-        
-        Ok(())
-    }
-
-    #[test]
-    fn test_custom_system_roundtrip() -> ZipResult<()> {
+    fn test_explicit_system_roundtrip() -> ZipResult<()> {
         // Test round-trip: write with various systems, read back and verify
         let systems = vec![System::Unix, System::Dos, System::WindowsNTFS];
         
