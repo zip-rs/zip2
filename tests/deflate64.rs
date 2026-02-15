@@ -4,9 +4,8 @@ use std::io::{self, Read};
 use zip::ZipArchive;
 
 #[test]
-fn decompress_deflate64() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/deflate64.zip"));
+pub fn decompress_deflate64() {
+    let v = include_bytes!("data/deflate64.zip");
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive

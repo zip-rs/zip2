@@ -3,7 +3,7 @@ use bencher::{benchmark_group, benchmark_main};
 use std::io::{Cursor, Read, Seek, Write};
 
 use bencher::Bencher;
-use zip::{result::ZipResult, write::SimpleFileOptions, ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 fn generate_random_archive(
     num_entries: usize,
@@ -17,7 +17,8 @@ fn generate_random_archive(
     for i in 0..num_entries {
         let name = format!("random{i}.dat");
         zip.start_file(name, options)?;
-        getrandom::fill(&mut bytes).unwrap();
+        getrandom::fill(&mut bytes)
+            .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
         zip.write_all(&bytes)?;
     }
 

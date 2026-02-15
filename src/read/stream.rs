@@ -1,11 +1,9 @@
 use super::{
-    central_header_to_zip_file_inner, make_symlink, read_zipfile_from_stream, ZipCentralEntryBlock,
-    ZipFile, ZipFileData, ZipResult,
+    ZipCentralEntryBlock, ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner,
+    make_symlink, read_zipfile_from_stream,
 };
 use crate::spec::FixedSizeBlock;
 use indexmap::IndexMap;
-use std::fs;
-use std::fs::create_dir_all;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
@@ -14,7 +12,7 @@ use std::path::{Path, PathBuf};
 pub struct ZipStreamReader<R>(R);
 
 impl<R> ZipStreamReader<R> {
-    /// Create a new ZipStreamReader
+    /// Create a new `ZipStreamReader`
     pub const fn new(reader: R) -> Self {
         Self(reader)
     }
@@ -58,7 +56,8 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        create_dir_all(&directory)?;
+        use std::fs;
+        fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
         struct Extractor(PathBuf, IndexMap<Box<str>, ()>);
         impl ZipStreamVisitor for Extractor {
@@ -112,7 +111,7 @@ impl<R: Read> ZipStreamReader<R> {
     }
 }
 
-/// Visitor for ZipStreamReader
+/// Visitor for `ZipStreamReader`
 pub trait ZipStreamVisitor {
     ///  * `file` - contains the content of the file and most of the metadata,
     ///    except:
@@ -121,7 +120,7 @@ pub trait ZipStreamVisitor {
     ///     - `external_attributes`: `unix_mode()`: will return None
     fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()>;
 
-    /// This function is guranteed to be called after all `visit_file`s.
+    /// This function is guaranteed to be called after all `visit_file`s.
     ///
     ///  * `metadata` - Provides missing metadata in `visit_file`.
     fn visit_additional_metadata(&mut self, metadata: &ZipStreamFileMetadata) -> ZipResult<()>;
@@ -158,7 +157,7 @@ impl ZipStreamFileMetadata {
     /// Rewrite the path, ignoring any path components with special meaning.
     ///
     /// - Absolute paths are made relative
-    /// - [std::path::Component::ParentDir]s are ignored
+    /// - [`std::path::Component::ParentDir`]s are ignored
     /// - Truncates the filename at a NULL byte
     ///
     /// This is appropriate if you need to be able to extract *something* from
@@ -211,11 +210,13 @@ impl ZipStreamFileMetadata {
 mod test {
     use tempfile::TempDir;
 
-    use super::*;
-    use crate::write::SimpleFileOptions;
     use crate::ZipWriter;
+    use crate::read::ZipFile;
+    use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
+    use crate::result::ZipResult;
+    use crate::write::SimpleFileOptions;
     use std::collections::BTreeSet;
-    use std::io::Cursor;
+    use std::io::{Cursor, Read};
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {
@@ -251,7 +252,7 @@ mod test {
 
     #[test]
     fn invalid_offset() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_offset.zip"
         )))
         .visit(&mut DummyVisitor)
@@ -260,7 +261,7 @@ mod test {
 
     #[test]
     fn invalid_offset2() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_offset2.zip"
         )))
         .visit(&mut DummyVisitor)
@@ -269,9 +270,8 @@ mod test {
 
     #[test]
     fn zip_read_streaming() {
-        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
-            "../../tests/data/mimetype.zip"
-        )));
+        let reader =
+            ZipStreamReader::new(Cursor::new(include_bytes!("../../tests/data/mimetype.zip")));
 
         #[derive(Default)]
         struct V {
@@ -306,7 +306,7 @@ mod test {
 
     #[test]
     fn file_and_dir_predicates() {
-        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        let reader = ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/files_and_dirs.zip"
         )));
 
@@ -353,7 +353,7 @@ mod test {
     /// files declared is more than the alleged offset in the CDE
     #[test]
     fn invalid_cde_number_of_files_allocation_smaller_offset() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
         )))
         .visit(&mut DummyVisitor)
@@ -365,7 +365,7 @@ mod test {
     /// files declared is less than the alleged offset in the CDE
     #[test]
     fn invalid_cde_number_of_files_allocation_greater_offset() {
-        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+        ZipStreamReader::new(Cursor::new(include_bytes!(
             "../../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
         )))
         .visit(&mut DummyVisitor)

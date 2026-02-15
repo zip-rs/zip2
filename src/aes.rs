@@ -5,6 +5,7 @@
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
 use crate::aes_ctr::AesCipher;
+use crate::result::ZipResult;
 use crate::types::AesMode;
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
@@ -13,7 +14,7 @@ use sha1::Sha1;
 use std::io::{self, Error, ErrorKind, Read, Write};
 use zeroize::{Zeroize, Zeroizing};
 
-/// The length of the password verifcation value in bytes
+/// The length of the password verification value in bytes
 pub const PWD_VERIFY_LENGTH: usize = 2;
 /// The length of the authentication code in bytes
 const AUTH_CODE_LENGTH: usize = 10;
@@ -29,21 +30,20 @@ enum Cipher {
 impl Cipher {
     /// Create a `Cipher` depending on the used `AesMode` and the given `key`.
     ///
-    /// # Panics
-    ///
-    /// This panics if `key` doesn't have the correct size for the chosen aes mode.
-    fn from_mode(aes_mode: AesMode, key: &[u8]) -> Self {
-        match aes_mode {
+    /// Returns `ZipError::InvalidPassword` if `key` doesn't have the correct size for the chosen
+    /// AES mode.
+    fn from_mode(aes_mode: AesMode, key: &[u8]) -> ZipResult<Self> {
+        Ok(match aes_mode {
             AesMode::Aes128 => Cipher::Aes128(Box::new(aes_ctr::AesCtrZipKeyStream::<
                 aes_ctr::Aes128,
-            >::new(key))),
+            >::new(key)?)),
             AesMode::Aes192 => Cipher::Aes192(Box::new(aes_ctr::AesCtrZipKeyStream::<
                 aes_ctr::Aes192,
-            >::new(key))),
+            >::new(key)?)),
             AesMode::Aes256 => Cipher::Aes256(Box::new(aes_ctr::AesCtrZipKeyStream::<
                 aes_ctr::Aes256,
-            >::new(key))),
-        }
+            >::new(key)?)),
+        })
     }
 
     fn crypt_in_place(&mut self, target: &mut [u8]) {
@@ -112,8 +112,12 @@ impl<R: Read> AesReader<R> {
             return Err(ZipError::InvalidPassword);
         }
 
-        let cipher = Cipher::from_mode(self.aes_mode, decrypt_key);
-        let hmac = Hmac::<Sha1>::new_from_slice(hmac_key).unwrap();
+        let cipher = Cipher::from_mode(self.aes_mode, decrypt_key)?;
+        let hmac = Hmac::<Sha1>::new_from_slice(hmac_key).map_err(|e| {
+            ZipError::Io(std::io::Error::other(format!(
+                "Cannot create hmac with key: {e}"
+            )))
+        })?;
 
         Ok(AesReaderValid {
             reader: self.reader,
@@ -200,12 +204,10 @@ impl<R: Read> Read for AesReaderValid<R> {
 
             // use constant time comparison to mitigate timing attacks
             if !constant_time_eq(computed_auth_code, &read_auth_code) {
-                return Err(
-                    Error::new(
-                        ErrorKind::InvalidData,
-                        "Invalid authentication code, this could be due to an invalid password or errors in the data"
-                    )
-                );
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Invalid authentication code, this could be due to an invalid password or errors in the data",
+                ));
             }
         }
 
@@ -229,14 +231,14 @@ pub struct AesWriter<W> {
 }
 
 impl<W: Write> AesWriter<W> {
-    pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> io::Result<Self> {
+    pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> ZipResult<Self> {
         let salt_length = aes_mode.salt_length();
         let key_length = aes_mode.key_length();
 
         let mut encrypted_file_header = Vec::with_capacity(salt_length + 2);
 
         let mut salt = vec![0; salt_length];
-        getrandom::fill(&mut salt)?;
+        getrandom::fill(&mut salt).map_err(|e| ZipError::Io(e.into()))?;
         encrypted_file_header.write_all(&salt)?;
 
         // Derive a key from the password and salt.  The length depends on the aes key length
@@ -252,14 +254,15 @@ impl<W: Write> AesWriter<W> {
         let pwd_verify = derived_key[derived_key_len - 2..].to_vec();
         encrypted_file_header.write_all(&pwd_verify)?;
 
-        let cipher = Cipher::from_mode(aes_mode, encryption_key);
-        let hmac = Hmac::<Sha1>::new_from_slice(hmac_key).unwrap();
+        let cipher = Cipher::from_mode(aes_mode, encryption_key)?;
+        let hmac = Hmac::<Sha1>::new_from_slice(hmac_key)
+            .map_err(|e| std::io::Error::other(format!("Cannot create hmac with key: {e}")))?;
 
         Ok(Self {
             writer,
             cipher,
             hmac,
-            buffer: Default::default(),
+            buffer: Zeroizing::default(),
             encrypted_file_header: Some(encrypted_file_header),
         })
     }
@@ -354,7 +357,9 @@ mod tests {
     fn crypt_aes_256_0_byte() {
         let plaintext = &[];
         let password = b"some super secret password";
-        assert!(roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -362,7 +367,9 @@ mod tests {
         let plaintext = b"asdf\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -370,7 +377,9 @@ mod tests {
         let plaintext = b"asdf\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -378,7 +387,9 @@ mod tests {
         let plaintext = b"asdf\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -386,7 +397,9 @@ mod tests {
         let plaintext = b"Lorem ipsum dolor sit amet, consectetur\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes128, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -394,7 +407,9 @@ mod tests {
         let plaintext = b"Lorem ipsum dolor sit amet, consectetur\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes192, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 
     #[test]
@@ -402,6 +417,8 @@ mod tests {
         let plaintext = b"Lorem ipsum dolor sit amet, consectetur\n";
         let password = b"some super secret password";
 
-        assert!(roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt"));
+        assert!(
+            roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt")
+        );
     }
 }

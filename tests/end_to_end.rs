@@ -1,17 +1,16 @@
 use std::collections::HashSet;
-use std::io::prelude::*;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
 use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
+use zip::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS, ZipWriter};
 
-// This test asserts that after creating a zip file, then reading its contents back out,
-// the extracted data will *always* be exactly the same as the original data.
-#[test]
-fn end_to_end() {
+fn for_each_supported_method<F>(mut f: F)
+where
+    F: FnMut(CompressionMethod),
+{
     for &method in SUPPORTED_COMPRESSION_METHODS {
         if method == CompressionMethod::DEFLATE
             && cfg!(all(
@@ -27,6 +26,15 @@ fn end_to_end() {
             continue;
         }
 
+        f(method);
+    }
+}
+
+// This test asserts that after creating a zip file, then reading its contents back out,
+// the extracted data will *always* be exactly the same as the original data.
+#[test]
+pub fn end_to_end() {
+    for_each_supported_method(|method| {
         let file = &mut Cursor::new(Vec::new());
 
         println!("Writing file with {method} compression");
@@ -35,32 +43,18 @@ fn end_to_end() {
         println!("Checking file contents");
         check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
         check_archive_file(file, INTERNAL_COPY_ENTRY_NAME, Some(method), LOREM_IPSUM);
-    }
+    });
 }
 
 // This test asserts that after copying a `ZipFile` to a new `ZipWriter`, then reading its
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn copy() {
-    for &method in SUPPORTED_COMPRESSION_METHODS {
-        if method == CompressionMethod::DEFLATE
-            && cfg!(all(
-                feature = "deflate-zopfli",
-                not(feature = "deflate-flate2")
-            ))
-        {
-            // We do not support DEFLATE decompression without the `flate2` feature.
-            continue;
-        }
-
-        if method == CompressionMethod::DEFLATE64 {
-            continue;
-        }
-
+    for_each_supported_method(|method| {
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method, false);
 
-        let mut tgt_file = &mut Cursor::new(Vec::new());
+        let mut tgt_file = Cursor::new(Vec::new());
 
         {
             let mut src_archive = zip::ZipArchive::new(src_file).unwrap();
@@ -84,36 +78,22 @@ fn copy() {
             }
         }
 
-        let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
+        let mut tgt_archive = zip::ZipArchive::new(&mut tgt_file).unwrap();
 
         check_archive_file_contents(&mut tgt_archive, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut tgt_archive, COPY_ENTRY_NAME, LOREM_IPSUM);
-    }
+    });
 }
 
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
 fn append() {
-    for &method in SUPPORTED_COMPRESSION_METHODS {
-        if method == CompressionMethod::DEFLATE
-            && cfg!(all(
-                feature = "deflate-zopfli",
-                not(feature = "deflate-flate2")
-            ))
-        {
-            // We do not support DEFLATE decompression without the `flate2` feature.
-            continue;
-        }
-
-        if method == CompressionMethod::DEFLATE64 {
-            continue;
-        }
-
+    for_each_supported_method(|method| {
         for shallow_copy in &[false, true] {
             println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
-            let mut file = &mut Cursor::new(Vec::new());
-            write_test_archive(file, method, *shallow_copy);
+            let mut file = Cursor::new(Vec::new());
+            write_test_archive(&mut file, method, *shallow_copy);
 
             {
                 let mut zip = ZipWriter::new_append(&mut file).unwrap();
@@ -133,7 +113,7 @@ fn append() {
             check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
             check_archive_file_contents(&mut zip, INTERNAL_COPY_ENTRY_NAME, LOREM_IPSUM);
         }
-    }
+    });
 }
 
 // Write a test zip archive to buffer.
@@ -174,7 +154,7 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
 
 // Load an archive from buffer and check for test data.
 fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<R>> {
-    let mut archive = zip::ZipArchive::new(zip_file).unwrap();
+    let mut archive = zip::ZipArchive::new(zip_file)?;
 
     // Check archive contains expected file names.
     {
@@ -255,12 +235,12 @@ fn check_archive_file_contents<R: Read + Seek>(
     assert_eq!(file_contents.as_bytes(), expected);
 }
 
-const LOREM_IPSUM : &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
+const LOREM_IPSUM: &[u8] = br#"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
 molestie. Proin blandit ornare dui, a tempor nisl accumsan in. Praesent a consequat felis. Morbi metus diam, auctor in auctor vel, feugiat id odio. Curabitur ex ex,
 dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim vehicula, porta tristique augue tincidunt. Vivamus ut gravida est. Sed pellentesque, dolor
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
 inceptos himenaeos. Maecenas feugiat velit in ex ultrices scelerisque id id neque.
-";
+"#;
 
 const EXTRA_DATA: &[u8] = b"Extra Data";
 
@@ -269,3 +249,24 @@ const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
 
 const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";
+
+#[test]
+fn test_extra_field_mapping_contains_expected_values() {
+    // just a test to access the variable in the crate
+    use zip::extra_fields::EXTRA_FIELD_MAPPING;
+    assert!(EXTRA_FIELD_MAPPING.is_sorted());
+
+    // The following assertions ensure required extra field IDs are present.
+    // ZIP64 extended information extra field - 0x0001 which is 1
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x0001));
+
+    // Strong Encryption Header - 0x0017 which is 23
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x0017));
+
+    // Additional checks for other well-known extra field IDs
+    // Extended Timestamp - 0x5455
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x5455));
+
+    // Info-ZIP Unix (UID/GID) - 0x7875
+    assert!(EXTRA_FIELD_MAPPING.contains(&0x7875));
+}
