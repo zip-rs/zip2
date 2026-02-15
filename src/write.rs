@@ -129,13 +129,13 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
-    use core::fmt::{Debug, Formatter};
-    use indexmap::IndexMap;
-    use std::io::{Seek, Write};
     use crate::{
         types::ZipFileData,
         write::{GenericZipWriter, ZipWriterStats},
     };
+    use core::fmt::{Debug, Formatter};
+    use indexmap::IndexMap;
+    use std::io::{Seek, Write};
 
     /// ZIP archive generator
     ///
