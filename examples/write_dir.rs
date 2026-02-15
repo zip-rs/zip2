@@ -114,7 +114,7 @@ fn zip_dir(
         let path_as_string = path_stripped
             .to_str()
             .map(str::to_owned)
-            .ok_or_else(|| format!("'{}' is a Non UTF-8 Path", path_stripped.display()))?;
+            .ok_or_else(|| format!("{:?} is a Non UTF-8 Path", path_stripped.display()))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
