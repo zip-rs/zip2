@@ -1036,9 +1036,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-        if let Some(zip64_block) =
-            Zip64ExtraFieldBlock::maybe_new(options.large_file, 0, 0, header_start)
-        {
+        if let Some(zip64_block) = Zip64ExtraFieldBlock::local_header(0, 0, header_start) {
             let mut new_extra_data = zip64_block.serialize().into_vec();
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
@@ -2246,8 +2244,8 @@ fn update_local_file_header<T: Write + Seek>(
 
         update_local_zip64_extra_field(writer, file)?;
 
-        file.compressed_size = spec::ZIP64_BYTES_THR;
-        file.uncompressed_size = spec::ZIP64_BYTES_THR;
+        // file.compressed_size = spec::ZIP64_BYTES_THR;
+        // file.uncompressed_size = spec::ZIP64_BYTES_THR;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
@@ -2270,12 +2268,17 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         Vec::new()
     };
     let central_len = file.central_extra_field_len();
-    let zip64_len = if let Some(zip64) = file.zip64_extra_field_block() {
+    let zip64_extra_field_block = Zip64ExtraFieldBlock::central_header(
+        file.uncompressed_size,
+        file.compressed_size,
+        file.header_start,
+    );
+    let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
         zip64.full_size()
     } else {
         0
     };
-    block.extra_field_length = (zip64_len + stripped_extra.len() + central_len)
+    block.extra_field_length = (zip64_block_len + stripped_extra.len() + central_len)
         .try_into()
         .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
 
@@ -2283,7 +2286,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name
     writer.write_all(&file.file_name_raw)?;
     // extra field
-    if let Some(zip64_extra_field) = &file.zip64_extra_field_block() {
+    if let Some(zip64_extra_field) = zip64_extra_field_block {
         writer.write_all(&zip64_extra_field.serialize())?;
     }
     if !stripped_extra.is_empty() {
@@ -2323,8 +2326,13 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
 fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
-) -> ZipResult<()> {
-    let block = file.zip64_extra_field_block().ok_or(invalid!(
+    let block = Zip64ExtraFieldBlock::local_header(
+    let block = Zip64ExtraFieldBlock::central_header(
+        file.uncompressed_size,
+        file.compressed_size,
+        file.header_start,
+    )
+    .ok_or(invalid!(
         "Attempted to update a nonexistent ZIP64 extra field"
     ))?;
 
