@@ -56,6 +56,12 @@ pub(crate) enum UsedExtraField {
     DataStreamAlignment = 0xa11e,
 }
 
+impl From<UsedExtraField> for u16 {
+    fn from(value: UsedExtraField) -> Self {
+        value as u16
+    }
+}
+
 macro_rules! extra_field_match {
     ($x:expr, $( $variant:path ),+ $(,)?) => {
         match $x {
