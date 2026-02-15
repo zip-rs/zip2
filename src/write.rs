@@ -44,7 +44,7 @@ impl<W: Write> MaybeEncrypted<W> {
             MaybeEncrypted::ZipCrypto(w) => w.get_ref(),
         }
     }
-    fn get_mut(&mut self) -> &mut W {
+    unsafe fn get_mut(&mut self) -> &mut W {
         match self {
             MaybeEncrypted::Unencrypted(w) => w,
             #[cfg(feature = "aes-crypto")]
