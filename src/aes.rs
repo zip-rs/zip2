@@ -268,7 +268,7 @@ impl<W: Write> AesWriter<W> {
     }
 
     /// Gets a reference to the underlying writer.
-    pub fn inner_ref(&self) -> &W {
+    pub fn get_ref(&self) -> &W {
         &self.writer
     }
 

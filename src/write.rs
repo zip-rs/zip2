@@ -48,7 +48,9 @@ impl<W: Write> MaybeEncrypted<W> {
         match self {
             MaybeEncrypted::Unencrypted(w) => w,
             #[cfg(feature = "aes-crypto")]
-            MaybeEncrypted::Aes(w) => w.get_mut(),
+            MaybeEncrypted::Aes(w) => unsafe {
+                w.get_mut()
+            },
             MaybeEncrypted::ZipCrypto(w) => w.get_mut(),
         }
     }
@@ -131,7 +133,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 pub(crate) mod zip_writer {
     use core::fmt::{Debug, Formatter};
     use std::io::{Seek, Write};
-
+    use std::ops::DerefMut;
     use indexmap::IndexMap;
 
     use crate::{
@@ -204,7 +206,7 @@ pub(crate) mod zip_writer {
                 #[cfg(feature = "deflate-zopfli")]
                 ZopfliDeflater(w) => w.get_ref().get_ref(),
                 #[cfg(feature = "deflate-zopfli")]
-                BufferedZopfliDeflater(w) => w.get_ref().get_ref().get_ref(),
+                BufferedZopfliDeflater(w) => w.get_ref(),
                 #[cfg(feature = "bzip2")]
                 Bzip2(w) => w.get_ref().get_ref(),
                 #[cfg(feature = "zstd")]
@@ -228,7 +230,7 @@ pub(crate) mod zip_writer {
                 #[cfg(feature = "deflate-zopfli")]
                 ZopfliDeflater(w) => w.get_mut().get_mut(),
                 #[cfg(feature = "deflate-zopfli")]
-                BufferedZopfliDeflater(w) => w.get_mut().get_mut().get_mut(),
+                BufferedZopfliDeflater(w) => w.get_mut(),
                 #[cfg(feature = "bzip2")]
                 Bzip2(w) => w.get_mut().get_mut(),
                 #[cfg(feature = "zstd")]
