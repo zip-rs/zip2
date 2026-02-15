@@ -7,8 +7,8 @@ use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, Zip64ExtraFieldBlock, ZipFileData,
-    ZipLocalEntryBlock, ZipRawValues, ffi,
+    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, Zip64ExtraFieldBlock,
+    ZipFileData, ZipLocalEntryBlock, ZipRawValues, ffi,
 };
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -448,6 +448,15 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         self
     }
 
+    /// Set the `system` field for the new file
+    ///
+    /// If not set, the `zip` crate will use the current system
+    #[must_use]
+    pub const fn system(mut self, system: System) -> Self {
+        self.system = Some(system);
+        self
+    }
+
     /// Set the compression level for the new file
     ///
     /// `None` value specifies default compression level.
@@ -591,6 +600,7 @@ impl FileOptions<'static, ()> {
         zopfli_buffer_size: Some(1 << 15),
         #[cfg(feature = "aes-crypto")]
         aes_mode: None,
+        system: None,
     };
 }
 
@@ -610,6 +620,7 @@ impl<'k> FileOptions<'k, ()> {
             zopfli_buffer_size: self.zopfli_buffer_size,
             #[cfg(feature = "aes-crypto")]
             aes_mode: self.aes_mode,
+            system: self.system,
         }
     }
 }
@@ -630,6 +641,7 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
             zopfli_buffer_size: Some(1 << 15),
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         }
     }
 }
@@ -2414,13 +2426,13 @@ impl<W: Write> Seek for StreamWriter<W> {
 mod test {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::CompressionMethod::Stored;
-    use crate::ZipArchive;
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::{DateTime, System};
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
+    use crate::{HasZipMetadata, ZipArchive};
     #[cfg(feature = "deflate-flate2")]
     use std::io::Read;
     use std::io::{Cursor, Write};
@@ -2628,6 +2640,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
         writer.start_file("mimetype", options).unwrap();
         writer
@@ -2677,6 +2690,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
 
         // GB18030
@@ -2738,6 +2752,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -2791,6 +2806,7 @@ mod test {
             zopfli_buffer_size: None,
             #[cfg(feature = "aes-crypto")]
             aes_mode: None,
+            system: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -4280,6 +4296,60 @@ mod test {
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
         let writer = ZipWriter::new_append(writer.finish()?)?;
         let _ = writer.finish_into_readable()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_explicit_system_roundtrip() -> ZipResult<()> {
+        // Test round-trip: write with various systems, read back and verify
+        let systems = vec![System::Unix, System::Dos, System::WindowsNTFS];
+
+        for system in systems {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            let options = SimpleFileOptions::default()
+                .compression_method(Stored)
+                .system(system);
+
+            let filename = format!("test_{:?}.txt", system);
+            writer.start_file(&filename, options)?;
+            writer.write_all(b"content")?;
+
+            // Write and read back
+            let bytes = writer.finish()?.into_inner();
+            let mut reader = ZipArchive::new(Cursor::new(bytes))?;
+
+            let file = reader.by_index(0)?;
+            assert_eq!(
+                file.get_metadata().system,
+                system,
+                "System mismatch for {:?}",
+                system
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_system_default_behavior() -> ZipResult<()> {
+        // Test that when system is not set, default behavior is preserved
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(Stored);
+
+        writer.start_file("test.txt", options)?;
+        writer.write_all(b"test")?;
+
+        let bytes = writer.finish()?.into_inner();
+        let mut reader = ZipArchive::new(Cursor::new(bytes))?;
+
+        let file = reader.by_index(0)?;
+        let expected_system = if cfg!(windows) {
+            System::Dos
+        } else {
+            System::Unix
+        };
+        assert_eq!(file.get_metadata().system, expected_system);
 
         Ok(())
     }

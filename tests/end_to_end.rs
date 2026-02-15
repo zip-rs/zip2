@@ -37,10 +37,8 @@ pub fn end_to_end() {
     for_each_supported_method(|method| {
         let file = &mut Cursor::new(Vec::new());
 
-        println!("Writing file with {method} compression");
         write_test_archive(file, method, true);
 
-        println!("Checking file contents");
         check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
         check_archive_file(file, INTERNAL_COPY_ENTRY_NAME, Some(method), LOREM_IPSUM);
     });
@@ -49,7 +47,7 @@ pub fn end_to_end() {
 // This test asserts that after copying a `ZipFile` to a new `ZipWriter`, then reading its
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
-fn copy() {
+fn test_copy_zip_entries() {
     for_each_supported_method(|method| {
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method, false);
@@ -88,10 +86,9 @@ fn copy() {
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
-fn append() {
+fn test_append_to_zip() {
     for_each_supported_method(|method| {
         for shallow_copy in &[false, true] {
-            println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
             let mut file = Cursor::new(Vec::new());
             write_test_archive(&mut file, method, *shallow_copy);
 
