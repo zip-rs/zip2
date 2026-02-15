@@ -1,16 +1,49 @@
-//! Implementation of the ZipCrypto algorithm
+//! Implementation of the `ZipCrypto` algorithm
 //!
-//! The following paper was used to implement the ZipCrypto algorithm:
+//! The following paper was used to implement the `ZipCrypto` algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
-use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
-use std::num::Wrapping;
+use core::fmt::{Debug, Formatter};
+use core::hash::Hash;
+use core::marker::PhantomData;
+use core::num::Wrapping;
 
+use crate::cfg_if_expr;
 use crate::result::ZipError;
 
+/// ZipCrypto header size in bytes.
+const ZIP_CRYPTO_HEADER_SIZE: usize = 12;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EncryptWith<'k> {
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        mode: crate::AesMode,
+        password: &'k str,
+    },
+    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
+}
+
+#[cfg(feature = "_arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        #[cfg(feature = "aes-crypto")]
+        if bool::arbitrary(u)? {
+            return Ok(EncryptWith::Aes {
+                mode: crate::AesMode::arbitrary(u)?,
+                password: u.arbitrary::<&str>()?,
+            });
+        }
+
+        Ok(EncryptWith::ZipCrypto(
+            ZipCryptoKeys::arbitrary(u)?,
+            PhantomData,
+        ))
+    }
+}
+
 /// A container to hold the current key state
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
@@ -19,30 +52,38 @@ pub(crate) struct ZipCryptoKeys {
 }
 
 impl Debug for ZipCryptoKeys {
-    #[allow(unreachable_code)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        #[cfg(not(any(test, fuzzing)))]
-        {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::Hasher;
-            let mut t = DefaultHasher::new();
-            self.hash(&mut t);
-            f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
+        cfg_if_expr! {
+            #[cfg(any(test, fuzzing))] => {
+                f.write_fmt(format_args!(
+                    "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
+                    self.key_0, self.key_1, self.key_2
+                ))
+            },
+            _ => {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::Hasher;
+                let mut t = DefaultHasher::new();
+                self.hash(&mut t);
+                f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
+            }
         }
-        #[cfg(any(test, fuzzing))]
-        f.write_fmt(format_args!(
-            "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
-            self.key_0, self.key_1, self.key_2
-        ))
     }
 }
 
 impl ZipCryptoKeys {
+    /// Initial value of `key_0` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_0: u32 = 0x12345678;
+    /// Initial value of `key_1` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_1: u32 = 0x23456789;
+    /// Initial value of `key_2` as specified by the classic ZipCrypto algorithm.
+    const INITIAL_KEY_2: u32 = 0x34567890;
+
     const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
-            key_0: Wrapping(0x12345678),
-            key_1: Wrapping(0x23456789),
-            key_2: Wrapping(0x34567890),
+            key_0: Wrapping(Self::INITIAL_KEY_0),
+            key_1: Wrapping(Self::INITIAL_KEY_1),
+            key_2: Wrapping(Self::INITIAL_KEY_2),
         }
     }
 
@@ -81,18 +122,19 @@ impl ZipCryptoKeys {
     }
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
-        (crc >> 8) ^ Wrapping(CRCTABLE[((crc & Wrapping(0xff)).0 as u8 ^ input) as usize])
+        let idx: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
+        (crc >> 8) ^ Wrapping(CRCTABLE[usize::from(idx)])
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
-        for byte in password.iter() {
+        for byte in password {
             keys.update(*byte);
         }
         keys
     }
 }
 
-/// A ZipCrypto reader with unverified password
+/// A `ZipCrypto` reader with unverified password
 pub struct ZipCryptoReader<R> {
     file: R,
     keys: ZipCryptoKeys,
@@ -117,15 +159,15 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         }
     }
 
-    /// Read the ZipCrypto header bytes and validate the password.
+    /// Read the `ZipCrypto` header bytes and validate the password.
     pub fn validate(
         mut self,
         validator: ZipCryptoValidator,
     ) -> Result<ZipCryptoReaderValid<R>, ZipError> {
         // ZipCrypto prefixes a file with a 12 byte header
-        let mut header_buf = [0u8; 12];
+        let mut header_buf = [0u8; ZIP_CRYPTO_HEADER_SIZE];
         self.file.read_exact(&mut header_buf)?;
-        for byte in header_buf.iter_mut() {
+        for byte in &mut header_buf {
             *byte = self.keys.decrypt_byte(*byte);
         }
 
@@ -156,11 +198,12 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
+pub(crate) const CHUNK_SIZE: usize = 4096;
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
-    pub(crate) buffer: Vec<u8>,
     pub(crate) keys: ZipCryptoKeys,
+    pub(crate) buffer: [u8; CHUNK_SIZE],
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
     /// Gets a reference to the underlying writer.
@@ -174,27 +217,27 @@ impl<W: std::io::Write> ZipCryptoWriter<W> {
     }
 
     #[allow(unused)]
-    pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
-        self.buffer[11] = (crc32 >> 24) as u8;
-        for byte in self.buffer.iter_mut() {
-            *byte = self.keys.encrypt_byte(*byte);
-        }
-        self.writer.write_all(&self.buffer)?;
-        self.writer.flush()?;
+    pub(crate) fn finish(mut self) -> std::io::Result<W> {
         Ok(self.writer)
     }
 }
 impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.buffer.extend_from_slice(buf);
+        for chunk in buf.chunks(CHUNK_SIZE) {
+            let encrypted_chunk = &mut self.buffer[..chunk.len()];
+            for (i, &byte) in chunk.iter().enumerate() {
+                encrypted_chunk[i] = self.keys.encrypt_byte(byte);
+            }
+            self.writer.write_all(encrypted_chunk)?;
+        }
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.writer.flush()
     }
 }
 
-/// A ZipCrypto reader with verified password
+/// A `ZipCrypto` reader with verified password
 pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
@@ -219,6 +262,8 @@ impl<R: std::io::Read> ZipCryptoReaderValid<R> {
     }
 }
 
+/// Standard CRC-32 lookup table used by the ZipCrypto encryption algorithm
+/// to update the internal keys during encryption and decryption.
 static CRCTABLE: [u32; 256] = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
     0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,

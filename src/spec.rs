@@ -1,12 +1,13 @@
 #![macro_use]
 
-use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
+use crate::extra_fields::UsedExtraField;
 use crate::read::ArchiveOffset;
-use crate::result::{invalid, ZipError, ZipResult};
+use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
+use crate::result::{ZipError, ZipResult, invalid};
+use core::any::type_name;
 use core::mem;
-use std::io;
-use std::io::prelude::*;
-use std::slice;
+use core::slice;
+use std::io::{self, Read, Seek, Write};
 
 /// "Magic" header values used in the zip spec to locate metadata records.
 ///
@@ -52,6 +53,46 @@ impl Magic {
     pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x08074b50);
 }
 
+/// Zip flags
+/// Stored as Little endian
+#[allow(unused)]
+#[rustfmt::skip]
+#[repr(u16)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum ZipFlags {
+    /// If set, indicates that the file is encrypted.
+    Encrypted                   = 0b0000_0000_0000_0001,
+    CompressionSetting          = 0b0000_0000_0000_0010,
+    CompressionSetting2         = 0b0000_0000_0000_0100,
+    /// If this bit is set, the fields crc-32, compressed size and uncompressed size are set to zero in the  local header.
+    /// The correct values are put in the data descriptor immediately following the compressed data.
+    UsingDataDescriptor         = 0b0000_0000_0000_1000,
+    /// Reserved for use with method 8, for enhanced deflating.
+    ReservedEnhancedDeflating   = 0b0000_0000_0001_0000,
+    /// If this bit is set, this indicates that the file is compressed patched data.
+    CompressedPatchedData       = 0b0000_0000_0010_0000,
+    /// Strong encryption.
+    /// If this bit is set, you MUST set the version needed to extract value to at least 50 and you MUST also set bit 0.
+    /// If AES encryption is used, the version needed to extract value MUST be at least 51.
+    StrongEncryption            = 0b0000_0000_0100_0000,
+    // bit 7 Currently unused   = 0b0000_0000_1000_0000;
+    // bit 8 Currently unused   = 0b0000_0001_0000_0000;
+    // bit 9 Currently unused   = 0b0000_0010_0000_0000;
+    // bit 10 Currently unused  = 0b0000_0100_0000_0000;
+
+    /// Language encoding flag (EFS).
+    /// If this bit is set, the filename and comment fields for this file MUST be encoded using UTF-8.
+    LanguageEncoding            = 0b0000_1000_0000_0000,
+    /// Reserved by PKWARE for enhanced compression.
+    ReservedEnhancedCompression = 0b0001_0000_0000_0000,
+    /// Set when encrypting the Central Directory to indicate selected data values in the Local Header are masked to hide their actual values.
+    Masked                      = 0b0010_0000_0000_0000,
+    /// Reserved by PKWARE for alternate streams.
+    ReservedAlternateStream     = 0b0100_0000_0000_0000,
+    /// Reserved by PKWARE.
+    Reserved                    = 0b1000_0000_0000_0000,
+}
+
 /// Similar to [`Magic`], but used for extra field tags as per section 4.5.3 of APPNOTE.TXT.
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -86,13 +127,13 @@ impl ExtraFieldMagic {
         Self(u16::to_le(self.0))
     }
 
-    pub const ZIP64_EXTRA_FIELD_TAG: Self = Self::literal(0x0001);
+    pub const ZIP64_EXTRA_FIELD_TAG: Self = Self::literal(UsedExtraField::Zip64ExtendedInfo as u16);
 }
 
 /// The file size at which a ZIP64 record becomes necessary.
 ///
 /// If a file larger than this threshold attempts to be written, compressed or uncompressed, and
-/// [`FileOptions::large_file()`](crate::write::FileOptions) was not true, then [`ZipWriter`] will
+/// [`FileOptions::large_file()`](crate::write::FileOptions::large_file) was not true, then [`crate::ZipWriter`] will
 /// raise an [`io::Error`] with [`io::ErrorKind::Other`].
 ///
 /// If the zip file itself is larger than this value, then a zip64 central directory record will be
@@ -102,33 +143,38 @@ impl ExtraFieldMagic {
 /// # fn main() -> Result<(), zip::result::ZipError> {
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// use std::io::{self, Cursor, prelude::*};
+/// use std::io::{self, Cursor, Write};
 /// use std::error::Error;
 /// use zip::{ZipWriter, write::SimpleFileOptions};
 ///
 /// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
 /// // Writing an extremely large file for this test is faster without compression.
-/// let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 ///
 /// let big_len: usize = (zip::ZIP64_BYTES_THR as usize) + 1;
 /// let big_buf = vec![0u8; big_len];
-/// zip.start_file("zero.dat", options)?;
-/// // This is too big!
-/// let res = zip.write_all(&big_buf[..]).err().unwrap();
-/// assert_eq!(res.kind(), io::ErrorKind::Other);
-/// let description = format!("{}", &res);
-/// assert_eq!(description, "Large file option has not been set");
-/// // Attempting to write anything further to the same zip will still succeed, but the previous
-/// // failing entry has been removed.
-/// zip.start_file("one.dat", options)?;
-/// let zip = zip.finish_into_readable()?;
-/// let names: Vec<_> = zip.file_names().collect();
-/// assert_eq!(&names, &["one.dat"]);
+/// {
+///     let options = SimpleFileOptions::default()
+///         .compression_method(zip::CompressionMethod::Stored);
+///     zip.start_file("zero.dat", options)?;
+///     // This is too big!
+///     let res = zip.write_all(&big_buf[..]).err().unwrap();
+///     assert_eq!(res.kind(), io::ErrorKind::Other);
+///     let description = format!("{}", &res);
+///     assert_eq!(description, "Large file option has not been set");
+///     // Attempting to write anything further to the same zip will still succeed, but the previous
+///     // failing entry has been removed.
+///     zip.start_file("one.dat", options)?;
+///     let zip = zip.finish_into_readable()?;
+///     let names: Vec<_> = zip.file_names().collect();
+///     assert_eq!(&names, &["one.dat"]);
+/// }
 ///
 /// // Create a new zip output.
 /// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
 /// // This time, create a zip64 record for the file.
-/// let options = options.large_file(true);
+/// let options = SimpleFileOptions::default()
+///      .compression_method(zip::CompressionMethod::Stored)
+///      .large_file(true);
 /// zip.start_file("zero.dat", options)?;
 /// // This succeeds because we specified that it could be a large file.
 /// assert!(zip.write_all(&big_buf[..]).is_ok());
@@ -140,7 +186,7 @@ pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 /// The number of entries within a single zip necessary to allocate a zip64 central
 /// directory record.
 ///
-/// If more than this number of entries is written to a [`ZipWriter`], then [`ZipWriter::finish()`]
+/// If more than this number of entries is written to a [`crate::ZipWriter`], then [`crate::ZipWriter::finish()`]
 /// will write out extra zip64 data to the end of the zip file.
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
@@ -159,28 +205,44 @@ pub(crate) unsafe trait Pod: Copy + 'static {
 
     #[inline]
     fn as_bytes(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(self as *const Self as *const u8, mem::size_of::<Self>()) }
+        unsafe {
+            slice::from_raw_parts(
+                std::ptr::from_ref::<Self>(self).cast::<u8>(),
+                mem::size_of::<Self>(),
+            )
+        }
     }
 
     #[inline]
     fn as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe { slice::from_raw_parts_mut(self as *mut Self as *mut u8, mem::size_of::<Self>()) }
+        unsafe {
+            slice::from_raw_parts_mut(
+                std::ptr::from_mut::<Self>(self).cast::<u8>(),
+                mem::size_of::<Self>(),
+            )
+        }
     }
 }
 
 pub(crate) trait FixedSizeBlock: Pod {
-    const MAGIC: Magic;
+    type Magic: Copy + Eq;
+    const MAGIC: Self::Magic;
 
-    fn magic(self) -> Magic;
+    fn magic(self) -> Self::Magic;
 
     const WRONG_MAGIC_ERROR: ZipError;
 
     #[allow(clippy::wrong_self_convention)]
     fn from_le(self) -> Self;
 
-    fn parse<R: Read>(reader: &mut R) -> ZipResult<Self> {
+    fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
         let mut block = Self::zeroed();
-        reader.read_exact(block.as_bytes_mut())?;
+        if let Err(e) = reader.read_exact(block.as_bytes_mut()) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return Err(invalid!("Unexpected end of {}", type_name::<Self>()));
+            }
+            return Err(e.into());
+        }
         let block = Self::from_le(block);
 
         if block.magic() != Self::MAGIC {
@@ -191,7 +253,7 @@ pub(crate) trait FixedSizeBlock: Pod {
 
     fn to_le(self) -> Self;
 
-    fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
         let block = self.to_le();
         writer.write_all(block.as_bytes())?;
         Ok(())
@@ -229,6 +291,7 @@ macro_rules! to_le {
 /* TODO: derive macro to generate these fields? */
 /// Implement `from_le()` and `to_le()`, providing the field specification to both macros
 /// and methods.
+#[macro_export]
 macro_rules! to_and_from_le {
     ($($args:tt),+ $(,)?) => {
         #[inline(always)]
@@ -260,6 +323,7 @@ pub(crate) struct Zip32CDEBlock {
 unsafe impl Pod for Zip32CDEBlock {}
 
 impl FixedSizeBlock for Zip32CDEBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
     #[inline(always)]
@@ -317,7 +381,7 @@ impl Zip32CentralDirectoryEnd {
         (block, zip_file_comment)
     }
 
-    pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
+    pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
         let Zip32CDEBlock {
             // magic,
             disk_number,
@@ -379,6 +443,7 @@ pub(crate) struct Zip64CDELocatorBlock {
 unsafe impl Pod for Zip64CDELocatorBlock {}
 
 impl FixedSizeBlock for Zip64CDELocatorBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
     #[inline(always)]
@@ -403,7 +468,7 @@ pub(crate) struct Zip64CentralDirectoryEndLocator {
 }
 
 impl Zip64CentralDirectoryEndLocator {
-    pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
+    pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let Zip64CDELocatorBlock {
             // magic,
             disk_with_central_directory,
@@ -456,6 +521,7 @@ pub(crate) struct Zip64CDEBlock {
 unsafe impl Pod for Zip64CDEBlock {}
 
 impl FixedSizeBlock for Zip64CDEBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
 
     fn magic(self) -> Magic {
@@ -492,7 +558,10 @@ pub(crate) struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn parse<T: Read>(reader: &mut T, max_size: u64) -> ZipResult<Zip64CentralDirectoryEnd> {
+    pub fn parse<T: Read + ?Sized>(
+        reader: &mut T,
+        max_size: u64,
+    ) -> ZipResult<Zip64CentralDirectoryEnd> {
         let Zip64CDEBlock {
             record_size,
             version_made_by,
@@ -513,7 +582,14 @@ impl Zip64CentralDirectoryEnd {
         }
 
         let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
-        reader.read_exact(&mut zip_file_comment)?;
+        if let Err(e) = reader.read_exact(&mut zip_file_comment) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return Err(invalid!(
+                    "EOCD64 extensible data sector exceeds file boundary"
+                ));
+            }
+            return Err(e.into());
+        }
 
         Ok(Self {
             record_size,
@@ -594,7 +670,7 @@ pub(crate) struct CentralDirectoryEndInfo {
 ///
 /// In the best case scenario (no prepended junk), this function will not backtrack
 /// in the reader.
-pub(crate) fn find_central_directory<R: Read + Seek>(
+pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
     reader: &mut R,
     archive_offset: ArchiveOffset,
     end_exclusive: u64,
@@ -637,7 +713,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
         let zip64_metadata = if eocd.may_be_zip64() {
             fn try_read_eocd64_locator(
-                reader: &mut (impl Read + Seek),
+                reader: &mut (impl Read + Seek + ?Sized),
                 eocd_offset: u64,
             ) -> ZipResult<(u64, Zip64CentralDirectoryEndLocator)> {
                 if eocd_offset < mem::size_of::<Zip64CDELocatorBlock>() as u64 {
@@ -647,10 +723,8 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
                 let locator64_offset = eocd_offset - mem::size_of::<Zip64CDELocatorBlock>() as u64;
 
                 reader.seek(io::SeekFrom::Start(locator64_offset))?;
-                Ok((
-                    locator64_offset,
-                    Zip64CentralDirectoryEndLocator::parse(reader)?,
-                ))
+                let locator64 = Zip64CentralDirectoryEndLocator::parse(reader);
+                Ok((locator64_offset, locator64?))
             }
 
             try_read_eocd64_locator(reader, eocd_offset).ok()
@@ -660,7 +734,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
         let Some((locator64_offset, locator64)) = zip64_metadata else {
             // Branch out for zip32
-            let relative_cd_offset = eocd.central_directory_offset as u64;
+            let relative_cd_offset = u64::from(eocd.central_directory_offset);
 
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
             if eocd.number_of_files == 0 {
@@ -722,7 +796,7 @@ pub(crate) fn find_central_directory<R: Read + Seek>(
 
         // This was hidden inside a function to collect errors in a single place.
         // Once try blocks are stabilized, this can go away.
-        fn try_read_eocd64<R: Read + Seek>(
+        fn try_read_eocd64<R: Read + Seek + ?Sized>(
             reader: &mut R,
             locator64: &Zip64CentralDirectoryEndLocator,
             expected_length: u64,
@@ -811,8 +885,12 @@ pub(crate) fn is_dir(filename: &str) -> bool {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::io::Cursor;
+
+    use crate::{
+        result::{ZipError, invalid},
+        spec::{FixedSizeBlock, Magic, Pod},
+    };
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
     #[repr(packed, C)]
@@ -824,6 +902,7 @@ mod test {
     unsafe impl Pod for TestBlock {}
 
     impl FixedSizeBlock for TestBlock {
+        type Magic = Magic;
         const MAGIC: Magic = Magic::literal(0x01111);
 
         fn magic(self) -> Magic {

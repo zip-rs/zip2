@@ -7,9 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.0.0](https://github.com/zip-rs/zip2/compare/v7.4.0...v8.0.0) - 2026-02-14
+
+### <!-- 0 -->🚀 Features
+
+- document zip flags as enum ([#639](https://github.com/zip-rs/zip2/pull/639))
+- Migrate to Rust 2024 ([#650](https://github.com/zip-rs/zip2/pull/650))
+- [**breaking**] Remove deprecated methods of `DateTime` ([#597](https://github.com/zip-rs/zip2/pull/597))
+
+## [7.4.0](https://github.com/zip-rs/zip2/compare/v7.3.0...v7.4.0) - 2026-02-05
+
+### <!-- 0 -->🚀 Features
+
+- Increase MSRV to 1.88 and update dependencies ([#626](https://github.com/zip-rs/zip2/pull/626))
+
+## [7.3.0](https://github.com/zip-rs/zip2/compare/v7.3.0-pre1...v7.3.0) - 2026-02-04
+
+### <!-- 0 -->🚀 Features
+
+- cleanup the benchmarks and Cargo.toml ([#606](https://github.com/zip-rs/zip2/pull/606))
+- Add support for per-file comments ([#543](https://github.com/zip-rs/zip2/pull/543))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Document feature `unreserved` and make the mapping of extra fields public ([#616](https://github.com/zip-rs/zip2/pull/616))
+- Return an error if abort_file() fails when exceeding non-large-file limit ([#598](https://github.com/zip-rs/zip2/pull/598))
+
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
-- [**breaking**] Remove `lzma-static` and `xz-static` feature flags, which are deprecated synonyms of `lzma` and `xz`. (#405, #425)
+- Bump version to 7.3.0 (semver checks fail if it's still 7.3.0-pre1)
+
+## [7.3.0-pre1](https://github.com/zip-rs/zip2/compare/v7.2.0...v7.3.0-pre1) - 2026-01-27
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Reject empty ZipCrypto password when encrypting files (can still be used when decrypting)
+- make zip crate safer and more readable ([#536](https://github.com/zip-rs/zip2/pull/536))
+
+### <!-- 4 -->⚡ Performance
+
+- Optimizations for CP437 conversion ([#559](https://github.com/zip-rs/zip2/pull/559))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Trigger release 7.3.0-pre1 to reset cargo-semver-checks baseline
+
+## [7.2.0](https://github.com/zip-rs/zip2/compare/v7.1.0...v7.2.0) - 2026-01-20
+
+### <!-- 0 -->🚀 Features
+
+- add read_zipfile_from_stream_with_compressed_size ([#70](https://github.com/zip-rs/zip2/pull/70))
+- Allow choosing bzip2 rust backend ([#329](https://github.com/zip-rs/zip2/pull/329))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Need to include zip64 extra field in central directory (fix #353) ([#360](https://github.com/zip-rs/zip2/pull/360))
+- Fails to extract file which might or might not be malformed ([#376](https://github.com/zip-rs/zip2/pull/376)) ([#426](https://github.com/zip-rs/zip2/pull/426))
+- *(aes)* Allow AES encryption while streaming ([#463](https://github.com/zip-rs/zip2/pull/463))
+- Default "platform" field in zip files should be set to the local platform, rather than always "Unix" ([#470](https://github.com/zip-rs/zip2/pull/470)) ([#471](https://github.com/zip-rs/zip2/pull/471))
+
+### <!-- 2 -->🚜 Refactor
+
+- Define cfg_if! and cfg_if_expr! internal macros ([#438](https://github.com/zip-rs/zip2/pull/438))
+
+### <!-- 4 -->⚡ Performance
+
+- Change an assert to debug_assert when encrypting/decrypting AES, and eliminate a fallible operation ([#521](https://github.com/zip-rs/zip2/pull/521))
+- eliminate a String clone per new file added to archive, and other related refactors ([#522](https://github.com/zip-rs/zip2/pull/522))
+
+## [7.1.0](https://github.com/zip-rs/zip2/compare/v7.0.0...v7.1.0) - 2026-01-14
+
+### <!-- 0 -->🚀 Features
+
+- display the underlying error in Display impl for `ZipError` ([#483](https://github.com/zip-rs/zip2/pull/483))
+- Enable creation of `ZipArchive` without reparsing ([#485](https://github.com/zip-rs/zip2/pull/485))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Return InvalidPassword rather than panic when AES key is the wrong length ([#457](https://github.com/zip-rs/zip2/pull/457))
+- bench with auto zip64 comment ([#505](https://github.com/zip-rs/zip2/pull/505))
+- add condition for `getrandom` dependency ([#504](https://github.com/zip-rs/zip2/pull/504))
+- *(zipcrypto)* Support streaming ZipCrypto encryption, don't store entire file in memory ([#462](https://github.com/zip-rs/zip2/pull/462))
+
+### <!-- 2 -->🚜 Refactor
+
+- Clean up imports and move types ([#461](https://github.com/zip-rs/zip2/pull/461))
+- Replace handwritten `Ord` and `PartialOrd` for `DateTime` ([#484](https://github.com/zip-rs/zip2/pull/484))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Lock `lzma-rust2` to at least 0.15.5 ([#491](https://github.com/zip-rs/zip2/pull/491))
+
+## [7.0.0](https://github.com/zip-rs/zip2/compare/v6.0.0...v7.0.0) - 2025-12-05
+
+### <!-- 9 -->⚠️ Breaking Changes
+
+- Removed the following features: `getrandom`, `hmac`, `pbkdf2`, `sha1`, `zeroize`.
+- Removed `lzma-static` and `xz-static` feature flags, which were deprecated synonyms of `lzma` and `xz`. ([#405](https://github.com/zip-rs/zip2/pull/405), [#425](https://github.com/zip-rs/zip2/pull/425))
+
+### <!-- 0 -->🚀 Features
+
+- *(`SimpleFileOptions`)* const DEFAULT implementation ([#474](https://github.com/zip-rs/zip2/pull/474))
+- ZipWriter `set_auto_large_file()` method to enable large-file data descriptor when necessary ([#468](https://github.com/zip-rs/zip2/pull/468))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- print previous error when failing to search another cde ([#460](https://github.com/zip-rs/zip2/pull/460))
+- cargo doc warnings ([#472](https://github.com/zip-rs/zip2/pull/472))
+- Write ZIP64 data descriptors when large_file option is true ([#467](https://github.com/zip-rs/zip2/pull/467))
+- Pin generic-array to an old version to work around https://github.com/RustCrypto/traits/issues/2036 until next RustCrypto & aes-crypto releases ([#458](https://github.com/zip-rs/zip2/pull/458))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Revert version bump so that release-plz will trigger
+- expose more flate2 feature flags ([#476](https://github.com/zip-rs/zip2/pull/476))
+- Next release will be 7.0.0
+- release v6.0.0 ([#442](https://github.com/zip-rs/zip2/pull/442))
+
+### Deps
+
+- Bump lzma-rust2 to v0.15 ([#465](https://github.com/zip-rs/zip2/pull/465))
 
 ## [6.0.0](https://github.com/zip-rs/zip2/compare/v5.1.1...v6.0.0) - 2025-10-09
 
@@ -81,6 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
 - Move deprecated annotations to fix a Clippy warning ([#391](https://github.com/zip-rs/zip2/pull/391))
+
 ## [4.3.0](https://github.com/zip-rs/zip2/compare/v4.2.0...v4.3.0) - 2025-07-09
 
 ### <!-- 0 -->🚀 Features
@@ -122,7 +240,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
 - drop unused crossbeam-utils dependency ([#339](https://github.com/zip-rs/zip2/pull/339))
-- fix typo
 - remove `deflate-flate2` dependency on specific backend
 - [**breaking**] Drop deprecated `deflate-miniz` feature flag ([#351](https://github.com/zip-rs/zip2/pull/351))
 
@@ -131,6 +248,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 1 -->🐛 Bug Fixes
 
 - avoid scanning through all local file headers while opening an archive ([#281](https://github.com/zip-rs/zip2/pull/281))
+
+## [2.6.0](https://github.com/zip-rs/zip2/compare/v2.5.0...v2.6.0) - 2025-03-30
+
+- No documented changes.
 
 ## [2.5.0](https://github.com/zip-rs/zip2/compare/v2.4.2...v2.5.0) - 2025-03-23
 
@@ -147,7 +268,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- `deep_copy_file` produced a mangled file header on big-endian platforms (#309)
+- `deep_copy_file` produced a mangled file header on big-endian platforms ([#309](https://github.com/zip-rs/zip2/pull/309))
 
 ## [2.4.1](https://github.com/zip-rs/zip2/compare/v2.4.0...v2.4.1) - 2025-03-17
 
@@ -180,7 +301,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix failing tests, remove symlink loop check
 - Canonicalize output path to avoid false negatives
 - Symlink handling in stream extraction
-- Canonicalize output paths and symlink targets, and ensure they descend from the destination
+- Canonicalize output paths and symlink targets, and ensure they descend from the destination ([CVE-2025-29787](https://github.com/zip-rs/zip2/security/advisories/GHSA-94vh-gphv-8pm8))
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
@@ -190,7 +311,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 2 -->🚜 Refactor
 
-- Change the inner structure of `DateTime` (#267)
+- Change the inner structure of `DateTime` ([#267](https://github.com/zip-rs/zip2/pull/267))
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
@@ -200,7 +321,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- rewrite the EOCD/EOCD64 detection to fix extreme performance regression (#247)
+- rewrite the EOCD/EOCD64 detection to fix extreme performance regression ([#247](https://github.com/zip-rs/zip2/pull/247))
 
 ## [2.2.1](https://github.com/zip-rs/zip2/compare/v2.2.0...v2.2.1) - 2024-11-20
 
@@ -480,7 +601,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 1 -->🐛 Bug Fixes
 - Rare bug where find_and_parse would give up prematurely on detecting a false end-of-CDR header
 
-## [1.1.2](https://github.com/Pr0methean/zip/compare/v1.1.1...v1.1.2) - 2024-04-28
+## [1.1.2](https://github.com/zip-rs/zip2/compare/v1.1.1...v1.1.2) - 2024-04-28
 
 ### <!-- 1 -->🐛 Bug Fixes
 - Alignment was previously handled incorrectly ([#33](https://github.com/Pr0methean/zip/pull/33))

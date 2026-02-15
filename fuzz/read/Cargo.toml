@@ -1,0 +1,15 @@
+[package]
+name = "fuzz_read"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+afl.workspace = true
+zip.workspace = true
+
+[target.'cfg(fuzzing)'.dependencies]
+tikv-jemallocator.workspace = true
+
+[features]
+zip-default = ["zip/default"]

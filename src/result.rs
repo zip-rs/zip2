@@ -2,14 +2,13 @@
 #![allow(non_local_definitions)]
 //! Error types that can be emitted from this library
 
+use core::error::Error;
+use core::fmt::{self, Display, Formatter};
+use core::num::TryFromIntError;
 use std::borrow::Cow;
-use std::error::Error;
-use std::fmt::{self, Display, Formatter};
 use std::io;
-use std::num::TryFromIntError;
-use std::string::FromUtf8Error;
 
-/// Generic result type with ZipError as its error variant
+/// Generic result type with `ZipError` as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
@@ -50,7 +49,7 @@ impl ZipError {
 impl Display for ZipError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(_) => f.write_str("i/o error"),
+            Self::Io(e) => write!(f, "i/o error: {e}"),
             Self::InvalidArchive(e) => write!(f, "invalid Zip archive: {e}"),
             Self::UnsupportedArchive(e) => write!(f, "unsupported Zip archive: {e}"),
             Self::FileNotFound => f.write_str("specified file not found in archive"),
@@ -97,8 +96,8 @@ impl From<DateTimeRangeError> for ZipError {
     }
 }
 
-impl From<FromUtf8Error> for ZipError {
-    fn from(_: FromUtf8Error) -> Self {
+impl From<std::string::FromUtf8Error> for ZipError {
+    fn from(_: std::string::FromUtf8Error) -> Self {
         invalid!("Invalid UTF-8")
     }
 }
@@ -115,7 +114,7 @@ impl From<TryFromIntError> for DateTimeRangeError {
 }
 
 impl fmt::Display for DateTimeRangeError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             fmt,
             "a date could not be represented within the bounds the MS-DOS date range (1980-2107)"

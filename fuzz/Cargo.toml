@@ -1,0 +1,13 @@
+[workspace]
+members = ["read", "write"]
+default-members = []
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+afl = "0.17"
+arbitrary = { version = "^1.4.2", features = ["derive"] }
+tikv-jemallocator = "0.6"
+zip = { path = "..", default-features = false, features = ["_arbitrary"] }

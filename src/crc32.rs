@@ -1,7 +1,6 @@
 //! Helper module to compute a CRC32 checksum
 
-use std::io;
-use std::io::prelude::*;
+use std::io::{self, Read};
 
 use crc32fast::Hasher;
 
@@ -16,7 +15,7 @@ pub struct Crc32Reader<R> {
 }
 
 impl<R> Crc32Reader<R> {
-    /// Get a new Crc32Reader which checks the inner reader against checksum.
+    /// Get a new `Crc32Reader` which checks the inner reader against checksum.
     /// The check is disabled if `ae2_encrypted == true`.
     pub(crate) fn new(inner: R, checksum: u32, ae2_encrypted: bool) -> Crc32Reader<R> {
         Crc32Reader {
@@ -85,7 +84,9 @@ impl<R: Read> Read for Crc32Reader<R> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use std::io::Read;
+
+    use super::Crc32Reader;
 
     #[test]
     fn test_empty_reader() {
@@ -96,11 +97,13 @@ mod test {
         assert_eq!(reader.read(&mut buf).unwrap(), 0);
 
         let mut reader = Crc32Reader::new(data, 1, false);
-        assert!(reader
-            .read(&mut buf)
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid checksum"));
+        assert!(
+            reader
+                .read(&mut buf)
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid checksum")
+        );
     }
 
     #[test]
@@ -108,7 +111,7 @@ mod test {
         let data: &[u8] = b"1234";
         let mut buf = [0; 1];
 
-        let mut reader = Crc32Reader::new(data, 0x9be3e0a3, false);
+        let mut reader = Crc32Reader::new(data, 0x9be_3e0a3, false);
         assert_eq!(reader.read(&mut buf).unwrap(), 1);
         assert_eq!(reader.read(&mut buf).unwrap(), 1);
         assert_eq!(reader.read(&mut buf).unwrap(), 1);
@@ -123,7 +126,7 @@ mod test {
         let data: &[u8] = b"1234";
         let mut buf = [0; 5];
 
-        let mut reader = Crc32Reader::new(data, 0x9be3e0a3, false);
+        let mut reader = Crc32Reader::new(data, 0x9be3_e0a3, false);
         assert_eq!(reader.read(&mut buf[..0]).unwrap(), 0);
         assert_eq!(reader.read(&mut buf).unwrap(), 4);
     }

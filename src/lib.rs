@@ -15,23 +15,34 @@
 //!
 //! This is a list of supported features:
 //!
-//! |         | Reading | Writing |
-//! | ------- | ------  | ------- |
-//! | Stored | ✅ | ✅ |
-//! | Deflate | ✅ [->](`crate::ZipArchive::by_name`)      | ✅ [->](`crate::write::FileOptions::compression_method`) |
-//! | Deflate64 | ✅ | |
-//! | Bzip2 | ✅ | ✅ |
-//! | ZStandard | ✅ | ✅ |
-//! | LZMA | ✅ | |
-//! | XZ | ✅ | ✅ |
-//! | PPMd | ✅ | ✅ |
-//! | AES encryption | ✅ | ✅ |
-//! | ZipCrypto deprecated encryption | ✅ | ✅ |
+//! |                                 | Reading                               | Writing                                                  |
+//! | ------------------------------- | ------------------------------------- | -------------------------------------------------------- |
+//! | Stored                          | ✅                                    | ✅                                                       |
+//! | Deflate                         | ✅ [->](`crate::ZipArchive::by_name`) | ✅ [->](`crate::write::FileOptions::compression_method`) |
+//! | Deflate64                       | ✅                                    |                                                          |
+//! | Bzip2                           | ✅                                    | ✅                                                       |
+//! | ZStandard                       | ✅                                    | ✅                                                       |
+//! | LZMA                            | ✅                                    |                                                          |
+//! | XZ                              | ✅                                    | ✅                                                       |
+//! | PPMd                            | ✅                                    | ✅                                                       |
+//! | AES encryption                  | ✅                                    | ✅                                                       |
+//! | ZipCrypto deprecated encryption | ✅                                    | ✅                                                       |
 //!
-//!
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
-#![warn(missing_docs)]
-#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
+
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(clippy::all, rust_2018_idioms)]
+#![deny(
+    missing_docs,
+    clippy::all,
+    clippy::missing_panics_doc,
+    clippy::cargo,
+    clippy::panic,
+    clippy::cast_lossless,
+    clippy::decimal_literal_representation
+)]
+#![warn(clippy::multiple_crate_versions)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::HasZipMetadata;
 pub use crate::read::{ZipArchive, ZipReadOptions};
@@ -71,3 +82,7 @@ zip = \"="]
 #[doc = "\"\n\
 ```"]
 pub mod unstable;
+
+pub(crate) mod macros;
+pub(crate) use macros::cfg_if;
+pub(crate) use macros::cfg_if_expr;
