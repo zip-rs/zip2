@@ -48,9 +48,7 @@ impl<W: Write> MaybeEncrypted<W> {
         match self {
             MaybeEncrypted::Unencrypted(w) => w,
             #[cfg(feature = "aes-crypto")]
-            MaybeEncrypted::Aes(w) => unsafe {
-                w.get_mut()
-            },
+            MaybeEncrypted::Aes(w) => unsafe { w.get_mut() },
             MaybeEncrypted::ZipCrypto(w) => w.get_mut(),
         }
     }
@@ -132,9 +130,9 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
     use core::fmt::{Debug, Formatter};
+    use indexmap::IndexMap;
     use std::io::{Seek, Write};
     use std::ops::DerefMut;
-    use indexmap::IndexMap;
 
     use crate::{
         types::ZipFileData,
@@ -220,8 +218,8 @@ pub(crate) mod zip_writer {
 
         /// Gets a reference to the underlying writer in this ZipWrite.
         pub fn get_mut(&mut self) -> &mut W {
-            use MaybeEncrypted::*;
             use GenericZipWriter::*;
+            use MaybeEncrypted::*;
             match &mut self.inner {
                 Closed => panic!("Can't get underlying writer of closed archive"),
                 Storer(w) => w.get_mut(),
