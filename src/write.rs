@@ -2339,7 +2339,6 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
     let block = Zip64ExtraFieldBlock::local_header(
-    let block = Zip64ExtraFieldBlock::central_header(
         file.uncompressed_size,
         file.compressed_size,
         file.header_start,
