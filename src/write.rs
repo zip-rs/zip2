@@ -1108,7 +1108,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let extra_data_len = extra_data.len();
         if let Some(data) = central_extra_data {
-            if extra_data_len + data.len() > u16::MAX as usize {
+            if extra_data_len + 4 + data.len() > u16::MAX as usize {
                 return Err(invalid!(
                     "Extra data and central extra data must be less than 64KiB when combined"
                 ));
