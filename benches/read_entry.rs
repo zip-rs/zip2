@@ -41,5 +41,37 @@ fn read_entry(bench: &mut Bencher) {
     bench.bytes = size as u64;
 }
 
-benchmark_group!(benches, read_entry);
+fn read_entry_iterable(bench: &mut Bencher) {
+    use zip::read::Config;
+    use zip::read::IterableZip;
+    let size = 1024 * 1024;
+    let bytes = generate_random_archive(size);
+    let mut archive =
+        IterableZip::try_new(Cursor::new(bytes.as_slice()), Config::default()).unwrap();
+
+    bench.iter(|| {
+        let file = archive
+            .files()
+            .unwrap()
+            .find(|f| {
+                let file = f.as_ref().unwrap();
+                let filename = &*file.file_name;
+                filename == "random.dat"
+            })
+            .unwrap()
+            .unwrap();
+        let mut buf = [0u8; 1024];
+        let mut file_reader = archive.by_file_data(&file, Default::default()).unwrap();
+        loop {
+            let n = file_reader.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+        }
+    });
+
+    bench.bytes = size as u64;
+}
+
+benchmark_group!(benches, read_entry, read_entry_iterable);
 benchmark_main!(benches);
