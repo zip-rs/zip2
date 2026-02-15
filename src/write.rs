@@ -132,8 +132,6 @@ pub(crate) mod zip_writer {
     use core::fmt::{Debug, Formatter};
     use indexmap::IndexMap;
     use std::io::{Seek, Write};
-    use std::ops::DerefMut;
-
     use crate::{
         types::ZipFileData,
         write::{GenericZipWriter, ZipWriterStats},
@@ -194,49 +192,52 @@ pub(crate) mod zip_writer {
 
     impl<W: Write + Seek> ZipWriter<W> {
         /// Gets a reference to the underlying writer in this ZipWrite.
-        pub fn get_ref(&self) -> &W {
+        pub fn get_ref(&self) -> Option<&W> {
             use GenericZipWriter::*;
             match &self.inner {
                 Closed => panic!("Can't get underlying writer of closed archive"),
-                Storer(w) => w.get_ref(),
+                Storer(w) => Some(w.get_ref()),
                 #[cfg(feature = "deflate-flate2")]
-                Deflater(w) => w.get_ref().get_ref(),
+                Deflater(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "deflate-zopfli")]
-                ZopfliDeflater(w) => w.get_ref().get_ref(),
+                ZopfliDeflater(_) => None,
                 #[cfg(feature = "deflate-zopfli")]
-                BufferedZopfliDeflater(w) => w.get_ref(),
+                BufferedZopfliDeflater(_) => None,
                 #[cfg(feature = "bzip2")]
-                Bzip2(w) => w.get_ref().get_ref(),
+                Bzip2(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "zstd")]
-                Zstd(w) => w.get_ref().get_ref(),
+                Zstd(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "xz")]
-                Xz(w) => w.inner().get_ref(),
+                Xz(w) => Some(w.inner().get_ref()),
                 #[cfg(feature = "ppmd")]
-                Ppmd(w) => w.get_ref().get_ref(),
+                Ppmd(w) => Some(w.get_ref().get_ref()),
             }
         }
 
         /// Gets a reference to the underlying writer in this ZipWrite.
-        pub fn get_mut(&mut self) -> &mut W {
+        /// SAFETY: Caller must not corrupt the archive, and must seek back to the current position
+        /// before continuing to write to the ZipWriter.
+        pub unsafe fn get_mut(&mut self) -> Option<&mut W> {
             use GenericZipWriter::*;
-            use MaybeEncrypted::*;
-            match &mut self.inner {
-                Closed => panic!("Can't get underlying writer of closed archive"),
-                Storer(w) => w.get_mut(),
-                #[cfg(feature = "deflate-flate2")]
-                Deflater(w) => w.get_mut().get_mut(),
-                #[cfg(feature = "deflate-zopfli")]
-                ZopfliDeflater(w) => w.get_mut().get_mut(),
-                #[cfg(feature = "deflate-zopfli")]
-                BufferedZopfliDeflater(w) => w.get_mut(),
-                #[cfg(feature = "bzip2")]
-                Bzip2(w) => w.get_mut().get_mut(),
-                #[cfg(feature = "zstd")]
-                Zstd(w) => w.get_mut().get_mut(),
-                #[cfg(feature = "xz")]
-                Xz(w) => w.inner_mut().get_mut(),
-                #[cfg(feature = "ppmd")]
-                Ppmd(w) => w.get_mut().get_mut(),
+            unsafe {
+                match &mut self.inner {
+                    Closed => panic!("Can't get underlying writer of closed archive"),
+                    Storer(w) => Some(w.get_mut()),
+                    #[cfg(feature = "deflate-flate2")]
+                    Deflater(w) => Some(w.get_mut().get_mut()),
+                    #[cfg(feature = "deflate-zopfli")]
+                    ZopfliDeflater(_) => None,
+                    #[cfg(feature = "deflate-zopfli")]
+                    BufferedZopfliDeflater(_) => None,
+                    #[cfg(feature = "bzip2")]
+                    Bzip2(w) => Some(w.get_mut().get_mut()),
+                    #[cfg(feature = "zstd")]
+                    Zstd(w) => Some(w.get_mut().get_mut()),
+                    #[cfg(feature = "xz")]
+                    Xz(w) => Some(w.inner_mut().get_mut()),
+                    #[cfg(feature = "ppmd")]
+                    Ppmd(w) => Some(w.get_mut().get_mut()),
+                }
             }
         }
     }
