@@ -26,6 +26,7 @@ fn test_ntfs_extra_field_timestamp_parsing() {
     #[cfg(feature = "nt-time")]
     assert_eq!(
         time::UtcDateTime::try_from(timestamp.modified_file_time()).unwrap(),
+        // 133_813_273_144_169_390 NTFS ticks corresponds to this UTC datetime
         time::macros::datetime!(2025-01-14 11:21:54.416_939_000 UTC)
     );
 
