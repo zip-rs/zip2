@@ -89,9 +89,6 @@ fn copy_zip_entries() {
 fn test_append_to_zip() {
     for_each_supported_method(|method| {
         for shallow_copy in &[false, true] {
-            if std::env::var("ZIP_TEST_DEBUG").is_ok() {
-                println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
-            }
             let mut file = Cursor::new(Vec::new());
             write_test_archive(&mut file, method, *shallow_copy);
 
