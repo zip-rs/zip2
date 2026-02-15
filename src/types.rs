@@ -1259,7 +1259,6 @@ impl Zip64ExtraFieldBlock {
 
         let full_size = self.full_size();
 
-        println!("{self:?}");
         let mut ret = Vec::with_capacity(full_size);
         ret.extend(magic.to_le_bytes());
         ret.extend(u16::to_le_bytes(size));
@@ -1276,8 +1275,6 @@ impl Zip64ExtraFieldBlock {
         debug_assert_eq!(ret.len(), full_size);
 
         println!("{ret:?} = {}, {}", ret.len(), ret.len() - 4);
-        ret.into_boxed_slice()
-    }
 }
 
 #[derive(Copy, Clone, Debug)]

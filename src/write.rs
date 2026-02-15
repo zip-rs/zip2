@@ -2326,7 +2326,7 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
 fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
-) -> ZipResult<()> {
+    let block = Zip64ExtraFieldBlock::local_header(
     let block = Zip64ExtraFieldBlock::central_header(
         file.uncompressed_size,
         file.compressed_size,
