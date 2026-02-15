@@ -1290,7 +1290,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => {
                     MaybeEncrypted::Unencrypted(w)
                 }
-                _ => unreachable!(),
+                _ => unreachable!(
+                    "switch_to_non_encrypting_writer called with incompatible GenericZipWriter variant"
+                ),
             },
         );
         Ok(())
