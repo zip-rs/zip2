@@ -22,12 +22,18 @@ fn test_ntfs_extra_field_timestamp_parsing() {
         })
         .expect("Expected NTFS extra field in test.txt");
 
-    assert_eq!(timestamp.mtime(), 133_813_273_144_169_390);
+    // Expected NTFS mtime for "test.txt" in ntfs.zip (2025-01-14 11:21:54.416939 UTC)
+    const EXPECTED_MTIME_TICKS: u64 = 133_813_273_144_169_390;
+    assert_eq!(timestamp.mtime(), EXPECTED_MTIME_TICKS);
     #[cfg(feature = "nt-time")]
-    assert_eq!(
-        time::UtcDateTime::try_from(timestamp.modified_file_time()).unwrap(),
-        time::macros::datetime!(2025-01-14 11:21:54.416_939_000 UTC)
-    );
+    {
+        const EXPECTED_DATETIME: time::UtcDateTime =
+            time::macros::datetime!(2025-01-14 11:21:54.416_939_000 UTC).to_utc();
+        assert_eq!(
+            time::UtcDateTime::try_from(timestamp.modified_file_time()).unwrap(),
+            EXPECTED_DATETIME
+        );
+    }
 
     assert_eq!(timestamp.atime(), 0);
     #[cfg(feature = "nt-time")]
