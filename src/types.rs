@@ -40,7 +40,9 @@ pub(crate) struct ZipRawValues {
 pub enum System {
     /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems; default on Windows)
     Dos = 0,
+    /// Amiga
     Amiga = 1,
+    /// OpenVMS
     OpenVMS = 2,
     /// Default on Unix; default for symlinks on all platforms
     Unix = 3,
@@ -50,6 +52,7 @@ pub enum System {
     AtariSt = 5,
     /// OS/2 H.P.F.S.
     Os2 = 6,
+    /// Legacy Mac OS, pre OS X
     Macintosh = 7,
     /// Z-System
     ZSystemO = 8,
@@ -81,6 +84,7 @@ pub enum System {
 }
 
 impl System {
+    /// Parse `version_made_by` block in local entry block.
     pub fn from_version_made_by(version_made_by: u16) -> Self {
         let upper_byte = (version_made_by >> 8) as u8;
         System::from(upper_byte) // from u8
