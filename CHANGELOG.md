@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.1.0](https://github.com/zip-rs/zip2/compare/v8.0.0...v8.1.0) - 2026-02-16
+
+### <!-- 0 -->🚀 Features
+
+- *(writer)* Allow getting underlying writer of ZipWriter ([#464](https://github.com/zip-rs/zip2/pull/464))
+- add system to FileOption, so byte-for-byte identical archives can be created across platforms ([#660](https://github.com/zip-rs/zip2/pull/660))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Bugs in extra-data length calculation in src/write.rs ([#662](https://github.com/zip-rs/zip2/pull/662))
+
 ## [8.0.0](https://github.com/zip-rs/zip2/compare/v7.4.0...v8.0.0) - 2026-02-14
 
 ### <!-- 0 -->🚀 Features
