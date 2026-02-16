@@ -35,6 +35,25 @@ enum MaybeEncrypted<W> {
     ZipCrypto(crate::zipcrypto::ZipCryptoWriter<W>),
 }
 
+impl<W: Write> MaybeEncrypted<W> {
+    fn get_ref(&self) -> &W {
+        match self {
+            MaybeEncrypted::Unencrypted(w) => w,
+            #[cfg(feature = "aes-crypto")]
+            MaybeEncrypted::Aes(w) => w.get_ref(),
+            MaybeEncrypted::ZipCrypto(w) => w.get_ref(),
+        }
+    }
+    unsafe fn get_mut(&mut self) -> &mut W {
+        match self {
+            MaybeEncrypted::Unencrypted(w) => w,
+            #[cfg(feature = "aes-crypto")]
+            MaybeEncrypted::Aes(w) => unsafe { w.get_mut() },
+            MaybeEncrypted::ZipCrypto(w) => w.get_mut(),
+        }
+    }
+}
+
 impl<W> Debug for MaybeEncrypted<W> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // Don't print W, since it may be a huge Vec<u8>
@@ -110,15 +129,13 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
-    use core::fmt::{Debug, Formatter};
-    use std::io::{Seek, Write};
-
-    use indexmap::IndexMap;
-
     use crate::{
         types::ZipFileData,
         write::{GenericZipWriter, ZipWriterStats},
     };
+    use core::fmt::{Debug, Formatter};
+    use indexmap::IndexMap;
+    use std::io::{Seek, Write};
 
     /// ZIP archive generator
     ///
@@ -170,6 +187,58 @@ pub(crate) mod zip_writer {
                 "ZipWriter {{files: {:?}, stats: {:?}, writing_to_file: {}, writing_raw: {}, comment: {:?}, flush_on_finish_file: {}}}",
                 self.files, self.stats, self.writing_to_file, self.writing_raw,
                 self.comment, self.flush_on_finish_file))
+        }
+    }
+
+    impl<W: Write + Seek> ZipWriter<W> {
+        /// Gets a reference to the underlying writer in this ZipWrite.
+        pub fn get_ref(&self) -> Option<&W> {
+            use GenericZipWriter::*;
+            match &self.inner {
+                Closed => None,
+                Storer(w) => Some(w.get_ref()),
+                #[cfg(feature = "deflate-flate2")]
+                Deflater(w) => Some(w.get_ref().get_ref()),
+                #[cfg(feature = "deflate-zopfli")]
+                ZopfliDeflater(w) => Some(w.get_ref().get_ref()),
+                #[cfg(feature = "deflate-zopfli")]
+                BufferedZopfliDeflater(w) => Some(w.get_ref().get_ref().get_ref()),
+                #[cfg(feature = "bzip2")]
+                Bzip2(w) => Some(w.get_ref().get_ref()),
+                #[cfg(feature = "zstd")]
+                Zstd(w) => Some(w.get_ref().get_ref()),
+                #[cfg(feature = "xz")]
+                Xz(w) => Some(w.inner().get_ref()),
+                #[cfg(feature = "ppmd")]
+                Ppmd(w) => Some(w.get_ref().get_ref()),
+            }
+        }
+
+        /// Gets a reference to the underlying writer in this ZipWrite.
+        /// SAFETY: Caller must not corrupt the archive, and must seek back to the current position
+        /// before continuing to write to the ZipWriter.
+        pub unsafe fn get_mut(&mut self) -> Option<&mut W> {
+            use GenericZipWriter::*;
+            unsafe {
+                match &mut self.inner {
+                    Closed => None,
+                    Storer(w) => Some(w.get_mut()),
+                    #[cfg(feature = "deflate-flate2")]
+                    Deflater(w) => Some(w.get_mut().get_mut()),
+                    #[cfg(feature = "deflate-zopfli")]
+                    ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
+                    #[cfg(feature = "deflate-zopfli")]
+                    BufferedZopfliDeflater(w) => Some(w.get_mut().get_mut().get_mut()),
+                    #[cfg(feature = "bzip2")]
+                    Bzip2(w) => Some(w.get_mut().get_mut()),
+                    #[cfg(feature = "zstd")]
+                    Zstd(w) => Some(w.get_mut().get_mut()),
+                    #[cfg(feature = "xz")]
+                    Xz(w) => Some(w.inner_mut().get_mut()),
+                    #[cfg(feature = "ppmd")]
+                    Ppmd(w) => Some(w.get_mut().get_mut()),
+                }
+            }
         }
     }
 }
@@ -2379,6 +2448,16 @@ impl<W: Write> StreamWriter<W> {
             inner,
             bytes_written: 0,
         }
+    }
+
+    /// Gets a reference to the underlying writer.
+    pub fn get_ref(&self) -> &W {
+        &self.inner
+    }
+
+    /// Gets a mutable reference to the underlying writer.
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.inner
     }
 
     /// Consumes this wrapper, returning the underlying writer.
