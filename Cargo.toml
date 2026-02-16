@@ -42,7 +42,7 @@ pbkdf2 = { version = "0.12", optional = true }
 sha1 = { version = "0.10", optional = true }
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "^0.13.3", optional = true, default-features = false }
-zopfli = { version = "0.8", optional = true }
+zopfli = { version = "^0.8.3", optional = true }
 deflate64 = { version = "0.1.10", optional = true }
 lzma-rust2 = { version = "^0.16.1", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.9", optional = true }

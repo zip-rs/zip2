@@ -200,9 +200,9 @@ pub(crate) mod zip_writer {
                 #[cfg(feature = "deflate-flate2")]
                 Deflater(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "deflate-zopfli")]
-                ZopfliDeflater(_) => None,
+                ZopfliDeflater(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "deflate-zopfli")]
-                BufferedZopfliDeflater(_) => None,
+                BufferedZopfliDeflater(w) => Some(w.get_ref().get_ref().get_ref()),
                 #[cfg(feature = "bzip2")]
                 Bzip2(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "zstd")]
@@ -226,9 +226,9 @@ pub(crate) mod zip_writer {
                     #[cfg(feature = "deflate-flate2")]
                     Deflater(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "deflate-zopfli")]
-                    ZopfliDeflater(_) => None,
+                    ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "deflate-zopfli")]
-                    BufferedZopfliDeflater(_) => None,
+                    BufferedZopfliDeflater(w) => Some(w.get_mut().get_mut().get_mut()),
                     #[cfg(feature = "bzip2")]
                     Bzip2(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "zstd")]
