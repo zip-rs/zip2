@@ -11,7 +11,7 @@ jobs:
     if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || github.actor == 'github-actions' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
       - uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
@@ -23,7 +23,7 @@ jobs:
       - name: Dependabot metadata
         id: metadata
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
-        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+        uses: step-security/dependabot-fetch-metadata@38d404f7e1742ae1cfa9b25ade9afa0c7a288e77 # v2.5.0
         with:
           github-token: ${{ steps.app-token.outputs.token }}
       - name: Enable auto-merge
