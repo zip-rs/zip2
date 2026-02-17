@@ -198,6 +198,9 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
+/// Size of the internal buffer used when encrypting data in chunks.
+/// 4096 bytes is a common page-sized buffer that balances memory usage
+/// and I/O performance for typical workloads.
 pub(crate) const CHUNK_SIZE: usize = 4096;
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
