@@ -776,7 +776,7 @@ impl ZipFileData {
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let file_name_raw: Box<[u8]> = file_name.as_bytes().to_vec().into_boxed_slice();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
