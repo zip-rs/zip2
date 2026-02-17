@@ -86,7 +86,7 @@ pub enum System {
 impl System {
     /// Parse `version_made_by` block in local entry block.
     pub fn from_version_made_by(version_made_by: u16) -> Self {
-        let upper_byte = (version_made_by >> 8) as u8;
+        let upper_byte = ((version_made_by >> 8) & 0xFF) as u8;
         System::from(upper_byte) // from u8
     }
 }
