@@ -397,7 +397,7 @@ impl DateTime {
             && (1..=31).contains(&day)
             && hour <= 23
             && minute <= 59
-            && second <= 60
+            && second <= 58
         {
             // DOS/ZIP timestamp stores seconds/2 in 5 bits and cannot represent 59 or 60 seconds (incl. leap seconds)
             let second = second.min(58);
