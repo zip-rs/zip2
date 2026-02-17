@@ -86,8 +86,16 @@ pub enum System {
 impl System {
     /// Parse `version_made_by` block in local entry block.
     pub fn from_version_made_by(version_made_by: u16) -> Self {
-        let upper_byte = ((version_made_by >> 8) & 0xFF) as u8;
+        // Extract upper byte from little-endian representation
+        let upper_byte = version_made_by.to_le_bytes()[1];
         System::from(upper_byte) // from u8
+    }
+
+    /// Extract the system and version from a `version_made_by` field.
+    /// The first byte (lower) is the version, and the second byte (upper) is the system.
+    pub(crate) fn extract_bytes(version_made_by: u16) -> (u8, Self) {
+        let bytes = version_made_by.to_le_bytes();
+        (bytes[0], Self::from(bytes[1]))
     }
 }
 
@@ -900,10 +908,10 @@ impl ZipFileData {
                 .into()
         };
 
+        let (version_made_by, system) = System::extract_bytes(version_made_by);
         Ok(ZipFileData {
-            system: System::from_version_made_by(version_made_by),
-            /* NB: this strips the top 8 bits! */
-            version_made_by: version_made_by as u8,
+            system,
+            version_made_by,
             flags,
             encrypted,
             using_data_descriptor,
