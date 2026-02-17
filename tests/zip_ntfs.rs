@@ -22,7 +22,9 @@ fn test_ntfs_extra_field_timestamp_parsing() {
         })
         .expect("Expected NTFS extra field in test.txt");
 
-    // Expected NTFS mtime for "test.txt" in ntfs.zip (2025-01-14 11:21:54.416939 UTC)
+    // Expected NTFS mtime for "test.txt" in ntfs.zip: 2025-01-14 11:21:54.416939 UTC.
+    // NTFS timestamps are stored as the number of 100-nanosecond intervals since
+    // 1601-01-01 00:00:00 UTC; 133_813_273_144_169_390 is the tick count for that datetime.
     const EXPECTED_MTIME_TICKS: u64 = 133_813_273_144_169_390;
     assert_eq!(timestamp.mtime(), EXPECTED_MTIME_TICKS);
     #[cfg(feature = "nt-time")]
