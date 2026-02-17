@@ -219,7 +219,7 @@ pub(crate) mod zip_writer {
         ///
         /// # Safety
         ///
-        /// SAFETY: Caller must not corrupt the archive, and must seek back to the current position
+        /// Caller must not corrupt the archive, and must seek back to the current position
         /// before continuing to write to the ZipWriter.
         pub unsafe fn get_mut(&mut self) -> Option<&mut W> {
             use GenericZipWriter::*;
