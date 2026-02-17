@@ -226,7 +226,7 @@ fn check_archive_file_contents<R: Read + Seek>(
     expected: &[u8],
 ) {
     let file_permissions: u32 = archive.by_name(name).unwrap().unix_mode().unwrap();
-    assert_eq!(file_permissions, 0o100755);
+    assert_eq!(file_permissions, EXPECTED_FILE_PERMISSIONS);
 
     let file_contents: String = read_archive_file(archive, name).unwrap();
     assert_eq!(file_contents.as_bytes(), expected);
@@ -246,6 +246,8 @@ const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
 
 const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";
+
+const EXPECTED_FILE_PERMISSIONS: u32 = 0o100755;
 
 #[test]
 fn test_extra_field_mapping_contains_expected_values() {
