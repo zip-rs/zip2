@@ -243,7 +243,7 @@ jobs:
       - name: Run clippy - inside bash for pipefail
         shell: bash
         # allow warnings but not errors
-        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload analysis results to GitHub
         if: always()
         uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
