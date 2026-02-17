@@ -248,8 +248,9 @@ jobs:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
       # allow warnings but not errors
-      - run: cargo clippy --all-targets ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -A warnings
-        if: matrix.workspace == "Cargo.toml"
+      - name: clippy check
+        if: matrix.workspace == 'Cargo.toml'
+        run: cargo clippy --all-targets ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -A warnings
       - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   fuzz_read:
