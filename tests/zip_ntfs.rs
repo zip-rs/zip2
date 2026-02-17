@@ -13,13 +13,7 @@ fn test_ntfs_extra_field_timestamp_parsing() {
 
     let timestamp = file
         .extra_data_fields()
-        .find_map(|field| {
-            if let zip::ExtraField::Ntfs(ts) = field {
-                Some(ts)
-            } else {
-                None
-            }
-        })
+        .find_map(|zip::ExtraField::Ntfs(ts)| Some(ts))
         .expect("Expected NTFS extra field in test.txt");
 
     // Expected NTFS mtime for "test.txt" in ntfs.zip: 2025-01-14 11:21:54.416939 UTC.
