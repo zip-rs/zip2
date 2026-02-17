@@ -240,17 +240,16 @@ jobs:
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
       - name: Install required cargo
         run: cargo install clippy-sarif sarif-fmt
-      - run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+      - name: Run clippy - inside bash for pipefail
+        shell: bash
+        # allow warnings but not errors
+        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload analysis results to GitHub
         if: always()
         uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
-      # allow warnings but not errors
-      - name: clippy check
-        if: matrix.workspace == 'Cargo.toml'
-        run: cargo clippy --all-targets ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} -- -A warnings
       - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   fuzz_read:
