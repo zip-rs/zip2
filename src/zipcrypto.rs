@@ -104,8 +104,8 @@ impl ZipCryptoKeys {
     }
 
     fn stream_byte(&mut self) -> u8 {
-        let temp: Wrapping<u16> = Wrapping(self.key_2.0 as u16) | Wrapping(3);
-        ((temp * (temp ^ Wrapping(1))) >> 8).0 as u8
+        let keystream_base: Wrapping<u16> = Wrapping(self.key_2.0 as u16) | Wrapping(3);
+        ((keystream_base * (keystream_base ^ Wrapping(1))) >> 8).0 as u8
     }
 
     fn decrypt_byte(&mut self, cipher_byte: u8) -> u8 {
