@@ -352,6 +352,10 @@ impl DateTime {
         DateTime { datepart, timepart }
     }
 
+    pub(crate) fn is_leap_year(year: u16) -> bool {
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+    }
+
     /// Converts an msdos (u16, u16) pair to a `DateTime` object if it represents a valid date and
     /// time.
     pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
@@ -388,10 +392,6 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
-        fn is_leap_year(year: u16) -> bool {
-            year.is_multiple_of(4) && (!year.is_multiple_of(25) || year.is_multiple_of(16))
-        }
-
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -404,7 +404,7 @@ impl DateTime {
             let max_day = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
                 4 | 6 | 9 | 11 => 30,
-                2 if is_leap_year(year) => 29,
+                2 if Self::is_leap_year(year) => 29,
                 2 => 28,
                 _ => unreachable!(),
             };
@@ -776,7 +776,7 @@ impl ZipFileData {
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
@@ -1657,9 +1657,9 @@ mod test {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
-    use std::{path::PathBuf, sync::OnceLock};
-
     use crate::types::{System, ZipFileData};
+    use std::{path::PathBuf, sync::OnceLock};
+    use time::util::is_leap_year;
 
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
@@ -1902,5 +1902,17 @@ mod test {
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();
 
         assert!(DateTime::try_from(PrimitiveDateTime::new(clock.date(), clock.time())).is_ok());
+    }
+
+    #[test]
+    fn test_is_leap_year() {
+        assert!(is_leap_year(2000));
+        assert!(!is_leap_year(2026));
+        assert!(!is_leap_year(2027));
+        assert!(is_leap_year(2028));
+        assert!(is_leap_year(1600));
+        assert!(is_leap_year(2400));
+        assert!(!is_leap_year(1900));
+        assert!(!is_leap_year(2100));
     }
 }
