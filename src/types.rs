@@ -392,7 +392,6 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
-
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -1658,9 +1657,9 @@ mod test {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
+    use crate::types::{System, ZipFileData};
     use std::{path::PathBuf, sync::OnceLock};
     use time::util::is_leap_year;
-    use crate::types::{System, ZipFileData};
 
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
