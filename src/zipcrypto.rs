@@ -123,7 +123,7 @@ impl ZipCryptoKeys {
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
         let idx: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
-        (crc >> 8) ^ Wrapping(CRCTABLE[usize::from(idx)])
+        (crc >> 8) ^ Wrapping(CRC_TABLE[usize::from(idx)])
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
