@@ -273,7 +273,10 @@ impl<W: Write> AesWriter<W> {
     }
 
     /// Gets a mutable reference to the underlying writer.
-    /// SAFETY: The caller must not corrupt the archive, and must leave it in the same
+    ///
+    /// # Safety
+    ///
+    /// The caller must not corrupt the archive, and must leave it in the same
     /// cursor position as it was when obtained.
     pub unsafe fn get_mut(&mut self) -> &mut W {
         &mut self.writer

@@ -27,7 +27,7 @@ use std::sync::Arc;
 // re-export from types
 pub use crate::types::{FileOptions, SimpleFileOptions};
 
-#[cfg_attr(feature = "aes-crypto", allow(clippy::large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 enum MaybeEncrypted<W> {
     Unencrypted(W),
     #[cfg(feature = "aes-crypto")]
@@ -85,6 +85,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
@@ -215,7 +216,10 @@ pub(crate) mod zip_writer {
         }
 
         /// Gets a reference to the underlying writer in this ZipWrite.
-        /// SAFETY: Caller must not corrupt the archive, and must seek back to the current position
+        ///
+        /// # Safety
+        ///
+        /// Caller must not corrupt the archive, and must seek back to the current position
         /// before continuing to write to the ZipWriter.
         pub unsafe fn get_mut(&mut self) -> Option<&mut W> {
             use GenericZipWriter::*;
