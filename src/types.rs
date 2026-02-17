@@ -55,7 +55,7 @@ pub enum System {
     /// Legacy Mac OS, pre OS X
     Macintosh = 7,
     /// Z-System
-    ZSystemO = 8,
+    ZSystem = 8,
     /// CP/M
     CPM = 9,
     /// Windows NTFS (with extra attributes; not used by default)
