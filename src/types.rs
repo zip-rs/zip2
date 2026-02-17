@@ -1659,7 +1659,6 @@ mod test {
 
     use crate::types::{System, ZipFileData};
     use std::{path::PathBuf, sync::OnceLock};
-    use time::util::is_leap_year;
 
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
