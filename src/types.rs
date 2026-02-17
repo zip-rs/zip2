@@ -389,7 +389,7 @@ impl DateTime {
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
         fn is_leap_year(year: u16) -> bool {
-            year.is_multiple_of(4) && (!year.is_multiple_of(25) || year.is_multiple_of(16))
+            year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
         }
 
         if (1980..=2107).contains(&year)
