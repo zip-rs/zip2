@@ -104,8 +104,8 @@ impl ZipCryptoKeys {
     }
 
     fn stream_byte(&mut self) -> u8 {
-        let temp: Wrapping<u16> = Wrapping(self.key_2.0 as u16) | Wrapping(3);
-        ((temp * (temp ^ Wrapping(1))) >> 8).0 as u8
+        let keystream_base: Wrapping<u16> = Wrapping(self.key_2.0 as u16) | Wrapping(3);
+        ((keystream_base * (keystream_base ^ Wrapping(1))) >> 8).0 as u8
     }
 
     fn decrypt_byte(&mut self, cipher_byte: u8) -> u8 {
@@ -122,8 +122,8 @@ impl ZipCryptoKeys {
     }
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
-        let idx: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
-        (crc >> 8) ^ Wrapping(CRC_TABLE[usize::from(idx)])
+        let crc_index: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
+        (crc >> 8) ^ Wrapping(CRC_TABLE[usize::from(crc_index)])
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
