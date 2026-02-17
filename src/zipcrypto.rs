@@ -104,8 +104,8 @@ impl ZipCryptoKeys {
     }
 
     fn stream_byte(&mut self) -> u8 {
-        let temp: Wrapping<u16> = Wrapping(self.key_2.0 as u16) | Wrapping(3);
-        ((temp * (temp ^ Wrapping(1))) >> 8).0 as u8
+        let keystream_base: Wrapping<u16> = Wrapping(self.key_2.0 as u16) | Wrapping(3);
+        ((keystream_base * (keystream_base ^ Wrapping(1))) >> 8).0 as u8
     }
 
     fn decrypt_byte(&mut self, cipher_byte: u8) -> u8 {
@@ -122,8 +122,8 @@ impl ZipCryptoKeys {
     }
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
-        let idx: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
-        (crc >> 8) ^ Wrapping(CRCTABLE[usize::from(idx)])
+        let crc_index: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
+        (crc >> 8) ^ Wrapping(CRC_TABLE[usize::from(crc_index)])
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
@@ -198,6 +198,9 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
+/// Size of the internal buffer used when encrypting data in chunks.
+/// 4096 bytes is a common page-sized buffer that balances memory usage
+/// and I/O performance for typical workloads.
 pub(crate) const CHUNK_SIZE: usize = 4096;
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
@@ -218,6 +221,7 @@ impl<W: std::io::Write> ZipCryptoWriter<W> {
 
     #[allow(unused)]
     pub(crate) fn finish(mut self) -> std::io::Result<W> {
+        self.writer.flush()?;
         Ok(self.writer)
     }
 }
@@ -264,7 +268,7 @@ impl<R: std::io::Read> ZipCryptoReaderValid<R> {
 
 /// Standard CRC-32 lookup table used by the ZipCrypto encryption algorithm
 /// to update the internal keys during encryption and decryption.
-static CRCTABLE: [u32; 256] = [
+static CRC_TABLE: [u32; 256] = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
     0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
     0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,

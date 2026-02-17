@@ -17,7 +17,10 @@ pub mod write {
     pub trait FileOptionsExt {
         /// Write the file with the given password using the deprecated `ZipCrypto` algorithm.
         ///
-        /// This is not recommended for new archives, as `ZipCrypto` is not secure.
+        /// <div class="warning">This is not recommended for new archives, as `ZipCrypto` is not
+        /// secure (it can be cracked given 12 bytes of known plaintext after compression). It is
+        /// provided only for backward compatibility with older software that doesn't support
+        /// AES-encrypted archives.</div>
         fn with_deprecated_encryption(self, password: &[u8]) -> ZipResult<Self>
         where
             Self: Sized;

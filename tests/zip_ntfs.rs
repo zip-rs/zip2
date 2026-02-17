@@ -13,22 +13,21 @@ fn test_ntfs_extra_field_timestamp_parsing() {
 
     let timestamp = file
         .extra_data_fields()
-        .find_map(|field| {
-            if let zip::ExtraField::Ntfs(ts) = field {
-                Some(ts)
-            } else {
-                None
-            }
+        .find_map(|field| match field {
+            zip::ExtraField::Ntfs(ts) => Some(ts),
+            _ => None,
         })
         .expect("Expected NTFS extra field in test.txt");
 
-    // Expected NTFS mtime for "test.txt" in ntfs.zip (2025-01-14 11:21:54.416939 UTC)
+    // Expected NTFS mtime for "test.txt" in ntfs.zip: 2025-01-14 11:21:54.416939 UTC.
+    // NTFS timestamps are stored as the number of 100-nanosecond intervals since
+    // 1601-01-01 00:00:00 UTC; 133_813_273_144_169_390 is the tick count for that datetime.
     const EXPECTED_MTIME_TICKS: u64 = 133_813_273_144_169_390;
     assert_eq!(timestamp.mtime(), EXPECTED_MTIME_TICKS);
     #[cfg(feature = "nt-time")]
     {
         const EXPECTED_DATETIME: time::UtcDateTime =
-            time::macros::datetime!(2025-01-14 11:21:54.416_939_000 UTC).to_utc();
+            time::macros::utc_datetime!(2025-01-14 11:21:54.416_939_000);
         assert_eq!(
             time::UtcDateTime::try_from(timestamp.modified_file_time()).unwrap(),
             EXPECTED_DATETIME
