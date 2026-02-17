@@ -33,7 +33,7 @@ where
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
-fn end_to_end() {
+pub fn end_to_end() {
     for_each_supported_method(|method| {
         let file = &mut Cursor::new(Vec::new());
 
