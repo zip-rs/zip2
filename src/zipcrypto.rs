@@ -206,9 +206,18 @@ pub(crate) const CHUNK_SIZE: usize = 4096;
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
     pub(crate) keys: ZipCryptoKeys,
-    pub(crate) buffer: [u8; CHUNK_SIZE],
+    pub(crate) buffer: Vec<u8>,
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
+    /// Creates a new `ZipCryptoWriter` with an internal buffer allocated on the heap.
+    pub(crate) fn new(writer: W, keys: ZipCryptoKeys) -> ZipCryptoWriter<W> {
+        ZipCryptoWriter {
+            writer,
+            keys,
+            buffer: vec![0u8; CHUNK_SIZE],
+        }
+    }
+
     /// Gets a reference to the underlying writer.
     pub fn get_ref(&self) -> &W {
         &self.writer
