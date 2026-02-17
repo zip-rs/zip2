@@ -191,8 +191,7 @@ fn read_archive_file<R: Read + Seek>(
     let mut file = archive.by_name(name)?;
 
     let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .expect("failed to read archive file contents as UTF-8 string");
+    file.read_to_string(&mut contents)?;
 
     Ok(contents)
 }
