@@ -218,6 +218,7 @@ impl<W: std::io::Write> ZipCryptoWriter<W> {
 
     #[allow(unused)]
     pub(crate) fn finish(mut self) -> std::io::Result<W> {
+        self.writer.flush()?;
         Ok(self.writer)
     }
 }
