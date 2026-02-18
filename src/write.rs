@@ -1243,6 +1243,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
+        #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(|(mode, vendor_version, compression_method, _)| {
             (mode, vendor_version, compression_method)
         });
