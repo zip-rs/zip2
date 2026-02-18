@@ -46,13 +46,16 @@ impl CustomSalt {
     ///
     /// # Errors
     /// Returns an error if the length of `salt` is too short for the given `mode`.
-    pub fn try_new(mode: AesMode, salt: &[u8]) -> Result<Self, String> {
+    pub fn try_new(mode: AesMode, salt: &[u8]) -> Result<Self, std::io::Error> {
         let mut salt_array = [0u8; AesMode::MAX_SALT_SIZE];
         let salt_length = mode.salt_length();
         if salt.len() < salt_length {
-            return Err(format!(
-                "Salt for {} must be at least {} bytes long",
-                mode, salt_length
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Salt for {} must be at least {} bytes long",
+                    mode, salt_length
+                ),
             ));
         }
         salt_array[..salt_length].copy_from_slice(&salt[..salt_length]);
