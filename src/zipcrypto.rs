@@ -33,6 +33,11 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
             return Ok(EncryptWith::Aes {
                 mode: crate::AesMode::arbitrary(u)?,
                 password: u.arbitrary::<&str>()?,
+                salt: if bool::arbitrary(u)? {
+                    Some(crate::aes::CustomSalt::arbitrary(u)?)
+                } else {
+                    None
+                },
             });
         }
 
