@@ -1243,6 +1243,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
+        let aes_mode = aes_mode.map(|(mode, vendor_version, compression_method, _)| {
+            (mode, vendor_version, compression_method)
+        });
         let mut file = ZipFileData::initialize_local_block(
             name,
             &options,
