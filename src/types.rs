@@ -1,6 +1,5 @@
 //! Types that specify what is contained in a ZIP.
-#[cfg(feature = "aes-crypto")]
-use crate::aes::CustomSalt;
+
 use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
 use crate::result::{ZipError, ZipResult, invalid};
@@ -155,7 +154,7 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
         AesMode,
         AesVendorVersion,
         CompressionMethod,
-        Option<CustomSalt>,
+        Option<crate::aes::CustomSalt>,
     )>,
     pub(crate) system: Option<System>,
 }
@@ -782,12 +781,7 @@ impl ZipFileData {
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
         compression_method: crate::compression::CompressionMethod,
-        aes_mode: Option<(
-            AesMode,
-            AesVendorVersion,
-            CompressionMethod,
-            Option<CustomSalt>,
-        )>,
+        aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
         extra_field: &[u8],
     ) -> Self
     where
@@ -822,9 +816,6 @@ impl ZipFileData {
                 external_attributes |= 0x01;
             }
         }
-        let aes_mode = aes_mode.map(|(mode, vendor_version, compression_method, _)| {
-            (mode, vendor_version, compression_method)
-        });
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
