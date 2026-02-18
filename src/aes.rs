@@ -317,11 +317,6 @@ impl<W: Write> AesWriter<W> {
         })
     }
 
-    #[allow(unused)]
-    pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> ZipResult<Self> {
-        Self::new_with_options(writer, aes_mode, password, None)
-    }
-
     /// Gets a reference to the underlying writer.
     pub fn get_ref(&self) -> &W {
         &self.writer
@@ -405,7 +400,7 @@ mod tests {
         let mut read_buffer = vec![];
 
         {
-            let mut writer = AesWriter::new(&mut buf, aes_mode, password)?;
+            let mut writer = AesWriter::new_with_options(&mut buf, aes_mode, password, None)?;
             writer.write_all(plaintext)?;
             writer.finish()?;
         }
