@@ -1,4 +1,6 @@
 //! Types that specify what is contained in a ZIP.
+#[cfg(feature = "aes-crypto")]
+use crate::aes::CustomSalt;
 use crate::cfg_if_expr;
 use crate::cp437::FromCp437;
 use crate::result::{ZipError, ZipResult, invalid};
@@ -8,6 +10,7 @@ use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
 use core::mem;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
@@ -148,7 +151,12 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
     #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    pub(crate) aes_mode: Option<(
+        AesMode,
+        AesVendorVersion,
+        CompressionMethod,
+        Option<CustomSalt>,
+    )>,
     pub(crate) system: Option<System>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
@@ -774,7 +782,12 @@ impl ZipFileData {
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
         compression_method: crate::compression::CompressionMethod,
-        aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+        aes_mode: Option<(
+            AesMode,
+            AesVendorVersion,
+            CompressionMethod,
+            Option<CustomSalt>,
+        )>,
         extra_field: &[u8],
     ) -> Self
     where
@@ -809,6 +822,9 @@ impl ZipFileData {
                 external_attributes |= 0x01;
             }
         }
+        let aes_mode = aes_mode.map(|(mode, vendor_version, compression_method, _)| {
+            (mode, vendor_version, compression_method)
+        });
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
@@ -1394,8 +1410,20 @@ pub enum AesMode {
     Aes256 = 0x03,
 }
 
+impl Display for AesMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Aes128 => write!(f, "AES-128"),
+            Self::Aes192 => write!(f, "AES-192"),
+            Self::Aes256 => write!(f, "AES-256"),
+        }
+    }
+}
+
 #[cfg(feature = "aes-crypto")]
 impl AesMode {
+    pub(crate) const MAX_SALT_SIZE: usize = AesMode::Aes256.salt_length();
+
     /// Length of the salt for the given AES mode.
     #[must_use]
     pub const fn salt_length(&self) -> usize {

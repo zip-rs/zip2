@@ -28,6 +28,35 @@ enum Cipher {
     Aes256(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes256>>),
 }
 
+/// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
+/// This is not recommended, but it can be useful for testing or for reproducible encryption results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CustomSalt([u8; AesMode::MAX_SALT_SIZE]);
+
+impl CustomSalt {
+    pub(crate) fn inner(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Creates a new `CustomSalt` with the given `mode` and `salt`.
+    /// The length of `salt` must be at least the required salt length for the given `mode`, otherwise an error is returned.
+    ///
+    /// # Errors
+    /// Returns an error if the length of `salt` is too short for the given `mode`.
+    pub fn try_new(mode: AesMode, salt: &[u8]) -> Result<Self, String> {
+        let mut salt_array = [0u8; AesMode::MAX_SALT_SIZE];
+        let salt_length = mode.salt_length();
+        if salt.len() < salt_length {
+            return Err(format!(
+                "Salt for {} must be at least {} bytes long",
+                mode, salt_length
+            ));
+        }
+        salt_array[..salt_length].copy_from_slice(salt[..salt_length].as_ref());
+        Ok(Self(salt_array))
+    }
+}
+
 impl Cipher {
     /// Create a `Cipher` depending on the used `AesMode` and the given `key`.
     ///
@@ -233,14 +262,33 @@ pub struct AesWriter<W> {
 }
 
 impl<W: Write> AesWriter<W> {
-    pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> ZipResult<Self> {
+    /// Creates a new `AesWriter` with the given options.
+    /// Private method to potentially allow more options in the future, for now it is only used to allow passing a custom salt.
+    pub(crate) fn new_with_options(
+        writer: W,
+        aes_mode: AesMode,
+        password: &[u8],
+        custom_salt: Option<CustomSalt>,
+    ) -> ZipResult<Self> {
         let salt_length = aes_mode.salt_length();
         let key_length = aes_mode.key_length();
 
         let mut encrypted_file_header = Vec::with_capacity(salt_length + 2);
 
-        let mut salt = vec![0; salt_length];
-        getrandom::fill(&mut salt).map_err(|e| ZipError::Io(e.into()))?;
+        let salt = if let Some(customized_salt) = custom_salt {
+            customized_salt
+                .inner()
+                .get(0..salt_length)
+                .ok_or(ZipError::Io(std::io::Error::other(
+                    "Cannot get the custom salt",
+                )))?
+                .to_vec()
+        } else {
+            // Generate a random salt
+            let mut salt = vec![0; salt_length];
+            getrandom::fill(&mut salt).map_err(|e| ZipError::Io(e.into()))?;
+            salt
+        };
         encrypted_file_header.write_all(&salt)?;
 
         // Derive a key from the password and salt.  The length depends on the aes key length
@@ -267,6 +315,11 @@ impl<W: Write> AesWriter<W> {
             buffer: Zeroizing::default(),
             encrypted_file_header: Some(encrypted_file_header),
         })
+    }
+
+    #[allow(unused)]
+    pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> ZipResult<Self> {
+        Self::new_with_options(writer, aes_mode, password, None)
     }
 
     /// Gets a reference to the underlying writer.

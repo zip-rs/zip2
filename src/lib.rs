@@ -53,6 +53,8 @@ pub use crate::write::ZipWriter;
 #[cfg(feature = "aes-crypto")]
 mod aes;
 #[cfg(feature = "aes-crypto")]
+pub use aes::CustomSalt;
+#[cfg(feature = "aes-crypto")]
 mod aes_ctr;
 mod compression;
 mod cp437;

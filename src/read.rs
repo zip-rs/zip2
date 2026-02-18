@@ -2047,6 +2047,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         if let Some(aes) = self.get_metadata().aes_mode {
             // Preserve AES metadata in options for downstream writers.
             // This is metadata-only and does not trigger encryption.
+            let aes = (aes.0, aes.1, aes.2, None);
             options.aes_mode = Some(aes);
         }
         options
