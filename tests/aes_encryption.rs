@@ -291,7 +291,7 @@ fn aes_custom_salt_for_reproducible_zip() {
         let custom_salt = custom_salt.expect("Failed to create custom salt");
         let options = SimpleFileOptions::default()
             .last_modified_time(DateTime::default())
-            .with_aes_encryption_and_salt(mode, "some password", custom_salt);
+            .with_aes_encryption_and_salt("some password", custom_salt);
 
         let mut data1 = Vec::new();
         let mut zip1 = ZipWriter::new(io::Cursor::new(&mut data1));

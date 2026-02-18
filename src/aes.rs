@@ -30,12 +30,15 @@ enum Cipher {
 
 /// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
 /// This is not recommended, but it can be useful for testing or for reproducible encryption results.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CustomSalt([u8; AesMode::MAX_SALT_SIZE]);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CustomSalt {
+    pub(crate) mode: AesMode,
+    inner: [u8; AesMode::MAX_SALT_SIZE],
+}
 
 impl CustomSalt {
     pub(crate) fn inner(&self) -> &[u8] {
-        &self.0
+        &self.inner
     }
 
     /// Creates a new `CustomSalt` with the given `mode` and `salt`.
@@ -53,7 +56,10 @@ impl CustomSalt {
             ));
         }
         salt_array[..salt_length].copy_from_slice(salt[..salt_length].as_ref());
-        Ok(Self(salt_array))
+        Ok(Self {
+            mode,
+            inner: salt_array,
+        })
     }
 }
 
