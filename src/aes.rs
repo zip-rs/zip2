@@ -55,7 +55,7 @@ impl CustomSalt {
                 mode, salt_length
             ));
         }
-        salt_array[..salt_length].copy_from_slice(salt[..salt_length].as_ref());
+        salt_array[..salt_length].copy_from_slice(&salt[..salt_length]);
         Ok(Self {
             mode,
             inner: salt_array,
