@@ -150,12 +150,7 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
     #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<(
-        AesMode,
-        AesVendorVersion,
-        CompressionMethod,
-        Option<crate::aes::CustomSalt>,
-    )>,
+    pub(crate) aes_mode: Option<crate::aes::AesModeOptions>,
     pub(crate) system: Option<System>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
@@ -1386,6 +1381,12 @@ impl FixedSizeBlock for Zip64DataDescriptorBlock {
 pub enum AesVendorVersion {
     Ae1 = 0x0001,
     Ae2 = 0x0002,
+}
+
+impl From<AesVendorVersion> for u16 {
+    fn from(value: AesVendorVersion) -> Self {
+        value as u16
+    }
 }
 
 /// AES variant used.

@@ -4,9 +4,10 @@
 //! Note that using CRC with AES depends on the used encryption specification, AE-1 or AE-2.
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
+use crate::CompressionMethod;
 use crate::aes_ctr::AesCipher;
 use crate::result::ZipResult;
-use crate::types::AesMode;
+use crate::types::{AesMode, AesVendorVersion};
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
@@ -26,6 +27,36 @@ enum Cipher {
     Aes128(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes128>>),
     Aes192(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes192>>),
     Aes256(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes256>>),
+}
+
+#[non_exhaustive]
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub(crate) struct AesModeOptions {
+    pub(crate) mode: AesMode,
+    pub(crate) vendor_version: AesVendorVersion,
+    pub(crate) compression_method: CompressionMethod,
+    pub(crate) custom_salt: Option<crate::aes::CustomSalt>,
+}
+
+impl AesModeOptions {
+    pub(crate) fn new(
+        mode: AesMode,
+        vendor_version: AesVendorVersion,
+        compression_method: CompressionMethod,
+        custom_salt: Option<CustomSalt>,
+    ) -> Self {
+        Self {
+            mode,
+            vendor_version,
+            compression_method,
+            custom_salt,
+        }
+    }
+
+    /// Used to create a the `aes_mode` of `ZipFileData`
+    pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
+        (self.mode, self.vendor_version, self.compression_method)
+    }
 }
 
 /// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.

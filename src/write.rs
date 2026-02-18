@@ -1174,7 +1174,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None if options.aes_mode.is_some() => (CompressionMethod::Aes, options.aes_mode),
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, salt, .. }) => {
-                let aes_mode = (
+                let aes_mode = crate::aes::AesModeOptions::new(
                     mode,
                     AesVendorVersion::Ae2,
                     options.compression_method,
@@ -1189,13 +1189,19 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[allow(unused_mut)]
         let mut aes_extra_data_start = 0;
         #[cfg(feature = "aes-crypto")]
-        if let Some((mode, vendor, underlying, _)) = aes_mode {
+        if let Some(crate::aes::AesModeOptions {
+            mode,
+            vendor_version,
+            compression_method,
+            ..
+        }) = aes_mode
+        {
             // For raw copies of AES entries, write the correct AES extra data immediately
             let mut body = [0; 7];
-            [body[0], body[1]] = (vendor as u16).to_le_bytes(); // vendor version (1 or 2)
+            [body[0], body[1]] = (vendor_version as u16).to_le_bytes(); // vendor version (1 or 2)
             [body[2], body[3]] = *b"AE"; // vendor id
             body[4] = mode as u8; // strength
-            [body[5], body[6]] = underlying.serialize_to_u16().to_le_bytes(); // real compression method
+            [body[5], body[6]] = compression_method.serialize_to_u16().to_le_bytes(); // real compression method
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
@@ -1243,9 +1249,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
         #[cfg(feature = "aes-crypto")]
-        let aes_mode = aes_mode.map(|(mode, vendor_version, compression_method, _)| {
-            (mode, vendor_version, compression_method)
-        });
+        let aes_mode = aes_mode.map(|mode| mode.to_tuple());
         let mut file = ZipFileData::initialize_local_block(
             name,
             &options,
