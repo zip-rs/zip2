@@ -1905,13 +1905,14 @@ mod test {
 
     #[test]
     fn test_is_leap_year() {
-        assert!(is_leap_year(2000));
-        assert!(!is_leap_year(2026));
-        assert!(!is_leap_year(2027));
-        assert!(is_leap_year(2028));
-        assert!(is_leap_year(1600));
-        assert!(is_leap_year(2400));
-        assert!(!is_leap_year(1900));
-        assert!(!is_leap_year(2100));
+        use crate::DateTime;
+        assert!(DateTime::is_leap_year(2000));
+        assert!(!DateTime::is_leap_year(2026));
+        assert!(!DateTime::is_leap_year(2027));
+        assert!(DateTime::is_leap_year(2028));
+        assert!(DateTime::is_leap_year(1600));
+        assert!(DateTime::is_leap_year(2400));
+        assert!(!DateTime::is_leap_year(1900));
+        assert!(!DateTime::is_leap_year(2100));
     }
 }
