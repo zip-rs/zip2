@@ -110,7 +110,7 @@ impl ZipCryptoKeys {
 
     fn stream_byte(&mut self) -> u8 {
         let keystream_base: Wrapping<u16> =
-            Wrapping(self.key_2.0 as u16) | Wrapping(Self::KEYSTREAM_BASE_SUFFIX);
+            Wrapping((self.key_2.0 & 0xFFFF) as u16) | Wrapping(Self::KEYSTREAM_BASE_SUFFIX);
         ((keystream_base * (keystream_base ^ Wrapping(1))) >> 8).0 as u8
     }
 
