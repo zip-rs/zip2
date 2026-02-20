@@ -383,7 +383,7 @@ impl DateTime {
     /// * day: [1, 28..=31]
     /// * hour: [0, 23]
     /// * minute: [0, 59]
-    /// * second: [0, 58]
+    /// * second: [0, 60] (rounded down to even and to [0, 58] due to ZIP format limitation)
     pub fn from_date_and_time(
         year: u16,
         month: u8,
