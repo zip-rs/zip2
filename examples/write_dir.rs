@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             CompressionMethod::Deflated => {
                 is_feature!("_deflate-any", zip::CompressionMethod::Deflated)
             }
-            CompressionMethod::Bzip2 => is_feature!("_bzip2_any", zip::CompressionMethod::Bzip2),
+            CompressionMethod::Bzip2 => is_feature!("dep:bzip2", zip::CompressionMethod::Bzip2),
             CompressionMethod::Xz => is_feature!("xz", zip::CompressionMethod::Xz),
             CompressionMethod::Zstd => is_feature!("zstd", zip::CompressionMethod::Zstd),
         };

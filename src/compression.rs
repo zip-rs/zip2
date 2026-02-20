@@ -26,7 +26,7 @@ pub enum CompressionMethod {
     #[cfg(feature = "deflate64")]
     Deflate64,
     /// Compress the file using BZIP2
-    #[cfg(feature = "_bzip2_any")]
+    #[cfg(feature = "dep:bzip2")]
     Bzip2,
     /// Encrypted using AES.
     ///
@@ -110,9 +110,9 @@ impl CompressionMethod {
     #[cfg(not(feature = "deflate64"))]
     pub const DEFLATE64: Self = CompressionMethod::Unsupported(9);
     pub const PKWARE_IMPLODE: Self = CompressionMethod::Unsupported(10);
-    #[cfg(feature = "_bzip2_any")]
+    #[cfg(feature = "dep:bzip2")]
     pub const BZIP2: Self = CompressionMethod::Bzip2;
-    #[cfg(not(feature = "_bzip2_any"))]
+    #[cfg(not(feature = "dep:bzip2"))]
     pub const BZIP2: Self = CompressionMethod::Unsupported(12);
     #[cfg(not(feature = "lzma"))]
     pub const LZMA: Self = CompressionMethod::Unsupported(14);
@@ -144,10 +144,10 @@ impl CompressionMethod {
     #[cfg(feature = "_deflate-any")]
     pub const DEFAULT: Self = CompressionMethod::Deflated;
 
-    #[cfg(all(not(feature = "_deflate-any"), feature = "_bzip2_any"))]
+    #[cfg(all(not(feature = "_deflate-any"), feature = "dep:bzip2"))]
     pub const DEFAULT: Self = CompressionMethod::Bzip2;
 
-    #[cfg(all(not(feature = "_deflate-any"), not(feature = "_bzip2_any")))]
+    #[cfg(all(not(feature = "_deflate-any"), not(feature = "dep:bzip2")))]
     pub const DEFAULT: Self = CompressionMethod::Stored;
 }
 impl CompressionMethod {
@@ -170,7 +170,7 @@ impl CompressionMethod {
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "deflate64")]
             9 => CompressionMethod::Deflate64,
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             12 => CompressionMethod::Bzip2,
             #[cfg(feature = "lzma")]
             14 => CompressionMethod::Lzma,
@@ -211,7 +211,7 @@ impl CompressionMethod {
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "deflate64")]
             CompressionMethod::Deflate64 => 9,
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             CompressionMethod::Bzip2 => 12,
             #[cfg(feature = "aes-crypto")]
             CompressionMethod::Aes => 99,
@@ -262,7 +262,7 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     CompressionMethod::Deflated,
     #[cfg(feature = "deflate64")]
     CompressionMethod::Deflate64,
-    #[cfg(feature = "_bzip2_any")]
+    #[cfg(feature = "dep:bzip2")]
     CompressionMethod::Bzip2,
     #[cfg(feature = "zstd")]
     CompressionMethod::Zstd,
@@ -278,7 +278,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     Deflated(flate2::bufread::DeflateDecoder<R>),
     #[cfg(feature = "deflate64")]
     Deflate64(deflate64::Deflate64Decoder<R>),
-    #[cfg(feature = "_bzip2_any")]
+    #[cfg(feature = "dep:bzip2")]
     Bzip2(bzip2::bufread::BzDecoder<R>),
     #[cfg(feature = "zstd")]
     Zstd(zstd::Decoder<'static, R>),
@@ -319,7 +319,7 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             Decompressor::Deflated(r) => r.read(buf),
             #[cfg(feature = "deflate64")]
             Decompressor::Deflate64(r) => r.read(buf),
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             Decompressor::Bzip2(r) => r.read(buf),
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => r.read(buf),
@@ -451,7 +451,7 @@ impl<R: io::BufRead> Decompressor<R> {
             CompressionMethod::Deflate64 => {
                 Decompressor::Deflate64(deflate64::Deflate64Decoder::with_buffer(reader))
             }
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             CompressionMethod::Bzip2 => Decompressor::Bzip2(bzip2::bufread::BzDecoder::new(reader)),
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
@@ -495,7 +495,7 @@ impl<R: io::BufRead> Decompressor<R> {
             Decompressor::Deflated(r) => r.into_inner(),
             #[cfg(feature = "deflate64")]
             Decompressor::Deflate64(r) => r.into_inner(),
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             Decompressor::Bzip2(r) => r.into_inner(),
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => r.finish(),

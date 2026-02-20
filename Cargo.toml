@@ -99,8 +99,7 @@ ppmd = ["dep:ppmd-rust"]
 # This feature allows writing custom extra-data field IDs in file headers.
 unreserved = []
 xz = ["dep:lzma-rust2"]
-_bzip2_any = []
-bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any"]
+bzip2 = ["dep:bzip2", "bzip2/default"]
 legacy-zip = ["bitstream-io"]
 time = ["dep:time"]
 default = [
@@ -116,7 +115,7 @@ default = [
 ]
 
 # The following features are not supported on wasm
-bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
+bzip2-rs = ["bzip2/bzip2-sys"]
 # Pull in flate2 and the zlib backend; only use this if you need a dynamically linked system zlib
 deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
 # Pull in flate2 and the zlib-ng backend; a modern fork of zlib

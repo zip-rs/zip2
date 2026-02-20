@@ -95,7 +95,7 @@ enum GenericZipWriter<W: Write + Seek> {
     ZopfliDeflater(zopfli::DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
     BufferedZopfliDeflater(std::io::BufWriter<zopfli::DeflateEncoder<MaybeEncrypted<W>>>),
-    #[cfg(feature = "_bzip2_any")]
+    #[cfg(feature = "dep:bzip2")]
     Bzip2(bzip2::write::BzEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "zstd")]
     Zstd(zstd::stream::write::Encoder<'static, MaybeEncrypted<W>>),
@@ -116,7 +116,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
             Self::ZopfliDeflater(_) => f.write_str("ZopfliDeflater"),
             #[cfg(feature = "deflate-zopfli")]
             Self::BufferedZopfliDeflater(_) => f.write_str("BufferedZopfliDeflater"),
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             Self::Bzip2(w) => f.write_fmt(format_args!("Bzip2({:?})", w.get_ref())),
             #[cfg(feature = "zstd")]
             Self::Zstd(w) => f.write_fmt(format_args!("Zstd({:?})", w.get_ref())),
@@ -204,7 +204,7 @@ pub(crate) mod zip_writer {
                 ZopfliDeflater(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "deflate-zopfli")]
                 BufferedZopfliDeflater(w) => Some(w.get_ref().get_ref().get_ref()),
-                #[cfg(feature = "bzip2")]
+                #[cfg(feature = "dep:bzip2")]
                 Bzip2(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "zstd")]
                 Zstd(w) => Some(w.get_ref().get_ref()),
@@ -233,7 +233,7 @@ pub(crate) mod zip_writer {
                     ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "deflate-zopfli")]
                     BufferedZopfliDeflater(w) => Some(w.get_mut().get_mut().get_mut()),
-                    #[cfg(feature = "bzip2")]
+                    #[cfg(feature = "dep:bzip2")]
                     Bzip2(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "zstd")]
                     Zstd(w) => Some(w.get_mut().get_mut()),
@@ -2048,7 +2048,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             CompressionMethod::Deflate64 => {
                 Err(UnsupportedArchive("Compressing Deflate64 is not supported"))
             }
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             CompressionMethod::Bzip2 => {
                 let level = validate_value_in_range(
                     compression_level.unwrap_or(i64::from(bzip2::Compression::default().level())),
@@ -2170,7 +2170,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 .into_inner()
                 .map_err(|e| ZipError::Io(e.into_error()))?
                 .finish()?,
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => w.finish()?,
@@ -2202,7 +2202,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::BufferedZopfliDeflater(w) => Some(w as &mut dyn Write),
-            #[cfg(feature = "_bzip2_any")]
+            #[cfg(feature = "dep:bzip2")]
             GenericZipWriter::Bzip2(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
             GenericZipWriter::Zstd(w) => Some(w as &mut dyn Write),
@@ -2247,7 +2247,7 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
     min..=max
 }
 
-#[cfg(feature = "_bzip2_any")]
+#[cfg(feature = "dep:bzip2")]
 fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
     let min = i64::from(bzip2::Compression::fast().level());
     let max = i64::from(bzip2::Compression::best().level());
@@ -2256,7 +2256,7 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
 
 #[cfg(any(
     feature = "_deflate-any",
-    feature = "_bzip2_any",
+    feature = "dep:bzip2",
     feature = "ppmd",
     feature = "xz",
     feature = "zstd",
@@ -3206,7 +3206,7 @@ mod test {
         Ok(())
     }
 
-    #[cfg(all(feature = "_bzip2_any", not(miri)))]
+    #[cfg(all(feature = "dep:bzip2", not(miri)))]
     #[test]
     fn test_fuzz_failure_2024_06_08() -> ZipResult<()> {
         use crate::write::ExtendedFileOptions;
@@ -3857,7 +3857,7 @@ mod test {
 
     #[test]
     #[allow(clippy::octal_escapes)]
-    #[cfg(all(feature = "_bzip2_any", not(miri)))]
+    #[cfg(all(feature = "dep:bzip2", not(miri)))]
     fn test_fuzz_crash_2024_06_17b() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -4051,7 +4051,7 @@ mod test {
         Ok(())
     }
 
-    #[cfg(all(feature = "_bzip2_any", feature = "aes-crypto", not(miri)))]
+    #[cfg(all(feature = "dep:bzip2", feature = "aes-crypto", not(miri)))]
     #[test]
     fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -4181,7 +4181,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(all(feature = "_bzip2_any", not(miri)))]
+    #[cfg(all(feature = "dep:bzip2", not(miri)))]
     fn fuzz_crash_2024_07_17() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);

@@ -33,4 +33,4 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-rust-cargo-hack-${{ hashFiles('Cargo.toml') }}
-      - run: cargo hack test --feature-powerset --all-targets --exclude-features _bzip2_any,_arbitrary,_deflate-any
+      - run: cargo hack test --feature-powerset --all-targets --exclude-features _arbitrary,_deflate-any
