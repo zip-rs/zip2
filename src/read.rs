@@ -1580,7 +1580,13 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         Err(()) => {
             match reader.read_u16_le() {
                 Ok(len) => len,
-                Err(_e) => return Ok(false), // early return, most likely a padding
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false), // early return, most likely a padding
+                Err(_e) => {
+                    // Consume remaining bytes to avoid infinite loop in caller
+                    let mut buf = Vec::new();
+                    let _ = reader.read_to_end(&mut buf);
+                    return Ok(false);
+                }
             }
         }
     };
