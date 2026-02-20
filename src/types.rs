@@ -391,7 +391,7 @@ impl DateTime {
     /// * day: [1, 28..=31]
     /// * hour: [0, 23]
     /// * minute: [0, 59]
-    /// * second: [0, 58]
+    /// * second: [0, 60] (rounded down to even and to [0, 58] due to ZIP format limitation)
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -1667,7 +1667,6 @@ mod test {
 
     use crate::types::{System, ZipFileData};
     use std::{path::PathBuf, sync::OnceLock};
-    use time::util::is_leap_year;
 
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
@@ -1914,13 +1913,14 @@ mod test {
 
     #[test]
     fn test_is_leap_year() {
-        assert!(is_leap_year(2000));
-        assert!(!is_leap_year(2026));
-        assert!(!is_leap_year(2027));
-        assert!(is_leap_year(2028));
-        assert!(is_leap_year(1600));
-        assert!(is_leap_year(2400));
-        assert!(!is_leap_year(1900));
-        assert!(!is_leap_year(2100));
+        use crate::DateTime;
+        assert!(DateTime::is_leap_year(2000));
+        assert!(!DateTime::is_leap_year(2026));
+        assert!(!DateTime::is_leap_year(2027));
+        assert!(DateTime::is_leap_year(2028));
+        assert!(DateTime::is_leap_year(1600));
+        assert!(DateTime::is_leap_year(2400));
+        assert!(!DateTime::is_leap_year(1900));
+        assert!(!DateTime::is_leap_year(2100));
     }
 }
