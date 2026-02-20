@@ -102,7 +102,7 @@ impl From<u8> for System {
             5 => System::AtariSt,
             6 => System::Os2,
             7 => System::Macintosh,
-            8 => System::ZSystem,
+            8 => System::ZSystemO,
             9 => System::CPM,
             10 => System::WindowsNTFS,
             11 => System::MVS,
