@@ -60,7 +60,7 @@ pub(crate) enum UsedExtraField {
 
 impl Display for UsedExtraField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:x}", *self as u16)
+        write!(f, "0x{:04X}", *self as u16)
     }
 }
 
