@@ -13,13 +13,9 @@ fn generate_file_with_padding(padding_local_header: u16, padding_central_header:
         0x00, 0x00, 0x00, 0x00, // size
         0x00, 0x00, 0x00, 0x00, // size
         0x08, 0x00, // filename size
-    ]
-    .to_vec();
+    ];
     let padding_local_bytes = padding_local_header.to_le_bytes();
-    let filename = [
-        0x74, 0x65, 0x73, 0x74, 0x2E, 0x74, 0x78, 0x74, // filename test.txt
-    ]
-    .to_vec();
+    let filename = b"test.txt"; // filename
     let padding_local = vec![0; padding_local_header as usize];
     let central_dir = [
         0x50, 0x4B, 0x01, 0x02, // sig Central directory header
@@ -62,7 +58,7 @@ fn generate_file_with_padding(padding_local_header: u16, padding_central_header:
     let mut zip_file = Vec::new();
     zip_file.extend(local_header);
     zip_file.extend(padding_local_bytes);
-    zip_file.extend(&filename);
+    zip_file.extend(filename);
     zip_file.extend(padding_local);
     zip_file.extend(central_dir);
     zip_file.extend(padding_central_bytes);
@@ -87,15 +83,11 @@ fn test_padding_in_extra_field() {
         // let mut file = File::create(filename).unwrap();
         // file.write_all(&zip_file).unwrap();
 
-        let mut archive = match ZipArchive::new(io::Cursor::new(&zip_file)) {
-            Ok(archive) => archive,
-            Err(e) => {
-                panic!("couldn't open test zip file for ({local} {central}): {e}")
-            }
-        };
+        let mut archive = ZipArchive::new(io::Cursor::new(&zip_file))
+            .map_err(|e| format!("Padding is ({local} {central}). Error: {e}"))
+            .expect("couldn't open test zip file");
 
         assert_eq!(archive.len(), 1);
-        println!("{archive:?}");
         let file_text = archive.by_name("test.txt");
         assert!(
             file_text.is_ok(),
