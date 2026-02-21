@@ -18,11 +18,13 @@ impl ExtraFieldVersion for CentralHeaderVersion {}
 
 mod extended_timestamp;
 mod ntfs;
+mod zip64_extended_information;
 mod zipinfo_utf8;
 
 // re-export
-pub use extended_timestamp::*;
+pub use extended_timestamp::ExtendedTimestamp;
 pub use ntfs::Ntfs;
+pub use zip64_extended_information::Zip64ExtendedInformation;
 pub use zipinfo_utf8::UnicodeExtraField;
 
 /// contains one extra field
@@ -33,6 +35,9 @@ pub enum ExtraField {
 
     /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
     ExtendedTimestamp(ExtendedTimestamp),
+
+    /// Zip64 extended information
+    Zip64ExtendedInfo(Zip64ExtendedInformation),
 }
 
 /// Extra field used in this crate
@@ -54,6 +59,13 @@ pub(crate) enum UsedExtraField {
     AeXEncryption = 0x9901,
     /// Data Stream Alignment (Apache Commons-Compress)
     DataStreamAlignment = 0xa11e,
+}
+
+impl UsedExtraField {
+    pub const fn to_le_bytes(self) -> [u8; 2] {
+        let field_u16 = self as u16;
+        field_u16.to_le_bytes()
+    }
 }
 
 impl From<UsedExtraField> for u16 {
