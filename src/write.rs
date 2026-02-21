@@ -602,7 +602,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     pub fn with_aes_encryption_and_salt(
         self,
         password: &str,
-        salt: crate::aes::CustomSalt,
+        salt: crate::aes::AesSalt,
     ) -> FileOptions<'_, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {

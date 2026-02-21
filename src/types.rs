@@ -1414,8 +1414,6 @@ impl Display for AesMode {
 
 #[cfg(feature = "aes-crypto")]
 impl AesMode {
-    pub(crate) const MAX_SALT_SIZE: usize = AesMode::Aes256.salt_length();
-
     /// Length of the salt for the given AES mode.
     #[must_use]
     pub const fn salt_length(&self) -> usize {
