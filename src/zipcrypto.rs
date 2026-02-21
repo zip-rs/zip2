@@ -19,7 +19,7 @@ pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
         mode: crate::AesMode,
-        password: &'k str,
+        password: &'k [u8],
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }

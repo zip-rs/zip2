@@ -598,6 +598,22 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption(self, mode: crate::AesMode, password: &str) -> FileOptions<'_, T> {
         FileOptions {
+            encrypt_with: Some(EncryptWith::Aes {
+                mode,
+                password: password.as_bytes(),
+            }),
+            ..self
+        }
+    }
+
+    /// Set the AES encryption parameters.
+    #[cfg(feature = "aes-crypto")]
+    pub fn with_aes_encryption_and_bytes_password(
+        self,
+        mode: crate::AesMode,
+        password: &[u8],
+    ) -> FileOptions<'_, T> {
+        FileOptions {
             encrypt_with: Some(EncryptWith::Aes { mode, password }),
             ..self
         }
@@ -1250,7 +1266,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, password }) => {
                 let writer = self.close_writer()?;
-                let aeswriter = crate::aes::AesWriter::new(writer, mode, password.as_bytes())?;
+                let aeswriter = crate::aes::AesWriter::new(writer, mode, password)?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
@@ -3535,7 +3551,7 @@ mod test {
             large_file: true,
             encrypt_with: Some(Aes {
                 mode: Aes256,
-                password: "",
+                password: &[],
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![2, 0, 1, 0, 0].into(),
@@ -4067,7 +4083,7 @@ mod test {
             large_file: true,
             encrypt_with: Some(crate::write::EncryptWith::Aes {
                 mode: crate::AesMode::Aes256,
-                password: "",
+                password: &[],
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
@@ -4249,7 +4265,7 @@ mod test {
             large_file: true,
             encrypt_with: Some(Aes {
                 mode: Aes128,
-                password: "",
+                password: &[],
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![3, 0, 4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),
