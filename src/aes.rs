@@ -21,6 +21,7 @@ const AUTH_CODE_LENGTH: usize = 10;
 /// The number of iterations used with PBKDF2
 const ITERATION_COUNT: u32 = 1000;
 
+#[derive(Debug)]
 enum Cipher {
     Aes128(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes128>>),
     Aes192(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes192>>),
@@ -153,6 +154,7 @@ impl<R: Read> AesReader<R> {
 /// There is a 1 in 65536 chance that an invalid password passes that check.
 /// After the data has been read and decrypted an HMAC will be checked and provide a final means
 /// to check if either the password is invalid or if the data has been changed.
+#[derive(Debug)]
 pub struct AesReaderValid<R: Read> {
     reader: R,
     data_remaining: u64,
