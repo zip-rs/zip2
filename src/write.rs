@@ -597,13 +597,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     /// Set the AES encryption parameters.
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption(self, mode: crate::AesMode, password: &str) -> FileOptions<'_, T> {
-        FileOptions {
-            encrypt_with: Some(EncryptWith::Aes {
-                mode,
-                password: password.as_bytes(),
-            }),
-            ..self
-        }
+        self.with_aes_encryption_and_bytes_password(mode, password.as_bytes())
     }
 
     /// Set the AES encryption parameters.
