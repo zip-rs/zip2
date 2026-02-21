@@ -74,7 +74,8 @@ pub struct CustomSalt {
 }
 
 impl CustomSalt {
-    pub(crate) fn inner(&self) -> InnerSalt {
+    /// Get the inner salt array and consume it
+    pub(crate) fn inner(self) -> InnerSalt {
         self.inner
     }
 
