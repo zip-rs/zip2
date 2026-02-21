@@ -2,13 +2,14 @@
 
 use crate::compression::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
+use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, Zip64ExtraFieldBlock,
-    ZipFileData, ZipLocalEntryBlock, ZipRawValues, ffi,
+    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, ZipFileData,
+    ZipLocalEntryBlock, ZipRawValues, ffi,
 };
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -1125,7 +1126,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-        if let Some(zip64_block) = Zip64ExtraFieldBlock::local_header(0, 0, header_start) {
+        if let Some(zip64_block) = Zip64ExtendedInformation::local_header(0, 0, header_start) {
             let mut new_extra_data = zip64_block.serialize().into_vec();
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
@@ -2359,7 +2360,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         Vec::new()
     };
     let central_len = file.central_extra_field_len();
-    let zip64_extra_field_block = Zip64ExtraFieldBlock::central_header(
+    let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
         file.uncompressed_size,
         file.compressed_size,
         file.header_start,
@@ -2418,7 +2419,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    let block = Zip64ExtraFieldBlock::local_header(
+    let block = Zip64ExtendedInformation::local_header(
         file.uncompressed_size,
         file.compressed_size,
         file.header_start,

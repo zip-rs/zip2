@@ -6,7 +6,6 @@ use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
-use core::mem;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -18,12 +17,12 @@ pub(crate) mod ffi {
     pub const S_IFLNK: u32 = 0o0120000;
 }
 
+use crate::CompressionMethod;
 use crate::extra_fields::{ExtraField, UsedExtraField};
 use crate::read::find_data_start;
 use crate::result::DateTimeRangeError;
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
-use crate::{CompressionMethod, ZIP64_BYTES_THR};
 use std::io::{Read, Seek};
 
 pub(crate) struct ZipRawValues {
@@ -1229,138 +1228,6 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
         (file_name_length, u16),
         (extra_field_length, u16),
     ];
-}
-
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct Zip64ExtraFieldBlock {
-    magic: spec::ExtraFieldMagic,
-    size: u16,
-    uncompressed_size: Option<u64>,
-    compressed_size: Option<u64>,
-    header_start: Option<u64>,
-    // Excluded fields:
-    // u32: disk start number
-}
-
-impl Zip64ExtraFieldBlock {
-    /// This entry in the Local header MUST include BOTH original and compressed file size fields
-    pub(crate) fn local_header(
-        uncompressed_size: u64,
-        compressed_size: u64,
-        header_start: u64,
-    ) -> Option<Zip64ExtraFieldBlock> {
-        let mut size: u16 = 0;
-        let should_add_size =
-            uncompressed_size >= ZIP64_BYTES_THR || compressed_size >= ZIP64_BYTES_THR;
-        let uncompressed_size = if should_add_size {
-            size += mem::size_of::<u64>() as u16;
-            Some(uncompressed_size)
-        } else {
-            None
-        };
-        let compressed_size = if should_add_size {
-            size += mem::size_of::<u64>() as u16;
-            Some(compressed_size)
-        } else {
-            None
-        };
-        let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(header_start)
-        } else {
-            None
-        };
-        // TODO: (unsupported for now)
-        // Disk Start Number  4 bytes    Number of the disk on which this file starts
-
-        if size == 0 {
-            // no info added, return early
-            return None;
-        }
-
-        Some(Zip64ExtraFieldBlock {
-            magic: spec::ExtraFieldMagic::ZIP64_EXTRA_FIELD_TAG,
-            size,
-            uncompressed_size,
-            compressed_size,
-            header_start,
-        })
-    }
-
-    pub(crate) fn central_header(
-        uncompressed_size: u64,
-        compressed_size: u64,
-        header_start: u64,
-    ) -> Option<Zip64ExtraFieldBlock> {
-        let mut size: u16 = 0;
-        let uncompressed_size = if uncompressed_size != 0 && uncompressed_size >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(uncompressed_size)
-        } else {
-            None
-        };
-        let compressed_size = if compressed_size != 0 && compressed_size >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(compressed_size)
-        } else {
-            None
-        };
-        let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(header_start)
-        } else {
-            None
-        };
-        // TODO: (unsupported for now)
-        // Disk Start Number  4 bytes    Number of the disk on which this file starts
-
-        if size == 0 {
-            // no info added, return early
-            return None;
-        }
-
-        Some(Zip64ExtraFieldBlock {
-            magic: spec::ExtraFieldMagic::ZIP64_EXTRA_FIELD_TAG,
-            size,
-            uncompressed_size,
-            compressed_size,
-            header_start,
-        })
-    }
-
-    pub fn full_size(&self) -> usize {
-        assert!(self.size > 0);
-        self.size as usize + mem::size_of::<spec::ExtraFieldMagic>() + mem::size_of::<u16>()
-    }
-
-    pub fn serialize(self) -> Box<[u8]> {
-        let Self {
-            magic,
-            size,
-            uncompressed_size,
-            compressed_size,
-            header_start,
-        } = self;
-
-        let full_size = self.full_size();
-
-        let mut ret = Vec::with_capacity(full_size);
-        ret.extend(magic.to_le_bytes());
-        ret.extend(u16::to_le_bytes(size));
-
-        if let Some(uncompressed_size) = uncompressed_size {
-            ret.extend(u64::to_le_bytes(uncompressed_size));
-        }
-        if let Some(compressed_size) = compressed_size {
-            ret.extend(u64::to_le_bytes(compressed_size));
-        }
-        if let Some(header_start) = header_start {
-            ret.extend(u64::to_le_bytes(header_start));
-        }
-        debug_assert_eq!(ret.len(), full_size);
-
-        ret.into_boxed_slice()
-    }
 }
 
 #[derive(Copy, Clone, Debug)]
