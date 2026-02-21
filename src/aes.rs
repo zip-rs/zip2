@@ -85,7 +85,7 @@ impl AesSalt {
     }
 
     /// Get the inner salt array and consume it
-    pub(crate) fn inner(self) -> Vec<u8> {
+    pub(crate) fn into_inner(self) -> Vec<u8> {
         match self {
             Self::Aes128(salt) => salt.to_vec(),
             Self::Aes192(salt) => salt.to_vec(),
@@ -343,7 +343,7 @@ impl<W: Write> AesWriter<W> {
         let mut encrypted_file_header = Vec::with_capacity(salt_length + 2);
 
         let salt = if let Some(customized_salt) = custom_salt {
-            customized_salt.inner()
+            customized_salt.into_inner()
         } else {
             // Generate a random salt
             let mut salt = vec![0; salt_length];
