@@ -1887,7 +1887,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let src_index = self.index_by_name(src_name)?;
         let mut dest_data = self.files[src_index].clone();
         dest_data.file_name = dest_name.to_string().into();
-        dest_data.file_name_raw = dest_name.to_string().into_bytes().into();
+        dest_data.file_name_raw = dest_name.as_bytes().into();
         dest_data.central_header_start = 0;
         self.insert_file_data(dest_data)?;
 
