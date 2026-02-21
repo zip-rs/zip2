@@ -35,9 +35,6 @@ pub enum ExtraField {
 
     /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
     ExtendedTimestamp(ExtendedTimestamp),
-
-    /// Zip64 extended information
-    Zip64ExtendedInfo(Zip64ExtendedInformation),
 }
 
 /// Extra field used in this crate
