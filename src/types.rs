@@ -86,8 +86,16 @@ pub enum System {
 impl System {
     /// Parse `version_made_by` block in local entry block.
     pub fn from_version_made_by(version_made_by: u16) -> Self {
-        let upper_byte = (version_made_by >> 8) as u8;
+        // Extract upper byte from little-endian representation
+        let upper_byte = version_made_by.to_le_bytes()[1];
         System::from(upper_byte) // from u8
+    }
+
+    /// Extract the system and version from a `version_made_by` field.
+    /// The first byte (lower) is the version, and the second byte (upper) is the system.
+    pub(crate) fn extract_bytes(version_made_by: u16) -> (u8, Self) {
+        let bytes = version_made_by.to_le_bytes();
+        (bytes[0], Self::from(bytes[1]))
     }
 }
 
@@ -352,6 +360,10 @@ impl DateTime {
         DateTime { datepart, timepart }
     }
 
+    pub(crate) fn is_leap_year(year: u16) -> bool {
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+    }
+
     /// Converts an msdos (u16, u16) pair to a `DateTime` object if it represents a valid date and
     /// time.
     pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
@@ -379,7 +391,7 @@ impl DateTime {
     /// * day: [1, 28..=31]
     /// * hour: [0, 23]
     /// * minute: [0, 59]
-    /// * second: [0, 58]
+    /// * second: [0, 60] (rounded down to even and to [0, 58] due to ZIP format limitation)
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -388,10 +400,6 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
-        fn is_leap_year(year: u16) -> bool {
-            year.is_multiple_of(4) && (!year.is_multiple_of(25) || year.is_multiple_of(16))
-        }
-
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -404,7 +412,7 @@ impl DateTime {
             let max_day = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
                 4 | 6 | 9 | 11 => 30,
-                2 if is_leap_year(year) => 29,
+                2 if Self::is_leap_year(year) => 29,
                 2 => 28,
                 _ => unreachable!(),
             };
@@ -776,7 +784,7 @@ impl ZipFileData {
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
@@ -900,10 +908,10 @@ impl ZipFileData {
                 .into()
         };
 
+        let (version_made_by, system) = System::extract_bytes(version_made_by);
         Ok(ZipFileData {
-            system: System::from_version_made_by(version_made_by),
-            /* NB: this strips the top 8 bits! */
-            version_made_by: version_made_by as u8,
+            system,
+            version_made_by,
             flags,
             encrypted,
             using_data_descriptor,
@@ -1710,9 +1718,8 @@ mod test {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
-    use std::{path::PathBuf, sync::OnceLock};
-
     use crate::types::{System, ZipFileData};
+    use std::{path::PathBuf, sync::OnceLock};
 
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
@@ -1955,5 +1962,18 @@ mod test {
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();
 
         assert!(DateTime::try_from(PrimitiveDateTime::new(clock.date(), clock.time())).is_ok());
+    }
+
+    #[test]
+    fn test_is_leap_year() {
+        use crate::DateTime;
+        assert!(DateTime::is_leap_year(2000));
+        assert!(!DateTime::is_leap_year(2026));
+        assert!(!DateTime::is_leap_year(2027));
+        assert!(DateTime::is_leap_year(2028));
+        assert!(DateTime::is_leap_year(1600));
+        assert!(DateTime::is_leap_year(2400));
+        assert!(!DateTime::is_leap_year(1900));
+        assert!(!DateTime::is_leap_year(2100));
     }
 }

@@ -1468,11 +1468,11 @@ fn central_header_to_zip_file_inner<R: Read>(
         file_comment_raw.from_cp437()?.into()
     };
 
+    let (version_made_by, system) = System::extract_bytes(version_made_by);
     // Construct the result
     let mut result = ZipFileData {
-        system: System::from_version_made_by(version_made_by),
-        /* NB: this strips the top 8 bits! */
-        version_made_by: version_made_by as u8,
+        system,
+        version_made_by,
         encrypted,
         using_data_descriptor,
         is_utf8,

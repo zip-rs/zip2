@@ -27,7 +27,7 @@ use std::sync::Arc;
 // re-export from types
 pub use crate::types::{FileOptions, SimpleFileOptions};
 
-#[cfg_attr(feature = "aes-crypto", allow(clippy::large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 enum MaybeEncrypted<W> {
     Unencrypted(W),
     #[cfg(feature = "aes-crypto")]
@@ -85,6 +85,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
@@ -203,7 +204,7 @@ pub(crate) mod zip_writer {
                 ZopfliDeflater(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "deflate-zopfli")]
                 BufferedZopfliDeflater(w) => Some(w.get_ref().get_ref().get_ref()),
-                #[cfg(feature = "bzip2")]
+                #[cfg(feature = "_bzip2_any")]
                 Bzip2(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "zstd")]
                 Zstd(w) => Some(w.get_ref().get_ref()),
@@ -215,7 +216,10 @@ pub(crate) mod zip_writer {
         }
 
         /// Gets a reference to the underlying writer in this ZipWrite.
-        /// SAFETY: Caller must not corrupt the archive, and must seek back to the current position
+        ///
+        /// # Safety
+        ///
+        /// Caller must not corrupt the archive, and must seek back to the current position
         /// before continuing to write to the ZipWriter.
         pub unsafe fn get_mut(&mut self) -> Option<&mut W> {
             use GenericZipWriter::*;
@@ -229,7 +233,7 @@ pub(crate) mod zip_writer {
                     ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "deflate-zopfli")]
                     BufferedZopfliDeflater(w) => Some(w.get_mut().get_mut().get_mut()),
-                    #[cfg(feature = "bzip2")]
+                    #[cfg(feature = "_bzip2_any")]
                     Bzip2(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "zstd")]
                     Zstd(w) => Some(w.get_mut().get_mut()),

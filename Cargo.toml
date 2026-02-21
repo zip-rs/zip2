@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "8.0.0"
+version = "8.1.0"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -34,7 +34,7 @@ crc32fast = "1.5"
 flate2 = { version = "1.1", default-features = false, optional = true }
 hmac = { version = "0.12", optional = true, features = ["reset"] }
 indexmap = "2"
-jiff = { version = "0.2.4", optional = true }
+jiff = { version = "^0.2.4", optional = true }
 memchr = "2.7"
 nt-time = { version = "0.13", default-features = false, optional = true }
 ppmd-rust = { version = "1.4", optional = true }
@@ -43,7 +43,7 @@ sha1 = { version = "0.10", optional = true }
 zeroize = { version = "1.8", optional = true, features = ["zeroize_derive"] }
 zstd = { version = "^0.13.3", optional = true, default-features = false }
 zopfli = { version = "^0.8.3", optional = true }
-deflate64 = { version = "0.1.10", optional = true }
+deflate64 = { version = "^0.1.10", optional = true }
 lzma-rust2 = { version = "^0.16.1", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.9", optional = true }
 typed-path = "0.12"
@@ -51,7 +51,7 @@ typed-path = "0.12"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 getrandom = { version = "0.4", default-features = false, optional = true }
-time = { version = "0.3.47", default-features = false, optional = true, features = ["std"] }
+time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 getrandom = { version = "0.4", default-features = false }
@@ -59,7 +59,7 @@ getrandom = { version = "0.4", default-features = false }
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", default-features = false, features = ["wasm_js"], optional = true }
-time = { version = "0.3.47", default-features = false, optional = true, features = [
+time = { version = "^0.3.47", default-features = false, optional = true, features = [
     "std",
     "wasm-bindgen"
 ] }
@@ -72,7 +72,7 @@ wasm-bindgen-test = "^0.3.56"
 bencher = "0.1"
 getrandom = { version = "0.4", default-features = false }
 walkdir = "2.5"
-time = { version = "0.3.47", features = ["formatting", "macros"] }
+time = { version = "^0.3.47", features = ["formatting", "macros"] }
 clap = { version = "^4.4.18", features = ["derive"] }
 tempfile = "3.15"
 rayon = "1.11"
