@@ -486,7 +486,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    existing_files: &IndexMap<Box<str>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<str>, T>,
 ) -> ZipResult<()> {
     #[cfg_attr(not(any(unix, windows)), allow(unused))]
     let Ok(target_str) = std::str::from_utf8(target) else {
