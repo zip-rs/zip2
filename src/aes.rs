@@ -34,42 +34,48 @@ enum Cipher {
 pub(crate) struct AesModeOptions {
     pub(crate) mode: AesMode,
     pub(crate) vendor_version: AesVendorVersion,
-    pub(crate) compression_method: CompressionMethod,
-    pub(crate) custom_salt: Option<crate::aes::CustomSalt>,
+    pub(crate) actual_compression_method: CompressionMethod,
+    pub(crate) custom_salt: Option<crate::aes::InnerSalt>,
 }
 
 impl AesModeOptions {
     pub(crate) fn new(
         mode: AesMode,
         vendor_version: AesVendorVersion,
-        compression_method: CompressionMethod,
-        custom_salt: Option<CustomSalt>,
+        actual_compression_method: CompressionMethod,
+        custom_salt: Option<crate::aes::InnerSalt>,
     ) -> Self {
         Self {
             mode,
             vendor_version,
-            compression_method,
+            actual_compression_method,
             custom_salt,
         }
     }
 
     /// Used to create a the `aes_mode` of `ZipFileData`
     pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
-        (self.mode, self.vendor_version, self.compression_method)
+        (
+            self.mode,
+            self.vendor_version,
+            self.actual_compression_method,
+        )
     }
 }
+
+pub(crate) type InnerSalt = [u8; AesMode::MAX_SALT_SIZE];
 
 /// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
 /// This is not recommended, but it can be useful for testing or for reproducible encryption results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CustomSalt {
     pub(crate) mode: AesMode,
-    inner: [u8; AesMode::MAX_SALT_SIZE],
+    inner: InnerSalt,
 }
 
 impl CustomSalt {
-    pub(crate) fn inner(&self) -> &[u8] {
-        &self.inner
+    pub(crate) fn inner(&self) -> InnerSalt {
+        self.inner
     }
 
     /// Creates a new `CustomSalt` with the given `mode` and `salt`.
@@ -308,7 +314,7 @@ impl<W: Write> AesWriter<W> {
         writer: W,
         aes_mode: AesMode,
         password: &[u8],
-        custom_salt: Option<CustomSalt>,
+        custom_salt: Option<InnerSalt>,
     ) -> ZipResult<Self> {
         let salt_length = aes_mode.salt_length();
         let key_length = aes_mode.key_length();
@@ -317,7 +323,6 @@ impl<W: Write> AesWriter<W> {
 
         let salt = if let Some(customized_salt) = custom_salt {
             customized_salt
-                .inner()
                 .get(0..salt_length)
                 .ok_or(ZipError::Io(std::io::Error::other(
                     "Cannot get the custom salt",

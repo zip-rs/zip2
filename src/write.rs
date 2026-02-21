@@ -608,7 +608,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: salt.mode,
                 password,
-                salt: Some(salt),
+                salt: Some(salt.inner()),
             }),
             ..self
         }
@@ -1192,7 +1192,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if let Some(crate::aes::AesModeOptions {
             mode,
             vendor_version,
-            compression_method,
+            actual_compression_method,
             ..
         }) = aes_mode
         {
@@ -1201,7 +1201,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             [body[0], body[1]] = (vendor_version as u16).to_le_bytes(); // vendor version (1 or 2)
             [body[2], body[3]] = *b"AE"; // vendor id
             body[4] = mode as u8; // strength
-            [body[5], body[6]] = compression_method.serialize_to_u16().to_le_bytes(); // real compression method
+            [body[5], body[6]] = actual_compression_method.serialize_to_u16().to_le_bytes(); // real compression method
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
