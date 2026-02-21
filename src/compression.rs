@@ -2,7 +2,7 @@
 
 use crate::cfg_if_expr;
 use core::fmt;
-use std::io;
+use std::{fmt::Debug, io};
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -294,6 +294,34 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     Xz(Box<lzma_rust2::XzReader<R>>),
     #[cfg(feature = "ppmd")]
     Ppmd(Ppmd<R>),
+}
+
+impl<R: io::BufRead> Debug for Decompressor<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stored(_) => write!(f, "StoredDecompressor"),
+            #[cfg(feature = "deflate-flate2")]
+            Self::Deflated(_) => write!(f, "DeflatedDecompressor"),
+            #[cfg(feature = "deflate64")]
+            Self::Deflate64(_) => write!(f, "Deflate64Decompressor"),
+            #[cfg(feature = "_bzip2_any")]
+            Self::Bzip2(_) => write!(f, "Bzip2Decompressor"),
+            #[cfg(feature = "zstd")]
+            Self::Zstd(_) => write!(f, "ZstdDecompressor"),
+            #[cfg(feature = "lzma")]
+            Self::Lzma(_) => write!(f, "LzmaDecompressor"),
+            #[cfg(feature = "legacy-zip")]
+            Self::Shrink(_) => write!(f, "ShrinkDecompressor"),
+            #[cfg(feature = "legacy-zip")]
+            Self::Reduce(_) => write!(f, "ReduceDecompressor"),
+            #[cfg(feature = "legacy-zip")]
+            Self::Implode() => write!(f, "ImplodeDecompressor"),
+            #[cfg(feature = "xz")]
+            Self::Xz(_) => write!(f, "XzDecompressor"),
+            #[cfg(feature = "ppmd")]
+            Self::Ppmd(_) => write!(f, "PpmdDecompressor"),
+        }
+    }
 }
 
 #[cfg(feature = "lzma")]

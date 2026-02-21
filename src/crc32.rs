@@ -5,6 +5,7 @@ use std::io::{self, Read};
 use crc32fast::Hasher;
 
 /// Reader that validates the CRC32 when it reaches the EOF.
+#[derive(Debug)]
 pub struct Crc32Reader<R> {
     inner: R,
     hasher: Hasher,

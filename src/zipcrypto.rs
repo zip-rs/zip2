@@ -135,6 +135,7 @@ impl ZipCryptoKeys {
 }
 
 /// A `ZipCrypto` reader with unverified password
+#[derive(Debug)]
 pub struct ZipCryptoReader<R> {
     file: R,
     keys: ZipCryptoKeys,
@@ -242,6 +243,7 @@ impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
 }
 
 /// A `ZipCrypto` reader with verified password
+#[derive(Debug)]
 pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
