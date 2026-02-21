@@ -1,6 +1,5 @@
 //! Types for reading ZIP archives
 
-use crate::cfg_if;
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
@@ -168,21 +167,21 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
     }
 
     /// Returns `true` if the data is encrypted using AE2.
-    #[allow(clippy::needless_return)] // can't use cfg_if_expr! because const
+    #[cfg(feature = "aes-crypto")]
     pub const fn is_ae2_encrypted(&self) -> bool {
-        cfg_if! {
-            if #[cfg(feature = "aes-crypto")] {
-                return matches!(
-                    self,
-                    CryptoReader::Aes {
-                        vendor_version: AesVendorVersion::Ae2,
-                        ..
-                    }
-                );
-            } else {
-                return false;
+        matches!(
+            self,
+            CryptoReader::Aes {
+                vendor_version: AesVendorVersion::Ae2,
+                ..
             }
-        }
+        )
+    }
+
+    /// Returns `true` if the data is encrypted using AE2.
+    #[cfg(not(feature = "aes-crypto"))]
+    pub const fn is_ae2_encrypted(&self) -> bool {
+        return false;
     }
 }
 
@@ -451,43 +450,59 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
     ))))
 }
 
+#[cfg(unix)]
+pub(crate) fn make_symlink_impl<T>(
+    outpath: &Path,
+    target_str: &str,
+    _existing_files: &IndexMap<Box<str>, T>,
+) -> ZipResult<()> {
+    std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn make_symlink_impl<T>(
+    outpath: &Path,
+    target_str: &str,
+    existing_files: &IndexMap<Box<str>, T>,
+) -> ZipResult<()> {
+    let target = Path::new(OsStr::new(&target_str));
+    let target_is_dir_from_archive = existing_files.contains_key(target_str) && is_dir(target_str);
+    let target_is_dir = if target_is_dir_from_archive {
+        true
+    } else if let Ok(meta) = std::fs::metadata(target) {
+        meta.is_dir()
+    } else {
+        false
+    };
+    if target_is_dir {
+        std::os::windows::fs::symlink_dir(target, outpath)?;
+    } else {
+        std::os::windows::fs::symlink_file(target, outpath)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(windows), allow(unused))] existing_files: &IndexMap<Box<str>, T>,
+    existing_files: &IndexMap<Box<str>, T>,
 ) -> ZipResult<()> {
     #[cfg_attr(not(any(unix, windows)), allow(unused))]
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
-
-    cfg_if! {
-        if #[cfg(unix)] {
-            std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
-        } else if #[cfg(windows)] {
-            let target = Path::new(OsStr::new(&target_str));
-            let target_is_dir_from_archive =
-                existing_files.contains_key(target_str) && is_dir(target_str);
-            let target_is_dir = if target_is_dir_from_archive {
-                true
-            } else if let Ok(meta) = std::fs::metadata(target) {
-                meta.is_dir()
-            } else {
-                false
-            };
-            if target_is_dir {
-                std::os::windows::fs::symlink_dir(target, outpath)?;
-            } else {
-                std::os::windows::fs::symlink_file(target, outpath)?;
-            }
-        } else {
-            use std::fs::File;
-            let output = File::create(outpath);
-            output?.write_all(target)?;
-        }
+    #[cfg(any(windows, unix))]
+    {
+        make_symlink_impl(outpath, target_str, existing_files)
     }
-
-    Ok(())
+    #[cfg(not(any(windows, unix)))]
+    {
+        use std::fs::File;
+        let output = File::create(outpath);
+        output?.write_all(target)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]

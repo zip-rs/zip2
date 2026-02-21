@@ -2030,16 +2030,18 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                             }))
                         }};
                     }
-                    crate::cfg_if! {
-                        if #[cfg(feature = "deflate-flate2")] {
-                            let best_non_zopfli = flate2::Compression::best().level();
-                            if level > best_non_zopfli {
-                                return deflate_zopfli_and_return!(bare, best_non_zopfli);
-                            }
-                        } else {
-                            let best_non_zopfli = 9;
+
+                    #[cfg(feature = "deflate-flate2")]
+                    {
+                        let best_non_zopfli = flate2::Compression::best().level();
+                        if level > best_non_zopfli {
                             return deflate_zopfli_and_return!(bare, best_non_zopfli);
                         }
+                    }
+                    #[cfg(not(feature = "deflate-flate2"))]
+                    {
+                        let best_non_zopfli = 9;
+                        return deflate_zopfli_and_return!(bare, best_non_zopfli);
                     }
                 }
                 crate::cfg_if_expr! {
