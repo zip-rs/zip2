@@ -82,7 +82,7 @@ impl ZipCryptoKeys {
     /// Constant added to the lower 2 bits of `key_2` when computing the
     /// ZipCrypto keystream base, corresponding to the `| 3` step described
     /// in the ZipCrypto specification.
-    const KEYSTREAM_BASE_SUFFIX: u16 = 3;
+    const KEYSTREAM_BASE_SUFFIX: u16 = 2;
 
     const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
