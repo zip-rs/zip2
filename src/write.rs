@@ -860,7 +860,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let dest_name_raw = dest_name.as_bytes();
         new_data.file_name = dest_name.into();
         new_data.file_name_raw = dest_name_raw.into();
-        new_data.is_utf8 = !dest_name.is_ascii();
+        new_data.is_utf8 = true;
         new_data.header_start = write_position;
         let extra_data_start = write_position
             + size_of::<ZipLocalEntryBlock>() as u64
