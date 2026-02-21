@@ -19,7 +19,7 @@ pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
         mode: crate::AesMode,
-        password: &'k str,
+        password: &'k [u8],
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
@@ -31,7 +31,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
                 mode: crate::AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&str>()?,
+                password: u.arbitrary::<&[u8]>()?,
             });
         }
 

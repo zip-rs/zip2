@@ -33,6 +33,22 @@ fn by_path_decrypt() {
     validate_file(file);
 }
 
+#[test]
+#[cfg(feature = "aes-crypto")]
+fn by_path_decrypt_and_bytes_password() {
+    use zip::AesMode;
+
+    const PASSWORD: &str = "helloworld";
+
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .with_aes_encryption_bytes(AesMode::Aes128, PASSWORD.as_bytes()); // change
+    let mut archive = create_archive(options);
+    let path = Path::new(DIRECTORY_NAME).join(FILE_NAME);
+    let file = archive.by_path_decrypt(path, PASSWORD.as_bytes()).unwrap();
+    validate_file(file);
+}
+
 fn create_archive(options: SimpleFileOptions) -> ZipArchive<Cursor<Vec<u8>>> {
     let mut buf = Vec::new();
     let mut zip = ZipWriter::new(Cursor::new(&mut buf));
