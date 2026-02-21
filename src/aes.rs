@@ -35,7 +35,7 @@ pub(crate) struct AesModeOptions {
     pub(crate) mode: AesMode,
     pub(crate) vendor_version: AesVendorVersion,
     pub(crate) actual_compression_method: CompressionMethod,
-    pub(crate) custom_salt: Option<crate::aes::InnerSalt>,
+    pub(crate) custom_salt: Option<CustomSalt>,
 }
 
 impl AesModeOptions {
@@ -43,7 +43,7 @@ impl AesModeOptions {
         mode: AesMode,
         vendor_version: AesVendorVersion,
         actual_compression_method: CompressionMethod,
-        custom_salt: Option<crate::aes::InnerSalt>,
+        custom_salt: Option<CustomSalt>,
     ) -> Self {
         Self {
             mode,
@@ -63,20 +63,45 @@ impl AesModeOptions {
     }
 }
 
-pub(crate) type InnerSalt = [u8; AesMode::MAX_SALT_SIZE];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CustomSalt {
+    Aes128([u8; AesMode::Aes128.salt_length()]),
+    Aes192([u8; AesMode::Aes192.salt_length()]),
+    Aes256([u8; AesMode::Aes256.salt_length()]),
+}
+
+impl CustomSalt {
+    pub(crate) fn inner(self) -> Vec<u8> {
+        match self {
+            Self::Aes128(salt) => salt.to_vec(),
+            Self::Aes192(salt) => salt.to_vec(),
+            Self::Aes256(salt) => salt.to_vec(),
+        }
+    }
+}
 
 /// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
 /// This is not recommended, but it can be useful for testing or for reproducible encryption results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CustomSalt {
+pub struct AesSalt {
     pub(crate) mode: AesMode,
-    inner: InnerSalt,
+    inner: CustomSalt,
 }
 
-impl CustomSalt {
+impl AesSalt {
     /// Get the inner salt array and consume it
-    pub(crate) fn inner(self) -> InnerSalt {
+    pub(crate) fn inner(self) -> CustomSalt {
         self.inner
+    }
+
+    pub(crate) fn salt_error(mode: AesMode, err: std::array::TryFromSliceError) -> std::io::Error {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "Salt for {mode} must be {} bytes long: {err}",
+                mode.salt_length(),
+            ),
+        )
     }
 
     /// Creates a new `CustomSalt` with the given `mode` and `salt`.
@@ -85,21 +110,20 @@ impl CustomSalt {
     /// # Errors
     /// Returns an error if the length of `salt` is too short for the given `mode`.
     pub fn try_new(mode: AesMode, salt: &[u8]) -> Result<Self, std::io::Error> {
-        let mut salt_array = [0u8; AesMode::MAX_SALT_SIZE];
-        let salt_length = mode.salt_length();
-        if salt.len() < salt_length {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Salt for {} must be at least {} bytes long",
-                    mode, salt_length
-                ),
-            ));
-        }
-        salt_array[..salt_length].copy_from_slice(&salt[..salt_length]);
+        let custom_salt = match mode {
+            AesMode::Aes128 => {
+                CustomSalt::Aes128(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+            }
+            AesMode::Aes192 => {
+                CustomSalt::Aes192(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+            }
+            AesMode::Aes256 => {
+                CustomSalt::Aes256(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+            }
+        };
         Ok(Self {
             mode,
-            inner: salt_array,
+            inner: custom_salt,
         })
     }
 }
@@ -315,7 +339,7 @@ impl<W: Write> AesWriter<W> {
         writer: W,
         aes_mode: AesMode,
         password: &[u8],
-        custom_salt: Option<InnerSalt>,
+        custom_salt: Option<CustomSalt>,
     ) -> ZipResult<Self> {
         let salt_length = aes_mode.salt_length();
         let key_length = aes_mode.key_length();
@@ -323,12 +347,7 @@ impl<W: Write> AesWriter<W> {
         let mut encrypted_file_header = Vec::with_capacity(salt_length + 2);
 
         let salt = if let Some(customized_salt) = custom_salt {
-            customized_salt
-                .get(0..salt_length)
-                .ok_or(ZipError::Io(std::io::Error::other(
-                    "Cannot get the custom salt",
-                )))?
-                .to_vec()
+            customized_salt.inner()
         } else {
             // Generate a random salt
             let mut salt = vec![0; salt_length];

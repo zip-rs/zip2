@@ -238,7 +238,7 @@ fn raw_copy_from_aes_zip() {
 
 #[test]
 fn aes_custom_salt_for_reproducible_zip() {
-    use zip::CustomSalt;
+    use zip::AesSalt;
     use zip::DateTime;
 
     for (mode, salt, expected_error) in [
@@ -246,12 +246,12 @@ fn aes_custom_salt_for_reproducible_zip() {
         (
             AesMode::Aes128,
             [].into(), // salt too short
-            Some("Salt for AES-128 must be at least 8 bytes long"),
+            Some("Salt for AES-128 must be 8 bytes long: could not convert slice to array"),
         ),
         (
             AesMode::Aes128,
             [1, 2, 3, 4, 5, 6, 7, 8, 9].into(), // salt too long should works
-            None,
+            Some("Salt for AES-128 must be 8 bytes long: could not convert slice to array"),
         ),
         (
             AesMode::Aes192,
@@ -261,12 +261,12 @@ fn aes_custom_salt_for_reproducible_zip() {
         (
             AesMode::Aes192,
             [].into(), // salt too short
-            Some("Salt for AES-192 must be at least 12 bytes long"),
+            Some("Salt for AES-192 must be 12 bytes long: could not convert slice to array"),
         ),
         (
             AesMode::Aes192,
             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].into(), // salt too long should works
-            None,
+            Some("Salt for AES-192 must be 12 bytes long: could not convert slice to array"),
         ),
         (
             AesMode::Aes256,
@@ -276,15 +276,15 @@ fn aes_custom_salt_for_reproducible_zip() {
         (
             AesMode::Aes256,
             [1, 2, 3, 4, 5, 6, 7, 8].into(),
-            Some("Salt for AES-256 must be at least 16 bytes long"),
+            Some("Salt for AES-256 must be 16 bytes long: could not convert slice to array"),
         ),
         (
             AesMode::Aes256,
             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].into(), // salt too long should works
-            None,
+            Some("Salt for AES-256 must be 16 bytes long: could not convert slice to array"),
         ),
     ] {
-        let custom_salt = CustomSalt::try_new(mode, salt.as_slice());
+        let custom_salt = AesSalt::try_new(mode, salt.as_slice());
         if let Some(expected_error) = expected_error {
             assert_eq!(custom_salt.unwrap_err().to_string(), expected_error);
             continue;
