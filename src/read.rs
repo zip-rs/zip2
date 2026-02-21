@@ -181,7 +181,7 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
     /// Returns `true` if the data is encrypted using AE2.
     #[cfg(not(feature = "aes-crypto"))]
     pub const fn is_ae2_encrypted(&self) -> bool {
-        return false;
+        false
     }
 }
 
