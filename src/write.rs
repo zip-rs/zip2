@@ -1978,11 +1978,19 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[allow(unreachable_code)]
             #[cfg(feature = "_deflate-any")]
             CompressionMethod::Deflated => {
-                let default = crate::cfg_if_expr! {
-                    i64:
-                    #[cfg(feature = "deflate-flate2")] => i64::from(flate2::Compression::default().level()),
-                    #[cfg(feature = "deflate-zopfli")] => 24,
-                    _ => compile_error!("could not calculate default: unknown deflate variant"),
+                let default = {
+                    #[cfg(feature = "deflate-flate2")]
+                    {
+                        i64::from(flate2::Compression::default().level())
+                    }
+                    #[cfg(all(not(feature = "deflate-flate2"), feature = "deflate-zopfli"))]
+                    {
+                        24
+                    }
+                    #[cfg(not(any(feature = "deflate-zopfli", feature = "deflate-flate2")))]
+                    {
+                        compile_error!("could not calculate default: unknown deflate variant")
+                    }
                 };
 
                 let level = validate_value_in_range(
@@ -2044,15 +2052,20 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         return deflate_zopfli_and_return!(bare, best_non_zopfli);
                     }
                 }
-                crate::cfg_if_expr! {
-                    ZipResult<SwitchWriterFunction<W>>:
-                    #[cfg(feature = "deflate-flate2")] => Ok(Box::new(move |bare| {
-                        Ok(GenericZipWriter::Deflater(flate2::write::DeflateEncoder::new(
-                            bare,
-                            flate2::Compression::new(level),
-                        )))
-                    })),
-                    _ => unreachable!("deflate writer: have no fallback for this case")
+                #[cfg(feature = "deflate-flate2")]
+                {
+                    Ok(Box::new(move |bare| {
+                        Ok(GenericZipWriter::Deflater(
+                            flate2::write::DeflateEncoder::new(
+                                bare,
+                                flate2::Compression::new(level),
+                            ),
+                        ))
+                    }))
+                }
+                #[cfg(not(feature = "deflate-flate2"))]
+                {
+                    unreachable!("deflate writer: have no fallback for this case")
                 }
             }
             #[cfg(feature = "deflate64")]
@@ -2241,18 +2254,31 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
 #[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    let min = crate::cfg_if_expr! {
-        i64:
-        #[cfg(feature = "deflate-flate2")] => i64::from(flate2::Compression::fast().level()),
-        #[cfg(feature = "deflate-zopfli")] => 1,
-        _ => compile_error!("min: unknown deflate variant"),
+    #[cfg(not(any(feature = "deflate-zopfli", feature = "deflate-flate2")))]
+    {
+        compile_error!("min: unknown deflate variant - enable deflate-zopfli or deflate-flate2")
+    }
+
+    let min = {
+        #[cfg(feature = "deflate-flate2")]
+        {
+            i64::from(flate2::Compression::fast().level())
+        }
+        #[cfg(all(not(feature = "deflate-flate2"), feature = "deflate-zopfli"))]
+        {
+            1
+        }
     };
 
-    let max = crate::cfg_if_expr! {
-        i64:
-        #[cfg(feature = "deflate-zopfli")] => 264,
-        #[cfg(feature = "deflate-flate2")] => flate2::Compression::best().level() as i64,
-        _ => compile_error!("max: unknown deflate variant"),
+    let max = {
+        #[cfg(feature = "deflate-zopfli")]
+        {
+            264
+        }
+        #[cfg(all(not(feature = "deflate-zopfli"), feature = "deflate-flate2"))]
+        {
+            flate2::Compression::best().level() as i64
+        }
     };
 
     min..=max
