@@ -53,7 +53,13 @@
 // 22c400260  00 00 50 4b 05 06 00 00  00 00 03 00 03 00 27 01  |..PK..........'.|
 // 22c400270  00 00 ff ff ff ff 00 00                           |........|
 // 22c400278
-use std::io::{self, Read, Seek, SeekFrom};
+use std::{
+    fs::File,
+    io::{self, Cursor, Read, Seek, SeekFrom},
+    path::Path,
+};
+
+use zip::write::SimpleFileOptions;
 
 const BLOCK1_LENGTH: u64 = 0x60;
 const BLOCK1: [u8; BLOCK1_LENGTH as usize] = [
@@ -208,4 +214,118 @@ fn zip64_large() {
             Err(e) => println!("Could not read the file: {e:?}"),
         };
     }
+}
+
+#[test]
+fn test_zip64_check_extra_field() {
+    let path = Path::new("bigfile.bin");
+    let bigfile = File::create(path).expect("Failed to create a big file");
+
+    // 1024 MiB = 1024 * 1024 * 1024 bytes
+    bigfile
+        .set_len(1024 * 1024 * 1024)
+        .expect("Failed to set file length of the big file");
+
+    let mut archive_buffer = Vec::new();
+    let res = zip64_check_extra_field(path, &mut archive_buffer);
+    std::fs::remove_file(path).expect("Failed to remove the big file");
+
+    assert_eq!(res.unwrap(), ());
+    assert_eq!(archive_buffer.len(), 5368709856);
+
+    let mut read_archive =
+        zip::ZipArchive::new(Cursor::new(&archive_buffer)).expect("Failed to read the archive");
+
+    assert_eq!(read_archive.len(), 4 + 1 + 1); // the archive should contain 4 files + 1 directory + 1 file in the directory
+    {
+        let dir = read_archive.by_name("dir/").unwrap();
+        assert_eq!(dir.compressed_size(), 0);
+        assert_eq!(dir.size(), 0);
+        let header_start = 4294967452;
+        assert_eq!(dir.header_start(), header_start);
+        assert_eq!(dir.central_header_start(), 5368709599);
+        let start_file = dir.header_start() as usize;
+        let range = (start_file)..(start_file + 70); // take a bunch of bytes from the local file header of the directory entry, which should contain the zip64 extra field
+        let raw_access = archive_buffer.get(range).unwrap();
+        eprintln!("RAW ACCESS: {:x?}", raw_access);
+        assert_eq!(raw_access[0..4], [0x50, 0x4b, 0x03, 0x04]); // local file header signature
+        assert_eq!(raw_access[4..6], [0x2d, 0x00]); // version needed to extract
+        assert_eq!(raw_access[6..8], [0x00, 0x00]); // general purpose bit flag
+        assert_eq!(raw_access[8..10], [0x00, 0x00]); // compression method
+        // assert_eq!(raw_access[10..12], [0x00, 0x00]); // last mod file time
+        // assert_eq!(raw_access[12..14], [0x00, 0x00]); // last mod file date
+        assert_eq!(raw_access[14..18], [0x00, 0x00, 0x00, 0x00]); // crc-32
+        assert_eq!(raw_access[18..22], [0x00, 0x00, 0x00, 0x00]); // compressed size - IMPORTANT
+        assert_eq!(raw_access[22..26], [0x00, 0x00, 0x00, 0x00]); // uncompressed size - IMPORTANT
+        assert_eq!(raw_access[26..28], [0x04, 0x00]); // file name length
+        assert_eq!(raw_access[28..30], [0x0c, 0x00]); // extra field length
+        assert_eq!(raw_access[30..34], *b"dir/"); // file name
+        assert_eq!(raw_access[34..36], [0x01, 0x00]); // zip64 extra field header id
+        assert_eq!(raw_access[36..38], [0x08, 0x00]); // zip64 extra field data size (should be 0 for a directory entry, since
+        assert_eq!(
+            raw_access[38..46],
+            [0x9c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]
+        ); // zip64 extra field - IMPORTANT
+    }
+    {
+        let bigfile_archive = read_archive.by_name("dir/bigfile.bin").unwrap();
+        assert_eq!(bigfile_archive.compressed_size(), 1024 * 1024 * 1024);
+        assert_eq!(bigfile_archive.size(), 1024 * 1024 * 1024);
+        let header_start = 4294967498;
+        assert_eq!(bigfile_archive.header_start(), header_start);
+        assert_eq!(bigfile_archive.central_header_start(), 5368709673);
+        let start_file = bigfile_archive.header_start() as usize;
+        let range = (start_file)..(start_file + 70); // take a bunch of bytes from the local file header of the directory entry, which should contain the zip64 extra field
+        let raw_access = archive_buffer.get(range).unwrap();
+        eprintln!("RAW ACCESS: {:x?}", raw_access);
+        assert_eq!(raw_access[0..4], [0x50, 0x4b, 0x03, 0x04]); // local file header signature
+        assert_eq!(raw_access[4..6], [0x2d, 0x00]); // version needed to extract
+        assert_eq!(raw_access[6..8], [0x00, 0x00]); // general purpose bit flag
+        assert_eq!(raw_access[8..10], [0x00, 0x00]); // compression method
+        // assert_eq!(raw_access[10..12], [0x00, 0x00]); // last mod file time
+        // assert_eq!(raw_access[12..14], [0x00, 0x00]); // last mod file date
+        assert_eq!(raw_access[14..18], [176, 194, 100, 91]); // crc-32
+        assert_eq!(raw_access[18..22], [0xff, 0xff, 0xff, 0xff]); // compressed size
+        assert_eq!(raw_access[22..26], [0xff, 0xff, 0xff, 0xff]); // uncompressed size
+        assert_eq!(raw_access[26..28], [0x0f, 0x00]); // file name length
+        assert_eq!(raw_access[28..30], [0x0c, 0x00]); // extra field length
+        assert_eq!(raw_access[30..45], *b"dir/bigfile.bin"); // file name
+        assert_eq!(raw_access[45..47], [0x01, 0x00]); // zip64 extra field header id
+        assert_eq!(raw_access[47..49], [0x08, 0x00]); // zip64 extra field data size
+        let offset_bytes = [0xca, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+        assert_eq!(raw_access[49..57], offset_bytes); // zip64 extra field data Relative Header Offset
+        let offset = u64::from_le_bytes(offset_bytes);
+        assert_eq!(offset, header_start); // the offset in the zip64 extra field should match the header start of the file data
+    }
+
+    panic!(
+        "This test is expected to fail because the zip64 extra field for the central directory header is not being written correctly, which causes the central directory to be misread and the archive to be considered malformed"
+    );
+}
+
+fn zip64_check_extra_field(
+    path: &Path,
+    archive_buffer: &mut Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut bigfile = File::open(path)?;
+
+    let mut archive = zip::ZipWriter::new(Cursor::new(archive_buffer));
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .unix_permissions(0o755);
+
+    // add 4GiB of file data to the archive, which should trigger the zip64 extra field
+    for i in 0..4 {
+        bigfile.seek(SeekFrom::Start(0))?;
+        let filename = format!("file{}.bin", i + 1);
+        archive.start_file(filename, options)?;
+        std::io::copy(&mut bigfile, &mut archive)?;
+    }
+    // now add a directory entry, which SHOULD trigger the zip64 extra field for the central directory header
+    archive.add_directory("dir/", options)?;
+    archive.start_file("dir/bigfile.bin", options)?;
+    bigfile.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut bigfile, &mut archive)?;
+    archive.finish()?;
+    Ok(())
 }

@@ -110,24 +110,32 @@ fn zip_dir(
             }
         };
         let path = entry.path();
-        let name = path.strip_prefix(src_dir)?;
-        let path_as_string = name
+        let path_stripped = path.strip_prefix(src_dir)?;
+        let path_as_string = path_stripped
             .to_str()
             .map(str::to_owned)
-            .ok_or_else(|| format!("{name:?} is a Non UTF-8 Path"))?;
+            .ok_or_else(|| format!("{:?} is a Non UTF-8 Path", path_stripped.display()))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
         if path.is_file() {
-            println!("adding file {path:?} as {name:?} ...");
+            println!(
+                "adding file {:?} as {:?} ...",
+                path.display(),
+                path_stripped.display()
+            );
             zip.start_file(path_as_string, options)?;
             let mut f = File::open(path)?;
 
             std::io::copy(&mut f, &mut zip)?;
-        } else if !name.as_os_str().is_empty() {
+        } else if !path_stripped.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
-            println!("adding dir {path_as_string:?} as {name:?} ...");
+            println!(
+                "adding dir '{}' as '{}' ...",
+                path.display(),
+                path_stripped.display()
+            );
             zip.add_directory(path_as_string, options)?;
         }
     }
