@@ -606,9 +606,9 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     ) -> FileOptions<'_, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
-                mode: salt.mode,
+                mode: salt.mode(),
                 password,
-                salt: Some(salt.inner()),
+                salt: Some(salt),
             }),
             ..self
         }

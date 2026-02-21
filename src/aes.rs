@@ -35,7 +35,7 @@ pub(crate) struct AesModeOptions {
     pub(crate) mode: AesMode,
     pub(crate) vendor_version: AesVendorVersion,
     pub(crate) actual_compression_method: CompressionMethod,
-    pub(crate) custom_salt: Option<CustomSalt>,
+    pub(crate) custom_salt: Option<AesSalt>,
 }
 
 impl AesModeOptions {
@@ -43,7 +43,7 @@ impl AesModeOptions {
         mode: AesMode,
         vendor_version: AesVendorVersion,
         actual_compression_method: CompressionMethod,
-        custom_salt: Option<CustomSalt>,
+        custom_salt: Option<AesSalt>,
     ) -> Self {
         Self {
             mode,
@@ -63,35 +63,34 @@ impl AesModeOptions {
     }
 }
 
+/// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
+/// This is not recommended, but it can be useful for testing or for reproducible encryption results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CustomSalt {
+pub enum AesSalt {
+    /// AES 128 salt
     Aes128([u8; AesMode::Aes128.salt_length()]),
+    /// AES 192 salt
     Aes192([u8; AesMode::Aes192.salt_length()]),
+    /// AES 256 salt
     Aes256([u8; AesMode::Aes256.salt_length()]),
 }
 
-impl CustomSalt {
+impl AesSalt {
+    pub(crate) fn mode(&self) -> AesMode {
+        match self {
+            Self::Aes128(_) => AesMode::Aes128,
+            Self::Aes192(_) => AesMode::Aes192,
+            Self::Aes256(_) => AesMode::Aes256,
+        }
+    }
+
+    /// Get the inner salt array and consume it
     pub(crate) fn inner(self) -> Vec<u8> {
         match self {
             Self::Aes128(salt) => salt.to_vec(),
             Self::Aes192(salt) => salt.to_vec(),
             Self::Aes256(salt) => salt.to_vec(),
         }
-    }
-}
-
-/// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
-/// This is not recommended, but it can be useful for testing or for reproducible encryption results.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AesSalt {
-    pub(crate) mode: AesMode,
-    inner: CustomSalt,
-}
-
-impl AesSalt {
-    /// Get the inner salt array and consume it
-    pub(crate) fn inner(self) -> CustomSalt {
-        self.inner
     }
 
     pub(crate) fn salt_error(mode: AesMode, err: std::array::TryFromSliceError) -> std::io::Error {
@@ -112,19 +111,16 @@ impl AesSalt {
     pub fn try_new(mode: AesMode, salt: &[u8]) -> Result<Self, std::io::Error> {
         let custom_salt = match mode {
             AesMode::Aes128 => {
-                CustomSalt::Aes128(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+                AesSalt::Aes128(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
             }
             AesMode::Aes192 => {
-                CustomSalt::Aes192(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+                AesSalt::Aes192(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
             }
             AesMode::Aes256 => {
-                CustomSalt::Aes256(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+                AesSalt::Aes256(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
             }
         };
-        Ok(Self {
-            mode,
-            inner: custom_salt,
-        })
+        Ok(custom_salt)
     }
 }
 
@@ -339,7 +335,7 @@ impl<W: Write> AesWriter<W> {
         writer: W,
         aes_mode: AesMode,
         password: &[u8],
-        custom_salt: Option<CustomSalt>,
+        custom_salt: Option<AesSalt>,
     ) -> ZipResult<Self> {
         let salt_length = aes_mode.salt_length();
         let key_length = aes_mode.key_length();
