@@ -315,7 +315,7 @@ impl<R: io::BufRead> Debug for Decompressor<R> {
             #[cfg(feature = "legacy-zip")]
             Self::Reduce(_) => write!(f, "ReduceDecompressor"),
             #[cfg(feature = "legacy-zip")]
-            Self::Implode() => write!(f, "ImplodeDecompressor"),
+            Self::Implode(_) => write!(f, "ImplodeDecompressor"),
             #[cfg(feature = "xz")]
             Self::Xz(_) => write!(f, "XzDecompressor"),
             #[cfg(feature = "ppmd")]
