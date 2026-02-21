@@ -42,7 +42,7 @@ fn by_path_decrypt_and_bytes_password() {
 
     let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
-        .with_aes_encryption_and_bytes_password(AesMode::Aes128, PASSWORD.as_bytes()); // change
+        .with_aes_encryption_bytes(AesMode::Aes128, PASSWORD.as_bytes()); // change
     let mut archive = create_archive(options);
     let path = Path::new(DIRECTORY_NAME).join(FILE_NAME);
     let file = archive.by_path_decrypt(path, PASSWORD.as_bytes()).unwrap();
