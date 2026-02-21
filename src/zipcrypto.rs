@@ -20,7 +20,7 @@ pub(crate) enum EncryptWith<'k> {
     Aes {
         mode: crate::AesMode,
         password: &'k str,
-        salt: Option<crate::aes::CustomSalt>,
+        salt: Option<crate::aes::AesSalt>,
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
