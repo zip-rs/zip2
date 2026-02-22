@@ -32,36 +32,26 @@ impl Zip64ExtendedInformation {
     const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
 
     pub(crate) fn from_new_entry(is_large_file: bool) -> Option<Self> {
-        Self::local_header(is_large_file, 0, 0)
+        if is_large_file {
+            Self::local_header(u64::MAX, u64::MAX)
+        } else {
+            None
+        }
     }
 
     /// This entry in the Local header MUST include BOTH original and compressed file size fields
-    pub(crate) fn local_header(
-        is_large_file: bool,
-        mut uncompressed_size: u64,
-        mut compressed_size: u64,
-    ) -> Option<Self> {
-        if is_large_file {
-            uncompressed_size = u64::MAX;
-            compressed_size = u64::MAX;
-        }
-        let mut size: u16 = 0;
+    pub(crate) fn local_header(uncompressed_size: u64, compressed_size: u64) -> Option<Self> {
         let should_add_size =
             uncompressed_size >= ZIP64_BYTES_THR || compressed_size >= ZIP64_BYTES_THR;
-        let (uncompressed_size, compressed_size) = if should_add_size {
-            size += mem::size_of::<u64>() as u16;
-            size += mem::size_of::<u64>() as u16;
-            (Some(uncompressed_size), Some(compressed_size))
-        } else {
-            (None, None)
-        };
-        // TODO: (unsupported for now)
-        // Disk Start Number  4 bytes    Number of the disk on which this file starts
-
-        if size == 0 {
-            // no info added, return early
+        if !should_add_size {
             return None;
         }
+        let size = (mem::size_of::<u64>() + mem::size_of::<u64>()) as u16;
+        let uncompressed_size = Some(uncompressed_size);
+        let compressed_size = Some(compressed_size);
+
+        // TODO: (unsupported for now)
+        // Disk Start Number  4 bytes    Number of the disk on which this file starts
 
         Some(Self {
             _is_local_header: true,
