@@ -1,5 +1,16 @@
 //! Types for extra fields
 
+use std::fmt::Display;
+
+mod extended_timestamp;
+mod ntfs;
+mod zipinfo_utf8;
+
+// re-export
+pub use extended_timestamp::*;
+pub use ntfs::Ntfs;
+pub use zipinfo_utf8::UnicodeExtraField;
+
 /// marker trait to denote the place where this extra field has been stored
 pub trait ExtraFieldVersion {}
 
@@ -15,17 +26,6 @@ pub struct CentralHeaderVersion;
 
 impl ExtraFieldVersion for LocalHeaderVersion {}
 impl ExtraFieldVersion for CentralHeaderVersion {}
-
-mod extended_timestamp;
-mod ntfs;
-mod zip64_extended_information;
-mod zipinfo_utf8;
-
-// re-export
-pub use extended_timestamp::ExtendedTimestamp;
-pub use ntfs::Ntfs;
-pub use zip64_extended_information::Zip64ExtendedInformation;
-pub use zipinfo_utf8::UnicodeExtraField;
 
 /// contains one extra field
 #[derive(Debug, Clone)]
@@ -68,6 +68,12 @@ impl UsedExtraField {
 impl From<UsedExtraField> for u16 {
     fn from(value: UsedExtraField) -> Self {
         value as u16
+    }
+}
+
+impl Display for UsedExtraField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{:04X}", *self as u16)
     }
 }
 

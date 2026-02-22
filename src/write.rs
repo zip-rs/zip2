@@ -598,6 +598,16 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     /// Set the AES encryption parameters.
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption(self, mode: crate::AesMode, password: &str) -> FileOptions<'_, T> {
+        self.with_aes_encryption_bytes(mode, password.as_bytes())
+    }
+
+    /// Set the AES encryption parameters.
+    #[cfg(feature = "aes-crypto")]
+    pub fn with_aes_encryption_bytes(
+        self,
+        mode: crate::AesMode,
+        password: &[u8],
+    ) -> FileOptions<'_, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes { mode, password }),
             ..self
@@ -861,7 +871,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let dest_name_raw = dest_name.as_bytes();
         new_data.file_name = dest_name.into();
         new_data.file_name_raw = dest_name_raw.into();
-        new_data.is_utf8 = !dest_name.is_ascii();
         new_data.header_start = write_position;
         let extra_data_start = write_position
             + size_of::<ZipLocalEntryBlock>() as u64
@@ -1242,7 +1251,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, password }) => {
                 let writer = self.close_writer()?;
-                let aeswriter = crate::aes::AesWriter::new(writer, mode, password.as_bytes())?;
+                let aeswriter = crate::aes::AesWriter::new(writer, mode, password)?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
@@ -1878,8 +1887,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let src_index = self.index_by_name(src_name)?;
         let mut dest_data = self.files[src_index].clone();
-        dest_data.file_name = dest_name.to_string().into();
-        dest_data.file_name_raw = dest_name.to_string().into_bytes().into();
+        dest_data.file_name = dest_name.into();
+        dest_data.file_name_raw = dest_name.as_bytes().into();
         dest_data.central_header_start = 0;
         self.insert_file_data(dest_data)?;
 
@@ -3537,7 +3546,7 @@ mod test {
             large_file: true,
             encrypt_with: Some(Aes {
                 mode: Aes256,
-                password: "",
+                password: &[],
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![2, 0, 1, 0, 0].into(),
@@ -4069,7 +4078,7 @@ mod test {
             large_file: true,
             encrypt_with: Some(crate::write::EncryptWith::Aes {
                 mode: crate::AesMode::Aes256,
-                password: "",
+                password: &[],
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
@@ -4251,7 +4260,7 @@ mod test {
             large_file: true,
             encrypt_with: Some(Aes {
                 mode: Aes128,
-                password: "",
+                password: &[],
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![3, 0, 4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),

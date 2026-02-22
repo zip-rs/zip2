@@ -191,6 +191,7 @@ fn invalid_state<T>() -> io::Result<T> {
     Err(io::Error::other("ZipFileReader was in an invalid state"))
 }
 
+#[derive(Debug)]
 pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
     NoReader,
     Raw(io::Take<&'a mut R>),
@@ -244,6 +245,7 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
 }
 
 /// A struct for reading a zip file
+#[derive(Debug)]
 pub struct ZipFile<'a, R: Read + ?Sized> {
     pub(crate) data: Cow<'a, ZipFileData>,
     pub(crate) reader: ZipFileReader<'a, R>,
@@ -1568,14 +1570,29 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false),
         Err(e) => return Err(e.into()),
     };
-    let len = match reader.read_u16_le() {
-        Ok(len) => len,
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-            return Err(invalid!("Extra field header truncated"));
+    let decoded_extra_field = UsedExtraField::try_from(kind);
+    let len = match decoded_extra_field {
+        Ok(known_field) => match reader.read_u16_le() {
+            Ok(len) => len,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                return Err(invalid!("Extra field {} header truncated", known_field));
+            }
+            Err(e) => return Err(e.into()),
+        },
+        Err(()) => {
+            match reader.read_u16_le() {
+                Ok(len) => len,
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false), // early return, most likely a padding
+                Err(_e) => {
+                    // Consume remaining bytes to avoid infinite loop in caller
+                    let mut buf = Vec::new();
+                    let _ = reader.read_to_end(&mut buf);
+                    return Ok(false);
+                }
+            }
         }
-        Err(e) => return Err(e.into()),
     };
-    match UsedExtraField::try_from(kind) {
+    match decoded_extra_field {
         // Zip64 extended information extra field
         Ok(UsedExtraField::Zip64ExtendedInfo) => {
             if disallow_zip64 {

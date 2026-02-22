@@ -19,7 +19,7 @@ pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
         mode: crate::AesMode,
-        password: &'k str,
+        password: &'k [u8],
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
@@ -31,7 +31,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
                 mode: crate::AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&str>()?,
+                password: u.arbitrary::<&[u8]>()?,
             });
         }
 
@@ -82,7 +82,7 @@ impl ZipCryptoKeys {
     /// Constant added to the lower 2 bits of `key_2` when computing the
     /// ZipCrypto keystream base, corresponding to the `| 3` step described
     /// in the ZipCrypto specification.
-    const KEYSTREAM_BASE_SUFFIX: u16 = 3;
+    const KEYSTREAM_BASE_SUFFIX: u16 = 2;
 
     const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
@@ -141,6 +141,7 @@ impl ZipCryptoKeys {
 }
 
 /// A `ZipCrypto` reader with unverified password
+#[derive(Debug)]
 pub struct ZipCryptoReader<R> {
     file: R,
     keys: ZipCryptoKeys,
@@ -204,9 +205,10 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
-/// Size of the internal buffer used when encrypting data in chunks.
-/// 4096 bytes is a common page-sized buffer that balances memory usage
-/// and I/O performance for typical workloads.
+/// Size of the internal I/O buffer used when encrypting data in chunks.
+/// 4096 bytes is a commonly used buffer size that balances memory usage
+/// and I/O performance for typical workloads; it is not required to match
+/// the underlying system page size.
 pub(crate) const CHUNK_SIZE: usize = 4096;
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
@@ -248,6 +250,7 @@ impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
 }
 
 /// A `ZipCrypto` reader with verified password
+#[derive(Debug)]
 pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
