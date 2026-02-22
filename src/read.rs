@@ -483,26 +483,32 @@ pub(crate) fn make_symlink_impl<T>(
     Ok(())
 }
 
+#[cfg(any(windows, unix))]
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<str>, T>,
 ) -> ZipResult<()> {
-    #[cfg_attr(not(any(unix, windows)), allow(unused))]
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
-    #[cfg(any(windows, unix))]
-    {
-        make_symlink_impl(outpath, target_str, existing_files)
-    }
-    #[cfg(not(any(windows, unix)))]
-    {
-        use std::fs::File;
-        let output = File::create(outpath);
-        output?.write_all(target)?;
-        Ok(())
-    }
+    make_symlink_impl(outpath, target_str, existing_files)
+}
+
+#[cfg(not(any(windows, unix)))]
+pub(crate) fn make_symlink<T>(
+    outpath: &Path,
+    target: &[u8],
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<str>, T>,
+) -> ZipResult<()> {
+    #[allow(unused)]
+    let Ok(target_str) = std::str::from_utf8(target) else {
+        return Err(invalid!("Invalid UTF-8 as symlink target"));
+    };
+    use std::fs::File;
+    let output = File::create(outpath);
+    output?.write_all(target)?;
+    Ok(())
 }
 
 #[derive(Debug)]
