@@ -601,7 +601,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption_and_salt(
         self,
-        password: &str,
+        password: &[u8],
         salt: crate::aes::AesSalt,
     ) -> FileOptions<'_, T> {
         FileOptions {
