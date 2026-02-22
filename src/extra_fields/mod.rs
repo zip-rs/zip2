@@ -4,7 +4,10 @@ use std::fmt::Display;
 
 mod extended_timestamp;
 mod ntfs;
+mod zip64_extended_information;
 mod zipinfo_utf8;
+
+pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export
 pub use extended_timestamp::*;
