@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.2.0](https://github.com/zip-rs/zip2/compare/v8.1.0...v8.2.0) - 2026-02-22
+
+### <!-- 0 -->🚀 Features
+
+- Support compressing bzip2 when feature `bzip2-rs` is enabled, since `bzip2/bzip2-sys` now supports it ([#685](https://github.com/zip-rs/zip2/pull/685))
+- enforce clippy in CI ([#674](https://github.com/zip-rs/zip2/pull/674))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- allow aes password as bytes ([#686](https://github.com/zip-rs/zip2/pull/686))
+- handle extra field padding ([#682](https://github.com/zip-rs/zip2/pull/682))
+
+### <!-- 2 -->🚜 Refactor
+
+- Simplify 2 type conversions in src/write.rs ([#687](https://github.com/zip-rs/zip2/pull/687))
+
+### <!-- 4 -->⚡ Performance
+
+- AI tweaks for string type conversions in src/types.rs ([#670](https://github.com/zip-rs/zip2/pull/670))
+
 ## [8.1.0](https://github.com/zip-rs/zip2/compare/v8.0.0...v8.1.0) - 2026-02-16
 
 ### <!-- 0 -->🚀 Features
