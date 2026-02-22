@@ -17,6 +17,8 @@ use crate::{ZIP64_BYTES_THR, extra_fields::UsedExtraField};
 /// Zip64 extended information extra field
 #[derive(Copy, Clone, Debug)]
 pub struct Zip64ExtendedInformation {
+    /// The local header does not contains any `header_start`
+    _is_local_header: bool,
     magic: UsedExtraField,
     size: u16,
     uncompressed_size: Option<u64>,
@@ -28,32 +30,30 @@ pub struct Zip64ExtendedInformation {
 
 impl Zip64ExtendedInformation {
     const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
+
+    pub(crate) fn from_new_entry(is_large_file: bool) -> Option<Self> {
+        Self::local_header(is_large_file, 0, 0)
+    }
+
     /// This entry in the Local header MUST include BOTH original and compressed file size fields
     pub(crate) fn local_header(
-        uncompressed_size: u64,
-        compressed_size: u64,
-        header_start: u64,
+        is_large_file: bool,
+        mut uncompressed_size: u64,
+        mut compressed_size: u64,
     ) -> Option<Self> {
+        if is_large_file {
+            uncompressed_size = u64::MAX;
+            compressed_size = u64::MAX;
+        }
         let mut size: u16 = 0;
         let should_add_size =
             uncompressed_size >= ZIP64_BYTES_THR || compressed_size >= ZIP64_BYTES_THR;
-        let uncompressed_size = if should_add_size {
+        let (uncompressed_size, compressed_size) = if should_add_size {
             size += mem::size_of::<u64>() as u16;
-            Some(uncompressed_size)
-        } else {
-            None
-        };
-        let compressed_size = if should_add_size {
             size += mem::size_of::<u64>() as u16;
-            Some(compressed_size)
+            (Some(uncompressed_size), Some(compressed_size))
         } else {
-            None
-        };
-        let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(header_start)
-        } else {
-            None
+            (None, None)
         };
         // TODO: (unsupported for now)
         // Disk Start Number  4 bytes    Number of the disk on which this file starts
@@ -64,11 +64,12 @@ impl Zip64ExtendedInformation {
         }
 
         Some(Self {
+            _is_local_header: true,
             magic: Self::MAGIC,
             size,
             uncompressed_size,
             compressed_size,
-            header_start,
+            header_start: None,
         })
     }
 
@@ -105,6 +106,7 @@ impl Zip64ExtendedInformation {
         }
 
         Some(Self {
+            _is_local_header: false,
             magic: Self::MAGIC,
             size,
             uncompressed_size,
@@ -121,6 +123,7 @@ impl Zip64ExtendedInformation {
     /// Serialize the block
     pub fn serialize(self) -> Box<[u8]> {
         let Self {
+            _is_local_header,
             magic,
             size,
             uncompressed_size,
@@ -129,22 +132,37 @@ impl Zip64ExtendedInformation {
         } = self;
 
         let full_size = self.full_size();
+        if _is_local_header {
+            // the local header does not contains the header start
+            if let (Some(uncompressed_size), Some(compressed_size)) =
+                (self.compressed_size, self.compressed_size)
+            {
+                let mut ret = Vec::with_capacity(full_size);
+                ret.extend(magic.to_le_bytes());
+                ret.extend(size.to_le_bytes());
+                ret.extend(u64::to_le_bytes(uncompressed_size));
+                ret.extend(u64::to_le_bytes(compressed_size));
+                return ret.into_boxed_slice();
+            }
+            // this should be unreachable
+            Box::new([])
+        } else {
+            let mut ret = Vec::with_capacity(full_size);
+            ret.extend(magic.to_le_bytes());
+            ret.extend(u16::to_le_bytes(size));
 
-        let mut ret = Vec::with_capacity(full_size);
-        ret.extend(magic.to_le_bytes());
-        ret.extend(u16::to_le_bytes(size));
+            if let Some(uncompressed_size) = uncompressed_size {
+                ret.extend(u64::to_le_bytes(uncompressed_size));
+            }
+            if let Some(compressed_size) = compressed_size {
+                ret.extend(u64::to_le_bytes(compressed_size));
+            }
+            if let Some(header_start) = header_start {
+                ret.extend(u64::to_le_bytes(header_start));
+            }
+            debug_assert_eq!(ret.len(), full_size);
 
-        if let Some(uncompressed_size) = uncompressed_size {
-            ret.extend(u64::to_le_bytes(uncompressed_size));
+            ret.into_boxed_slice()
         }
-        if let Some(compressed_size) = compressed_size {
-            ret.extend(u64::to_le_bytes(compressed_size));
-        }
-        if let Some(header_start) = header_start {
-            ret.extend(u64::to_le_bytes(header_start));
-        }
-        debug_assert_eq!(ret.len(), full_size);
-
-        ret.into_boxed_slice()
     }
 }

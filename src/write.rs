@@ -1114,19 +1114,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
         });
 
-        // Check if we're close to the 4GB boundary and force ZIP64 if needed
-        // This ensures we properly handle appending to files close to 4GB
-        if header_start > spec::ZIP64_BYTES_THR {
-            // Files that start on or past the 4GiB boundary are always ZIP64
-            options.large_file = true;
-        }
-
         let mut extra_data = match options.extended_options.extra_data() {
             Some(data) => data.to_vec(),
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-        if let Some(zip64_block) = Zip64ExtendedInformation::local_header(0, 0, header_start) {
+        if let Some(zip64_block) = Zip64ExtendedInformation::from_new_entry(options.large_file) {
             let mut new_extra_data = zip64_block.serialize().into_vec();
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
@@ -2420,9 +2413,9 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
     let block = Zip64ExtendedInformation::local_header(
+        file.large_file,
         file.uncompressed_size,
         file.compressed_size,
-        file.header_start,
     )
     .ok_or(invalid!(
         "Attempted to update a nonexistent ZIP64 extra field"
