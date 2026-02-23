@@ -234,6 +234,11 @@ fn test_zip64_check_extra_field() {
     assert_eq!(res.unwrap(), ());
     assert_eq!(archive_buffer.len(), 5368709808);
 
+    // uncomment for debug
+    // use std::io::Write;
+    // let mut file = File::create("tests/data/test_zip64_check_extra_field.zip").unwrap();
+    // file.write_all(&archive_buffer).unwrap();
+
     let mut read_archive =
         zip::ZipArchive::new(Cursor::new(&archive_buffer)).expect("Failed to read the archive");
 

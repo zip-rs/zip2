@@ -2421,11 +2421,14 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    let block =
-        Zip64ExtendedInformation::local_header(file.uncompressed_size, file.compressed_size)
-            .ok_or(invalid!(
-                "Attempted to update a nonexistent ZIP64 extra field"
-            ))?;
+    let block = Zip64ExtendedInformation::local_header(
+        file.large_file,
+        file.uncompressed_size,
+        file.compressed_size,
+    )
+    .ok_or(invalid!(
+        "Attempted to update a nonexistent ZIP64 extra field"
+    ))?;
 
     let zip64_extra_field_start = file.header_start
         + size_of::<ZipLocalEntryBlock>() as u64
