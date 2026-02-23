@@ -216,6 +216,9 @@ fn zip64_large() {
     }
 }
 
+/// We cannot run this test because on wasm32
+/// the literal `5368709808` does not fit into the type `usize` whose range is `0..=4294967295`
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_zip64_check_extra_field() {
     let path = Path::new("bigfile.bin");
@@ -313,7 +316,7 @@ fn test_zip64_check_extra_field() {
         assert_eq!(bigfile_archive.central_header_start(), 5368709637);
 
         let central_header_start = bigfile_archive.central_header_start() as usize;
-        // take a bunch of bytes from the central file header of the directory entry, which should contain the zip64 extra field
+        // take a bunch of bytes from the central file header of the file entry, which should contain the zip64 extra field
         let central_header_end = central_header_start + 73;
         let range = central_header_start..central_header_end;
         let central_header = archive_buffer.get(range).unwrap();
@@ -347,7 +350,6 @@ fn test_zip64_check_extra_field() {
 
         // now we check the local header
         let local_header_start = bigfile_archive.header_start() as usize;
-        // take a bunch of bytes from the local file header of the directory entry, which should contain the zip64 extra field
         let local_header_end = local_header_start + 45;
         let range = local_header_start..local_header_end;
         let local_header = archive_buffer.get(range).unwrap();
