@@ -53,13 +53,7 @@
 // 22c400260  00 00 50 4b 05 06 00 00  00 00 03 00 03 00 27 01  |..PK..........'.|
 // 22c400270  00 00 ff ff ff ff 00 00                           |........|
 // 22c400278
-use std::{
-    fs::File,
-    io::{self, Cursor, Read, Seek, SeekFrom},
-    path::Path,
-};
-
-use zip::write::SimpleFileOptions;
+use std::io::{self, Read, Seek, SeekFrom};
 
 const BLOCK1_LENGTH: u64 = 0x60;
 const BLOCK1: [u8; BLOCK1_LENGTH as usize] = [
@@ -221,6 +215,7 @@ fn zip64_large() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_zip64_check_extra_field() {
+    use std::{fs::File, io::Cursor, path::Path};
     let path = Path::new("bigfile.bin");
     let bigfile = File::create(path).expect("Failed to create a big file");
 
@@ -374,9 +369,11 @@ fn test_zip64_check_extra_field() {
 /// See `test_zip64_check_extra_field`
 #[cfg(not(target_arch = "wasm32"))]
 fn zip64_check_extra_field(
-    path: &Path,
+    path: &std::path::Path,
     archive_buffer: &mut Vec<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use std::{fs::File, io::Cursor};
+    use zip::write::SimpleFileOptions;
     let mut bigfile = File::open(path)?;
 
     let mut archive = zip::ZipWriter::new(Cursor::new(archive_buffer));
