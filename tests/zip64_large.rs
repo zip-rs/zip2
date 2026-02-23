@@ -370,6 +370,9 @@ fn test_zip64_check_extra_field() {
     }
 }
 
+/// We cannot run this test because on wasm32
+/// See `test_zip64_check_extra_field`
+#[cfg(not(target_arch = "wasm32"))]
 fn zip64_check_extra_field(
     path: &Path,
     archive_buffer: &mut Vec<u8>,
