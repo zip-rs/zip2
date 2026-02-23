@@ -33,16 +33,23 @@ impl Zip64ExtendedInformation {
 
     pub(crate) fn from_new_entry(is_large_file: bool) -> Option<Self> {
         if is_large_file {
-            Self::local_header(u64::MAX, u64::MAX)
+            Self::local_header(true, u64::MAX, u64::MAX)
         } else {
             None
         }
     }
 
     /// This entry in the Local header MUST include BOTH original and compressed file size fields
-    pub(crate) fn local_header(uncompressed_size: u64, compressed_size: u64) -> Option<Self> {
-        let should_add_size =
-            uncompressed_size >= ZIP64_BYTES_THR || compressed_size >= ZIP64_BYTES_THR;
+    /// If the user is using `is_large_file` when the file is not large we force the zip64 extra field
+    pub(crate) fn local_header(
+        is_large_file: bool,
+        uncompressed_size: u64,
+        compressed_size: u64,
+    ) -> Option<Self> {
+        // here - we force if `is_large_file` is `true`
+        let should_add_size = is_large_file
+            || uncompressed_size >= ZIP64_BYTES_THR
+            || compressed_size >= ZIP64_BYTES_THR;
         if !should_add_size {
             return None;
         }
