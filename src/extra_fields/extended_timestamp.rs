@@ -53,21 +53,27 @@ impl ExtendedTimestamp {
         // allow unsupported/undocumented flags
 
         let mod_time = if (flags & 0b0000_0001_u8 == 0b0000_0001_u8) || len == 5 {
-            bytes_to_read -= size_of::<u32>();
+            bytes_to_read = bytes_to_read
+                .checked_sub(size_of::<u32>())
+                .ok_or(invalid!("Extended timestamp field too short for mod_time"))?;
             Some(reader.read_u32_le()?)
         } else {
             None
         };
 
         let ac_time = if flags & 0b0000_0010_u8 == 0b0000_0010_u8 && len > 5 {
-            bytes_to_read -= size_of::<u32>();
+            bytes_to_read = bytes_to_read
+                .checked_sub(size_of::<u32>())
+                .ok_or(invalid!("Extended timestamp field too short for ac_time"))?;
             Some(reader.read_u32_le()?)
         } else {
             None
         };
 
         let cr_time = if flags & 0b0000_0100_u8 == 0b0000_0100_u8 && len > 5 {
-            bytes_to_read -= size_of::<u32>();
+            bytes_to_read = bytes_to_read
+                .checked_sub(size_of::<u32>())
+                .ok_or(invalid!("Extended timestamp field too short for cr_time"))?;
             Some(reader.read_u32_le()?)
         } else {
             None
@@ -119,5 +125,22 @@ mod test {
             )))
             .is_err()
         );
+    }
+
+    #[test]
+    /// Ensure that a truncated extended timestamp (len too short for flags)
+    /// returns an error instead of panicking from a subtraction overflow.
+    fn test_extended_timestamp_overflow() {
+        use super::ExtendedTimestamp;
+        use std::io::Cursor;
+
+        // flags = 0x01 indicates mod_time is present, which requires 4 bytes,
+        // but len = 2 only provides 1 byte after the flags byte.
+        // The validation check catches this before the subtraction, but even
+        // if validation were removed, checked_sub would catch it.
+        let data: &[u8] = &[0x01, 0x00, 0x00, 0x00];
+        let mut cursor = Cursor::new(data);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 2);
+        assert!(result.is_err(), "expected error for truncated extended timestamp, got {result:?}");
     }
 }
