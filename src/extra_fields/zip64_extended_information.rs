@@ -16,7 +16,7 @@ use crate::{ZIP64_BYTES_THR, extra_fields::UsedExtraField};
 
 /// Zip64 extended information extra field
 #[derive(Copy, Clone, Debug)]
-pub struct Zip64ExtendedInformation {
+pub(crate) struct Zip64ExtendedInformation {
     /// The local header does not contains any `header_start`
     _is_local_header: bool,
     magic: UsedExtraField,
@@ -31,7 +31,7 @@ pub struct Zip64ExtendedInformation {
 impl Zip64ExtendedInformation {
     const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
 
-    pub(crate) fn from_new_entry(is_large_file: bool) -> Option<Self> {
+    pub(crate) fn new_local(is_large_file: bool) -> Option<Self> {
         if is_large_file {
             Self::local_header(true, u64::MAX, u64::MAX)
         } else {

@@ -1016,20 +1016,6 @@ impl ZipFileData {
         })
     }
 
-    // pub(crate) fn was_large_file(&self) -> bool {
-    //     // if self.compressed_size > spec::ZIP64_BYTES_THR {
-    //     //     return true;
-    //     // }
-    //     // if self.uncompressed_size > spec::ZIP64_BYTES_THR {
-    //     //     return true;
-    //     // }
-    //     if self.header_start >= spec::ZIP64_BYTES_THR {
-    //         return true;
-    //     }
-    //     // TODO: Also disk number (unsupported for now)
-    //     false
-    // }
-
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
         let compressed_size = self
             .compressed_size

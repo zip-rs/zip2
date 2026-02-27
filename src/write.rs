@@ -1128,7 +1128,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-        if let Some(zip64_block) = Zip64ExtendedInformation::from_new_entry(options.large_file) {
+        if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
             let mut new_extra_data = zip64_block.serialize().into_vec();
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
