@@ -34,7 +34,7 @@ The features available are:
 - `lzma`: Enables the LZMA compression algorithm. Only decompression is supported.
 - `bzip2`: Enables the BZip2 compression algorithm.
 - `ppmd`: Enables the PPMd compression algorithm.
-- `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
+- `time`: Enables features using the [time](https://github.com/time-rs/time) crate.
 - `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.
 - `jiff-02`: Enables converting last-modified `zip::DateTime` to and from `jiff::civil::DateTime`.
 - `nt-time`: Enables returning timestamps stored in the NTFS extra field as `nt_time::FileTime`.
