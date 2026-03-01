@@ -31,6 +31,10 @@ pub(crate) mod stream;
 
 pub(crate) mod magic_finder;
 
+/// Iterable zip
+pub mod iterable_zip;
+pub use iterable_zip::IterableZip;
+
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
