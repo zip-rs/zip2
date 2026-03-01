@@ -4,16 +4,19 @@ A zip library for rust which supports reading and writing of simple ZIP files. C
 <https://github.com/zip-rs/zip2>.
 
 Supported compression formats:
-
-- stored (i.e. none)
-- deflate
-- deflate64 (decompression only)
-- bzip2
-- zstd
-- lzma (decompression only)
-- xz
-- ppmd
-
+- Compress and decompress:
+  - stored (i.e. none)
+  - deflate
+  - bzip2
+  - zstd
+  - xz
+  - ppmd
+- Decompress only:
+  - deflate64
+  - lzma
+  - implode
+  - reduce
+  - shrink
 Currently unsupported zip extensions:
 
 - Multi-disk
