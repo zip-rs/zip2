@@ -27,6 +27,12 @@ mod config;
 
 pub use config::{ArchiveOffset, Config};
 
+/// Factory for the final reader in the chain (wraps the decompressed stream).
+/// Use with `ZipReadOptions::final_reader_factory`. Example: `Arc::new(|inner, _crc32, _ae2| inner)` to skip CRC checks.
+/// `take_raw_reader()` is not supported when using a custom final reader.
+pub type ValidatorReaderFactory =
+    dyn for<'a> Fn(Box<dyn Read + 'a>, u32, bool) -> Box<dyn Read + 'a> + Send + Sync;
+
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
 
@@ -191,11 +197,32 @@ fn invalid_state<T>() -> io::Result<T> {
     Err(io::Error::other("ZipFileReader was in an invalid state"))
 }
 
+// Same inner chain in both variants: Decompressor<BufReader<CryptoReader<'a, R>>>.
+// We only swap the final reader (Go-style: swap one layer in the chain).
+type BuiltinCrcReader<'a, R> =
+    Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>;
+
+pub(crate) enum CompressedInner<'a, R: Read + ?Sized> {
+    /// Builtin: Crc32Reader wraps Decompressor<BufReader<CryptoReader>>.
+    Builtin(Box<BuiltinCrcReader<'a, R>>),
+    /// Custom: user's reader wraps the same decompressor (factory receives it as Box<dyn Read>).
+    Custom(Box<dyn Read + 'a>),
+}
+
+impl<R: Read + ?Sized> core::fmt::Debug for CompressedInner<'_, R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CompressedInner::Builtin(_) => f.write_str("Builtin(..)"),
+            CompressedInner::Custom(_) => f.write_str("Custom(..)"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
     NoReader,
     Raw(io::Take<&'a mut R>),
-    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
+    Compressed(CompressedInner<'a, R>),
 }
 
 impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
@@ -203,7 +230,8 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read(buf),
-            ZipFileReader::Compressed(r) => r.read(buf),
+            ZipFileReader::Compressed(CompressedInner::Builtin(r)) => r.read(buf),
+            ZipFileReader::Compressed(CompressedInner::Custom(r)) => r.read(buf),
         }
     }
 
@@ -211,7 +239,8 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_exact(buf),
-            ZipFileReader::Compressed(r) => r.read_exact(buf),
+            ZipFileReader::Compressed(CompressedInner::Builtin(r)) => r.read_exact(buf),
+            ZipFileReader::Compressed(CompressedInner::Custom(r)) => r.read_exact(buf),
         }
     }
 
@@ -219,7 +248,8 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_end(buf),
-            ZipFileReader::Compressed(r) => r.read_to_end(buf),
+            ZipFileReader::Compressed(CompressedInner::Builtin(r)) => r.read_to_end(buf),
+            ZipFileReader::Compressed(CompressedInner::Custom(r)) => r.read_to_end(buf),
         }
     }
 
@@ -227,7 +257,8 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_string(buf),
-            ZipFileReader::Compressed(r) => r.read_to_string(buf),
+            ZipFileReader::Compressed(CompressedInner::Builtin(r)) => r.read_to_string(buf),
+            ZipFileReader::Compressed(CompressedInner::Custom(r)) => r.read_to_string(buf),
         }
     }
 }
@@ -237,9 +268,12 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => Ok(r),
-            ZipFileReader::Compressed(r) => {
+            ZipFileReader::Compressed(CompressedInner::Builtin(r)) => {
                 Ok(r.into_inner().into_inner()?.into_inner().into_inner())
             }
+            ZipFileReader::Compressed(CompressedInner::Custom(_)) => Err(io::Error::other(
+                "take_raw_reader is not supported when using a custom final reader",
+            )),
         }
     }
 }
@@ -429,26 +463,36 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     Ok(reader)
 }
 
-pub(crate) fn make_reader<R: Read + ?Sized>(
+pub(crate) fn make_reader<'a, R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
     crc32: u32,
-    reader: CryptoReader<'_, R>,
+    reader: CryptoReader<'a, R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
-) -> ZipResult<ZipFileReader<'_, R>> {
+    final_reader_factory: Option<&Arc<ValidatorReaderFactory>>,
+) -> ZipResult<ZipFileReader<'a, R>> {
     let ae2_encrypted = reader.is_ae2_encrypted();
     #[cfg(not(feature = "legacy-zip"))]
     let flags = 0;
-    Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
-        Decompressor::new(
-            io::BufReader::new(reader),
-            compression_method,
-            uncompressed_size,
-            flags,
-        )?,
-        crc32,
-        ae2_encrypted,
-    ))))
+    let decompressor = Decompressor::new(
+        io::BufReader::new(reader),
+        compression_method,
+        uncompressed_size,
+        flags,
+    )?;
+    let inner = match final_reader_factory {
+        None => CompressedInner::Builtin(Box::new(Crc32Reader::new(
+            decompressor,
+            crc32,
+            ae2_encrypted,
+        ))),
+        Some(factory) => {
+            let boxed: Box<dyn Read + '_> = Box::new(decompressor);
+            let custom = factory.as_ref()(boxed, crc32, ae2_encrypted);
+            CompressedInner::Custom(custom)
+        }
+    };
+    Ok(ZipFileReader::Compressed(inner))
 }
 
 pub(crate) fn make_symlink<T>(
@@ -1287,6 +1331,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,
+                options.validation_reader_factory.as_ref(),
             )?,
         })
     }
@@ -1733,6 +1778,9 @@ pub struct ZipReadOptions<'a> {
 
     /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
     ignore_encryption_flag: bool,
+
+    /// Custom validation reader in the chain (e.g. to skip or replace CRC checking). Default is the built-in CRC reader.
+    validation_reader_factory: Option<Arc<ValidatorReaderFactory>>,
 }
 
 impl<'a> ZipReadOptions<'a> {
@@ -1753,6 +1801,13 @@ impl<'a> ZipReadOptions<'a> {
     #[must_use]
     pub fn ignore_encryption_flag(mut self, ignore: bool) -> Self {
         self.ignore_encryption_flag = ignore;
+        self
+    }
+
+    /// Set a custom final reader factory (final reader in the chain). Return for chaining.
+    #[must_use]
+    pub fn final_reader_factory(mut self, f: Option<Arc<ValidatorReaderFactory>>) -> Self {
+        self.validation_reader_factory = f;
         self
     }
 }
@@ -2112,9 +2167,12 @@ impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {
         // self.data is Owned, this reader is constructed by a streaming reader.
         // In this case, we want to exhaust the reader so that the next file is accessible.
         if let Cow::Owned(_) = self.data {
-            // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
             if let Ok(mut inner) = self.take_raw_reader() {
                 let _ = copy(&mut inner, &mut sink());
+            } else if let ZipFileReader::Compressed(CompressedInner::Custom(mut r)) =
+                replace(&mut self.reader, ZipFileReader::NoReader)
+            {
+                let _ = copy(&mut *r, &mut sink());
             }
         }
     }
@@ -2180,6 +2238,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
+            None,
         )?,
     }))
 }
@@ -2309,6 +2368,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
+            None,
         )?,
     }))
 }
