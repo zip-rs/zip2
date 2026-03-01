@@ -2,13 +2,14 @@
 
 use crate::compression::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
+use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, Zip64ExtraFieldBlock,
-    ZipFileData, ZipLocalEntryBlock, ZipRawValues, ffi,
+    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, ZipFileData,
+    ZipLocalEntryBlock, ZipRawValues, ffi,
 };
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -1122,21 +1123,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
         });
 
-        // Check if we're close to the 4GB boundary and force ZIP64 if needed
-        // This ensures we properly handle appending to files close to 4GB
-        if header_start > spec::ZIP64_BYTES_THR {
-            // Files that start on or past the 4GiB boundary are always ZIP64
-            options.large_file = true;
-        }
-
         let mut extra_data = match options.extended_options.extra_data() {
             Some(data) => data.to_vec(),
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
-        if let Some(zip64_block) =
-            Zip64ExtraFieldBlock::maybe_new(options.large_file, 0, 0, header_start)
-        {
+        if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
             let mut new_extra_data = zip64_block.serialize().into_vec();
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
@@ -2346,13 +2338,13 @@ fn update_local_file_header<T: Write + Seek>(
 
         update_local_zip64_extra_field(writer, file)?;
 
-        file.compressed_size = spec::ZIP64_BYTES_THR;
-        file.uncompressed_size = spec::ZIP64_BYTES_THR;
+        // file.compressed_size = spec::ZIP64_BYTES_THR;
+        // file.uncompressed_size = spec::ZIP64_BYTES_THR;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
             return Err(ZipError::Io(io::Error::other(
-                "Large file option has not been set",
+                "large_file(true) option has not been set",
             )));
         }
         writer.write_u32_le(file.compressed_size as u32)?;
@@ -2370,12 +2362,17 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         Vec::new()
     };
     let central_len = file.central_extra_field_len();
-    let zip64_len = if let Some(zip64) = file.zip64_extra_field_block() {
+    let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
+        file.uncompressed_size,
+        file.compressed_size,
+        file.header_start,
+    );
+    let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
         zip64.full_size()
     } else {
         0
     };
-    let total_extra_len = zip64_len + stripped_extra.len() + central_len;
+    let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
     block.extra_field_length = u16::try_from(total_extra_len)
         .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
 
@@ -2383,7 +2380,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name
     writer.write_all(&file.file_name_raw)?;
     // extra field
-    if let Some(zip64_extra_field) = &file.zip64_extra_field_block() {
+    if let Some(zip64_extra_field) = zip64_extra_field_block {
         writer.write_all(&zip64_extra_field.serialize())?;
     }
     if !stripped_extra.is_empty() {
@@ -2424,7 +2421,12 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
 ) -> ZipResult<()> {
-    let block = file.zip64_extra_field_block().ok_or(invalid!(
+    let block = Zip64ExtendedInformation::local_header(
+        file.large_file,
+        file.uncompressed_size,
+        file.compressed_size,
+    )
+    .ok_or(invalid!(
         "Attempted to update a nonexistent ZIP64 extra field"
     ))?;
 
@@ -2495,10 +2497,8 @@ impl<W: Write> Seek for StreamWriter<W> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
             SeekFrom::Current(0) | SeekFrom::End(0) => return Ok(self.bytes_written),
-            SeekFrom::Start(x) => {
-                if x == self.bytes_written {
-                    return Ok(self.bytes_written);
-                }
+            SeekFrom::Start(x) if x == self.bytes_written => {
+                return Ok(self.bytes_written);
             }
             _ => {}
         }

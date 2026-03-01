@@ -4,7 +4,10 @@ use std::fmt::Display;
 
 mod extended_timestamp;
 mod ntfs;
+mod zip64_extended_information;
 mod zipinfo_utf8;
+
+pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export
 pub use extended_timestamp::*;
@@ -56,6 +59,19 @@ pub(crate) enum UsedExtraField {
     AeXEncryption = 0x9901,
     /// Data Stream Alignment (Apache Commons-Compress)
     DataStreamAlignment = 0xa11e,
+}
+
+impl UsedExtraField {
+    pub const fn to_le_bytes(self) -> [u8; 2] {
+        let field_u16 = self as u16;
+        field_u16.to_le_bytes()
+    }
+}
+
+impl From<UsedExtraField> for u16 {
+    fn from(value: UsedExtraField) -> Self {
+        value as u16
+    }
 }
 
 impl Display for UsedExtraField {
