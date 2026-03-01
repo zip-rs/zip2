@@ -1300,12 +1300,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 salt,
             }) => {
                 let writer = self.close_writer()?;
-                let aeswriter = crate::aes::AesWriter::new_with_options(
-                    writer,
-                    mode,
-                    password,
-                    salt,
-                )?;
+                let aeswriter =
+                    crate::aes::AesWriter::new_with_options(writer, mode, password, salt)?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
