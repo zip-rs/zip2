@@ -2064,10 +2064,15 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
         options.normalize();
         #[cfg(feature = "aes-crypto")]
-        if let Some(aes) = self.get_metadata().aes_mode {
+        if let Some((mode, vendor_version, compression_method)) = self.get_metadata().aes_mode {
             // Preserve AES metadata in options for downstream writers.
             // This is metadata-only and does not trigger encryption.
-            options.aes_mode = Some(aes);
+            options.aes_mode = Some(crate::aes::AesModeOptions::new(
+                mode,
+                vendor_version,
+                compression_method,
+                None,
+            ));
         }
         options
     }

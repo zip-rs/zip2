@@ -9,6 +9,7 @@ use zip::{AesMode, ZipArchive, result::ZipError, write::SimpleFileOptions};
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 
 const PASSWORD: &[u8] = b"helloworld";
+const SOME_PASSWORD: &[u8] = b"some password";
 
 #[test]
 pub fn aes256_encrypted_uncompressed_file() {
@@ -232,5 +233,86 @@ fn raw_copy_from_aes_zip() {
             }
             assert_eq!(s_buf, d_buf, "content differs for {name}");
         }
+    }
+}
+
+#[test]
+fn aes_custom_salt_for_reproducible_zip() {
+    use zip::AesSalt;
+    use zip::DateTime;
+
+    for (mode, salt, expected_error) in [
+        (AesMode::Aes128, [1, 2, 3, 4, 5, 6, 7, 8].to_vec(), None),
+        (
+            AesMode::Aes128,
+            [].into(), // salt too short
+            Some("Salt for AES-128 must be 8 bytes long: could not convert slice to array"),
+        ),
+        (
+            AesMode::Aes128,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9].into(), // salt too long should works
+            Some("Salt for AES-128 must be 8 bytes long: could not convert slice to array"),
+        ),
+        (
+            AesMode::Aes192,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].into(),
+            None,
+        ),
+        (
+            AesMode::Aes192,
+            [].into(), // salt too short
+            Some("Salt for AES-192 must be 12 bytes long: could not convert slice to array"),
+        ),
+        (
+            AesMode::Aes192,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].into(), // salt too long should works
+            Some("Salt for AES-192 must be 12 bytes long: could not convert slice to array"),
+        ),
+        (
+            AesMode::Aes256,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].into(),
+            None,
+        ),
+        (
+            AesMode::Aes256,
+            [1, 2, 3, 4, 5, 6, 7, 8].into(),
+            Some("Salt for AES-256 must be 16 bytes long: could not convert slice to array"),
+        ),
+        (
+            AesMode::Aes256,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].into(), // salt too long should works
+            Some("Salt for AES-256 must be 16 bytes long: could not convert slice to array"),
+        ),
+    ] {
+        let custom_salt = AesSalt::try_new(mode, salt.as_slice());
+        if let Some(expected_error) = expected_error {
+            assert_eq!(custom_salt.unwrap_err().to_string(), expected_error);
+            continue;
+        }
+        let custom_salt = custom_salt.expect("Failed to create custom salt");
+        let options = SimpleFileOptions::default()
+            .last_modified_time(DateTime::default())
+            .with_aes_encryption_and_salt(SOME_PASSWORD, custom_salt);
+
+        let mut data1 = Vec::new();
+        let mut zip1 = ZipWriter::new(io::Cursor::new(&mut data1));
+        zip1.start_file("test.txt", options).unwrap();
+        let fake_file = [0u8; 16];
+        let mut f = io::Cursor::new(fake_file);
+        std::io::copy(&mut f, &mut zip1).unwrap();
+        zip1.finish().unwrap();
+
+        let mut data2 = Vec::new();
+        let mut zip2 = ZipWriter::new(io::Cursor::new(&mut data2));
+        zip2.start_file("test.txt", options).unwrap();
+        let fake_file = [0u8; 16];
+        let mut f = io::Cursor::new(fake_file);
+        std::io::copy(&mut f, &mut zip2).unwrap();
+        zip2.finish().unwrap();
+
+        assert_eq!(
+            data1, data2,
+            "Expected identical zip contents for same salt"
+        );
     }
 }

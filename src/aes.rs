@@ -4,9 +4,10 @@
 //! Note that using CRC with AES depends on the used encryption specification, AE-1 or AE-2.
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
+use crate::CompressionMethod;
 use crate::aes_ctr::AesCipher;
 use crate::result::ZipResult;
-use crate::types::AesMode;
+use crate::types::{AesMode, AesVendorVersion};
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
@@ -26,6 +27,101 @@ enum Cipher {
     Aes128(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes128>>),
     Aes192(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes192>>),
     Aes256(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes256>>),
+}
+
+#[non_exhaustive]
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub(crate) struct AesModeOptions {
+    pub(crate) mode: AesMode,
+    pub(crate) vendor_version: AesVendorVersion,
+    pub(crate) actual_compression_method: CompressionMethod,
+    pub(crate) custom_salt: Option<AesSalt>,
+}
+
+impl AesModeOptions {
+    pub(crate) fn new(
+        mode: AesMode,
+        vendor_version: AesVendorVersion,
+        actual_compression_method: CompressionMethod,
+        custom_salt: Option<AesSalt>,
+    ) -> Self {
+        Self {
+            mode,
+            vendor_version,
+            actual_compression_method,
+            custom_salt,
+        }
+    }
+
+    /// Used to create a the `aes_mode` of `ZipFileData`
+    pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
+        (
+            self.mode,
+            self.vendor_version,
+            self.actual_compression_method,
+        )
+    }
+}
+
+/// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
+/// This is not recommended, but it can be useful for testing or for reproducible encryption results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AesSalt {
+    /// AES 128 salt
+    Aes128([u8; AesMode::Aes128.salt_length()]),
+    /// AES 192 salt
+    Aes192([u8; AesMode::Aes192.salt_length()]),
+    /// AES 256 salt
+    Aes256([u8; AesMode::Aes256.salt_length()]),
+}
+
+impl AesSalt {
+    pub(crate) fn mode(&self) -> AesMode {
+        match self {
+            Self::Aes128(_) => AesMode::Aes128,
+            Self::Aes192(_) => AesMode::Aes192,
+            Self::Aes256(_) => AesMode::Aes256,
+        }
+    }
+
+    /// Get the inner salt array and consume it
+    pub(crate) fn into_inner(self) -> Vec<u8> {
+        match self {
+            Self::Aes128(salt) => salt.to_vec(),
+            Self::Aes192(salt) => salt.to_vec(),
+            Self::Aes256(salt) => salt.to_vec(),
+        }
+    }
+
+    pub(crate) fn salt_error(mode: AesMode, err: std::array::TryFromSliceError) -> std::io::Error {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "Salt for {mode} must be {} bytes long: {err}",
+                mode.salt_length(),
+            ),
+        )
+    }
+
+    /// Creates a new `CustomSalt` with the given `mode` and `salt`.
+    /// The length of `salt` must be at least the required salt length for the given `mode`, otherwise an error is returned.
+    ///
+    /// # Errors
+    /// Returns an error if the length of `salt` is too short for the given `mode`.
+    pub fn try_new(mode: AesMode, salt: &[u8]) -> Result<Self, std::io::Error> {
+        let custom_salt = match mode {
+            AesMode::Aes128 => {
+                AesSalt::Aes128(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+            }
+            AesMode::Aes192 => {
+                AesSalt::Aes192(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+            }
+            AesMode::Aes256 => {
+                AesSalt::Aes256(salt.try_into().map_err(|e| Self::salt_error(mode, e))?)
+            }
+        };
+        Ok(custom_salt)
+    }
 }
 
 impl Cipher {
@@ -233,14 +329,27 @@ pub struct AesWriter<W> {
 }
 
 impl<W: Write> AesWriter<W> {
-    pub fn new(writer: W, aes_mode: AesMode, password: &[u8]) -> ZipResult<Self> {
+    /// Creates a new `AesWriter` with the given options.
+    /// Private method to potentially allow more options in the future, for now it is only used to allow passing a custom salt.
+    pub(crate) fn new_with_options(
+        writer: W,
+        aes_mode: AesMode,
+        password: &[u8],
+        custom_salt: Option<AesSalt>,
+    ) -> ZipResult<Self> {
         let salt_length = aes_mode.salt_length();
         let key_length = aes_mode.key_length();
 
         let mut encrypted_file_header = Vec::with_capacity(salt_length + 2);
 
-        let mut salt = vec![0; salt_length];
-        getrandom::fill(&mut salt).map_err(|e| ZipError::Io(e.into()))?;
+        let salt = if let Some(customized_salt) = custom_salt {
+            customized_salt.into_inner()
+        } else {
+            // Generate a random salt
+            let mut salt = vec![0; salt_length];
+            getrandom::fill(&mut salt).map_err(|e| ZipError::Io(e.into()))?;
+            salt
+        };
         encrypted_file_header.write_all(&salt)?;
 
         // Derive a key from the password and salt.  The length depends on the aes key length
@@ -352,7 +461,7 @@ mod tests {
         let mut read_buffer = vec![];
 
         {
-            let mut writer = AesWriter::new(&mut buf, aes_mode, password)?;
+            let mut writer = AesWriter::new_with_options(&mut buf, aes_mode, password, None)?;
             writer.write_all(plaintext)?;
             writer.finish()?;
         }
