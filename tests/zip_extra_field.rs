@@ -1,4 +1,4 @@
-use std::io::{self};
+use std::io;
 use zip::ZipArchive;
 
 fn generate_file_with_padding(padding_local_header: u16, padding_central_header: u16) -> Vec<u8> {
