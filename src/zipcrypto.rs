@@ -8,7 +8,6 @@ use core::hash::Hash;
 use core::marker::PhantomData;
 use core::num::Wrapping;
 
-use crate::cfg_if_expr;
 use crate::result::ZipError;
 
 /// ZipCrypto header size in bytes.
@@ -52,22 +51,20 @@ pub(crate) struct ZipCryptoKeys {
 }
 
 impl Debug for ZipCryptoKeys {
+    #[cfg(any(test, fuzzing))]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        cfg_if_expr! {
-            #[cfg(any(test, fuzzing))] => {
-                f.write_fmt(format_args!(
-                    "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
-                    self.key_0, self.key_1, self.key_2
-                ))
-            },
-            _ => {
-                use std::collections::hash_map::DefaultHasher;
-                use std::hash::Hasher;
-                let mut t = DefaultHasher::new();
-                self.hash(&mut t);
-                f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
-            }
-        }
+        f.write_fmt(format_args!(
+            "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
+            self.key_0, self.key_1, self.key_2
+        ))
+    }
+    #[cfg(not(any(test, fuzzing)))]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
+        let mut t = DefaultHasher::new();
+        self.hash(&mut t);
+        f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
     }
 }
 

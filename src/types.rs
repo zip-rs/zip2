@@ -1,5 +1,5 @@
 //! Types that specify what is contained in a ZIP.
-use crate::cfg_if_expr;
+
 use crate::cp437::FromCp437;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
@@ -808,15 +808,14 @@ impl ZipFileData {
                 external_attributes |= 0x01;
             }
         }
+        let encrypted = options.encrypt_with.is_some();
+        #[cfg(feature = "aes-crypto")]
+        let encrypted = encrypted || options.aes_mode.is_some();
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
             flags: 0,
-            encrypted: options.encrypt_with.is_some()
-                || cfg_if_expr! {
-                    #[cfg(feature = "aes-crypto")] => options.aes_mode.is_some(),
-                    _ => false
-                },
+            encrypted,
             using_data_descriptor: false,
             is_utf8: !file_name.is_ascii(),
             compression_method,

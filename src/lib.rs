@@ -82,7 +82,3 @@ zip = \"="]
 #[doc = "\"\n\
 ```"]
 pub mod unstable;
-
-pub(crate) mod macros;
-pub(crate) use macros::cfg_if;
-pub(crate) use macros::cfg_if_expr;
