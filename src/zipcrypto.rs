@@ -79,10 +79,11 @@ impl ZipCryptoKeys {
     /// Initial value of `key_2` as specified by the classic ZipCrypto algorithm.
     const INITIAL_KEY_2: u32 = 0x34567890;
 
-    /// Constant added to the lower 2 bits of `key_2` when computing the
-    /// ZipCrypto keystream base, corresponding to the `| 3` step described
-    /// in the ZipCrypto specification.
-    const KEYSTREAM_BASE_SUFFIX: u16 = 2;
+    /// Bitmask applied to the lower 2 bits of `key_2` when computing the
+    /// ZipCrypto keystream base, corresponding to the step described
+    /// in the ZipCrypto specification variously as `| 2` or `| 3` (both give the same keystream
+    /// due to the use of `keystream_base * (keystream_base ^ Wrapping(1))` and a quirk of CRC32).
+    const KEYSTREAM_BITMASK: u16 = 2;
 
     const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
@@ -110,7 +111,7 @@ impl ZipCryptoKeys {
 
     fn stream_byte(&mut self) -> u8 {
         let keystream_base: Wrapping<u16> =
-            Wrapping((self.key_2.0 & 0xFFFF) as u16) | Wrapping(Self::KEYSTREAM_BASE_SUFFIX);
+            Wrapping((self.key_2.0 & 0xFFFF) as u16) | Wrapping(Self::KEYSTREAM_BITMASK);
         ((keystream_base * (keystream_base ^ Wrapping(1))) >> 8).0 as u8
     }
 
