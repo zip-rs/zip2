@@ -311,11 +311,12 @@ static CRC_TABLE: [u32; 256] = [
 
 #[test]
 fn test_crc_table() {
-    for byte in 0..=(u8::MAX as u32) {
-        let mut crc = byte;
+    const CRC32_POLY: u32 = 0xEDB88320;
+    for (i, &table_val) in CRC_TABLE.iter().enumerate() {
+        let mut crc = i as u32;
         for _ in 0..8 {
-            crc = (crc >> 1) ^ ((crc & 1) * 0xEDB88320);
+            crc = (crc >> 1) ^ ((crc & 1) * CRC32_POLY);
         }
-        assert_eq!(CRC_TABLE[byte as usize], crc);
+        assert_eq!(table_val, crc);
     }
 }
