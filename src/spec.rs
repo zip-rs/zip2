@@ -1,6 +1,5 @@
 #![macro_use]
 
-use crate::extra_fields::UsedExtraField;
 use crate::read::ArchiveOffset;
 use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::result::{ZipError, ZipResult, invalid};
@@ -91,43 +90,6 @@ pub(crate) enum ZipFlags {
     ReservedAlternateStream     = 0b0100_0000_0000_0000,
     /// Reserved by PKWARE.
     Reserved                    = 0b1000_0000_0000_0000,
-}
-
-/// Similar to [`Magic`], but used for extra field tags as per section 4.5.3 of APPNOTE.TXT.
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub(crate) struct ExtraFieldMagic(u16);
-
-/* TODO: maybe try to use this for parsing extra fields as well as writing them? */
-#[allow(dead_code)]
-impl ExtraFieldMagic {
-    pub const fn literal(x: u16) -> Self {
-        Self(x)
-    }
-
-    #[inline(always)]
-    pub const fn from_le_bytes(bytes: [u8; 2]) -> Self {
-        Self(u16::from_le_bytes(bytes))
-    }
-
-    #[inline(always)]
-    pub const fn to_le_bytes(self) -> [u8; 2] {
-        self.0.to_le_bytes()
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    #[inline(always)]
-    pub fn from_le(self) -> Self {
-        Self(u16::from_le(self.0))
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    #[inline(always)]
-    pub fn to_le(self) -> Self {
-        Self(u16::to_le(self.0))
-    }
-
-    pub const ZIP64_EXTRA_FIELD_TAG: Self = Self::literal(UsedExtraField::Zip64ExtendedInfo as u16);
 }
 
 /// The file size at which a ZIP64 record becomes necessary.
