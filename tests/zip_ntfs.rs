@@ -26,6 +26,7 @@ fn test_ntfs_extra_field_timestamp_parsing() {
     assert_eq!(timestamp.mtime(), EXPECTED_MTIME_TICKS);
     #[cfg(feature = "nt-time")]
     {
+        // The `time::UtcDateTime` equivalent of `EXPECTED_MTIME_TICKS`.
         const EXPECTED_DATETIME: time::UtcDateTime =
             time::macros::utc_datetime!(2025-01-14 11:21:54.416_939_000);
         assert_eq!(
