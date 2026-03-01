@@ -219,10 +219,10 @@ fn test_zip64_check_extra_field() {
     let path = Path::new("bigfile.bin");
     let bigfile = File::create(path).expect("Failed to create a big file");
 
-    let bigfile_size: u32 = 1024 * 1024 * 1024;
+    let bigfile_size: u64 = 1024 * 1024 * 1024;
     // 1024 MiB = 1024 * 1024 * 1024 bytes
     bigfile
-        .set_len(bigfile_size as u64)
+        .set_len(bigfile_size)
         .expect("Failed to set file length of the big file");
 
     let mut archive_buffer = Vec::new();
