@@ -435,15 +435,19 @@ fn test_number_of_files() {
 
     let archive_len = archive_buffer.len();
     let range_number_entries_disk = (archive_len - 14)..(archive_len - 12);
-    assert_eq!(archive_buffer.get(range_number_entries_disk).unwrap(), [0xFF, 0xFF]);
-    
+    assert_eq!(
+        archive_buffer.get(range_number_entries_disk).unwrap(),
+        [0xFF, 0xFF]
+    );
+
     let range_number_entries = (archive_len - 12)..(archive_len - 10);
-    assert_eq!(archive_buffer.get(range_number_entries).unwrap(), [0xFF, 0xFF]);
+    assert_eq!(
+        archive_buffer.get(range_number_entries).unwrap(),
+        [0xFF, 0xFF]
+    );
 
     let reader =
         zip::ZipArchive::new(Cursor::new(&archive_buffer)).expect("Failed to read the archive");
     let correct_count = u16::MAX as usize + 10;
     assert_eq!(reader.len(), correct_count);
-    
-
 }
