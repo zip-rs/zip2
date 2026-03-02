@@ -506,7 +506,6 @@ impl FixedSizeBlock for Zip64CDEBlock {
     ];
 }
 
-#[derive(Debug)]
 pub(crate) struct Zip64CentralDirectoryEnd {
     pub record_size: u64,
     pub version_made_by: u16,
