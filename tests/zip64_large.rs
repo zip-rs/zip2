@@ -434,11 +434,16 @@ fn test_number_of_files() {
     // file.write_all(&archive_buffer).unwrap();
 
     let archive_len = archive_buffer.len();
-    let range_number_entries_disk = (archive_len - 14)..(archive_len - 12);
-    assert_eq!(
-        archive_buffer.get(range_number_entries_disk).unwrap(),
-        [0xFF, 0xFF]
-    );
+    // Offsets from the end of the file to fields in the End of Central Directory Record, assuming no comment.
+    const EOCD_NUM_FILES_ON_DISK_OFFSET_FROM_END: usize = 14;
+    const EOCD_NUM_FILES_OFFSET_FROM_END: usize = 12;
+    const EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END: usize = 10;
+
+    let range_number_entries_disk = (archive_len - EOCD_NUM_FILES_ON_DISK_OFFSET_FROM_END)..(archive_len - EOCD_NUM_FILES_OFFSET_FROM_END);
+    assert_eq!(archive_buffer.get(range_number_entries_disk).unwrap(), [0xFF, 0xFF]);
+    
+    let range_number_entries = (archive_len - EOCD_NUM_FILES_OFFSET_FROM_END)..(archive_len - EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END);
+    assert_eq!(archive_buffer.get(range_number_entries).unwrap(), [0xFF, 0xFF]);
 
     let range_number_entries = (archive_len - 12)..(archive_len - 10);
     assert_eq!(
