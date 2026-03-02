@@ -396,3 +396,57 @@ fn zip64_check_extra_field(
     archive.finish()?;
     Ok(())
 }
+
+#[test]
+fn test_number_of_files() {
+    use std::io::Cursor;
+    use zip::write::SimpleFileOptions;
+    let mut archive_buffer = Vec::new();
+    let mut archive = zip::ZipWriter::new(Cursor::new(&mut archive_buffer));
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+    let max_u16 = u16::MAX as usize;
+    // create an archive with u16::MAX files
+    for i in 0..max_u16 {
+        let filename = format!("file_{i}.sample");
+        let mut small_file = Cursor::new(vec![0, 1, 2, 3, 4]);
+        archive
+            .start_file(filename, options)
+            .expect("Failed to create new file in archived");
+        std::io::copy(&mut small_file, &mut archive)
+            .expect("Failed to copy small file into archived");
+    }
+    for i in 0..10 {
+        let filename = format!("file_more_{i}.sample");
+        let mut small_file = Cursor::new(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        archive
+            .start_file(filename, options)
+            .expect("Failed to create new file in archived");
+        std::io::copy(&mut small_file, &mut archive)
+            .expect("Failed to copy small file into archived");
+    }
+    archive.finish().expect("Failed to create archived");
+
+    // uncomment for debug
+    // use std::io::Write;
+    // use std::fs::File;
+    // let mut file = File::create("tests/data/test_zip64_number_of_files.zip").unwrap();
+    // file.write_all(&archive_buffer).unwrap();
+
+    let archive_len = archive_buffer.len();
+    // Offsets from the end of the file to fields in the End of Central Directory Record, assuming no comment.
+    const EOCD_NUM_FILES_ON_DISK_OFFSET_FROM_END: usize = 14;
+    const EOCD_NUM_FILES_OFFSET_FROM_END: usize = 12;
+    const EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END: usize = 10;
+
+    let range_number_entries_disk = (archive_len - EOCD_NUM_FILES_ON_DISK_OFFSET_FROM_END)..(archive_len - EOCD_NUM_FILES_OFFSET_FROM_END);
+    assert_eq!(archive_buffer.get(range_number_entries_disk).unwrap(), [0xFF, 0xFF]);
+    
+    let range_number_entries = (archive_len - EOCD_NUM_FILES_OFFSET_FROM_END)..(archive_len - EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END);
+    assert_eq!(archive_buffer.get(range_number_entries).unwrap(), [0xFF, 0xFF]);
+
+    let reader =
+        zip::ZipArchive::new(Cursor::new(&archive_buffer)).expect("Failed to read the archive");
+    let correct_count = u16::MAX as usize + 10;
+    assert_eq!(reader.len(), correct_count);
+}
