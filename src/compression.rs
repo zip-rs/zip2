@@ -137,6 +137,9 @@ impl CompressionMethod {
     pub const PPMD: Self = CompressionMethod::Unsupported(98);
     #[cfg(feature = "aes-crypto")]
     pub const AES: Self = CompressionMethod::Aes;
+
+    // E.4 The compression method field (section 4.4.5) is set to 99
+    // to indicate a file has been encrypted using this method.
     #[cfg(not(feature = "aes-crypto"))]
     pub const AES: Self = CompressionMethod::Unsupported(99);
 
@@ -212,8 +215,6 @@ impl CompressionMethod {
             CompressionMethod::Deflate64 => 9,
             #[cfg(feature = "_bzip2_any")]
             CompressionMethod::Bzip2 => 12,
-            #[cfg(feature = "aes-crypto")]
-            CompressionMethod::Aes => 99,
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => 93,
             #[cfg(feature = "lzma")]
@@ -222,6 +223,10 @@ impl CompressionMethod {
             CompressionMethod::Xz => 95,
             #[cfg(feature = "ppmd")]
             CompressionMethod::Ppmd => 98,
+            // E.4 The compression method field (section 4.4.5) is set to 99
+            // to indicate a file has been encrypted using this method.
+            #[cfg(feature = "aes-crypto")]
+            CompressionMethod::Aes => 99,
             #[allow(deprecated)]
             CompressionMethod::Unsupported(v) => v,
         }

@@ -7,6 +7,7 @@ use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
@@ -147,7 +148,7 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
     #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    pub(crate) aes_mode: Option<crate::aes::AesModeOptions>,
     pub(crate) system: Option<System>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
@@ -1286,6 +1287,12 @@ pub enum AesVendorVersion {
     Ae2 = 0x0002,
 }
 
+impl From<AesVendorVersion> for u16 {
+    fn from(value: AesVendorVersion) -> Self {
+        value as u16
+    }
+}
+
 /// AES variant used.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
@@ -1297,6 +1304,16 @@ pub enum AesMode {
     Aes192 = 0x02,
     /// 256-bit AES encryption.
     Aes256 = 0x03,
+}
+
+impl Display for AesMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Aes128 => write!(f, "AES-128"),
+            Self::Aes192 => write!(f, "AES-192"),
+            Self::Aes256 => write!(f, "AES-256"),
+        }
+    }
 }
 
 #[cfg(feature = "aes-crypto")]

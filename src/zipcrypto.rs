@@ -19,6 +19,7 @@ pub(crate) enum EncryptWith<'k> {
     Aes {
         mode: crate::AesMode,
         password: &'k [u8],
+        salt: Option<crate::aes::AesSalt>,
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
@@ -31,6 +32,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
             return Ok(EncryptWith::Aes {
                 mode: crate::AesMode::arbitrary(u)?,
                 password: u.arbitrary::<&[u8]>()?,
+                salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
             });
         }
 

@@ -596,6 +596,26 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     }
 
     /// Set the AES encryption parameters.
+    /// The `salt` must be at least 8 bytes long for AES-128, and at least 16 bytes long for AES-256.
+    /// This method is not recommended, since having a fixed salt is not secure.
+    /// Consider using `with_aes_encryption` instead, which uses a random salt and is more secure.
+    #[cfg(feature = "aes-crypto")]
+    pub fn with_aes_encryption_and_salt(
+        self,
+        password: &[u8],
+        salt: crate::aes::AesSalt,
+    ) -> FileOptions<'_, T> {
+        FileOptions {
+            encrypt_with: Some(EncryptWith::Aes {
+                mode: salt.mode(),
+                password,
+                salt: Some(salt),
+            }),
+            ..self
+        }
+    }
+
+    /// Set the AES encryption parameters.
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption(self, mode: crate::AesMode, password: &str) -> FileOptions<'_, T> {
         self.with_aes_encryption_bytes(mode, password.as_bytes())
@@ -609,7 +629,11 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         password: &[u8],
     ) -> FileOptions<'_, T> {
         FileOptions {
-            encrypt_with: Some(EncryptWith::Aes { mode, password }),
+            encrypt_with: Some(EncryptWith::Aes {
+                mode,
+                password,
+                salt: None,
+            }),
             ..self
         }
     }
@@ -1141,10 +1165,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "aes-crypto")]
             None if options.aes_mode.is_some() => (CompressionMethod::Aes, options.aes_mode),
             #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, .. }) => (
-                CompressionMethod::Aes,
-                Some((mode, AesVendorVersion::Ae2, options.compression_method)),
-            ),
+            Some(EncryptWith::Aes { mode, salt, .. }) => {
+                let aes_mode = crate::aes::AesModeOptions::new(
+                    mode,
+                    AesVendorVersion::Ae2,
+                    options.compression_method,
+                    salt,
+                );
+                (CompressionMethod::Aes, Some(aes_mode))
+            }
             _ => (options.compression_method, None),
         };
 
@@ -1152,13 +1181,19 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[allow(unused_mut)]
         let mut aes_extra_data_start = 0;
         #[cfg(feature = "aes-crypto")]
-        if let Some((mode, vendor, underlying)) = aes_mode {
+        if let Some(crate::aes::AesModeOptions {
+            mode,
+            vendor_version,
+            actual_compression_method,
+            ..
+        }) = aes_mode
+        {
             // For raw copies of AES entries, write the correct AES extra data immediately
             let mut body = [0; 7];
-            [body[0], body[1]] = (vendor as u16).to_le_bytes(); // vendor version (1 or 2)
+            [body[0], body[1]] = (vendor_version as u16).to_le_bytes(); // vendor version (1 or 2)
             [body[2], body[3]] = *b"AE"; // vendor id
             body[4] = mode as u8; // strength
-            [body[5], body[6]] = underlying.serialize_to_u16().to_le_bytes(); // real compression method
+            [body[5], body[6]] = actual_compression_method.serialize_to_u16().to_le_bytes(); // real compression method
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
@@ -1205,6 +1240,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
+        #[cfg(feature = "aes-crypto")]
+        let aes_mode = aes_mode.map(|mode| mode.to_tuple());
         let mut file = ZipFileData::initialize_local_block(
             name,
             &options,
@@ -1249,9 +1286,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.stats.start = self.inner.try_inner_mut()?.stream_position()?;
         match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, password }) => {
+            Some(EncryptWith::Aes {
+                mode,
+                password,
+                salt,
+            }) => {
                 let writer = self.close_writer()?;
-                let aeswriter = crate::aes::AesWriter::new(writer, mode, password)?;
+                let aeswriter =
+                    crate::aes::AesWriter::new_with_options(writer, mode, password, salt)?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
@@ -3573,6 +3615,7 @@ mod test {
             encrypt_with: Some(Aes {
                 mode: Aes256,
                 password: &[],
+                salt: None,
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![2, 0, 1, 0, 0].into(),
@@ -4105,6 +4148,7 @@ mod test {
             encrypt_with: Some(crate::write::EncryptWith::Aes {
                 mode: crate::AesMode::Aes256,
                 password: &[],
+                salt: None,
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
@@ -4287,6 +4331,7 @@ mod test {
             encrypt_with: Some(Aes {
                 mode: Aes128,
                 password: &[],
+                salt: None,
             }),
             extended_options: ExtendedFileOptions {
                 extra_data: vec![3, 0, 4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),
