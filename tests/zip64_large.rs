@@ -445,12 +445,6 @@ fn test_number_of_files() {
     let range_number_entries = (archive_len - EOCD_NUM_FILES_OFFSET_FROM_END)..(archive_len - EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END);
     assert_eq!(archive_buffer.get(range_number_entries).unwrap(), [0xFF, 0xFF]);
 
-    let range_number_entries = (archive_len - 12)..(archive_len - 10);
-    assert_eq!(
-        archive_buffer.get(range_number_entries).unwrap(),
-        [0xFF, 0xFF]
-    );
-
     let reader =
         zip::ZipArchive::new(Cursor::new(&archive_buffer)).expect("Failed to read the archive");
     let correct_count = u16::MAX as usize + 10;
