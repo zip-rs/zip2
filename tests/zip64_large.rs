@@ -439,11 +439,19 @@ fn test_number_of_files() {
     const EOCD_NUM_FILES_OFFSET_FROM_END: usize = 12;
     const EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END: usize = 10;
 
-    let range_number_entries_disk = (archive_len - EOCD_NUM_FILES_ON_DISK_OFFSET_FROM_END)..(archive_len - EOCD_NUM_FILES_OFFSET_FROM_END);
-    assert_eq!(archive_buffer.get(range_number_entries_disk).unwrap(), [0xFF, 0xFF]);
-    
-    let range_number_entries = (archive_len - EOCD_NUM_FILES_OFFSET_FROM_END)..(archive_len - EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END);
-    assert_eq!(archive_buffer.get(range_number_entries).unwrap(), [0xFF, 0xFF]);
+    let range_number_entries_disk = (archive_len - EOCD_NUM_FILES_ON_DISK_OFFSET_FROM_END)
+        ..(archive_len - EOCD_NUM_FILES_OFFSET_FROM_END);
+    assert_eq!(
+        archive_buffer.get(range_number_entries_disk).unwrap(),
+        [0xFF, 0xFF]
+    );
+
+    let range_number_entries = (archive_len - EOCD_NUM_FILES_OFFSET_FROM_END)
+        ..(archive_len - EOCD_TOTAL_NUM_FILES_OFFSET_FROM_END);
+    assert_eq!(
+        archive_buffer.get(range_number_entries).unwrap(),
+        [0xFF, 0xFF]
+    );
 
     let reader =
         zip::ZipArchive::new(Cursor::new(&archive_buffer)).expect("Failed to read the archive");
