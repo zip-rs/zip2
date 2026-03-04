@@ -1,7 +1,4 @@
-//! A library for reading and writing ZIP archives.
 #![doc = include_str!("../README.md")]
-
-
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, rust_2018_idioms)]
 #![deny(
