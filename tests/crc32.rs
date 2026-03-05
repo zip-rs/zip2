@@ -2,7 +2,7 @@
 use std::io::Read;
 
 fn generate_zip_with_wrong_crc32() -> Vec<u8> {
-    let options = zip::write::SimpleFileOptions::default();
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     let mut data = Vec::new();
     let mut archive = zip::ZipWriter::new(std::io::Cursor::new(&mut data));
@@ -12,10 +12,12 @@ fn generate_zip_with_wrong_crc32() -> Vec<u8> {
     std::io::copy(&mut f, &mut archive).unwrap();
     archive.finish().unwrap();
 
+    println!("{data:#04x?}");
     // local header crc32
-    data[15..19].copy_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+    data[14..18].copy_from_slice(&[0x01, 0x02, 0x03, 0x04]);
     // central header crc32
-    data[60..64].copy_from_slice(&[0x05, 0x06, 0x07, 0x08]);
+    data[70..74].copy_from_slice(&[0x05, 0x06, 0x07, 0x08]);
+    println!("{data:#04x?}");
 
     data
 }
