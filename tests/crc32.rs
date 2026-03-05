@@ -20,8 +20,6 @@ fn generate_zip_with_wrong_crc32() -> Vec<u8> {
     data
 }
 
-
-
 #[test]
 fn invalid_crc32_should_error() {
     let archive = generate_zip_with_wrong_crc32();
@@ -38,7 +36,6 @@ fn invalid_crc32_should_error() {
     assert_eq!(err.to_string(), "Invalid checksum");
 }
 
-
 #[test]
 fn invalid_crc32_ignored_should_success() {
     let archive = generate_zip_with_wrong_crc32();
@@ -51,4 +48,3 @@ fn invalid_crc32_ignored_should_success() {
     let read_res = file.read_to_end(&mut buf);
     assert!(read_res.is_ok());
 }
-
