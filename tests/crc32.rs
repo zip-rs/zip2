@@ -2,7 +2,8 @@
 use std::io::Read;
 
 fn generate_zip_with_wrong_crc32() -> Vec<u8> {
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     let mut data = Vec::new();
     let mut archive = zip::ZipWriter::new(std::io::Cursor::new(&mut data));
