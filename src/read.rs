@@ -244,6 +244,10 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
 }
 
 /// A struct for reading a zip file
+///
+/// When reading from a `ZipFile` using [`Self::read()`], keep in mind that `read()` **does not guarantee** the buffer will be fully filled in a single call.
+///
+/// If your logic depends on the buffer being completely populated, use [`Self::read_exact()`] instead. It will continue reading until the entire buffer is filled or an error occurs.
 #[derive(Debug)]
 pub struct ZipFile<'a, R: Read + ?Sized> {
     pub(crate) data: Cow<'a, ZipFileData>,

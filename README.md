@@ -3,20 +3,24 @@
 A zip library for rust which supports reading and writing of simple ZIP files. Currently hosted at
 <https://github.com/zip-rs/zip2>.
 
+The current implementation is based on [PKWARE's APPNOTE.TXT v6.3.9](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)
+
 Supported compression formats:
-- Compress and decompress:
-  - stored (i.e. none)
-  - deflate
-  - bzip2
-  - zstd
-  - xz
-  - ppmd
-- Decompress only:
-  - deflate64
-  - lzma
-  - implode
-  - reduce
-  - shrink
+
+| Formats                         | Reading | Writing |
+| ------------------------------- | ------- | ------- |
+| Stored (i.e. none)              | ✅      | ✅      |
+| Implode, Shrink, Reduce         | ✅      |         |
+| Deflate                         | ✅      | ✅      |
+| Deflate64                       | ✅      |         |
+| Bzip2                           | ✅      | ✅      |
+| ZStandard                       | ✅      | ✅      |
+| LZMA                            | ✅      |         |
+| XZ                              | ✅      | ✅      |
+| PPMd                            | ✅      | ✅      |
+| AES encryption                  | ✅      | ✅      |
+| ZipCrypto deprecated encryption | ✅      | ✅      |
+
 Currently unsupported zip extensions:
 
 - Multi-disk
@@ -38,13 +42,51 @@ The features available are:
 - `bzip2`: Enables the BZip2 compression algorithm.
 - `ppmd`: Enables the PPMd compression algorithm.
 - `time`: Enables features using the [time](https://github.com/time-rs/time) crate.
-- `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.
-- `jiff-02`: Enables converting last-modified `zip::DateTime` to and from `jiff::civil::DateTime`.
+- `chrono`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `chrono::NaiveDateTime`.
+- `jiff-02`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `jiff::civil::DateTime`.
 - `nt-time`: Enables returning timestamps stored in the NTFS extra field as `nt_time::FileTime`.
 - `xz`: Enables the XZ compression algorithm.
 - `zstd`: Enables the Zstandard compression algorithm.
 
 By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time`, `xz` and `zstd` are enabled.
+
+## Library usage
+
+Reading:
+- [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html)
+
+Writing:
+- [`ZipWriter::new()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html) - to create a new archive
+- [`ZipWriter::new_stream()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new_stream) - to write in stream mode
+
+## Examples
+
+See the [examples directory](./examples) for:
+
+- How to [write a file to a zip](./examples/write_sample.rs).
+- How to [write a directory of files to a zip](./examples/write_dir.rs) (using [walkdir](https://github.com/BurntSushi/walkdir)).
+- How to [extract a zip file](./examples/extract.rs).
+- How to [extract a single file from a zip](./examples/extract_lorem.rs).
+- How to [read a zip from the standard input](./examples/stdin_info.rs).
+- How to [append a directory to an existing archive](./examples/append.rs)
+
+## Wasm
+
+This library can work in a Wasm environment but you may need to disable certain features (which are using non-rust library). Here is an example below
+
+```toml
+# change to latest version
+zip = { version = "latest", default-features = false, features = [
+    # "aes-crypto",
+    # "bzip2",
+    # "xz",
+    "deflate64",
+    "deflate",
+    "lzma",
+    "time",
+    "zstd",
+] }
+```
 
 ## MSRV
 
@@ -54,16 +96,6 @@ we will follow these guidelines:
 - We will always support a minor Rust version that has been stable for at least 6 months.
 - Any change to the MSRV will be accompanied with a **minor** version bump.
 
-## Examples
-
-See the [examples directory](examples) for:
-
-- How to [write a file to a zip](./examples/write_sample.rs).
-- How to [write a directory of files to a zip](./examples/write_dir.rs) (using [walkdir](https://github.com/BurntSushi/walkdir)).
-- How to [extract a zip file](./examples/extract.rs).
-- How to [extract a single file from a zip](./examples/extract_lorem.rs).
-- How to [read a zip from the standard input](./examples/stdin_info.rs).
-- How to [append a directory to an existing archive](./examples/append.rs)
 
 ## Fuzzing
 
@@ -93,7 +125,7 @@ cargo afl build --manifest-path=fuzz/Cargo.toml --all-features -p fuzz_write
 cargo afl fuzz -x fuzz/write/fuzz.dict -i fuzz/write/in -o fuzz-write-out fuzz/target/debug/fuzz_write
 ```
 
-## Fuzzing stdio
+### Fuzzing stdio
 
 The read and write fuzzers can also receive input over stdin for one-off validation. Note here that the fuzzers can be configured to build in support for DEFLATE, or not:
 
