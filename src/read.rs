@@ -431,11 +431,16 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
 pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
-    crc32: u32,
+    crc32: Option<u32>,
     reader: CryptoReader<'_, R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
 ) -> ZipResult<ZipFileReader<'_, R>> {
-    let ae2_encrypted = reader.is_ae2_encrypted();
+    // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
+    let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
+        (reader.is_ae2_encrypted(), data_crc32)
+    } else {
+        (true, 0)
+    };
     #[cfg(not(feature = "legacy-zip"))]
     let flags = 0;
     Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
@@ -446,7 +451,7 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
             flags,
         )?,
         crc32,
-        ae2_encrypted,
+        should_disable,
     ))))
 }
 
@@ -1298,12 +1303,18 @@ impl<R: Read + Seek> ZipArchive<R> {
         let crypto_reader =
             make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
 
+        let crc32 = if options.ignore_crc {
+            None
+        } else {
+            Some(data.crc32)
+        };
+
         Ok(ZipFile {
             data: Cow::Borrowed(data),
             reader: make_reader(
                 data.compression_method,
                 data.uncompressed_size,
-                data.crc32,
+                crc32,
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,
@@ -1753,6 +1764,9 @@ pub struct ZipReadOptions<'a> {
 
     /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
     ignore_encryption_flag: bool,
+
+    /// Ignore the crc32 of the file
+    ignore_crc: bool,
 }
 
 impl<'a> ZipReadOptions<'a> {
@@ -1773,6 +1787,13 @@ impl<'a> ZipReadOptions<'a> {
     #[must_use]
     pub fn ignore_encryption_flag(mut self, ignore: bool) -> Self {
         self.ignore_encryption_flag = ignore;
+        self
+    }
+
+    /// Ignore the CRC32 of the file
+    #[must_use]
+    pub fn ignore_crc32(mut self, should_ignore: bool) -> Self {
+        self.ignore_crc = should_ignore;
         self
     }
 }
@@ -2201,7 +2222,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
         reader: make_reader(
             compression_method,
             uncompressed_size,
-            crc32,
+            Some(crc32),
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
@@ -2330,7 +2351,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
         reader: make_reader(
             compression_method,
             uncompressed_size,
-            crc32,
+            Some(crc32),
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
