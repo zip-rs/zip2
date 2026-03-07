@@ -28,13 +28,11 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
 pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
     Utf8WindowsPath::new(no_null_filename)
         .components()
-        .filter(|component| matches!(*component, Utf8WindowsComponent::Normal(..)))
-        .fold(PathBuf::new(), |mut path, cur| {
-            if let Utf8WindowsComponent::Normal(s) = cur {
-                path.push(s);
-            }
-            path
+        .filter_map(|component| match component {
+            Utf8WindowsComponent::Normal(s) => Some(s),
+            _ => None,
         })
+        .collect()
 }
 
 pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
