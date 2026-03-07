@@ -34,7 +34,8 @@ impl From<ExtendedTimestampFlags> for u8 {
     }
 }
 
-/// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
+/// Extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone)]
 pub struct ExtendedTimestamp {
     mod_time: Option<u32>,
@@ -85,7 +86,7 @@ impl ExtendedTimestamp {
         // allow unsupported/undocumented flags
 
         let mod_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::ModTime)
-            && bytes_to_read >= 4)
+            && bytes_to_read >= mem::size_of::<u32>())
             || len == 13
         {
             bytes_to_read = bytes_to_read
@@ -100,7 +101,7 @@ impl ExtendedTimestamp {
         };
 
         let ac_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::AcTime)
-            && bytes_to_read >= 4)
+            && bytes_to_read >= mem::size_of::<u32>())
             || len == 13
         {
             bytes_to_read = bytes_to_read
@@ -115,7 +116,7 @@ impl ExtendedTimestamp {
         };
 
         let cr_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::CrTime)
-            && bytes_to_read >= 4)
+            && bytes_to_read >= mem::size_of::<u32>())
             || len == 13
         {
             bytes_to_read = bytes_to_read
