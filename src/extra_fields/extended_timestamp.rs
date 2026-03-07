@@ -9,6 +9,7 @@ use std::mem;
 
 /// ExtendedTimestamp Flags
 #[rustfmt::skip]
+#[deny(clippy::enum_variant_names)]
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtendedTimestampFlags {
@@ -63,7 +64,7 @@ impl ExtendedTimestamp {
         reader.read_exact(&mut flags)?;
         bytes_to_read = bytes_to_read
             .checked_sub(flags.len())
-            .ok_or(invalid!("Extended timestamp field too short for mod_time"))?;
+            .ok_or(invalid!("Extended timestamp field too short for flags"))?;
         let flags = flags[0];
 
         // the `flags` field refers to the local headers and might not correspond
@@ -147,12 +148,14 @@ impl ExtendedTimestamp {
 
 #[cfg(test)]
 mod test {
+    use super::ExtendedTimestamp;
 
-    #[test]
+    use std::io::Cursor;
+
     /// Ensure we don't panic or read garbage data if the field body is empty
+    #[test]
     pub fn test_bad_extended_timestamp() {
         use crate::ZipArchive;
-        use std::io::Cursor;
 
         assert!(
             ZipArchive::new(Cursor::new(include_bytes!(
@@ -162,13 +165,10 @@ mod test {
         );
     }
 
-    #[test]
     /// Ensure that a truncated extended timestamp (len too short for flags)
     /// returns an error instead of panicking from a subtraction overflow.
+    #[test]
     fn test_extended_timestamp_overflow() {
-        use super::ExtendedTimestamp;
-        use std::io::Cursor;
-
         let tests_args = [
             (vec![0b0000_0001_u8, 0x00, 0x00, 0x00], 0), // len is 0
             (vec![0b0000_0001_u8, 0x00, 0x00, 0x00], 2), // len is 2 (not enough)
@@ -198,5 +198,62 @@ mod test {
             let result = ExtendedTimestamp::try_from_reader(&mut cursor, len);
             assert!(result.is_err());
         }
+    }
+
+    #[test]
+    fn check_extended_timestamp_value() {
+        let mut cursor = Cursor::new(&[0b0000_0001_u8, 0x00, 0x00, 0x00, 0x01]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
+        assert_eq!(result.mod_time(), Some(1));
+        assert_eq!(result.ac_time(), None);
+        assert_eq!(result.cr_time(), None);
+
+        let mut cursor = Cursor::new(&[0b0000_0010_u8, 0x00, 0x00, 0x00, 0x02]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
+        assert_eq!(result.mod_time(), None);
+        assert_eq!(result.ac_time(), Some(2));
+        assert_eq!(result.cr_time(), None);
+
+        let mut cursor = Cursor::new(&[0b0000_0100_u8, 0x00, 0x00, 0x00, 0x03]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
+        assert_eq!(result.mod_time(), None);
+        assert_eq!(result.ac_time(), None);
+        assert_eq!(result.cr_time(), Some(3));
+
+        let mut cursor = Cursor::new(&[
+            0b0000_0011_u8,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x02,
+        ]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 9).unwrap();
+        assert_eq!(result.mod_time(), Some(1));
+        assert_eq!(result.ac_time(), Some(2));
+        assert_eq!(result.cr_time(), None);
+
+        let mut cursor = Cursor::new(&[
+            0b0000_0111_u8,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x02,
+            0x00,
+            0x00,
+            0x00,
+            0x03,
+        ]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 13).unwrap();
+        assert_eq!(result.mod_time(), Some(1));
+        assert_eq!(result.ac_time(), Some(2));
+        assert_eq!(result.ac_time(), Some(3));
     }
 }
