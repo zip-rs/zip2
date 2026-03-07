@@ -23,7 +23,7 @@ enum ExtendedTimestampFlags {
 
 impl ExtendedTimestampFlags {
     fn matching(flags: u8, matching_flag: Self) -> bool {
-        flags & u8::from(matching_flag) == 1
+        flags & u8::from(matching_flag) != 0
     }
 }
 
