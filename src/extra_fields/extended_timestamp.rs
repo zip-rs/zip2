@@ -9,7 +9,7 @@ use std::mem;
 
 /// `ExtendedTimestamp` Flags
 #[rustfmt::skip]
-#[deny(clippy::enum_variant_names)]
+#[allow(clippy::enum_variant_names)]
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtendedTimestampFlags {
