@@ -1,10 +1,39 @@
+//! Extended Timestamp extra field
+//! Defined in <https://libzip.org/specifications/extrafld.txt>
+
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
 use std::io::Read;
+use std::mem;
+
+/// ExtendedTimestamp Flags
+#[rustfmt::skip]
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ExtendedTimestampFlags {
+    /// modification time is present
+    ModTime = 0b0000_0001_u8,
+    /// access time is present
+    AcTime  = 0b0000_0010_u8,
+    /// creation time is present
+    CrTime  = 0b0000_0100_u8,
+    // others bytes reversed
+}
+
+impl ExtendedTimestampFlags {
+    fn matching(flags: u8, matching_flag: Self) -> bool {
+        flags & u8::from(matching_flag) == 1
+    }
+}
+
+impl From<ExtendedTimestampFlags> for u8 {
+    fn from(extended_timestamp: ExtendedTimestampFlags) -> u8 {
+        extended_timestamp as u8
+    }
+}
 
 /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
-
 #[derive(Debug, Clone)]
 pub struct ExtendedTimestamp {
     mod_time: Option<u32>,
@@ -32,7 +61,9 @@ impl ExtendedTimestamp {
         let mut flags = [0u8];
         let mut bytes_to_read = len as usize;
         reader.read_exact(&mut flags)?;
-        bytes_to_read -= flags.len();
+        bytes_to_read = bytes_to_read
+            .checked_sub(flags.len())
+            .ok_or(invalid!("Extended timestamp field too short for mod_time"))?;
         let flags = flags[0];
 
         // the `flags` field refers to the local headers and might not correspond
@@ -52,26 +83,36 @@ impl ExtendedTimestamp {
 
         // allow unsupported/undocumented flags
 
-        let mod_time = if (flags & 0b0000_0001_u8 == 0b0000_0001_u8) || len == 5 {
-            bytes_to_read -= size_of::<u32>();
+        let mod_time = if ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::ModTime)
+            || len == 5
+        {
+            bytes_to_read = bytes_to_read
+                .checked_sub(mem::size_of::<u32>())
+                .ok_or(invalid!("Extended timestamp field too short for mod_time"))?;
             Some(reader.read_u32_le()?)
         } else {
             None
         };
 
-        let ac_time = if flags & 0b0000_0010_u8 == 0b0000_0010_u8 && len > 5 {
-            bytes_to_read -= size_of::<u32>();
-            Some(reader.read_u32_le()?)
-        } else {
-            None
-        };
+        let ac_time =
+            if ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::AcTime) && len > 5 {
+                bytes_to_read = bytes_to_read
+                    .checked_sub(mem::size_of::<u32>())
+                    .ok_or(invalid!("Extended timestamp field too short for ac_time"))?;
+                Some(reader.read_u32_le()?)
+            } else {
+                None
+            };
 
-        let cr_time = if flags & 0b0000_0100_u8 == 0b0000_0100_u8 && len > 5 {
-            bytes_to_read -= size_of::<u32>();
-            Some(reader.read_u32_le()?)
-        } else {
-            None
-        };
+        let cr_time =
+            if ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::CrTime) && len > 5 {
+                bytes_to_read = bytes_to_read
+                    .checked_sub(mem::size_of::<u32>())
+                    .ok_or(invalid!("Extended timestamp field too short for cr_time"))?;
+                Some(reader.read_u32_le()?)
+            } else {
+                None
+            };
 
         if bytes_to_read > 0 {
             // ignore undocumented bytes
@@ -119,5 +160,43 @@ mod test {
             )))
             .is_err()
         );
+    }
+
+    #[test]
+    /// Ensure that a truncated extended timestamp (len too short for flags)
+    /// returns an error instead of panicking from a subtraction overflow.
+    fn test_extended_timestamp_overflow() {
+        use super::ExtendedTimestamp;
+        use std::io::Cursor;
+
+        let tests_args = [
+            (vec![0b0000_0001_u8, 0x00, 0x00, 0x00], 0), // len is 0
+            (vec![0b0000_0001_u8, 0x00, 0x00, 0x00], 2), // len is 2 (not enough)
+            (vec![0b0000_0010_u8, 0x00, 0x00, 0x00], 3), // len is 3 (not enough)
+            (vec![0b0000_0100_u8, 0x00, 0x00, 0x00], 4), // len is 4 (not enough)
+            // len is 8 (not enough)
+            (
+                vec![
+                    0b0000_0011_u8,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                ],
+                8,
+            ),
+            // len is too long and missing 4 bytes
+            (vec![0b0000_0011_u8, 0x00, 0x00, 0x00, 0x00], 8),
+            (vec![0b0000_0000_u8], 5), // too long len
+        ];
+        for (data, len) in tests_args {
+            let mut cursor = Cursor::new(data);
+            let result = ExtendedTimestamp::try_from_reader(&mut cursor, len);
+            assert!(result.is_err());
+        }
     }
 }
