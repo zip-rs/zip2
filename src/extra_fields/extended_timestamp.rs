@@ -7,7 +7,7 @@ use crate::unstable::LittleEndianReadExt;
 use std::io::Read;
 use std::mem;
 
-/// ExtendedTimestamp Flags
+/// `ExtendedTimestamp` Flags
 #[rustfmt::skip]
 #[deny(clippy::enum_variant_names)]
 #[repr(u8)]
