@@ -84,36 +84,50 @@ impl ExtendedTimestamp {
 
         // allow unsupported/undocumented flags
 
-        let mod_time = if ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::ModTime)
-            || len == 5
+        let mod_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::ModTime)
+            && bytes_to_read >= 4)
+            || len == 13
         {
             bytes_to_read = bytes_to_read
                 .checked_sub(mem::size_of::<u32>())
-                .ok_or(invalid!("Extended timestamp field too short for mod_time"))?;
+                .ok_or(invalid!(
+                    "Extended timestamp field too short for mod_time len={} flags={flags:08b}",
+                    len
+                ))?;
             Some(reader.read_u32_le()?)
         } else {
             None
         };
 
-        let ac_time =
-            if ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::AcTime) && len > 5 {
-                bytes_to_read = bytes_to_read
-                    .checked_sub(mem::size_of::<u32>())
-                    .ok_or(invalid!("Extended timestamp field too short for ac_time"))?;
-                Some(reader.read_u32_le()?)
-            } else {
-                None
-            };
+        let ac_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::AcTime)
+            && bytes_to_read >= 4)
+            || len == 13
+        {
+            bytes_to_read = bytes_to_read
+                .checked_sub(mem::size_of::<u32>())
+                .ok_or(invalid!(
+                    "Extended timestamp field too short for ac_time len={} flags={flags:08b}",
+                    len
+                ))?;
+            Some(reader.read_u32_le()?)
+        } else {
+            None
+        };
 
-        let cr_time =
-            if ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::CrTime) && len > 5 {
-                bytes_to_read = bytes_to_read
-                    .checked_sub(mem::size_of::<u32>())
-                    .ok_or(invalid!("Extended timestamp field too short for cr_time"))?;
-                Some(reader.read_u32_le()?)
-            } else {
-                None
-            };
+        let cr_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::CrTime)
+            && bytes_to_read >= 4)
+            || len == 13
+        {
+            bytes_to_read = bytes_to_read
+                .checked_sub(mem::size_of::<u32>())
+                .ok_or(invalid!(
+                    "Extended timestamp field too short for cr_time len={} flags={flags:08b}",
+                    len
+                ))?;
+            Some(reader.read_u32_le()?)
+        } else {
+            None
+        };
 
         if bytes_to_read > 0 {
             // ignore undocumented bytes
@@ -204,21 +218,21 @@ mod test {
     fn check_extended_timestamp_value() {
         let mut cursor = Cursor::new(&[0b0000_0001_u8, 0x00, 0x00, 0x00, 0x01]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
-        assert_eq!(result.mod_time(), Some(1));
+        assert_eq!(result.mod_time(), Some(16777216));
         assert_eq!(result.ac_time(), None);
         assert_eq!(result.cr_time(), None);
 
         let mut cursor = Cursor::new(&[0b0000_0010_u8, 0x00, 0x00, 0x00, 0x02]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
         assert_eq!(result.mod_time(), None);
-        assert_eq!(result.ac_time(), Some(2));
+        assert_eq!(result.ac_time(), Some(33554432));
         assert_eq!(result.cr_time(), None);
 
         let mut cursor = Cursor::new(&[0b0000_0100_u8, 0x00, 0x00, 0x00, 0x03]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
         assert_eq!(result.mod_time(), None);
         assert_eq!(result.ac_time(), None);
-        assert_eq!(result.cr_time(), Some(3));
+        assert_eq!(result.cr_time(), Some(50331648));
 
         let mut cursor = Cursor::new(&[
             0b0000_0011_u8,
@@ -232,8 +246,8 @@ mod test {
             0x02,
         ]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 9).unwrap();
-        assert_eq!(result.mod_time(), Some(1));
-        assert_eq!(result.ac_time(), Some(2));
+        assert_eq!(result.mod_time(), Some(16777216));
+        assert_eq!(result.ac_time(), Some(33554432));
         assert_eq!(result.cr_time(), None);
 
         let mut cursor = Cursor::new(&[
@@ -252,8 +266,8 @@ mod test {
             0x03,
         ]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 13).unwrap();
-        assert_eq!(result.mod_time(), Some(1));
-        assert_eq!(result.ac_time(), Some(2));
-        assert_eq!(result.ac_time(), Some(3));
+        assert_eq!(result.mod_time(), Some(16777216));
+        assert_eq!(result.ac_time(), Some(33554432));
+        assert_eq!(result.cr_time(), Some(50331648));
     }
 }
