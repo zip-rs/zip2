@@ -116,11 +116,11 @@ impl TryFrom<u16> for UsedExtraField {
 
 /// Known Extra fields (PKWARE and Third party) mappings, sorted
 pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
-    UsedExtraField::Zip64ExtendedInfo as u16,
+    UsedExtraField::Zip64ExtendedInfo.as_u16(),
     0x0007, // AV Info
     0x0008, // Reserved for extended language encoding data (PFS)
     0x0009, // OS/2
-    UsedExtraField::Ntfs as u16,
+    UsedExtraField::Ntfs.as_u16(),
     0x000c, // OpenVMS
     0x000d, // UNIX
     0x000e, // Reserved for file stream and fork descriptors

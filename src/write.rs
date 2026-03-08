@@ -196,27 +196,23 @@ pub(crate) mod zip_writer {
     impl<W: Write + Seek> ZipWriter<W> {
         /// Gets a reference to the underlying writer in this `ZipWriter`.
         pub fn get_ref(&self) -> Option<&W> {
-            use GenericZipWriter::{
-                BufferedZopfliDeflater, Bzip2, Closed, Deflater, Ppmd, Storer, Xz, ZopfliDeflater,
-                Zstd,
-            };
             match &self.inner {
-                Closed => None,
-                Storer(w) => Some(w.get_ref()),
+                GenericZipWriter::Closed => None,
+                GenericZipWriter::Storer(w) => Some(w.get_ref()),
                 #[cfg(feature = "deflate-flate2")]
-                Deflater(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::Deflater(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "deflate-zopfli")]
-                ZopfliDeflater(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::ZopfliDeflater(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "deflate-zopfli")]
-                BufferedZopfliDeflater(w) => Some(w.get_ref().get_ref().get_ref()),
+                GenericZipWriter::BufferedZopfliDeflater(w) => Some(w.get_ref().get_ref().get_ref()),
                 #[cfg(feature = "_bzip2_any")]
-                Bzip2(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::Bzip2(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "zstd")]
-                Zstd(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::Zstd(w) => Some(w.get_ref().get_ref()),
                 #[cfg(feature = "xz")]
-                Xz(w) => Some(w.inner().get_ref()),
+                GenericZipWriter::Xz(w) => Some(w.inner().get_ref()),
                 #[cfg(feature = "ppmd")]
-                Ppmd(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::Ppmd(w) => Some(w.get_ref().get_ref()),
             }
         }
 
@@ -1203,7 +1199,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
-                UsedExtraField::AeXEncryption as u16,
+                UsedExtraField::AeXEncryption.as_u16(),
                 &body,
             )?;
         }
@@ -1230,7 +1226,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
                     ExtendedFileOptions::add_extra_data_unchecked(
                         &mut extra_data,
-                        UsedExtraField::DataStreamAlignment as u16,
+                        UsedExtraField::DataStreamAlignment.as_u16(),
                         &pad_body,
                     )?;
                     debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
