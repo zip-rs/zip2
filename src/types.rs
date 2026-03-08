@@ -3,17 +3,21 @@
 use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::extra_fields::ExtraField;
+use crate::extra_fields::Zip64ExtendedInformation;
 use crate::result::DateTimeRangeError;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
 use crate::types::ffi::S_IFDIR;
+use crate::unstable::LittleEndianWriteExt;
 use crate::write::FileOptionExtension;
+use crate::write::strip_alignment_extra_field;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
 use std::ffi::OsStr;
 use std::fmt::Display;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::mem::offset_of;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
@@ -649,6 +653,109 @@ impl ZipFileData {
         }
 
         Ok(data_start)
+    }
+
+    fn update_local_zip64_extra_field<T: Write + Seek>(
+       &mut self,
+        writer: &mut T,
+    ) -> ZipResult<()> {
+        let block = Zip64ExtendedInformation::local_header(
+            self.large_file,
+            self.uncompressed_size,
+            self.compressed_size,
+        )
+        .ok_or(invalid!(
+            "Attempted to update a nonexistent ZIP64 extra field"
+        ))?;
+
+        let zip64_extra_field_start = self.header_start
+            + size_of::<ZipLocalEntryBlock>() as u64
+            + self.file_name_raw.len() as u64;
+
+        writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
+        let block = block.serialize();
+        writer.write_all(&block)?;
+
+        let Some(ref mut extra_field) = self.extra_field else {
+            return Err(invalid!(
+                "update_aes_extra_data called on a file that has no extra-data field"
+            ));
+        };
+        let extra_field = Arc::make_mut(extra_field);
+        extra_field[..block.len()].copy_from_slice(&block);
+
+        Ok(())
+    }
+
+    pub(crate) fn update_local_file_header<T: Write + Seek>(
+        &mut self,
+        writer: &mut T,
+    ) -> ZipResult<()> {
+        writer.seek(SeekFrom::Start(
+            self.header_start + offset_of!(ZipLocalEntryBlock, crc32) as u64,
+        ))?;
+        writer.write_u32_le(self.crc32)?;
+        if self.large_file {
+            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
+            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
+
+            self.update_local_zip64_extra_field(writer)?;
+
+            // self.compressed_size = spec::ZIP64_BYTES_THR;
+            // self.uncompressed_size = spec::ZIP64_BYTES_THR;
+        } else {
+            // check compressed size as well as it can also be slightly larger than uncompressed size
+            if self.compressed_size > spec::ZIP64_BYTES_THR {
+                return Err(ZipError::Io(std::io::Error::other(
+                    "large_file(true) option has not been set",
+                )));
+            }
+            writer.write_u32_le(self.compressed_size as u32)?;
+            // uncompressed size is already checked on write to catch it as soon as possible
+            writer.write_u32_le(self.uncompressed_size as u32)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_central_directory_header<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
+        let mut block = self.block()?;
+        let stripped_extra = if let Some(extra) = &self.extra_field {
+            strip_alignment_extra_field(extra)
+        } else {
+            Vec::new()
+        };
+        let central_len = self.central_extra_field_len();
+        let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
+            self.uncompressed_size,
+            self.compressed_size,
+            self.header_start,
+        );
+        let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
+            zip64.full_size()
+        } else {
+            0
+        };
+        let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
+        block.extra_field_length = u16::try_from(total_extra_len)
+            .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
+
+        block.write(writer)?;
+        // file name
+        writer.write_all(&self.file_name_raw)?;
+        // extra field
+        if let Some(zip64_extra_field) = zip64_extra_field_block {
+            writer.write_all(&zip64_extra_field.serialize())?;
+        }
+        if !stripped_extra.is_empty() {
+            writer.write_all(&stripped_extra)?;
+        }
+        if let Some(central_extra_field) = &self.central_extra_field {
+            writer.write_all(central_extra_field)?;
+        }
+        // file comment
+        writer.write_all(self.file_comment.as_bytes())?;
+
+        Ok(())
     }
 
     #[allow(dead_code)]

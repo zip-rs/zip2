@@ -15,7 +15,7 @@ use crate::types::{
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
-use core::mem::{self, offset_of, size_of};
+use core::mem::{self, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
@@ -1403,7 +1403,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.using_data_descriptor {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
-                update_local_file_header(writer, file)?;
+                file.update_local_file_header(writer)?;
                 writer.seek(SeekFrom::Start(file_end))?;
             }
         }
@@ -1870,7 +1870,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
         for file in self.files.values() {
-            write_central_directory_header(writer, file)?;
+            file.write_central_directory_header(writer)?;
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
@@ -2401,78 +2401,7 @@ fn update_aes_extra_data<W: Write + Seek>(
     Ok(())
 }
 
-fn update_local_file_header<T: Write + Seek>(
-    writer: &mut T,
-    file: &mut ZipFileData,
-) -> ZipResult<()> {
-    writer.seek(SeekFrom::Start(
-        file.header_start + offset_of!(ZipLocalEntryBlock, crc32) as u64,
-    ))?;
-    writer.write_u32_le(file.crc32)?;
-    if file.large_file {
-        writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-        writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-
-        update_local_zip64_extra_field(writer, file)?;
-
-        // file.compressed_size = spec::ZIP64_BYTES_THR;
-        // file.uncompressed_size = spec::ZIP64_BYTES_THR;
-    } else {
-        // check compressed size as well as it can also be slightly larger than uncompressed size
-        if file.compressed_size > spec::ZIP64_BYTES_THR {
-            return Err(ZipError::Io(io::Error::other(
-                "large_file(true) option has not been set",
-            )));
-        }
-        writer.write_u32_le(file.compressed_size as u32)?;
-        // uncompressed size is already checked on write to catch it as soon as possible
-        writer.write_u32_le(file.uncompressed_size as u32)?;
-    }
-    Ok(())
-}
-
-fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    let mut block = file.block()?;
-    let stripped_extra = if let Some(extra) = &file.extra_field {
-        strip_alignment_extra_field(extra)
-    } else {
-        Vec::new()
-    };
-    let central_len = file.central_extra_field_len();
-    let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
-        file.uncompressed_size,
-        file.compressed_size,
-        file.header_start,
-    );
-    let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
-        zip64.full_size()
-    } else {
-        0
-    };
-    let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
-    block.extra_field_length = u16::try_from(total_extra_len)
-        .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
-
-    block.write(writer)?;
-    // file name
-    writer.write_all(&file.file_name_raw)?;
-    // extra field
-    if let Some(zip64_extra_field) = zip64_extra_field_block {
-        writer.write_all(&zip64_extra_field.serialize())?;
-    }
-    if !stripped_extra.is_empty() {
-        writer.write_all(&stripped_extra)?;
-    }
-    if let Some(central_extra_field) = &file.central_extra_field {
-        writer.write_all(central_extra_field)?;
-    }
-    // file comment
-    writer.write_all(file.file_comment.as_bytes())?;
-
-    Ok(())
-}
-
-fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
+pub(crate) fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
     let mut new_extra = Vec::with_capacity(extra_field.len());
     let mut cursor = 0;
     while cursor + 4 <= extra_field.len() {
@@ -2483,7 +2412,7 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
             break;
         }
 
-        if tag != UsedExtraField::DataStreamAlignment as u16 {
+        if tag != UsedExtraField::DataStreamAlignment.as_u16() {
             new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
         }
         cursor += 4 + len;
@@ -2492,38 +2421,6 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
         new_extra.extend_from_slice(&extra_field[cursor..]);
     }
     new_extra
-}
-
-fn update_local_zip64_extra_field<T: Write + Seek>(
-    writer: &mut T,
-    file: &mut ZipFileData,
-) -> ZipResult<()> {
-    let block = Zip64ExtendedInformation::local_header(
-        file.large_file,
-        file.uncompressed_size,
-        file.compressed_size,
-    )
-    .ok_or(invalid!(
-        "Attempted to update a nonexistent ZIP64 extra field"
-    ))?;
-
-    let zip64_extra_field_start = file.header_start
-        + size_of::<ZipLocalEntryBlock>() as u64
-        + file.file_name_raw.len() as u64;
-
-    writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
-    let block = block.serialize();
-    writer.write_all(&block)?;
-
-    let Some(ref mut extra_field) = file.extra_field else {
-        return Err(invalid!(
-            "update_aes_extra_data called on a file that has no extra-data field"
-        ));
-    };
-    let extra_field = Arc::make_mut(extra_field);
-    extra_field[..block.len()].copy_from_slice(&block);
-
-    Ok(())
 }
 
 /// Wrapper around a [Write] implementation that implements the [Seek] trait, but where seeking
