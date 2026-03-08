@@ -779,14 +779,14 @@ impl ZipFileData {
             .max(crypto_version)
             .max(misc_feature_version)
     }
-    #[inline]
+    #[inline(always)]
     pub(crate) fn extra_field_len(&self) -> usize {
         self.extra_field
             .as_ref()
             .map(|v| v.len())
             .unwrap_or_default()
     }
-    #[inline]
+    #[inline(always)]
     pub(crate) fn central_extra_field_len(&self) -> usize {
         self.central_extra_field
             .as_ref()
@@ -1173,7 +1173,7 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
-    #[inline]
+    #[inline(always)]
     fn magic(self) -> Magic {
         self.magic
     }
@@ -1223,7 +1223,7 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
 
-    #[inline]
+    #[inline(always)]
     fn magic(self) -> Magic {
         self.magic
     }
@@ -1260,7 +1260,7 @@ impl FixedSizeBlock for ZipDataDescriptorBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
 
-    #[inline]
+    #[inline(always)]
     fn magic(self) -> Magic {
         self.magic
     }

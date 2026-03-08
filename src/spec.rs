@@ -21,25 +21,25 @@ impl Magic {
         Self(x)
     }
 
-    #[inline]
+    #[inline(always)]
     #[allow(dead_code)]
     pub const fn from_le_bytes(bytes: [u8; 4]) -> Self {
         Self(u32::from_le_bytes(bytes))
     }
 
-    #[inline]
+    #[inline(always)]
     pub const fn to_le_bytes(self) -> [u8; 4] {
         self.0.to_le_bytes()
     }
 
     #[allow(clippy::wrong_self_convention)]
-    #[inline]
+    #[inline(always)]
     pub fn from_le(self) -> Self {
         Self(u32::from_le(self.0))
     }
 
     #[allow(clippy::wrong_self_convention)]
-    #[inline]
+    #[inline(always)]
     pub fn to_le(self) -> Self {
         Self(u32::to_le(self.0))
     }
@@ -274,12 +274,12 @@ macro_rules! to_le {
 #[macro_export]
 macro_rules! to_and_from_le {
     ($($args:tt),+ $(,)?) => {
-        #[inline]
+        #[inline(always)]
         fn from_le(mut self) -> Self {
             from_le![self, [$($args),+]];
             self
         }
-        #[inline]
+        #[inline(always)]
         fn to_le(mut self) -> Self {
             to_le![self, [$($args),+]];
             self
@@ -306,7 +306,7 @@ impl FixedSizeBlock for Zip32CDEBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
-    #[inline]
+    #[inline(always)]
     fn magic(self) -> Magic {
         self.magic
     }
@@ -426,7 +426,7 @@ impl FixedSizeBlock for Zip64CDELocatorBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
-    #[inline]
+    #[inline(always)]
     fn magic(self) -> Magic {
         self.magic
     }
