@@ -87,7 +87,6 @@ pub enum System {
 
 impl System {
     /// Parse `version_made_by` block in local entry block.
-    #[must_use]
     pub fn from_version_made_by(version_made_by: u16) -> Self {
         // Extract upper byte from little-endian representation
         let upper_byte = version_made_by.to_le_bytes()[1];
