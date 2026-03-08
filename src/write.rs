@@ -193,9 +193,12 @@ pub(crate) mod zip_writer {
     }
 
     impl<W: Write + Seek> ZipWriter<W> {
-        /// Gets a reference to the underlying writer in this ZipWrite.
+        /// Gets a reference to the underlying writer in this `ZipWrite`.
         pub fn get_ref(&self) -> Option<&W> {
-            use GenericZipWriter::*;
+            use GenericZipWriter::{
+                BufferedZopfliDeflater, Bzip2, Closed, Deflater, Ppmd, Storer, Xz, ZopfliDeflater,
+                Zstd,
+            };
             match &self.inner {
                 Closed => None,
                 Storer(w) => Some(w.get_ref()),
@@ -216,14 +219,17 @@ pub(crate) mod zip_writer {
             }
         }
 
-        /// Gets a reference to the underlying writer in this ZipWrite.
+        /// Gets a reference to the underlying writer in this `ZipWrite`.
         ///
         /// # Safety
         ///
         /// Caller must not corrupt the archive, and must seek back to the current position
-        /// before continuing to write to the ZipWriter.
+        /// before continuing to write to the `ZipWriter`.
         pub unsafe fn get_mut(&mut self) -> Option<&mut W> {
-            use GenericZipWriter::*;
+            use GenericZipWriter::{
+                BufferedZopfliDeflater, Bzip2, Closed, Deflater, Ppmd, Storer, Xz, ZopfliDeflater,
+                Zstd,
+            };
             unsafe {
                 match &mut self.inner {
                     Closed => None,
@@ -427,9 +433,8 @@ impl ExtendedFileOptions {
                     && EXTRA_FIELD_MAPPING.contains(&header_id)
                 {
                     return Err(ZipError::Io(io::Error::other(format!(
-                        "Extra data header ID {:#06} (0x{:x}) \
+                        "Extra data header ID {header_id:#06} (0x{header_id:x}) \
                             requires crate feature \"unreserved\"",
-                        header_id, header_id,
                     ))));
                 }
                 data.seek(SeekFrom::Current(-2))?;
@@ -715,7 +720,8 @@ impl FileOptions<'static, ()> {
 }
 
 impl<'k> FileOptions<'k, ()> {
-    /// Convert to FullFileOptions.
+    /// Convert to `FullFileOptions`.
+    #[must_use]
     pub fn into_full_options(self) -> FullFileOptions<'k> {
         FileOptions {
             compression_method: self.compression_method,
@@ -902,10 +908,10 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
             let stripped = strip_alignment_extra_field(extra);
-            if !stripped.is_empty() {
-                new_data.extra_field = Some(stripped.into());
-            } else {
+            if stripped.is_empty() {
                 new_data.extra_field = None;
+            } else {
+                new_data.extra_field = Some(stripped.into());
             }
         }
 
@@ -1241,7 +1247,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
         #[cfg(feature = "aes-crypto")]
-        let aes_mode = aes_mode.map(|mode| mode.to_tuple());
+        let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
             name,
             &options,

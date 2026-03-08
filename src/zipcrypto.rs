@@ -10,7 +10,7 @@ use core::num::Wrapping;
 
 use crate::result::ZipError;
 
-/// ZipCrypto header size in bytes.
+/// `ZipCrypto` header size in bytes.
 const ZIP_CRYPTO_HEADER_SIZE: usize = 12;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -71,16 +71,16 @@ impl Debug for ZipCryptoKeys {
 }
 
 impl ZipCryptoKeys {
-    /// Initial value of `key_0` as specified by the classic ZipCrypto algorithm.
+    /// Initial value of `key_0` as specified by the classic `ZipCrypto` algorithm.
     const INITIAL_KEY_0: u32 = 0x12345678;
-    /// Initial value of `key_1` as specified by the classic ZipCrypto algorithm.
+    /// Initial value of `key_1` as specified by the classic `ZipCrypto` algorithm.
     const INITIAL_KEY_1: u32 = 0x23456789;
-    /// Initial value of `key_2` as specified by the classic ZipCrypto algorithm.
+    /// Initial value of `key_2` as specified by the classic `ZipCrypto` algorithm.
     const INITIAL_KEY_2: u32 = 0x34567890;
 
     /// Bitmask applied to the lower 2 bits of `key_2` when computing the
-    /// ZipCrypto keystream base, corresponding to the step described
-    /// in the ZipCrypto specification variously as `| 2` or `| 3` (both give the same keystream
+    /// `ZipCrypto` keystream base, corresponding to the step described
+    /// in the `ZipCrypto` specification variously as `| 2` or `| 3` (both give the same keystream
     /// due to the use of `keystream_base * (keystream_base ^ Wrapping(1))` and a quirk of CRC32).
     const KEYSTREAM_BITMASK: u16 = 2;
 
@@ -275,7 +275,7 @@ impl<R: std::io::Read> ZipCryptoReaderValid<R> {
     }
 }
 
-/// Standard CRC-32 lookup table used by the ZipCrypto encryption algorithm
+/// Standard CRC-32 lookup table used by the `ZipCrypto` encryption algorithm
 /// to update the internal keys during encryption and decryption.
 static CRC_TABLE: [u32; 256] = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
