@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = candidate_path
         .canonicalize()
         .map_err(|e| format!("Could not open {fname_arg:?}: {e}"))?;
-    if !path.starts_with(base_dir.canonicalize().unwrap_or(base_dir.clone())) {
+    if !path.starts_with(base_dir.canonicalize().unwrap_or(base_dir)) {
         return Err("Error: refusing to open path outside of base directory: {fname_arg:?}".into());
     }
     let mut archive = zip::ZipArchive::new(BufReader::new(fs::File::open(&path)?))

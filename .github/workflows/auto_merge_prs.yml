@@ -8,16 +8,26 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'github-actions' }}
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || github.actor == 'github-actions' }}
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        with:
+          egress-policy: audit
+      - uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        id: app-token
+        with:
+          app-id: 2754721
+          owner: ${{ github.repository_owner }}
+          private-key: ${{ secrets.ACTIONS_RECURSIVE_PRIVATE_KEY }}
       - name: Dependabot metadata
         id: metadata
-        if: ${{ github.actor == 'dependabot[bot]' }}
-        uses: dependabot/fetch-metadata@v2.5.0
+        if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+        uses: step-security/dependabot-fetch-metadata@38d404f7e1742ae1cfa9b25ade9afa0c7a288e77 # v2.5.0
         with:
-          github-token: "${{ github.token }}"
+          github-token: ${{ steps.app-token.outputs.token }}
       - name: Enable auto-merge
         run: gh pr merge --auto --merge "$PR_URL"
         env:
-          GH_TOKEN: "${{ github.token }}"
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{github.event.pull_request.html_url}}

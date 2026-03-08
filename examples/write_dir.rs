@@ -6,10 +6,9 @@
 
 use clap::{Parser, ValueEnum};
 use walkdir::WalkDir;
-use zip::{cfg_if_expr, result::ZipError, write::SimpleFileOptions};
+use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -33,6 +32,28 @@ enum CompressionMethod {
     Zstd,
 }
 
+/// Used to test with --no-default-features or a specific features
+/// ```sh
+/// cargo run --no-default-features --example write_dir src/ dest.zip xz
+/// # should error because no xz
+///
+/// cargo run --features xz --example write_dir src/ dest.zip xz
+/// # should work
+/// ```
+macro_rules! is_feature {
+    ($feature:literal, $compression:expr) => {{
+        #[cfg(feature = $feature)]
+        {
+            Ok($compression)
+        }
+
+        #[cfg(not(feature = $feature))]
+        {
+            Err(format!("The `{}` feature is not enabled", $feature).into())
+        }
+    }};
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let src_dir = &args.source;
@@ -40,22 +61,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let method: Result<zip::CompressionMethod, Box<dyn std::error::Error>> =
         match args.compression_method {
             CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
-            CompressionMethod::Deflated => cfg_if_expr! {
-                #[cfg(feature = "_deflate-any")] => Ok(zip::CompressionMethod::Deflated),
-                _ => Err("The `deflate-flate2` features are not enabled".into()),
-            },
-            CompressionMethod::Bzip2 => cfg_if_expr! {
-                #[cfg(feature = "_bzip2_any")] => Ok(zip::CompressionMethod::Bzip2),
-                _ => Err("The `bzip2` features are not enabled".into()),
-            },
-            CompressionMethod::Xz => cfg_if_expr! {
-                #[cfg(feature = "xz")] => Ok(zip::CompressionMethod::Xz),
-                _ => Err("The `xz` feature is not enabled".into()),
-            },
-            CompressionMethod::Zstd => cfg_if_expr! {
-                #[cfg(feature = "zstd")] => Ok(zip::CompressionMethod::Zstd),
-                _ => Err("The `zstd` feature is not enabled".into()),
-            },
+            // _deflate-any and _bzip2_any are enabled by their respective implementations
+            CompressionMethod::Deflated => {
+                is_feature!("_deflate-any", zip::CompressionMethod::Deflated)
+            }
+            CompressionMethod::Bzip2 => is_feature!("_bzip2_any", zip::CompressionMethod::Bzip2),
+            CompressionMethod::Xz => is_feature!("xz", zip::CompressionMethod::Xz),
+            CompressionMethod::Zstd => is_feature!("zstd", zip::CompressionMethod::Zstd),
         };
     let method = method?;
     zip_dir(src_dir, dest_file, method)?;
@@ -72,8 +84,10 @@ fn zip_dir(
         return Err(ZipError::FileNotFound.into());
     }
 
-    let path = Path::new(dest_file);
-    let file = File::create(path)?;
+    if dest_file.exists() {
+        return Err(format!("File {} already exists", dest_file.display()).into());
+    }
+    let file = File::create(dest_file)?;
 
     let walkdir = WalkDir::new(src_dir);
 
@@ -82,30 +96,46 @@ fn zip_dir(
         .compression_method(method)
         .unix_permissions(0o755);
 
-    let prefix = Path::new(src_dir);
-    let mut buffer = Vec::new();
-    for entry in walkdir.into_iter().filter_map(|e| e.ok()) {
+    // SECURITY NOTE: Any error after this point may leave a partial or corrupt
+    // zip file.
+    // This can lead to data integrity issues or race conditions (e.g., TOCTOU)
+    // if other processes access the incomplete file. A robust application
+    // should mitigate this, for example by writing to a temporary file and
+    // renaming it on success to ensure atomicity.
+    for entry_result in walkdir.into_iter() {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(e) => {
+                return Err(format!("Error while traversing directory {src_dir:?}: {e}").into());
+            }
+        };
         let path = entry.path();
-        let name = path.strip_prefix(prefix)?;
-        let path_as_string = name
+        let path_stripped = path.strip_prefix(src_dir)?;
+        let path_as_string = path_stripped
             .to_str()
             .map(str::to_owned)
-            .ok_or_else(|| format!("{name:?} is a Non UTF-8 Path"))?;
+            .ok_or_else(|| format!("{:?} is a Non UTF-8 Path", path_stripped.display()))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
         if path.is_file() {
-            println!("adding file {path:?} as {name:?} ...");
+            println!(
+                "adding file {:?} as {:?} ...",
+                path.display(),
+                path_stripped.display()
+            );
             zip.start_file(path_as_string, options)?;
             let mut f = File::open(path)?;
 
-            f.read_to_end(&mut buffer)?;
-            zip.write_all(&buffer)?;
-            buffer.clear();
-        } else if !name.as_os_str().is_empty() {
+            std::io::copy(&mut f, &mut zip)?;
+        } else if !path_stripped.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
-            println!("adding dir {path_as_string:?} as {name:?} ...");
+            println!(
+                "adding dir '{}' as '{}' ...",
+                path.display(),
+                path_stripped.display()
+            );
             zip.add_directory(path_as_string, options)?;
         }
     }

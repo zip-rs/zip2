@@ -1,4 +1,4 @@
-use crate::result::{invalid, ZipResult};
+use crate::result::{ZipResult, invalid};
 use crate::unstable::LittleEndianReadExt;
 use core::mem::size_of;
 use std::io::Read;

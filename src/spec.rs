@@ -1,8 +1,8 @@
 #![macro_use]
 
-use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::read::ArchiveOffset;
-use crate::result::{invalid, ZipError, ZipResult};
+use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
+use crate::result::{ZipError, ZipResult, invalid};
 use core::any::type_name;
 use core::mem;
 use core::slice;
@@ -52,41 +52,44 @@ impl Magic {
     pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x08074b50);
 }
 
-/// Similar to [`Magic`], but used for extra field tags as per section 4.5.3 of APPNOTE.TXT.
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub(crate) struct ExtraFieldMagic(u16);
+/// Zip flags
+/// Stored as Little endian
+#[allow(unused)]
+#[rustfmt::skip]
+#[repr(u16)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum ZipFlags {
+    /// If set, indicates that the file is encrypted.
+    Encrypted                   = 0b0000_0000_0000_0001,
+    CompressionSetting          = 0b0000_0000_0000_0010,
+    CompressionSetting2         = 0b0000_0000_0000_0100,
+    /// If this bit is set, the fields crc-32, compressed size and uncompressed size are set to zero in the  local header.
+    /// The correct values are put in the data descriptor immediately following the compressed data.
+    UsingDataDescriptor         = 0b0000_0000_0000_1000,
+    /// Reserved for use with method 8, for enhanced deflating.
+    ReservedEnhancedDeflating   = 0b0000_0000_0001_0000,
+    /// If this bit is set, this indicates that the file is compressed patched data.
+    CompressedPatchedData       = 0b0000_0000_0010_0000,
+    /// Strong encryption.
+    /// If this bit is set, you MUST set the version needed to extract value to at least 50 and you MUST also set bit 0.
+    /// If AES encryption is used, the version needed to extract value MUST be at least 51.
+    StrongEncryption            = 0b0000_0000_0100_0000,
+    // bit 7 Currently unused   = 0b0000_0000_1000_0000;
+    // bit 8 Currently unused   = 0b0000_0001_0000_0000;
+    // bit 9 Currently unused   = 0b0000_0010_0000_0000;
+    // bit 10 Currently unused  = 0b0000_0100_0000_0000;
 
-/* TODO: maybe try to use this for parsing extra fields as well as writing them? */
-#[allow(dead_code)]
-impl ExtraFieldMagic {
-    pub const fn literal(x: u16) -> Self {
-        Self(x)
-    }
-
-    #[inline(always)]
-    pub const fn from_le_bytes(bytes: [u8; 2]) -> Self {
-        Self(u16::from_le_bytes(bytes))
-    }
-
-    #[inline(always)]
-    pub const fn to_le_bytes(self) -> [u8; 2] {
-        self.0.to_le_bytes()
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    #[inline(always)]
-    pub fn from_le(self) -> Self {
-        Self(u16::from_le(self.0))
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    #[inline(always)]
-    pub fn to_le(self) -> Self {
-        Self(u16::to_le(self.0))
-    }
-
-    pub const ZIP64_EXTRA_FIELD_TAG: Self = Self::literal(0x0001);
+    /// Language encoding flag (EFS).
+    /// If this bit is set, the filename and comment fields for this file MUST be encoded using UTF-8.
+    LanguageEncoding            = 0b0000_1000_0000_0000,
+    /// Reserved by PKWARE for enhanced compression.
+    ReservedEnhancedCompression = 0b0001_0000_0000_0000,
+    /// Set when encrypting the Central Directory to indicate selected data values in the Local Header are masked to hide their actual values.
+    Masked                      = 0b0010_0000_0000_0000,
+    /// Reserved by PKWARE for alternate streams.
+    ReservedAlternateStream     = 0b0100_0000_0000_0000,
+    /// Reserved by PKWARE.
+    Reserved                    = 0b1000_0000_0000_0000,
 }
 
 /// The file size at which a ZIP64 record becomes necessary.
@@ -164,19 +167,30 @@ pub(crate) unsafe trait Pod: Copy + 'static {
 
     #[inline]
     fn as_bytes(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(self as *const Self as *const u8, mem::size_of::<Self>()) }
+        unsafe {
+            slice::from_raw_parts(
+                std::ptr::from_ref::<Self>(self).cast::<u8>(),
+                mem::size_of::<Self>(),
+            )
+        }
     }
 
     #[inline]
     fn as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe { slice::from_raw_parts_mut(self as *mut Self as *mut u8, mem::size_of::<Self>()) }
+        unsafe {
+            slice::from_raw_parts_mut(
+                std::ptr::from_mut::<Self>(self).cast::<u8>(),
+                mem::size_of::<Self>(),
+            )
+        }
     }
 }
 
 pub(crate) trait FixedSizeBlock: Pod {
-    const MAGIC: Magic;
+    type Magic: Copy + Eq;
+    const MAGIC: Self::Magic;
 
-    fn magic(self) -> Magic;
+    fn magic(self) -> Self::Magic;
 
     const WRONG_MAGIC_ERROR: ZipError;
 
@@ -201,7 +215,7 @@ pub(crate) trait FixedSizeBlock: Pod {
 
     fn to_le(self) -> Self;
 
-    fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
         let block = self.to_le();
         writer.write_all(block.as_bytes())?;
         Ok(())
@@ -239,6 +253,7 @@ macro_rules! to_le {
 /* TODO: derive macro to generate these fields? */
 /// Implement `from_le()` and `to_le()`, providing the field specification to both macros
 /// and methods.
+#[macro_export]
 macro_rules! to_and_from_le {
     ($($args:tt),+ $(,)?) => {
         #[inline(always)]
@@ -270,6 +285,7 @@ pub(crate) struct Zip32CDEBlock {
 unsafe impl Pod for Zip32CDEBlock {}
 
 impl FixedSizeBlock for Zip32CDEBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
     #[inline(always)]
@@ -389,6 +405,7 @@ pub(crate) struct Zip64CDELocatorBlock {
 unsafe impl Pod for Zip64CDELocatorBlock {}
 
 impl FixedSizeBlock for Zip64CDELocatorBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
     #[inline(always)]
@@ -466,6 +483,7 @@ pub(crate) struct Zip64CDEBlock {
 unsafe impl Pod for Zip64CDEBlock {}
 
 impl FixedSizeBlock for Zip64CDEBlock {
+    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
 
     fn magic(self) -> Magic {
@@ -678,7 +696,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 
         let Some((locator64_offset, locator64)) = zip64_metadata else {
             // Branch out for zip32
-            let relative_cd_offset = eocd.central_directory_offset as u64;
+            let relative_cd_offset = u64::from(eocd.central_directory_offset);
 
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
             if eocd.number_of_files == 0 {
@@ -832,7 +850,7 @@ mod test {
     use std::io::Cursor;
 
     use crate::{
-        result::{invalid, ZipError},
+        result::{ZipError, invalid},
         spec::{FixedSizeBlock, Magic, Pod},
     };
 
@@ -846,6 +864,7 @@ mod test {
     unsafe impl Pod for TestBlock {}
 
     impl FixedSizeBlock for TestBlock {
+        type Magic = Magic;
         const MAGIC: Magic = Magic::literal(0x01111);
 
         fn magic(self) -> Magic {

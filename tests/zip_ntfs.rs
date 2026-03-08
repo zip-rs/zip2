@@ -3,27 +3,49 @@ use std::io;
 use zip::ZipArchive;
 
 #[test]
-fn test_ntfs() {
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("../tests/data/ntfs.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
+fn test_ntfs_extra_field_timestamp_parsing() {
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("../tests/data/ntfs.zip")))
+        .expect("couldn't open test zip file");
 
-    for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
-        if let zip::ExtraField::Ntfs(ts) = field {
-            assert_eq!(ts.mtime(), 133_813_273_144_169_390);
-            #[cfg(feature = "nt-time")]
-            assert_eq!(
-                time::OffsetDateTime::try_from(ts.modified_file_time()).unwrap(),
-                time::macros::datetime!(2025-01-14 11:21:54.416_939_000 UTC)
-            );
+    let file = archive
+        .by_name("test.txt")
+        .expect("expected file 'test.txt' to be present in ntfs.zip test archive");
 
-            assert_eq!(ts.atime(), 0);
-            #[cfg(feature = "nt-time")]
-            assert_eq!(ts.accessed_file_time(), nt_time::FileTime::NT_TIME_EPOCH);
+    let timestamp = file
+        .extra_data_fields()
+        .find_map(|field| match field {
+            zip::ExtraField::Ntfs(ts) => Some(ts),
+            _ => None,
+        })
+        .expect("Expected NTFS extra field in test.txt");
 
-            assert_eq!(ts.ctime(), 0);
-            #[cfg(feature = "nt-time")]
-            assert_eq!(ts.created_file_time(), nt_time::FileTime::NT_TIME_EPOCH);
-        }
+    // Expected NTFS mtime for "test.txt" in ntfs.zip: 2025-01-14 11:21:54.416939 UTC.
+    // NTFS timestamps are stored as the number of 100-nanosecond intervals since
+    // 1601-01-01 00:00:00 UTC; 133_813_273_144_169_390 is the tick count for that datetime.
+    const EXPECTED_MTIME_TICKS: u64 = 133_813_273_144_169_390;
+    assert_eq!(timestamp.mtime(), EXPECTED_MTIME_TICKS);
+    #[cfg(feature = "nt-time")]
+    {
+        // The `time::UtcDateTime` equivalent of `EXPECTED_MTIME_TICKS`.
+        const EXPECTED_DATETIME: time::UtcDateTime =
+            time::macros::utc_datetime!(2025-01-14 11:21:54.416_939_000);
+        assert_eq!(
+            time::UtcDateTime::try_from(timestamp.modified_file_time()).unwrap(),
+            EXPECTED_DATETIME
+        );
     }
+
+    assert_eq!(timestamp.atime(), 0);
+    #[cfg(feature = "nt-time")]
+    assert_eq!(
+        timestamp.accessed_file_time(),
+        nt_time::FileTime::NT_TIME_EPOCH
+    );
+
+    assert_eq!(timestamp.ctime(), 0);
+    #[cfg(feature = "nt-time")]
+    assert_eq!(
+        timestamp.created_file_time(),
+        nt_time::FileTime::NT_TIME_EPOCH
+    );
 }

@@ -7,20 +7,25 @@
 //! cargo install wasm-pack
 //!
 //! # useful commands
-//! wasm-pack test --headless --chrome
-//! wasm-pack test --headless --firefox
+//! WASM_BINDGEN_USE_BROWSER=1 wasm-pack test --headless --chrome
+//! WASM_BINDGEN_USE_BROWSER=1 wasm-pack test --headless --firefox
 //! wasm-pack test --node
 //! ```
+//!
+//! For testing within a browser, you will need the `WASM_BINDGEN_USE_BROWSER=1` env variable
 //!
 
 #![cfg(target_arch = "wasm32")]
 
-use wasm_bindgen_test::*;
-wasm_bindgen_test_configure!(run_in_browser);
+use wasm_bindgen_test::wasm_bindgen_test;
 
 mod aes_encryption;
 
-/// wasm-pack test --headless --chrome --features aes-crypto
+/// Verifies AES-256 encryption and decryption of an uncompressed file in the `wasm32` environment.
+/// The test ensures that data encrypted with AES-256 can be correctly decrypted back to its original
+/// contents using the WebAssembly build of the library.
+///
+/// Run with: `wasm-pack test --headless --chrome --features aes-crypto`
 #[cfg(feature = "aes-crypto")]
 #[wasm_bindgen_test]
 fn test_aes256_encrypted_uncompressed_file() {
@@ -28,6 +33,10 @@ fn test_aes256_encrypted_uncompressed_file() {
 }
 
 mod deflate64;
+/// Verifies that data compressed using the Deflate64 algorithm can be correctly
+/// decompressed in the `wasm32` environment.
+///
+/// Run with: `wasm-pack test --headless --chrome --features deflate64`
 #[cfg(feature = "deflate64")]
 #[wasm_bindgen_test]
 fn test_decompress_deflate64() {
@@ -35,6 +44,10 @@ fn test_decompress_deflate64() {
 }
 
 mod xz;
+/// Verifies that data compressed with XZ can be correctly decompressed
+/// in the `wasm32` environment.
+///
+/// Run with: `wasm-pack test --headless --chrome --features xz`
 #[cfg(feature = "xz")]
 #[wasm_bindgen_test]
 fn test_decompress_xz() {
@@ -42,16 +55,27 @@ fn test_decompress_xz() {
 }
 
 mod lzma;
+/// Verifies that data compressed with LZMA can be correctly decompressed
+/// in the `wasm32` environment.
+///
+/// Run with: `wasm-pack test --headless --chrome --features lzma`
 #[cfg(feature = "lzma")]
 #[wasm_bindgen_test]
 fn test_decompress_lzma() {
     lzma::decompress_lzma();
 }
 
-// time needs the features wasm-bindgen
-// or you get the error
-// time not implemented on this platform
+// The end_to_end tests depend on a time implementation (e.g. the `time` crate or similar)
+// that must be compiled with its `wasm-bindgen` feature when targeting `wasm32`.
+// Without that feature enabled, running these tests will fail with "time not implemented on this platform".
 mod end_to_end;
+/// Runs the end-to-end integration test suite for the `wasm32` target, including
+/// checks for time-dependent behavior.
+///
+/// Run with: `wasm-pack test --headless --chrome`
+///
+/// **Note**: This test requires `time`, `chrono` or `nt-time` with its `wasm-bindgen`
+/// feature enabled for `wasm32` targets.
 #[wasm_bindgen_test]
 fn test_end_to_end() {
     end_to_end::end_to_end();

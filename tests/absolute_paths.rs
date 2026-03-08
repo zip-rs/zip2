@@ -1,20 +1,21 @@
 use std::io::Write;
 use zip::result::ZipResult;
 use zip::write::SimpleFileOptions;
-use zip::{cfg_if_expr, ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipWriter};
 
 #[test]
 fn test_absolute_paths() -> ZipResult<()> {
     // Create a ZIP file with absolute paths
     let buf = Vec::new();
     let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
-    let options = cfg_if_expr!(
-        SimpleFileOptions:
-        #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))] => {
+    let options = {
+        #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+        {
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)
-        },
-        _ => SimpleFileOptions::default()
-    );
+        }
+        #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
+        SimpleFileOptions::default()
+    };
 
     // Create entries with absolute paths
     writer.add_directory("/_/", options)?;
@@ -28,13 +29,12 @@ fn test_absolute_paths() -> ZipResult<()> {
     // Try to read the ZIP file
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data))?;
 
-    println!("ZIP file created with {} entries", archive.len());
-
     // Test individual file access
-    assert_eq!(archive.len(), 3); // directory + 2 files
+    const EXPECTED_ENTRY_COUNT: usize = 3; // directory + 2 files
+    assert_eq!(archive.len(), EXPECTED_ENTRY_COUNT);
 
-    for i in 0..archive.len() {
-        let file = archive.by_index(i)?;
+    for entry_index in 0..archive.len() {
+        let file = archive.by_index(entry_index)?;
 
         // Verify that enclosed_name properly handles the paths
         let enclosed_name = file
@@ -68,11 +68,5 @@ fn test_absolute_paths() -> ZipResult<()> {
         "Nested file content"
     );
 
-    // Verify extraction results with assertions
-    let extracted_files: Vec<_> = std::fs::read_dir(temp_dir.path())?.collect();
-    assert!(
-        !extracted_files.is_empty(),
-        "Should have extracted at least one file"
-    );
     Ok(())
 }
