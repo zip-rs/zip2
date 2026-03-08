@@ -227,28 +227,24 @@ pub(crate) mod zip_writer {
         /// Caller must not corrupt the archive, and must seek back to the current position
         /// before continuing to write to the `ZipWriter`.
         pub unsafe fn get_mut(&mut self) -> Option<&mut W> {
-            use GenericZipWriter::{
-                BufferedZopfliDeflater, Bzip2, Closed, Deflater, Ppmd, Storer, Xz, ZopfliDeflater,
-                Zstd,
-            };
             unsafe {
                 match &mut self.inner {
-                    Closed => None,
-                    Storer(w) => Some(w.get_mut()),
+                    GenericZipWriter::Closed => None,
+                    GenericZipWriter::Storer(w) => Some(w.get_mut()),
                     #[cfg(feature = "deflate-flate2")]
-                    Deflater(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::Deflater(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "deflate-zopfli")]
-                    ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "deflate-zopfli")]
-                    BufferedZopfliDeflater(w) => Some(w.get_mut().get_mut().get_mut()),
+                    GenericZipWriter::BufferedZopfliDeflater(w) => Some(w.get_mut().get_mut().get_mut()),
                     #[cfg(feature = "_bzip2_any")]
-                    Bzip2(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::Bzip2(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "zstd")]
-                    Zstd(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::Zstd(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "xz")]
-                    Xz(w) => Some(w.inner_mut().get_mut()),
+                    GenericZipWriter::Xz(w) => Some(w.inner_mut().get_mut()),
                     #[cfg(feature = "ppmd")]
-                    Ppmd(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::Ppmd(w) => Some(w.get_mut().get_mut()),
                 }
             }
         }
