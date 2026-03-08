@@ -12,7 +12,7 @@ pub(crate) use aex_encryption::AexEncryption;
 pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export
-pub use extended_timestamp::*;
+pub use extended_timestamp::ExtendedTimestamp;
 pub use ntfs::Ntfs;
 pub use zipinfo_utf8::UnicodeExtraField;
 

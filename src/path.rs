@@ -24,7 +24,7 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::simplified_components;
     use std::path::Path;
 
     #[test]
