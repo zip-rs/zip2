@@ -236,7 +236,9 @@ pub(crate) mod zip_writer {
                     #[cfg(feature = "deflate-zopfli")]
                     GenericZipWriter::ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "deflate-zopfli")]
-                    GenericZipWriter::BufferedZopfliDeflater(w) => Some(w.get_mut().get_mut().get_mut()),
+                    GenericZipWriter::BufferedZopfliDeflater(w) => {
+                        Some(w.get_mut().get_mut().get_mut())
+                    }
                     #[cfg(feature = "_bzip2_any")]
                     GenericZipWriter::Bzip2(w) => Some(w.get_mut().get_mut()),
                     #[cfg(feature = "zstd")]
