@@ -51,7 +51,7 @@ impl AesExtraField {
         compression_method: CompressionMethod,
     ) -> Self {
         Self {
-            header_id: UsedExtraField::AeXEncryption as u16,
+            header_id: UsedExtraField::AeXEncryption.as_u16(),
             data_size: 7,
             version: version as u16,
             vendor_id: u16::from_le_bytes(*b"AE"),

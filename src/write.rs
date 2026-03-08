@@ -1011,7 +1011,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(inner)),
             files: IndexMap::new(),
-            stats: Default::default(),
+            stats: ZipWriterStats::default(),
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
@@ -1023,6 +1023,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Set automatically large file to true if needed
+    #[must_use]
     pub fn set_auto_large_file(mut self) -> Self {
         self.auto_large_file = true;
         self
@@ -1250,9 +1251,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
-            name,
+            &name,
             &options,
-            raw_values,
+            &raw_values,
             header_start,
             None,
             aes_extra_data_start,
@@ -1968,7 +1969,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
         ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(StreamWriter::new(inner))),
             files: IndexMap::new(),
-            stats: Default::default(),
+            stats: ZipWriterStats::default(),
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),

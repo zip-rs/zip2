@@ -157,20 +157,20 @@ pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
     0x4d63, // Macintosh Smartzip (??)
     0x4f4c, // Xceed original location extra field
     0x5356, // AOS/VS (ACL)
-    UsedExtraField::ExtendedTimestamp as u16,
+    UsedExtraField::ExtendedTimestamp.as_u16(),
     0x554e, // Xceed unicode extra field
     0x5855, // Info-ZIP UNIX (original, also OS/2, NT, etc)
-    UsedExtraField::UnicodeComment as u16,
+    UsedExtraField::UnicodeComment.as_u16(),
     0x6542, // BeOS/BeBox
     0x6854, // THEOS
-    UsedExtraField::UnicodePath as u16,
+    UsedExtraField::UnicodePath.as_u16(),
     0x7441, // AtheOS/Syllable
     0x756e, // ASi UNIX
     0x7855, // Info-ZIP UNIX (new)
     0x7875, // Info-ZIP UNIX (newer UID/GID)
-    UsedExtraField::AeXEncryption as u16,
+    UsedExtraField::AeXEncryption.as_u16(),
     0x9902, // unknown
-    UsedExtraField::DataStreamAlignment as u16,
+    UsedExtraField::DataStreamAlignment.as_u16(),
     0xa220, // Microsoft Open Packaging Growth Hint
     0xcafe, // Java JAR file Extra Field Header ID
     0xd935, // Android ZIP Alignment Extra Field

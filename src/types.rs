@@ -23,9 +23,9 @@ use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 pub(crate) mod ffi {
-    pub const S_IFDIR: u32 = 0o0040000;
-    pub const S_IFREG: u32 = 0o0100000;
-    pub const S_IFLNK: u32 = 0o0120000;
+    pub const S_IFDIR: u32 = 0o0_040_000;
+    pub const S_IFREG: u32 = 0o0_100_000;
+    pub const S_IFLNK: u32 = 0o0_120_000;
 }
 
 pub(crate) struct ZipRawValues {
@@ -40,45 +40,45 @@ pub(crate) struct ZipRawValues {
 #[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 pub enum System {
-    /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems; default on Windows)
+    /// `MS-DOS` and `OS/2` (`FAT` / `VFAT` / `FAT32` file systems; default on Windows)
     Dos = 0,
-    /// Amiga
+    /// `Amiga`
     Amiga = 1,
-    /// OpenVMS
+    /// `OpenVMS`
     OpenVMS = 2,
     /// Default on Unix; default for symlinks on all platforms
     Unix = 3,
-    /// VM/CMS
+    /// `VM/CMS`
     VmCms = 4,
-    /// Atari ST
+    /// `Atari ST`
     AtariSt = 5,
-    /// OS/2 H.P.F.S.
+    /// `OS/2 H.P.F.S.`
     Os2 = 6,
-    /// Legacy Mac OS, pre OS X
+    /// Legacy `Mac OS`, pre `OS X`
     Macintosh = 7,
-    /// Z-System
+    /// `Z-System`
     ZSystemO = 8,
-    /// CP/M
+    /// `CP/M`
     CPM = 9,
     /// Windows NTFS (with extra attributes; not used by default)
     WindowsNTFS = 10,
-    /// MVS (OS/390 - Z/OS)
+    /// `MVS (OS/390 - Z/OS)`
     MVS = 11,
-    /// VSE
+    /// `VSE`
     VSE = 12,
-    /// Acorn Risc
+    /// `Acorn Risc`
     AcornRisc = 13,
-    /// VFAT
+    /// `VFAT`
     VFAT = 14,
     /// alternate MVS
     AlternateMVS = 15,
-    /// BeOS
+    /// `BeOS`
     BeOS = 16,
-    /// Tandem
+    /// `Tandem`
     Tandem = 17,
-    /// OS/400
+    /// `OS/400`
     Os400 = 18,
-    /// OS X (Darwin) (with extra attributes; not used by default)
+    /// `OS X` (Darwin) (with extra attributes; not used by default)
     OsDarwin = 19,
     /// unused
     #[default]
@@ -87,6 +87,7 @@ pub enum System {
 
 impl System {
     /// Parse `version_made_by` block in local entry block.
+    #[must_use]
     pub fn from_version_made_by(version_made_by: u16) -> Self {
         // Extract upper byte from little-endian representation
         let upper_byte = version_made_by.to_le_bytes()[1];
@@ -157,7 +158,7 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
 pub type SimpleFileOptions = FileOptions<'static, ()>;
 
 impl FileOptions<'static, ()> {
-    const DEFAULT_FILE_PERMISSION: u32 = 0o100644;
+    const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
 }
 /// Representation of a moment in time.
 ///
@@ -369,12 +370,12 @@ impl DateTime {
     /// Converts an msdos (u16, u16) pair to a `DateTime` object if it represents a valid date and
     /// time.
     pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
-        let seconds = (timepart & 0b0000000000011111) << 1;
-        let minutes = (timepart & 0b0000011111100000) >> 5;
-        let hours = (timepart & 0b1111100000000000) >> 11;
-        let days = datepart & 0b0000000000011111;
-        let months = (datepart & 0b0000000111100000) >> 5;
-        let years = (datepart & 0b1111111000000000) >> 9;
+        let seconds = (timepart & 0b0000_0000_0001_1111) << 1;
+        let minutes = (timepart & 0b0000_0111_1110_0000) >> 5;
+        let hours = (timepart & 0b1111_1000_0000_0000) >> 11;
+        let days = datepart & 0b0000_0000_0001_1111;
+        let months = (datepart & 0b0000_0001_1110_0000) >> 5;
+        let years = (datepart & 0b1111_1110_0000_0000) >> 9;
         Self::from_date_and_time(
             years.checked_add(1980).ok_or(DateTimeRangeError)?,
             months.try_into()?,
@@ -461,7 +462,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn month(&self) -> u8 {
-        ((self.datepart & 0b0000000111100000) >> 5) as u8
+        ((self.datepart & 0b0000_0001_1110_0000) >> 5) as u8
     }
 
     /// Get the day
@@ -471,7 +472,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn day(&self) -> u8 {
-        (self.datepart & 0b0000000000011111) as u8
+        (self.datepart & 0b0000_0000_0001_1111) as u8
     }
 
     /// Get the hour
@@ -491,7 +492,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn minute(&self) -> u8 {
-        ((self.timepart & 0b0000011111100000) >> 5) as u8
+        ((self.timepart & 0b0000_0111_1110_0000) >> 5) as u8
     }
 
     /// Get the second
@@ -501,7 +502,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn second(&self) -> u8 {
-        ((self.timepart & 0b0000000000011111) << 1) as u8
+        ((self.timepart & 0b0000_0000_0001_1111) << 1) as u8
     }
 }
 
@@ -886,14 +887,14 @@ impl ZipFileData {
             .max(crypto_version)
             .max(misc_feature_version)
     }
-    #[inline(always)]
+    #[inline]
     pub(crate) fn extra_field_len(&self) -> usize {
         self.extra_field
             .as_ref()
             .map(|v| v.len())
             .unwrap_or_default()
     }
-    #[inline(always)]
+    #[inline]
     pub(crate) fn central_extra_field_len(&self) -> usize {
         self.central_extra_field
             .as_ref()
@@ -903,9 +904,9 @@ impl ZipFileData {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
-        name: S,
+        name: &S,
         options: &FileOptions<'_, T>,
-        raw_values: ZipRawValues,
+        raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
@@ -1280,7 +1281,7 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
-    #[inline(always)]
+    #[inline]
     fn magic(self) -> Magic {
         self.magic
     }
@@ -1330,7 +1331,7 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
 
-    #[inline(always)]
+    #[inline]
     fn magic(self) -> Magic {
         self.magic
     }
@@ -1367,7 +1368,7 @@ impl FixedSizeBlock for ZipDataDescriptorBlock {
     type Magic = Magic;
     const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
 
-    #[inline(always)]
+    #[inline]
     fn magic(self) -> Magic {
         self.magic
     }
@@ -1397,7 +1398,7 @@ impl FixedSizeBlock for Zip64DataDescriptorBlock {
     type Magic = Magic;
     const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
 
-    #[inline(always)]
+    #[inline]
     fn magic(self) -> spec::Magic {
         self.magic
     }

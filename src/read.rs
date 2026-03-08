@@ -1102,7 +1102,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the index of a file entry by name, if it's present.
-    #[inline(always)]
+    #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
         self.shared.files.get_index_of(name)
     }
@@ -1140,14 +1140,14 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the index of a file entry by path, if it's present.
-    #[inline(always)]
+    #[inline]
     pub fn index_for_path<T: AsRef<Path>>(&self, path: T) -> Option<usize> {
         let path_as_string = &path_to_string(path).ok()?;
         self.index_for_name(path_as_string)
     }
 
     /// Get the name of a file entry, if it's present.
-    #[inline(always)]
+    #[inline]
     pub fn name_for_index(&self, index: usize) -> Option<&str> {
         self.shared
             .files
