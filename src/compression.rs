@@ -471,7 +471,8 @@ impl<R: io::BufRead> Decompressor<R> {
     pub fn new(
         reader: R,
         compression_method: CompressionMethod,
-        #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))] uncompressed_size: u64,
+        #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
+        uncompressed_size: u64,
         #[cfg_attr(not(feature = "legacy-zip"), allow(unused))] flags: u16,
     ) -> crate::result::ZipResult<Self> {
         Ok(match compression_method {
