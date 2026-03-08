@@ -194,7 +194,7 @@ pub(crate) mod zip_writer {
     }
 
     impl<W: Write + Seek> ZipWriter<W> {
-        /// Gets a reference to the underlying writer in this `ZipWrite`.
+        /// Gets a reference to the underlying writer in this `ZipWriter`.
         pub fn get_ref(&self) -> Option<&W> {
             use GenericZipWriter::{
                 BufferedZopfliDeflater, Bzip2, Closed, Deflater, Ppmd, Storer, Xz, ZopfliDeflater,
@@ -220,7 +220,7 @@ pub(crate) mod zip_writer {
             }
         }
 
-        /// Gets a reference to the underlying writer in this `ZipWrite`.
+        /// Gets a reference to the underlying writer in this `ZipWriter`.
         ///
         /// # Safety
         ///
