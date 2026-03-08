@@ -8,7 +8,7 @@ mod ntfs;
 mod zip64_extended_information;
 mod zipinfo_utf8;
 
-pub(crate) use aex_encryption::AesExtraField;
+pub(crate) use aex_encryption::AexEncryption;
 pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export

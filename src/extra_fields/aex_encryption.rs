@@ -12,7 +12,7 @@ use crate::{from_le, to_le};
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
-pub(crate) struct AesExtraField {
+pub(crate) struct AexEncryption {
     header_id: u16,
     data_size: u16,
     version: u16,
@@ -21,9 +21,9 @@ pub(crate) struct AesExtraField {
     compression_method: u16,
 }
 
-unsafe impl Pod for AesExtraField {}
+unsafe impl Pod for AexEncryption {}
 
-impl FixedSizeBlock for AesExtraField {
+impl FixedSizeBlock for AexEncryption {
     type Magic = u16;
     const MAGIC: Self::Magic = UsedExtraField::AeXEncryption.as_u16();
 
@@ -44,7 +44,7 @@ impl FixedSizeBlock for AesExtraField {
     ];
 }
 
-impl AesExtraField {
+impl AexEncryption {
     pub(crate) fn new(
         version: AesVendorVersion,
         aes_mode: AesMode,

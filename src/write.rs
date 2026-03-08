@@ -1,7 +1,7 @@
 //! Writing a ZIP archive
 
 use crate::compression::CompressionMethod;
-use crate::extra_fields::AesExtraField;
+use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
@@ -2382,9 +2382,9 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let mut buf = [0u8; size_of::<AesExtraField>()];
+    let mut buf = [0u8; size_of::<AexEncryption>()];
 
-    let aes_extra_field = AesExtraField::new(*version, *aes_mode, *compression_method);
+    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
 
     aes_extra_field.write(&mut buf.as_mut())?;
     writer.write_all(&buf)?;
@@ -2396,7 +2396,7 @@ fn update_aes_extra_data<W: Write + Seek>(
         ));
     };
     let extra_field = Arc::make_mut(extra_field);
-    extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AesExtraField>()]
+    extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AexEncryption>()]
         .copy_from_slice(&buf);
 
     Ok(())
