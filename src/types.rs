@@ -656,10 +656,7 @@ impl ZipFileData {
         Ok(data_start)
     }
 
-    fn update_local_zip64_extra_field<T: Write + Seek>(
-       &mut self,
-        writer: &mut T,
-    ) -> ZipResult<()> {
+    fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T) -> ZipResult<()> {
         let block = Zip64ExtendedInformation::local_header(
             self.large_file,
             self.uncompressed_size,
