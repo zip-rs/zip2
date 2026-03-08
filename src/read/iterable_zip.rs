@@ -6,14 +6,14 @@ use std::{
 };
 
 use crate::{
+    ZipReadOptions,
     read::{
-        central_header_to_zip_file, find_content, make_crypto_reader, make_reader,
-        unsupported_zip_error, CentralDirectoryInfo, Config, ZipFile,
+        CentralDirectoryInfo, Config, ZipFile, central_header_to_zip_file, find_content,
+        make_crypto_reader, make_reader, unsupported_zip_error,
     },
     result::{ZipError, ZipResult},
     spec,
     types::ZipFileData,
-    ZipReadOptions,
 };
 
 /// Iterable version of ZipArchive
@@ -90,7 +90,7 @@ impl<R: Read + Seek> IterableZip<R> {
             // Require and use the password only if the file is encrypted.
             match (options.password, data.encrypted) {
                 (None, true) => {
-                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED))
+                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
                 }
                 // Password supplied, but none needed! Discard.
                 (Some(_), false) => options.password = None,
