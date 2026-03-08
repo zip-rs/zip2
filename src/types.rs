@@ -1,13 +1,19 @@
 //! Types that specify what is contained in a ZIP.
 
+use crate::CompressionMethod;
 use crate::cp437::FromCp437;
+use crate::extra_fields::ExtraField;
+use crate::result::DateTimeRangeError;
 use crate::result::{ZipError, ZipResult, invalid};
+use crate::spec::is_dir;
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
+use crate::types::ffi::S_IFDIR;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
 use std::ffi::OsStr;
 use std::fmt::Display;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
@@ -17,14 +23,6 @@ pub(crate) mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
     pub const S_IFLNK: u32 = 0o0120000;
 }
-
-use crate::CompressionMethod;
-use crate::extra_fields::{ExtraField, UsedExtraField};
-use crate::read::find_data_start;
-use crate::result::DateTimeRangeError;
-use crate::spec::is_dir;
-use crate::types::ffi::S_IFDIR;
-use std::io::{Read, Seek};
 
 pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
@@ -618,8 +616,39 @@ impl ZipFileData {
     pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
             Some(data_start) => Ok(*data_start),
-            None => Ok(find_data_start(self, reader)?),
+            None => Ok(self.find_data_start(reader)?),
         }
+    }
+
+    pub(crate) fn find_data_start(
+        &self,
+        reader: &mut (impl Read + Seek + ?Sized),
+    ) -> Result<u64, ZipError> {
+        // Go to start of data.
+        reader.seek(SeekFrom::Start(self.header_start))?;
+
+        // Parse static-sized fields and check the magic value.
+        let block = ZipLocalEntryBlock::parse(reader)?;
+
+        // Calculate the end of the local header from the fields we just parsed.
+        let variable_fields_len =
+        // Each of these fields must be converted to u64 before adding, as the result may
+        // easily overflow a u16.
+        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+        let data_start =
+            self.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+
+        // Set the value so we don't have to read it again.
+        match self.data_start.set(data_start) {
+            Ok(()) => (),
+            // If the value was already set in the meantime, ensure it matches (this is probably
+            // unnecessary).
+            Err(existing_value) => {
+                debug_assert_eq!(existing_value, data_start);
+            }
+        }
+
+        Ok(data_start)
     }
 
     #[allow(dead_code)]
@@ -863,7 +892,7 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = flags & (ZipFlags::Encrypted as u16) != 0;
+        let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
                 "Encrypted files are not supported",
@@ -871,14 +900,14 @@ impl ZipFileData {
         }
 
         /* FIXME: these were previously incorrect: add testing! */
-        let using_data_descriptor: bool = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
+        let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
             ));
         }
 
-        let is_utf8: bool = flags & (ZipFlags::LanguageEncoding as u16) != 0;
+        let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -953,13 +982,13 @@ impl ZipFileData {
 
     fn flags(&self) -> u16 {
         let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
-            ZipFlags::LanguageEncoding as u16
+            ZipFlags::LanguageEncoding.as_u16()
         } else {
             0
         };
 
         let using_data_descriptor_bit = if self.using_data_descriptor {
-            ZipFlags::UsingDataDescriptor as u16
+            ZipFlags::UsingDataDescriptor.as_u16()
         } else {
             0
         };
@@ -1331,56 +1360,6 @@ impl AesMode {
             Self::Aes128 => 16,
             Self::Aes192 => 24,
             Self::Aes256 => 32,
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-#[repr(packed, C)]
-pub(crate) struct AesExtraField {
-    header_id: u16,
-    data_size: u16,
-    version: u16,
-    vendor_id: u16,
-    aes_mode: u8,
-    compression_method: u16,
-}
-
-unsafe impl Pod for AesExtraField {}
-
-impl FixedSizeBlock for AesExtraField {
-    type Magic = u16;
-    const MAGIC: Self::Magic = UsedExtraField::AeXEncryption as u16;
-
-    fn magic(self) -> Self::Magic {
-        Self::MAGIC
-    }
-
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Wrong AES header ID");
-
-    to_and_from_le![
-        (header_id, u16),
-        (data_size, u16),
-        (version, u16),
-        (vendor_id, u16),
-        (aes_mode, u8),
-        (compression_method, u16)
-    ];
-}
-
-impl AesExtraField {
-    pub(crate) fn new(
-        version: AesVendorVersion,
-        aes_mode: AesMode,
-        compression_method: CompressionMethod,
-    ) -> Self {
-        Self {
-            header_id: UsedExtraField::AeXEncryption as u16,
-            data_size: 7,
-            version: version as u16,
-            vendor_id: u16::from_le_bytes(*b"AE"),
-            aes_mode: aes_mode as u8,
-            compression_method: compression_method.serialize_to_u16(),
         }
     }
 }

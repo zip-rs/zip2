@@ -354,37 +354,6 @@ fn find_content_seek<'a, R: Read + Seek + ?Sized>(
     Ok(SeekableTake::new(reader, data.compressed_size)?)
 }
 
-pub(crate) fn find_data_start(
-    data: &ZipFileData,
-    reader: &mut (impl Read + Seek + ?Sized),
-) -> Result<u64, ZipError> {
-    // Go to start of data.
-    reader.seek(SeekFrom::Start(data.header_start))?;
-
-    // Parse static-sized fields and check the magic value.
-    let block = ZipLocalEntryBlock::parse(reader)?;
-
-    // Calculate the end of the local header from the fields we just parsed.
-    let variable_fields_len =
-        // Each of these fields must be converted to u64 before adding, as the result may
-        // easily overflow a u16.
-        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-    let data_start =
-        data.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
-
-    // Set the value so we don't have to read it again.
-    match data.data_start.set(data_start) {
-        Ok(()) => (),
-        // If the value was already set in the meantime, ensure it matches (this is probably
-        // unnecessary).
-        Err(existing_value) => {
-            debug_assert_eq!(existing_value, data_start);
-        }
-    }
-
-    Ok(data_start)
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     data: &ZipFileData,
@@ -1472,9 +1441,9 @@ fn central_header_to_zip_file_inner<R: Read>(
         ..
     } = block;
 
-    let encrypted = flags & (ZipFlags::Encrypted as u16) != 0;
-    let is_utf8 = flags & (ZipFlags::LanguageEncoding as u16) != 0;
-    let using_data_descriptor = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
+    let encrypted = ZipFlags::matching(flags, ZipFlags::Encrypted);
+    let is_utf8 = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
+    let using_data_descriptor = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
 
     let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;

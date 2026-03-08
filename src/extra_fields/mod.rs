@@ -2,11 +2,13 @@
 
 use std::fmt::Display;
 
+mod aex_encryption;
 mod extended_timestamp;
 mod ntfs;
 mod zip64_extended_information;
 mod zipinfo_utf8;
 
+pub(crate) use aex_encryption::AesExtraField;
 pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export
@@ -66,11 +68,15 @@ impl UsedExtraField {
         let field_u16 = self as u16;
         field_u16.to_le_bytes()
     }
+
+    pub const fn as_u16(self) -> u16 {
+        self as u16
+    }
 }
 
 impl From<UsedExtraField> for u16 {
     fn from(value: UsedExtraField) -> Self {
-        value as u16
+        value.as_u16()
     }
 }
 

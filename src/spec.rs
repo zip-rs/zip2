@@ -92,6 +92,22 @@ pub(crate) enum ZipFlags {
     Reserved                    = 0b1000_0000_0000_0000,
 }
 
+impl ZipFlags {
+    pub(crate) fn matching(flags: u16, matching_flag: Self) -> bool {
+        flags & u16::from(matching_flag) != 0
+    }
+
+    pub(crate) const fn as_u16(self) -> u16 {
+        self as u16
+    }
+}
+
+impl From<ZipFlags> for u16 {
+    fn from(value: ZipFlags) -> u16 {
+        value.as_u16()
+    }
+}
+
 /// The file size at which a ZIP64 record becomes necessary.
 ///
 /// If a file larger than this threshold attempts to be written, compressed or uncompressed, and
@@ -223,6 +239,7 @@ pub(crate) trait FixedSizeBlock: Pod {
 }
 
 /// Convert all the fields of a struct *from* little-endian representations.
+#[macro_export]
 macro_rules! from_le {
     ($obj:ident, $field:ident, $type:ty) => {
         $obj.$field = <$type>::from_le($obj.$field);
@@ -237,6 +254,7 @@ macro_rules! from_le {
 }
 
 /// Convert all the fields of a struct *into* little-endian representations.
+#[macro_export]
 macro_rules! to_le {
     ($obj:ident, $field:ident, $type:ty) => {
         $obj.$field = <$type>::to_le($obj.$field);

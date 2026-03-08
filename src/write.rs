@@ -1,6 +1,7 @@
 //! Writing a ZIP archive
 
 use crate::compression::CompressionMethod;
+use crate::extra_fields::AesExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
@@ -8,8 +9,8 @@ use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesExtraField, AesVendorVersion, DateTime, MIN_VERSION, System, ZipFileData,
-    ZipLocalEntryBlock, ZipRawValues, ffi,
+    AesVendorVersion, DateTime, MIN_VERSION, System, ZipFileData, ZipLocalEntryBlock, ZipRawValues,
+    ffi,
 };
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
