@@ -2397,35 +2397,6 @@ fn update_aes_extra_data<W: Write + Seek>(
 }
 
 impl ZipFileData {
-    fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T) -> ZipResult<()> {
-        let block = Zip64ExtendedInformation::local_header(
-            self.large_file,
-            self.uncompressed_size,
-            self.compressed_size,
-        )
-        .ok_or(invalid!(
-            "Attempted to update a nonexistent ZIP64 extra field"
-        ))?;
-
-        let zip64_extra_field_start = self.header_start
-            + size_of::<ZipLocalEntryBlock>() as u64
-            + self.file_name_raw.len() as u64;
-
-        writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
-        let block = block.serialize();
-        writer.write_all(&block)?;
-
-        let Some(ref mut extra_field) = self.extra_field else {
-            return Err(invalid!(
-                "update_local_zip64_extra_field called on a file that has no extra-data field"
-            ));
-        };
-        let extra_field = Arc::make_mut(extra_field);
-        extra_field[..block.len()].copy_from_slice(&block);
-
-        Ok(())
-    }
-
     pub(crate) fn update_local_file_header<T: Write + Seek>(
         &mut self,
         writer: &mut T,
@@ -2453,6 +2424,35 @@ impl ZipFileData {
             // uncompressed size is already checked on write to catch it as soon as possible
             writer.write_u32_le(self.uncompressed_size as u32)?;
         }
+        Ok(())
+    }
+
+    fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T) -> ZipResult<()> {
+        let block = Zip64ExtendedInformation::local_header(
+            self.large_file,
+            self.uncompressed_size,
+            self.compressed_size,
+        )
+        .ok_or(invalid!(
+            "Attempted to update a nonexistent ZIP64 extra field"
+        ))?;
+
+        let zip64_extra_field_start = self.header_start
+            + size_of::<ZipLocalEntryBlock>() as u64
+            + self.file_name_raw.len() as u64;
+
+        writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
+        let block = block.serialize();
+        writer.write_all(&block)?;
+
+        let Some(ref mut extra_field) = self.extra_field else {
+            return Err(invalid!(
+                "update_local_zip64_extra_field called on a file that has no extra-data field"
+            ));
+        };
+        let extra_field = Arc::make_mut(extra_field);
+        extra_field[..block.len()].copy_from_slice(&block);
+
         Ok(())
     }
 
