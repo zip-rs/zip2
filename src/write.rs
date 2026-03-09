@@ -2433,6 +2433,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     };
     let central_len = file.central_extra_field_len();
     let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
+        file.large_file,
         file.uncompressed_size,
         file.compressed_size,
         file.header_start,
