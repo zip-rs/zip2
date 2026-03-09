@@ -1020,8 +1020,7 @@ impl ZipFileData {
         let compressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
         } else {
-            self
-                .compressed_size
+            self.compressed_size
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
                 .map_err(std::io::Error::other)?
@@ -1029,8 +1028,7 @@ impl ZipFileData {
         let uncompressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
         } else {
-            self
-                .uncompressed_size
+            self.uncompressed_size
                 .min(spec::ZIP64_BYTES_THR)
                 .try_into()
                 .map_err(std::io::Error::other)?
