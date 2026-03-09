@@ -135,7 +135,7 @@ impl Zip64ExtendedInformation {
         if _is_local_header {
             // the local header does not contains the header start
             if let (Some(uncompressed_size), Some(compressed_size)) =
-                (self.compressed_size, self.compressed_size)
+                (uncompressed_size, compressed_size)
             {
                 let mut ret = Vec::with_capacity(full_size);
                 ret.extend(magic.to_le_bytes());
