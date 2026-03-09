@@ -83,14 +83,14 @@ impl Zip64ExtendedInformation {
                 Some(uncompressed_size)
             } else {
                 None
-        };
+            };
         let compressed_size =
             if is_large_file || (compressed_size != 0 && compressed_size >= ZIP64_BYTES_THR) {
                 size += mem::size_of::<u64>() as u16;
                 Some(compressed_size)
             } else {
                 None
-        };
+            };
         let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
             size += mem::size_of::<u64>() as u16;
             Some(header_start)
