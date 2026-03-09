@@ -71,18 +71,19 @@ impl Zip64ExtendedInformation {
     }
 
     pub(crate) fn central_header(
+        is_large_file: bool,
         uncompressed_size: u64,
         compressed_size: u64,
         header_start: u64,
     ) -> Option<Self> {
         let mut size: u16 = 0;
-        let uncompressed_size = if uncompressed_size != 0 && uncompressed_size >= ZIP64_BYTES_THR {
+        let uncompressed_size = if is_large_file || (uncompressed_size != 0 && uncompressed_size >= ZIP64_BYTES_THR) {
             size += mem::size_of::<u64>() as u16;
             Some(uncompressed_size)
         } else {
             None
         };
-        let compressed_size = if compressed_size != 0 && compressed_size >= ZIP64_BYTES_THR {
+        let compressed_size = if is_large_file || (compressed_size != 0 && compressed_size >= ZIP64_BYTES_THR) {
             size += mem::size_of::<u64>() as u16;
             Some(compressed_size)
         } else {
