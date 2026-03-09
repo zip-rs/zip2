@@ -1017,8 +1017,7 @@ impl ZipFileData {
     }
 
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
-        let compressed_size = if self
-large_file {
+        let compressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
         } else {
             self
