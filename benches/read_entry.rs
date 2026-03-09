@@ -25,7 +25,7 @@ fn read_entry(bench: &mut Bencher) {
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size)
         .expect("Failed to create a random archive for the bench read_entry()");
-    let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+    let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
 
     bench.iter(|| {
         let mut file = archive.by_name("random.dat").unwrap();
@@ -45,9 +45,10 @@ fn read_entry_iterable(bench: &mut Bencher) {
     use zip::read::Config;
     use zip::read::IterableZip;
     let size = 1024 * 1024;
-    let bytes = generate_random_archive(size);
-    let mut archive =
-        IterableZip::try_new(Cursor::new(bytes.as_slice()), Config::default()).unwrap();
+    let bytes = generate_random_archive(size)
+        .expect("Failed to create a random archive for the bench read_entry()");
+    let mut reader = Cursor::new(&bytes);
+    let mut archive = IterableZip::try_new(reader.clone(), Config::default()).unwrap();
 
     bench.iter(|| {
         let file = archive
@@ -55,13 +56,14 @@ fn read_entry_iterable(bench: &mut Bencher) {
             .unwrap()
             .find(|f| {
                 let file = f.as_ref().unwrap();
-                let filename = &*file.file_name;
+                let filename = file.file_name().unwrap();
                 filename == "random.dat"
             })
             .unwrap()
             .unwrap();
         let mut buf = [0u8; 1024];
-        let mut file_reader = archive.by_file_data(&file, Default::default()).unwrap();
+        let zip_data = &file.into_zip_file_data(&mut reader).unwrap();
+        let mut file_reader = archive.by_file_data(&zip_data, Default::default()).unwrap();
         loop {
             let n = file_reader.read(&mut buf).unwrap();
             if n == 0 {
