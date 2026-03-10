@@ -2451,9 +2451,6 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name
     writer.write_all(&file.file_name_raw)?;
     // extra field
-    if let Some(zip64_extra_field) = zip64_extra_field_block {
-        writer.write_all(&zip64_extra_field.serialize())?;
-    }
     if !stripped_extra.is_empty() {
         writer.write_all(&stripped_extra)?;
     }

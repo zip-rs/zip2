@@ -458,3 +458,156 @@ fn test_number_of_files() {
     let correct_count = u16::MAX as usize + 10;
     assert_eq!(reader.len(), correct_count);
 }
+
+#[test]
+fn force_large_file() {
+    // https://github.com/zip-rs/zip2/issues/715
+    use std::io::Write;
+
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .large_file(true)
+        .unix_permissions(0o755);
+
+    let mut bytes = vec![];
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut bytes));
+    writer.start_file("file.txt", options).unwrap();
+    writeln!(&mut writer, r#"abcdefghijklmnopqrstuvwxyzabcde"#).unwrap();
+    writer.finish().unwrap();
+
+    assert_eq!(bytes.len(), 186);
+    assert_eq!(bytes[0..4], [0x50, 0x4B, 0x03, 0x04]);
+    assert_eq!(bytes[4..6], [0x2D, 0x00]);
+    assert_eq!(bytes[6..8], [0x00, 0x00]);
+    assert_eq!(bytes[8..10], [0x08, 0x00]);
+    // date and time
+    assert_eq!(bytes[14..18], [0xDF, 0x38, 0xA8, 0xD5]); // crc32
+    assert_eq!(bytes[18..22], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[22..26], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[26..28], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[28..30], [0x14, 0x00]); // extra field length
+    assert_eq!(&bytes[30..38], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[38..40], [0x01, 0x00]);
+    assert_eq!(bytes[40..42], [0x10, 0x00]);
+    assert_eq!(
+        bytes[42..50],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[50..58],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[58..90],
+        [
+            0x4B, 0x4C, 0x4A, 0x4E, 0x49, 0x4D, 0x4B, 0xCF, 0xC8, 0xCC, 0xCA, 0xCE, 0xC9, 0xCD,
+            0xCB, 0x2F, 0x28, 0x2C, 0x2A, 0x2E, 0x29, 0x2D, 0x2B, 0xAF, 0xA8, 0xAC, 0x4A, 0x04,
+            0xC9, 0x70, 0x01, 0x00
+        ]
+    );
+    assert_eq!(bytes[90..94], [0x50, 0x4B, 0x01, 0x02]); // signature
+    assert_eq!(bytes[94..96], [0x2D, 0x03]); // version made by
+    assert_eq!(bytes[96..98], [0x2D, 0x00]); // version needed to extract
+    assert_eq!(bytes[98..100], [0x00, 0x00]); // general purpose bit flag
+    assert_eq!(bytes[100..102], [0x08, 0x00]); // compression
+    // date and time
+    assert_eq!(bytes[106..110], [0xDF, 0x38, 0xA8, 0xD5]); // crc32
+    assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[114..118], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[118..120], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[120..122], [0x28, 0x00]); // extra field length
+    assert_eq!(bytes[122..124], [0x00, 0x00]); // file comment length
+    assert_eq!(bytes[124..126], [0x00, 0x00]); // disk number
+    assert_eq!(bytes[126..128], [0x00, 0x00]); // internal attr
+    assert_eq!(bytes[128..132], [0x00, 0x00, 0xED, 0x81]); // external attr
+    assert_eq!(bytes[132..136], [0x00, 0x00, 0x00, 0x00]); // relative offset
+    assert_eq!(&bytes[136..144], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[144..146], [0x01, 0x00]);
+    assert_eq!(bytes[146..148], [0x10, 0x00]);
+    assert_eq!(
+        bytes[148..156],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[156..164],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[164..186],
+        [
+            0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4A, 0x00,
+            0x00, 0x00, 0x5A, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]
+    );
+
+    let mut bytes = vec![];
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut bytes));
+    writer.start_file("file.txt", options).unwrap();
+    writeln!(&mut writer, r#"abcdefghijklmnopqrstuvwxyzabcdef"#).unwrap(); // one char longer
+    writer.finish().unwrap();
+
+    assert_eq!(bytes.len(), 186);
+    assert_eq!(bytes[0..4], [0x50, 0x4B, 0x03, 0x04]);
+    assert_eq!(bytes[4..6], [0x2D, 0x00]);
+    assert_eq!(bytes[6..8], [0x00, 0x00]);
+    assert_eq!(bytes[8..10], [0x08, 0x00]);
+    // date and time
+    assert_eq!(bytes[14..18], [0x45, 0x45, 0x26, 0xED]); // crc32
+    assert_eq!(bytes[18..22], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[22..26], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[26..28], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[28..30], [0x14, 0x00]); // extra field length
+    assert_eq!(&bytes[30..38], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[38..40], [0x01, 0x00]);
+    assert_eq!(bytes[40..42], [0x10, 0x00]);
+    assert_eq!(
+        bytes[42..50],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[50..58],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[58..90],
+        [
+            0x4B, 0x4C, 0x4A, 0x4E, 0x49, 0x4D, 0x4B, 0xCF, 0xC8, 0xCC, 0xCA, 0xCE, 0xC9, 0xCD,
+            0xCB, 0x2F, 0x28, 0x2C, 0x2A, 0x2E, 0x29, 0x2D, 0x2B, 0xAF, 0xA8, 0xAC, 0x4A, 0x04,
+            0xCB, 0x70, 0x01, 0x00
+        ]
+    );
+    assert_eq!(bytes[90..94], [0x50, 0x4B, 0x01, 0x02]); // signature
+    assert_eq!(bytes[94..96], [0x2D, 0x03]); // version made by
+    assert_eq!(bytes[96..98], [0x2D, 0x00]); // version needed to extract
+    assert_eq!(bytes[98..100], [0x00, 0x00]); // general purpose bit flag
+    assert_eq!(bytes[100..102], [0x08, 0x00]); // compression
+    // date and time
+    assert_eq!(bytes[106..110], [0x45, 0x45, 0x26, 0xED]); // crc32
+    assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[114..118], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[118..120], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[120..122], [0x28, 0x00]); // extra field length
+    assert_eq!(bytes[122..124], [0x00, 0x00]); // file comment length
+    assert_eq!(bytes[124..126], [0x00, 0x00]); // disk number
+    assert_eq!(bytes[126..128], [0x00, 0x00]); // internal attr
+    assert_eq!(bytes[128..132], [0x00, 0x00, 0xED, 0x81]); // external attr
+    assert_eq!(bytes[132..136], [0x00, 0x00, 0x00, 0x00]); // relative offset
+    assert_eq!(&bytes[136..144], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[144..146], [0x01, 0x00]);
+    assert_eq!(bytes[146..148], [0x10, 0x00]);
+    assert_eq!(
+        bytes[148..156],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[156..164],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[164..186],
+        [
+            0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4A, 0x00,
+            0x00, 0x00, 0x5A, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]
+    );
+}
