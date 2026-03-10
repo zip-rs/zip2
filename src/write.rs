@@ -901,7 +901,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
-            let stripped = strip_alignment_extra_field(extra);
+            let stripped = strip_alignment_extra_field(extra, false);
             if !stripped.is_empty() {
                 new_data.extra_field = Some(stripped.into());
             } else {
@@ -2427,7 +2427,7 @@ fn update_local_file_header<T: Write + Seek>(
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     let mut block = file.block()?;
     let stripped_extra = if let Some(extra) = &file.extra_field {
-        strip_alignment_extra_field(extra)
+        strip_alignment_extra_field(extra, true)
     } else {
         Vec::new()
     };
@@ -2466,7 +2466,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
+fn strip_alignment_extra_field(extra_field: &[u8], remove_zip64: bool) -> Vec<u8> {
     let mut new_extra = Vec::with_capacity(extra_field.len());
     let mut cursor = 0;
     while cursor + 4 <= extra_field.len() {
@@ -2478,7 +2478,7 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
         }
 
         if tag != UsedExtraField::DataStreamAlignment as u16
-            && tag != UsedExtraField::Zip64ExtendedInfo as u16
+            && !(tag == UsedExtraField::Zip64ExtendedInfo as u16 && remove_zip64)
         {
             new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
         }
