@@ -2511,14 +2511,6 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     let block = block.serialize();
     writer.write_all(&block)?;
 
-    let Some(ref mut extra_field) = file.extra_field else {
-        return Err(invalid!(
-            "update_aes_extra_data called on a file that has no extra-data field"
-        ));
-    };
-    let extra_field = Arc::make_mut(extra_field);
-    extra_field[..block.len()].copy_from_slice(&block);
-
     Ok(())
 }
 
