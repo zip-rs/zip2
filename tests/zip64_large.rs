@@ -515,7 +515,7 @@ fn force_large_file() {
     assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
     assert_eq!(bytes[114..118], [0xFF, 0xFF, 0xFF, 0xFF]); // size
     assert_eq!(bytes[118..120], [0x08, 0x00]); // filename length
-    assert_eq!(bytes[120..122], [0x28, 0x00]); // extra field length
+    assert_eq!(bytes[120..122], [0x14, 0x00]); // extra field length
     assert_eq!(bytes[122..124], [0x00, 0x00]); // file comment length
     assert_eq!(bytes[124..126], [0x00, 0x00]); // disk number
     assert_eq!(bytes[126..128], [0x00, 0x00]); // internal attr
@@ -586,7 +586,7 @@ fn force_large_file() {
     assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
     assert_eq!(bytes[114..118], [0xFF, 0xFF, 0xFF, 0xFF]); // size
     assert_eq!(bytes[118..120], [0x08, 0x00]); // filename length
-    assert_eq!(bytes[120..122], [0x28, 0x00]); // extra field length
+    assert_eq!(bytes[120..122], [0x14, 0x00]); // extra field length
     assert_eq!(bytes[122..124], [0x00, 0x00]); // file comment length
     assert_eq!(bytes[124..126], [0x00, 0x00]); // disk number
     assert_eq!(bytes[126..128], [0x00, 0x00]); // internal attr
