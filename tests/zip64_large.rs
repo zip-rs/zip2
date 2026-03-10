@@ -464,22 +464,30 @@ fn force_large_file() {
     // https://github.com/zip-rs/zip2/issues/715
     use std::io::Write;
 
+    #[cfg(feature = "deflate")]
+    let compression_method = zip::CompressionMethod::Deflated;
+    #[cfg(not(feature = "deflate"))]
+    let compression_method = zip::CompressionMethod::Stored;
     let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
+        .compression_method(compression_method)
         .large_file(true)
         .unix_permissions(0o755);
 
     let mut bytes = vec![];
+    let data = r#"abcdefghijklmnopqrstuvwxyzabcde"#;
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut bytes));
     writer.start_file("file.txt", options).unwrap();
-    writeln!(&mut writer, r#"abcdefghijklmnopqrstuvwxyzabcde"#).unwrap();
+    writeln!(&mut writer, "{}", data).unwrap();
     writer.finish().unwrap();
 
     assert_eq!(bytes.len(), 186);
     assert_eq!(bytes[0..4], [0x50, 0x4B, 0x03, 0x04]);
     assert_eq!(bytes[4..6], [0x2D, 0x00]);
     assert_eq!(bytes[6..8], [0x00, 0x00]);
+    #[cfg(feature = "deflate")]
     assert_eq!(bytes[8..10], [0x08, 0x00]);
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[8..10], [0x00, 0x00]);
     // date and time
     assert_eq!(bytes[14..18], [0xDF, 0x38, 0xA8, 0xD5]); // crc32
     assert_eq!(bytes[18..22], [0xFF, 0xFF, 0xFF, 0xFF]); // size
@@ -497,6 +505,7 @@ fn force_large_file() {
         bytes[50..58],
         [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     );
+    #[cfg(feature = "deflate")]
     assert_eq!(
         bytes[58..90],
         [
@@ -505,11 +514,16 @@ fn force_large_file() {
             0xC9, 0x70, 0x01, 0x00
         ]
     );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(&bytes[58..89], data.as_bytes());
     assert_eq!(bytes[90..94], [0x50, 0x4B, 0x01, 0x02]); // signature
     assert_eq!(bytes[94..96], [0x2D, 0x03]); // version made by
     assert_eq!(bytes[96..98], [0x2D, 0x00]); // version needed to extract
     assert_eq!(bytes[98..100], [0x00, 0x00]); // general purpose bit flag
+    #[cfg(feature = "deflate")]
     assert_eq!(bytes[100..102], [0x08, 0x00]); // compression
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[100..102], [0x00, 0x00]); // compression
     // date and time
     assert_eq!(bytes[106..110], [0xDF, 0x38, 0xA8, 0xD5]); // crc32
     assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
@@ -541,16 +555,23 @@ fn force_large_file() {
     );
 
     let mut bytes = vec![];
+    let data = r#"abcdefghijklmnopqrstuvwxyzabcdef"#;
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut bytes));
     writer.start_file("file.txt", options).unwrap();
-    writeln!(&mut writer, r#"abcdefghijklmnopqrstuvwxyzabcdef"#).unwrap(); // one char longer
+    writeln!(&mut writer, "{}", data).unwrap(); // one char longer
     writer.finish().unwrap();
 
+    #[cfg(feature = "deflate")]
     assert_eq!(bytes.len(), 186);
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes.len(), 187);
     assert_eq!(bytes[0..4], [0x50, 0x4B, 0x03, 0x04]);
     assert_eq!(bytes[4..6], [0x2D, 0x00]);
     assert_eq!(bytes[6..8], [0x00, 0x00]);
+    #[cfg(feature = "deflate")]
     assert_eq!(bytes[8..10], [0x08, 0x00]);
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[8..10], [0x00, 0x00]);
     // date and time
     assert_eq!(bytes[14..18], [0x45, 0x45, 0x26, 0xED]); // crc32
     assert_eq!(bytes[18..22], [0xFF, 0xFF, 0xFF, 0xFF]); // size
@@ -564,10 +585,19 @@ fn force_large_file() {
         bytes[42..50],
         [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     );
+    #[cfg(feature = "deflate")]
     assert_eq!(
         bytes[50..58],
         [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(
+        bytes[50..58],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+
+    // content
+    #[cfg(feature = "deflate")]
     assert_eq!(
         bytes[58..90],
         [
@@ -576,11 +606,22 @@ fn force_large_file() {
             0xCB, 0x70, 0x01, 0x00
         ]
     );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(&bytes[58..90], data.as_bytes());
+    #[cfg(not(feature = "deflate"))]
+    let mut bytes = bytes.to_vec();
+    #[cfg(not(feature = "deflate"))]
+    bytes.remove(90);
+
     assert_eq!(bytes[90..94], [0x50, 0x4B, 0x01, 0x02]); // signature
     assert_eq!(bytes[94..96], [0x2D, 0x03]); // version made by
     assert_eq!(bytes[96..98], [0x2D, 0x00]); // version needed to extract
     assert_eq!(bytes[98..100], [0x00, 0x00]); // general purpose bit flag
+
+    #[cfg(feature = "deflate")]
     assert_eq!(bytes[100..102], [0x08, 0x00]); // compression
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[100..102], [0x00, 0x00]); // compression
     // date and time
     assert_eq!(bytes[106..110], [0x45, 0x45, 0x26, 0xED]); // crc32
     assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
@@ -599,15 +640,27 @@ fn force_large_file() {
         bytes[148..156],
         [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     );
+    #[cfg(feature = "deflate")]
     assert_eq!(
         bytes[156..164],
         [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(
+        bytes[156..164],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+
+    // end of zip
+    #[cfg(feature = "deflate")]
+    let offset = 0x5A;
+    #[cfg(not(feature = "deflate"))]
+    let offset = 0x5B;
     assert_eq!(
         bytes[164..186],
         [
             0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4A, 0x00,
-            0x00, 0x00, 0x5A, 0x00, 0x00, 0x00, 0x00, 0x00
+            0x00, 0x00, offset, 0x00, 0x00, 0x00, 0x00, 0x00
         ]
     );
 }
