@@ -35,12 +35,11 @@ impl From<ExtendedTimestampFlags> for u8 {
 }
 
 /// Extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
-#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone)]
 pub struct ExtendedTimestamp {
-    mod_time: Option<u32>,
-    ac_time: Option<u32>,
-    cr_time: Option<u32>,
+    modified: Option<u32>,
+    accessed: Option<u32>,
+    created: Option<u32>,
 }
 
 impl ExtendedTimestamp {
@@ -85,7 +84,7 @@ impl ExtendedTimestamp {
 
         // allow unsupported/undocumented flags
 
-        let mod_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::ModTime)
+        let modified = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::ModTime)
             && bytes_to_read >= mem::size_of::<u32>())
             || len == 13
         {
@@ -100,7 +99,7 @@ impl ExtendedTimestamp {
             None
         };
 
-        let ac_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::AcTime)
+        let accessed = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::AcTime)
             && bytes_to_read >= mem::size_of::<u32>())
             || len == 13
         {
@@ -115,7 +114,7 @@ impl ExtendedTimestamp {
             None
         };
 
-        let cr_time = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::CrTime)
+        let created = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::CrTime)
             && bytes_to_read >= mem::size_of::<u32>())
             || len == 13
         {
@@ -136,28 +135,28 @@ impl ExtendedTimestamp {
         }
 
         Ok(Self {
-            mod_time,
-            ac_time,
-            cr_time,
+            modified,
+            accessed,
+            created,
         })
     }
 
     /// returns the last modification timestamp, if defined, as UNIX epoch seconds
     #[must_use]
     pub fn mod_time(&self) -> Option<u32> {
-        self.mod_time
+        self.modified
     }
 
     /// returns the last access timestamp, if defined, as UNIX epoch seconds
     #[must_use]
     pub fn ac_time(&self) -> Option<u32> {
-        self.ac_time
+        self.accessed
     }
 
     /// returns the creation timestamp, if defined, as UNIX epoch seconds
     #[must_use]
     pub fn cr_time(&self) -> Option<u32> {
-        self.cr_time
+        self.created
     }
 }
 
