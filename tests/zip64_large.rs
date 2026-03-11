@@ -274,7 +274,9 @@ fn test_zip64_check_extra_field() {
         assert_eq!(central_header[42..46], [0xFF, 0xFF, 0xFF, 0xFF]); // relative offset of local header
         assert_eq!(central_header[46..50], *b"dir/"); // file name
         assert_eq!(central_header[50..52], [0x01, 0x00]); // zip64 extra field header id
-        assert_eq!(central_header[52..54], [0x08, 0x00]); // zip64 extra field data size (should be 0 for a directory entry, since
+        // zip64 extra field data size is 8 since the folder have a size of 0 and that fits in
+        // the fours bytes of the size
+        assert_eq!(central_header[52..54], [0x08, 0x00]);
         // IMPORTANT
         assert_eq!(
             central_header[54..],
@@ -298,6 +300,8 @@ fn test_zip64_check_extra_field() {
         assert_eq!(local_block[18..22], [0x00, 0x00, 0x00, 0x00]); // compressed size
         assert_eq!(local_block[22..26], [0x00, 0x00, 0x00, 0x00]); // uncompressed size
         assert_eq!(local_block[26..28], [0x04, 0x00]); // file name length
+        // IMPORTANT - extra field length - 0 since the size of a bigfile fits in 4 bytes and the
+        // local header does not contains an offset
         assert_eq!(local_block[28..30], [0x00, 0x00]); // extra field length
         assert_eq!(local_block[30..], *b"dir/"); // file name
         // there is not zip64 extra field in the local header
@@ -336,7 +340,8 @@ fn test_zip64_check_extra_field() {
         assert_eq!(central_header[42..46], [0xFF, 0xFF, 0xFF, 0xFF]); // relative offset of local header
         assert_eq!(central_header[46..61], *b"dir/bigfile.bin"); // file name
         assert_eq!(central_header[61..63], [0x01, 0x00]); // zip64 extra field header id
-        assert_eq!(central_header[63..65], [0x08, 0x00]); // zip64 extra field data size
+        // zip64 extra field data size only 8 since the size of a bigfile fits in 4 bytes
+        assert_eq!(central_header[63..65], [0x08, 0x00]);
         assert_eq!(
             central_header[65..],
             [0xbe, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]
@@ -359,7 +364,8 @@ fn test_zip64_check_extra_field() {
         assert_eq!(local_header[18..22], bigfile_size.to_le_bytes()); // compressed size
         assert_eq!(local_header[22..26], bigfile_size.to_le_bytes()); // uncompressed size
         assert_eq!(local_header[26..28], [0x0f, 0x00]); // file name length
-        // IMPORTANT
+        // IMPORTANT - extra field length - 0 since the size of a bigfile fits in 4 bytes and the
+        // local header does not contains an offset
         assert_eq!(local_header[28..30], [0x00, 0x00]); // extra field length
         assert_eq!(local_header[30..], *b"dir/bigfile.bin"); // file name
     }
@@ -608,6 +614,9 @@ fn force_large_file() {
     );
     #[cfg(not(feature = "deflate"))]
     assert_eq!(&bytes[58..90], data.as_bytes());
+
+    // the data is one byte longer without deflate so we remove one byte
+    // so that the index are the same with and without the deflate feature
     #[cfg(not(feature = "deflate"))]
     let mut bytes = bytes.to_vec();
     #[cfg(not(feature = "deflate"))]
