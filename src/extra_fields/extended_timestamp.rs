@@ -9,16 +9,15 @@ use std::mem;
 
 /// `ExtendedTimestamp` Flags
 #[rustfmt::skip]
-#[allow(clippy::enum_variant_names)]
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ExtendedTimestampFlags {
     /// modification time is present
-    ModTime = 0b0000_0001_u8,
+    Modified = 0b0000_0001_u8,
     /// access time is present
-    AcTime  = 0b0000_0010_u8,
+    Accessed = 0b0000_0010_u8,
     /// creation time is present
-    CrTime  = 0b0000_0100_u8,
+    Created  = 0b0000_0100_u8,
     // others bytes reversed
 }
 
@@ -85,37 +84,39 @@ impl ExtendedTimestamp {
 
         // allow unsupported/undocumented flags
 
-        let modified = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::ModTime)
-            && bytes_to_read >= mem::size_of::<u32>())
-            || len == 13
-        {
-            bytes_to_read = bytes_to_read
-                .checked_sub(mem::size_of::<u32>())
-                .ok_or(invalid!(
-                    "Extended timestamp field too short for mod_time len={} flags={flags:08b}",
-                    len
-                ))?;
-            Some(reader.read_u32_le()?)
-        } else {
-            None
-        };
+        let modified =
+            if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Modified)
+                && bytes_to_read >= mem::size_of::<u32>())
+                || len == 13
+            {
+                bytes_to_read = bytes_to_read.checked_sub(mem::size_of::<u32>()).ok_or(
+                    invalid!(
+                        "Extended timestamp field too short for mod_time len={} flags={flags:08b}",
+                        len
+                    ),
+                )?;
+                Some(reader.read_u32_le()?)
+            } else {
+                None
+            };
 
-        let accessed = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::AcTime)
-            && bytes_to_read >= mem::size_of::<u32>())
-            || len == 13
-        {
-            bytes_to_read = bytes_to_read
-                .checked_sub(mem::size_of::<u32>())
-                .ok_or(invalid!(
-                    "Extended timestamp field too short for ac_time len={} flags={flags:08b}",
-                    len
-                ))?;
-            Some(reader.read_u32_le()?)
-        } else {
-            None
-        };
+        let accessed =
+            if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Accessed)
+                && bytes_to_read >= mem::size_of::<u32>())
+                || len == 13
+            {
+                bytes_to_read = bytes_to_read.checked_sub(mem::size_of::<u32>()).ok_or(
+                    invalid!(
+                        "Extended timestamp field too short for ac_time len={} flags={flags:08b}",
+                        len
+                    ),
+                )?;
+                Some(reader.read_u32_le()?)
+            } else {
+                None
+            };
 
-        let created = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::CrTime)
+        let created = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Created)
             && bytes_to_read >= mem::size_of::<u32>())
             || len == 13
         {
