@@ -275,7 +275,7 @@ fn test_zip64_check_extra_field() {
         assert_eq!(central_header[46..50], *b"dir/"); // file name
         assert_eq!(central_header[50..52], [0x01, 0x00]); // zip64 extra field header id
         // zip64 extra field data size is 8 since the folder have a size of 0 and that fits in
-        // the fours bytes of the size
+        // the four bytes
         assert_eq!(central_header[52..54], [0x08, 0x00]);
         // IMPORTANT
         assert_eq!(
@@ -364,7 +364,7 @@ fn test_zip64_check_extra_field() {
         assert_eq!(local_header[18..22], bigfile_size.to_le_bytes()); // compressed size
         assert_eq!(local_header[22..26], bigfile_size.to_le_bytes()); // uncompressed size
         assert_eq!(local_header[26..28], [0x0f, 0x00]); // file name length
-        // IMPORTANT - extra field length - 0 since the size of a bigfile fits in 4 bytes and the
+        // IMPORTANT - extra field length is 0 since the size of 'dir/bigfile.bin' fits in 4 bytes and the
         // local header does not contains an offset
         assert_eq!(local_header[28..30], [0x00, 0x00]); // extra field length
         assert_eq!(local_header[30..], *b"dir/bigfile.bin"); // file name
