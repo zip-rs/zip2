@@ -1,6 +1,7 @@
 //! Types that specify what is contained in a ZIP.
 
 use crate::cp437::FromCp437;
+use crate::path::{enclosed_name, file_name_sanitized};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
 use crate::write::FileOptionExtension;
@@ -10,7 +11,6 @@ use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -633,15 +633,7 @@ impl ZipFileData {
             None => &self.file_name,
         };
 
-        Utf8WindowsPath::new(no_null_filename)
-            .components()
-            .filter(|component| matches!(*component, Utf8WindowsComponent::Normal(..)))
-            .fold(PathBuf::new(), |mut path, cur| {
-                if let Utf8WindowsComponent::Normal(s) = cur {
-                    path.push(s);
-                }
-                path
-            })
+        file_name_sanitized(no_null_filename)
     }
 
     /// Simplify the file name by removing the prefix and parent directories and only return normal components
@@ -657,27 +649,7 @@ impl ZipFileData {
         if self.file_name.contains('\0') {
             return None;
         }
-        let mut depth = 0usize;
-        let mut out_path = PathBuf::new();
-        for component in Utf8WindowsPath::new(&self.file_name).components() {
-            match component {
-                Utf8WindowsComponent::Prefix(_) | Utf8WindowsComponent::RootDir => {
-                    if depth > 0 {
-                        return None;
-                    }
-                }
-                Utf8WindowsComponent::ParentDir => {
-                    depth = depth.checked_sub(1)?;
-                    out_path.pop();
-                }
-                Utf8WindowsComponent::Normal(s) => {
-                    depth += 1;
-                    out_path.push(s);
-                }
-                Utf8WindowsComponent::CurDir => (),
-            }
-        }
-        Some(out_path)
+        enclosed_name(&self.file_name)
     }
 
     /// Get unix mode for the file
