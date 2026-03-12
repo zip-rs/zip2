@@ -690,7 +690,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             // Turn EOCD into internal representation.
             match CentralDirectoryInfo::try_from(&cde)
-                .and_then(|info| Self::read_central_header(info, config, reader))
+                .and_then(|info| Self::read_central_header(&info, config, reader))
             {
                 Ok(shared) => {
                     return Ok(shared.build(
@@ -709,7 +709,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     fn read_central_header(
-        dir_info: CentralDirectoryInfo,
+        dir_info: &CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
     ) -> Result<zip_archive::SharedBuilder, ZipError> {
@@ -732,7 +732,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
-            let file = central_header_to_zip_file(reader, &dir_info)?;
+            let file = central_header_to_zip_file(reader, dir_info)?;
             files.push(file);
         }
 
@@ -785,7 +785,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// A default [`Config`] is used.
     pub fn new(reader: R) -> ZipResult<ZipArchive<R>> {
-        Self::with_config(Default::default(), reader)
+        Self::with_config(Config::default(), reader)
     }
 
     /// Get the metadata associated with the ZIP archive.

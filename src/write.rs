@@ -2033,8 +2033,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(default),
                     deflate_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?;
 
                 #[cfg(feature = "deflate-zopfli")]
                 {
@@ -2110,12 +2109,11 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             }
             #[cfg(feature = "_bzip2_any")]
             CompressionMethod::Bzip2 => {
-                let level = validate_value_in_range(
+                let level: u32 = validate_value_in_range(
                     compression_level.unwrap_or(i64::from(bzip2::Compression::default().level())),
                     bzip2_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                 Ok(Box::new(move |bare| {
                     Ok(GenericZipWriter::Bzip2(bzip2::write::BzEncoder::new(
                         bare,
@@ -2158,7 +2156,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             }
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => {
-                let level = validate_value_in_range(compression_level.unwrap_or(6), 0..=9)
+                let level = validate_value_in_range(compression_level.unwrap_or(6), 0_u32..=9u32)
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?
                     as u32;
                 Ok(Box::new(move |bare| {
@@ -2172,9 +2170,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             CompressionMethod::Ppmd => {
                 const ORDERS: [u32; 10] = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-                let level = validate_value_in_range(compression_level.unwrap_or(7), 1..=9)
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                let level = validate_value_in_range(compression_level.unwrap_or(7), 1u32..=9u32)
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
 
                 let order = ORDERS[level as usize];
                 let memory_size = 1 << (level + 19);
@@ -2289,7 +2286,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 }
 
 #[cfg(feature = "_deflate-any")]
-fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
+fn deflate_compression_level_range() -> std::ops::RangeInclusive<u32> {
     #[cfg(not(any(feature = "deflate-zopfli", feature = "deflate-flate2")))]
     {
         compile_error!("min: unknown deflate variant - enable deflate-zopfli or deflate-flate2")
@@ -2298,7 +2295,7 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
     let min = {
         #[cfg(feature = "deflate-flate2")]
         {
-            i64::from(flate2::Compression::fast().level())
+            flate2::Compression::fast().level()
         }
         #[cfg(all(not(feature = "deflate-flate2"), feature = "deflate-zopfli"))]
         {
@@ -2313,7 +2310,7 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
         }
         #[cfg(all(not(feature = "deflate-zopfli"), feature = "deflate-flate2"))]
         {
-            flate2::Compression::best().level() as i64
+            flate2::Compression::best().level()
         }
     };
 
@@ -2321,9 +2318,9 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
 }
 
 #[cfg(feature = "_bzip2_any")]
-fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    let min = i64::from(bzip2::Compression::fast().level());
-    let max = i64::from(bzip2::Compression::best().level());
+fn bzip2_compression_level_range() -> std::ops::RangeInclusive<u32> {
+    let min = bzip2::Compression::fast().level();
+    let max = bzip2::Compression::best().level();
     min..=max
 }
 
@@ -2337,8 +2334,9 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
 fn validate_value_in_range<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     value: T,
     range: std::ops::RangeInclusive<U>,
-) -> Option<T> {
-    if range.contains(&value.try_into().ok()?) {
+) -> Option<U> {
+    let value: U = value.try_into().ok()?;
+    if range.contains(&value) {
         Some(value)
     } else {
         None
