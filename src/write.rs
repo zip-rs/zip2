@@ -901,7 +901,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
-            let stripped = strip_alignment_extra_field(extra);
+            let stripped = strip_alignment_extra_field(extra, false);
             if !stripped.is_empty() {
                 new_data.extra_field = Some(stripped.into());
             } else {
@@ -2427,12 +2427,13 @@ fn update_local_file_header<T: Write + Seek>(
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     let mut block = file.block()?;
     let stripped_extra = if let Some(extra) = &file.extra_field {
-        strip_alignment_extra_field(extra)
+        strip_alignment_extra_field(extra, true)
     } else {
         Vec::new()
     };
     let central_len = file.central_extra_field_len();
     let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
+        file.large_file,
         file.uncompressed_size,
         file.compressed_size,
         file.header_start,
@@ -2465,7 +2466,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
+fn strip_alignment_extra_field(extra_field: &[u8], remove_zip64: bool) -> Vec<u8> {
     let mut new_extra = Vec::with_capacity(extra_field.len());
     let mut cursor = 0;
     while cursor + 4 <= extra_field.len() {
@@ -2476,7 +2477,9 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
             break;
         }
 
-        if tag != UsedExtraField::DataStreamAlignment as u16 {
+        if tag != UsedExtraField::DataStreamAlignment as u16
+            && !(tag == UsedExtraField::Zip64ExtendedInfo as u16 && remove_zip64)
+        {
             new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
         }
         cursor += 4 + len;
@@ -2507,14 +2510,6 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
     let block = block.serialize();
     writer.write_all(&block)?;
-
-    let Some(ref mut extra_field) = file.extra_field else {
-        return Err(invalid!(
-            "update_aes_extra_data called on a file that has no extra-data field"
-        ));
-    };
-    let extra_field = Arc::make_mut(extra_field);
-    extra_field[..block.len()].copy_from_slice(&block);
 
     Ok(())
 }
