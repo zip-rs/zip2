@@ -13,6 +13,11 @@ pub struct UnicodeExtraField {
 
 impl UnicodeExtraField {
     /// Verifies the checksum and returns the content.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the crc32 from the extra field does not match the crc32 of the
+    /// `ascii_field`.
     pub fn unwrap_valid(self, ascii_field: &[u8]) -> ZipResult<Box<[u8]>> {
         let mut crc32 = crc32fast::Hasher::new();
         crc32.update(ascii_field);

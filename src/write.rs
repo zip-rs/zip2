@@ -2158,9 +2158,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             }
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => {
-                let level = validate_value_in_range(compression_level.unwrap_or(6), 0_u32..=9u32)
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                let level = validate_value_in_range(compression_level.unwrap_or(6), 0_u32..=9_u32)
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                 Ok(Box::new(move |bare| {
                     Ok(GenericZipWriter::Xz(Box::new(
                         lzma_rust2::XzWriter::new(bare, lzma_rust2::XzOptions::with_preset(level))
@@ -2172,7 +2171,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             CompressionMethod::Ppmd => {
                 const ORDERS: [u32; 10] = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-                let level = validate_value_in_range(compression_level.unwrap_or(7), 1u32..=9u32)
+                let level = validate_value_in_range(compression_level.unwrap_or(7), 1_u32..=9_u32)
                     .ok_or(UnsupportedArchive("Unsupported compression level"))?;
 
                 let order = ORDERS[level as usize];
