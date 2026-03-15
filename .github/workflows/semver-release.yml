@@ -1,0 +1,22 @@
+name: Semver check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: semver-check-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
+  cancel-in-progress: false
+
+on:
+  pull_request:
+    branches:
+      - "master"
+  workflow_dispatch:
+
+jobs:
+  semver_check:
+    if: startsWith(github.base_ref, 'release-plz-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: cargo-semver-checks
+        uses: obi1kenobi/cargo-semver-checks-action@v2.8
