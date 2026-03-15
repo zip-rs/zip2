@@ -43,6 +43,10 @@ pub struct ExtendedTimestamp {
 }
 
 impl ExtendedTimestamp {
+    const MAX_LENGTH: u16 = (mem::size_of::<u8>()
+        + mem::size_of::<u32>()
+        + mem::size_of::<u32>()
+        + mem::size_of::<u32>()) as u16;
     /// creates an extended timestamp struct by reading the required bytes from the reader.
     ///
     /// This method assumes that the length has already been read, therefore
@@ -82,12 +86,10 @@ impl ExtendedTimestamp {
             ))));
         }
 
-        // allow unsupported/undocumented flags
-
         let modified =
             if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Modified)
                 && bytes_to_read >= mem::size_of::<u32>())
-                || len == 13
+                || len == Self::MAX_LENGTH
             {
                 bytes_to_read = bytes_to_read.checked_sub(mem::size_of::<u32>()).ok_or(
                     invalid!(
@@ -103,7 +105,7 @@ impl ExtendedTimestamp {
         let accessed =
             if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Accessed)
                 && bytes_to_read >= mem::size_of::<u32>())
-                || len == 13
+                || len == Self::MAX_LENGTH
             {
                 bytes_to_read = bytes_to_read.checked_sub(mem::size_of::<u32>()).ok_or(
                     invalid!(
@@ -118,7 +120,7 @@ impl ExtendedTimestamp {
 
         let created = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Created)
             && bytes_to_read >= mem::size_of::<u32>())
-            || len == 13
+            || len == Self::MAX_LENGTH
         {
             bytes_to_read = bytes_to_read
                 .checked_sub(mem::size_of::<u32>())
@@ -252,6 +254,37 @@ mod test {
         assert_eq!(result.ac_time(), Some(33554432));
         assert_eq!(result.cr_time(), None);
 
+        let mut cursor = Cursor::new(&[
+            0b0000_0111_u8,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x02,
+            0x00,
+            0x00,
+            0x00,
+            0x03,
+        ]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 13).unwrap();
+        assert_eq!(result.mod_time(), Some(16777216));
+        assert_eq!(result.ac_time(), Some(33554432));
+        assert_eq!(result.cr_time(), Some(50331648));
+    }
+
+    #[test]
+    fn test_extended_timestamp() {
+        // in the central header
+        let mut cursor = Cursor::new(&[0b0000_0111_u8, 0x00, 0x00, 0x00, 0x01]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
+        assert_eq!(result.mod_time(), Some(16777216));
+        assert_eq!(result.ac_time(), None);
+        assert_eq!(result.cr_time(), None);
+
+        // in the local header
         let mut cursor = Cursor::new(&[
             0b0000_0111_u8,
             0x00,
