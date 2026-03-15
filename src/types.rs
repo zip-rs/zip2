@@ -1,30 +1,28 @@
 //! Types that specify what is contained in a ZIP.
 
+use crate::CompressionMethod;
 use crate::cp437::FromCp437;
+use crate::extra_fields::ExtraField;
 use crate::path::{enclosed_name, file_name_sanitized};
+use crate::result::DateTimeRangeError;
 use crate::result::{ZipError, ZipResult, invalid};
+use crate::spec::is_dir;
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
+use crate::types::ffi::S_IFDIR;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
 use std::ffi::OsStr;
 use std::fmt::Display;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 pub(crate) mod ffi {
-    pub const S_IFDIR: u32 = 0o0040000;
-    pub const S_IFREG: u32 = 0o0100000;
-    pub const S_IFLNK: u32 = 0o0120000;
+    pub const S_IFDIR: u32 = 0o0_040_000;
+    pub const S_IFREG: u32 = 0o0_100_000;
+    pub const S_IFLNK: u32 = 0o0_120_000;
 }
-
-use crate::CompressionMethod;
-use crate::extra_fields::{ExtraField, UsedExtraField};
-use crate::read::find_data_start;
-use crate::result::DateTimeRangeError;
-use crate::spec::is_dir;
-use crate::types::ffi::S_IFDIR;
-use std::io::{Read, Seek};
 
 pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
@@ -38,45 +36,45 @@ pub(crate) struct ZipRawValues {
 #[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 pub enum System {
-    /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems; default on Windows)
+    /// `MS-DOS` and `OS/2` (`FAT` / `VFAT` / `FAT32` file systems; default on Windows)
     Dos = 0,
-    /// Amiga
+    /// `Amiga`
     Amiga = 1,
-    /// OpenVMS
+    /// `OpenVMS`
     OpenVMS = 2,
     /// Default on Unix; default for symlinks on all platforms
     Unix = 3,
-    /// VM/CMS
+    /// `VM/CMS`
     VmCms = 4,
-    /// Atari ST
+    /// `Atari ST`
     AtariSt = 5,
-    /// OS/2 H.P.F.S.
+    /// `OS/2 H.P.F.S.`
     Os2 = 6,
-    /// Legacy Mac OS, pre OS X
+    /// Legacy `Mac OS`, pre `OS X`
     Macintosh = 7,
-    /// Z-System
+    /// `Z-System`
     ZSystemO = 8,
-    /// CP/M
+    /// `CP/M`
     CPM = 9,
     /// Windows NTFS (with extra attributes; not used by default)
     WindowsNTFS = 10,
-    /// MVS (OS/390 - Z/OS)
+    /// `MVS (OS/390 - Z/OS)`
     MVS = 11,
-    /// VSE
+    /// `VSE`
     VSE = 12,
-    /// Acorn Risc
+    /// `Acorn Risc`
     AcornRisc = 13,
-    /// VFAT
+    /// `VFAT`
     VFAT = 14,
     /// alternate MVS
     AlternateMVS = 15,
-    /// BeOS
+    /// `BeOS`
     BeOS = 16,
-    /// Tandem
+    /// `Tandem`
     Tandem = 17,
-    /// OS/400
+    /// `OS/400`
     Os400 = 18,
-    /// OS X (Darwin) (with extra attributes; not used by default)
+    /// `OS X` (Darwin) (with extra attributes; not used by default)
     OsDarwin = 19,
     /// unused
     #[default]
@@ -155,7 +153,7 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
 pub type SimpleFileOptions = FileOptions<'static, ()>;
 
 impl FileOptions<'static, ()> {
-    const DEFAULT_FILE_PERMISSION: u32 = 0o100644;
+    const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
 }
 /// Representation of a moment in time.
 ///
@@ -367,12 +365,12 @@ impl DateTime {
     /// Converts an msdos (u16, u16) pair to a `DateTime` object if it represents a valid date and
     /// time.
     pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
-        let seconds = (timepart & 0b0000000000011111) << 1;
-        let minutes = (timepart & 0b0000011111100000) >> 5;
-        let hours = (timepart & 0b1111100000000000) >> 11;
-        let days = datepart & 0b0000000000011111;
-        let months = (datepart & 0b0000000111100000) >> 5;
-        let years = (datepart & 0b1111111000000000) >> 9;
+        let seconds = (timepart & 0b0000_0000_0001_1111) << 1;
+        let minutes = (timepart & 0b0000_0111_1110_0000) >> 5;
+        let hours = (timepart & 0b1111_1000_0000_0000) >> 11;
+        let days = datepart & 0b0000_0000_0001_1111;
+        let months = (datepart & 0b0000_0001_1110_0000) >> 5;
+        let years = (datepart & 0b1111_1110_0000_0000) >> 9;
         Self::from_date_and_time(
             years.checked_add(1980).ok_or(DateTimeRangeError)?,
             months.try_into()?,
@@ -459,7 +457,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn month(&self) -> u8 {
-        ((self.datepart & 0b0000000111100000) >> 5) as u8
+        ((self.datepart & 0b0000_0001_1110_0000) >> 5) as u8
     }
 
     /// Get the day
@@ -469,7 +467,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn day(&self) -> u8 {
-        (self.datepart & 0b0000000000011111) as u8
+        (self.datepart & 0b0000_0000_0001_1111) as u8
     }
 
     /// Get the hour
@@ -489,7 +487,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn minute(&self) -> u8 {
-        ((self.timepart & 0b0000011111100000) >> 5) as u8
+        ((self.timepart & 0b0000_0111_1110_0000) >> 5) as u8
     }
 
     /// Get the second
@@ -499,7 +497,7 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     #[must_use]
     pub const fn second(&self) -> u8 {
-        ((self.timepart & 0b0000000000011111) << 1) as u8
+        ((self.timepart & 0b0000_0000_0001_1111) << 1) as u8
     }
 }
 
@@ -618,8 +616,39 @@ impl ZipFileData {
     pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
             Some(data_start) => Ok(*data_start),
-            None => Ok(find_data_start(self, reader)?),
+            None => Ok(self.find_data_start(reader)?),
         }
+    }
+
+    pub(crate) fn find_data_start(
+        &self,
+        reader: &mut (impl Read + Seek + ?Sized),
+    ) -> Result<u64, ZipError> {
+        // Go to start of data.
+        reader.seek(SeekFrom::Start(self.header_start))?;
+
+        // Parse static-sized fields and check the magic value.
+        let block = ZipLocalEntryBlock::parse(reader)?;
+
+        // Calculate the end of the local header from the fields we just parsed.
+        let variable_fields_len =
+        // Each of these fields must be converted to u64 before adding, as the result may
+        // easily overflow a u16.
+        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+        let data_start =
+            self.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+
+        // Set the value so we don't have to read it again.
+        match self.data_start.set(data_start) {
+            Ok(()) => (),
+            // If the value was already set in the meantime, ensure it matches (this is probably
+            // unnecessary).
+            Err(existing_value) => {
+                debug_assert_eq!(existing_value, data_start);
+            }
+        }
+
+        Ok(data_start)
     }
 
     #[allow(dead_code)]
@@ -739,9 +768,9 @@ impl ZipFileData {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
-        name: S,
+        name: &S,
         options: &FileOptions<'_, T>,
-        raw_values: ZipRawValues,
+        raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
@@ -835,7 +864,7 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = flags & (ZipFlags::Encrypted as u16) != 0;
+        let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
         if encrypted {
             return Err(ZipError::UnsupportedArchive(
                 "Encrypted files are not supported",
@@ -843,14 +872,14 @@ impl ZipFileData {
         }
 
         /* FIXME: these were previously incorrect: add testing! */
-        let using_data_descriptor: bool = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
+        let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
         if using_data_descriptor {
             return Err(ZipError::UnsupportedArchive(
                 "The file length is not available in the local header",
             ));
         }
 
-        let is_utf8: bool = flags & (ZipFlags::LanguageEncoding as u16) != 0;
+        let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -925,13 +954,13 @@ impl ZipFileData {
 
     fn flags(&self) -> u16 {
         let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
-            ZipFlags::LanguageEncoding as u16
+            ZipFlags::LanguageEncoding.as_u16()
         } else {
             0
         };
 
         let using_data_descriptor_bit = if self.using_data_descriptor {
-            ZipFlags::UsingDataDescriptor as u16
+            ZipFlags::UsingDataDescriptor.as_u16()
         } else {
             0
         };
@@ -1233,7 +1262,7 @@ impl FixedSizeBlock for Zip64DataDescriptorBlock {
     type Magic = Magic;
     const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
 
-    #[inline(always)]
+    #[inline]
     fn magic(self) -> spec::Magic {
         self.magic
     }
@@ -1303,56 +1332,6 @@ impl AesMode {
             Self::Aes128 => 16,
             Self::Aes192 => 24,
             Self::Aes256 => 32,
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-#[repr(packed, C)]
-pub(crate) struct AesExtraField {
-    header_id: u16,
-    data_size: u16,
-    version: u16,
-    vendor_id: u16,
-    aes_mode: u8,
-    compression_method: u16,
-}
-
-unsafe impl Pod for AesExtraField {}
-
-impl FixedSizeBlock for AesExtraField {
-    type Magic = u16;
-    const MAGIC: Self::Magic = UsedExtraField::AeXEncryption as u16;
-
-    fn magic(self) -> Self::Magic {
-        Self::MAGIC
-    }
-
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Wrong AES header ID");
-
-    to_and_from_le![
-        (header_id, u16),
-        (data_size, u16),
-        (version, u16),
-        (vendor_id, u16),
-        (aes_mode, u8),
-        (compression_method, u16)
-    ];
-}
-
-impl AesExtraField {
-    pub(crate) fn new(
-        version: AesVendorVersion,
-        aes_mode: AesMode,
-        compression_method: CompressionMethod,
-    ) -> Self {
-        Self {
-            header_id: UsedExtraField::AeXEncryption as u16,
-            data_size: 7,
-            version: version as u16,
-            vendor_id: u16::from_le_bytes(*b"AE"),
-            aes_mode: aes_mode as u8,
-            compression_method: compression_method.serialize_to_u16(),
         }
     }
 }

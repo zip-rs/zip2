@@ -113,7 +113,7 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Result<Box<str>, std::io::Erro
         match component {
             Component::Normal(os_str) => {
                 if let Some(valid_str) = os_str.to_str() {
-                    normalized_components.push(Cow::Borrowed(valid_str))
+                    normalized_components.push(Cow::Borrowed(valid_str));
                 } else {
                     recreate = true;
                     normalized_components.push(os_str.to_string_lossy());

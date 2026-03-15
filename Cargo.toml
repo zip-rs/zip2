@@ -18,7 +18,7 @@ description = """
 Library to support the reading and writing of zip files.
 """
 edition = "2024"
-exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**", ".amazonq/**", "benches/**"]
+exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**", ".amazonq/**", "benches/**", ".typos.toml"]
 
 [package.metadata.docs.rs]
 all-features = true
