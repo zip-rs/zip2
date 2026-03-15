@@ -5,6 +5,9 @@ on:
     branches:
       - master
 
+permissions:  # added using https://github.com/step-security/secure-repo
+  contents: read
+
 jobs:
   release-plz-release:
     name: Release-plz release
@@ -14,18 +17,24 @@ jobs:
       contents: write
       id-token: write
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PLZ_PAT }}
+          persist-credentials: false
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
       - name: Authenticate with crates.io
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec # v1.0.3
         id: auth
       - name: Run release-plz
-        uses: release-plz/action@v0.5
+        uses: release-plz/action@52440b50d383aa252927de395c8b2c1e0a9cf8e9 # v0.5.126
         with:
           command: release
         env:
@@ -43,15 +52,23 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PLZ_PAT }}
+          persist-credentials: false
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7
+        with:
+          toolchain: stable
       - name: Run release-plz
-        uses: release-plz/action@v0.5
+        uses: release-plz/action@52440b50d383aa252927de395c8b2c1e0a9cf8e9 # v0.5.126
         with:
           command: release-pr
         env:

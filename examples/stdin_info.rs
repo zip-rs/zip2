@@ -1,10 +1,9 @@
-use std::io::{self, Read};
+use std::{
+    error::Error,
+    io::{self, Read},
+};
 
-fn main() {
-    std::process::exit(real_main());
-}
-
-fn real_main() -> i32 {
+fn main() -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
     let mut stdin_handle = stdin.lock();
     let mut buf = [0u8; 16];
@@ -26,10 +25,10 @@ fn real_main() -> i32 {
             Ok(None) => break,
             Err(e) => {
                 println!("Error encountered while reading zip: {e:?}");
-                return 1;
+                return Err(e.into());
             }
         }
     }
 
-    0
+    Ok(())
 }

@@ -41,11 +41,7 @@ impl<'a> FinderDirection<'a> for Forward<'a> {
         let magic_overlap = self.needle().len().saturating_sub(1) as u64;
         let next = cursor.saturating_add(window_size as u64 - magic_overlap);
 
-        if next >= bounds.1 {
-            None
-        } else {
-            Some(next)
-        }
+        if next >= bounds.1 { None } else { Some(next) }
     }
 
     fn move_scope(&self, offset: usize) -> usize {
@@ -142,7 +138,7 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
     }
 
     /// Find the next magic bytes in the direction specified in the type.
-    pub fn next<R: Read + Seek>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
+    pub fn next<R: Read + Seek + ?Sized>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
         loop {
             if self.cursor < self.bounds.0 || self.cursor >= self.bounds.1 {
                 // The finder is consumed
@@ -165,7 +161,13 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
 
             if self.mid_buffer_offset.is_none() {
                 reader.seek(SeekFrom::Start(window_start))?;
-                reader.read_exact(window)?;
+                if let Err(e) = reader.read_exact(window) {
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        // If we can't read the whole window, it means the bounds or file length are wrong.
+                        break;
+                    }
+                    return Err(e.into());
+                }
             }
 
             let (window, window_start_offset) = match self.mid_buffer_offset {
@@ -184,18 +186,15 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
 
             self.mid_buffer_offset = None;
 
-            match self
-                .finder
-                .move_cursor(self.cursor, self.bounds, self.buffer.len())
+            if let Some(new_cursor) =
+                self.finder
+                    .move_cursor(self.cursor, self.bounds, self.buffer.len())
             {
-                Some(new_cursor) => {
-                    self.cursor = new_cursor;
-                }
-                None => {
-                    // Destroy the finder when we've reached the end of the bounds.
-                    self.bounds.0 = self.bounds.1;
-                    break;
-                }
+                self.cursor = new_cursor;
+            } else {
+                // Destroy the finder when we've reached the end of the bounds.
+                self.bounds.0 = self.bounds.1;
+                break;
             }
         }
 
@@ -209,7 +208,7 @@ impl<'a, T: FinderDirection<'a>> MagicFinder<T> {
 /// found directly.
 ///
 /// The guess can be marked as mandatory to produce an error. This is useful
-/// if the ArchiveOffset is known and auto-detection is not desired.
+/// if the `ArchiveOffset` is known and auto-detection is not desired.
 pub struct OptimisticMagicFinder<Direction> {
     inner: MagicFinder<Direction>,
     initial_guess: Option<(u64, bool)>,
@@ -246,7 +245,7 @@ impl<'a, Direction: FinderDirection<'a>> OptimisticMagicFinder<Direction> {
 
     /// Equivalent to `next_back`, with an optional initial guess attempted before
     /// proceeding with reading from the back of the reader.
-    pub fn next<R: Read + Seek>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
+    pub fn next<R: Read + Seek + ?Sized>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
         if let Some((v, mandatory)) = self.initial_guess {
             reader.seek(SeekFrom::Start(v))?;
 
@@ -255,10 +254,16 @@ impl<'a, Direction: FinderDirection<'a>> OptimisticMagicFinder<Direction> {
 
             // Attempt to match only if there's enough space for the needle
             if v.saturating_add(buffer.len() as u64) <= self.inner.bounds.1 {
-                reader.read_exact(buffer)?;
-
-                // If a match is found, yield it.
-                if self.inner.finder.needle() == buffer {
+                if let Err(e) = reader.read_exact(buffer) {
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        if mandatory {
+                            return Ok(None);
+                        }
+                    } else {
+                        return Err(e.into());
+                    }
+                } else if self.inner.finder.needle() == buffer {
+                    // If a match is found, yield it.
                     self.initial_guess.take();
                     reader.seek(SeekFrom::Start(v))?;
                     return Ok(Some(v));
