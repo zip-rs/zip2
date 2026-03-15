@@ -5,7 +5,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use std::fs;
 use std::io::{self, Cursor, Read, Seek, Write};
-use zip::{result::ZipResult, write::FileOptions, CompressionMethod, ZipArchive, ZipWriter};
+use zip::{result::ZipResult, write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 // deterministic seeded randomness helper (SplitMix64, no external dependencies)
 fn seeded_random_bytes(size: usize) -> Vec<u8> {
@@ -32,7 +32,7 @@ fn seeded_random_bytes(size: usize) -> Vec<u8> {
 
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     writer.start_file("random.dat", options).unwrap();
 
     // generate deterministic seeded random data
@@ -47,13 +47,14 @@ const FILE_SIZE_META: usize = 1024;
 
 fn generate_random_archive_meta(count_files: usize, file_size: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
     // seeded random payload reused across entries
     let bytes = seeded_random_bytes(file_size);
 
     for i in 0..count_files {
         let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
-        writer
-            .start_file(name, FileOptions::default().compression_method(CompressionMethod::Stored))?;
+        writer.start_file(name, options)?;
         writer.write_all(&bytes)?;
     }
 
@@ -63,7 +64,7 @@ fn generate_random_archive_meta(count_files: usize, file_size: usize) -> ZipResu
 fn generate_random_archive_merge(
     num_entries: usize,
     entry_size: usize,
-    _options: FileOptions,
+    options: SimpleFileOptions,
 ) -> ZipResult<(usize, Vec<u8>)> {
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
@@ -73,7 +74,7 @@ fn generate_random_archive_merge(
 
     for i in 0..num_entries {
         let name = format!("random{i}.dat");
-        zip.start_file(name, FileOptions::default().compression_method(CompressionMethod::Stored))?;
+        zip.start_file(name, options)?;
         zip.write_all(&bytes)?;
     }
 
@@ -81,6 +82,14 @@ fn generate_random_archive_merge(
     let len = buf.len();
 
     Ok((len, buf))
+}
+
+fn perform_merge<R: Read + Seek, W: Write + Seek>(
+    src: ZipArchive<R>,
+    mut target: ZipWriter<W>,
+) -> ZipResult<ZipWriter<W>> {
+    target.merge_archive(src)?;
+    Ok(target)
 }
 
 fn perform_raw_copy_file<R: Read + Seek, W: Write + Seek>(
@@ -158,9 +167,9 @@ const ROUNDTRIP_ENTRIES: usize = 100;
 
 fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let comment = seeded_random_bytes(comment_len);
-    writer.set_raw_comment(comment);
+    writer.set_raw_comment(comment.into_boxed_slice());
     writer.start_file("data.txt", options)?;
     writer.write_all(b"x")?;
     Ok(writer.finish()?.into_inner())
@@ -199,7 +208,29 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+    let (len, src_bytes) = generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+
+    c.bench_function("merge_archive_stored", |b| {
+        b.iter_batched(
+            || {
+                let src = ZipArchive::new(Cursor::new(src_bytes.clone())).unwrap();
+                let buf = Cursor::new(Vec::with_capacity(len));
+                (src, buf)
+            },
+            |(src, buf)| {
+                let zip = ZipWriter::new(buf);
+                let zip = perform_merge(src, zip).unwrap();
+                let out = zip.finish().unwrap().into_inner();
+
+                assert_eq!(out.len(), len);
+
+                black_box(out)
+            },
+            BatchSize::SmallInput,
+        );
+    });
 
     let (len2, src_bytes2) =
         generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
@@ -212,8 +243,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 (src, buf)
             },
             |(src, buf)| {
-                let mut zip = ZipWriter::new(buf);
-                zip = perform_raw_copy_file(src, zip).unwrap();
+                let zip = ZipWriter::new(buf);
+                let zip = perform_raw_copy_file(src, zip).unwrap();
                 let out = zip.finish().unwrap().into_inner();
 
                 assert_eq!(out.len(), len2);
@@ -287,11 +318,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("write_many_small_files", |b| {
         b.iter(|| {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..write_many_count() {
                 let name = format!("file_{i}.dat");
-                writer
-                    .start_file(name, FileOptions::default().compression_method(CompressionMethod::Stored))
-                    .unwrap();
+                writer.start_file(name, options).unwrap();
                 writer.write_all(&payload_small).unwrap();
             }
             black_box(writer.finish().unwrap().into_inner());
@@ -303,7 +333,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("write_one_large_file", |b| {
         b.iter(|| {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-            let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+            let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             writer.start_file("large.dat", options).unwrap();
             writer.write_all(&payload_large).unwrap();
             black_box(writer.finish().unwrap().into_inner());
@@ -315,13 +345,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("write_then_read_roundtrip", |b| {
         b.iter(|| {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..ROUNDTRIP_ENTRIES {
-                writer
-                    .start_file(
-                        format!("entry_{i}.dat"),
-                        FileOptions::default().compression_method(CompressionMethod::Stored),
-                    )
-                    .unwrap();
+                writer.start_file(format!("entry_{i}.dat"), options).unwrap();
                 writer.write_all(&roundtrip_payload).unwrap();
             }
             let bytes = writer.finish().unwrap().into_inner();
@@ -336,7 +362,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let (_, deflated_bytes) = generate_random_archive_merge(
             5,
             4096,
-            FileOptions::default().compression_method(CompressionMethod::Deflated),
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
         )
         .unwrap();
         c.bench_function("read_deflated_entry", |b| {
@@ -356,13 +382,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         c.bench_function("write_deflated_entries", |b| {
             b.iter(|| {
                 let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                let options =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
                 for i in 0..20 {
-                    writer
-                        .start_file(
-                            format!("deflated_{i}.dat"),
-                            FileOptions::default().compression_method(CompressionMethod::Deflated),
-                        )
-                        .unwrap();
+                    writer.start_file(format!("deflated_{i}.dat"), options).unwrap();
                     writer.write_all(&deflate_payload).unwrap();
                 }
                 black_box(writer.finish().unwrap().into_inner());
