@@ -574,7 +574,7 @@ impl<R> ZipArchive<R> {
         zip64_comment: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
-    ) -> ZipResult<Self> {
+    ) -> Self {
         let initial_offset = match files.first() {
             Some((_, file)) => file.header_start,
             None => central_start,
@@ -589,7 +589,7 @@ impl<R> ZipArchive<R> {
             comment,
             zip64_comment,
         });
-        Ok(Self { reader, shared })
+        Self { reader, shared }
     }
 
     /// Total size of the files in the archive, if it can be known. Doesn't include directories or

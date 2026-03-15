@@ -992,9 +992,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
 
-        let archive =
-            ZipArchive::from_finalized_writer(files, comment, zip64_comment, inner, central_start)?;
-        Ok(archive)
+        Ok(ZipArchive::from_finalized_writer(
+            files,
+            comment,
+            zip64_comment,
+            inner,
+            central_start,
+        ))
     }
 }
 
@@ -1138,7 +1142,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Start a new file for with the requested options.
     fn start_entry<S: ToString, T: FileOptionExtension>(
         &mut self,
-        name: S,
+        name: &S,
         mut options: FileOptions<'_, T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()> {
@@ -1247,7 +1251,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
-            &name,
+            name,
             &options,
             &raw_values,
             header_start,
@@ -1481,7 +1485,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             options.zopfli_buffer_size,
         )?;
-        self.start_entry(name, options, None)?;
+        self.start_entry(&name, options, None)?;
         let result = self.inner.switch_to(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
@@ -1600,13 +1604,13 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
-        self.raw_copy_file_rename_internal(file, name, options)
+        self.raw_copy_file_rename_internal(file, &name, options)
     }
 
     fn raw_copy_file_rename_internal<R: Read, S: ToString, T: FileOptionExtension>(
         &mut self,
         mut file: ZipFile<'_, R>,
-        name: S,
+        name: &S,
         options: FileOptions<'_, T>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
@@ -1709,7 +1713,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         options.normalize();
 
-        self.raw_copy_file_rename_internal(file, name, options)
+        self.raw_copy_file_rename_internal(file, &name, options)
     }
 
     /// Add a directory entry.
@@ -1740,7 +1744,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(name_with_slash, options, None)?;
+        self.start_entry(&name_with_slash, options, None)?;
         self.writing_to_file = false;
         self.switch_to_non_encrypting_writer()?;
         Ok(())
@@ -1807,7 +1811,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // likely wastes space. So always store.
         options.compression_method = Stored;
 
-        self.start_entry(name, options, None)?;
+        self.start_entry(&name, options, None)?;
         self.writing_to_file = true;
         let result = self.write_all(target.to_string().as_bytes());
         self.ok_or_abort_file(result)?;
