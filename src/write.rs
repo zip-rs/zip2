@@ -720,6 +720,7 @@ impl FileOptions<'static, ()> {
 
 impl<'k> FileOptions<'k, ()> {
     /// Convert to `FullFileOptions`.
+    #[must_use]
     pub fn into_full_options(self) -> FullFileOptions<'k> {
         FileOptions {
             compression_method: self.compression_method,
@@ -1020,6 +1021,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Set automatically large file to true if needed
+    #[must_use]
     pub fn set_auto_large_file(mut self) -> Self {
         self.auto_large_file = true;
         self
