@@ -10,12 +10,12 @@ fn decompress_lzma() {
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive
-        .by_name("hello.txt")
+        .by_name("binary.wmv")
         .expect("couldn't find file in archive");
-    assert_eq!("hello.txt", file.name());
+    assert_eq!("binary.wmv", file.name());
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)
         .expect("couldn't read encrypted and compressed file");
-    assert_eq!("Hello world\n", String::from_utf8(content).unwrap());
+    assert_eq!(include_bytes!("data/folder/binary.wmv"), &content[..]);
 }
