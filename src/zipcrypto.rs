@@ -7,6 +7,8 @@ use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 use std::num::Wrapping;
 
+use crate::result::ZipError;
+
 /// A container to hold the current key state
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -110,7 +112,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     pub fn validate(
         mut self,
         validator: ZipCryptoValidator,
-    ) -> Result<Option<ZipCryptoReaderValid<R>>, std::io::Error> {
+    ) -> Result<ZipCryptoReaderValid<R>, ZipError> {
         // ZipCrypto prefixes a file with a 12 byte header
         let mut header_buf = [0u8; 12];
         self.file.read_exact(&mut header_buf)?;
@@ -125,7 +127,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
                 // We also use 1 byte CRC.
 
                 if (crc32_plaintext >> 24) as u8 != header_buf[11] {
-                    return Ok(None); // Wrong password
+                    return Err(ZipError::InvalidPassword);
                 }
             }
             ZipCryptoValidator::InfoZipMsdosTime(last_mod_time) => {
@@ -137,12 +139,12 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
                 // We check only 1 byte.
 
                 if (last_mod_time >> 8) as u8 != header_buf[11] {
-                    return Ok(None); // Wrong password
+                    return Err(ZipError::InvalidPassword);
                 }
             }
         }
 
-        Ok(Some(ZipCryptoReaderValid { reader: self }))
+        Ok(ZipCryptoReaderValid { reader: self })
     }
 }
 #[allow(unused)]
@@ -183,11 +185,11 @@ impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
         // Note: There might be potential for optimization. Inspiration can be found at:
         // https://github.com/kornelski/7z/blob/master/CPP/7zip/Crypto/ZipCrypto.cpp
 
-        let result = self.reader.file.read(buf);
-        for byte in buf.iter_mut() {
+        let n = self.reader.file.read(buf)?;
+        for byte in buf.iter_mut().take(n) {
             *byte = self.reader.keys.decrypt_byte(*byte);
         }
-        result
+        Ok(n)
     }
 }
 

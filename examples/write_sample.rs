@@ -1,5 +1,7 @@
 use std::io::prelude::*;
-use zip_next::write::FileOptions;
+use zip::write::SimpleFileOptions;
+#[cfg(feature = "aes-crypto")]
+use zip::{AesMode, CompressionMethod};
 
 fn main() {
     std::process::exit(real_main());
@@ -21,22 +23,40 @@ fn real_main() -> i32 {
     0
 }
 
-fn doit(filename: &str) -> zip_next::result::ZipResult<()> {
+fn doit(filename: &str) -> zip::result::ZipResult<()> {
     let path = std::path::Path::new(filename);
     let file = std::fs::File::create(path).unwrap();
 
-    let mut zip = zip_next::ZipWriter::new(file);
+    let mut zip = zip::ZipWriter::new(file);
 
-    zip.add_directory("test/", Default::default())?;
+    zip.add_directory("test/", SimpleFileOptions::default())?;
 
-    let options = FileOptions::default()
-        .compression_method(zip_next::CompressionMethod::Stored)
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
         .unix_permissions(0o755);
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
-    zip.start_file("test/lorem_ipsum.txt", Default::default())?;
+    zip.start_file("test/lorem_ipsum.txt", options)?;
     zip.write_all(LOREM_IPSUM)?;
+
+    #[cfg(feature = "aes-crypto")]
+    {
+        zip.start_file(
+            "test/lorem_ipsum.aes.txt",
+            options
+                .compression_method(CompressionMethod::Zstd)
+                .with_aes_encryption(AesMode::Aes256, "password"),
+        )?;
+        zip.write_all(LOREM_IPSUM)?;
+
+        // This should use AE-1 due to the short file length.
+        zip.start_file(
+            "test/short.aes.txt",
+            options.with_aes_encryption(AesMode::Aes256, "password"),
+        )?;
+        zip.write_all(b"short text\n")?;
+    }
 
     zip.finish()?;
     Ok(())
