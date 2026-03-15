@@ -148,24 +148,26 @@ pub(crate) mod zip_writer {
     /// ```
     /// # fn doit() -> zip::result::ZipResult<()>
     /// # {
-    /// # use zip::ZipWriter;
+    /// use zip::ZipWriter;
     /// use std::io::Write;
     /// use zip::write::SimpleFileOptions;
     ///
     /// // We use a cursor + vec here, though you'd normally use a `File`
-    /// let mut cur = std::io::Cursor::new(Vec::new());
-    /// let mut zip = ZipWriter::new(&mut cur);
+    /// let mut cursor = std::io::Cursor::new(Vec::new());
+    /// let mut archive = ZipWriter::new(&mut cursor);
     ///
     /// let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    /// zip.start_file("hello_world.txt", options)?;
-    /// zip.write(b"Hello, World!")?;
+    /// archive.start_file("hello_world.txt", options)?;
+    /// archive.write(b"Hello, World!")?;
+    /// // also direct write with
+    /// // std::io::copy(&mut file, &mut zip)?;
     ///
     /// // Apply the changes you've made.
     /// // Dropping the `ZipWriter` will have the same effect, but may silently fail
-    /// zip.finish()?;
+    /// archive.finish()?;
     ///
     /// // raw zip data is available as a Vec<u8>
-    /// let zip_bytes = cur.into_inner();
+    /// let zip_bytes = cursor.into_inner();
     ///
     /// # Ok(())
     /// # }
@@ -858,8 +860,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// read previously-written files and not overwrite them.
     ///
     /// Note: when using an `inner` that cannot overwrite flushed bytes, do not wrap it in a
-    /// [`BufWriter`], because that has a [`Seek::seek`] method that implicitly calls
-    /// [`BufWriter::flush`], and `ZipWriter` needs to seek backward to update each file's header with
+    /// [`std::io::BufWriter`], because that has a [`Seek::seek`] method that implicitly calls
+    /// [`std::io::BufWriter::flush`], and `ZipWriter` needs to seek backward to update each file's header with
     /// the size and checksum after writing the body.
     ///
     /// This setting is false by default.
@@ -1036,7 +1038,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.set_raw_comment(comment.into().into_boxed_bytes());
     }
 
-    /// Set ZIP archive comment.
+    /// Set raw ZIP archive comment.
     ///
     /// This sets the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
@@ -1056,7 +1058,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         from_utf8(self.get_raw_comment())
     }
 
-    /// Get ZIP archive comment.
+    /// Get raw ZIP archive comment.
     ///
     /// This returns the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
@@ -1072,7 +1074,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.set_raw_zip64_comment(comment.map(|v| v.into().into_boxed_bytes()));
     }
 
-    /// Set ZIP64 archive comment.
+    /// Set raw ZIP64 archive comment.
     ///
     /// This sets the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
@@ -1085,7 +1087,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.get_raw_zip64_comment().map(from_utf8)
     }
 
-    /// Get ZIP archive comment.
+    /// Get raw ZIP64 archive comment.
     ///
     /// This returns the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
@@ -1101,7 +1103,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// been (or will be) written for the currently open file entry.
     ///
     /// The caller must ensure that:
-    /// - A file entry is currently being written (that is, [`start_file`] or equivalent has
+    /// - A file entry is currently being written (that is, [`Self::start_file`] or equivalent has
     ///   been called successfully and `abort_file` has not been called since).
     /// - `length` is the exact uncompressed size, in bytes, of the file data written to the
     ///   underlying [`Write`] implementation for this entry.
