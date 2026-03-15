@@ -364,7 +364,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             4096,
             SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
         )
-        .unwrap();
+            .unwrap();
         c.bench_function("read_deflated_entry", |b| {
             b.iter(|| {
                 let mut archive = ZipArchive::new(Cursor::new(deflated_bytes.as_slice())).unwrap();
