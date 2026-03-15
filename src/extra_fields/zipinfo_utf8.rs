@@ -47,22 +47,24 @@ mod tests {
     #[test]
     fn unicode_extra_field_crc32_correct() {
         let data = [
-            0x00, 0xef, 0x39, 0x8e, 0x4b, 'a' as u8, 'b' as u8, 'c' as u8, 'd' as u8, 'e' as u8,
-            'f' as u8,
+            0x00, 0xef, 0x39, 0x8e, 0x4b, 'u' as u8, 't' as u8, 'f' as u8, '-' as u8, '8' as u8,
         ];
-        let extra = UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 6).unwrap();
+        let extra =
+            UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
         let res = extra.unwrap_valid(b"abcdef");
         assert!(res.is_ok());
+        let content = res.unwrap();
+        assert_eq!(content.as_ref(), b"utf-8");
     }
 
     #[test]
     fn unicode_extra_field_crc32_incorrect() {
         let data = [
-            0x00, 0x00, 0x00, 0x00, 0x00, 'a' as u8, 'b' as u8, 'c' as u8, 'd' as u8, 'e' as u8,
-            'f' as u8,
+            0x00, 0x00, 0x00, 0x00, 0x00, 'u' as u8, 't' as u8, 'f' as u8, '-' as u8, '8' as u8,
         ];
-        let extra = UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 6).unwrap();
+        let extra =
+            UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
         let res = extra.unwrap_valid(b"abcdef");
-        assert!(res.is_ok());
+        assert!(res.is_err());
     }
 }
