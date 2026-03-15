@@ -40,18 +40,20 @@
     clippy::cast_lossless,
     clippy::decimal_literal_representation
 )]
-#![warn(clippy::multiple_crate_versions)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
+#![allow(clippy::multiple_crate_versions)] // https://github.com/rust-lang/rust-clippy/issues/16440
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::HasZipMetadata;
 pub use crate::read::{ZipArchive, ZipReadOptions};
 pub use crate::spec::{ZIP64_BYTES_THR, ZIP64_ENTRY_THR};
-pub use crate::types::{AesMode, DateTime};
+pub use crate::types::{AesMode, DateTime, System};
 pub use crate::write::ZipWriter;
 
 #[cfg(feature = "aes-crypto")]
 mod aes;
+#[cfg(feature = "aes-crypto")]
+pub use aes::AesSalt;
 #[cfg(feature = "aes-crypto")]
 mod aes_ctr;
 mod compression;
@@ -82,7 +84,3 @@ zip = \"="]
 #[doc = "\"\n\
 ```"]
 pub mod unstable;
-
-pub(crate) mod macros;
-pub(crate) use macros::cfg_if;
-pub(crate) use macros::cfg_if_expr;

@@ -8,7 +8,6 @@ use core::hash::Hash;
 use core::marker::PhantomData;
 use core::num::Wrapping;
 
-use crate::cfg_if_expr;
 use crate::result::ZipError;
 
 /// ZipCrypto header size in bytes.
@@ -19,7 +18,8 @@ pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
         mode: crate::AesMode,
-        password: &'k str,
+        password: &'k [u8],
+        salt: Option<crate::aes::AesSalt>,
     },
     ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
@@ -31,7 +31,8 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
                 mode: crate::AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&str>()?,
+                password: u.arbitrary::<&[u8]>()?,
+                salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
             });
         }
 
@@ -52,22 +53,20 @@ pub(crate) struct ZipCryptoKeys {
 }
 
 impl Debug for ZipCryptoKeys {
+    #[cfg(any(test, fuzzing))]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        cfg_if_expr! {
-            #[cfg(any(test, fuzzing))] => {
-                f.write_fmt(format_args!(
-                    "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
-                    self.key_0, self.key_1, self.key_2
-                ))
-            },
-            _ => {
-                use std::collections::hash_map::DefaultHasher;
-                use std::hash::Hasher;
-                let mut t = DefaultHasher::new();
-                self.hash(&mut t);
-                f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
-            }
-        }
+        f.write_fmt(format_args!(
+            "ZipCryptoKeys::of({:#10x},{:#10x},{:#10x})",
+            self.key_0, self.key_1, self.key_2
+        ))
+    }
+    #[cfg(not(any(test, fuzzing)))]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
+        let mut t = DefaultHasher::new();
+        self.hash(&mut t);
+        f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
     }
 }
 
@@ -78,6 +77,12 @@ impl ZipCryptoKeys {
     const INITIAL_KEY_1: u32 = 0x23456789;
     /// Initial value of `key_2` as specified by the classic ZipCrypto algorithm.
     const INITIAL_KEY_2: u32 = 0x34567890;
+
+    /// Bitmask applied to the lower 2 bits of `key_2` when computing the
+    /// ZipCrypto keystream base, corresponding to the step described
+    /// in the ZipCrypto specification variously as `| 2` or `| 3` (both give the same keystream
+    /// due to the use of `keystream_base * (keystream_base ^ Wrapping(1))` and a quirk of CRC32).
+    const KEYSTREAM_BITMASK: u16 = 2;
 
     const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
@@ -104,8 +109,9 @@ impl ZipCryptoKeys {
     }
 
     fn stream_byte(&mut self) -> u8 {
-        let temp: Wrapping<u16> = Wrapping(self.key_2.0 as u16) | Wrapping(3);
-        ((temp * (temp ^ Wrapping(1))) >> 8).0 as u8
+        let keystream_base: Wrapping<u16> =
+            Wrapping((self.key_2.0 & 0xFFFF) as u16) | Wrapping(Self::KEYSTREAM_BITMASK);
+        ((keystream_base * (keystream_base ^ Wrapping(1))) >> 8).0 as u8
     }
 
     fn decrypt_byte(&mut self, cipher_byte: u8) -> u8 {
@@ -122,8 +128,8 @@ impl ZipCryptoKeys {
     }
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
-        let idx: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
-        (crc >> 8) ^ Wrapping(CRCTABLE[usize::from(idx)])
+        let crc_index: u8 = ((crc & Wrapping(0xff)).0 as u8) ^ input;
+        (crc >> 8) ^ Wrapping(CRC_TABLE[usize::from(crc_index)])
     }
     pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
         let mut keys = ZipCryptoKeys::new();
@@ -135,6 +141,7 @@ impl ZipCryptoKeys {
 }
 
 /// A `ZipCrypto` reader with unverified password
+#[derive(Debug)]
 pub struct ZipCryptoReader<R> {
     file: R,
     keys: ZipCryptoKeys,
@@ -198,6 +205,10 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
+/// Size of the internal I/O buffer used when encrypting data in chunks.
+/// 4096 bytes is a commonly used buffer size that balances memory usage
+/// and I/O performance for typical workloads; it is not required to match
+/// the underlying system page size.
 pub(crate) const CHUNK_SIZE: usize = 4096;
 #[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
@@ -206,8 +217,19 @@ pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) buffer: [u8; CHUNK_SIZE],
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
+    /// Gets a reference to the underlying writer.
+    pub fn get_ref(&self) -> &W {
+        &self.writer
+    }
+
+    /// Gets a mutable reference to the underlying writer.
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
     #[allow(unused)]
     pub(crate) fn finish(mut self) -> std::io::Result<W> {
+        self.writer.flush()?;
         Ok(self.writer)
     }
 }
@@ -228,6 +250,7 @@ impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
 }
 
 /// A `ZipCrypto` reader with verified password
+#[derive(Debug)]
 pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
@@ -254,7 +277,7 @@ impl<R: std::io::Read> ZipCryptoReaderValid<R> {
 
 /// Standard CRC-32 lookup table used by the ZipCrypto encryption algorithm
 /// to update the internal keys during encryption and decryption.
-static CRCTABLE: [u32; 256] = [
+static CRC_TABLE: [u32; 256] = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
     0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
     0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
@@ -288,3 +311,15 @@ static CRCTABLE: [u32; 256] = [
     0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
     0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
 ];
+
+#[test]
+fn test_crc_table() {
+    const CRC32_POLY: u32 = 0xEDB88320;
+    for (i, &table_val) in CRC_TABLE.iter().enumerate() {
+        let mut crc = i as u32;
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ ((crc & 1) * CRC32_POLY);
+        }
+        assert_eq!(table_val, crc);
+    }
+}

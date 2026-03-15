@@ -1,13 +1,13 @@
 //! Types that specify what is contained in a ZIP.
-use crate::cfg_if_expr;
+
 use crate::cp437::FromCp437;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::{self, Debug, Formatter};
-use core::mem;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
@@ -18,12 +18,12 @@ pub(crate) mod ffi {
     pub const S_IFLNK: u32 = 0o0120000;
 }
 
+use crate::CompressionMethod;
 use crate::extra_fields::{ExtraField, UsedExtraField};
 use crate::read::find_data_start;
 use crate::result::DateTimeRangeError;
 use crate::spec::is_dir;
 use crate::types::ffi::S_IFDIR;
-use crate::{CompressionMethod, ZIP64_BYTES_THR};
 use std::io::{Read, Seek};
 
 pub(crate) struct ZipRawValues {
@@ -32,36 +32,109 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
+/// System inside `version made by` (upper byte)
+/// Reference: 4.4.2.2
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 pub enum System {
+    /// MS-DOS and OS/2 (FAT / VFAT / FAT32 file systems; default on Windows)
     Dos = 0,
+    /// Amiga
+    Amiga = 1,
+    /// OpenVMS
+    OpenVMS = 2,
+    /// Default on Unix; default for symlinks on all platforms
     Unix = 3,
+    /// VM/CMS
+    VmCms = 4,
+    /// Atari ST
+    AtariSt = 5,
+    /// OS/2 H.P.F.S.
+    Os2 = 6,
+    /// Legacy Mac OS, pre OS X
+    Macintosh = 7,
+    /// Z-System
+    ZSystemO = 8,
+    /// CP/M
+    CPM = 9,
+    /// Windows NTFS (with extra attributes; not used by default)
+    WindowsNTFS = 10,
+    /// MVS (OS/390 - Z/OS)
+    MVS = 11,
+    /// VSE
+    VSE = 12,
+    /// Acorn Risc
+    AcornRisc = 13,
+    /// VFAT
+    VFAT = 14,
+    /// alternate MVS
+    AlternateMVS = 15,
+    /// BeOS
+    BeOS = 16,
+    /// Tandem
+    Tandem = 17,
+    /// OS/400
+    Os400 = 18,
+    /// OS X (Darwin) (with extra attributes; not used by default)
+    OsDarwin = 19,
+    /// unused
     #[default]
-    Unknown,
+    Unknown = 255,
+}
+
+impl System {
+    /// Parse `version_made_by` block in local entry block.
+    pub fn from_version_made_by(version_made_by: u16) -> Self {
+        // Extract upper byte from little-endian representation
+        let upper_byte = version_made_by.to_le_bytes()[1];
+        System::from(upper_byte) // from u8
+    }
+
+    /// Extract the system and version from a `version_made_by` field.
+    /// The first byte (lower) is the version, and the second byte (upper) is the system.
+    pub(crate) fn extract_bytes(version_made_by: u16) -> (u8, Self) {
+        let bytes = version_made_by.to_le_bytes();
+        (bytes[0], Self::from(bytes[1]))
+    }
 }
 
 impl From<u8> for System {
     fn from(system: u8) -> Self {
         match system {
-            0 => Self::Dos,
-            3 => Self::Unix,
-            _ => Self::Unknown,
+            0 => System::Dos,
+            1 => System::Amiga,
+            2 => System::OpenVMS,
+            3 => System::Unix,
+            4 => System::VmCms,
+            5 => System::AtariSt,
+            6 => System::Os2,
+            7 => System::Macintosh,
+            8 => System::ZSystemO,
+            9 => System::CPM,
+            10 => System::WindowsNTFS,
+            11 => System::MVS,
+            12 => System::VSE,
+            13 => System::AcornRisc,
+            14 => System::VFAT,
+            15 => System::AlternateMVS,
+            16 => System::BeOS,
+            17 => System::Tandem,
+            18 => System::Os400,
+            19 => System::OsDarwin,
+            _ => System::Unknown,
         }
     }
 }
 
 impl From<System> for u8 {
     fn from(system: System) -> Self {
-        match system {
-            System::Dos => 0,
-            System::Unix => 3,
-            System::Unknown => 4,
-        }
+        system as u8
     }
 }
 
 /// Metadata for a file to be written
+#[non_exhaustive]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
@@ -75,11 +148,15 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
     #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    pub(crate) aes_mode: Option<crate::aes::AesModeOptions>,
+    pub(crate) system: Option<System>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
 pub type SimpleFileOptions = FileOptions<'static, ()>;
 
+impl FileOptions<'static, ()> {
+    const DEFAULT_FILE_PERMISSION: u32 = 0o100644;
+}
 /// Representation of a moment in time.
 ///
 /// Zip files use an old format from DOS to store timestamps,
@@ -283,6 +360,10 @@ impl DateTime {
         DateTime { datepart, timepart }
     }
 
+    pub(crate) fn is_leap_year(year: u16) -> bool {
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+    }
+
     /// Converts an msdos (u16, u16) pair to a `DateTime` object if it represents a valid date and
     /// time.
     pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
@@ -310,7 +391,7 @@ impl DateTime {
     /// * day: [1, 28..=31]
     /// * hour: [0, 23]
     /// * minute: [0, 59]
-    /// * second: [0, 58]
+    /// * second: [0, 60] (rounded down to even and to [0, 58] due to ZIP format limitation)
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -319,10 +400,6 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, DateTimeRangeError> {
-        fn is_leap_year(year: u16) -> bool {
-            year.is_multiple_of(4) && (!year.is_multiple_of(25) || year.is_multiple_of(16))
-        }
-
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -335,7 +412,7 @@ impl DateTime {
             let max_day = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
                 4 | 6 | 9 | 11 => 30,
-                2 if is_leap_year(year) => 29,
+                2 if Self::is_leap_year(year) => 29,
                 2 => 28,
                 _ => unreachable!(),
             };
@@ -703,13 +780,23 @@ impl ZipFileData {
     where
         S: ToString,
     {
-        let permissions = options.permissions.unwrap_or(0o100644);
+        let permissions = options
+            .permissions
+            .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.bytes().collect();
+        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
+        } else if let Some(system_option) = options.system {
+            // user provided
+            system_option
         } else if cfg!(windows) {
+            System::Dos
+        } else {
+            System::Unix
+        };
+        if system == System::Dos {
             if is_dir(&file_name) {
                 // DOS directory bit
                 external_attributes |= 0x10;
@@ -721,19 +808,15 @@ impl ZipFileData {
                 // DOS read-only bit
                 external_attributes |= 0x01;
             }
-            System::Dos
-        } else {
-            System::Unix
-        };
+        }
+        let encrypted = options.encrypt_with.is_some();
+        #[cfg(feature = "aes-crypto")]
+        let encrypted = encrypted || options.aes_mode.is_some();
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
             flags: 0,
-            encrypted: options.encrypt_with.is_some()
-                || cfg_if_expr! {
-                    #[cfg(feature = "aes-crypto")] => options.aes_mode.is_some(),
-                    _ => false
-                },
+            encrypted,
             using_data_descriptor: false,
             is_utf8: !file_name.is_ascii(),
             compression_method,
@@ -824,13 +907,10 @@ impl ZipFileData {
                 .into()
         };
 
-        let system: u8 = (version_made_by >> 8)
-            .try_into()
-            .map_err(std::io::Error::other)?;
+        let (version_made_by, system) = System::extract_bytes(version_made_by);
         Ok(ZipFileData {
-            system: System::from(system),
-            /* NB: this strips the top 8 bits! */
-            version_made_by: version_made_by as u8,
+            system,
+            version_made_by,
             flags,
             encrypted,
             using_data_descriptor,
@@ -937,6 +1017,21 @@ impl ZipFileData {
     }
 
     pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
+        let compressed_size = self
+            .compressed_size
+            .min(spec::ZIP64_BYTES_THR)
+            .try_into()
+            .map_err(std::io::Error::other)?;
+        let uncompressed_size = self
+            .uncompressed_size
+            .min(spec::ZIP64_BYTES_THR)
+            .try_into()
+            .map_err(std::io::Error::other)?;
+        let offset = self
+            .header_start
+            .min(spec::ZIP64_BYTES_THR)
+            .try_into()
+            .map_err(std::io::Error::other)?;
         let extra_field_len: u16 = self
             .extra_field_len()
             .try_into()
@@ -959,16 +1054,8 @@ impl ZipFileData {
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
-            compressed_size: self
-                .compressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            uncompressed_size: self
-                .uncompressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?,
+            compressed_size,
+            uncompressed_size,
             file_name_length: self
                 .file_name_raw
                 .len()
@@ -985,21 +1072,8 @@ impl ZipFileData {
             disk_number: 0,
             internal_file_attributes: 0,
             external_file_attributes: self.external_attributes,
-            offset: self
-                .header_start
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?,
+            offset,
         })
-    }
-
-    pub(crate) fn zip64_extra_field_block(&self) -> Option<Zip64ExtraFieldBlock> {
-        Zip64ExtraFieldBlock::maybe_new(
-            self.large_file,
-            self.uncompressed_size,
-            self.compressed_size,
-            self.header_start,
-        )
     }
 
     pub(crate) fn write_data_descriptor<W: std::io::Write>(
@@ -1143,93 +1217,6 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct Zip64ExtraFieldBlock {
-    magic: spec::ExtraFieldMagic,
-    size: u16,
-    uncompressed_size: Option<u64>,
-    compressed_size: Option<u64>,
-    header_start: Option<u64>,
-    // Excluded fields:
-    // u32: disk start number
-}
-
-impl Zip64ExtraFieldBlock {
-    pub(crate) fn maybe_new(
-        large_file: bool,
-        uncompressed_size: u64,
-        compressed_size: u64,
-        header_start: u64,
-    ) -> Option<Zip64ExtraFieldBlock> {
-        let mut size: u16 = 0;
-        let uncompressed_size = if uncompressed_size >= ZIP64_BYTES_THR || large_file {
-            size += mem::size_of::<u64>() as u16;
-            Some(uncompressed_size)
-        } else {
-            None
-        };
-        let compressed_size = if compressed_size >= ZIP64_BYTES_THR || large_file {
-            size += mem::size_of::<u64>() as u16;
-            Some(compressed_size)
-        } else {
-            None
-        };
-        let header_start = if header_start >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(header_start)
-        } else {
-            None
-        };
-        if size == 0 {
-            return None;
-        }
-
-        Some(Zip64ExtraFieldBlock {
-            magic: spec::ExtraFieldMagic::ZIP64_EXTRA_FIELD_TAG,
-            size,
-            uncompressed_size,
-            compressed_size,
-            header_start,
-        })
-    }
-}
-
-impl Zip64ExtraFieldBlock {
-    pub fn full_size(&self) -> usize {
-        assert!(self.size > 0);
-        self.size as usize + mem::size_of::<spec::ExtraFieldMagic>() + mem::size_of::<u16>()
-    }
-
-    pub fn serialize(self) -> Box<[u8]> {
-        let Self {
-            magic,
-            size,
-            uncompressed_size,
-            compressed_size,
-            header_start,
-        } = self;
-
-        let full_size = self.full_size();
-
-        let mut ret = Vec::with_capacity(full_size);
-        ret.extend(magic.to_le_bytes());
-        ret.extend(u16::to_le_bytes(size));
-
-        if let Some(uncompressed_size) = uncompressed_size {
-            ret.extend(u64::to_le_bytes(uncompressed_size));
-        }
-        if let Some(compressed_size) = compressed_size {
-            ret.extend(u64::to_le_bytes(compressed_size));
-        }
-        if let Some(header_start) = header_start {
-            ret.extend(u64::to_le_bytes(header_start));
-        }
-        debug_assert_eq!(ret.len(), full_size);
-
-        ret.into_boxed_slice()
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipDataDescriptorBlock {
     magic: spec::Magic,
@@ -1300,6 +1287,12 @@ pub enum AesVendorVersion {
     Ae2 = 0x0002,
 }
 
+impl From<AesVendorVersion> for u16 {
+    fn from(value: AesVendorVersion) -> Self {
+        value as u16
+    }
+}
+
 /// AES variant used.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
@@ -1311,6 +1304,16 @@ pub enum AesMode {
     Aes192 = 0x02,
     /// 256-bit AES encryption.
     Aes256 = 0x03,
+}
+
+impl Display for AesMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Aes128 => write!(f, "AES-128"),
+            Self::Aes192 => write!(f, "AES-192"),
+            Self::Aes256 => write!(f, "AES-256"),
+        }
+    }
 }
 
 #[cfg(feature = "aes-crypto")]
@@ -1393,8 +1396,8 @@ mod test {
         assert_eq!(u8::from(System::Unix), 3u8);
         assert_eq!(System::from(0), System::Dos);
         assert_eq!(System::from(3), System::Unix);
-        assert_eq!(u8::from(System::Unknown), 4u8);
-        assert_eq!(System::Unknown as u8, 4u8);
+        assert_eq!(u8::from(System::Unknown), 255u8);
+        assert_eq!(System::Unknown as u8, 255u8);
     }
 
     #[test]
@@ -1584,9 +1587,8 @@ mod test {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
-    use std::{path::PathBuf, sync::OnceLock};
-
     use crate::types::{System, ZipFileData};
+    use std::{path::PathBuf, sync::OnceLock};
 
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
@@ -1829,5 +1831,18 @@ mod test {
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();
 
         assert!(DateTime::try_from(PrimitiveDateTime::new(clock.date(), clock.time())).is_ok());
+    }
+
+    #[test]
+    fn test_is_leap_year() {
+        use crate::DateTime;
+        assert!(DateTime::is_leap_year(2000));
+        assert!(!DateTime::is_leap_year(2026));
+        assert!(!DateTime::is_leap_year(2027));
+        assert!(DateTime::is_leap_year(2028));
+        assert!(DateTime::is_leap_year(1600));
+        assert!(DateTime::is_leap_year(2400));
+        assert!(!DateTime::is_leap_year(1900));
+        assert!(!DateTime::is_leap_year(2100));
     }
 }

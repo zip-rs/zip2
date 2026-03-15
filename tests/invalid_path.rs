@@ -27,7 +27,10 @@ pub mod tests {
             .expect("starting nested file with absolute path should succeed");
         writer.write_all(b"File 2 content").unwrap();
 
-        writer.finish().unwrap().into_inner()
+        let cursor = writer
+            .finish()
+            .expect("finishing ZIP with absolute paths should succeed");
+        cursor.into_inner()
     }
 
     /// Create a ZIP file with entries that have Windows-style absolute paths
@@ -147,7 +150,6 @@ pub mod tests {
         // Test accessing individual files
         for i in 0..archive.len() {
             let file = archive.by_index(i).unwrap();
-            println!("File name: {}", file.name());
 
             // After our fix, enclosed_name should return a safe relative path
             let enclosed_name = file.enclosed_name();

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.2.0](https://github.com/zip-rs/zip2/compare/v8.1.0...v8.2.0) - 2026-03-02
+
+### <!-- 0 -->🚀 Features
+
+- allow custom salt ([#680](https://github.com/zip-rs/zip2/pull/680))
+- Support compressing bzip2 when feature `bzip2-rs` is enabled, since `bzip2/bzip2-sys` now supports it ([#685](https://github.com/zip-rs/zip2/pull/685))
+- enforce clippy in CI ([#674](https://github.com/zip-rs/zip2/pull/674))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- zip64 central header (issue 617) ([#629](https://github.com/zip-rs/zip2/pull/629))
+- allow aes password as bytes ([#686](https://github.com/zip-rs/zip2/pull/686))
+- handle extra field padding ([#682](https://github.com/zip-rs/zip2/pull/682))
+
+### <!-- 2 -->🚜 Refactor
+
+- Simplify 2 type conversions in src/write.rs ([#687](https://github.com/zip-rs/zip2/pull/687))
+
+### <!-- 4 -->⚡ Performance
+
+- AI tweaks for string type conversions in src/types.rs ([#670](https://github.com/zip-rs/zip2/pull/670))
+
+## [8.1.0](https://github.com/zip-rs/zip2/compare/v8.0.0...v8.1.0) - 2026-02-16
+
+### <!-- 0 -->🚀 Features
+
+- *(writer)* Allow getting underlying writer of ZipWriter ([#464](https://github.com/zip-rs/zip2/pull/464))
+- add system to FileOption, so byte-for-byte identical archives can be created across platforms ([#660](https://github.com/zip-rs/zip2/pull/660))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Bugs in extra-data length calculation in src/write.rs ([#662](https://github.com/zip-rs/zip2/pull/662))
+
 ## [8.0.0](https://github.com/zip-rs/zip2/compare/v7.4.0...v8.0.0) - 2026-02-14
 
 ### <!-- 0 -->🚀 Features
