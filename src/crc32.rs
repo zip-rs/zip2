@@ -17,7 +17,7 @@ pub struct Crc32Reader<R> {
 
 impl<R> Crc32Reader<R> {
     /// Get a new `Crc32Reader` which checks the inner reader against checksum.
-    /// The check is disabled if `ae2_encrypted == true`.
+    /// The check can be disabled with the arg `should_disable` (used in aes for example)
     pub(crate) fn new(inner: R, checksum: u32, should_disable: bool) -> Crc32Reader<R> {
         Crc32Reader {
             inner,
