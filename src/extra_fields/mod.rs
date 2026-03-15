@@ -49,7 +49,7 @@ pub(crate) enum UsedExtraField {
     /// NTFS
     Ntfs = 0x000a,
     /// extended timestamp
-    /// from https://libzip.org/specifications/extrafld.txt
+    /// from <https://libzip.org/specifications/extrafld.txt>
     ExtendedTimestamp = 0x5455,
     /// Info-ZIP Unicode Comment Extra Field
     UnicodeComment = 0x6375,
