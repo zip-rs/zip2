@@ -28,6 +28,7 @@ time = { version = "0.3.37", default-features = false }
 
 [dependencies]
 aes = { version = "0.8", optional = true }
+byteorder = "1.5"
 bzip2 = { version = "0.5.0", optional = true }
 chrono = { version = "0.4", optional = true }
 constant_time_eq = { version = "0.3", optional = true }
@@ -99,10 +100,6 @@ harness = false
 
 [[bench]]
 name = "read_metadata"
-harness = false
-
-[[bench]]
-name = "merge_archive"
 harness = false
 
 [[bench]]
