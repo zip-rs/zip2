@@ -21,6 +21,7 @@ Supported compression formats:
 * bzip2
 * zstd
 * lzma (decompression only)
+* xz (decompression only)
 
 Currently unsupported zip extensions:
 
@@ -43,22 +44,19 @@ The features available are:
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
 * `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.
+* `jiff-02`: Enables converting last-modified `zip::DateTime` to and from `jiff::civil::DateTime`.
+* `nt-time`: Enables returning timestamps stored in the NTFS extra field as `nt_time::FileTime`.
 * `zstd`: Enables the Zstandard compression algorithm.
 
-By default `aes-crypto`, `deflate`, `deflate-zlib-ng`, `deflate-zopfli`, `bzip2`, `time` and `zstd` are enabled.
-
-The following feature flags are deprecated:
-
-* `deflate-miniz`: Use `flate2`'s default backend for compression. Currently the same as `deflate`.
+By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `time` and `zstd` are enabled.
 
 MSRV
 ----
 
-Our current Minimum Supported Rust Version is **1.73**. When adding features,
+Our current Minimum Supported Rust Version is **1.75**. When adding features,
 we will follow these guidelines:
 
-- We will always support the latest four minor Rust versions. This gives you a 6
-  month window to upgrade your compiler.
+- We will always support a minor Rust version that has been stable for at least 6 months.
 - Any change to the MSRV will be accompanied with a **minor** version bump.
 
 Examples

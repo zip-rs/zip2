@@ -28,3 +28,21 @@ fn correctly_handle_zip_with_garbage_after_comment() {
 
     assert_eq!(archive.comment(), "short.".as_bytes());
 }
+
+/// Ensure that a file which has the signature misaligned with the window size is still
+/// successfully located.
+#[test]
+fn correctly_handle_cde_on_window() {
+    let mut v = Vec::new();
+    v.extend_from_slice(include_bytes!("../tests/data/misaligned_comment.zip"));
+    assert_eq!(v.len(), 512 + 1);
+    let sig: [u8; 4] = v[..4].try_into().unwrap();
+    let sig = u32::from_le_bytes(sig);
+
+    const CENTRAL_DIRECTORY_END_SIGNATURE: u32 = 0x06054b50;
+    assert_eq!(sig, CENTRAL_DIRECTORY_END_SIGNATURE);
+
+    let archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip");
+
+    assert_eq!(archive.comment(), "short.".as_bytes());
+}
