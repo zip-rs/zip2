@@ -18,7 +18,7 @@ use crate::{ZIP64_BYTES_THR, extra_fields::UsedExtraField};
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Zip64ExtendedInformation {
     /// The local header does not contains any `header_start`
-    _is_local_header: bool,
+    is_local_header: bool,
     magic: UsedExtraField,
     size: u16,
     uncompressed_size: Option<u64>,
@@ -61,7 +61,7 @@ impl Zip64ExtendedInformation {
         // Disk Start Number  4 bytes    Number of the disk on which this file starts
 
         Some(Self {
-            _is_local_header: true,
+            is_local_header: true,
             magic: Self::MAGIC,
             size,
             uncompressed_size,
@@ -103,7 +103,7 @@ impl Zip64ExtendedInformation {
         }
 
         Some(Self {
-            _is_local_header: false,
+            is_local_header: false,
             magic: Self::MAGIC,
             size,
             uncompressed_size,
@@ -120,7 +120,7 @@ impl Zip64ExtendedInformation {
     /// Serialize the block
     pub fn serialize(self) -> Box<[u8]> {
         let Self {
-            _is_local_header,
+            is_local_header,
             magic,
             size,
             uncompressed_size,
@@ -129,7 +129,7 @@ impl Zip64ExtendedInformation {
         } = self;
 
         let full_size = self.full_size();
-        if _is_local_header {
+        if is_local_header {
             // the local header does not contains the header start
             if let (Some(uncompressed_size), Some(compressed_size)) =
                 (self.compressed_size, self.compressed_size)

@@ -7,19 +7,19 @@ The current implementation is based on [PKWARE's APPNOTE.TXT v6.3.9](https://pkw
 
 Supported compression formats:
 
-| Formats                         | Reading | Writing |
-| ------------------------------- | ------- | ------- |
-| Stored (i.e. none)              | ✅      | ✅      |
-| Implode, Shrink, Reduce         | ✅      |         |
-| Deflate                         | ✅      | ✅      |
-| Deflate64                       | ✅      |         |
-| Bzip2                           | ✅      | ✅      |
-| ZStandard                       | ✅      | ✅      |
-| LZMA                            | ✅      |         |
-| XZ                              | ✅      | ✅      |
-| PPMd                            | ✅      | ✅      |
-| AES encryption                  | ✅      | ✅      |
-| ZipCrypto deprecated encryption | ✅      | ✅      |
+| Formats                             | Reading | Writing |
+| ----------------------------------- | ------- | ------- |
+| Stored (i.e. none)                  | ✅      | ✅      |
+| Implode, Shrink, Reduce             | ✅      |         |
+| Deflate                             | ✅      | ✅      |
+| `Deflate64`                         | ✅      |         |
+| `Bzip2`                             | ✅      | ✅      |
+| `ZStandard`                         | ✅      | ✅      |
+| `LZMA`                              | ✅      |         |
+| `XZ`                                | ✅      | ✅      |
+| `PPMd`                              | ✅      | ✅      |
+| AES encryption                      | ✅      | ✅      |
+| `ZipCrypto` (deprecated encryption) | ✅      | ✅      |
 
 Currently unsupported zip extensions:
 
@@ -38,15 +38,15 @@ The features available are:
   is the most effective `deflate` implementation available, but also among the slowest. If `flate2` isn't also enabled,
   only compression will be supported and not decompression.
 - `deflate64`: Enables the deflate64 compression algorithm. Only decompression is supported.
-- `lzma`: Enables the LZMA compression algorithm. Only decompression is supported.
-- `bzip2`: Enables the BZip2 compression algorithm.
-- `ppmd`: Enables the PPMd compression algorithm.
+- `lzma`: Enables the `LZMA` compression algorithm. Only decompression is supported.
+- `bzip2`: Enables the `BZip2` compression algorithm.
+- `ppmd`: Enables the `PPMd` compression algorithm.
 - `time`: Enables features using the [time](https://github.com/time-rs/time) crate.
 - `chrono`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `chrono::NaiveDateTime`.
 - `jiff-02`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `jiff::civil::DateTime`.
 - `nt-time`: Enables returning timestamps stored in the NTFS extra field as `nt_time::FileTime`.
-- `xz`: Enables the XZ compression algorithm.
-- `zstd`: Enables the Zstandard compression algorithm.
+- `xz`: Enables the `XZ` compression algorithm.
+- `zstd`: Enables the `Zstandard` compression algorithm.
 
 By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time`, `xz` and `zstd` are enabled.
 

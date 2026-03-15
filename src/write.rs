@@ -992,9 +992,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
 
-        let archive =
-            ZipArchive::from_finalized_writer(files, comment, zip64_comment, inner, central_start)?;
-        Ok(archive)
+        Ok(ZipArchive::from_finalized_writer(
+            files,
+            comment,
+            zip64_comment,
+            inner,
+            central_start,
+        ))
     }
 }
 
@@ -1138,7 +1142,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Start a new file for with the requested options.
     fn start_entry<S: ToString, T: FileOptionExtension>(
         &mut self,
-        name: S,
+        name: &S,
         mut options: FileOptions<'_, T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()> {
@@ -1247,7 +1251,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
-            &name,
+            name,
             &options,
             &raw_values,
             header_start,
@@ -1481,7 +1485,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             options.zopfli_buffer_size,
         )?;
-        self.start_entry(name, options, None)?;
+        self.start_entry(&name, options, None)?;
         let result = self.inner.switch_to(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
@@ -1600,13 +1604,13 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
-        self.raw_copy_file_rename_internal(file, name, options)
+        self.raw_copy_file_rename_internal(file, &name, options)
     }
 
     fn raw_copy_file_rename_internal<R: Read, S: ToString, T: FileOptionExtension>(
         &mut self,
         mut file: ZipFile<'_, R>,
-        name: S,
+        name: &S,
         options: FileOptions<'_, T>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
@@ -1709,7 +1713,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         options.normalize();
 
-        self.raw_copy_file_rename_internal(file, name, options)
+        self.raw_copy_file_rename_internal(file, &name, options)
     }
 
     /// Add a directory entry.
@@ -1740,7 +1744,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(name_with_slash, options, None)?;
+        self.start_entry(&name_with_slash, options, None)?;
         self.writing_to_file = false;
         self.switch_to_non_encrypting_writer()?;
         Ok(())
@@ -1807,7 +1811,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // likely wastes space. So always store.
         options.compression_method = Stored;
 
-        self.start_entry(name, options, None)?;
+        self.start_entry(&name, options, None)?;
         self.writing_to_file = true;
         let result = self.write_all(target.to_string().as_bytes());
         self.ok_or_abort_file(result)?;
@@ -2035,8 +2039,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     compression_level.unwrap_or(default),
                     deflate_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?;
 
                 #[cfg(feature = "deflate-zopfli")]
                 {
@@ -2112,12 +2115,11 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             }
             #[cfg(feature = "_bzip2_any")]
             CompressionMethod::Bzip2 => {
-                let level = validate_value_in_range(
+                let level: u32 = validate_value_in_range(
                     compression_level.unwrap_or(i64::from(bzip2::Compression::default().level())),
                     bzip2_compression_level_range(),
                 )
-                .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                 Ok(Box::new(move |bare| {
                     Ok(GenericZipWriter::Bzip2(bzip2::write::BzEncoder::new(
                         bare,
@@ -2160,9 +2162,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             }
             #[cfg(feature = "xz")]
             CompressionMethod::Xz => {
-                let level = validate_value_in_range(compression_level.unwrap_or(6), 0..=9)
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                let level = validate_value_in_range(compression_level.unwrap_or(6), 0_u32..=9_u32)
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
                 Ok(Box::new(move |bare| {
                     Ok(GenericZipWriter::Xz(Box::new(
                         lzma_rust2::XzWriter::new(bare, lzma_rust2::XzOptions::with_preset(level))
@@ -2174,9 +2175,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             CompressionMethod::Ppmd => {
                 const ORDERS: [u32; 10] = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-                let level = validate_value_in_range(compression_level.unwrap_or(7), 1..=9)
-                    .ok_or(UnsupportedArchive("Unsupported compression level"))?
-                    as u32;
+                let level = validate_value_in_range(compression_level.unwrap_or(7), 1_u32..=9_u32)
+                    .ok_or(UnsupportedArchive("Unsupported compression level"))?;
 
                 let order = ORDERS[level as usize];
                 let memory_size = 1 << (level + 19);
@@ -2291,7 +2291,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 }
 
 #[cfg(feature = "_deflate-any")]
-fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
+fn deflate_compression_level_range() -> std::ops::RangeInclusive<u32> {
     #[cfg(not(any(feature = "deflate-zopfli", feature = "deflate-flate2")))]
     {
         compile_error!("min: unknown deflate variant - enable deflate-zopfli or deflate-flate2")
@@ -2300,7 +2300,7 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
     let min = {
         #[cfg(feature = "deflate-flate2")]
         {
-            i64::from(flate2::Compression::fast().level())
+            flate2::Compression::fast().level()
         }
         #[cfg(all(not(feature = "deflate-flate2"), feature = "deflate-zopfli"))]
         {
@@ -2315,7 +2315,7 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
         }
         #[cfg(all(not(feature = "deflate-zopfli"), feature = "deflate-flate2"))]
         {
-            flate2::Compression::best().level() as i64
+            flate2::Compression::best().level()
         }
     };
 
@@ -2323,9 +2323,9 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
 }
 
 #[cfg(feature = "_bzip2_any")]
-fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
-    let min = i64::from(bzip2::Compression::fast().level());
-    let max = i64::from(bzip2::Compression::best().level());
+fn bzip2_compression_level_range() -> std::ops::RangeInclusive<u32> {
+    let min = bzip2::Compression::fast().level();
+    let max = bzip2::Compression::best().level();
     min..=max
 }
 
@@ -2339,8 +2339,9 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
 fn validate_value_in_range<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     value: T,
     range: std::ops::RangeInclusive<U>,
-) -> Option<T> {
-    if range.contains(&value.try_into().ok()?) {
+) -> Option<U> {
+    let value: U = value.try_into().ok()?;
+    if range.contains(&value) {
         Some(value)
     } else {
         None
