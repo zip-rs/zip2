@@ -214,6 +214,7 @@ impl DateTime {
 
     /// Returns the current time if possible, otherwise the default of 1980-01-01.
     #[cfg(not(feature = "time"))]
+    #[must_use]
     pub fn default_for_write() -> Self {
         DateTime::default()
     }
