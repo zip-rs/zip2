@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.3.0](https://github.com/zip-rs/zip2/compare/v8.2.0...v8.3.0) - 2026-03-16
+
+### <!-- 0 -->🚀 Features
+
+- improve and fix extended timestamp extra field parsing ([#713](https://github.com/zip-rs/zip2/pull/713))
+- add crc32 ignore option ([#710](https://github.com/zip-rs/zip2/pull/710))
+- path related code in single file ([#712](https://github.com/zip-rs/zip2/pull/712))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Malformed ZIP64 file output ([#715](https://github.com/zip-rs/zip2/pull/715)) ([#717](https://github.com/zip-rs/zip2/pull/717))
+
+### <!-- 2 -->🚜 Refactor
+
+- improve part of the code with clippy help ([#725](https://github.com/zip-rs/zip2/pull/725))
+- simplify code for unicode extra field and improve error message ([#724](https://github.com/zip-rs/zip2/pull/724))
+- reorganize code ([#714](https://github.com/zip-rs/zip2/pull/714))
+
+### Deps
+
+- avoid pulling in `zeroize_derive` ([#720](https://github.com/zip-rs/zip2/pull/720))
+
 ## [8.2.0](https://github.com/zip-rs/zip2/compare/v8.1.0...v8.2.0) - 2026-03-02
 
 ### <!-- 0 -->🚀 Features
