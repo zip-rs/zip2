@@ -1,34 +1,4 @@
-//! A library for reading and writing ZIP archives.
-//! ZIP is a format designed for cross-platform file "archiving".
-//! That is, storing a collection of files in a single datastream
-//! to make them easier to share between computers.
-//! Additionally, ZIP is able to compress and encrypt files in its
-//! archives.
-//!
-//! The current implementation is based on [PKWARE's APPNOTE.TXT v6.3.9](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)
-//!
-//! ---
-//!
-//! [`zip`](`crate`) has support for the most common ZIP archives found in common use.
-//! However, in special cases,
-//! there are some zip archives that are difficult to read or write.
-//!
-//! This is a list of supported features:
-//!
-//! |                                 | Reading                               | Writing                                                  |
-//! | ------------------------------- | ------------------------------------- | -------------------------------------------------------- |
-//! | Stored                          | ✅                                    | ✅                                                       |
-//! | Deflate                         | ✅ [->](`crate::ZipArchive::by_name`) | ✅ [->](`crate::write::FileOptions::compression_method`) |
-//! | Deflate64                       | ✅                                    |                                                          |
-//! | Bzip2                           | ✅                                    | ✅                                                       |
-//! | ZStandard                       | ✅                                    | ✅                                                       |
-//! | LZMA                            | ✅                                    |                                                          |
-//! | XZ                              | ✅                                    | ✅                                                       |
-//! | PPMd                            | ✅                                    | ✅                                                       |
-//! | AES encryption                  | ✅                                    | ✅                                                       |
-//! | ZipCrypto deprecated encryption | ✅                                    | ✅                                                       |
-//!
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, rust_2018_idioms)]
 #![deny(

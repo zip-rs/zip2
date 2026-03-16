@@ -56,9 +56,6 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        use std::fs;
-        fs::create_dir_all(&directory)?;
-        let directory = directory.as_ref().canonicalize()?;
         struct Extractor(PathBuf, IndexMap<Box<str>, ()>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
@@ -91,13 +88,13 @@ impl<R: Read> ZipStreamReader<R> {
                 #[cfg(unix)]
                 {
                     use super::ZipError;
+                    use std::os::unix::fs::PermissionsExt;
                     let filepath = metadata
                         .enclosed_name()
                         .ok_or(crate::result::invalid!("Invalid file path"))?;
 
                     let outpath = self.0.join(filepath);
 
-                    use std::os::unix::fs::PermissionsExt;
                     if let Some(mode) = metadata.unix_mode() {
                         fs::set_permissions(outpath, fs::Permissions::from_mode(mode))?;
                     }
@@ -106,6 +103,9 @@ impl<R: Read> ZipStreamReader<R> {
                 Ok(())
             }
         }
+        use std::fs;
+        fs::create_dir_all(&directory)?;
+        let directory = directory.as_ref().canonicalize()?;
 
         self.visit(&mut Extractor(directory, IndexMap::new()))
     }

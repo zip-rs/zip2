@@ -44,12 +44,12 @@ impl Magic {
         Self(u32::to_le(self.0))
     }
 
-    pub const LOCAL_FILE_HEADER_SIGNATURE: Self = Self::literal(0x04034b50);
-    pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Self = Self::literal(0x02014b50);
-    pub const CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x06054b50);
-    pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x06064b50);
-    pub const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Self = Self::literal(0x07064b50);
-    pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x08074b50);
+    pub const LOCAL_FILE_HEADER_SIGNATURE: Self = Self::literal(0x0403_4b50);
+    pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Self = Self::literal(0x0201_4b50);
+    pub const CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0605_4b50);
+    pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0606_4b50);
+    pub const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Self = Self::literal(0x0706_4b50);
+    pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x0807_4b50);
 }
 
 /// Zip flags
@@ -90,6 +90,22 @@ pub(crate) enum ZipFlags {
     ReservedAlternateStream     = 0b0100_0000_0000_0000,
     /// Reserved by PKWARE.
     Reserved                    = 0b1000_0000_0000_0000,
+}
+
+impl ZipFlags {
+    pub(crate) fn matching(flags: u16, matching_flag: Self) -> bool {
+        flags & u16::from(matching_flag) != 0
+    }
+
+    pub(crate) const fn as_u16(self) -> u16 {
+        self as u16
+    }
+}
+
+impl From<ZipFlags> for u16 {
+    fn from(value: ZipFlags) -> u16 {
+        value.as_u16()
+    }
 }
 
 /// The file size at which a ZIP64 record becomes necessary.
@@ -223,6 +239,7 @@ pub(crate) trait FixedSizeBlock: Pod {
 }
 
 /// Convert all the fields of a struct *from* little-endian representations.
+#[macro_export]
 macro_rules! from_le {
     ($obj:ident, $field:ident, $type:ty) => {
         $obj.$field = <$type>::from_le($obj.$field);
@@ -237,6 +254,7 @@ macro_rules! from_le {
 }
 
 /// Convert all the fields of a struct *into* little-endian representations.
+#[macro_export]
 macro_rules! to_le {
     ($obj:ident, $field:ident, $type:ty) => {
         $obj.$field = <$type>::to_le($obj.$field);

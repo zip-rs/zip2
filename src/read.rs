@@ -244,6 +244,10 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
 }
 
 /// A struct for reading a zip file
+///
+/// When reading from a `ZipFile` using [`Self::read()`], keep in mind that `read()` **does not guarantee** the buffer will be fully filled in a single call.
+///
+/// If your logic depends on the buffer being completely populated, use [`Self::read_exact()`] instead. It will continue reading until the entire buffer is filled or an error occurs.
 #[derive(Debug)]
 pub struct ZipFile<'a, R: Read + ?Sized> {
     pub(crate) data: Cow<'a, ZipFileData>,
@@ -354,37 +358,6 @@ fn find_content_seek<'a, R: Read + Seek + ?Sized>(
     Ok(SeekableTake::new(reader, data.compressed_size)?)
 }
 
-pub(crate) fn find_data_start(
-    data: &ZipFileData,
-    reader: &mut (impl Read + Seek + ?Sized),
-) -> Result<u64, ZipError> {
-    // Go to start of data.
-    reader.seek(SeekFrom::Start(data.header_start))?;
-
-    // Parse static-sized fields and check the magic value.
-    let block = ZipLocalEntryBlock::parse(reader)?;
-
-    // Calculate the end of the local header from the fields we just parsed.
-    let variable_fields_len =
-        // Each of these fields must be converted to u64 before adding, as the result may
-        // easily overflow a u16.
-        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-    let data_start =
-        data.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
-
-    // Set the value so we don't have to read it again.
-    match data.data_start.set(data_start) {
-        Ok(()) => (),
-        // If the value was already set in the meantime, ensure it matches (this is probably
-        // unnecessary).
-        Err(existing_value) => {
-            debug_assert_eq!(existing_value, data_start);
-        }
-    }
-
-    Ok(data_start)
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     data: &ZipFileData,
@@ -431,11 +404,16 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
 pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
-    crc32: u32,
+    crc32: Option<u32>,
     reader: CryptoReader<'_, R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
 ) -> ZipResult<ZipFileReader<'_, R>> {
-    let ae2_encrypted = reader.is_ae2_encrypted();
+    // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
+    let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
+        (reader.is_ae2_encrypted(), data_crc32)
+    } else {
+        (true, 0)
+    };
     #[cfg(not(feature = "legacy-zip"))]
     let flags = 0;
     Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
@@ -446,7 +424,7 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
             flags,
         )?,
         crc32,
-        ae2_encrypted,
+        should_disable,
     ))))
 }
 
@@ -596,7 +574,7 @@ impl<R> ZipArchive<R> {
         zip64_comment: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
-    ) -> ZipResult<Self> {
+    ) -> Self {
         let initial_offset = match files.first() {
             Some((_, file)) => file.header_start,
             None => central_start,
@@ -611,7 +589,7 @@ impl<R> ZipArchive<R> {
             comment,
             zip64_comment,
         });
-        Ok(Self { reader, shared })
+        Self { reader, shared }
     }
 
     /// Total size of the files in the archive, if it can be known. Doesn't include directories or
@@ -721,7 +699,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             // Turn EOCD into internal representation.
             match CentralDirectoryInfo::try_from(&cde)
-                .and_then(|info| Self::read_central_header(info, config, reader))
+                .and_then(|info| Self::read_central_header(&info, config, reader))
             {
                 Ok(shared) => {
                     return Ok(shared.build(
@@ -740,7 +718,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     fn read_central_header(
-        dir_info: CentralDirectoryInfo,
+        dir_info: &CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
     ) -> Result<zip_archive::SharedBuilder, ZipError> {
@@ -763,7 +741,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
-            let file = central_header_to_zip_file(reader, &dir_info)?;
+            let file = central_header_to_zip_file(reader, dir_info)?;
             files.push(file);
         }
 
@@ -816,7 +794,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// A default [`Config`] is used.
     pub fn new(reader: R) -> ZipResult<ZipArchive<R>> {
-        Self::with_config(Default::default(), reader)
+        Self::with_config(Config::default(), reader)
     }
 
     /// Get the metadata associated with the ZIP archive.
@@ -1133,7 +1111,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the index of a file entry by name, if it's present.
-    #[inline(always)]
+    #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
         self.shared.files.get_index_of(name)
     }
@@ -1298,12 +1276,18 @@ impl<R: Read + Seek> ZipArchive<R> {
         let crypto_reader =
             make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
 
+        let crc32 = if options.ignore_crc {
+            None
+        } else {
+            Some(data.crc32)
+        };
+
         Ok(ZipFile {
             data: Cow::Borrowed(data),
             reader: make_reader(
                 data.compression_method,
                 data.uncompressed_size,
-                data.crc32,
+                crc32,
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,
@@ -1472,9 +1456,9 @@ fn central_header_to_zip_file_inner<R: Read>(
         ..
     } = block;
 
-    let encrypted = flags & (ZipFlags::Encrypted as u16) != 0;
-    let is_utf8 = flags & (ZipFlags::LanguageEncoding as u16) != 0;
-    let using_data_descriptor = flags & (ZipFlags::UsingDataDescriptor as u16) != 0;
+    let encrypted = ZipFlags::matching(flags, ZipFlags::Encrypted);
+    let is_utf8 = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
+    let using_data_descriptor = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
 
     let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
@@ -1753,6 +1737,9 @@ pub struct ZipReadOptions<'a> {
 
     /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
     ignore_encryption_flag: bool,
+
+    /// Ignore the crc32 of the file
+    ignore_crc: bool,
 }
 
 impl<'a> ZipReadOptions<'a> {
@@ -1773,6 +1760,13 @@ impl<'a> ZipReadOptions<'a> {
     #[must_use]
     pub fn ignore_encryption_flag(mut self, ignore: bool) -> Self {
         self.ignore_encryption_flag = ignore;
+        self
+    }
+
+    /// Ignore the CRC32 of the file
+    #[must_use]
+    pub fn ignore_crc32(mut self, should_ignore: bool) -> Self {
+        self.ignore_crc = should_ignore;
         self
     }
 }
@@ -2201,7 +2195,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
         reader: make_reader(
             compression_method,
             uncompressed_size,
-            crc32,
+            Some(crc32),
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
@@ -2330,7 +2324,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
         reader: make_reader(
             compression_method,
             uncompressed_size,
-            crc32,
+            Some(crc32),
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
