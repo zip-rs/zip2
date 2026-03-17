@@ -8,7 +8,8 @@
     clippy::cargo,
     clippy::panic,
     clippy::cast_lossless,
-    clippy::decimal_literal_representation
+    clippy::decimal_literal_representation,
+    clippy::must_use_candidate
 )]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
