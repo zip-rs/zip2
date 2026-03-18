@@ -3,14 +3,14 @@
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
+use crate::datetime::DateTime;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR, ZipFlags,
+    self, CentralDirectoryEndInfo, DataAndPosition, Pod, ZIP64_BYTES_THR, ZipCentralEntryBlock, ZipFlags, ZipLocalEntryBlock,
 };
 use crate::types::{
-    AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
-    ZipFileData, ZipLocalEntryBlock,
+    AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData
 };
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use core::mem::{replace, size_of};
@@ -2052,7 +2052,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
             .unix_permissions(self.unix_mode().unwrap_or(0o644) | S_IFREG)
             .last_modified_time(
                 self.last_modified()
-                    .filter(super::types::DateTime::is_valid)
+                    .filter(DateTime::is_valid)
                     .unwrap_or_else(DateTime::default_for_write),
             );
 
