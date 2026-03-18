@@ -830,6 +830,9 @@ mod test {
 
     #[test]
     fn sanitize() {
+        use super::{System, ZipFileData};
+        use std::{path::PathBuf, sync::Once lock};
+
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
         let data = ZipFileData {
             system: System::Dos,
