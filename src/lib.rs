@@ -30,6 +30,7 @@ mod aes_ctr;
 mod compression;
 mod cp437;
 mod crc32;
+mod datetime;
 pub mod extra_fields;
 mod path;
 pub mod read;
