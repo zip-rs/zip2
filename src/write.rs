@@ -396,7 +396,7 @@ impl ExtendedFileOptions {
         header_id: u16,
         data: &[u8],
     ) -> Result<(), ZipError> {
-        vec.reserve_exact(data.len() + 4);
+        vec.reserve_exact(data.len() + size_of::<u16>() + size_of::<u16>());
         vec.write_u16_le(header_id)?;
         vec.write_u16_le(data.len() as u16)?;
         vec.write_all(data)?;
