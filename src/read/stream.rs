@@ -549,7 +549,6 @@ mod test {
         writer.start_file("file.txt", options).unwrap();
         write!(&mut writer, "{}", "test-".repeat(100)).unwrap();
         writer.finish().unwrap();
-        eprintln!("{:x?}", bytes);
 
         let compressed_size = u32::from_le_bytes(bytes[18..22].try_into().unwrap());
         let uncompressed_size = u32::from_le_bytes(bytes[22..26].try_into().unwrap());
