@@ -290,7 +290,7 @@ macro_rules! to_and_from_le {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipCentralEntryBlock {
-    magic: Magic,
+    pub(crate) magic: Magic,
     pub version_made_by: u16,
     pub version_to_extract: u16,
     pub flags: u16,
@@ -346,7 +346,7 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipLocalEntryBlock {
-    magic: Magic,
+    pub(crate) magic: Magic,
     pub version_made_by: u16,
     pub flags: u16,
     pub compression_method: u16,
@@ -390,7 +390,7 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipDataDescriptorBlock {
-    magic: Magic,
+    pub(crate) magic: Magic,
     pub crc32: u32,
     pub compressed_size: u32,
     pub uncompressed_size: u32,
@@ -420,7 +420,7 @@ impl FixedSizeBlock for ZipDataDescriptorBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct Zip64DataDescriptorBlock {
-    magic: Magic,
+    pub(crate) magic: Magic,
     pub crc32: u32,
     pub compressed_size: u64,
     pub uncompressed_size: u64,

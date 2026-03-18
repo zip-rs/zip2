@@ -2586,7 +2586,8 @@ mod test {
     use crate::CompressionMethod::Stored;
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
-    use crate::types::{DateTime, System};
+    use crate::datetime::DateTime;
+    use crate::types::System;
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
