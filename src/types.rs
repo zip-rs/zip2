@@ -861,5 +861,4 @@ mod test {
         };
         assert_eq!(data.file_name_sanitized(), PathBuf::from("path/etc/passwd"));
     }
-
 }
