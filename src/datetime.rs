@@ -397,7 +397,7 @@ impl TryFrom<DateTime> for time::PrimitiveDateTime {
 
 #[cfg(tests)]
 mod tests {
-#[test]
+    #[test]
     #[allow(clippy::unusual_byte_groupings)]
     fn datetime_default() {
         use super::DateTime;
@@ -527,9 +527,6 @@ mod tests {
         // common year: divisible by 100 but not by 400
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
-
-    use crate::types::{System, ZipFileData};
-    use std::{path::PathBuf, sync::OnceLock};
 
     #[cfg(all(feature = "time", feature = "deprecated-time"))]
     #[test]
