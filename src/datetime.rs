@@ -397,7 +397,6 @@ impl TryFrom<DateTime> for time::PrimitiveDateTime {
     }
 }
 
-
 #[cfg(tests)]
 mod tests {
     #[test]
