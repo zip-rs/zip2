@@ -697,11 +697,11 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                 reader: &mut (impl Read + Seek + ?Sized),
                 eocd_offset: u64,
             ) -> ZipResult<(u64, Zip64CentralDirectoryEndLocator)> {
-                if eocd_offset < mem::size_of::<Zip64CDELocatorBlock>() as u64 {
+                if eocd_offset < (mem::size_of::<Magic>() + mem::size_of::<Zip64CDELocatorBlock>()) as u64 {
                     return Err(invalid!("EOCD64 Locator does not fit in file"));
                 }
 
-                let locator64_offset = eocd_offset - mem::size_of::<Zip64CDELocatorBlock>() as u64;
+                let locator64_offset = eocd_offset - (mem::size_of::<Magic>() + mem::size_of::<Zip64CDELocatorBlock>()) as u64;
 
                 reader.seek(io::SeekFrom::Start(locator64_offset))?;
                 let locator64 = Zip64CentralDirectoryEndLocator::parse(reader);
@@ -830,7 +830,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                         < eocd64
                             .number_of_files
                             .saturating_mul(
-                                mem::size_of::<crate::types::ZipCentralEntryBlock>() as u64
+                                (mem::size_of::<Magic>() + mem::size_of::<crate::types::ZipCentralEntryBlock>()) as u64
                             )
                             .saturating_add(eocd64.central_directory_offset)
                     {

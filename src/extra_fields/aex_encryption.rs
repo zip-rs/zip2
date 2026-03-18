@@ -9,6 +9,7 @@ use crate::to_and_from_le;
 use crate::types::AesVendorVersion;
 use crate::{from_le, to_le};
 use std::io::Write;
+use crate::result::ZipResult;
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
@@ -39,9 +40,7 @@ impl AexEncryption {
         (aes_mode, u8),
         (compression_method, u16)
     ];
-}
 
-impl AexEncryption {
     pub(crate) fn new(
         version: AesVendorVersion,
         aes_mode: AesMode,

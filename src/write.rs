@@ -1,5 +1,6 @@
 //! Writing a ZIP archive
 
+use crate::spec::Magic;
 use crate::compression::CompressionMethod;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UsedExtraField;
@@ -902,7 +903,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.file_name_raw = dest_name_raw.into();
         new_data.header_start = write_position;
         let extra_data_start = write_position
-            + size_of::<ZipLocalEntryBlock>() as u64
+            + (mem::size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
@@ -1212,7 +1213,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             )?;
         }
         let header_end =
-            header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
+            header_start + (mem::size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64 + name.to_string().len() as u64;
 
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
@@ -1853,7 +1854,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writer.seek(SeekFrom::Start(central_start))?;
             writer.write_u32_le(0)?;
             writer.seek(SeekFrom::Start(
-                footer_end - size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64,
+                footer_end - (mem::size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64 - self.comment.len() as u64,
             ))?;
             writer.write_u32_le(0)?;
 
@@ -2443,7 +2444,7 @@ impl ZipFileData {
         ))?;
 
         let zip64_extra_field_start = self.header_start
-            + size_of::<ZipLocalEntryBlock>() as u64
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + self.file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
