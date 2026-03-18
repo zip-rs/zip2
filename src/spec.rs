@@ -202,11 +202,28 @@ pub(crate) unsafe trait Pod: Copy + 'static {
     }
 }
 
-pub(crate) trait FixedSizeBlock: Pod {
-    type Magic: Copy + Eq;
-    const MAGIC: Self::Magic;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+struct BlockWithMagic<T: FixedSizeBlock> {
+    magic: Magic,
+    inner: T,
+}
+unsafe impl<T: FixedSizeBlock> Pod for BlockWithMagic<T> {}
 
-    fn magic(self) -> Self::Magic;
+impl<T: FixedSizeBlock> BlockWithMagic<T> {
+    fn to_le(mut self) -> Self {
+        self.magic = self.magic.to_le();
+        self.inner = self.inner.to_le();
+        self
+    }
+}
+
+pub(crate) trait FixedSizeBlock: Pod {
+    const MAGIC: Magic;
+
+    fn magic(self) -> Magic {
+        Self::MAGIC
+    }
 
     const WRONG_MAGIC_ERROR: ZipError;
 
@@ -214,16 +231,20 @@ pub(crate) trait FixedSizeBlock: Pod {
     fn from_le(self) -> Self;
 
     fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
-        let mut block = Self::zeroed();
-        if let Err(e) = reader.read_exact(block.as_bytes_mut()) {
+        let mut block_with_magic = BlockWithMagic::zeroed();
+        if let Err(e) = reader.read_exact(block_with_magic.as_bytes_mut()) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Err(invalid!("Unexpected end of {}", type_name::<Self>()));
             }
             return Err(e.into());
         }
+        let BlockWithMagic {
+            magic,
+            inner: block,
+        } = block_with_magic;
         let block = Self::from_le(block);
 
-        if block.magic() != Self::MAGIC {
+        if magic != Self::MAGIC {
             return Err(Self::WRONG_MAGIC_ERROR);
         }
         Ok(block)
@@ -232,8 +253,14 @@ pub(crate) trait FixedSizeBlock: Pod {
     fn to_le(self) -> Self;
 
     fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
-        let block = self.to_le();
+        let block = BlockWithMagic {
+            magic: self.magic(),
+            inner: self,
+        };
+        let block = block.to_le();
         writer.write_all(block.as_bytes())?;
+        let BlockWithMagic { inner, ..} = block;
+        eprintln!("{} {}", block.as_bytes().len(), inner.as_bytes().len());
         Ok(())
     }
 }
@@ -290,7 +317,6 @@ macro_rules! to_and_from_le {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct Zip32CDEBlock {
-    magic: Magic,
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
     pub number_of_files_on_this_disk: u16,
@@ -303,18 +329,11 @@ pub(crate) struct Zip32CDEBlock {
 unsafe impl Pod for Zip32CDEBlock {}
 
 impl FixedSizeBlock for Zip32CDEBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid digital signature header");
 
     to_and_from_le![
-        (magic, Magic),
         (disk_number, u16),
         (disk_with_central_directory, u16),
         (number_of_files_on_this_disk, u16),
@@ -348,7 +367,6 @@ impl Zip32CentralDirectoryEnd {
             zip_file_comment,
         } = self;
         let block = Zip32CDEBlock {
-            magic: Zip32CDEBlock::MAGIC,
             disk_number,
             disk_with_central_directory,
             number_of_files_on_this_disk,
@@ -414,7 +432,6 @@ impl Zip32CentralDirectoryEnd {
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
 pub(crate) struct Zip64CDELocatorBlock {
-    magic: Magic,
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
@@ -423,18 +440,11 @@ pub(crate) struct Zip64CDELocatorBlock {
 unsafe impl Pod for Zip64CDELocatorBlock {}
 
 impl FixedSizeBlock for Zip64CDELocatorBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 locator digital signature header");
 
     to_and_from_le![
-        (magic, Magic),
         (disk_with_central_directory, u32),
         (end_of_central_directory_offset, u64),
         (number_of_disks, u32),
@@ -471,7 +481,6 @@ impl Zip64CentralDirectoryEndLocator {
             number_of_disks,
         } = self;
         Zip64CDELocatorBlock {
-            magic: Zip64CDELocatorBlock::MAGIC,
             disk_with_central_directory,
             end_of_central_directory_offset,
             number_of_disks,
@@ -486,7 +495,6 @@ impl Zip64CentralDirectoryEndLocator {
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
 pub(crate) struct Zip64CDEBlock {
-    magic: Magic,
     pub record_size: u64,
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
@@ -501,17 +509,11 @@ pub(crate) struct Zip64CDEBlock {
 unsafe impl Pod for Zip64CDEBlock {}
 
 impl FixedSizeBlock for Zip64CDEBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
-
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid digital signature header");
 
     to_and_from_le![
-        (magic, Magic),
         (record_size, u64),
         (version_made_by, u16),
         (version_needed_to_extract, u16),
@@ -601,7 +603,6 @@ impl Zip64CentralDirectoryEnd {
 
         (
             Zip64CDEBlock {
-                magic: Zip64CDEBlock::MAGIC,
                 record_size,
                 version_made_by,
                 version_needed_to_extract,
@@ -875,30 +876,23 @@ mod test {
     #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
     #[repr(packed, C)]
     pub struct TestBlock {
-        magic: Magic,
         pub file_name_length: u16,
     }
 
     unsafe impl Pod for TestBlock {}
 
     impl FixedSizeBlock for TestBlock {
-        type Magic = Magic;
         const MAGIC: Magic = Magic::literal(0x01111);
-
-        fn magic(self) -> Magic {
-            self.magic
-        }
 
         const WRONG_MAGIC_ERROR: ZipError = invalid!("unreachable");
 
-        to_and_from_le![(magic, Magic), (file_name_length, u16)];
+        to_and_from_le![(file_name_length, u16)];
     }
 
     /// Demonstrate that a block object can be safely written to memory and deserialized back out.
     #[test]
     fn block_serde() {
         let block = TestBlock {
-            magic: TestBlock::MAGIC,
             file_name_length: 3,
         };
         let mut c = Cursor::new(Vec::new());

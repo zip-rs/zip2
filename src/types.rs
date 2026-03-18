@@ -1001,7 +1001,6 @@ impl ZipFileData {
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
         Ok(ZipLocalEntryBlock {
-            magic: ZipLocalEntryBlock::MAGIC,
             version_made_by: self.version_needed(),
             flags: self.flags(),
             compression_method: self.compression_method.serialize_to_u16(),
@@ -1055,7 +1054,6 @@ impl ZipFileData {
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
         Ok(ZipCentralEntryBlock {
-            magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
             flags: self.flags(),
@@ -1108,7 +1106,6 @@ impl ZipFileData {
 
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
         ZipDataDescriptorBlock {
-            magic: ZipDataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size as u32,
             uncompressed_size: self.uncompressed_size as u32,
@@ -1117,7 +1114,6 @@ impl ZipFileData {
 
     pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
         Zip64DataDescriptorBlock {
-            magic: Zip64DataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size,
             uncompressed_size: self.uncompressed_size,
@@ -1128,7 +1124,6 @@ impl ZipFileData {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipCentralEntryBlock {
-    magic: spec::Magic,
     pub version_made_by: u16,
     pub version_to_extract: u16,
     pub flags: u16,
@@ -1150,18 +1145,11 @@ pub(crate) struct ZipCentralEntryBlock {
 unsafe impl Pod for ZipCentralEntryBlock {}
 
 impl FixedSizeBlock for ZipCentralEntryBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid Central Directory header");
 
     to_and_from_le![
-        (magic, Magic),
         (version_made_by, u16),
         (version_to_extract, u16),
         (flags, u16),
@@ -1184,7 +1172,6 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipLocalEntryBlock {
-    magic: spec::Magic,
     pub version_made_by: u16,
     pub flags: u16,
     pub compression_method: u16,
@@ -1200,18 +1187,11 @@ pub(crate) struct ZipLocalEntryBlock {
 unsafe impl Pod for ZipLocalEntryBlock {}
 
 impl FixedSizeBlock for ZipLocalEntryBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid local file header");
 
     to_and_from_le![
-        (magic, Magic),
         (version_made_by, u16),
         (flags, u16),
         (compression_method, u16),
@@ -1228,7 +1208,6 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipDataDescriptorBlock {
-    magic: spec::Magic,
     pub crc32: u32,
     pub compressed_size: u32,
     pub uncompressed_size: u32,
@@ -1237,18 +1216,11 @@ pub(crate) struct ZipDataDescriptorBlock {
 unsafe impl Pod for ZipDataDescriptorBlock {}
 
 impl FixedSizeBlock for ZipDataDescriptorBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid data descriptor header");
 
     to_and_from_le![
-        (magic, Magic),
         (crc32, u32),
         (compressed_size, u32),
         (uncompressed_size, u32),
@@ -1258,7 +1230,6 @@ impl FixedSizeBlock for ZipDataDescriptorBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct Zip64DataDescriptorBlock {
-    magic: spec::Magic,
     pub crc32: u32,
     pub compressed_size: u64,
     pub uncompressed_size: u64,
@@ -1267,18 +1238,11 @@ pub(crate) struct Zip64DataDescriptorBlock {
 unsafe impl Pod for Zip64DataDescriptorBlock {}
 
 impl FixedSizeBlock for Zip64DataDescriptorBlock {
-    type Magic = Magic;
     const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
-
-    #[inline]
-    fn magic(self) -> spec::Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 data descriptor header");
 
     to_and_from_le![
-        (magic, spec::Magic),
         (crc32, u32),
         (compressed_size, u64),
         (uncompressed_size, u64),

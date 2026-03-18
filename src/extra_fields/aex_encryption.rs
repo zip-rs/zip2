@@ -4,11 +4,11 @@ use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
 use crate::result::ZipError;
-use crate::spec::FixedSizeBlock;
 use crate::spec::Pod;
 use crate::to_and_from_le;
 use crate::types::AesVendorVersion;
 use crate::{from_le, to_le};
+use std::io::Write;
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
@@ -21,18 +21,15 @@ pub(crate) struct AexEncryption {
     compression_method: u16,
 }
 
-unsafe impl Pod for AexEncryption {}
+unsafe impl Pod for AexEncryption{}
 
-impl FixedSizeBlock for AexEncryption {
-    type Magic = u16;
-    const MAGIC: Self::Magic = UsedExtraField::AeXEncryption.as_u16();
+impl AexEncryption {
 
-    fn magic(self) -> Self::Magic {
-        Self::MAGIC
+    pub(crate) fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
+        let block = self.to_le();
+        writer.write_all(block.as_bytes())?;
+        Ok(())
     }
-
-    const WRONG_MAGIC_ERROR: ZipError =
-        ZipError::InvalidArchive(std::borrow::Cow::Borrowed("Wrong AES header ID"));
 
     to_and_from_le![
         (header_id, u16),
