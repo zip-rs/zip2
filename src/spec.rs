@@ -290,7 +290,7 @@ macro_rules! to_and_from_le {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipCentralEntryBlock {
-    magic: spec::Magic,
+    magic: Magic,
     pub version_made_by: u16,
     pub version_to_extract: u16,
     pub flags: u16,
@@ -346,7 +346,7 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipLocalEntryBlock {
-    magic: spec::Magic,
+    magic: Magic,
     pub version_made_by: u16,
     pub flags: u16,
     pub compression_method: u16,
@@ -390,7 +390,7 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipDataDescriptorBlock {
-    magic: spec::Magic,
+    magic: Magic,
     pub crc32: u32,
     pub compressed_size: u32,
     pub uncompressed_size: u32,
@@ -420,7 +420,7 @@ impl FixedSizeBlock for ZipDataDescriptorBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct Zip64DataDescriptorBlock {
-    magic: spec::Magic,
+    magic: Magic,
     pub crc32: u32,
     pub compressed_size: u64,
     pub uncompressed_size: u64,
@@ -430,7 +430,7 @@ unsafe impl Pod for Zip64DataDescriptorBlock {}
 
 impl FixedSizeBlock for Zip64DataDescriptorBlock {
     type Magic = Magic;
-    const MAGIC: spec::Magic = spec::Magic::DATA_DESCRIPTOR_SIGNATURE;
+    const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
 
     #[inline]
     fn magic(self) -> spec::Magic {
