@@ -7,11 +7,10 @@ use crate::datetime::DateTime;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    self, CentralDirectoryEndInfo, DataAndPosition, Pod, ZIP64_BYTES_THR, ZipCentralEntryBlock, ZipFlags, ZipLocalEntryBlock,
+    self, CentralDirectoryEndInfo, DataAndPosition, Pod, ZIP64_BYTES_THR, ZipCentralEntryBlock,
+    ZipFlags, ZipLocalEntryBlock,
 };
-use crate::types::{
-    AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData
-};
+use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use core::mem::{replace, size_of};
 use core::ops::{Deref, Range};

@@ -7,7 +7,10 @@ use crate::extra_fields::ExtraField;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
-use crate::spec::{self, FixedSizeBlock, ZipCentralEntryBlock, ZipDataDescriptorBlock,Zip64DataDescriptorBlock, ZipFlags, ZipLocalEntryBlock};
+use crate::spec::{
+    self, FixedSizeBlock, Zip64DataDescriptorBlock, ZipCentralEntryBlock, ZipDataDescriptorBlock,
+    ZipFlags, ZipLocalEntryBlock,
+};
 use crate::types::ffi::S_IFDIR;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;

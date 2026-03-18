@@ -7,12 +7,9 @@ use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, ZipLocalEntryBlock, Zip32CDEBlock};
+use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::ffi::S_IFLNK;
-use crate::types::{
-    AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues,
-    ffi,
-};
+use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;

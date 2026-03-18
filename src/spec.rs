@@ -988,9 +988,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                     if eocd64_offset
                         < eocd64
                             .number_of_files
-                            .saturating_mul(
-                                mem::size_of::<ZipCentralEntryBlock>() as u64
-                            )
+                            .saturating_mul(mem::size_of::<ZipCentralEntryBlock>() as u64)
                             .saturating_add(eocd64.central_directory_offset)
                     {
                         local_error =
