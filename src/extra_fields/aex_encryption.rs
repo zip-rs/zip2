@@ -21,9 +21,9 @@ pub(crate) struct AexEncryption {
 unsafe impl Pod for AexEncryption {}
 
 impl AexEncryption {
-    pub(crate) fn serialize(self) -> Vec<u8> {
+    pub(crate) fn serialize(self) -> Box<[u8]> {
         let block = self.to_le();
-        block.as_bytes().to_vec()
+        block.as_bytes().into()
     }
 
     #[inline(always)]
