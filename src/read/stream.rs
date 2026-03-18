@@ -1,8 +1,8 @@
 use super::{
-    ZipCentralEntryBlock, ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner,
+    ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner,
     make_symlink, read_zipfile_from_stream,
 };
-use crate::spec::FixedSizeBlock;
+use crate::spec::{FixedSizeBlock, ZipCentralEntryBlock};
 use indexmap::IndexMap;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
