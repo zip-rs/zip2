@@ -33,6 +33,7 @@ impl Magic {
     }
 
     #[allow(clippy::wrong_self_convention)]
+    #[allow(unused)]
     #[inline(always)]
     pub fn from_le(self) -> Self {
         Self(u32::from_le(self.0))

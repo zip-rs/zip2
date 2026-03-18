@@ -2385,12 +2385,9 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let mut buf = [0u8; size_of::<AexEncryption>()];
-
     let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
-
-    aes_extra_field.write(&mut buf.as_mut())?;
-    writer.write_all(&buf)?;
+    let buf = &aes_extra_field.serialize();
+    writer.write_all(buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
     let Some(ref mut extra_field) = file.extra_field else {
@@ -2400,7 +2397,7 @@ fn update_aes_extra_data<W: Write + Seek>(
     };
     let extra_field = Arc::make_mut(extra_field);
     extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AexEncryption>()]
-        .copy_from_slice(&buf);
+        .copy_from_slice(buf);
 
     Ok(())
 }
@@ -2411,7 +2408,7 @@ impl ZipFileData {
         writer: &mut T,
     ) -> ZipResult<()> {
         writer.seek(SeekFrom::Start(
-            self.header_start + offset_of!(ZipLocalEntryBlock, crc32) as u64,
+            self.header_start + (size_of::<Magic>() + offset_of!(ZipLocalEntryBlock, crc32)) as u64,
         ))?;
         writer.write_u32_le(self.crc32)?;
         if self.large_file {

@@ -269,7 +269,7 @@ mod test {
     }
 
     #[test]
-    fn zip_read_streaming() {
+    fn zip_read_streaming_visitor() {
         let reader =
             ZipStreamReader::new(Cursor::new(include_bytes!("../../tests/data/mimetype.zip")));
 
@@ -393,12 +393,58 @@ mod test {
 
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
-        let mut v = Vec::new();
-        v.extend_from_slice(include_bytes!("../../tests/data/mimetype.zip"));
-        let reader = ZipStreamReader::new(v.as_slice());
+        let v = include_bytes!("../../tests/data/mimetype.zip");
+        let reader = ZipStreamReader::new(v.as_ref());
         let dest = TempDir::with_prefix("stream_test_can_create_destination").unwrap();
         reader.extract(&dest)?;
         assert!(dest.path().join("mimetype").exists());
         Ok(())
+    }
+
+    #[test]
+    fn zip_read_streaming() {
+        use super::read_zipfile_from_stream;
+
+        let mut reader = Cursor::new(include_bytes!("../../tests/data/mimetype.zip"));
+        loop {
+            if read_zipfile_from_stream(&mut reader).unwrap().is_none() {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "deflate")]
+    fn zip_read_streaming_compressed() {
+        use crate::read::read_zipfile_from_stream_with_compressed_size;
+        use std::io::Write;
+
+        let compression_method = crate::CompressionMethod::Deflated;
+        let options = crate::write::SimpleFileOptions::default()
+            .compression_method(compression_method)
+            .unix_permissions(0o755);
+
+        let mut bytes = Vec::new();
+        let mut writer = crate::ZipWriter::new(std::io::Cursor::new(&mut bytes));
+        writer.start_file("file.txt", options).unwrap();
+        write!(&mut writer, "{}", "test-".repeat(100)).unwrap();
+        writer.finish().unwrap();
+        eprintln!("{:x?}", bytes);
+
+        let compressed_size = u32::from_le_bytes(bytes[18..22].try_into().unwrap());
+        let uncompressed_size = u32::from_le_bytes(bytes[22..26].try_into().unwrap());
+
+        assert_eq!(compressed_size, 14);
+        assert_eq!(uncompressed_size as usize, "test-".len() * 100);
+
+        let mut reader = Cursor::new(bytes);
+        loop {
+            if read_zipfile_from_stream_with_compressed_size(&mut reader, compressed_size as u64)
+                .unwrap()
+                .is_none()
+            {
+                break;
+            }
+        }
     }
 }

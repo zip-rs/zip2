@@ -3,13 +3,9 @@
 use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
-use crate::result::ZipError;
-use crate::result::ZipResult;
 use crate::spec::Pod;
-use crate::to_and_from_le;
+use crate::to_le;
 use crate::types::AesVendorVersion;
-use crate::{from_le, to_le};
-use std::io::Write;
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
@@ -25,20 +21,26 @@ pub(crate) struct AexEncryption {
 unsafe impl Pod for AexEncryption {}
 
 impl AexEncryption {
-    pub(crate) fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
+    pub(crate) fn serialize(self) -> Vec<u8> {
         let block = self.to_le();
-        writer.write_all(block.as_bytes())?;
-        Ok(())
+        block.as_bytes().to_vec()
     }
 
-    to_and_from_le![
-        (header_id, u16),
-        (data_size, u16),
-        (version, u16),
-        (vendor_id, u16),
-        (aes_mode, u8),
-        (compression_method, u16)
-    ];
+    #[inline(always)]
+    fn to_le(mut self) -> Self {
+        to_le![
+            self,
+            [
+                (header_id, u16),
+                (data_size, u16),
+                (version, u16),
+                (vendor_id, u16),
+                (aes_mode, u8),
+                (compression_method, u16)
+            ]
+        ];
+        self
+    }
 
     pub(crate) fn new(
         version: AesVendorVersion,
