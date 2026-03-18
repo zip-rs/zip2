@@ -1,4 +1,7 @@
-//! Code related to Date time in zip files
+//! Code related to `DateTime` in zip files
+
+use crate::result::DateTimeRangeError;
+use core::fmt;
 
 /// Representation of a moment in time.
 ///
@@ -22,8 +25,8 @@ pub struct DateTime {
     timepart: u16,
 }
 
-impl Debug for DateTime {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+impl fmt::Debug for DateTime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if *self == Self::default() {
             return f.write_str("DateTime::default()");
         }
