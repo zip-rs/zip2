@@ -1,15 +1,16 @@
 //! Writing a ZIP archive
 
 use crate::compression::CompressionMethod;
+use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
+use crate::spec::{self, FixedSizeBlock, ZipLocalEntryBlock, Zip32CDEBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{
-    AesVendorVersion, DateTime, MIN_VERSION, System, ZipFileData, ZipLocalEntryBlock, ZipRawValues,
+    AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues,
     ffi,
 };
 use core::default::Default;
