@@ -260,8 +260,6 @@ pub(crate) trait FixedSizeBlock: Pod {
         };
         let block = block.to_le();
         writer.write_all(block.as_bytes())?;
-        let BlockWithMagic { inner, .. } = block;
-        eprintln!("{} {}", block.as_bytes().len(), inner.as_bytes().len());
         Ok(())
     }
 }
