@@ -1,9 +1,18 @@
 use super::{
     ZipCentralEntryBlock, ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner,
-    make_symlink, read_zipfile_from_stream,
+    make_symlink,
 };
+use crate::read::make_crypto_reader;
+use crate::read::make_reader;
+use crate::read::parse_extra_field;
+use crate::read::unsupported_zip_error;
+use crate::result::ZipError;
 use crate::spec::FixedSizeBlock;
+use crate::spec::Magic;
+use crate::spec::Pod;
+use crate::types::ZipLocalEntryBlock;
 use indexmap::IndexMap;
+use std::borrow::Cow;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
@@ -232,8 +241,8 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
     reader.read_exact(block.as_bytes_mut())?;
 
     match block.magic().from_le() {
-        spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
+        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
 
@@ -252,6 +261,54 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
         crc32,
         uncompressed_size,
         compression_method,
+        #[cfg(feature = "legacy-zip")]
+        flags,
+        ..
+    } = result;
+
+    Ok(Some(ZipFile {
+        data: Cow::Owned(result),
+        reader: make_reader(
+            compression_method,
+            uncompressed_size,
+            Some(crc32),
+            crypto_reader,
+            #[cfg(feature = "legacy-zip")]
+            flags,
+        )?,
+    }))
+}
+
+/// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
+/// given compressed size and don't read any further ahead than that.
+pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
+    reader: &mut R,
+    compressed_size: u64,
+) -> ZipResult<Option<ZipFile<'_, R>>> {
+    let mut block = ZipLocalEntryBlock::zeroed();
+    reader.read_exact(block.as_bytes_mut())?;
+
+    match block.magic().from_le() {
+        Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
+        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
+    }
+
+    let block = block.from_le();
+
+    let mut result = ZipFileData::from_local_block(block, reader)?;
+    result.compressed_size = compressed_size;
+
+    if result.encrypted {
+        return unsupported_zip_error("Encrypted files are not supported");
+    }
+
+    let limit_reader = reader.take(result.compressed_size);
+    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
+    let ZipFileData {
+        crc32,
+        compression_method,
+        uncompressed_size,
         #[cfg(feature = "legacy-zip")]
         flags,
         ..
@@ -479,7 +536,7 @@ mod test {
     #[test]
     #[cfg(feature = "deflate")]
     fn zip_read_streaming_compressed() {
-        use crate::read::read_zipfile_from_stream_with_compressed_size;
+        use super::read_zipfile_from_stream_with_compressed_size;
         use std::io::Write;
 
         let compression_method = crate::CompressionMethod::Deflated;

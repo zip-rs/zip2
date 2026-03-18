@@ -6,11 +6,11 @@ use crate::crc32::Crc32Reader;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, Pod, ZIP64_BYTES_THR, ZipFlags,
+    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR, ZipFlags,
 };
 use crate::types::{
     AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
-    ZipFileData, ZipLocalEntryBlock,
+    ZipFileData,
 };
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use core::mem::{replace, size_of};
@@ -28,6 +28,7 @@ pub use config::{ArchiveOffset, Config};
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
+pub use stream::read_zipfile_from_stream;
 
 pub(crate) mod magic_finder;
 
@@ -2218,54 +2219,6 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
         return Some(d);
     }
     None
-}
-
-/// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
-/// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
-    reader: &mut R,
-    compressed_size: u64,
-) -> ZipResult<Option<ZipFile<'_, R>>> {
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
-
-    match block.magic().from_le() {
-        spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
-        _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
-    }
-
-    let block = block.from_le();
-
-    let mut result = ZipFileData::from_local_block(block, reader)?;
-    result.compressed_size = compressed_size;
-
-    if result.encrypted {
-        return unsupported_zip_error("Encrypted files are not supported");
-    }
-
-    let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
-    let ZipFileData {
-        crc32,
-        compression_method,
-        uncompressed_size,
-        #[cfg(feature = "legacy-zip")]
-        flags,
-        ..
-    } = result;
-
-    Ok(Some(ZipFile {
-        data: Cow::Owned(result),
-        reader: make_reader(
-            compression_method,
-            uncompressed_size,
-            Some(crc32),
-            crypto_reader,
-            #[cfg(feature = "legacy-zip")]
-            flags,
-        )?,
-    }))
 }
 
 #[cfg(test)]
