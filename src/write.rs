@@ -2437,7 +2437,7 @@ impl ZipFileData {
     }
 
     fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T) -> ZipResult<()> {
-        let block = Zip64ExtendedInformation::local_header(
+        let zip64_block = Zip64ExtendedInformation::local_header(
             self.large_file,
             self.uncompressed_size,
             self.compressed_size,
@@ -2451,17 +2451,8 @@ impl ZipFileData {
             + self.file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
-        let block = block.serialize();
-        writer.write_all(&block)?;
-
-        let Some(ref mut extra_field) = self.extra_field else {
-            return Err(invalid!(
-                "update_local_zip64_extra_field called on a file that has no extra-data field"
-            ));
-        };
-        let extra_field = Arc::make_mut(extra_field);
-        extra_field[..block.len()].copy_from_slice(&block);
-
+        let zip64_block = zip64_block.serialize();
+        writer.write_all(&zip64_block)?;
         Ok(())
     }
 
