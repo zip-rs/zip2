@@ -2,15 +2,16 @@
 
 use crate::CompressionMethod;
 use crate::cp437::FromCp437;
+use crate::datetime::DateTime;
 use crate::extra_fields::ExtraField;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
-use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
+use crate::spec::{self, FixedSizeBlock, ZipCentralEntryBlock, ZipDataDescriptorBlock,Zip64DataDescriptorBlock, ZipFlags, ZipLocalEntryBlock};
 use crate::types::ffi::S_IFDIR;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
-use core::fmt::{self, Debug, Formatter};
+use core::fmt::Debug;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::io::{Read, Seek, SeekFrom};
