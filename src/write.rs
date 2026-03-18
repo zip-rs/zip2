@@ -1,18 +1,15 @@
 //! Writing a ZIP archive
 
 use crate::compression::CompressionMethod;
+use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::Magic;
-use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock};
+use crate::spec::{self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::ffi::S_IFLNK;
-use crate::types::{
-    AesVendorVersion, DateTime, MIN_VERSION, System, ZipFileData, ZipLocalEntryBlock, ZipRawValues,
-    ffi,
-};
+use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
@@ -2588,8 +2585,9 @@ mod test {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::CompressionMethod::Stored;
     use crate::compression::CompressionMethod;
+    use crate::datetime::DateTime;
     use crate::result::ZipResult;
-    use crate::types::{DateTime, System};
+    use crate::types::System;
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
