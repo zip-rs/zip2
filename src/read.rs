@@ -2139,70 +2139,6 @@ impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {
     }
 }
 
-/// Read `ZipFile` structures from a non-seekable reader.
-///
-/// This is an alternative method to read a zip file. If possible, use the `ZipArchive` functions
-/// as some information will be missing when reading this manner.
-///
-/// Reads a file header from the start of the stream. Will return `Ok(Some(..))` if a file is
-/// present at the start of the stream. Returns `Ok(None)` if the start of the central directory
-/// is encountered. No more files should be read after this.
-///
-/// The Drop implementation of `ZipFile` ensures that the reader will be correctly positioned after
-/// the structure is done.
-///
-/// Missing fields are:
-/// * `comment`: set to an empty string
-/// * `data_start`: set to 0
-/// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
-    // We can't use the typical ::parse() method, as we follow separate code paths depending on the
-    // "magic" value (since the magic value will be from the central directory header if we've
-    // finished iterating over all the actual files).
-    /* TODO: smallvec? */
-
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
-
-    match block.magic().from_le() {
-        spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
-        _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
-    }
-
-    let block = block.from_le();
-
-    let mut result = ZipFileData::from_local_block(block, reader)?;
-
-    match parse_extra_field(&mut result) {
-        Ok(..) | Err(ZipError::Io(..)) => {}
-        Err(e) => return Err(e),
-    }
-
-    let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
-    let ZipFileData {
-        crc32,
-        uncompressed_size,
-        compression_method,
-        #[cfg(feature = "legacy-zip")]
-        flags,
-        ..
-    } = result;
-
-    Ok(Some(ZipFile {
-        data: Cow::Owned(result),
-        reader: make_reader(
-            compression_method,
-            uncompressed_size,
-            Some(crc32),
-            crypto_reader,
-            #[cfg(feature = "legacy-zip")]
-            flags,
-        )?,
-    }))
-}
-
 /// A filter that determines whether an entry should be ignored when searching
 /// for the root directory of a Zip archive.
 ///
@@ -2379,18 +2315,6 @@ mod test {
             ZipArchive::new(Cursor::new(include_bytes!("../tests/data/mimetype.zip"))).unwrap();
         assert_eq!(reader.comment(), b"");
         assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
-    }
-
-    #[test]
-    fn zip_read_streaming() {
-        use super::read_zipfile_from_stream;
-
-        let mut reader = Cursor::new(include_bytes!("../tests/data/mimetype.zip"));
-        loop {
-            if read_zipfile_from_stream(&mut reader).unwrap().is_none() {
-                break;
-            }
-        }
     }
 
     #[test]
