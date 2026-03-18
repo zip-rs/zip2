@@ -989,7 +989,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                         < eocd64
                             .number_of_files
                             .saturating_mul(
-                                mem::size_of::<crate::types::ZipCentralEntryBlock>() as u64
+                                mem::size_of::<ZipCentralEntryBlock>() as u64
                             )
                             .saturating_add(eocd64.central_directory_offset)
                     {
