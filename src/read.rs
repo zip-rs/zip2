@@ -369,7 +369,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     {
         if let CompressionMethod::Unsupported(_) = data.compression_method {
             return Err(ZipError::UnsupportedArchive(
-                "Compression method not supported"
+                "Compression method not supported",
             ));
         }
     }
@@ -734,7 +734,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         if dir_info.disk_number != dir_info.disk_with_central_directory {
             return Err(ZipError::UnsupportedArchive(
-                "Support for multi-disk files is not implemented"
+                "Support for multi-disk files is not implemented",
             ));
         }
 
