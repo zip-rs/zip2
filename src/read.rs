@@ -29,6 +29,7 @@ pub use config::{ArchiveOffset, Config};
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
 pub use stream::read_zipfile_from_stream;
+pub use stream::read_zipfile_from_stream_with_compressed_size;
 
 pub(crate) mod magic_finder;
 
