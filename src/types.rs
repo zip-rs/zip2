@@ -4,7 +4,6 @@ use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::extra_fields::ExtraField;
 use crate::path::{enclosed_name, file_name_sanitized};
-use crate::result::DateTimeRangeError;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, ZipFlags};
@@ -831,7 +830,7 @@ mod test {
     #[test]
     fn sanitize() {
         use super::{System, ZipFileData};
-        use std::{path::PathBuf, sync::Once lock};
+        use std::{path::PathBuf, sync::OnceLock};
 
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
         let data = ZipFileData {
