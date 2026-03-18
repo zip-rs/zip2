@@ -5,7 +5,6 @@ use super::{
 use crate::read::make_crypto_reader;
 use crate::read::make_reader;
 use crate::read::parse_extra_field;
-use crate::read::unsupported_zip_error;
 use crate::result::ZipError;
 use crate::spec::FixedSizeBlock;
 use crate::spec::Magic;
@@ -300,7 +299,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     result.compressed_size = compressed_size;
 
     if result.encrypted {
-        return unsupported_zip_error("Encrypted files are not supported");
+        return Err(ZipError::UnsupportedArchive("Encrypted files are not supported"));
     }
 
     let limit_reader = reader.take(result.compressed_size);
