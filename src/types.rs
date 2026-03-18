@@ -637,8 +637,9 @@ impl ZipFileData {
         // Each of these fields must be converted to u64 before adding, as the result may
         // easily overflow a u16.
         u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-        let data_start =
-            self.header_start + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64 + variable_fields_len;
+        let data_start = self.header_start
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+            + variable_fields_len;
 
         // Set the value so we don't have to read it again.
         match self.data_start.set(data_start) {

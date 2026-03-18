@@ -4,12 +4,12 @@ use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
 use crate::result::ZipError;
+use crate::result::ZipResult;
 use crate::spec::Pod;
 use crate::to_and_from_le;
 use crate::types::AesVendorVersion;
 use crate::{from_le, to_le};
 use std::io::Write;
-use crate::result::ZipResult;
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
@@ -22,10 +22,9 @@ pub(crate) struct AexEncryption {
     compression_method: u16,
 }
 
-unsafe impl Pod for AexEncryption{}
+unsafe impl Pod for AexEncryption {}
 
 impl AexEncryption {
-
     pub(crate) fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
         let block = self.to_le();
         writer.write_all(block.as_bytes())?;
