@@ -7,7 +7,7 @@ use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::spec::{self, FixedSizeBlock, Magic, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::ffi::S_IFLNK;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
@@ -2382,8 +2382,8 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
-    let buf = &aes_extra_field.serialize();
+    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method).to_le();
+    let buf = aes_extra_field.as_bytes();
     writer.write_all(buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
