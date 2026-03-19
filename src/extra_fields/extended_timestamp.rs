@@ -4,8 +4,8 @@
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
-use std::io::Read;
 use core::mem;
+use std::io::Read;
 
 /// `ExtendedTimestamp` Flags
 #[rustfmt::skip]

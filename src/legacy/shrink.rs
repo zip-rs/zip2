@@ -189,8 +189,7 @@ fn output_code(
         assert!(
             tab_entry
                 .prefix_code
-                .ok_or_else(|| io::Error::other("Cannot get prefix code"))?
-                as usize
+                .ok_or_else(|| io::Error::other("Cannot get prefix code"))? as usize
                 > CONTROL_CODE
         );
     }

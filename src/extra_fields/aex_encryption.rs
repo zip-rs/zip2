@@ -6,9 +6,8 @@ use crate::extra_fields::UsedExtraField;
 use crate::result::ZipError;
 use crate::spec::FixedSizeBlock;
 use crate::spec::Pod;
-use crate::to_and_from_le;
+use crate::spec::{from_le, to_and_from_le, to_le};
 use crate::types::AesVendorVersion;
-use crate::{from_le, to_le};
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
