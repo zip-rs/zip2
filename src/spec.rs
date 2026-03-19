@@ -450,6 +450,166 @@ impl FixedSizeBlock for Zip64DataDescriptorBlock {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
+pub(crate) struct ZipCentralEntryBlock {
+    pub(crate) magic: Magic,
+    pub version_made_by: u16,
+    pub version_to_extract: u16,
+    pub flags: u16,
+    pub compression_method: u16,
+    pub last_mod_time: u16,
+    pub last_mod_date: u16,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub file_name_length: u16,
+    pub extra_field_length: u16,
+    pub file_comment_length: u16,
+    pub disk_number: u16,
+    pub internal_file_attributes: u16,
+    pub external_file_attributes: u32,
+    pub offset: u32,
+}
+
+unsafe impl Pod for ZipCentralEntryBlock {}
+
+impl FixedSizeBlock for ZipCentralEntryBlock {
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
+
+    #[inline(always)]
+    fn magic(self) -> Magic {
+        self.magic
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid Central Directory header");
+
+    to_and_from_le![
+        (magic, Magic),
+        (version_made_by, u16),
+        (version_to_extract, u16),
+        (flags, u16),
+        (compression_method, u16),
+        (last_mod_time, u16),
+        (last_mod_date, u16),
+        (crc32, u32),
+        (compressed_size, u32),
+        (uncompressed_size, u32),
+        (file_name_length, u16),
+        (extra_field_length, u16),
+        (file_comment_length, u16),
+        (disk_number, u16),
+        (internal_file_attributes, u16),
+        (external_file_attributes, u32),
+        (offset, u32),
+    ];
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed, C)]
+pub(crate) struct ZipLocalEntryBlock {
+    pub(crate) magic: Magic,
+    pub version_made_by: u16,
+    pub flags: u16,
+    pub compression_method: u16,
+    pub last_mod_time: u16,
+    pub last_mod_date: u16,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub file_name_length: u16,
+    pub extra_field_length: u16,
+}
+
+unsafe impl Pod for ZipLocalEntryBlock {}
+
+impl FixedSizeBlock for ZipLocalEntryBlock {
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
+
+    #[inline(always)]
+    fn magic(self) -> Magic {
+        self.magic
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid local file header");
+
+    to_and_from_le![
+        (magic, Magic),
+        (version_made_by, u16),
+        (flags, u16),
+        (compression_method, u16),
+        (last_mod_time, u16),
+        (last_mod_date, u16),
+        (crc32, u32),
+        (compressed_size, u32),
+        (uncompressed_size, u32),
+        (file_name_length, u16),
+        (extra_field_length, u16),
+    ];
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed, C)]
+pub(crate) struct ZipDataDescriptorBlock {
+    pub(crate) magic: Magic,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+}
+
+unsafe impl Pod for ZipDataDescriptorBlock {}
+
+impl FixedSizeBlock for ZipDataDescriptorBlock {
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
+
+    #[inline(always)]
+    fn magic(self) -> Magic {
+        self.magic
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid data descriptor header");
+
+    to_and_from_le![
+        (magic, Magic),
+        (crc32, u32),
+        (compressed_size, u32),
+        (uncompressed_size, u32),
+    ];
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed, C)]
+pub(crate) struct Zip64DataDescriptorBlock {
+    pub(crate) magic: Magic,
+    pub crc32: u32,
+    pub compressed_size: u64,
+    pub uncompressed_size: u64,
+}
+
+unsafe impl Pod for Zip64DataDescriptorBlock {}
+
+impl FixedSizeBlock for Zip64DataDescriptorBlock {
+    type Magic = Magic;
+    const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
+
+    #[inline]
+    fn magic(self) -> Magic {
+        self.magic
+    }
+
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 data descriptor header");
+
+    to_and_from_le![
+        (magic, Magic),
+        (crc32, u32),
+        (compressed_size, u64),
+        (uncompressed_size, u64),
+    ];
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(packed, C)]
 pub(crate) struct Zip32CDEBlock {
     magic: Magic,
     pub disk_number: u16,
