@@ -15,7 +15,7 @@ use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::Debug;
 use std::ffi::OsStr;
-use std::fmt::Display;
+use core::fmt::Display;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -765,7 +765,7 @@ pub enum AesMode {
 }
 
 impl Display for AesMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Aes128 => write!(f, "AES-128"),
             Self::Aes192 => write!(f, "AES-192"),
