@@ -1,15 +1,15 @@
-use super::{
-    ZipCentralEntryBlock, ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner,
-    make_symlink,
-};
+//! Code related to stream reading
+
 use crate::read::make_crypto_reader;
 use crate::read::make_reader;
 use crate::read::parse_extra_field;
+use crate::read::{
+    ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
+};
 use crate::result::ZipError;
-use crate::spec::FixedSizeBlock;
 use crate::spec::Magic;
 use crate::spec::Pod;
-use crate::types::ZipLocalEntryBlock;
+use crate::spec::{FixedSizeBlock, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};

@@ -3,15 +3,14 @@
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
+use crate::datetime::DateTime;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR, ZipFlags,
+    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
+    ZipCentralEntryBlock, ZipFlags,
 };
-use crate::types::{
-    AesMode, AesVendorVersion, DateTime, SimpleFileOptions, System, ZipCentralEntryBlock,
-    ZipFileData,
-};
+use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use core::mem::{replace, size_of};
 use core::ops::{Deref, Range};
@@ -370,7 +369,9 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     #[allow(deprecated)]
     {
         if let CompressionMethod::Unsupported(_) = data.compression_method {
-            return unsupported_zip_error("Compression method not supported");
+            return Err(ZipError::UnsupportedArchive(
+                "Compression method not supported",
+            ));
         }
     }
 
@@ -733,11 +734,13 @@ impl<R: Read + Seek> ZipArchive<R> {
         };
 
         if dir_info.disk_number != dir_info.disk_with_central_directory {
-            return unsupported_zip_error("Support for multi-disk files is not implemented");
+            return Err(ZipError::UnsupportedArchive(
+                "Support for multi-disk files is not implemented",
+            ));
         }
 
         if file_capacity.saturating_mul(size_of::<ZipFileData>()) > isize::MAX as usize {
-            return unsupported_zip_error("Oversized central directory");
+            return Err(ZipError::UnsupportedArchive("Oversized central directory"));
         }
 
         let mut files = Vec::with_capacity(file_capacity);
@@ -1387,10 +1390,6 @@ pub struct AesInfo {
     pub verification_value: [u8; crate::aes::PWD_VERIFY_LENGTH],
     /// The salt
     pub salt: Vec<u8>,
-}
-
-const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
-    Err(ZipError::UnsupportedArchive(detail))
 }
 
 /// Parse a central directory entry to collect the information for the file.
@@ -2054,7 +2053,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
             .unix_permissions(self.unix_mode().unwrap_or(0o644) | S_IFREG)
             .last_modified_time(
                 self.last_modified()
-                    .filter(super::types::DateTime::is_valid)
+                    .filter(DateTime::is_valid)
                     .unwrap_or_else(DateTime::default_for_write),
             );
 
