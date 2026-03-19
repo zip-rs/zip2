@@ -9,8 +9,9 @@ use core::fmt;
 /// with its own set of peculiarities.
 /// For example, it has a resolution of 2 seconds!
 ///
-/// A [`DateTime`] can be stored directly in a zipfile with [`FileOptions::last_modified_time`],
-/// or read from one with [`ZipFile::last_modified`](crate::read::ZipFile::last_modified).
+/// A [`DateTime`] can be stored directly in a zipfile with
+/// [`FileOptions::last_modified_time`](crate::read::ZipFile::last_modified), or
+/// read from one with [`ZipFile::last_modified`](crate::read::ZipFile::last_modified).
 ///
 /// # Warning
 ///
@@ -397,7 +398,7 @@ impl TryFrom<DateTime> for time::PrimitiveDateTime {
     }
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
     #[test]
     #[allow(clippy::unusual_byte_groupings)]

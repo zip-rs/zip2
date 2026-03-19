@@ -4,13 +4,17 @@ use crate::compression::{CompressionMethod, Decompressor};
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::datetime::DateTime;
+use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
+use crate::result::ZipError::InvalidPassword;
 use crate::result::{ZipError, ZipResult, invalid};
+use crate::spec::is_dir;
 use crate::spec::{
     self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
 };
-use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData};
+use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData, ffi};
+use crate::unstable::{LittleEndianReadExt, path_to_string};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use core::mem::{replace, size_of};
 use core::ops::{Deref, Range};
@@ -22,7 +26,6 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 mod config;
-
 pub use config::{ArchiveOffset, Config};
 
 /// Provides high level API for reading from a stream.
@@ -31,6 +34,8 @@ pub use stream::read_zipfile_from_stream;
 pub use stream::read_zipfile_from_stream_with_compressed_size;
 
 pub(crate) mod magic_finder;
+
+pub use zip_archive::ZipArchive;
 
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
@@ -108,13 +113,6 @@ pub(crate) mod zip_archive {
         pub(super) shared: Arc<ZipArchiveMetadata>,
     }
 }
-
-use crate::extra_fields::UnicodeExtraField;
-use crate::result::ZipError::InvalidPassword;
-use crate::spec::is_dir;
-use crate::types::ffi::{S_IFLNK, S_IFREG};
-use crate::unstable::{LittleEndianReadExt, path_to_string};
-pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
@@ -2004,7 +2002,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// Returns whether the file is actually a symbolic link
     pub fn is_symlink(&self) -> bool {
         self.unix_mode()
-            .is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
+            .is_some_and(|mode| mode & ffi::S_IFLNK == ffi::S_IFLNK)
     }
 
     /// Returns whether the file is a normal file (i.e. not a directory or symlink)
@@ -2050,7 +2048,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         let mut options = SimpleFileOptions::default()
             .large_file(self.compressed_size().max(self.size()) > ZIP64_BYTES_THR)
             .compression_method(self.compression())
-            .unix_permissions(self.unix_mode().unwrap_or(0o644) | S_IFREG)
+            .unix_permissions(self.unix_mode().unwrap_or(0o644) | ffi::S_IFREG)
             .last_modified_time(
                 self.last_modified()
                     .filter(DateTime::is_valid)
@@ -2222,7 +2220,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::CompressionMethod::Stored;
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;

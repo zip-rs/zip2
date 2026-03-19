@@ -4,8 +4,8 @@
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
+use core::mem;
 use std::io::Read;
-use std::mem;
 
 /// `ExtendedTimestamp` Flags
 #[rustfmt::skip]
@@ -165,7 +165,7 @@ impl ExtendedTimestamp {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::ExtendedTimestamp;
 
     use std::io::Cursor;

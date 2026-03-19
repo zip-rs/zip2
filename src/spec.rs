@@ -1,4 +1,4 @@
-#![macro_use]
+//! Code linked with the specifications of the zip file
 
 use crate::read::ArchiveOffset;
 use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
@@ -265,7 +265,6 @@ pub(crate) trait FixedSizeBlock: Pod {
 }
 
 /// Convert all the fields of a struct *from* little-endian representations.
-#[macro_export]
 macro_rules! from_le {
     ($obj:ident, $field:ident, $type:ty) => {
         $obj.$field = <$type>::from_le($obj.$field);
@@ -278,9 +277,9 @@ macro_rules! from_le {
         from_le!($obj, [$($rest),+]);
     };
 }
+pub(crate) use from_le;
 
 /// Convert all the fields of a struct *into* little-endian representations.
-#[macro_export]
 macro_rules! to_le {
     ($obj:ident, $field:ident, $type:ty) => {
         $obj.$field = <$type>::to_le($obj.$field);
@@ -293,6 +292,7 @@ macro_rules! to_le {
         to_le!($obj, [$($rest),+]);
     };
 }
+pub(crate) use to_le;
 
 /* TODO: derive macro to generate these fields? */
 /// Implement `from_le()` and `to_le()`, providing the field specification to both macros
@@ -312,6 +312,7 @@ macro_rules! to_and_from_le {
         }
     };
 }
+pub(crate) use to_and_from_le;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
@@ -995,7 +996,7 @@ pub(crate) fn is_dir(filename: &str) -> bool {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::io::Cursor;
 
     use crate::{

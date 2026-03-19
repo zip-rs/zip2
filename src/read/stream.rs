@@ -335,7 +335,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use tempfile::TempDir;
 
     use crate::ZipWriter;

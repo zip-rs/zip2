@@ -7,8 +7,7 @@ use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Magic, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
-use crate::types::ffi::S_IFLNK;
+use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -55,7 +54,7 @@ impl<W: Write> MaybeEncrypted<W> {
 }
 
 impl<W> Debug for MaybeEncrypted<W> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         // Don't print W, since it may be a huge Vec<u8>
         f.write_str(match self {
             MaybeEncrypted::Unencrypted(_) => "Unencrypted",
@@ -106,7 +105,7 @@ enum GenericZipWriter<W: Write + Seek> {
 }
 
 impl<W: Write + Seek> Debug for GenericZipWriter<W> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Closed => f.write_str("Closed"),
             Self::Storer(w) => f.write_fmt(format_args!("Storer({w:?})")),
@@ -185,7 +184,7 @@ pub(crate) mod zip_writer {
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
             f.write_fmt(format_args!(
                 "ZipWriter {{files: {:?}, stats: {:?}, writing_to_file: {}, writing_raw: {}, comment: {:?}, flush_on_finish_file: {}}}",
                 self.files, self.stats, self.writing_to_file, self.writing_raw,
@@ -444,7 +443,7 @@ impl ExtendedFileOptions {
 }
 
 impl Debug for ExtendedFileOptions {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
         f.write_fmt(format_args!("ExtendedFileOptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
         self.extra_data, self.central_extra_data))
     }
@@ -1807,7 +1806,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         *options
             .permissions
             .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |= S_IFLNK;
+            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |=
+            ffi::S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
@@ -2581,7 +2581,7 @@ impl<W: Write> Seek for StreamWriter<W> {
 #[allow(unknown_lints)] // needless_update is new in clippy pre 1.29.0
 #[allow(clippy::needless_update)] // So we can use the same FileOptions decls with and without zopfli_buffer_size
 #[allow(clippy::octal_escapes)] // many false positives in converted fuzz cases
-mod test {
+mod tests {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::CompressionMethod::Stored;
     use crate::compression::CompressionMethod;
