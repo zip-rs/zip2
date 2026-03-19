@@ -8,8 +8,8 @@ use crate::path::{enclosed_name, file_name_sanitized};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
-    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock, ZipDataDescriptorBlock,
-    ZipFlags, ZipLocalEntryBlock,
+    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock,
+    ZipDataDescriptorBlock, ZipFlags, ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;

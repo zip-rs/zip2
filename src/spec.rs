@@ -277,7 +277,6 @@ macro_rules! from_le {
         from_le!($obj, [$($rest),+]);
     };
 }
-pub(crate) use from_le;
 
 /// Convert all the fields of a struct *into* little-endian representations.
 macro_rules! to_le {
@@ -312,7 +311,6 @@ macro_rules! to_and_from_le {
         }
     };
 }
-pub(crate) use to_and_from_le;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
@@ -959,8 +957,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                         < eocd64
                             .number_of_files
                             .saturating_mul(
-                                (mem::size_of::<Magic>()
-                                    + mem::size_of::<ZipCentralEntryBlock>())
+                                (mem::size_of::<Magic>() + mem::size_of::<ZipCentralEntryBlock>())
                                     as u64,
                             )
                             .saturating_add(eocd64.central_directory_offset)

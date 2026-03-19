@@ -4,7 +4,7 @@ use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
 use crate::spec::Pod;
-use crate::to_le;
+use crate::spec::to_le;
 use crate::types::AesVendorVersion;
 
 #[derive(Copy, Clone)]
