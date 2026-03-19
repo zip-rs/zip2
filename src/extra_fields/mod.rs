@@ -1,6 +1,6 @@
 //! Types for extra fields
 
-use std::fmt::Display;
+use core::fmt::Display;
 
 mod aex_encryption;
 mod extended_timestamp;
@@ -81,7 +81,7 @@ impl From<UsedExtraField> for u16 {
 }
 
 impl Display for UsedExtraField {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "0x{:04X}", *self as u16)
     }
 }

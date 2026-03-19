@@ -7,7 +7,7 @@ use std::path::{Component, MAIN_SEPARATOR, Path};
 
 /// Provides high level API for reading from a stream.
 pub mod stream {
-    pub use crate::read::stream::*;
+    pub use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
 }
 /// Types for creating ZIP archives.
 pub mod write {
