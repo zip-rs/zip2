@@ -14,8 +14,8 @@ use crate::spec::{
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::Debug;
-use std::ffi::OsStr;
 use core::fmt::Display;
+use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
