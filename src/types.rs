@@ -11,7 +11,6 @@ use crate::spec::{
     self, FixedSizeBlock, Zip64DataDescriptorBlock, ZipCentralEntryBlock, ZipDataDescriptorBlock,
     ZipFlags, ZipLocalEntryBlock,
 };
-use crate::types::ffi::S_IFDIR;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::Debug;
@@ -352,7 +351,7 @@ impl ZipFileData {
             45
         } else if self
             .unix_mode()
-            .is_some_and(|mode| mode & S_IFDIR == S_IFDIR)
+            .is_some_and(|mode| mode & ffi::S_IFDIR == ffi::S_IFDIR)
         {
             // file is directory
             20
@@ -812,23 +811,20 @@ mod test {
     #[test]
     fn unix_mode_robustness() {
         use super::{System, ZipFileData};
-        use crate::types::ffi::S_IFLNK;
+        use crate::types::ffi;
         let mut data = ZipFileData {
             system: System::Dos,
-            external_attributes: (S_IFLNK | 0o777) << 16,
+            external_attributes: (ffi::S_IFLNK | 0o777) << 16,
             ..ZipFileData::default()
         };
-        assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
+        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
 
         data.system = System::Unknown;
-        assert_eq!(data.unix_mode(), Some(S_IFLNK | 0o777));
+        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
 
         data.external_attributes = 0x10; // DOS directory bit
         data.system = System::Dos;
-        assert_eq!(
-            data.unix_mode().unwrap() & 0o170000,
-            crate::types::ffi::S_IFDIR
-        );
+        assert_eq!(data.unix_mode().unwrap() & 0o170000, ffi::S_IFDIR);
     }
 
     #[test]

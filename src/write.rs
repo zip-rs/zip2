@@ -8,7 +8,6 @@ use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock, ZipLocalEntryBlock};
-use crate::types::ffi::S_IFLNK;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -1806,7 +1805,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         *options
             .permissions
             .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |= S_IFLNK;
+            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |=
+            ffi::S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
