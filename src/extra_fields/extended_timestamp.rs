@@ -165,7 +165,7 @@ impl ExtendedTimestamp {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::ExtendedTimestamp;
 
     use std::io::Cursor;

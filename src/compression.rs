@@ -561,7 +561,7 @@ impl<R: io::BufRead> Decompressor<R> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 
     #[test]

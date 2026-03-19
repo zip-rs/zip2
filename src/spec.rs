@@ -1023,7 +1023,7 @@ pub(crate) fn is_dir(filename: &str) -> bool {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::io::Cursor;
 
     use crate::{

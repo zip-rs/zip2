@@ -84,7 +84,7 @@ impl<R: Read> Read for Crc32Reader<R> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::io::Read;
 
     use super::Crc32Reader;

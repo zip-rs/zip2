@@ -794,7 +794,7 @@ impl AesMode {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     #[test]
     fn system() {
         use super::System;

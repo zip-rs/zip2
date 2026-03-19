@@ -398,7 +398,7 @@ impl TryFrom<DateTime> for time::PrimitiveDateTime {
     }
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
     #[test]
     #[allow(clippy::unusual_byte_groupings)]

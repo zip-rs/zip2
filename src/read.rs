@@ -2220,7 +2220,7 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::CompressionMethod::Stored;
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
