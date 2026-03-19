@@ -277,6 +277,7 @@ macro_rules! from_le {
         from_le!($obj, [$($rest),+]);
     };
 }
+pub(crate) use from_le;
 
 /// Convert all the fields of a struct *into* little-endian representations.
 macro_rules! to_le {
@@ -311,6 +312,7 @@ macro_rules! to_and_from_le {
         }
     };
 }
+pub(crate) use to_and_from_le;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
