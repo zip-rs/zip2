@@ -32,13 +32,7 @@ fn read_many_entries(bench: &mut Bencher) {
     bench.iter(|| {
         for idx in 0..archive.len() {
             let mut file = archive.by_index(idx).unwrap();
-            let mut buf = [0u8; 1024];
-            loop {
-                let n = file.read(&mut buf).unwrap();
-                if n == 0 {
-                    break;
-                }
-            }
+            let n = std::io::copy(&mut file, &mut std::io::sink()).unwrap(); 
         }
     });
 
