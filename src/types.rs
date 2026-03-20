@@ -746,6 +746,8 @@ pub enum AesVendorVersion {
 }
 
 impl AesVendorVersion {
+    /// As u16
+    #[must_use]
     pub const fn as_u16(self) -> u16 {
         self as u16
     }
@@ -772,6 +774,7 @@ pub enum AesMode {
 
 impl AesMode {
     /// As u8
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self as u8
     }
