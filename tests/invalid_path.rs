@@ -35,7 +35,7 @@ pub mod tests {
 
     /// Create a ZIP file with entries that have Windows-style absolute paths
     ///
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     fn create_zip_with_windows_absolute_paths() -> Vec<u8> {
         let buf = Vec::new();
@@ -57,7 +57,7 @@ pub mod tests {
     /// Create a ZIP file that more closely simulates the soldeer registry issue
     /// with an underscore directory at the root with absolute path
     ///
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     fn create_zip_like_soldeer_issue() -> Vec<u8> {
         let buf = Vec::new();
@@ -85,7 +85,7 @@ pub mod tests {
         writer.finish().unwrap().into_inner()
     }
 
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_extract_zip_with_absolute_paths() {
@@ -106,7 +106,7 @@ pub mod tests {
         assert_eq!(content, "File 1 content");
     }
 
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_extract_zip_with_windows_absolute_paths() {
@@ -126,7 +126,7 @@ pub mod tests {
         assert_eq!(content, "File 1 content");
     }
 
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_extract_soldeer_like_zip() {

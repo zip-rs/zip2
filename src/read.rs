@@ -2404,7 +2404,7 @@ mod tests {
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
     }
 
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_is_symlink() -> std::io::Result<()> {
@@ -2489,7 +2489,7 @@ mod tests {
     }
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
@@ -2512,7 +2512,7 @@ mod tests {
         Ok(())
     }
 
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
@@ -2527,7 +2527,7 @@ mod tests {
         Ok(())
     }
 
-    /// Only on little endian because cannot we cannot use fs with miri CI
+    /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_central_directory_not_at_end() -> ZipResult<()> {

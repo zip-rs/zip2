@@ -1,4 +1,4 @@
-/// Only on little endian because cannot we cannot use fs with miri CI
+/// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
 fn write_data(w: &mut dyn std::io::Write, size: usize) {
     let chunks = 1 << 20; // 1MB chunks
@@ -11,7 +11,7 @@ fn write_data(w: &mut dyn std::io::Write, size: usize) {
     }
 }
 
-/// Only on little endian because cannot we cannot use fs with miri CI
+/// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_append_near_4gb() {
@@ -70,7 +70,7 @@ fn test_append_near_4gb() {
     }
 }
 
-/// Only on little endian because cannot we cannot use fs with miri CI
+/// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_append_near_4gb_with_1gb_files() {
@@ -137,7 +137,7 @@ fn test_append_near_4gb_with_1gb_files() {
 }
 
 // A smaller test that doesn't create a 4GB file but still tests the logic
-/// Only on little endian because cannot we cannot use fs with miri CI
+/// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_append_with_large_file_flag() {
