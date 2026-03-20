@@ -11,7 +11,7 @@ use crate::types::AesVendorVersion;
 pub(crate) struct AexEncryption {
     header_id: u16,
     data_size: u16,
-    version: u16,
+    pub(crate) version: u16,
     vendor_id: u16,
     aes_mode: u8,
     compression_method: u16,
