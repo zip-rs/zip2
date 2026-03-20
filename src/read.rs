@@ -17,7 +17,7 @@ use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFile
 use crate::unstable::{LittleEndianReadExt, path_to_string};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use core::mem::{replace, size_of};
-use core::ops::{Deref, Range};
+use core::ops::Range;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -1490,7 +1490,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         flags,
         file_name,
         file_name_raw,
-        extra_field: Some(Arc::new(extra_field.to_vec())),
+        extra_field: Some(Arc::from(extra_field)),
         central_extra_field: None,
         file_comment,
         header_start: offset.into(),
@@ -1554,7 +1554,7 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
             }
         }
         if modified {
-            *field_group = Some(Arc::new(processed_extra_field));
+            *field_group = Some(Arc::from(processed_extra_field.into_boxed_slice()));
         }
     }
     file.extra_field = extra_field;
@@ -2025,7 +2025,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         self.get_metadata()
             .extra_field
             .as_ref()
-            .map(|v| v.deref().deref())
+            .map(|v| &**v)
     }
 
     /// Get the starting offset of the data of the compressed file
