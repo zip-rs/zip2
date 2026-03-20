@@ -2449,7 +2449,7 @@ mod tests {
         reader.by_name("你好.txt").unwrap();
     }
 
-    /// Only on little endian because cannot too long with miri CI
+    /// Only on little endian because it runs too long with Miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_64k_files() -> ZipResult<()> {
