@@ -907,7 +907,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             if stripped.is_empty() {
                 new_data.extra_field = None;
             } else {
-                new_data.extra_field = Some(stripped.into());
+                new_data.extra_field = Some(Arc::from(stripped.into_boxed_slice()));
             }
         }
 
@@ -1285,7 +1285,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writer.write_all(&file.file_name_raw)?;
             if extra_data_len > 0 {
                 writer.write_all(&extra_data)?;
-                file.extra_field = Some(extra_data.into());
+                file.extra_field = Some(Arc::from(extra_data.into_boxed_slice()));
             }
             Ok(())
         };
@@ -2392,9 +2392,10 @@ fn update_aes_extra_data<W: Write + Seek>(
             "update_aes_extra_data called on a file that has no extra-data field"
         ));
     };
-    let extra_field = Arc::make_mut(extra_field);
-    extra_field[aes_extra_data_start..aes_extra_data_start + size_of::<AexEncryption>()]
+    let mut vec = extra_field.to_vec();
+    vec[aes_extra_data_start..aes_extra_data_start + size_of::<AexEncryption>()]
         .copy_from_slice(&buf);
+    *extra_field = Arc::from(vec.into_boxed_slice());
 
     Ok(())
 }
