@@ -132,12 +132,15 @@ impl<R: Read + ?Sized> core::fmt::Debug for CryptoReader<'_, R> {
             CryptoReader::ZipCrypto(_) => f.write_str("CryptoReader::ZipCrypto"),
             #[cfg(feature = "aes-crypto")]
             CryptoReader::Aes { vendor_version, .. } => {
-                write!(f, "CryptoReader::Aes {{ vendor_version: {:?} }}", vendor_version)
-            },
+                write!(
+                    f,
+                    "CryptoReader::Aes {{ vendor_version: {:?} }}",
+                    vendor_version
+                )
+            }
         }
     }
 }
-
 
 impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
