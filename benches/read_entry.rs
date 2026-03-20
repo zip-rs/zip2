@@ -25,9 +25,9 @@ fn read_entry(bench: &mut Bencher) {
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size)
         .expect("Failed to create a random archive for the bench read_entry()");
-    let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
 
     bench.iter(|| {
+        let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
         let mut file = archive.by_name("random.dat").unwrap();
         let mut buf = [0u8; 1024];
         loop {
