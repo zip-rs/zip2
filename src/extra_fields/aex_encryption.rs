@@ -44,11 +44,13 @@ impl AexEncryption {
     ) -> Self {
         Self {
             header_id: UsedExtraField::AeXEncryption.as_u16(),
-            data_size: 7,
+            data_size: (size_of::<u16>() + size_of::<u16>() + size_of::<u8>() + size_of::<u16>())
+                as u16,
             version: version as u16,
             vendor_id: u16::from_le_bytes(*b"AE"),
             aes_mode: aes_mode as u8,
             compression_method: compression_method.serialize_to_u16(),
         }
+        .to_le()
     }
 }

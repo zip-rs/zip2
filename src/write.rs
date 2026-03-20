@@ -1197,7 +1197,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             // For raw copies of AES entries, write the correct AES extra data immediately
             let aex_extra_field =
-                AexEncryption::new(vendor_version, mode, actual_compression_method).to_le();
+                AexEncryption::new(vendor_version, mode, actual_compression_method);
             let buf = &aex_extra_field.as_bytes()[size_of::<u16>() + size_of::<u16>()..];
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
@@ -2377,7 +2377,7 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method).to_le();
+    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
     let buf = aes_extra_field.as_bytes();
     writer.write_all(buf)?;
 
