@@ -114,17 +114,6 @@ pub(crate) mod zip_archive {
     }
 }
 
-impl<R: Read + ?Sized> std::fmt::Debug for CryptoReader<'_, R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CryptoReader::Plaintext(_) => f.write_str("CryptoReader::Plaintext"),
-            CryptoReader::ZipCrypto(_) => f.write_str("CryptoReader::ZipCrypto"),
-            #[cfg(feature = "aes-crypto")]
-            CryptoReader::Aes { .. } => f.write_str("CryptoReader::Aes"),
-        }
-    }
-}
-
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
     Plaintext(io::Take<&'a mut R>),
@@ -135,6 +124,20 @@ pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
         vendor_version: AesVendorVersion,
     },
 }
+
+impl<R: Read + ?Sized> core::fmt::Debug for CryptoReader<'_, R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CryptoReader::Plaintext(_) => f.write_str("CryptoReader::Plaintext"),
+            CryptoReader::ZipCrypto(_) => f.write_str("CryptoReader::ZipCrypto"),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { vendor_version, .. } => {
+                write!(f, "CryptoReader::Aes {{ vendor_version: {:?} }}", vendor_version)
+            },
+        }
+    }
+}
+
 
 impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
