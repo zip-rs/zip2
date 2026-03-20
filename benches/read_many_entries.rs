@@ -5,11 +5,13 @@ use std::io::{Cursor, Read, Write};
 use bencher::Bencher;
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
+const NB_FILES: usize = 200;
+
 fn generate_random_archive(size: usize) -> Result<Vec<u8>, std::io::Error> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    for count in 0..600 {
+    for count in 0..NB_FILES {
         writer.start_file(format!("random_{}.dat", count), options)?;
         let mut bytes = vec![0u8; size];
         getrandom::fill(&mut bytes)
@@ -40,7 +42,7 @@ fn read_many_entries(bench: &mut Bencher) {
         }
     });
 
-    bench.bytes = size as u64;
+    bench.bytes = (size * NB_FILES) as u64;
 }
 
 benchmark_group!(benches, read_many_entries);
