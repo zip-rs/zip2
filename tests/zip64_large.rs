@@ -212,7 +212,10 @@ fn zip64_large() {
 
 /// We cannot run this test because on wasm32
 /// the literal `5368709808` does not fit into the type `usize` whose range is `0..=4294967295`
+///
+/// Only on little endian because too long with miri CI
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_endian = "little")]
 #[test]
 fn test_zip64_check_extra_field() {
     use std::{fs::File, io::Cursor, path::Path};
@@ -373,7 +376,10 @@ fn test_zip64_check_extra_field() {
 
 /// We cannot run this test because on wasm32
 /// See `test_zip64_check_extra_field`
+///
+/// Only on little endian because too long with miri CI
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_endian = "little")]
 fn zip64_check_extra_field(
     path: &std::path::Path,
     archive_buffer: &mut Vec<u8>,
@@ -403,6 +409,8 @@ fn zip64_check_extra_field(
     Ok(())
 }
 
+/// Only on little endian because too long with miri CI
+#[cfg(target_endian = "little")]
 #[test]
 fn test_number_of_files() {
     use std::io::Cursor;

@@ -1,10 +1,11 @@
-use std::io::Write;
-use zip::result::ZipResult;
-use zip::write::SimpleFileOptions;
-use zip::{ZipArchive, ZipWriter};
-
+/// Only on little endian because cannot we cannot use fs with miri CI
+#[cfg(target_endian = "little")]
 #[test]
-fn test_absolute_paths() -> ZipResult<()> {
+fn test_absolute_paths() -> zip::result::ZipResult<()> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    use zip::{ZipArchive, ZipWriter};
+
     // Create a ZIP file with absolute paths
     let buf = Vec::new();
     let mut writer = ZipWriter::new(std::io::Cursor::new(buf));

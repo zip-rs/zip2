@@ -1,8 +1,6 @@
-use std::{fs::File, io::Write};
-use tempfile::tempdir;
-use zip::{ZipWriter, write::SimpleFileOptions};
-
-fn write_data(w: &mut dyn Write, size: usize) {
+/// Only on little endian because cannot we cannot use fs with miri CI
+#[cfg(target_endian = "little")]
+fn write_data(w: &mut dyn std::io::Write, size: usize) {
     let chunks = 1 << 20; // 1MB chunks
     let mut written = 0;
     let buf = vec![0x21; chunks];
@@ -13,8 +11,15 @@ fn write_data(w: &mut dyn Write, size: usize) {
     }
 }
 
+/// Only on little endian because cannot we cannot use fs with miri CI
+#[cfg(target_endian = "little")]
 #[test]
 fn test_append_near_4gb() {
+    use std::fs::File;
+    use tempfile::tempdir;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
     let dir = tempdir().unwrap();
     let path = dir.path().join("large-then-small.zip");
 
@@ -65,8 +70,15 @@ fn test_append_near_4gb() {
     }
 }
 
+/// Only on little endian because cannot we cannot use fs with miri CI
+#[cfg(target_endian = "little")]
 #[test]
 fn test_append_near_4gb_with_1gb_files() {
+    use std::fs::File;
+    use tempfile::tempdir;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
     let dir = tempdir().unwrap();
     let path = dir.path().join("large-then-small.zip");
 
@@ -125,8 +137,15 @@ fn test_append_near_4gb_with_1gb_files() {
 }
 
 // A smaller test that doesn't create a 4GB file but still tests the logic
+/// Only on little endian because cannot we cannot use fs with miri CI
+#[cfg(target_endian = "little")]
 #[test]
 fn test_append_with_large_file_flag() {
+    use std::fs::File;
+    use tempfile::tempdir;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
     let dir = tempdir().unwrap();
     let path = dir.path().join("test.zip");
 

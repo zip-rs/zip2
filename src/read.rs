@@ -2221,13 +2221,9 @@ fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime
 
 #[cfg(test)]
 mod tests {
-    use crate::CompressionMethod::Stored;
     use crate::read::ZipReadOptions;
     use crate::result::ZipResult;
-    use crate::types::SimpleFileOptions;
-    use crate::{ZipArchive, ZipWriter};
-    use std::io::{Cursor, Read, Write};
-    use tempfile::TempDir;
+    use std::io::{Cursor, Read};
 
     #[test]
     fn invalid_offset() {
@@ -2330,6 +2326,7 @@ mod tests {
 
     #[test]
     fn zip64_magic_in_filenames() {
+        use super::ZipArchive;
         let files = vec![
             include_bytes!("../tests/data/zip64_magic_in_filename_1.zip").to_vec(),
             include_bytes!("../tests/data/zip64_magic_in_filename_2.zip").to_vec(),
@@ -2373,6 +2370,7 @@ mod tests {
     #[cfg(feature = "deflate64")]
     #[test]
     fn deflate64_index_out_of_bounds() -> std::io::Result<()> {
+        use super::ZipArchive;
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
             "../tests/data/raw_deflate64_index_out_of_bounds.zip"
         )))?;
@@ -2383,6 +2381,8 @@ mod tests {
     #[cfg(feature = "deflate64")]
     #[test]
     fn deflate64_not_enough_space() {
+        use super::ZipArchive;
+
         ZipArchive::new(Cursor::new(include_bytes!(
             "../tests/data/deflate64_issue_25.zip"
         )))
@@ -2392,6 +2392,7 @@ mod tests {
     #[cfg(feature = "deflate-flate2")]
     #[test]
     fn test_read_with_data_descriptor() {
+        use super::ZipArchive;
         use std::io::Read;
 
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
@@ -2403,8 +2404,13 @@ mod tests {
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
     }
 
+    /// Only on little endian because cannot we cannot use fs with miri CI
+    #[cfg(target_endian = "little")]
     #[test]
     fn test_is_symlink() -> std::io::Result<()> {
+        use super::ZipArchive;
+        use tempfile::TempDir;
+
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/symlink.zip")))?;
         assert!(reader.by_index(0)?.is_symlink());
         let tempdir = TempDir::with_prefix("test_is_symlink")?;
@@ -2416,6 +2422,8 @@ mod tests {
     #[test]
     #[cfg(feature = "deflate-flate2")]
     fn test_utf8_extra_field() {
+        use super::ZipArchive;
+
         let mut reader =
             ZipArchive::new(Cursor::new(include_bytes!("../tests/data/chinese.zip"))).unwrap();
         reader.by_name("七个房间.txt").unwrap();
@@ -2423,6 +2431,8 @@ mod tests {
 
     #[test]
     fn test_utf8() {
+        use super::ZipArchive;
+
         let mut reader =
             ZipArchive::new(Cursor::new(include_bytes!("../tests/data/linux-7z.zip"))).unwrap();
         reader.by_name("你好.txt").unwrap();
@@ -2430,6 +2440,8 @@ mod tests {
 
     #[test]
     fn test_utf8_2() {
+        use super::ZipArchive;
+
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
             "../tests/data/windows-7zip.zip"
         )))
@@ -2437,8 +2449,16 @@ mod tests {
         reader.by_name("你好.txt").unwrap();
     }
 
+    /// Only on little endian because cannot too long with miri CI
+    #[cfg(target_endian = "little")]
     #[test]
     fn test_64k_files() -> ZipResult<()> {
+        use super::ZipArchive;
+        use crate::CompressionMethod::Stored;
+        use crate::ZipWriter;
+        use crate::types::SimpleFileOptions;
+        use std::io::Write;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions {
             compression_method: Stored,
@@ -2469,9 +2489,14 @@ mod tests {
     }
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
+    /// Only on little endian because cannot we cannot use fs with miri CI
+    #[cfg(target_endian = "little")]
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
+        use crate::ZipWriter;
+        use crate::types::SimpleFileOptions;
         use std::fs::create_dir;
+        use tempfile::TempDir;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
@@ -2487,8 +2512,13 @@ mod tests {
         Ok(())
     }
 
+    /// Only on little endian because cannot we cannot use fs with miri CI
+    #[cfg(target_endian = "little")]
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
+        use super::ZipArchive;
+        use tempfile::TempDir;
+
         let mut reader =
             ZipArchive::new(Cursor::new(include_bytes!("../tests/data/mimetype.zip")))?;
         let dest = TempDir::with_prefix("read__test_can_create_destination")?;
@@ -2497,8 +2527,12 @@ mod tests {
         Ok(())
     }
 
+    /// Only on little endian because cannot we cannot use fs with miri CI
+    #[cfg(target_endian = "little")]
     #[test]
     fn test_central_directory_not_at_end() -> ZipResult<()> {
+        use super::ZipArchive;
+
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/omni.ja")))?;
         let mut file = reader.by_name("chrome.manifest")?;
         let mut contents = String::new();
@@ -2522,6 +2556,8 @@ mod tests {
 
     #[test]
     fn test_ignore_encryption_flag() -> ZipResult<()> {
+        use super::ZipArchive;
+
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
             "../tests/data/ignore_encryption_flag.zip"
         )))?;

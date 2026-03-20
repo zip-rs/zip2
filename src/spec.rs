@@ -120,6 +120,7 @@ impl From<ZipFlags> for u16 {
 ///```
 /// # fn main() -> Result<(), zip::result::ZipError> {
 /// # #[cfg(target_pointer_width = "64")]
+/// # #[cfg(target_endian = "little")] // too long to run on miri
 /// # {
 /// use std::io::{self, Cursor, Write};
 /// use std::error::Error;
