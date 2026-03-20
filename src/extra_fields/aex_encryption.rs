@@ -3,7 +3,7 @@
 use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
-use crate::spec::{Pod, to_le};
+use crate::spec::Pod;
 use crate::types::AesVendorVersion;
 
 #[derive(Copy, Clone)]
@@ -22,17 +22,12 @@ unsafe impl Pod for AexEncryption {}
 impl AexEncryption {
     #[inline(always)]
     pub(crate) fn to_le(mut self) -> Self {
-        to_le![
-            self,
-            [
-                (header_id, u16),
-                (data_size, u16),
-                (version, u16),
-                (vendor_id, u16),
-                (aes_mode, u8),
-                (compression_method, u16)
-            ]
-        ];
+        self.header_id = u16::to_le(self.header_id);
+        self.data_size = u16::to_le(self.data_size);
+        self.version = u16::to_le(self.version);
+        self.vendor_id = u16::to_le(self.vendor_id);
+        self.aes_mode = u8::to_le(self.aes_mode);
+        self.compression_method = u16::to_le(self.compression_method);
         self
     }
 

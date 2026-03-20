@@ -265,7 +265,6 @@ macro_rules! to_le {
         to_le!($obj, [$($rest),+]);
     };
 }
-pub(crate) use to_le;
 
 /* TODO: derive macro to generate these fields? */
 /// Implement `from_le()` and `to_le()`, providing the field specification to both macros
