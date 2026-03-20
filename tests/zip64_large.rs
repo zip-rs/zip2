@@ -215,7 +215,7 @@ fn zip64_large() {
 ///
 /// Only on little endian because too long with miri CI
 #[cfg(not(target_arch = "wasm32"))]
-#[cfg(target_endian = "little")]
+#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_zip64_check_extra_field() {
     use std::{fs::File, io::Cursor, path::Path};
@@ -379,7 +379,7 @@ fn test_zip64_check_extra_field() {
 ///
 /// Only on little endian because too long with miri CI
 #[cfg(not(target_arch = "wasm32"))]
-#[cfg(target_endian = "little")]
+#[cfg(all(target_endian = "little", not(miri)))]
 fn zip64_check_extra_field(
     path: &std::path::Path,
     archive_buffer: &mut Vec<u8>,
@@ -410,7 +410,7 @@ fn zip64_check_extra_field(
 }
 
 /// Only on little endian because too long with miri CI
-#[cfg(target_endian = "little")]
+#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_number_of_files() {
     use std::io::Cursor;

@@ -36,7 +36,7 @@ pub mod tests {
     /// Create a ZIP file with entries that have Windows-style absolute paths
     ///
     /// Only on little endian because cannot we cannot use fs with miri CI
-    #[cfg(target_endian = "little")]
+    #[cfg(all(target_endian = "little", not(miri)))]
     fn create_zip_with_windows_absolute_paths() -> Vec<u8> {
         let buf = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
@@ -58,7 +58,7 @@ pub mod tests {
     /// with an underscore directory at the root with absolute path
     ///
     /// Only on little endian because cannot we cannot use fs with miri CI
-    #[cfg(target_endian = "little")]
+    #[cfg(all(target_endian = "little", not(miri)))]
     fn create_zip_like_soldeer_issue() -> Vec<u8> {
         let buf = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
@@ -86,7 +86,7 @@ pub mod tests {
     }
 
     /// Only on little endian because cannot we cannot use fs with miri CI
-    #[cfg(target_endian = "little")]
+    #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_extract_zip_with_absolute_paths() {
         let zip_data = create_zip_with_absolute_paths();
@@ -107,7 +107,7 @@ pub mod tests {
     }
 
     /// Only on little endian because cannot we cannot use fs with miri CI
-    #[cfg(target_endian = "little")]
+    #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_extract_zip_with_windows_absolute_paths() {
         let zip_data = create_zip_with_windows_absolute_paths();
@@ -127,7 +127,7 @@ pub mod tests {
     }
 
     /// Only on little endian because cannot we cannot use fs with miri CI
-    #[cfg(target_endian = "little")]
+    #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_extract_soldeer_like_zip() {
         let zip_data = create_zip_like_soldeer_issue();
