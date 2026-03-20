@@ -222,10 +222,6 @@ impl<T: FixedSizeBlock> BlockWithMagic<T> {
 pub(crate) trait FixedSizeBlock: Pod {
     const MAGIC: Magic;
 
-    fn magic(self) -> Magic {
-        Self::MAGIC
-    }
-
     const WRONG_MAGIC_ERROR: ZipError;
 
     #[allow(clippy::wrong_self_convention)]
@@ -243,6 +239,7 @@ pub(crate) trait FixedSizeBlock: Pod {
             magic,
             inner: block,
         } = block_with_magic;
+        let magic = Magic::from_le(magic);
         let block = Self::from_le(block);
 
         if magic != Self::MAGIC {
@@ -255,7 +252,7 @@ pub(crate) trait FixedSizeBlock: Pod {
 
     fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
         let block = BlockWithMagic {
-            magic: self.magic(),
+            magic: Self::MAGIC,
             inner: self,
         };
         let block = block.to_le();
@@ -277,7 +274,6 @@ macro_rules! from_le {
         from_le!($obj, [$($rest),+]);
     };
 }
-pub(crate) use from_le;
 
 /// Convert all the fields of a struct *into* little-endian representations.
 macro_rules! to_le {
@@ -312,7 +308,6 @@ macro_rules! to_and_from_le {
         }
     };
 }
-pub(crate) use to_and_from_le;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
