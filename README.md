@@ -96,6 +96,10 @@ we will follow these guidelines:
 - We will always support a minor Rust version that has been stable for at least 6 months.
 - Any change to the MSRV will be accompanied with a **minor** version bump.
 
+## License
+
+Licensed under the [MIT License](./LICENSE). Some files in the "tests/data" subdirectory of this repository are under other
+licences; see files named `LICENSE.*.txt` for details.
 
 ## Fuzzing
 
