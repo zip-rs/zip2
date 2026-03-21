@@ -39,7 +39,6 @@ pub(crate) mod reader;
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
 
-
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
     Plaintext(io::Take<&'a mut R>),
