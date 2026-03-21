@@ -2,16 +2,16 @@
 
 use crate::cp437::FromCp437;
 use crate::read::central_header_to_zip_file_inner;
-use crate::spec::ZipFlags;
+use crate::spec::{FixedSizeBlock, ZipCentralEntryBlock, ZipFlags};
 use crate::{
     ZipReadOptions,
     read::{
         CentralDirectoryInfo, Config, ZipFile, find_content, make_crypto_reader, make_reader,
-        read_variable_length_byte_field, unsupported_zip_error,
+        read_variable_length_byte_field
     },
     result::{ZipError, ZipResult},
-    spec::{self, FixedSizeBlock},
-    types::{ZipCentralEntryBlock, ZipFileData},
+    spec,
+    types::ZipFileData,
 };
 use std::{
     borrow::Cow,
@@ -58,11 +58,11 @@ impl<R: Read + Seek> IterableZip<R> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
         if central_directory.number_of_files > central_directory.directory_start as usize {
-            return unsupported_zip_error("Fishy error :)");
+            return Err(ZipError::UnsupportedArchive("Fishy error :)"));
         }
 
         if central_directory.disk_number != central_directory.disk_with_central_directory {
-            return unsupported_zip_error("Support for multi-disk files is not implemented");
+            return Err(ZipError::UnsupportedArchive("Support for multi-disk files is not implemented"));
         }
 
         let iterable_shared = IterableZipFiles::try_new(reader, central_directory)?;
@@ -109,7 +109,7 @@ impl<R: Read + Seek> IterableZip<R> {
             reader: make_reader(
                 data.compression_method,
                 data.uncompressed_size,
-                data.crc32,
+                Some(data.crc32),
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,
