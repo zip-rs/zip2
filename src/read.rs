@@ -1474,9 +1474,8 @@ mod tests {
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_is_symlink() -> std::io::Result<()> {
-        use tempfile::TempDir;
-
         use super::ZipArchive;
+        use tempfile::TempDir;
 
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/symlink.zip")))?;
         assert!(reader.by_index(0)?.is_symlink());
@@ -1520,10 +1519,11 @@ mod tests {
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_64k_files() -> ZipResult<()> {
-        use std::io::Write;
-
         use super::ZipArchive;
-        use crate::{CompressionMethod::Stored, ZipWriter, types::SimpleFileOptions};
+        use crate::CompressionMethod::Stored;
+        use crate::ZipWriter;
+        use crate::types::SimpleFileOptions;
+        use std::io::Write;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions {
@@ -1559,11 +1559,10 @@ mod tests {
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
+        use crate::ZipWriter;
+        use crate::types::SimpleFileOptions;
         use std::fs::create_dir;
-
         use tempfile::TempDir;
-
-        use crate::{ZipWriter, types::SimpleFileOptions};
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
@@ -1583,9 +1582,8 @@ mod tests {
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
-        use tempfile::TempDir;
-
         use super::ZipArchive;
+        use tempfile::TempDir;
 
         let mut reader =
             ZipArchive::new(Cursor::new(include_bytes!("../tests/data/mimetype.zip")))?;
