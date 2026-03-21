@@ -1,16 +1,12 @@
 //! Code related to reader
 
 use crate::AesMode;
-use crate::CompressionMethod;
-use crate::compression::Decompressor;
+use crate::compression::{CompressionMethod, Decompressor};
 use crate::crc32::Crc32Reader;
-use crate::read::CryptoReader;
-use crate::read::ZipFileReader;
 use crate::result::{ZipError, ZipResult};
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
-use crate::zipcrypto::ZipCryptoReader;
-use crate::zipcrypto::ZipCryptoValidator;
+use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use std::io::{self, Read, Seek, SeekFrom};
 
 pub(crate) enum ZipFileSeekReader<'a, R: ?Sized> {
@@ -70,6 +66,135 @@ impl<R: Read + ?Sized> Read for SeekableTake<'_, R> {
         Ok(written)
     }
 }
+
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
+    Plaintext(io::Take<&'a mut R>),
+    ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut R>>),
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        reader: crate::aes::AesReaderValid<io::Take<&'a mut R>>,
+        vendor_version: AesVendorVersion,
+    },
+}
+
+impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            CryptoReader::Plaintext(r) => r.read(buf),
+            CryptoReader::ZipCrypto(r) => r.read(buf),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader: r, .. } => r.read(buf),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self {
+            CryptoReader::Plaintext(r) => r.read_to_end(buf),
+            CryptoReader::ZipCrypto(r) => r.read_to_end(buf),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader: r, .. } => r.read_to_end(buf),
+        }
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        match self {
+            CryptoReader::Plaintext(r) => r.read_to_string(buf),
+            CryptoReader::ZipCrypto(r) => r.read_to_string(buf),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader: r, .. } => r.read_to_string(buf),
+        }
+    }
+}
+
+impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
+    /// Consumes this decoder, returning the underlying reader.
+    pub fn into_inner(self) -> io::Take<&'a mut R> {
+        match self {
+            CryptoReader::Plaintext(r) => r,
+            CryptoReader::ZipCrypto(r) => r.into_inner(),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader: r, .. } => r.into_inner(),
+        }
+    }
+
+    /// Returns `true` if the data is encrypted using AE2.
+    #[cfg(feature = "aes-crypto")]
+    pub const fn is_ae2_encrypted(&self) -> bool {
+        matches!(
+            self,
+            CryptoReader::Aes {
+                vendor_version: AesVendorVersion::Ae2,
+                ..
+            }
+        )
+    }
+
+    /// `false` since the feature `aes-crypto` is not enabled
+    #[cfg(not(feature = "aes-crypto"))]
+    pub const fn is_ae2_encrypted(&self) -> bool {
+        false
+    }
+}
+
+#[cold]
+fn invalid_state<T>() -> io::Result<T> {
+    Err(io::Error::other("ZipFileReader was in an invalid state"))
+}
+
+#[derive(Debug)]
+pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
+    NoReader,
+    Raw(io::Take<&'a mut R>),
+    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
+}
+
+impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            ZipFileReader::NoReader => invalid_state(),
+            ZipFileReader::Raw(r) => r.read(buf),
+            ZipFileReader::Compressed(r) => r.read(buf),
+        }
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        match self {
+            ZipFileReader::NoReader => invalid_state(),
+            ZipFileReader::Raw(r) => r.read_exact(buf),
+            ZipFileReader::Compressed(r) => r.read_exact(buf),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self {
+            ZipFileReader::NoReader => invalid_state(),
+            ZipFileReader::Raw(r) => r.read_to_end(buf),
+            ZipFileReader::Compressed(r) => r.read_to_end(buf),
+        }
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        match self {
+            ZipFileReader::NoReader => invalid_state(),
+            ZipFileReader::Raw(r) => r.read_to_string(buf),
+            ZipFileReader::Compressed(r) => r.read_to_string(buf),
+        }
+    }
+}
+
+impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
+    pub(crate) fn into_inner(self) -> io::Result<io::Take<&'a mut R>> {
+        match self {
+            ZipFileReader::NoReader => invalid_state(),
+            ZipFileReader::Raw(r) => Ok(r),
+            ZipFileReader::Compressed(r) => {
+                Ok(r.into_inner().into_inner()?.into_inner().into_inner())
+            }
+        }
+    }
+}
+
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
