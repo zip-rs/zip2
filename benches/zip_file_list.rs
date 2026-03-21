@@ -64,6 +64,8 @@ fn file_listing_file(bench: &mut Bencher) {
             names.push(file.name().to_string());
         }
     });
+
+    std::fs::remove_file(FILENAME).unwrap();
 }
 
 fn file_listing_iterable_memory(bench: &mut Bencher) {
@@ -101,6 +103,7 @@ fn file_listing_iterable_file(bench: &mut Bencher) {
             names.push(file.file_name().unwrap().to_string());
         }
     });
+    std::fs::remove_file(FILENAME).unwrap();
 }
 
 benchmark_group!(
