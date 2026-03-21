@@ -1467,7 +1467,7 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
 mod tests {
     use std::io::{Cursor, Read};
 
-    use crate::{read::ZipReadOptions, result::ZipResult};
+    use crate::result::ZipResult;
 
     /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]

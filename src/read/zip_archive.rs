@@ -817,15 +817,16 @@ mod tests {
 
     #[cfg(feature = "deflate64")]
     #[test]
-    fn deflate64_index_out_of_bounds() -> std::io::Result<()> {
+    fn deflate64_index_out_of_bounds() {
         use super::ZipArchive;
         use std::io::Cursor;
 
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
             "../../tests/data/raw_deflate64_index_out_of_bounds.zip"
-        )))?;
-        std::io::copy(&mut reader.by_index(0)?, &mut std::io::sink()).expect_err("Invalid file");
-        Ok(())
+        )))
+        .unwrap();
+        let mut file = reader.by_index(0).unwrap();
+        std::io::copy(&mut file, &mut std::io::sink()).expect_err("Invalid file");
     }
 
     #[cfg(feature = "deflate64")]
@@ -859,20 +860,23 @@ mod tests {
     /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
-    fn test_central_directory_not_at_end() -> ZipResult<()> {
+    fn test_central_directory_not_at_end() {
         use super::ZipArchive;
+        use std::io::Cursor;
+        use std::io::Read;
 
-        let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/omni.ja")))?;
-        let mut file = reader.by_name("chrome.manifest")?;
+        let mut reader =
+            ZipArchive::new(Cursor::new(include_bytes!("../../tests/data/omni.ja"))).unwrap();
+        let mut file = reader.by_name("chrome.manifest").unwrap();
         let mut contents = String::new();
-        file.read_to_string(&mut contents)?; // ensures valid UTF-8
+        file.read_to_string(&mut contents).unwrap(); // ensures valid UTF-8
         assert!(!contents.is_empty(), "chrome.manifest should not be empty");
         drop(file);
         for i in 0..reader.len() {
-            let mut file = reader.by_index(i)?;
+            let mut file = reader.by_index(i).unwrap();
             // Attempt to read a small portion or all of each file to ensure it's accessible
             let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer)?;
+            file.read_to_end(&mut buffer).unwrap();
             assert_eq!(
                 buffer.len(),
                 file.size() as usize,
@@ -880,27 +884,30 @@ mod tests {
                 file.name()
             );
         }
-        Ok(())
     }
 
     #[test]
-    fn test_ignore_encryption_flag() -> ZipResult<()> {
+    fn test_ignore_encryption_flag() {
         use super::ZipArchive;
+        use crate::ZipReadOptions;
+        use std::io::Cursor;
+        use std::io::Read;
 
         let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
-            "../tests/data/ignore_encryption_flag.zip"
-        )))?;
+            "../../tests/data/ignore_encryption_flag.zip"
+        )))
+        .unwrap();
 
         // Get the file entry by ignoring its encryption flag.
-        let mut file =
-            reader.by_index_with_options(0, ZipReadOptions::new().ignore_encryption_flag(true))?;
+        let mut file = reader
+            .by_index_with_options(0, ZipReadOptions::new().ignore_encryption_flag(true))
+            .unwrap();
         let mut contents = String::new();
         assert_eq!(file.name(), "plaintext.txt");
 
         // The file claims it is encrypted, but it is not.
         assert!(file.encrypted());
-        file.read_to_string(&mut contents)?; // ensures valid UTF-8
+        file.read_to_string(&mut contents).unwrap(); // ensures valid UTF-8
         assert_eq!(contents, "This file is not encrypted.\n");
-        Ok(())
     }
 }
