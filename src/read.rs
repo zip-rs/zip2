@@ -1383,7 +1383,7 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Read};
+    use std::io::Cursor;
 
     use crate::result::ZipResult;
 
@@ -1440,7 +1440,7 @@ mod tests {
         use crate::CompressionMethod::Stored;
         use crate::ZipWriter;
         use crate::types::SimpleFileOptions;
-        use std::io::Write;
+        use std::io::{Read, Write};
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions {
