@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.3.1](https://github.com/zip-rs/zip2/compare/v8.3.0...v8.3.1) - 2026-03-21
+
+### <!-- 2 -->🚜 Refactor
+
+- use `AexEncryption::new` ([#736](https://github.com/zip-rs/zip2/pull/736))
+- update tests to add big endian miri check ([#735](https://github.com/zip-rs/zip2/pull/735))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- cleanup repository files ([#743](https://github.com/zip-rs/zip2/pull/743))
+
 ## [8.3.0](https://github.com/zip-rs/zip2/compare/v8.2.0...v8.3.0) - 2026-03-19
 
 ### <!-- 0 -->🚀 Features
