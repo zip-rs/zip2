@@ -2,10 +2,10 @@
 
 use crate::compression::CompressionMethod;
 use crate::read::config::Config;
-use crate::read::readers::{ZipFileSeekReader, make_crypto_reader, make_reader, ZipFileReader};
+use crate::read::readers::{ZipFileReader, ZipFileSeekReader, make_crypto_reader, make_reader};
 use crate::read::{
-    ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek,
-    ZipReadOptions, central_header_to_zip_file,
+    ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek, ZipReadOptions,
+    central_header_to_zip_file,
 };
 use crate::result::{ZipError, ZipResult};
 use crate::spec;

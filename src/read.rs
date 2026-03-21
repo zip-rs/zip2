@@ -1255,8 +1255,6 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
 mod tests {
     use std::io::Cursor;
 
-    use crate::result::ZipResult;
-
     /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
@@ -1305,7 +1303,7 @@ mod tests {
     /// Only on little endian because it runs too long with Miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
-    fn test_64k_files() -> ZipResult<()> {
+    fn test_64k_files() -> crate::result::ZipResult<()> {
         use super::ZipArchive;
         use crate::CompressionMethod::Stored;
         use crate::ZipWriter;
@@ -1345,7 +1343,7 @@ mod tests {
     /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
-    fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
+    fn test_cannot_symlink_outside_destination() -> crate::result::ZipResult<()> {
         use crate::ZipWriter;
         use crate::types::SimpleFileOptions;
         use std::fs::create_dir;
@@ -1368,7 +1366,7 @@ mod tests {
     /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
-    fn test_can_create_destination() -> ZipResult<()> {
+    fn test_can_create_destination() -> crate::result::ZipResult<()> {
         use super::ZipArchive;
         use tempfile::TempDir;
 
