@@ -30,6 +30,8 @@ impl<'a> FromCp437 for &'a [u8] {
         Ok(target)
     }
 }
+
+#[allow(clippy::too_many_lines)]
 fn to_char(input: u8) -> char {
     match input {
         0x00..=0x7f => input as char,
@@ -165,7 +167,7 @@ fn to_char(input: u8) -> char {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     #[test]
     fn to_char_valid() {
         for i in u8::MIN..=u8::MAX {

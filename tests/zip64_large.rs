@@ -212,7 +212,10 @@ fn zip64_large() {
 
 /// We cannot run this test because on wasm32
 /// the literal `5368709808` does not fit into the type `usize` whose range is `0..=4294967295`
+///
+/// Only on little endian because too long with miri CI
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_zip64_check_extra_field() {
     use std::{fs::File, io::Cursor, path::Path};
@@ -274,7 +277,9 @@ fn test_zip64_check_extra_field() {
         assert_eq!(central_header[42..46], [0xFF, 0xFF, 0xFF, 0xFF]); // relative offset of local header
         assert_eq!(central_header[46..50], *b"dir/"); // file name
         assert_eq!(central_header[50..52], [0x01, 0x00]); // zip64 extra field header id
-        assert_eq!(central_header[52..54], [0x08, 0x00]); // zip64 extra field data size (should be 0 for a directory entry, since
+        // zip64 extra field data size is 8 since the folder have a size of 0 and that fits in
+        // the four bytes
+        assert_eq!(central_header[52..54], [0x08, 0x00]);
         // IMPORTANT
         assert_eq!(
             central_header[54..],
@@ -298,6 +303,8 @@ fn test_zip64_check_extra_field() {
         assert_eq!(local_block[18..22], [0x00, 0x00, 0x00, 0x00]); // compressed size
         assert_eq!(local_block[22..26], [0x00, 0x00, 0x00, 0x00]); // uncompressed size
         assert_eq!(local_block[26..28], [0x04, 0x00]); // file name length
+        // IMPORTANT - extra field length - 0 since the size of a bigfile fits in 4 bytes and the
+        // local header does not contains an offset
         assert_eq!(local_block[28..30], [0x00, 0x00]); // extra field length
         assert_eq!(local_block[30..], *b"dir/"); // file name
         // there is not zip64 extra field in the local header
@@ -336,7 +343,8 @@ fn test_zip64_check_extra_field() {
         assert_eq!(central_header[42..46], [0xFF, 0xFF, 0xFF, 0xFF]); // relative offset of local header
         assert_eq!(central_header[46..61], *b"dir/bigfile.bin"); // file name
         assert_eq!(central_header[61..63], [0x01, 0x00]); // zip64 extra field header id
-        assert_eq!(central_header[63..65], [0x08, 0x00]); // zip64 extra field data size
+        // zip64 extra field data size only 8 since the size of a bigfile fits in 4 bytes
+        assert_eq!(central_header[63..65], [0x08, 0x00]);
         assert_eq!(
             central_header[65..],
             [0xbe, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]
@@ -359,7 +367,8 @@ fn test_zip64_check_extra_field() {
         assert_eq!(local_header[18..22], bigfile_size.to_le_bytes()); // compressed size
         assert_eq!(local_header[22..26], bigfile_size.to_le_bytes()); // uncompressed size
         assert_eq!(local_header[26..28], [0x0f, 0x00]); // file name length
-        // IMPORTANT
+        // IMPORTANT - extra field length is 0 since the size of 'dir/bigfile.bin' fits in 4 bytes and the
+        // local header does not contains an offset
         assert_eq!(local_header[28..30], [0x00, 0x00]); // extra field length
         assert_eq!(local_header[30..], *b"dir/bigfile.bin"); // file name
     }
@@ -367,7 +376,10 @@ fn test_zip64_check_extra_field() {
 
 /// We cannot run this test because on wasm32
 /// See `test_zip64_check_extra_field`
+///
+/// Only on little endian because too long with miri CI
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(target_endian = "little", not(miri)))]
 fn zip64_check_extra_field(
     path: &std::path::Path,
     archive_buffer: &mut Vec<u8>,
@@ -397,6 +409,8 @@ fn zip64_check_extra_field(
     Ok(())
 }
 
+/// Only on little endian because too long with miri CI
+#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_number_of_files() {
     use std::io::Cursor;
@@ -457,4 +471,213 @@ fn test_number_of_files() {
         zip::ZipArchive::new(Cursor::new(&archive_buffer)).expect("Failed to read the archive");
     let correct_count = u16::MAX as usize + 10;
     assert_eq!(reader.len(), correct_count);
+}
+
+#[test]
+fn force_large_file() {
+    // https://github.com/zip-rs/zip2/issues/715
+    use std::io::Write;
+
+    #[cfg(feature = "deflate")]
+    let compression_method = zip::CompressionMethod::Deflated;
+    #[cfg(not(feature = "deflate"))]
+    let compression_method = zip::CompressionMethod::Stored;
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(compression_method)
+        .large_file(true)
+        .unix_permissions(0o755);
+
+    let mut bytes = vec![];
+    let data = r#"abcdefghijklmnopqrstuvwxyzabcde"#;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut bytes));
+    writer.start_file("file.txt", options).unwrap();
+    writeln!(&mut writer, "{}", data).unwrap();
+    writer.finish().unwrap();
+
+    assert_eq!(bytes.len(), 186);
+    assert_eq!(bytes[0..4], [0x50, 0x4B, 0x03, 0x04]);
+    // assert_eq!(bytes[4..6], [0x2D, 0x00]);
+    assert_eq!(bytes[6..8], [0x00, 0x00]);
+    #[cfg(feature = "deflate")]
+    assert_eq!(bytes[8..10], [0x08, 0x00]);
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[8..10], [0x00, 0x00]);
+    // date and time
+    assert_eq!(bytes[14..18], [0xDF, 0x38, 0xA8, 0xD5]); // crc32
+    assert_eq!(bytes[18..22], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[22..26], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[26..28], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[28..30], [0x14, 0x00]); // extra field length
+    assert_eq!(&bytes[30..38], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[38..40], [0x01, 0x00]);
+    assert_eq!(bytes[40..42], [0x10, 0x00]);
+    assert_eq!(
+        bytes[42..50],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[50..58],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    #[cfg(feature = "deflate")]
+    assert_eq!(
+        bytes[58..90],
+        [
+            0x4B, 0x4C, 0x4A, 0x4E, 0x49, 0x4D, 0x4B, 0xCF, 0xC8, 0xCC, 0xCA, 0xCE, 0xC9, 0xCD,
+            0xCB, 0x2F, 0x28, 0x2C, 0x2A, 0x2E, 0x29, 0x2D, 0x2B, 0xAF, 0xA8, 0xAC, 0x4A, 0x04,
+            0xC9, 0x70, 0x01, 0x00
+        ]
+    );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(&bytes[58..89], data.as_bytes());
+    assert_eq!(bytes[90..94], [0x50, 0x4B, 0x01, 0x02]); // signature
+    // assert_eq!(bytes[94..96], [0x2D, 0x03]); // version made by
+    // assert_eq!(bytes[96..98], [0x2D, 0x00]); // version needed to extract
+    assert_eq!(bytes[98..100], [0x00, 0x00]); // general purpose bit flag
+    #[cfg(feature = "deflate")]
+    assert_eq!(bytes[100..102], [0x08, 0x00]); // compression
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[100..102], [0x00, 0x00]); // compression
+    // date and time
+    assert_eq!(bytes[106..110], [0xDF, 0x38, 0xA8, 0xD5]); // crc32
+    assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[114..118], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[118..120], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[120..122], [0x14, 0x00]); // extra field length
+    assert_eq!(bytes[122..124], [0x00, 0x00]); // file comment length
+    assert_eq!(bytes[124..126], [0x00, 0x00]); // disk number
+    assert_eq!(bytes[126..128], [0x00, 0x00]); // internal attr
+    assert_eq!(bytes[128..132], [0x00, 0x00, 0xED, 0x81]); // external attr
+    assert_eq!(bytes[132..136], [0x00, 0x00, 0x00, 0x00]); // relative offset
+    assert_eq!(&bytes[136..144], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[144..146], [0x01, 0x00]);
+    assert_eq!(bytes[146..148], [0x10, 0x00]);
+    assert_eq!(
+        bytes[148..156],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[156..164],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        bytes[164..186],
+        [
+            0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4A, 0x00,
+            0x00, 0x00, 0x5A, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]
+    );
+
+    let mut bytes = vec![];
+    let data = r#"abcdefghijklmnopqrstuvwxyzabcdef"#;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut bytes));
+    writer.start_file("file.txt", options).unwrap();
+    writeln!(&mut writer, "{}", data).unwrap(); // one char longer
+    writer.finish().unwrap();
+
+    #[cfg(feature = "deflate")]
+    assert_eq!(bytes.len(), 186);
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes.len(), 187);
+    assert_eq!(bytes[0..4], [0x50, 0x4B, 0x03, 0x04]);
+    // assert_eq!(bytes[4..6], [0x2D, 0x00]);
+    assert_eq!(bytes[6..8], [0x00, 0x00]);
+    #[cfg(feature = "deflate")]
+    assert_eq!(bytes[8..10], [0x08, 0x00]);
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[8..10], [0x00, 0x00]);
+    // date and time
+    assert_eq!(bytes[14..18], [0x45, 0x45, 0x26, 0xED]); // crc32
+    assert_eq!(bytes[18..22], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[22..26], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[26..28], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[28..30], [0x14, 0x00]); // extra field length
+    assert_eq!(&bytes[30..38], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[38..40], [0x01, 0x00]);
+    assert_eq!(bytes[40..42], [0x10, 0x00]);
+    assert_eq!(
+        bytes[42..50],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    #[cfg(feature = "deflate")]
+    assert_eq!(
+        bytes[50..58],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(
+        bytes[50..58],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+
+    // content
+    #[cfg(feature = "deflate")]
+    assert_eq!(
+        bytes[58..90],
+        [
+            0x4B, 0x4C, 0x4A, 0x4E, 0x49, 0x4D, 0x4B, 0xCF, 0xC8, 0xCC, 0xCA, 0xCE, 0xC9, 0xCD,
+            0xCB, 0x2F, 0x28, 0x2C, 0x2A, 0x2E, 0x29, 0x2D, 0x2B, 0xAF, 0xA8, 0xAC, 0x4A, 0x04,
+            0xCB, 0x70, 0x01, 0x00
+        ]
+    );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(&bytes[58..90], data.as_bytes());
+
+    // the data is one byte longer without deflate so we remove one byte
+    // so that the index are the same with and without the deflate feature
+    #[cfg(not(feature = "deflate"))]
+    let mut bytes = bytes.to_vec();
+    #[cfg(not(feature = "deflate"))]
+    bytes.remove(90);
+
+    assert_eq!(bytes[90..94], [0x50, 0x4B, 0x01, 0x02]); // signature
+    // assert_eq!(bytes[94..96], [0x2D, 0x03]); // version made by
+    // assert_eq!(bytes[96..98], [0x2D, 0x00]); // version needed to extract
+    assert_eq!(bytes[98..100], [0x00, 0x00]); // general purpose bit flag
+
+    #[cfg(feature = "deflate")]
+    assert_eq!(bytes[100..102], [0x08, 0x00]); // compression
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(bytes[100..102], [0x00, 0x00]); // compression
+    // date and time
+    assert_eq!(bytes[106..110], [0x45, 0x45, 0x26, 0xED]); // crc32
+    assert_eq!(bytes[110..114], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[114..118], [0xFF, 0xFF, 0xFF, 0xFF]); // size
+    assert_eq!(bytes[118..120], [0x08, 0x00]); // filename length
+    assert_eq!(bytes[120..122], [0x14, 0x00]); // extra field length
+    assert_eq!(bytes[122..124], [0x00, 0x00]); // file comment length
+    assert_eq!(bytes[124..126], [0x00, 0x00]); // disk number
+    assert_eq!(bytes[126..128], [0x00, 0x00]); // internal attr
+    assert_eq!(bytes[128..132], [0x00, 0x00, 0xED, 0x81]); // external attr
+    assert_eq!(bytes[132..136], [0x00, 0x00, 0x00, 0x00]); // relative offset
+    assert_eq!(&bytes[136..144], b"file.txt".as_ref()); // filename
+    assert_eq!(bytes[144..146], [0x01, 0x00]);
+    assert_eq!(bytes[146..148], [0x10, 0x00]);
+    assert_eq!(
+        bytes[148..156],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    #[cfg(feature = "deflate")]
+    assert_eq!(
+        bytes[156..164],
+        [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+    #[cfg(not(feature = "deflate"))]
+    assert_eq!(
+        bytes[156..164],
+        [0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
+
+    // end of zip
+    #[cfg(feature = "deflate")]
+    let offset = 0x5A;
+    #[cfg(not(feature = "deflate"))]
+    let offset = 0x5B;
+    assert_eq!(
+        bytes[164..186],
+        [
+            0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4A, 0x00,
+            0x00, 0x00, offset, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]
+    );
 }
