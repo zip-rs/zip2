@@ -85,5 +85,10 @@ fn read_many_entries(bench: &mut Bencher) {
     bench.bytes = (size * NB_FILES) as u64;
 }
 
-benchmark_group!(benches, read_many_entries, read_many_entries_as_file, read_many_entries_as_file_buf);
+benchmark_group!(
+    benches,
+    read_many_entries,
+    read_many_entries_as_file,
+    read_many_entries_as_file_buf
+);
 benchmark_main!(benches);
