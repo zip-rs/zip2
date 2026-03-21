@@ -39,242 +39,6 @@ pub(crate) mod reader;
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
 
-impl<R: Read + Seek> ZipArchive<R> {
-    pub(crate) fn merge_contents<W: Write + Seek>(
-        &mut self,
-        mut w: W,
-    ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
-        if self.shared.files.is_empty() {
-            return Ok(IndexMap::new());
-        }
-        let mut new_files = self.shared.files.clone();
-        /* The first file header will probably start at the beginning of the file, but zip doesn't
-         * enforce that, and executable zips like PEX files will have a shebang line so will
-         * definitely be greater than 0.
-         *
-         * assert_eq!(0, new_files[0].header_start); // Avoid this.
-         */
-
-        let first_new_file_header_start = w.stream_position()?;
-
-        /* Push back file header starts for all entries in the covered files. */
-        new_files.values_mut().try_for_each(|f| {
-            /* This is probably the only really important thing to change. */
-            f.header_start = f
-                .header_start
-                .checked_add(first_new_file_header_start)
-                .ok_or(invalid!(
-                    "new header start from merge would have been too large"
-                ))?;
-            /* This is only ever used internally to cache metadata lookups (it's not part of the
-             * zip spec), and 0 is the sentinel value. */
-            f.central_header_start = 0;
-            /* This is an atomic variable so it can be updated from another thread in the
-             * implementation (which is good!). */
-            if let Some(old_data_start) = f.data_start.take() {
-                let new_data_start = old_data_start
-                    .checked_add(first_new_file_header_start)
-                    .ok_or(invalid!(
-                        "new data start from merge would have been too large"
-                    ))?;
-                f.data_start.get_or_init(|| new_data_start);
-            }
-            Ok::<_, ZipError>(())
-        })?;
-
-        /* Rewind to the beginning of the file.
-         *
-         * NB: we *could* decide to start copying from new_files[0].header_start instead, which
-         * would avoid copying over e.g. any pex shebangs or other file contents that start before
-         * the first zip file entry. However, zip files actually shouldn't care about garbage data
-         * in *between* real entries, since the central directory header records the correct start
-         * location of each, and keeping track of that math is more complicated logic that will only
-         * rarely be used, since most zips that get merged together are likely to be produced
-         * specifically for that purpose (and therefore are unlikely to have a shebang or other
-         * preface). Finally, this preserves any data that might actually be useful.
-         */
-        self.reader.rewind()?;
-        /* Find the end of the file data. */
-        let length_to_read = self.shared.dir_start;
-        /* Produce a Read that reads bytes up until the start of the central directory header.
-         * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
-         * handle, which it really shouldn't need to anyway. */
-        let mut limited_raw = (&mut self.reader as &mut dyn Read).take(length_to_read);
-        /* Copy over file data from source archive directly. */
-        io::copy(&mut limited_raw, &mut w)?;
-
-        /* Return the files we've just written to the data stream. */
-        Ok(new_files)
-    }
-
-    /// Extract a Zip archive into a directory, overwriting files if they
-    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`]. Symbolic links are only
-    /// created and followed if the target is within the destination directory (this is checked
-    /// conservatively using [`std::fs::canonicalize`]).
-    ///
-    /// Extraction is not atomic. If an error is encountered, some of the files
-    /// may be left on disk. However, on Unix targets, no newly-created directories with part but
-    /// not all of their contents extracted will be readable, writable or usable as process working
-    /// directories by any non-root user except you.
-    ///
-    /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
-    /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
-    /// containing the target path in UTF-8.
-    pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
-        self.extract_internal(directory, None::<fn(&Path) -> bool>)
-    }
-
-    /// Extracts a Zip archive into a directory in the same fashion as
-    /// [`ZipArchive::extract`], but detects a "root" directory in the archive
-    /// (a single top-level directory that contains the rest of the archive's
-    /// entries) and extracts its contents directly.
-    ///
-    /// For a sensible default `filter`, you can use [`root_dir_common_filter`].
-    /// For a custom `filter`, see [`RootDirFilter`].
-    ///
-    /// See [`ZipArchive::root_dir`] for more information on how the root
-    /// directory is detected and the meaning of the `filter` parameter.
-    ///
-    /// ## Example
-    ///
-    /// Imagine a Zip archive with the following structure:
-    ///
-    /// ```text
-    /// root/file1.txt
-    /// root/file2.txt
-    /// root/sub/file3.txt
-    /// root/sub/subsub/file4.txt
-    /// ```
-    ///
-    /// If the archive is extracted to `foo` using [`ZipArchive::extract`],
-    /// the resulting directory structure will be:
-    ///
-    /// ```text
-    /// foo/root/file1.txt
-    /// foo/root/file2.txt
-    /// foo/root/sub/file3.txt
-    /// foo/root/sub/subsub/file4.txt
-    /// ```
-    ///
-    /// If the archive is extracted to `foo` using
-    /// [`ZipArchive::extract_unwrapped_root_dir`], the resulting directory
-    /// structure will be:
-    ///
-    /// ```text
-    /// foo/file1.txt
-    /// foo/file2.txt
-    /// foo/sub/file3.txt
-    /// foo/sub/subsub/file4.txt
-    /// ```
-    ///
-    /// ## Example - No Root Directory
-    ///
-    /// Imagine a Zip archive with the following structure:
-    ///
-    /// ```text
-    /// root/file1.txt
-    /// root/file2.txt
-    /// root/sub/file3.txt
-    /// root/sub/subsub/file4.txt
-    /// other/file5.txt
-    /// ```
-    ///
-    /// Due to the presence of the `other` directory,
-    /// [`ZipArchive::extract_unwrapped_root_dir`] will extract this in the same
-    /// fashion as [`ZipArchive::extract`] as there is now no "root directory."
-    pub fn extract_unwrapped_root_dir<P: AsRef<Path>>(
-        &mut self,
-        directory: P,
-        root_dir_filter: impl RootDirFilter,
-    ) -> ZipResult<()> {
-        self.extract_internal(directory, Some(root_dir_filter))
-    }
-
-    fn extract_internal<P: AsRef<Path>>(
-        &mut self,
-        directory: P,
-        root_dir_filter: Option<impl RootDirFilter>,
-    ) -> ZipResult<()> {
-        use std::fs;
-
-        fs::create_dir_all(&directory)?;
-        let directory = directory.as_ref().canonicalize()?;
-
-        let root_dir = root_dir_filter
-            .and_then(|filter| {
-                self.root_dir(&filter)
-                    .transpose()
-                    .map(|root_dir| root_dir.map(|root_dir| (root_dir, filter)))
-            })
-            .transpose()?;
-
-        // If we have a root dir, simplify the path components to be more
-        // appropriate for passing to `safe_prepare_path`
-        let root_dir = root_dir
-            .as_ref()
-            .map(|(root_dir, filter)| {
-                crate::path::simplified_components(root_dir)
-                    .ok_or_else(|| {
-                        // Should be unreachable
-                        debug_assert!(false, "Invalid root dir path");
-
-                        invalid!("Invalid root dir path")
-                    })
-                    .map(|root_dir| (root_dir, filter))
-            })
-            .transpose()?;
-
-        #[cfg(unix)]
-        let mut files_by_unix_mode = UnixFileModes::default();
-
-        for i in 0..self.len() {
-            let mut file = self.by_index(i)?;
-
-            let mut outpath = directory.clone();
-            /* TODO: the control flow of this method call and subsequent expectations about the
-             *       values in this loop is extremely difficult to follow. It also appears to
-             *       perform a nested loop upon extracting every single file entry? Why does it
-             *       accept two arguments that point to the same directory path, one mutable? */
-            file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
-
-            #[cfg(any(unix, windows))]
-            if file.is_symlink() {
-                let mut target = Vec::with_capacity(file.size() as usize);
-                file.read_to_end(&mut target)?;
-                drop(file);
-                make_symlink(&outpath, &target, &self.shared.files)?;
-                continue;
-            } else if file.is_dir() {
-                crate::read::make_writable_dir_all(&outpath)?;
-                continue;
-            }
-            let mut outfile = fs::File::create(&outpath)?;
-            io::copy(&mut file, &mut outfile)?;
-
-            // Check for real permissions, which we'll set in a second pass.
-            #[cfg(unix)]
-            if let Some(mode) = file.unix_mode() {
-                files_by_unix_mode.add_mode(outpath, mode);
-            }
-
-            // Set original timestamp.
-            #[cfg(feature = "chrono")]
-            if let Some(last_modified) = file.last_modified()
-                && let Some(t) = last_modified.datetime_to_systemtime()
-            {
-                outfile.set_modified(t)?;
-            }
-        }
-
-        // Ensure we update children's permissions before making a parent unwritable.
-        #[cfg(unix)]
-        for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
-            std::fs::set_permissions(path, perms)?;
-        }
-
-        Ok(())
-    }
-}
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
@@ -646,6 +410,243 @@ impl UnixFileModes {
             .into_iter()
             .rev()
             .map(|(p, m)| (p, std::fs::Permissions::from_mode(m)))
+    }
+}
+
+impl<R: Read + Seek> ZipArchive<R> {
+    pub(crate) fn merge_contents<W: Write + Seek>(
+        &mut self,
+        mut w: W,
+    ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
+        if self.shared.files.is_empty() {
+            return Ok(IndexMap::new());
+        }
+        let mut new_files = self.shared.files.clone();
+        /* The first file header will probably start at the beginning of the file, but zip doesn't
+         * enforce that, and executable zips like PEX files will have a shebang line so will
+         * definitely be greater than 0.
+         *
+         * assert_eq!(0, new_files[0].header_start); // Avoid this.
+         */
+
+        let first_new_file_header_start = w.stream_position()?;
+
+        /* Push back file header starts for all entries in the covered files. */
+        new_files.values_mut().try_for_each(|f| {
+            /* This is probably the only really important thing to change. */
+            f.header_start = f
+                .header_start
+                .checked_add(first_new_file_header_start)
+                .ok_or(invalid!(
+                    "new header start from merge would have been too large"
+                ))?;
+            /* This is only ever used internally to cache metadata lookups (it's not part of the
+             * zip spec), and 0 is the sentinel value. */
+            f.central_header_start = 0;
+            /* This is an atomic variable so it can be updated from another thread in the
+             * implementation (which is good!). */
+            if let Some(old_data_start) = f.data_start.take() {
+                let new_data_start = old_data_start
+                    .checked_add(first_new_file_header_start)
+                    .ok_or(invalid!(
+                        "new data start from merge would have been too large"
+                    ))?;
+                f.data_start.get_or_init(|| new_data_start);
+            }
+            Ok::<_, ZipError>(())
+        })?;
+
+        /* Rewind to the beginning of the file.
+         *
+         * NB: we *could* decide to start copying from new_files[0].header_start instead, which
+         * would avoid copying over e.g. any pex shebangs or other file contents that start before
+         * the first zip file entry. However, zip files actually shouldn't care about garbage data
+         * in *between* real entries, since the central directory header records the correct start
+         * location of each, and keeping track of that math is more complicated logic that will only
+         * rarely be used, since most zips that get merged together are likely to be produced
+         * specifically for that purpose (and therefore are unlikely to have a shebang or other
+         * preface). Finally, this preserves any data that might actually be useful.
+         */
+        self.reader.rewind()?;
+        /* Find the end of the file data. */
+        let length_to_read = self.shared.dir_start;
+        /* Produce a Read that reads bytes up until the start of the central directory header.
+         * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
+         * handle, which it really shouldn't need to anyway. */
+        let mut limited_raw = (&mut self.reader as &mut dyn Read).take(length_to_read);
+        /* Copy over file data from source archive directly. */
+        io::copy(&mut limited_raw, &mut w)?;
+
+        /* Return the files we've just written to the data stream. */
+        Ok(new_files)
+    }
+
+    /// Extract a Zip archive into a directory, overwriting files if they
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`]. Symbolic links are only
+    /// created and followed if the target is within the destination directory (this is checked
+    /// conservatively using [`std::fs::canonicalize`]).
+    ///
+    /// Extraction is not atomic. If an error is encountered, some of the files
+    /// may be left on disk. However, on Unix targets, no newly-created directories with part but
+    /// not all of their contents extracted will be readable, writable or usable as process working
+    /// directories by any non-root user except you.
+    ///
+    /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
+    /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
+    /// containing the target path in UTF-8.
+    pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
+        self.extract_internal(directory, None::<fn(&Path) -> bool>)
+    }
+
+    /// Extracts a Zip archive into a directory in the same fashion as
+    /// [`ZipArchive::extract`], but detects a "root" directory in the archive
+    /// (a single top-level directory that contains the rest of the archive's
+    /// entries) and extracts its contents directly.
+    ///
+    /// For a sensible default `filter`, you can use [`root_dir_common_filter`].
+    /// For a custom `filter`, see [`RootDirFilter`].
+    ///
+    /// See [`ZipArchive::root_dir`] for more information on how the root
+    /// directory is detected and the meaning of the `filter` parameter.
+    ///
+    /// ## Example
+    ///
+    /// Imagine a Zip archive with the following structure:
+    ///
+    /// ```text
+    /// root/file1.txt
+    /// root/file2.txt
+    /// root/sub/file3.txt
+    /// root/sub/subsub/file4.txt
+    /// ```
+    ///
+    /// If the archive is extracted to `foo` using [`ZipArchive::extract`],
+    /// the resulting directory structure will be:
+    ///
+    /// ```text
+    /// foo/root/file1.txt
+    /// foo/root/file2.txt
+    /// foo/root/sub/file3.txt
+    /// foo/root/sub/subsub/file4.txt
+    /// ```
+    ///
+    /// If the archive is extracted to `foo` using
+    /// [`ZipArchive::extract_unwrapped_root_dir`], the resulting directory
+    /// structure will be:
+    ///
+    /// ```text
+    /// foo/file1.txt
+    /// foo/file2.txt
+    /// foo/sub/file3.txt
+    /// foo/sub/subsub/file4.txt
+    /// ```
+    ///
+    /// ## Example - No Root Directory
+    ///
+    /// Imagine a Zip archive with the following structure:
+    ///
+    /// ```text
+    /// root/file1.txt
+    /// root/file2.txt
+    /// root/sub/file3.txt
+    /// root/sub/subsub/file4.txt
+    /// other/file5.txt
+    /// ```
+    ///
+    /// Due to the presence of the `other` directory,
+    /// [`ZipArchive::extract_unwrapped_root_dir`] will extract this in the same
+    /// fashion as [`ZipArchive::extract`] as there is now no "root directory."
+    pub fn extract_unwrapped_root_dir<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        root_dir_filter: impl RootDirFilter,
+    ) -> ZipResult<()> {
+        self.extract_internal(directory, Some(root_dir_filter))
+    }
+
+    fn extract_internal<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        root_dir_filter: Option<impl RootDirFilter>,
+    ) -> ZipResult<()> {
+        use std::fs;
+
+        fs::create_dir_all(&directory)?;
+        let directory = directory.as_ref().canonicalize()?;
+
+        let root_dir = root_dir_filter
+            .and_then(|filter| {
+                self.root_dir(&filter)
+                    .transpose()
+                    .map(|root_dir| root_dir.map(|root_dir| (root_dir, filter)))
+            })
+            .transpose()?;
+
+        // If we have a root dir, simplify the path components to be more
+        // appropriate for passing to `safe_prepare_path`
+        let root_dir = root_dir
+            .as_ref()
+            .map(|(root_dir, filter)| {
+                crate::path::simplified_components(root_dir)
+                    .ok_or_else(|| {
+                        // Should be unreachable
+                        debug_assert!(false, "Invalid root dir path");
+
+                        invalid!("Invalid root dir path")
+                    })
+                    .map(|root_dir| (root_dir, filter))
+            })
+            .transpose()?;
+
+        #[cfg(unix)]
+        let mut files_by_unix_mode = UnixFileModes::default();
+
+        for i in 0..self.len() {
+            let mut file = self.by_index(i)?;
+
+            let mut outpath = directory.clone();
+            /* TODO: the control flow of this method call and subsequent expectations about the
+             *       values in this loop is extremely difficult to follow. It also appears to
+             *       perform a nested loop upon extracting every single file entry? Why does it
+             *       accept two arguments that point to the same directory path, one mutable? */
+            file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
+
+            #[cfg(any(unix, windows))]
+            if file.is_symlink() {
+                let mut target = Vec::with_capacity(file.size() as usize);
+                file.read_to_end(&mut target)?;
+                drop(file);
+                make_symlink(&outpath, &target, &self.shared.files)?;
+                continue;
+            } else if file.is_dir() {
+                crate::read::make_writable_dir_all(&outpath)?;
+                continue;
+            }
+            let mut outfile = fs::File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
+
+            // Check for real permissions, which we'll set in a second pass.
+            #[cfg(unix)]
+            if let Some(mode) = file.unix_mode() {
+                files_by_unix_mode.add_mode(outpath, mode);
+            }
+
+            // Set original timestamp.
+            #[cfg(feature = "chrono")]
+            if let Some(last_modified) = file.last_modified()
+                && let Some(t) = last_modified.datetime_to_systemtime()
+            {
+                outfile.set_modified(t)?;
+            }
+        }
+
+        // Ensure we update children's permissions before making a parent unwritable.
+        #[cfg(unix)]
+        for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
+            std::fs::set_permissions(path, perms)?;
+        }
+
+        Ok(())
     }
 }
 
