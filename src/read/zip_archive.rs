@@ -1,9 +1,9 @@
 //! Code related to `ZipArchive`
 
 use crate::read::config::Config;
+use crate::types::ZipFileData;
 use indexmap::IndexMap;
 use std::sync::Arc;
-use crate::types::ZipFileData;
 
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
@@ -18,7 +18,6 @@ pub struct ZipArchiveMetadata {
     pub(crate) zip64_comment: Option<Box<[u8]>>,
 }
 
-
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
     pub(crate) files: Vec<super::ZipFileData>,
@@ -30,11 +29,7 @@ pub(crate) struct SharedBuilder {
 }
 
 impl SharedBuilder {
-    pub fn build(
-        self,
-        comment: Box<[u8]>,
-        zip64_comment: Option<Box<[u8]>>,
-    ) -> ZipArchiveMetadata {
+    pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> ZipArchiveMetadata {
         let mut index_map = IndexMap::with_capacity(self.files.len());
         self.files.into_iter().for_each(|file| {
             index_map.insert(file.file_name.clone(), file);
@@ -77,3 +72,577 @@ pub struct ZipArchive<R> {
     pub(super) shared: Arc<ZipArchiveMetadata>,
 }
 
+impl<R> ZipArchive<R> {
+    pub(crate) fn from_finalized_writer(
+        files: IndexMap<Box<str>, ZipFileData>,
+        comment: Box<[u8]>,
+        zip64_comment: Option<Box<[u8]>>,
+        reader: R,
+        central_start: u64,
+    ) -> Self {
+        let initial_offset = match files.first() {
+            Some((_, file)) => file.header_start,
+            None => central_start,
+        };
+        let shared = Arc::new(ZipArchiveMetadata {
+            files,
+            offset: initial_offset,
+            dir_start: central_start,
+            config: Config {
+                archive_offset: ArchiveOffset::Known(initial_offset),
+            },
+            comment,
+            zip64_comment,
+        });
+        Self { reader, shared }
+    }
+
+    /// Total size of the files in the archive, if it can be known. Doesn't include directories or
+    /// metadata.
+    pub fn decompressed_size(&self) -> Option<u128> {
+        let mut total = 0u128;
+        for file in self.shared.files.values() {
+            if file.using_data_descriptor {
+                return None;
+            }
+            total = total.checked_add(u128::from(file.uncompressed_size))?;
+        }
+        Some(total)
+    }
+}
+
+impl<R: Read + Seek> ZipArchive<R> {
+    /// Get the directory start offset and number of files. This is done in a
+    /// separate function to ease the control flow design.
+    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<ZipArchiveMetadata> {
+        // End of the probed region, initially set to the end of the file
+        let file_len = reader.seek(io::SeekFrom::End(0))?;
+        let mut end_exclusive = file_len;
+        let mut last_err = None;
+
+        loop {
+            // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
+            let cde = match spec::find_central_directory(
+                reader,
+                config.archive_offset,
+                end_exclusive,
+                file_len,
+            ) {
+                Ok(cde) => cde,
+                Err(e) => {
+                    // return the previous error first (if there is)
+                    return Err(last_err.unwrap_or(e));
+                }
+            };
+
+            // Turn EOCD into internal representation.
+            match CentralDirectoryInfo::try_from(&cde)
+                .and_then(|info| Self::read_central_header(&info, config, reader))
+            {
+                Ok(shared) => {
+                    return Ok(shared.build(
+                        cde.eocd.data.zip_file_comment,
+                        cde.eocd64.map(|v| v.data.extensible_data_sector),
+                    ));
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+            // Something went wrong while decoding the cde, try to find a new one
+            end_exclusive = cde.eocd.position;
+            continue;
+        }
+    }
+
+    fn read_central_header(
+        dir_info: &CentralDirectoryInfo,
+        config: Config,
+        reader: &mut R,
+    ) -> Result<SharedBuilder, ZipError> {
+        // If the parsed number of files is greater than the offset then
+        // something fishy is going on and we shouldn't trust number_of_files.
+        let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
+            0
+        } else {
+            dir_info.number_of_files
+        };
+
+        if dir_info.disk_number != dir_info.disk_with_central_directory {
+            return Err(ZipError::UnsupportedArchive(
+                "Support for multi-disk files is not implemented",
+            ));
+        }
+
+        if file_capacity.saturating_mul(size_of::<ZipFileData>()) > isize::MAX as usize {
+            return Err(ZipError::UnsupportedArchive("Oversized central directory"));
+        }
+
+        let mut files = Vec::with_capacity(file_capacity);
+        reader.seek(SeekFrom::Start(dir_info.directory_start))?;
+        for _ in 0..dir_info.number_of_files {
+            let file = central_header_to_zip_file(reader, dir_info)?;
+            files.push(file);
+        }
+
+        Ok(SharedBuilder {
+            files,
+            offset: dir_info.archive_offset,
+            dir_start: dir_info.directory_start,
+            config,
+        })
+    }
+
+    /// Returns the verification value and salt for the AES encryption of the file
+    ///
+    /// It fails if the file number is invalid.
+    ///
+    /// # Returns
+    ///
+    /// - None if the file is not encrypted with AES
+    #[cfg(feature = "aes-crypto")]
+    pub fn get_aes_verification_key_and_salt(
+        &mut self,
+        file_number: usize,
+    ) -> ZipResult<Option<AesInfo>> {
+        let (_, data) = self
+            .shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+
+        let limit_reader = data.find_content(&mut self.reader)?;
+        match data.aes_mode {
+            None => Ok(None),
+            Some((aes_mode, _, _)) => {
+                let (verification_value, salt) =
+                    crate::aes::AesReader::new(limit_reader, aes_mode, data.compressed_size)
+                        .get_verification_value_and_salt()?;
+                let aes_info = AesInfo {
+                    aes_mode,
+                    verification_value,
+                    salt,
+                };
+                Ok(Some(aes_info))
+            }
+        }
+    }
+
+    /// Read a ZIP archive, collecting the files it contains.
+    ///
+    /// This uses the central directory record of the ZIP file, and ignores local file headers.
+    ///
+    /// A default [`Config`] is used.
+    pub fn new(reader: R) -> ZipResult<ZipArchive<R>> {
+        Self::with_config(Config::default(), reader)
+    }
+
+    /// Get the metadata associated with the ZIP archive.
+    ///
+    /// This can be used with [`Self::unsafe_new_with_metadata`] to create a new reader over the
+    /// same file without needing to reparse the metadata.
+    pub fn metadata(&self) -> Arc<ZipArchiveMetadata> {
+        self.shared.clone()
+    }
+
+    /// Read a ZIP archive using the given `metadata`.
+    ///
+    /// This is useful for creating multiple readers over the same file without
+    /// needing to reparse the metadata.
+    ///
+    /// # Safety
+    /// `unsafe` is used here to indicate that `reader` and `metadata` could
+    /// potentially be incompatible, and it is left to the user to ensure they are.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use std::fs;
+    /// use rayon::prelude::*;
+    ///
+    /// const FILE_NAME: &str = "my_data.zip";
+    ///
+    /// let file = fs::File::open(FILE_NAME).unwrap();
+    /// let mut archive = zip::ZipArchive::new(file).unwrap();
+    ///
+    /// let file_names = (0..archive.len())
+    ///     .into_par_iter()
+    ///     .map_init({
+    ///         let metadata = archive.metadata().clone();
+    ///         move || {
+    ///             let file = fs::File::open(FILE_NAME).unwrap();
+    ///             unsafe { zip::ZipArchive::unsafe_new_with_metadata(file, metadata.clone()) }
+    ///         }},
+    ///         |archive, i| {
+    ///             let mut file = archive.by_index(i).unwrap();
+    ///             file.enclosed_name()
+    ///         }
+    ///     )
+    ///     .filter_map(|name| name)
+    ///     .collect::<Vec<_>>();
+    /// ```
+    pub unsafe fn unsafe_new_with_metadata(reader: R, metadata: Arc<ZipArchiveMetadata>) -> Self {
+        Self {
+            reader,
+            shared: metadata,
+        }
+    }
+
+    /// Read a ZIP archive providing a read configuration, collecting the files it contains.
+    ///
+    /// This uses the central directory record of the ZIP file, and ignores local file headers.
+    pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
+        let shared = Self::get_metadata(config, &mut reader)?;
+
+        Ok(ZipArchive {
+            reader,
+            shared: shared.into(),
+        })
+    }
+
+    /// Number of files contained in this zip.
+    pub fn len(&self) -> usize {
+        self.shared.files.len()
+    }
+
+    /// Get the starting offset of the zip central directory.
+    pub fn central_directory_start(&self) -> u64 {
+        self.shared.dir_start
+    }
+
+    /// Whether this zip archive contains no files
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get the offset from the beginning of the underlying reader that this zip begins at, in bytes.
+    ///
+    /// Normally this value is zero, but if the zip has arbitrary data prepended to it, then this value will be the size
+    /// of that prepended data.
+    pub fn offset(&self) -> u64 {
+        self.shared.offset
+    }
+
+    /// Get the comment of the zip archive.
+    pub fn comment(&self) -> &[u8] {
+        &self.shared.comment
+    }
+
+    /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
+    pub fn zip64_comment(&self) -> Option<&[u8]> {
+        self.shared.zip64_comment.as_deref()
+    }
+
+    /// Returns an iterator over all the file and directory names in this archive.
+    pub fn file_names(&self) -> impl Iterator<Item = &str> {
+        self.shared.files.keys().map(std::convert::AsRef::as_ref)
+    }
+
+    /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
+    /// doesn't make the archive invalid, but some programs will refuse to decompress it because the
+    /// copies would take up space independently in the destination.
+    pub fn has_overlapping_files(&mut self) -> ZipResult<bool> {
+        let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
+        for file in self.shared.files.values() {
+            if file.compressed_size == 0 {
+                continue;
+            }
+            let start = file.data_start(&mut self.reader)?;
+            let end = start + file.compressed_size;
+            if ranges
+                .iter()
+                .any(|range| range.start <= end && start <= range.end)
+            {
+                return Ok(true);
+            }
+            ranges.push(start..end);
+        }
+        Ok(false)
+    }
+
+    /// Search for a file entry by name, decrypt with given password
+    ///
+    /// # Warning
+    ///
+    /// The implementation of the cryptographic algorithms has not
+    /// gone through a correctness review, and you should assume it is insecure:
+    /// passwords used with this API may be compromised.
+    ///
+    /// This function sometimes accepts wrong password. This is because the ZIP spec only allows us
+    /// to check for a 1/256 chance that the password is correct.
+    /// There are many passwords out there that will also pass the validity checks
+    /// we are able to perform. This is a weakness of the `ZipCrypto` algorithm,
+    /// due to its fairly primitive approach to cryptography.
+    pub fn by_name_decrypt(&mut self, name: &str, password: &[u8]) -> ZipResult<ZipFile<'_, R>> {
+        self.by_name_with_optional_password(name, Some(password))
+    }
+
+    /// Search for a file entry by name
+    pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile<'_, R>> {
+        self.by_name_with_optional_password(name, None)
+    }
+
+    /// Get the index of a file entry by name, if it's present.
+    #[inline]
+    pub fn index_for_name(&self, name: &str) -> Option<usize> {
+        self.shared.files.get_index_of(name)
+    }
+
+    /// Search for a file entry by path, decrypt with given password
+    ///
+    /// # Warning
+    ///
+    /// The implementation of the cryptographic algorithms has not
+    /// gone through a correctness review, and you should assume it is insecure:
+    /// passwords used with this API may be compromised.
+    ///
+    /// This function sometimes accepts wrong password. This is because the ZIP spec only allows us
+    /// to check for a 1/256 chance that the password is correct.
+    /// There are many passwords out there that will also pass the validity checks
+    /// we are able to perform. This is a weakness of the `ZipCrypto` algorithm,
+    /// due to its fairly primitive approach to cryptography.
+    pub fn by_path_decrypt<T: AsRef<Path>>(
+        &mut self,
+        path: T,
+        password: &[u8],
+    ) -> ZipResult<ZipFile<'_, R>> {
+        self.index_for_path(path)
+            .ok_or(ZipError::FileNotFound)
+            .and_then(|index| {
+                self.by_index_with_options(index, ZipReadOptions::new().password(Some(password)))
+            })
+    }
+
+    /// Search for a file entry by path
+    pub fn by_path<T: AsRef<Path>>(&mut self, path: T) -> ZipResult<ZipFile<'_, R>> {
+        self.index_for_path(path)
+            .ok_or(ZipError::FileNotFound)
+            .and_then(|index| self.by_index_with_options(index, ZipReadOptions::new()))
+    }
+
+    /// Get the index of a file entry by path, if it's present.
+    #[inline(always)]
+    pub fn index_for_path<T: AsRef<Path>>(&self, path: T) -> Option<usize> {
+        let path_as_string = &path_to_string(path).ok()?;
+        self.index_for_name(path_as_string)
+    }
+
+    /// Get the name of a file entry, if it's present.
+    #[inline(always)]
+    pub fn name_for_index(&self, index: usize) -> Option<&str> {
+        self.shared
+            .files
+            .get_index(index)
+            .map(|(name, _)| name.as_ref())
+    }
+
+    /// Search for a file entry by name and return a seekable object.
+    pub fn by_name_seek(&mut self, name: &str) -> ZipResult<ZipFileSeek<'_, R>> {
+        self.by_index_seek(self.index_for_name(name).ok_or(ZipError::FileNotFound)?)
+    }
+
+    /// Search for a file entry by index and return a seekable object.
+    pub fn by_index_seek(&mut self, index: usize) -> ZipResult<ZipFileSeek<'_, R>> {
+        let reader = &mut self.reader;
+        self.shared
+            .files
+            .get_index(index)
+            .ok_or(ZipError::FileNotFound)
+            .and_then(move |(_, data)| {
+                let seek_reader = match data.compression_method {
+                    CompressionMethod::Stored => {
+                        ZipFileSeekReader::Raw(data.find_content_seek(reader)?)
+                    }
+                    _ => {
+                        return Err(ZipError::UnsupportedArchive(
+                            "Seekable compressed files are not yet supported",
+                        ));
+                    }
+                };
+                Ok(ZipFileSeek {
+                    reader: seek_reader,
+                    data: Cow::Borrowed(data),
+                })
+            })
+    }
+
+    fn by_name_with_optional_password<'a>(
+        &'a mut self,
+        name: &str,
+        password: Option<&[u8]>,
+    ) -> ZipResult<ZipFile<'a, R>> {
+        let Some(index) = self.shared.files.get_index_of(name) else {
+            return Err(ZipError::FileNotFound);
+        };
+        self.by_index_with_options(index, ZipReadOptions::new().password(password))
+    }
+
+    /// Get a contained file by index, decrypt with given password
+    ///
+    /// # Warning
+    ///
+    /// The implementation of the cryptographic algorithms has not
+    /// gone through a correctness review, and you should assume it is insecure:
+    /// passwords used with this API may be compromised.
+    ///
+    /// This function sometimes accepts wrong password. This is because the ZIP spec only allows us
+    /// to check for a 1/256 chance that the password is correct.
+    /// There are many passwords out there that will also pass the validity checks
+    /// we are able to perform. This is a weakness of the `ZipCrypto` algorithm,
+    /// due to its fairly primitive approach to cryptography.
+    pub fn by_index_decrypt(
+        &mut self,
+        file_number: usize,
+        password: &[u8],
+    ) -> ZipResult<ZipFile<'_, R>> {
+        self.by_index_with_options(file_number, ZipReadOptions::new().password(Some(password)))
+    }
+
+    /// Get a contained file by index
+    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
+        self.by_index_with_options(file_number, ZipReadOptions::new())
+    }
+
+    /// Get a contained file by index without decompressing it
+    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
+        let reader = &mut self.reader;
+        let (_, data) = self
+            .shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        Ok(ZipFile {
+            reader: ZipFileReader::Raw(data.find_content(reader)?),
+            data: Cow::Borrowed(data),
+        })
+    }
+
+    /// Get a contained file by index with options.
+    pub fn by_index_with_options(
+        &mut self,
+        file_number: usize,
+        mut options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFile<'_, R>> {
+        let (_, data) = self
+            .shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+
+        if options.ignore_encryption_flag {
+            // Always use no password when we're ignoring the encryption flag.
+            options.password = None;
+        } else {
+            // Require and use the password only if the file is encrypted.
+            match (options.password, data.encrypted) {
+                (None, true) => {
+                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
+                }
+                // Password supplied, but none needed! Discard.
+                (Some(_), false) => options.password = None,
+                _ => {}
+            }
+        }
+        let limit_reader = data.find_content(&mut self.reader)?;
+
+        let crypto_reader =
+            make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
+
+        let crc32 = if options.ignore_crc {
+            None
+        } else {
+            Some(data.crc32)
+        };
+
+        Ok(ZipFile {
+            data: Cow::Borrowed(data),
+            reader: make_reader(
+                data.compression_method,
+                data.uncompressed_size,
+                crc32,
+                crypto_reader,
+                #[cfg(feature = "legacy-zip")]
+                data.flags,
+            )?,
+        })
+    }
+
+    /// Find the "root directory" of an archive if it exists, filtering out
+    /// irrelevant entries when searching.
+    ///
+    /// Our definition of a "root directory" is a single top-level directory
+    /// that contains the rest of the archive's entries. This is useful for
+    /// extracting archives that contain a single top-level directory that
+    /// you want to "unwrap" and extract directly.
+    ///
+    /// For a sensible default filter, you can use [`root_dir_common_filter`].
+    /// For a custom filter, see [`RootDirFilter`].
+    pub fn root_dir(&self, filter: impl RootDirFilter) -> ZipResult<Option<PathBuf>> {
+        let mut root_dir: Option<PathBuf> = None;
+
+        for i in 0..self.len() {
+            let (_, file) = self
+                .shared
+                .files
+                .get_index(i)
+                .ok_or(ZipError::FileNotFound)?;
+
+            let path = match file.enclosed_name() {
+                Some(path) => path,
+                None => return Ok(None),
+            };
+
+            if !filter(&path) {
+                continue;
+            }
+
+            macro_rules! replace_root_dir {
+                ($path:ident) => {
+                    match &mut root_dir {
+                        Some(root_dir) => {
+                            if *root_dir != $path {
+                                // We've found multiple root directories,
+                                // abort.
+                                return Ok(None);
+                            }
+                            continue;
+                        }
+
+                        None => {
+                            root_dir = Some($path.into());
+                            continue;
+                        }
+                    }
+                };
+            }
+
+            // If this entry is located at the root of the archive...
+            if path.components().count() == 1 {
+                if file.is_dir() {
+                    // If it's a directory, it could be the root directory.
+                    replace_root_dir!(path);
+                }
+                // If it's anything else, this archive does not have a
+                // root directory.
+                return Ok(None);
+            }
+
+            // Find the root directory for this entry.
+            let mut path = path.as_path();
+            while let Some(parent) = path.parent().filter(|path| *path != Path::new("")) {
+                path = parent;
+            }
+
+            replace_root_dir!(path);
+        }
+
+        Ok(root_dir)
+    }
+
+    /// Unwrap and return the inner reader object
+    ///
+    /// The position of the reader is undefined.
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
+}
