@@ -43,31 +43,6 @@ impl fmt::Debug for DateTime {
     }
 }
 
-impl DateTime {
-    /// Constructs a default datetime of 1980-01-01 00:00:00.
-    pub const DEFAULT: Self = DateTime {
-        datepart: 0b0000_0000_0010_0001,
-        timepart: 0,
-    };
-
-    /// Returns the current time if possible, otherwise the default of 1980-01-01.
-    #[cfg(feature = "time")]
-    #[must_use]
-    pub fn default_for_write() -> Self {
-        let now = time::OffsetDateTime::now_utc();
-        time::PrimitiveDateTime::new(now.date(), now.time())
-            .try_into()
-            .unwrap_or_else(|_| DateTime::default())
-    }
-
-    /// Returns the current time if possible, otherwise the default of 1980-01-01.
-    #[cfg(not(feature = "time"))]
-    #[must_use]
-    pub fn default_for_write() -> Self {
-        DateTime::default()
-    }
-}
-
 #[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
@@ -199,6 +174,56 @@ impl fmt::Display for DateTime {
 }
 
 impl DateTime {
+    /// Constructs a default datetime of 1980-01-01 00:00:00.
+    pub const DEFAULT: Self = DateTime {
+        datepart: 0b0000_0000_0010_0001,
+        timepart: 0,
+    };
+
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(feature = "time")]
+    #[must_use]
+    pub fn default_for_write() -> Self {
+        let now = time::OffsetDateTime::now_utc();
+        time::PrimitiveDateTime::new(now.date(), now.time())
+            .try_into()
+            .unwrap_or_else(|_| DateTime::default())
+    }
+
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(not(feature = "time"))]
+    #[must_use]
+    pub fn default_for_write() -> Self {
+        DateTime::default()
+    }
+
+    #[cfg(feature = "chrono")]
+    /// Generate a `SystemTime` from a `DateTime`.
+    pub(crate) fn datetime_to_systemtime(&self) -> Option<std::time::SystemTime> {
+        if let Some(chrono_datetime) = self.generate_chrono_datetime() {
+            let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(chrono_datetime, chrono::Utc);
+            return Some(time.into());
+        }
+        None
+    }
+
+    #[cfg(feature = "chrono")]
+    /// Generate a `NaiveDateTime` from a `DateTime`.
+    fn generate_chrono_datetime(&self) -> Option<chrono::NaiveDateTime> {
+        if let Some(chrono_date) = chrono::NaiveDate::from_ymd_opt(
+            self.year().into(),
+            self.month().into(),
+            self.day().into(),
+        ) && let Some(chrone_datetime) = chrono_date.and_hms_opt(
+            self.hour().into(),
+            self.minute().into(),
+            self.second().into(),
+        ) {
+            return Some(chrone_datetime);
+        }
+        None
+    }
+
     /// Converts an msdos (u16, u16) pair to a `DateTime` object
     ///
     /// # Safety

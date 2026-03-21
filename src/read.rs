@@ -1016,7 +1016,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             // Set original timestamp.
             #[cfg(feature = "chrono")]
             if let Some(last_modified) = file.last_modified()
-                && let Some(t) = datetime_to_systemtime(&last_modified)
+                && let Some(t) = last_modified.datetime_to_systemtime()
             {
                 outfile.set_modified(t)?;
             }
@@ -2190,33 +2190,6 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
     }
 
     true
-}
-
-#[cfg(feature = "chrono")]
-/// Generate a `SystemTime` from a `DateTime`.
-fn datetime_to_systemtime(datetime: &DateTime) -> Option<std::time::SystemTime> {
-    if let Some(t) = generate_chrono_datetime(datetime) {
-        let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(t, chrono::Utc);
-        return Some(time.into());
-    }
-    None
-}
-
-#[cfg(feature = "chrono")]
-/// Generate a `NaiveDateTime` from a `DateTime`.
-fn generate_chrono_datetime(datetime: &DateTime) -> Option<chrono::NaiveDateTime> {
-    if let Some(d) = chrono::NaiveDate::from_ymd_opt(
-        datetime.year().into(),
-        datetime.month().into(),
-        datetime.day().into(),
-    ) && let Some(d) = d.and_hms_opt(
-        datetime.hour().into(),
-        datetime.minute().into(),
-        datetime.second().into(),
-    ) {
-        return Some(d);
-    }
-    None
 }
 
 #[cfg(test)]
