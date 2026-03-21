@@ -7,7 +7,7 @@ use crate::{
     ZipReadOptions,
     read::{
         CentralDirectoryInfo, Config, ZipFile, find_content, make_crypto_reader, make_reader,
-        read_variable_length_byte_field
+        read_variable_length_byte_field,
     },
     result::{ZipError, ZipResult},
     spec,
@@ -62,7 +62,9 @@ impl<R: Read + Seek> IterableZip<R> {
         }
 
         if central_directory.disk_number != central_directory.disk_with_central_directory {
-            return Err(ZipError::UnsupportedArchive("Support for multi-disk files is not implemented"));
+            return Err(ZipError::UnsupportedArchive(
+                "Support for multi-disk files is not implemented",
+            ));
         }
 
         let iterable_shared = IterableZipFiles::try_new(reader, central_directory)?;
