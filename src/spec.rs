@@ -121,6 +121,7 @@ impl From<ZipFlags> for u16 {
 ///```
 /// # fn main() -> Result<(), zip::result::ZipError> {
 /// # #[cfg(target_pointer_width = "64")]
+/// # #[cfg(all(target_endian = "little", not(miri)))] // too long to run on miri
 /// # {
 /// use std::io::{self, Cursor, Write};
 /// use std::error::Error;
@@ -288,7 +289,6 @@ macro_rules! to_le {
         to_le!($obj, [$($rest),+]);
     };
 }
-pub(crate) use to_le;
 
 /* TODO: derive macro to generate these fields? */
 /// Implement `from_le()` and `to_le()`, providing the field specification to both macros

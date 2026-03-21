@@ -1196,16 +1196,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         }) = aes_mode
         {
             // For raw copies of AES entries, write the correct AES extra data immediately
-            let mut body = [0; 7];
-            [body[0], body[1]] = (vendor_version as u16).to_le_bytes(); // vendor version (1 or 2)
-            [body[2], body[3]] = *b"AE"; // vendor id
-            body[4] = mode as u8; // strength
-            [body[5], body[6]] = actual_compression_method.serialize_to_u16().to_le_bytes(); // real compression method
+            let aex_extra_field =
+                AexEncryption::new(vendor_version, mode, actual_compression_method);
+            let buf = &aex_extra_field.as_bytes()[offset_of!(AexEncryption, version)..];
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
                 UsedExtraField::AeXEncryption.as_u16(),
-                &body,
+                buf,
             )?;
         }
         let header_end = header_start
@@ -2382,7 +2380,7 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method).to_le();
+    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
     let buf = aes_extra_field.as_bytes();
     writer.write_all(buf)?;
 
