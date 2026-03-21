@@ -217,12 +217,12 @@ impl DateTime {
             self.year().into(),
             self.month().into(),
             self.day().into(),
-        ) && let Some(chrone_datetime) = chrono_date.and_hms_opt(
+        ) && let Some(chrono_datetime) = chrono_date.and_hms_opt(
             self.hour().into(),
             self.minute().into(),
             self.second().into(),
         ) {
-            return Some(chrone_datetime);
+            return Some(chrono_datetime);
         }
         None
     }
