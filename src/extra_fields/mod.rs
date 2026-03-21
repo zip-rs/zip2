@@ -65,7 +65,7 @@ pub(crate) enum UsedExtraField {
 
 impl UsedExtraField {
     pub const fn to_le_bytes(self) -> [u8; 2] {
-        let field_u16 = self as u16;
+        let field_u16 = self.as_u16();
         field_u16.to_le_bytes()
     }
 

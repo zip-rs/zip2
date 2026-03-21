@@ -745,6 +745,14 @@ pub enum AesVendorVersion {
     Ae2 = 0x0002,
 }
 
+impl AesVendorVersion {
+    /// As u16
+    #[must_use]
+    pub const fn as_u16(self) -> u16 {
+        self as u16
+    }
+}
+
 impl From<AesVendorVersion> for u16 {
     fn from(value: AesVendorVersion) -> Self {
         value as u16
@@ -762,6 +770,14 @@ pub enum AesMode {
     Aes192 = 0x02,
     /// 256-bit AES encryption.
     Aes256 = 0x03,
+}
+
+impl AesMode {
+    /// As u8
+    #[must_use]
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
 }
 
 impl Display for AesMode {
