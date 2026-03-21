@@ -1,19 +1,22 @@
 //! Code related to `ZipArchive`
 
-use std::borrow::Cow;
+use crate::CompressionMethod;
 use crate::read::config::Config;
 use crate::read::reader::ZipFileSeekReader;
-use crate::CompressionMethod;
-use crate::read::{ArchiveOffset, CentralDirectoryInfo, central_header_to_zip_file, make_reader,ZipFileSeek, RootDirFilter, make_crypto_reader,ZipReadOptions, ZipFile, ZipFileReader, AesInfo};
+use crate::read::{
+    AesInfo, ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileReader,
+    ZipFileSeek, ZipReadOptions, central_header_to_zip_file, make_crypto_reader, make_reader,
+};
+use crate::result::{ZipError, ZipResult};
+use crate::spec;
 use crate::types::ZipFileData;
 use crate::unstable::path_to_string;
-use crate::result::{ZipError, ZipResult};
-use std::path::{Path, PathBuf};
-use std::io::{Seek, Read, SeekFrom};
-use std::sync::Arc;
 use core::ops::Range;
 use indexmap::IndexMap;
-use crate::spec;
+use std::borrow::Cow;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
@@ -653,5 +656,251 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// The position of the reader is undefined.
     pub fn into_inner(self) -> R {
         self.reader
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn invalid_offset() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/invalid_offset.zip"
+        )));
+        assert!(reader.is_err());
+    }
+
+    #[test]
+    fn invalid_offset2() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/invalid_offset2.zip"
+        )));
+        assert!(reader.is_err());
+    }
+
+    #[test]
+    fn zip64_with_leading_junk() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/zip64_demo.zip"
+        )))
+        .unwrap();
+        assert_eq!(reader.len(), 1);
+    }
+
+    #[test]
+    fn zip_contents() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let mut reader =
+            ZipArchive::new(Cursor::new(include_bytes!("../../tests/data/mimetype.zip"))).unwrap();
+        assert_eq!(reader.comment(), b"");
+        assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
+    }
+
+    #[test]
+    fn zip_clone() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+        use std::io::Read;
+
+        let mut reader1 =
+            ZipArchive::new(Cursor::new(include_bytes!("../../tests/data/mimetype.zip"))).unwrap();
+        let mut reader2 = reader1.clone();
+
+        let mut file1 = reader1.by_index(0).unwrap();
+        let mut file2 = reader2.by_index(0).unwrap();
+
+        let t = file1.last_modified().unwrap();
+        assert_eq!(
+            (
+                t.year(),
+                t.month(),
+                t.day(),
+                t.hour(),
+                t.minute(),
+                t.second()
+            ),
+            (1980, 1, 1, 0, 0, 0)
+        );
+
+        let mut buf1 = [0; 5];
+        let mut buf2 = [0; 5];
+        let mut buf3 = [0; 5];
+        let mut buf4 = [0; 5];
+
+        file1.read_exact(&mut buf1).unwrap();
+        file2.read_exact(&mut buf2).unwrap();
+        file1.read_exact(&mut buf3).unwrap();
+        file2.read_exact(&mut buf4).unwrap();
+
+        assert_eq!(buf1, buf2);
+        assert_eq!(buf3, buf4);
+        assert_ne!(buf1, buf3);
+    }
+
+    #[test]
+    fn file_and_dir_predicates() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let mut zip = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/files_and_dirs.zip"
+        )))
+        .unwrap();
+
+        for i in 0..zip.len() {
+            let zip_file = zip.by_index(i).unwrap();
+            let full_name = zip_file.enclosed_name().unwrap();
+            let file_name = full_name.file_name().unwrap().to_str().unwrap();
+            assert!(
+                (file_name.starts_with("dir") && zip_file.is_dir())
+                    || (file_name.starts_with("file") && zip_file.is_file())
+            );
+        }
+    }
+
+    #[test]
+    fn zip64_magic_in_filenames() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let files = vec![
+            include_bytes!("../../tests/data/zip64_magic_in_filename_1.zip").to_vec(),
+            include_bytes!("../../tests/data/zip64_magic_in_filename_2.zip").to_vec(),
+            include_bytes!("../../tests/data/zip64_magic_in_filename_3.zip").to_vec(),
+            include_bytes!("../../tests/data/zip64_magic_in_filename_4.zip").to_vec(),
+            include_bytes!("../../tests/data/zip64_magic_in_filename_5.zip").to_vec(),
+        ];
+        // Although we don't allow adding files whose names contain the ZIP64 CDB-end or
+        // CDB-end-locator signatures, we still read them when they aren't genuinely ambiguous.
+        for file in files {
+            ZipArchive::new(Cursor::new(file)).unwrap();
+        }
+    }
+
+    /// test case to ensure we don't preemptively over allocate based on the
+    /// declared number of files in the CDE of an invalid zip when the number of
+    /// files declared is more than the alleged offset in the CDE
+    #[test]
+    fn invalid_cde_number_of_files_allocation_smaller_offset() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
+        )));
+        assert!(reader.is_err() || reader.unwrap().is_empty());
+    }
+
+    /// test case to ensure we don't preemptively over allocate based on the
+    /// declared number of files in the CDE of an invalid zip when the number of
+    /// files declared is less than the alleged offset in the CDE
+    #[test]
+    fn invalid_cde_number_of_files_allocation_greater_offset() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
+        )));
+        assert!(reader.is_err());
+    }
+
+    #[cfg(feature = "deflate64")]
+    #[test]
+    fn deflate64_index_out_of_bounds() -> std::io::Result<()> {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/raw_deflate64_index_out_of_bounds.zip"
+        )))?;
+        std::io::copy(&mut reader.by_index(0)?, &mut std::io::sink()).expect_err("Invalid file");
+        Ok(())
+    }
+
+    #[cfg(feature = "deflate64")]
+    #[test]
+    fn deflate64_not_enough_space() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+
+        ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/deflate64_issue_25.zip"
+        )))
+        .expect_err("Invalid file");
+    }
+
+    #[cfg(feature = "deflate-flate2")]
+    #[test]
+    fn test_read_with_data_descriptor() {
+        use super::ZipArchive;
+        use std::io::Cursor;
+        use std::io::Read;
+
+        let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/data_descriptor.zip"
+        )))
+        .unwrap();
+        let mut decompressed = [0u8; 16];
+        let mut file = reader.by_index(0).unwrap();
+        assert_eq!(file.read(&mut decompressed).unwrap(), 12);
+    }
+
+    /// Only on little endian because we cannot use fs with miri CI
+    #[cfg(all(target_endian = "little", not(miri)))]
+    #[test]
+    fn test_central_directory_not_at_end() -> ZipResult<()> {
+        use super::ZipArchive;
+
+        let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/omni.ja")))?;
+        let mut file = reader.by_name("chrome.manifest")?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?; // ensures valid UTF-8
+        assert!(!contents.is_empty(), "chrome.manifest should not be empty");
+        drop(file);
+        for i in 0..reader.len() {
+            let mut file = reader.by_index(i)?;
+            // Attempt to read a small portion or all of each file to ensure it's accessible
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+            assert_eq!(
+                buffer.len(),
+                file.size() as usize,
+                "File size mismatch for {}",
+                file.name()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_ignore_encryption_flag() -> ZipResult<()> {
+        use super::ZipArchive;
+
+        let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../tests/data/ignore_encryption_flag.zip"
+        )))?;
+
+        // Get the file entry by ignoring its encryption flag.
+        let mut file =
+            reader.by_index_with_options(0, ZipReadOptions::new().ignore_encryption_flag(true))?;
+        let mut contents = String::new();
+        assert_eq!(file.name(), "plaintext.txt");
+
+        // The file claims it is encrypted, but it is not.
+        assert!(file.encrypted());
+        file.read_to_string(&mut contents)?; // ensures valid UTF-8
+        assert_eq!(contents, "This file is not encrypted.\n");
+        Ok(())
     }
 }
