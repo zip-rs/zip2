@@ -6,6 +6,7 @@ use crate::crc32::Crc32Reader;
 use crate::datetime::DateTime;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
+use crate::read::reader::ZipFileSeekReader;
 use crate::result::ZipError::InvalidPassword;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
@@ -13,7 +14,6 @@ use crate::spec::{
     self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
 };
-use crate::read::reader::ZipFileSeekReader;
 use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData, ffi};
 use crate::unstable::{LittleEndianReadExt, path_to_string};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
@@ -37,84 +37,9 @@ pub use stream::read_zipfile_from_stream_with_compressed_size;
 pub(crate) mod magic_finder;
 pub(crate) mod reader;
 
+pub(crate) mod zip_archive;
 pub use zip_archive::ZipArchive;
-
-/// Immutable metadata about a `ZipArchive`.
-#[derive(Debug)]
-pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Box<str>, ZipFileData>,
-    pub(crate) offset: u64,
-    pub(crate) dir_start: u64,
-    // This isn't yet used anywhere, but it is here for use cases in the future.
-    #[allow(dead_code)]
-    pub(crate) config: Config,
-    pub(crate) comment: Box<[u8]>,
-    pub(crate) zip64_comment: Option<Box<[u8]>>,
-}
-
-pub(crate) mod zip_archive {
-    use crate::read::ZipArchiveMetadata;
-    use indexmap::IndexMap;
-    use std::sync::Arc;
-
-    #[derive(Debug)]
-    pub(crate) struct SharedBuilder {
-        pub(crate) files: Vec<super::ZipFileData>,
-        pub(super) offset: u64,
-        pub(super) dir_start: u64,
-        // This isn't yet used anywhere, but it is here for use cases in the future.
-        #[allow(dead_code)]
-        pub(super) config: super::Config,
-    }
-
-    impl SharedBuilder {
-        pub fn build(
-            self,
-            comment: Box<[u8]>,
-            zip64_comment: Option<Box<[u8]>>,
-        ) -> ZipArchiveMetadata {
-            let mut index_map = IndexMap::with_capacity(self.files.len());
-            self.files.into_iter().for_each(|file| {
-                index_map.insert(file.file_name.clone(), file);
-            });
-            ZipArchiveMetadata {
-                files: index_map,
-                offset: self.offset,
-                dir_start: self.dir_start,
-                config: self.config,
-                comment,
-                zip64_comment,
-            }
-        }
-    }
-
-    /// ZIP archive reader
-    ///
-    /// At the moment, this type is cheap to clone if this is the case for the
-    /// reader it uses. However, this is not guaranteed by this crate and it may
-    /// change in the future.
-    ///
-    /// ```no_run
-    /// use std::io::{Read, Seek};
-    /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
-    ///     use zip::HasZipMetadata;
-    ///     let mut zip = zip::ZipArchive::new(reader)?;
-    ///
-    ///     for i in 0..zip.len() {
-    ///         let mut file = zip.by_index(i)?;
-    ///         println!("Filename: {}", file.name());
-    ///         std::io::copy(&mut file, &mut std::io::stdout())?;
-    ///     }
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
-    #[derive(Clone, Debug)]
-    pub struct ZipArchive<R> {
-        pub(super) reader: R,
-        pub(super) shared: Arc<ZipArchiveMetadata>,
-    }
-}
+pub use zip_archive::ZipArchiveMetadata;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
