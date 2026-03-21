@@ -99,7 +99,7 @@ we will follow these guidelines:
 ## License
 
 Licensed under the [MIT License](./LICENSE). Some files in the "tests/data" subdirectory of this repository are under other
-licences; see files named `LICENSE.*.txt` for details.
+licenses; see files named `LICENSE.*.txt` for details.
 
 ## Fuzzing
 
