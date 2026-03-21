@@ -201,7 +201,10 @@ impl DateTime {
     /// Generate a `SystemTime` from a `DateTime`.
     pub(crate) fn datetime_to_systemtime(&self) -> Option<std::time::SystemTime> {
         if let Some(chrono_datetime) = self.generate_chrono_datetime() {
-            let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(chrono_datetime, chrono::Utc);
+            let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                chrono_datetime,
+                chrono::Utc,
+            );
             return Some(time.into());
         }
         None

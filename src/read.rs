@@ -13,6 +13,7 @@ use crate::spec::{
     self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
 };
+use crate::read::reader::ZipFileSeekReader;
 use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData, ffi};
 use crate::unstable::{LittleEndianReadExt, path_to_string};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
@@ -34,6 +35,7 @@ pub use stream::read_zipfile_from_stream;
 pub use stream::read_zipfile_from_stream_with_compressed_size;
 
 pub(crate) mod magic_finder;
+pub(crate) mod reader;
 
 pub use zip_archive::ZipArchive;
 
@@ -259,64 +261,6 @@ pub struct ZipFileSeek<'a, R> {
     reader: ZipFileSeekReader<'a, R>,
 }
 
-enum ZipFileSeekReader<'a, R: ?Sized> {
-    Raw(SeekableTake<'a, R>),
-}
-
-struct SeekableTake<'a, R: ?Sized> {
-    inner: &'a mut R,
-    inner_starting_offset: u64,
-    length: u64,
-    current_offset: u64,
-}
-
-impl<'a, R: Seek + ?Sized> SeekableTake<'a, R> {
-    pub fn new(inner: &'a mut R, length: u64) -> io::Result<Self> {
-        let inner_starting_offset = inner.stream_position()?;
-        Ok(Self {
-            inner,
-            inner_starting_offset,
-            length,
-            current_offset: 0,
-        })
-    }
-}
-
-impl<R: Seek + ?Sized> Seek for SeekableTake<'_, R> {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let offset = match pos {
-            SeekFrom::Start(offset) => Some(offset),
-            SeekFrom::End(offset) => self.length.checked_add_signed(offset),
-            SeekFrom::Current(offset) => self.current_offset.checked_add_signed(offset),
-        };
-        match offset {
-            None => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid seek to a negative or overflowing position",
-            )),
-            Some(offset) => {
-                let clamped_offset = std::cmp::min(self.length, offset);
-                let new_inner_offset = self
-                    .inner
-                    .seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
-                self.current_offset = new_inner_offset - self.inner_starting_offset;
-                Ok(self.current_offset)
-            }
-        }
-    }
-}
-
-impl<R: Read + ?Sized> Read for SeekableTake<'_, R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let written = self
-            .inner
-            .take(self.length - self.current_offset)
-            .read(buf)?;
-        self.current_offset += written as u64;
-        Ok(written)
-    }
-}
-
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
     use std::fs;
     fs::create_dir_all(outpath.as_ref())?;
@@ -332,29 +276,6 @@ pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), Zi
         )?;
     }
     Ok(())
-}
-
-pub(crate) fn find_content<'a, R: Read + Seek + ?Sized>(
-    data: &ZipFileData,
-    reader: &'a mut R,
-) -> ZipResult<io::Take<&'a mut R>> {
-    // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
-    let data_start = data.data_start(reader)?;
-
-    reader.seek(SeekFrom::Start(data_start))?;
-    Ok(reader.take(data.compressed_size))
-}
-
-fn find_content_seek<'a, R: Read + Seek + ?Sized>(
-    data: &ZipFileData,
-    reader: &'a mut R,
-) -> ZipResult<SeekableTake<'a, R>> {
-    // Parse local header
-    let data_start = data.data_start(reader)?;
-    reader.seek(SeekFrom::Start(data_start))?;
-
-    // Explicit Ok and ? are needed to convert io::Error to ZipError
-    Ok(SeekableTake::new(reader, data.compressed_size)?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -774,7 +695,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
 
-        let limit_reader = find_content(data, &mut self.reader)?;
+        let limit_reader = data.find_content(&mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
             Some((aes_mode, _, _)) => {
@@ -1182,7 +1103,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .and_then(move |(_, data)| {
                 let seek_reader = match data.compression_method {
                     CompressionMethod::Stored => {
-                        ZipFileSeekReader::Raw(find_content_seek(data, reader)?)
+                        ZipFileSeekReader::Raw(data.find_content_seek(reader)?)
                     }
                     _ => {
                         return Err(ZipError::UnsupportedArchive(
@@ -1243,7 +1164,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
         Ok(ZipFile {
-            reader: ZipFileReader::Raw(find_content(data, reader)?),
+            reader: ZipFileReader::Raw(data.find_content(reader)?),
             data: Cow::Borrowed(data),
         })
     }
@@ -1274,7 +1195,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 _ => {}
             }
         }
-        let limit_reader = find_content(data, &mut self.reader)?;
+        let limit_reader = data.find_content(&mut self.reader)?;
 
         let crypto_reader =
             make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
