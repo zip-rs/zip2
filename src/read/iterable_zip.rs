@@ -230,9 +230,9 @@ impl ZipEntry {
         }
     }
     /// Check if the entry have the UTF-8 encoding flag
+    #[must_use]
     pub fn is_utf8(&self) -> bool {
-        // TODO
-        self.central_block.flags & (ZipFlags::LanguageEncoding as u16) != 0
+        ZipFlags::matching(self.central_block.flags, ZipFlags::LanguageEncoding)
     }
 
     /// Get file name
@@ -248,8 +248,21 @@ impl ZipEntry {
     }
 
     /// Get raw file name
+    #[must_use]
     pub fn file_name_raw(&self) -> &[u8] {
         &self.variable_data.file_name
+    }
+
+    /// Get raw extra fields
+    #[must_use]
+    pub fn extra_fields(&self) -> &[u8] {
+        &self.variable_data.extra_fields
+    }
+
+    /// Get raw comment
+    #[must_use]
+    pub fn comment(&self) -> &[u8] {
+        &self.variable_data.file_comment
     }
 
     /// TODO convert into zip_file

@@ -1,6 +1,6 @@
 use bencher::{benchmark_group, benchmark_main};
 
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 
 use bencher::Bencher;
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -33,7 +33,7 @@ fn generate_random_archive_to_file(size: usize) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn file_listing(bench: &mut Bencher) {
+fn file_listing_memory(bench: &mut Bencher) {
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size)
         .expect("Failed to create a random archive for the bench read_entry()");
@@ -48,16 +48,33 @@ fn file_listing(bench: &mut Bencher) {
     });
 }
 
-fn file_listing_iterable(bench: &mut Bencher) {
+fn file_listing_file(bench: &mut Bencher) {
+    use std::fs::File;
+
+    let size = 1024 * 1024;
+    generate_random_archive_to_file(size)
+        .expect("Failed to create a random archive for the bench read_entry()");
+
+    bench.iter(|| {
+        let file = File::open(FILENAME).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut names = vec![];
+        for idx in 0..archive.len() {
+            let file = archive.by_index(idx).unwrap();
+            names.push(file.name().to_string());
+        }
+    });
+}
+
+fn file_listing_iterable_memory(bench: &mut Bencher) {
     use zip::read::Config;
-    use zip::read::IterableZip;
+    use zip::unstable::read::IterableZip;
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size)
         .expect("Failed to create a random archive for the bench read_entry()");
 
     bench.iter(|| {
-        let mut reader = Cursor::new(&bytes);
-        let mut archive = IterableZip::try_new(reader.clone(), Config::default()).unwrap();
+        let mut archive = IterableZip::try_new(Cursor::new(&bytes), Config::default()).unwrap();
         let mut names = vec![];
         for file in archive.files().unwrap() {
             let file = file.unwrap();
@@ -66,5 +83,31 @@ fn file_listing_iterable(bench: &mut Bencher) {
     });
 }
 
-benchmark_group!(benches, file_listing, file_listing_iterable);
+fn file_listing_iterable_file(bench: &mut Bencher) {
+    use std::fs::File;
+    use zip::read::Config;
+    use zip::unstable::read::IterableZip;
+
+    let size = 1024 * 1024;
+    generate_random_archive_to_file(size)
+        .expect("Failed to create a random archive for the bench read_entry()");
+
+    bench.iter(|| {
+        let file = File::open(FILENAME).unwrap();
+        let mut archive = IterableZip::try_new(file, Config::default()).unwrap();
+        let mut names = vec![];
+        for file in archive.files().unwrap() {
+            let file = file.unwrap();
+            names.push(file.file_name().unwrap().to_string());
+        }
+    });
+}
+
+benchmark_group!(
+    benches,
+    file_listing_memory,
+    file_listing_iterable_memory,
+    file_listing_file,
+    file_listing_iterable_file
+);
 benchmark_main!(benches);

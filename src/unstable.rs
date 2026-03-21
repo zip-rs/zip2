@@ -9,6 +9,12 @@ use std::path::{Component, MAIN_SEPARATOR, Path};
 pub mod stream {
     pub use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
 }
+
+/// Iterable zip
+pub mod read {
+    pub use crate::read::iterable_zip::IterableZip;
+}
+
 /// Types for creating ZIP archives.
 pub mod write {
     use crate::result::{ZipError, ZipResult};

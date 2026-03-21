@@ -33,11 +33,9 @@ pub(crate) mod stream;
 pub use stream::read_zipfile_from_stream;
 pub use stream::read_zipfile_from_stream_with_compressed_size;
 
-pub(crate) mod magic_finder;
+pub(crate) mod iterable_zip;
 
-/// Iterable zip
-pub mod iterable_zip;
-pub use iterable_zip::IterableZip;
+pub(crate) mod magic_finder;
 
 pub use zip_archive::ZipArchive;
 

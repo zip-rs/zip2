@@ -43,7 +43,7 @@ fn read_entry(bench: &mut Bencher) {
 
 fn read_entry_iterable(bench: &mut Bencher) {
     use zip::read::Config;
-    use zip::read::IterableZip;
+    use zip::unstable::read::IterableZip;
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size)
         .expect("Failed to create a random archive for the bench read_entry()");
