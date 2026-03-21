@@ -6,7 +6,7 @@ use crate::crc32::Crc32Reader;
 use crate::datetime::DateTime;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
-use crate::read::reader::ZipFileSeekReader;
+use crate::read::readers::ZipFileSeekReader;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
@@ -33,7 +33,7 @@ pub(crate) mod stream;
 pub use stream::{read_zipfile_from_stream, read_zipfile_from_stream_with_compressed_size};
 
 pub(crate) mod magic_finder;
-pub(crate) mod reader;
+pub(crate) mod readers;
 
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};

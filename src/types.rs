@@ -5,7 +5,7 @@ use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraField;
 use crate::path::{enclosed_name, file_name_sanitized};
-use crate::read::reader::SeekableTake;
+use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
