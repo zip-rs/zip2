@@ -39,6 +39,9 @@ pub(crate) mod reader;
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
 
+#[cfg(feature = "aes-crypto")]
+pub use crate::aes::AesInfo;
+
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
     Plaintext(io::Take<&'a mut R>),
@@ -647,18 +650,6 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         Ok(())
     }
-}
-
-/// Holds the AES information of a file in the zip archive
-#[cfg(feature = "aes-crypto")]
-#[derive(Debug)]
-pub struct AesInfo {
-    /// The AES encryption mode
-    pub aes_mode: AesMode,
-    /// The verification key
-    pub verification_value: [u8; crate::aes::PWD_VERIFY_LENGTH],
-    /// The salt
-    pub salt: Vec<u8>,
 }
 
 /// Parse a central directory entry to collect the information for the file.

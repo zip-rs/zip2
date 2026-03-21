@@ -4,7 +4,7 @@ use crate::CompressionMethod;
 use crate::read::config::Config;
 use crate::read::reader::ZipFileSeekReader;
 use crate::read::{
-    AesInfo, ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileReader,
+    ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileReader,
     ZipFileSeek, ZipReadOptions, central_header_to_zip_file, make_crypto_reader, make_reader,
 };
 use crate::result::{ZipError, ZipResult};
@@ -216,7 +216,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn get_aes_verification_key_and_salt(
         &mut self,
         file_number: usize,
-    ) -> ZipResult<Option<AesInfo>> {
+    ) -> ZipResult<Option<crate::aes::AesInfo>> {
         let (_, data) = self
             .shared
             .files
@@ -230,7 +230,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let (verification_value, salt) =
                     crate::aes::AesReader::new(limit_reader, aes_mode, data.compressed_size)
                         .get_verification_value_and_salt()?;
-                let aes_info = AesInfo {
+                let aes_info = crate::aes::AesInfo {
                     aes_mode,
                     verification_value,
                     salt,
