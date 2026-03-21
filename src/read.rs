@@ -7,7 +7,6 @@ use crate::datetime::DateTime;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::read::reader::ZipFileSeekReader;
-use crate::result::ZipError::InvalidPassword;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
@@ -16,7 +15,7 @@ use crate::spec::{
 };
 use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData, ffi};
 use crate::unstable::LittleEndianReadExt;
-use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
+use crate::zipcrypto::ZipCryptoReaderValid;
 use core::mem::{replace, size_of};
 use core::ops::Deref;
 use indexmap::IndexMap;
@@ -202,78 +201,6 @@ pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), Zi
         )?;
     }
     Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
-    data: &ZipFileData,
-    reader: io::Take<&'a mut R>,
-    password: Option<&[u8]>,
-    aes_info: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-) -> ZipResult<CryptoReader<'a, R>> {
-    #[allow(deprecated)]
-    {
-        if let CompressionMethod::Unsupported(_) = data.compression_method {
-            return Err(ZipError::UnsupportedArchive(
-                "Compression method not supported",
-            ));
-        }
-    }
-
-    let reader = match (password, aes_info) {
-        #[cfg(not(feature = "aes-crypto"))]
-        (Some(_), Some(_)) => {
-            return Err(ZipError::UnsupportedArchive(
-                "AES encrypted files cannot be decrypted without the aes-crypto feature.",
-            ));
-        }
-        #[cfg(feature = "aes-crypto")]
-        (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
-            reader: crate::aes::AesReader::new(reader, aes_mode, data.compressed_size)
-                .validate(password)?,
-            vendor_version,
-        },
-        (Some(password), None) => {
-            let validator = if data.using_data_descriptor {
-                ZipCryptoValidator::InfoZipMsdosTime(
-                    data.last_modified_time.map_or(0, |x| x.timepart()),
-                )
-            } else {
-                ZipCryptoValidator::PkzipCrc32(data.crc32)
-            };
-            CryptoReader::ZipCrypto(ZipCryptoReader::new(reader, password).validate(validator)?)
-        }
-        (None, Some(_)) => return Err(InvalidPassword),
-        (None, None) => CryptoReader::Plaintext(reader),
-    };
-    Ok(reader)
-}
-
-pub(crate) fn make_reader<R: Read + ?Sized>(
-    compression_method: CompressionMethod,
-    uncompressed_size: u64,
-    crc32: Option<u32>,
-    reader: CryptoReader<'_, R>,
-    #[cfg(feature = "legacy-zip")] flags: u16,
-) -> ZipResult<ZipFileReader<'_, R>> {
-    // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
-    let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
-        (reader.is_ae2_encrypted(), data_crc32)
-    } else {
-        (true, 0)
-    };
-    #[cfg(not(feature = "legacy-zip"))]
-    let flags = 0;
-    Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
-        Decompressor::new(
-            io::BufReader::new(reader),
-            compression_method,
-            uncompressed_size,
-            flags,
-        )?,
-        crc32,
-        should_disable,
-    ))))
 }
 
 #[cfg(unix)]
