@@ -1,10 +1,19 @@
 //! Code related to `ZipArchive`
 
+use std::borrow::Cow;
 use crate::read::config::Config;
+use crate::read::reader::ZipFileSeekReader;
+use crate::CompressionMethod;
+use crate::read::{ArchiveOffset, CentralDirectoryInfo, central_header_to_zip_file, make_reader,ZipFileSeek, RootDirFilter, make_crypto_reader,ZipReadOptions, ZipFile, ZipFileReader, AesInfo};
 use crate::types::ZipFileData;
-use indexmap::IndexMap;
+use crate::unstable::path_to_string;
+use crate::result::{ZipError, ZipResult};
+use std::path::{Path, PathBuf};
+use std::io::{Seek, Read, SeekFrom};
 use std::sync::Arc;
-
+use core::ops::Range;
+use indexmap::IndexMap;
+use crate::spec;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
@@ -116,7 +125,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// separate function to ease the control flow design.
     pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<ZipArchiveMetadata> {
         // End of the probed region, initially set to the end of the file
-        let file_len = reader.seek(io::SeekFrom::End(0))?;
+        let file_len = reader.seek(SeekFrom::End(0))?;
         let mut end_exclusive = file_len;
         let mut last_err = None;
 
