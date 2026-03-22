@@ -231,7 +231,7 @@ impl ZipStreamFileMetadata {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
-    // We can't use the typical ::parse() method, as we follow separate code paths depending on the
+    // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
     /* TODO: smallvec? */
