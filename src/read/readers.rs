@@ -164,7 +164,7 @@ macro_rules! invalid_state {
 pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
     NoReader,
     Raw(io::Take<&'a mut R>),
-Stored(Box<Crc32Reader<CryptoReader<'a, R>>>),
+    Stored(Box<Crc32Reader<CryptoReader<'a, R>>>),
     Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
 }
 
