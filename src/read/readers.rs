@@ -140,7 +140,7 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
 macro_rules! invalid_state {
     ( $( $x:expr ),* ) => {
         Err(io::Error::other("ZipFileReader was in an invalid state"))
-    }
+    };
 }
 
 #[derive(Debug)]

@@ -39,7 +39,7 @@ impl<R> Crc32Reader<R> {
 macro_rules! invalid_checksum {
     ( $( $x:expr ),* ) => {
         io::Error::new(io::ErrorKind::InvalidData, "Invalid checksum")
-    }
+    };
 }
 
 impl<R: Read> Read for Crc32Reader<R> {
