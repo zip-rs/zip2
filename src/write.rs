@@ -1063,32 +1063,38 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Set ZIP64 archive comment.
-    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>)
+    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
+    pub fn set_zip64_comment<S>(&mut self, _comment: Option<S>)
     where
         S: Into<Box<str>>,
     {
-        self.set_raw_zip64_comment(comment.map(|v| v.into().into_boxed_bytes()));
+        // no-op since deprecated
     }
 
     /// Set raw ZIP64 archive comment.
     ///
     /// This sets the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
-    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) {
-        self.zip64_comment = comment;
+    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
+    pub fn set_raw_zip64_comment(&mut self, _comment: Option<Box<[u8]>>) {
+        // no-op since deprecated
     }
 
     /// Get ZIP64 archive comment.
+    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
     pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
-        self.get_raw_zip64_comment().map(from_utf8)
+        // no-op since deprecated
+        None
     }
 
     /// Get raw ZIP64 archive comment.
     ///
     /// This returns the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
+    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
     pub fn get_raw_zip64_comment(&self) -> Option<&[u8]> {
-        self.zip64_comment.as_deref()
+        // no-op since deprecated
+        None
     }
 
     /// Set the file length and crc32 manually.

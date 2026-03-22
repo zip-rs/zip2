@@ -1086,8 +1086,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
+    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
     pub fn zip64_comment(&self) -> Option<&[u8]> {
-        self.shared.zip64_comment.as_deref()
+        // no-op since deprecated
+        None
     }
 
     /// Returns an iterator over all the file and directory names in this archive.
