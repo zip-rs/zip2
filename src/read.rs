@@ -125,6 +125,23 @@ pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
     },
 }
 
+impl<R: Read + ?Sized> core::fmt::Debug for CryptoReader<'_, R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CryptoReader::Plaintext(_) => f.write_str("CryptoReader::Plaintext"),
+            CryptoReader::ZipCrypto(_) => f.write_str("CryptoReader::ZipCrypto"),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { vendor_version, .. } => {
+                write!(
+                    f,
+                    "CryptoReader::Aes {{ vendor_version: {:?} }}",
+                    vendor_version
+                )
+            }
+        }
+    }
+}
+
 impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -193,6 +210,7 @@ fn invalid_state<T>() -> io::Result<T> {
 pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
     NoReader,
     Raw(io::Take<&'a mut R>),
+    Stored(Box<Crc32Reader<CryptoReader<'a, R>>>),
     Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
 }
 
@@ -201,6 +219,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read(buf),
+            ZipFileReader::Stored(r) => r.read(buf),
             ZipFileReader::Compressed(r) => r.read(buf),
         }
     }
@@ -209,6 +228,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_exact(buf),
+            ZipFileReader::Stored(r) => r.read_exact(buf),
             ZipFileReader::Compressed(r) => r.read_exact(buf),
         }
     }
@@ -217,6 +237,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_end(buf),
+            ZipFileReader::Stored(r) => r.read_to_end(buf),
             ZipFileReader::Compressed(r) => r.read_to_end(buf),
         }
     }
@@ -225,6 +246,7 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => r.read_to_string(buf),
+            ZipFileReader::Stored(r) => r.read_to_string(buf),
             ZipFileReader::Compressed(r) => r.read_to_string(buf),
         }
     }
@@ -235,6 +257,7 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
         match self {
             ZipFileReader::NoReader => invalid_state(),
             ZipFileReader::Raw(r) => Ok(r),
+            ZipFileReader::Stored(r) => Ok(r.into_inner().into_inner()),
             ZipFileReader::Compressed(r) => {
                 Ok(r.into_inner().into_inner()?.into_inner().into_inner())
             }
@@ -415,6 +438,13 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
     } else {
         (true, 0)
     };
+    if compression_method == CompressionMethod::Stored {
+        return Ok(ZipFileReader::Stored(Box::new(Crc32Reader::new(
+            reader,
+            crc32,
+            should_disable,
+        ))));
+    }
     #[cfg(not(feature = "legacy-zip"))]
     let flags = 0;
     Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
