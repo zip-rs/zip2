@@ -720,8 +720,8 @@ impl Zip64CentralDirectoryEnd {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
         }
 
-        let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
-        if let Err(e) = reader.read_exact(&mut zip_file_comment) {
+        let mut extensible_data_sector = vec![0u8; record_size as usize - 44].into_boxed_slice();
+        if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Err(invalid!(
                     "EOCD64 extensible data sector exceeds file boundary"
@@ -740,7 +740,7 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            extensible_data_sector: zip_file_comment,
+            extensible_data_sector,
         })
     }
 

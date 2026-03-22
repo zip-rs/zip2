@@ -47,7 +47,6 @@ pub struct ZipArchiveMetadata {
     #[allow(dead_code)]
     pub(crate) config: Config,
     pub(crate) comment: Box<[u8]>,
-    pub(crate) zip64_comment: Option<Box<[u8]>>,
 }
 
 pub(crate) mod zip_archive {
@@ -69,7 +68,7 @@ pub(crate) mod zip_archive {
         pub fn build(
             self,
             comment: Box<[u8]>,
-            zip64_comment: Option<Box<[u8]>>,
+            _zip64_comment: Option<Box<[u8]>>,
         ) -> ZipArchiveMetadata {
             let mut index_map = IndexMap::with_capacity(self.files.len());
             self.files.into_iter().for_each(|file| {
@@ -81,7 +80,6 @@ pub(crate) mod zip_archive {
                 dir_start: self.dir_start,
                 config: self.config,
                 comment,
-                zip64_comment,
             }
         }
     }
@@ -602,7 +600,6 @@ impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
         comment: Box<[u8]>,
-        zip64_comment: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
@@ -618,7 +615,6 @@ impl<R> ZipArchive<R> {
                 archive_offset: ArchiveOffset::Known(initial_offset),
             },
             comment,
-            zip64_comment,
         });
         Self { reader, shared }
     }

@@ -177,7 +177,6 @@ pub(crate) mod zip_writer {
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
         pub(super) comment: Box<[u8]>,
-        pub(super) zip64_comment: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
@@ -842,7 +841,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             stats: ZipWriterStats::default(),
             writing_to_file: false,
             comment: shared.comment,
-            zip64_comment: shared.zip64_comment,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
@@ -987,13 +985,11 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let central_start = self.finalize()?;
         let inner = self.close_writer()?;
         let comment = mem::take(&mut self.comment);
-        let zip64_comment = mem::take(&mut self.zip64_comment);
         let files = mem::take(&mut self.files);
 
         Ok(ZipArchive::from_finalized_writer(
             files,
             comment,
-            zip64_comment,
             inner,
             central_start,
         ))
@@ -1014,7 +1010,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
-            zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
@@ -1048,11 +1043,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
         let max_comment_len = u16::MAX as usize; // 65,535
         if comment.len() > max_comment_len {
-            self.set_raw_zip64_comment(Some(comment));
             self.comment = Box::new([]);
         } else {
             self.comment = comment;
-            self.set_raw_zip64_comment(None);
         }
     }
 
@@ -1875,13 +1868,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         let central_size = writer.stream_position()? - central_start;
         let is64 = self.files.len() > spec::ZIP64_ENTRY_THR
             || central_size.max(central_start) > spec::ZIP64_BYTES_THR
-            || self.zip64_comment.is_some();
+            ;
 
         if is64 {
-            let comment = self.zip64_comment.clone().unwrap_or_default();
-
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
-                record_size: comment.len() as u64 + 44,
+                record_size: 44,
                 version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
                 disk_number: 0,
@@ -1890,7 +1881,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u64,
                 central_directory_size: central_size,
                 central_directory_offset: central_start,
-                extensible_data_sector: comment,
+                extensible_data_sector: Box::new([]),
             };
 
             zip64_footer.write(writer)?;
@@ -1971,7 +1962,6 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
-            zip64_comment: None,
             flush_on_finish_file: false,
             seek_possible: false,
             auto_large_file: false,
