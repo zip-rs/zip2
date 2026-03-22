@@ -1867,8 +1867,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let central_size = writer.stream_position()? - central_start;
         let is64 = self.files.len() > spec::ZIP64_ENTRY_THR
-            || central_size.max(central_start) > spec::ZIP64_BYTES_THR
-            ;
+            || central_size.max(central_start) > spec::ZIP64_BYTES_THR;
 
         if is64 {
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
