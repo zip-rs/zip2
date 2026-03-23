@@ -80,7 +80,7 @@ fn generate_zip64_archive_with_random_extensible_data(comment_length: usize) -> 
     let mut bytes = vec![0u8; comment_length];
     getrandom::fill(&mut bytes)
         .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
-    writer.set_raw_zip64_extensible_data(bytes.into_boxed_slice());
+    writer.set_raw_zip64_extensible_data_sector(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
