@@ -27,7 +27,7 @@ pub struct ZipArchiveMetadata {
     #[allow(dead_code)]
     pub(crate) config: Config,
     pub(crate) comment: Box<[u8]>,
-    pub(crate) zip64_comment: Option<Box<[u8]>>,
+    pub(crate) zip64_extensible_data: Option<Box<[u8]>>
 }
 
 #[derive(Debug)]
@@ -41,7 +41,7 @@ pub(crate) struct SharedBuilder {
 }
 
 impl SharedBuilder {
-    pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> ZipArchiveMetadata {
+    pub fn build(self, comment: Box<[u8]>, _zip64_comment: Option<Box<[u8]>>) -> ZipArchiveMetadata {
         let mut index_map = IndexMap::with_capacity(self.files.len());
         self.files.into_iter().for_each(|file| {
             index_map.insert(file.file_name.clone(), file);
@@ -52,7 +52,7 @@ impl SharedBuilder {
             dir_start: self.dir_start,
             config: self.config,
             comment,
-            zip64_comment,
+            zip64_extensible_data: None
         }
     }
 }
@@ -88,7 +88,7 @@ impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
         comment: Box<[u8]>,
-        zip64_comment: Option<Box<[u8]>>,
+        zip64_extensible_data: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
@@ -104,7 +104,7 @@ impl<R> ZipArchive<R> {
                 archive_offset: ArchiveOffset::Known(initial_offset),
             },
             comment,
-            zip64_comment,
+            zip64_extensible_data,
         });
         Self { reader, shared }
     }
@@ -341,8 +341,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
+    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
     pub fn zip64_comment(&self) -> Option<&[u8]> {
-        self.shared.zip64_comment.as_deref()
+        // no-op since deprecated
+        None
     }
 
     /// Returns an iterator over all the file and directory names in this archive.

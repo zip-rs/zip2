@@ -177,6 +177,7 @@ pub(crate) mod zip_writer {
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
         pub(super) comment: Box<[u8]>,
+        pub(super) zip64_extensible_data: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
@@ -841,6 +842,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             stats: ZipWriterStats::default(),
             writing_to_file: false,
             comment: shared.comment,
+            zip64_extensible_data: shared.zip64_extensible_data,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
@@ -985,11 +987,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let central_start = self.finalize()?;
         let inner = self.close_writer()?;
         let comment = mem::take(&mut self.comment);
+        let zip64_extensible_data = mem::take(&mut self.zip64_extensible_data);
         let files = mem::take(&mut self.files);
 
         Ok(ZipArchive::from_finalized_writer(
             files,
             comment,
+            zip64_extensible_data,
             inner,
             central_start,
         ))
@@ -1010,6 +1014,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
+            zip64_extensible_data: None,
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
@@ -1078,6 +1083,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     #[deprecated(note = "Zip64 comment is not part of the zip specification")]
     pub fn set_raw_zip64_comment(&mut self, _comment: Option<Box<[u8]>>) {
         // no-op since deprecated
+    }
+
+    /// Get the zip64 extensible data. Use at your own risk
+    pub fn set_raw_zip64_extendisble_data(&mut self, extensible_data: Box<[u8]>) {
+        self.zip64_extensible_data = Some(extensible_data);
     }
 
     /// Get ZIP64 archive comment.
@@ -1967,6 +1977,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
+            zip64_extensible_data: None,
             flush_on_finish_file: false,
             seek_possible: false,
             auto_large_file: false,
