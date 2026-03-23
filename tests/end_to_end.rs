@@ -270,8 +270,6 @@ fn test_extra_field_mapping_contains_expected_values() {
     assert!(EXTRA_FIELD_MAPPING.contains(&0x7875));
 }
 
-
-
 #[test]
 fn test_long_comment_is_cut() {
     use std::io::{Cursor, Write};
