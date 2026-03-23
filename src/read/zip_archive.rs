@@ -356,7 +356,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the ZIP64 extensible_data of the zip archive, if it is ZIP64.
-    pub fn zip64_extensible_data_sector(&self) -> Option<&[u8]> {
+    pub fn raw_zip64_extensible_data_sector(&self) -> Option<&[u8]> {
         self.shared.zip64_extensible_data_sector.as_deref()
     }
 

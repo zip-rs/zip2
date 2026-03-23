@@ -700,7 +700,7 @@ fn zip64_extensible_data_sector() {
         .unwrap();
 
     let mut writer = ZipWriter::new(Cursor::new(data));
-    writer.set_raw_zip64_extensible_data(bytes.clone().into_boxed_slice());
+    writer.set_raw_zip64_extensible_data_sector(bytes.clone().into_boxed_slice());
     writer.start_file("asdf.txt", options).unwrap();
     writer.write_all(b"asdf").unwrap();
     let archive_as_bytes = writer.finish().unwrap().into_inner();
@@ -710,7 +710,7 @@ fn zip64_extensible_data_sector() {
 
     // reading
     let zip_reader = ZipArchive::new(Cursor::new(archive_as_bytes)).unwrap();
-    let extensible_data = zip_reader.zip64_extensible_data_sector().unwrap();
+    let extensible_data = zip_reader.raw_zip64_extensible_data_sector().unwrap();
 
     assert_eq!(extensible_data.len(), extensible_data_length);
     assert_eq!(extensible_data, bytes);
