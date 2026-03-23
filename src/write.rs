@@ -1048,7 +1048,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
         let max_comment_len = u16::MAX as usize; // 65,535
         if comment.len() > max_comment_len {
-            self.comment = Box::new([]);
+            self.comment = comment[..max_comment_len].into();
         } else {
             self.comment = comment;
         }

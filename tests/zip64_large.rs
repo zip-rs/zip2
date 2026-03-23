@@ -687,12 +687,12 @@ fn zip64_extensible_data_sector() {
     use std::io::{Cursor, Write};
     use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
-    let comment_length = 1024;
+    let extensible_data_length = 1024;
     let data = Vec::new();
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
         .large_file(true);
-    let mut bytes = vec![0u8; comment_length];
+    let mut bytes = vec![0u8; extensible_data_length];
     getrandom::fill(&mut bytes)
         .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))
         .unwrap();
@@ -707,5 +707,6 @@ fn zip64_extensible_data_sector() {
     let zip_reader = ZipArchive::new(Cursor::new(archive_as_bytes)).unwrap();
     let extensible_data = zip_reader.zip64_extensible_data_sector().unwrap();
 
+    assert_eq!(extensible_data.len(), extensible_data_length);
     assert_eq!(extensible_data, bytes);
 }

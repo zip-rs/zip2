@@ -269,3 +269,34 @@ fn test_extra_field_mapping_contains_expected_values() {
     // Info-ZIP Unix (UID/GID) - 0x7875
     assert!(EXTRA_FIELD_MAPPING.contains(&0x7875));
 }
+
+
+
+#[test]
+fn test_long_comment_is_cut() {
+    use std::io::{Cursor, Write};
+    use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
+
+    let comment_length = (u16::MAX as usize) + 100; // the comment is larger than the max
+    let data = Vec::new();
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+    let mut bytes = vec![0u8; comment_length];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))
+        .unwrap();
+
+    let mut writer = ZipWriter::new(Cursor::new(data));
+    writer.set_raw_comment(bytes.clone().into_boxed_slice());
+    writer.start_file("asdf.txt", options).unwrap();
+    writer.write_all(b"asdf").unwrap();
+    let archive_as_bytes = writer.finish().unwrap().into_inner();
+
+    // reading
+    let zip_reader = ZipArchive::new(Cursor::new(archive_as_bytes)).unwrap();
+    let comment = zip_reader.comment();
+
+    assert_eq!(comment.len(), u16::MAX as usize);
+    assert_eq!(comment, &bytes[..(u16::MAX as usize)]);
+}
