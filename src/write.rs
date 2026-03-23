@@ -1920,7 +1920,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let central_directory_size = if is64 {
             spec::ZIP64_BYTES_THR as u32
         } else {
-            central_start.min(spec::ZIP64_BYTES_THR) as u32
+            central_size.min(spec::ZIP64_BYTES_THR) as u32
         };
 
         let number_of_files = self.files.len().min(spec::ZIP64_ENTRY_THR) as u16;
