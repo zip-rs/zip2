@@ -71,6 +71,7 @@ impl SharedBuilder {
 /// use std::io::{Read, Seek};
 /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
 ///     use zip::HasZipMetadata;
+///     let mut zip = zip::ZipArchive::new(reader)?;
 ///
 ///     for i in 0..zip.len() {
 ///         let mut file = zip.by_index(i)?;
