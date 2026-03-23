@@ -693,11 +693,11 @@ pub(crate) struct Zip64CentralDirectoryEnd {
     pub number_of_files: u64,
     pub central_directory_size: u64,
     pub central_directory_offset: u64,
-    pub extensible_data_sector: Box<[u8]>,
+    pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn parse<T: Read + ?Sized>(
+    pub(crate) fn parse<T: Read + ?Sized>(
         reader: &mut T,
         max_size: u64,
     ) -> ZipResult<Zip64CentralDirectoryEnd> {
@@ -720,15 +720,21 @@ impl Zip64CentralDirectoryEnd {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
         }
 
-        let mut extensible_data_sector = vec![0u8; record_size as usize - 44].into_boxed_slice();
-        if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Err(invalid!(
-                    "EOCD64 extensible data sector exceeds file boundary"
-                ));
+        let zip64_extensible_data_sector = if record_size > 44 {
+            let mut extensible_data_sector =
+                vec![0u8; record_size as usize - 44].into_boxed_slice();
+            if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(invalid!(
+                        "EOCD64 extensible data sector exceeds file boundary"
+                    ));
+                }
+                return Err(e.into());
             }
-            return Err(e.into());
-        }
+            Some(extensible_data_sector)
+        } else {
+            None
+        };
 
         Ok(Self {
             record_size,
@@ -740,11 +746,11 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            extensible_data_sector,
+            zip64_extensible_data_sector,
         })
     }
 
-    pub fn into_block_and_comment(self) -> (Zip64CDEBlock, Box<[u8]>) {
+    pub(crate) fn into_block_and_extensible_data(self) -> (Zip64CDEBlock, Option<Box<[u8]>>) {
         let Self {
             record_size,
             version_made_by,
@@ -755,7 +761,7 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            extensible_data_sector,
+            zip64_extensible_data_sector,
         } = self;
 
         (
@@ -771,14 +777,16 @@ impl Zip64CentralDirectoryEnd {
                 central_directory_size,
                 central_directory_offset,
             },
-            extensible_data_sector,
+            zip64_extensible_data_sector,
         )
     }
 
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        let (block, comment) = self.into_block_and_comment();
+    pub(crate) fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        let (block, zip64_extensible_data) = self.into_block_and_extensible_data();
         block.write(writer)?;
-        writer.write_all(&comment)?;
+        if let Some(extensible_data) = zip64_extensible_data {
+            writer.write_all(&extensible_data)?;
+        }
         Ok(())
     }
 }

@@ -27,7 +27,7 @@ pub struct ZipArchiveMetadata {
     #[allow(dead_code)]
     pub(crate) config: Config,
     pub(crate) comment: Box<[u8]>,
-    pub(crate) zip64_extensible_data: Option<Box<[u8]>>,
+    pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
 }
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ impl SharedBuilder {
     pub(crate) fn build(
         self,
         comment: Box<[u8]>,
-        zip64_extensible_data: Option<Box<[u8]>>,
+        zip64_extensible_data_sector: Option<Box<[u8]>>,
     ) -> ZipArchiveMetadata {
         let mut index_map = IndexMap::with_capacity(self.files.len());
         self.files.into_iter().for_each(|file| {
@@ -56,7 +56,7 @@ impl SharedBuilder {
             dir_start: self.dir_start,
             config: self.config,
             comment,
-            zip64_extensible_data,
+            zip64_extensible_data_sector,
         }
     }
 }
@@ -71,7 +71,6 @@ impl SharedBuilder {
 /// use std::io::{Read, Seek};
 /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
 ///     use zip::HasZipMetadata;
-
 ///
 ///     for i in 0..zip.len() {
 ///         let mut file = zip.by_index(i)?;
@@ -92,7 +91,7 @@ impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
         comment: Box<[u8]>,
-        zip64_extensible_data: Option<Box<[u8]>>,
+        zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
@@ -108,7 +107,7 @@ impl<R> ZipArchive<R> {
                 archive_offset: ArchiveOffset::Known(initial_offset),
             },
             comment,
-            zip64_extensible_data,
+            zip64_extensible_data_sector,
         });
         Self { reader, shared }
     }
@@ -156,10 +155,14 @@ impl<R: Read + Seek> ZipArchive<R> {
                 .and_then(|info| Self::read_central_header(&info, config, reader))
             {
                 Ok(shared) => {
-                    return Ok(shared.build(
-                        cde.eocd.data.zip_file_comment,
-                        cde.eocd64.data.zip64_extensible_data_sector,
-                    ));
+                    let zip64_extensible_data_sector = if let Some(eocd64) = cde.eocd64 {
+                        eocd64.data.zip64_extensible_data_sector
+                    } else {
+                        None
+                    };
+                    return Ok(
+                        shared.build(cde.eocd.data.zip_file_comment, zip64_extensible_data_sector)
+                    );
                 }
                 Err(e) => {
                     last_err = Some(e);

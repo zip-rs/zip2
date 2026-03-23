@@ -177,7 +177,7 @@ pub(crate) mod zip_writer {
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
         pub(super) comment: Box<[u8]>,
-        pub(super) zip64_extensible_data: Option<Box<[u8]>>,
+        pub(super) zip64_extensible_data_sector: Option<Box<[u8]>>,
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
@@ -842,7 +842,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             stats: ZipWriterStats::default(),
             writing_to_file: false,
             comment: shared.comment,
-            zip64_extensible_data: shared.zip64_extensible_data,
+            zip64_extensible_data_sector: shared.zip64_extensible_data_sector,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
@@ -987,13 +987,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let central_start = self.finalize()?;
         let inner = self.close_writer()?;
         let comment = mem::take(&mut self.comment);
-        let zip64_extensible_data = mem::take(&mut self.zip64_extensible_data);
+        let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
         let files = mem::take(&mut self.files);
 
         Ok(ZipArchive::from_finalized_writer(
             files,
             comment,
-            zip64_extensible_data,
+            zip64_extensible_data_sector,
             inner,
             central_start,
         ))
@@ -1014,7 +1014,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
-            zip64_extensible_data: None,
+            zip64_extensible_data_sector: None,
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
@@ -1087,7 +1087,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Get the zip64 extensible data. Use at your own risk
     pub fn set_raw_zip64_extendisble_data(&mut self, extensible_data: Box<[u8]>) {
-        self.zip64_extensible_data = Some(extensible_data);
+        self.zip64_extensible_data_sector = Some(extensible_data);
     }
 
     /// Get ZIP64 archive comment.
@@ -1884,11 +1884,17 @@ impl<W: Write + Seek> ZipWriter<W> {
         let central_size = writer.stream_position()? - central_start;
         let is64 = self.files.len() > spec::ZIP64_ENTRY_THR
             || central_size.max(central_start) > spec::ZIP64_BYTES_THR
-            || self.zip64_extensible_data.is_some();
+            || self.zip64_extensible_data_sector.is_some();
 
         if is64 {
+            let zip64_extensible_data_sector = self.zip64_extensible_data_sector.clone();
+            let extensible_len = zip64_extensible_data_sector
+                .as_ref()
+                .map(|e| e.len() as u64)
+                .unwrap_or(0);
+
             let zip64_footer = spec::Zip64CentralDirectoryEnd {
-                record_size: 44,
+                record_size: extensible_len + 44,
                 version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
                 disk_number: 0,
@@ -1897,7 +1903,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u64,
                 central_directory_size: central_size,
                 central_directory_offset: central_start,
-                extensible_data_sector: Box::new([]),
+                zip64_extensible_data_sector,
             };
 
             zip64_footer.write(writer)?;
@@ -1978,7 +1984,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             writing_to_file: false,
             writing_raw: false,
             comment: Box::new([]),
-            zip64_extensible_data: None,
+            zip64_extensible_data_sector: None,
             flush_on_finish_file: false,
             seek_possible: false,
             auto_large_file: false,
