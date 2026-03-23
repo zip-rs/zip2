@@ -27,7 +27,7 @@ pub struct ZipArchiveMetadata {
     #[allow(dead_code)]
     pub(crate) config: Config,
     pub(crate) comment: Box<[u8]>,
-    pub(crate) zip64_extensible_data: Option<Box<[u8]>>
+    pub(crate) zip64_extensible_data: Option<Box<[u8]>>,
 }
 
 #[derive(Debug)]
@@ -41,7 +41,11 @@ pub(crate) struct SharedBuilder {
 }
 
 impl SharedBuilder {
-    pub fn build(self, comment: Box<[u8]>, _zip64_comment: Option<Box<[u8]>>) -> ZipArchiveMetadata {
+    pub(crate) fn build(
+        self,
+        comment: Box<[u8]>,
+        zip64_extensible_data: Option<Box<[u8]>>,
+    ) -> ZipArchiveMetadata {
         let mut index_map = IndexMap::with_capacity(self.files.len());
         self.files.into_iter().for_each(|file| {
             index_map.insert(file.file_name.clone(), file);
@@ -52,7 +56,7 @@ impl SharedBuilder {
             dir_start: self.dir_start,
             config: self.config,
             comment,
-            zip64_extensible_data: None
+            zip64_extensible_data,
         }
     }
 }
@@ -67,7 +71,7 @@ impl SharedBuilder {
 /// use std::io::{Read, Seek};
 /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
 ///     use zip::HasZipMetadata;
-///     let mut zip = zip::ZipArchive::new(reader)?;
+
 ///
 ///     for i in 0..zip.len() {
 ///         let mut file = zip.by_index(i)?;
@@ -154,7 +158,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 Ok(shared) => {
                     return Ok(shared.build(
                         cde.eocd.data.zip_file_comment,
-                        cde.eocd64.map(|v| v.data.extensible_data_sector),
+                        cde.eocd64.data.zip64_extensible_data_sector,
                     ));
                 }
                 Err(e) => {
