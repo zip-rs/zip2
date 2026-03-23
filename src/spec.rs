@@ -566,7 +566,9 @@ impl Zip32CentralDirectoryEnd {
     }
 
     pub fn may_be_zip64(&self) -> bool {
-        self.number_of_files == u16::MAX || self.central_directory_offset == u32::MAX
+        self.number_of_files == u16::MAX
+            || self.central_directory_size == u32::MAX
+            || self.central_directory_offset == u32::MAX
     }
 }
 

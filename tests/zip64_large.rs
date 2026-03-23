@@ -682,6 +682,8 @@ fn force_large_file() {
     );
 }
 
+// Warning the generated zip is not correct since the zip64_extensible_data_sector should
+// use a specific format - here we are using random bytes
 #[test]
 fn zip64_extensible_data_sector() {
     use std::io::{Cursor, Write};
@@ -702,6 +704,9 @@ fn zip64_extensible_data_sector() {
     writer.start_file("asdf.txt", options).unwrap();
     writer.write_all(b"asdf").unwrap();
     let archive_as_bytes = writer.finish().unwrap().into_inner();
+
+    // debug
+    // eprintln!("{:x?}", archive_as_bytes);
 
     // reading
     let zip_reader = ZipArchive::new(Cursor::new(archive_as_bytes)).unwrap();

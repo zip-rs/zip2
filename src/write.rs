@@ -1917,6 +1917,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             zip64_footer.write(writer)?;
         }
 
+        let central_directory_size = if is64 {
+            spec::ZIP64_BYTES_THR as u32
+        } else {
+            central_start.min(spec::ZIP64_BYTES_THR) as u32
+        };
+
         let number_of_files = self.files.len().min(spec::ZIP64_ENTRY_THR) as u16;
         let footer = spec::Zip32CentralDirectoryEnd {
             disk_number: 0,
@@ -1924,7 +1930,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             zip_file_comment: self.comment.clone(),
             number_of_files_on_this_disk: number_of_files,
             number_of_files,
-            central_directory_size: central_size.min(spec::ZIP64_BYTES_THR) as u32,
+            central_directory_size,
             central_directory_offset: central_start.min(spec::ZIP64_BYTES_THR) as u32,
         };
 
