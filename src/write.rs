@@ -1086,7 +1086,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Get the zip64 extensible data. Use at your own risk
-    pub fn set_raw_zip64_extendisble_data(&mut self, extensible_data: Box<[u8]>) {
+    pub fn set_raw_zip64_extensible_data(&mut self, extensible_data: Box<[u8]>) {
         self.zip64_extensible_data_sector = Some(extensible_data);
     }
 

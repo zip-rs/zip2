@@ -355,6 +355,11 @@ impl<R: Read + Seek> ZipArchive<R> {
         None
     }
 
+    /// Get the ZIP64 extensible_data of the zip archive, if it is ZIP64.
+    pub fn zip64_extensible_data_sector(&self) -> Option<&[u8]> {
+        self.shared.zip64_extensible_data_sector.as_deref()
+    }
+
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
         self.shared.files.keys().map(std::convert::AsRef::as_ref)
