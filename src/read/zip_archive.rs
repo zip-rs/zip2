@@ -349,7 +349,9 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
-    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
+    #[deprecated(
+        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
+    )]
     pub fn zip64_comment(&self) -> Option<&[u8]> {
         // no-op since deprecated
         None

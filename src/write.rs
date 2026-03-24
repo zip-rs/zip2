@@ -1043,8 +1043,9 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Set raw ZIP archive comment.
     ///
-    /// This sets the raw bytes of the comment. The comment
-    /// is typically expected to be encoded in UTF-8.
+    /// This sets the raw bytes of the comment.
+    /// The comment is typically expected to be encoded in UTF-8.
+    /// If the comment is more than `u16::MAX` it will be truncated
     pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
         let max_comment_len = u16::MAX as usize; // 65,535
         if comment.len() > max_comment_len {
@@ -1068,7 +1069,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Set ZIP64 archive comment.
-    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
+    #[deprecated(
+        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
+    )]
     pub fn set_zip64_comment<S>(&mut self, _comment: Option<S>)
     where
         S: Into<Box<str>>,
@@ -1080,7 +1083,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// This sets the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
-    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
+    #[deprecated(
+        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
+    )]
     pub fn set_raw_zip64_comment(&mut self, _comment: Option<Box<[u8]>>) {
         // no-op since deprecated
     }
@@ -1091,7 +1096,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Get ZIP64 archive comment.
-    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
+    #[deprecated(
+        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
+    )]
     pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
         // no-op since deprecated
         None
@@ -1101,7 +1108,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// This returns the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8.
-    #[deprecated(note = "Zip64 comment is not part of the zip specification")]
+    #[deprecated(
+        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
+    )]
     pub fn get_raw_zip64_comment(&self) -> Option<&[u8]> {
         // no-op since deprecated
         None
