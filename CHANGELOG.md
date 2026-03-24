@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.4.0](https://github.com/zip-rs/zip2/compare/v8.3.1...v8.4.0) - 2026-03-23
+
+### <!-- 0 -->🚀 Features
+
+- add a check for building benches ([#748](https://github.com/zip-rs/zip2/pull/748))
+
+### <!-- 2 -->🚜 Refactor
+
+- split part of `read.rs` for code readability ([#744](https://github.com/zip-rs/zip2/pull/744))
+- remove unused allow ([#745](https://github.com/zip-rs/zip2/pull/745))
+
+### <!-- 4 -->⚡ Performance
+
+- skip BufReader for Stored files in make_reader ([#739](https://github.com/zip-rs/zip2/pull/739))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- move pull request template to correct folder ([#749](https://github.com/zip-rs/zip2/pull/749))
+
 ## [8.3.1](https://github.com/zip-rs/zip2/compare/v8.3.0...v8.3.1) - 2026-03-21
 
 ### <!-- 2 -->🚜 Refactor
