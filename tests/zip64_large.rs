@@ -684,6 +684,7 @@ fn force_large_file() {
 
 // Warning the generated zip is not correct since the zip64_extensible_data_sector should
 // use a specific format - here we are using random bytes
+// See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
 #[test]
 fn zip64_extensible_data_sector() {
     use std::io::{Cursor, Write};
