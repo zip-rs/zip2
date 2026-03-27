@@ -9,8 +9,8 @@ use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
-    self, FixedSizeBlock, Zip64DataDescriptorBlock, ZipCentralEntryBlock, ZipDataDescriptorBlock,
-    ZipFlags, ZipLocalEntryBlock,
+    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock,
+    ZipDataDescriptorBlock, ZipFlags, ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
@@ -247,8 +247,9 @@ impl ZipFileData {
         // Each of these fields must be converted to u64 before adding, as the result may
         // easily overflow a u16.
         u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-        let data_start =
-            self.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+        let data_start = self.header_start
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+            + variable_fields_len;
 
         // Set the value so we don't have to read it again.
         match self.data_start.set(data_start) {
@@ -485,7 +486,6 @@ impl ZipFileData {
         reader: &mut R,
     ) -> ZipResult<Self> {
         let ZipLocalEntryBlock {
-            // magic,
             version_made_by,
             flags,
             compression_method,
@@ -634,7 +634,6 @@ impl ZipFileData {
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
         Ok(ZipLocalEntryBlock {
-            magic: ZipLocalEntryBlock::MAGIC,
             version_made_by: self.version_needed(),
             flags: self.flags(),
             compression_method: self.compression_method.serialize_to_u16(),
@@ -688,7 +687,6 @@ impl ZipFileData {
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
         Ok(ZipCentralEntryBlock {
-            magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
             flags: self.flags(),
@@ -741,7 +739,6 @@ impl ZipFileData {
 
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
         ZipDataDescriptorBlock {
-            magic: ZipDataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size as u32,
             uncompressed_size: self.uncompressed_size as u32,
@@ -750,7 +747,6 @@ impl ZipFileData {
 
     pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
         Zip64DataDescriptorBlock {
-            magic: Zip64DataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size,
             uncompressed_size: self.uncompressed_size,

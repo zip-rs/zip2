@@ -7,7 +7,7 @@ use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::spec::{self, FixedSizeBlock, Magic, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -392,7 +392,7 @@ impl ExtendedFileOptions {
         header_id: u16,
         data: &[u8],
     ) -> Result<(), ZipError> {
-        vec.reserve_exact(data.len() + 4);
+        vec.reserve_exact(data.len() + size_of::<u16>() + size_of::<u16>());
         vec.write_u16_le(header_id)?;
         vec.write_u16_le(data.len() as u16)?;
         vec.write_all(data)?;
@@ -899,7 +899,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.file_name_raw = dest_name_raw.into();
         new_data.header_start = write_position;
         let extra_data_start = write_position
-            + size_of::<ZipLocalEntryBlock>() as u64
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
@@ -1206,8 +1206,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 buf,
             )?;
         }
-        let header_end =
-            header_start + size_of::<ZipLocalEntryBlock>() as u64 + name.to_string().len() as u64;
+        let header_end = header_start
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+            + name.to_string().len() as u64;
 
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
@@ -1849,7 +1850,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             writer.seek(SeekFrom::Start(central_start))?;
             writer.write_u32_le(0)?;
             writer.seek(SeekFrom::Start(
-                footer_end - size_of::<Zip32CDEBlock>() as u64 - self.comment.len() as u64,
+                footer_end
+                    - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
+                    - self.comment.len() as u64,
             ))?;
             writer.write_u32_le(0)?;
 
@@ -2400,7 +2403,7 @@ impl ZipFileData {
         writer: &mut T,
     ) -> ZipResult<()> {
         writer.seek(SeekFrom::Start(
-            self.header_start + offset_of!(ZipLocalEntryBlock, crc32) as u64,
+            self.header_start + (size_of::<Magic>() + offset_of!(ZipLocalEntryBlock, crc32)) as u64,
         ))?;
         writer.write_u32_le(self.crc32)?;
         if self.large_file {
@@ -2436,7 +2439,7 @@ impl ZipFileData {
         ))?;
 
         let zip64_extra_field_start = self.header_start
-            + size_of::<ZipLocalEntryBlock>() as u64
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + self.file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
