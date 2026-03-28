@@ -37,6 +37,7 @@ jobs:
           allowed-endpoints: >
             github.com:443
             index.crates.io:443
+            api.deps.dev:443
             static.crates.io:443
             static.rust-lang.org:443
       - name: 'Checkout Repository'
