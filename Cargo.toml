@@ -70,7 +70,7 @@ wasm-bindgen-test = "^0.3.56"
 
 [dev-dependencies]
 bencher = "0.1.5"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 getrandom = { version = "0.4", default-features = false }
 tempfile = "3.15"
 walkdir = "2.5"

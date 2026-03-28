@@ -2,8 +2,9 @@
 // Run: cargo bench --bench criterion_bench
 // First run saves baseline; later runs compare and can fail on regression.
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use std::fs;
+use std::hint::black_box;
 use std::io::{self, Cursor, Read, Seek, Write};
 use zip::{result::ZipResult, write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
