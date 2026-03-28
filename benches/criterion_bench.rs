@@ -371,18 +371,26 @@ fn criterion_benchmark(c: &mut Criterion) {
     #[cfg(feature = "deflate")]
     {
         let deflate_payload = seeded_random_bytes(2048);
+        let mut buffer = Vec::with_capacity(128 * 1024);
+
         c.bench_function("write_deflated_entries", |b| {
             b.iter(|| {
-                let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+                buffer.clear();
+
+                let mut writer = ZipWriter::new(Cursor::new(&mut buffer));
+
                 let options =
                     SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
                 for i in 0..20 {
                     writer
                         .start_file(format!("deflated_{i}.dat"), options)
                         .unwrap();
                     writer.write_all(&deflate_payload).unwrap();
                 }
-                black_box(writer.finish().unwrap().into_inner());
+
+                let cursor = writer.finish().unwrap();
+                black_box(cursor.into_inner());
             });
         });
     }
