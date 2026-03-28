@@ -286,7 +286,9 @@ fn test_long_comment_is_cut() {
         .unwrap();
 
     let mut writer = ZipWriter::new(Cursor::new(data));
-    writer.set_raw_comment(bytes.clone().into_boxed_slice());
+    writer
+        .set_raw_comment(bytes.clone().into_boxed_slice())
+        .unwrap();
     writer.start_file("asdf.txt", options).unwrap();
     writer.write_all(b"asdf").unwrap();
     let archive_as_bytes = writer.finish().unwrap().into_inner();

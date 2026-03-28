@@ -1034,11 +1034,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Set ZIP archive comment.
-    pub fn set_comment<S>(&mut self, comment: S)
+    pub fn set_comment<S>(&mut self, comment: S) -> ZipResult<()>
     where
         S: Into<Box<str>>,
     {
-        self.set_raw_comment(comment.into().into_boxed_bytes());
+        self.set_raw_comment(comment.into().into_boxed_bytes())
     }
 
     /// Set raw ZIP archive comment.
@@ -1046,13 +1046,18 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This sets the raw bytes of the comment.
     /// The comment is typically expected to be encoded in UTF-8.
     /// If the comment is more than `u16::MAX` it will be truncated
-    pub fn set_raw_comment(&mut self, comment: Box<[u8]>) {
+    pub fn set_raw_comment(&mut self, comment: Box<[u8]>) -> ZipResult<()> {
         let max_comment_len = u16::MAX as usize; // 65,535
-        if comment.len() > max_comment_len {
-            self.comment = comment[..max_comment_len].into();
-        } else {
+        if comment.len() <= max_comment_len {
             self.comment = comment;
+            return Ok(());
         }
+        let (allowed, rest) = comment.split_at(max_comment_len);
+        self.comment = allowed.into();
+        Err(ZipError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Unexpected data comment - {} bytes too long", rest.len()),
+        )))
     }
 
     /// Get ZIP archive comment.
@@ -1072,11 +1077,14 @@ impl<W: Write + Seek> ZipWriter<W> {
     #[deprecated(
         note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
     )]
-    pub fn set_zip64_comment<S>(&mut self, _comment: Option<S>)
+    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>) -> ZipResult<()>
     where
         S: Into<Box<str>>,
     {
-        // no-op since deprecated
+        if let Some(com) = comment {
+            self.set_comment(com)?;
+        }
+        Ok(())
     }
 
     /// Set raw ZIP64 archive comment.
@@ -1086,8 +1094,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     #[deprecated(
         note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
     )]
-    pub fn set_raw_zip64_comment(&mut self, _comment: Option<Box<[u8]>>) {
-        // no-op since deprecated
+    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) -> ZipResult<()> {
+        if let Some(com) = comment {
+            self.set_raw_comment(com)?;
+        }
+        Ok(())
     }
 
     /// Get the zip64 extensible data. Use at your own risk
@@ -2631,7 +2642,7 @@ mod tests {
     #[test]
     fn write_empty_zip() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.set_comment("ZIP");
+        writer.set_comment("ZIP").unwrap();
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 25);
         assert_eq!(
@@ -3271,7 +3282,7 @@ mod tests {
             255, 255, 255, 255, 255, 16,
         ]
         .into_boxed_slice();
-        writer.set_raw_comment(comment);
+        writer.set_raw_comment(comment).unwrap();
         let options = SimpleFileOptions::default()
             .compression_method(Stored)
             .with_alignment(11823);
@@ -4065,14 +4076,16 @@ mod tests {
     #[test]
     fn test_fuzz_crash_2024_06_18() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.set_raw_comment(Box::<[u8]>::from([
-            80, 75, 5, 6, 255, 255, 255, 255, 255, 255, 80, 75, 5, 6, 255, 255, 255, 255, 255, 255,
-            13, 0, 13, 13, 13, 13, 13, 255, 255, 255, 255, 255, 255, 255, 255,
-        ]));
+        writer
+            .set_raw_comment(Box::<[u8]>::from([
+                80, 75, 5, 6, 255, 255, 255, 255, 255, 255, 80, 75, 5, 6, 255, 255, 255, 255, 255,
+                255, 13, 0, 13, 13, 13, 13, 13, 255, 255, 255, 255, 255, 255, 255, 255,
+            ]))
+            .unwrap();
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
-            writer.set_raw_comment(Box::new([]));
+            writer.set_raw_comment(Box::new([])).unwrap();
             writer
         };
         writer.merge_archive(sub_writer.finish_into_readable()?)?;
@@ -4085,7 +4098,7 @@ mod tests {
     fn test_fuzz_crash_2024_06_18a() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        writer.set_raw_comment(Box::<[u8]>::from([]));
+        writer.set_raw_comment(Box::<[u8]>::from([])).unwrap();
         let sub_writer = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
             writer.set_flush_on_finish_file(false);
@@ -4159,7 +4172,7 @@ mod tests {
     fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(true);
-        writer.set_raw_comment([0].into());
+        writer.set_raw_comment([0].into())?;
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
         assert_eq!(writer.get_raw_comment()[0], 0);
         let options = FileOptions {
@@ -4230,7 +4243,7 @@ mod tests {
         writer.deep_copy_file_from_path("", "copy")?;
         writer.abort_file()?;
         writer.set_flush_on_finish_file(false);
-        writer.set_raw_comment([255, 0].into());
+        writer.set_raw_comment([255, 0].into())?;
         writer.abort_file()?;
         assert_eq!(writer.get_raw_comment(), [255, 0]);
         writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;
@@ -4275,7 +4288,7 @@ mod tests {
         writer = ZipWriter::new_append(writer.finish()?)?;
         writer.deep_copy_file_from_path(LONG_PATH, "oo\0\0\0")?;
         writer.abort_file()?;
-        writer.set_raw_comment([33].into());
+        writer.set_raw_comment([33].into())?;
         let archive = writer.finish_into_readable()?;
         writer = ZipWriter::new_append(archive.into_inner())?;
         assert!(writer.get_raw_comment().starts_with(&[33]));
