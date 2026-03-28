@@ -699,6 +699,10 @@ pub(crate) struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
+    /// Minimum size of the block
+    /// Block - record_size - extensible_data
+    const MIN_SIZE: usize = 2 * size_of::<u16>() + 2 * size_of::<u32>() + 4 * size_of::<u64>();
+
     pub(crate) fn parse<T: Read + ?Sized>(
         reader: &mut T,
         max_size: u64,
@@ -716,15 +720,15 @@ impl Zip64CentralDirectoryEnd {
             ..
         } = Zip64CDEBlock::parse(reader)?;
 
-        if record_size < 44 {
+        if record_size < 40 {
             return Err(invalid!("Low EOCD64 record size"));
         } else if record_size.saturating_add(12) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
         }
 
-        let zip64_extensible_data_sector = if record_size > 44 {
+        let zip64_extensible_data_sector = if record_size > (Self::MIN_SIZE as u64) {
             let mut extensible_data_sector =
-                vec![0u8; record_size as usize - 44].into_boxed_slice();
+                vec![0u8; record_size as usize - Self::MIN_SIZE].into_boxed_slice();
             if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
                 if e.kind() == io::ErrorKind::UnexpectedEof {
                     return Err(invalid!(
@@ -1073,5 +1077,11 @@ mod tests {
         c.set_position(0);
         let block2 = TestBlock::parse(&mut c).unwrap();
         assert_eq!(block, block2);
+    }
+
+    #[test]
+    fn test_size_zip64_central_directory_end() {
+        use super::Zip64CentralDirectoryEnd;
+        assert_eq!(Zip64CentralDirectoryEnd::MIN_SIZE, 44);
     }
 }
