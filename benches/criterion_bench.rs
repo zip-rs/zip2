@@ -2,11 +2,11 @@
 // Run: cargo bench --bench criterion_bench
 // First run saves baseline; later runs compare and can fail on regression.
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::fs;
 use std::hint::black_box;
 use std::io::{self, Cursor, Read, Seek, Write};
-use zip::{result::ZipResult, write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 // deterministic seeded randomness helper (SplitMix64, no external dependencies)
 fn seeded_random_bytes(size: usize) -> Vec<u8> {
@@ -122,27 +122,15 @@ fn file_count_meta() -> usize {
 }
 
 fn comment_size() -> usize {
-    if is_low_memory() {
-        10_000
-    } else {
-        50_000
-    }
+    if is_low_memory() { 10_000 } else { 50_000 }
 }
 
 fn read_all_entries_count() -> usize {
-    if is_low_memory() {
-        200
-    } else {
-        500
-    }
+    if is_low_memory() { 200 } else { 500 }
 }
 
 fn by_name_lookup_count() -> usize {
-    if is_low_memory() {
-        20
-    } else {
-        50
-    }
+    if is_low_memory() { 20 } else { 50 }
 }
 
 fn large_non_zip_size() -> usize {
@@ -154,11 +142,7 @@ fn large_non_zip_size() -> usize {
 }
 
 fn write_many_count() -> usize {
-    if is_low_memory() {
-        300
-    } else {
-        1_000
-    }
+    if is_low_memory() { 300 } else { 1_000 }
 }
 
 const STREAM_ENTRIES: usize = 20;
@@ -257,8 +241,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     // --- read_all_entries: iterate by_index and read each entry ---
-    let bytes_all_entries =
-        generate_random_archive_meta(read_all_entries_count(), 512).unwrap();
+    let bytes_all_entries = generate_random_archive_meta(read_all_entries_count(), 512).unwrap();
     c.bench_function("read_all_entries", |b| {
         b.iter(|| {
             let mut archive = ZipArchive::new(Cursor::new(bytes_all_entries.as_slice())).unwrap();
@@ -299,7 +282,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("read_stream_entries", |b| {
         b.iter(|| {
             let mut f = fs::File::open(&path_stream).unwrap();
-            while zip::read::read_zipfile_from_stream(&mut f).unwrap().is_some() {}
+            while zip::read::read_zipfile_from_stream(&mut f)
+                .unwrap()
+                .is_some()
+            {}
         });
     });
 
@@ -319,7 +305,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("write_many_small_files", |b| {
         b.iter(|| {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-            let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..write_many_count() {
                 let name = format!("file_{i}.dat");
                 writer.start_file(name, options).unwrap();
@@ -334,7 +321,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("write_one_large_file", |b| {
         b.iter(|| {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-            let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             writer.start_file("large.dat", options).unwrap();
             writer.write_all(&payload_large).unwrap();
             black_box(writer.finish().unwrap().into_inner());
@@ -346,9 +334,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("write_then_read_roundtrip", |b| {
         b.iter(|| {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-            let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..ROUNDTRIP_ENTRIES {
-                writer.start_file(format!("entry_{i}.dat"), options).unwrap();
+                writer
+                    .start_file(format!("entry_{i}.dat"), options)
+                    .unwrap();
                 writer.write_all(&roundtrip_payload).unwrap();
             }
             let bytes = writer.finish().unwrap().into_inner();
@@ -365,7 +356,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             4096,
             SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
         )
-            .unwrap();
+        .unwrap();
         c.bench_function("read_deflated_entry", |b| {
             b.iter(|| {
                 let mut archive = ZipArchive::new(Cursor::new(deflated_bytes.as_slice())).unwrap();
@@ -386,7 +377,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let options =
                     SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
                 for i in 0..20 {
-                    writer.start_file(format!("deflated_{i}.dat"), options).unwrap();
+                    writer
+                        .start_file(format!("deflated_{i}.dat"), options)
+                        .unwrap();
                     writer.write_all(&deflate_payload).unwrap();
                 }
                 black_box(writer.finish().unwrap().into_inner());
