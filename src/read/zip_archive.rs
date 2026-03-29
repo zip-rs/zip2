@@ -27,7 +27,7 @@ pub struct ZipArchiveMetadata {
     #[allow(dead_code)]
     pub(crate) config: Config,
     pub(crate) comment: Box<[u8]>,
-    pub(crate) zip64_comment: Option<Box<[u8]>>,
+    pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
 }
 
 #[derive(Debug)]
@@ -41,7 +41,11 @@ pub(crate) struct SharedBuilder {
 }
 
 impl SharedBuilder {
-    pub fn build(self, comment: Box<[u8]>, zip64_comment: Option<Box<[u8]>>) -> ZipArchiveMetadata {
+    pub(crate) fn build(
+        self,
+        comment: Box<[u8]>,
+        zip64_extensible_data_sector: Option<Box<[u8]>>,
+    ) -> ZipArchiveMetadata {
         let mut index_map = IndexMap::with_capacity(self.files.len());
         self.files.into_iter().for_each(|file| {
             index_map.insert(file.file_name.clone(), file);
@@ -52,7 +56,7 @@ impl SharedBuilder {
             dir_start: self.dir_start,
             config: self.config,
             comment,
-            zip64_comment,
+            zip64_extensible_data_sector,
         }
     }
 }
@@ -88,7 +92,7 @@ impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
         files: IndexMap<Box<str>, ZipFileData>,
         comment: Box<[u8]>,
-        zip64_comment: Option<Box<[u8]>>,
+        zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
@@ -104,7 +108,7 @@ impl<R> ZipArchive<R> {
                 archive_offset: ArchiveOffset::Known(initial_offset),
             },
             comment,
-            zip64_comment,
+            zip64_extensible_data_sector,
         });
         Self { reader, shared }
     }
@@ -152,10 +156,14 @@ impl<R: Read + Seek> ZipArchive<R> {
                 .and_then(|info| Self::read_central_header(&info, config, reader))
             {
                 Ok(shared) => {
-                    return Ok(shared.build(
-                        cde.eocd.data.zip_file_comment,
-                        cde.eocd64.map(|v| v.data.extensible_data_sector),
-                    ));
+                    let zip64_extensible_data_sector = if let Some(eocd64) = cde.eocd64 {
+                        eocd64.data.zip64_extensible_data_sector
+                    } else {
+                        None
+                    };
+                    return Ok(
+                        shared.build(cde.eocd.data.zip_file_comment, zip64_extensible_data_sector)
+                    );
                 }
                 Err(e) => {
                     last_err = Some(e);
@@ -341,8 +349,17 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
+    #[deprecated(
+        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
+    )]
     pub fn zip64_comment(&self) -> Option<&[u8]> {
-        self.shared.zip64_comment.as_deref()
+        // no-op since deprecated
+        None
+    }
+
+    /// Get the ZIP64 extensible_data of the zip archive, if it is ZIP64.
+    pub fn raw_zip64_extensible_data_sector(&self) -> Option<&[u8]> {
+        self.shared.zip64_extensible_data_sector.as_deref()
     }
 
     /// Returns an iterator over all the file and directory names in this archive.
