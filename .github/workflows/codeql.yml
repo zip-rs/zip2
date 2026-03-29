@@ -69,8 +69,8 @@ jobs:
           github.com:443
           release-assets.githubusercontent.com:443
           uploads.github.com:443
-          static.rust-lang.org
-          index.crates.io
+          static.rust-lang.org:443
+          index.crates.io:443
     - name: Checkout repository
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
