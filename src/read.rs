@@ -15,7 +15,7 @@ use crate::spec::{
 use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData, ffi};
 use crate::unstable::LittleEndianReadExt;
 use core::mem::{replace, size_of};
-use core::ops::{Deref, Range};
+use core::ops::Deref;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
