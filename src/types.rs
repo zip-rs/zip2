@@ -5,6 +5,7 @@ use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraField;
 use crate::path::{enclosed_name, file_name_sanitized};
+use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
@@ -16,7 +17,7 @@ use crate::zipcrypto::EncryptWith;
 use core::fmt::Debug;
 use core::fmt::Display;
 use std::ffi::OsStr;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -260,6 +261,29 @@ impl ZipFileData {
         }
 
         Ok(data_start)
+    }
+
+    pub(crate) fn find_content<'a, R: Read + Seek + ?Sized>(
+        &self,
+        reader: &'a mut R,
+    ) -> ZipResult<Take<&'a mut R>> {
+        // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
+        let data_start = self.data_start(reader)?;
+        reader.seek(SeekFrom::Start(data_start))?;
+
+        Ok(reader.take(self.compressed_size))
+    }
+
+    pub(crate) fn find_content_seek<'a, R: Read + Seek + ?Sized>(
+        &self,
+        reader: &'a mut R,
+    ) -> ZipResult<SeekableTake<'a, R>> {
+        // Parse local header
+        let data_start = self.data_start(reader)?;
+        reader.seek(SeekFrom::Start(data_start))?;
+
+        // Explicit Ok and ? are needed to convert io::Error to ZipError
+        Ok(SeekableTake::new(reader, self.compressed_size)?)
     }
 
     #[allow(dead_code)]
@@ -748,6 +772,14 @@ pub enum AesVendorVersion {
     Ae2 = 0x0002,
 }
 
+impl AesVendorVersion {
+    /// As u16
+    #[must_use]
+    pub const fn as_u16(self) -> u16 {
+        self as u16
+    }
+}
+
 impl From<AesVendorVersion> for u16 {
     fn from(value: AesVendorVersion) -> Self {
         value as u16
@@ -765,6 +797,14 @@ pub enum AesMode {
     Aes192 = 0x02,
     /// 256-bit AES encryption.
     Aes256 = 0x03,
+}
+
+impl AesMode {
+    /// As u8
+    #[must_use]
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
 }
 
 impl Display for AesMode {

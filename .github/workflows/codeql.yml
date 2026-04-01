@@ -60,11 +60,18 @@ jobs:
         # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
         # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
     steps:
-    - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+    - name: Harden Runner
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
       with:
-        egress-policy: audit
-
+        egress-policy: block
+        allowed-endpoints: >
+          api.github.com:443
+          github.com:443
+          release-assets.githubusercontent.com:443
+          uploads.github.com:443
+          static.rust-lang.org:443
+          index.crates.io:443
+          static.crates.io:443
     - name: Checkout repository
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:

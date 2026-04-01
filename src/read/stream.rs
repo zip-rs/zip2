@@ -1,8 +1,7 @@
 //! Code related to stream reading
 
-use crate::read::make_crypto_reader;
-use crate::read::make_reader;
 use crate::read::parse_extra_field;
+use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
@@ -231,7 +230,7 @@ impl ZipStreamFileMetadata {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
-    // We can't use the typical ::parse() method, as we follow separate code paths depending on the
+    // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
     /* TODO: smallvec? */
@@ -330,13 +329,10 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
 
 #[cfg(test)]
 mod tests {
-    use tempfile::TempDir;
 
-    use crate::ZipWriter;
     use crate::read::ZipFile;
     use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
     use crate::result::ZipResult;
-    use crate::write::SimpleFileOptions;
     use std::collections::BTreeSet;
     use std::io::{Cursor, Read};
 
@@ -495,9 +491,14 @@ mod tests {
     }
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
+    /// Only on little endian because we cannot use fs with miri CI
+    #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
+        use crate::ZipWriter;
+        use crate::write::SimpleFileOptions;
         use std::fs::create_dir;
+        use tempfile::TempDir;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
@@ -513,8 +514,12 @@ mod tests {
         Ok(())
     }
 
+    /// Only on little endian because we cannot use fs with miri CI
+    #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
+        use tempfile::TempDir;
+
         let v = include_bytes!("../../tests/data/mimetype.zip");
         let reader = ZipStreamReader::new(v.as_ref());
         let dest = TempDir::with_prefix("stream_test_can_create_destination").unwrap();
@@ -522,6 +527,7 @@ mod tests {
         assert!(dest.path().join("mimetype").exists());
         Ok(())
     }
+
     #[test]
     fn zip_read_streaming() {
         use super::read_zipfile_from_stream;
@@ -538,15 +544,17 @@ mod tests {
     #[cfg(feature = "deflate")]
     fn zip_read_streaming_compressed() {
         use super::read_zipfile_from_stream_with_compressed_size;
+        use crate::ZipWriter;
+        use crate::write::SimpleFileOptions;
         use std::io::Write;
 
         let compression_method = crate::CompressionMethod::Deflated;
-        let options = crate::write::SimpleFileOptions::default()
+        let options = SimpleFileOptions::default()
             .compression_method(compression_method)
             .unix_permissions(0o755);
 
         let mut bytes = Vec::new();
-        let mut writer = crate::ZipWriter::new(std::io::Cursor::new(&mut bytes));
+        let mut writer = ZipWriter::new(std::io::Cursor::new(&mut bytes));
         writer.start_file("file.txt", options).unwrap();
         write!(&mut writer, "{}", "test-".repeat(100)).unwrap();
         writer.finish().unwrap();

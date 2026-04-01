@@ -7,7 +7,7 @@ use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::spec::{self, FixedSizeBlock, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -1196,16 +1196,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         }) = aes_mode
         {
             // For raw copies of AES entries, write the correct AES extra data immediately
-            let mut body = [0; 7];
-            [body[0], body[1]] = (vendor_version as u16).to_le_bytes(); // vendor version (1 or 2)
-            [body[2], body[3]] = *b"AE"; // vendor id
-            body[4] = mode as u8; // strength
-            [body[5], body[6]] = actual_compression_method.serialize_to_u16().to_le_bytes(); // real compression method
+            let aex_extra_field =
+                AexEncryption::new(vendor_version, mode, actual_compression_method);
+            let buf = &aex_extra_field.as_bytes()[offset_of!(AexEncryption, version)..];
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
                 &mut extra_data,
                 UsedExtraField::AeXEncryption.as_u16(),
-                &body,
+                buf,
             )?;
         }
         let header_end =
@@ -2379,12 +2377,9 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let mut buf = [0u8; size_of::<AexEncryption>()];
-
     let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
-
-    aes_extra_field.write(&mut buf.as_mut())?;
-    writer.write_all(&buf)?;
+    let buf = aes_extra_field.as_bytes();
+    writer.write_all(buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
     let Some(ref mut extra_field) = file.extra_field else {
