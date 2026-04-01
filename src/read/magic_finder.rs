@@ -101,7 +101,7 @@ const BUFFER_SIZE: usize = 2048;
 /// A utility for finding magic symbols from the end of a seekable reader.
 ///
 /// Can be repurposed to recycle the internal buffer.
-pub struct MagicFinder<Direction> {
+pub(crate) struct MagicFinder<Direction> {
     buffer: [u8; BUFFER_SIZE],
     pub(self) finder: Direction,
     cursor: u64,
@@ -217,11 +217,6 @@ pub(crate) struct OptimisticMagicFinder<Direction> {
     initial_guess: Option<(u64, bool)>,
 }
 
-/// This is a temporary restriction, to avoid heap allocation in [`Self::next_back`].
-///
-/// We only use magic bytes of size 4 at the moment.
-const STACK_BUFFER_SIZE: usize = 8;
-
 impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direction> {
     /// Create a new empty optimistic magic bytes finder.
     pub(crate) fn new(magic_bytes: &'a MagicSize) -> Self {
@@ -238,7 +233,6 @@ impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direct
         bounds: (u64, u64),
         initial_guess: Option<(u64, bool)>,
     ) -> &mut Self {
-        debug_assert!(magic_bytes.len() <= STACK_BUFFER_SIZE);
 
         self.inner.repurpose(magic_bytes, bounds);
         self.initial_guess = initial_guess;
@@ -252,12 +246,11 @@ impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direct
         if let Some((v, mandatory)) = self.initial_guess {
             reader.seek(SeekFrom::Start(v))?;
 
-            let mut buffer = [0; STACK_BUFFER_SIZE];
-            let buffer = &mut buffer[..self.inner.finder.needle().len()];
+            let mut buffer: MagicSize = [0; 4];
 
             // Attempt to match only if there's enough space for the needle
             if v.saturating_add(buffer.len() as u64) <= self.inner.bounds.1 {
-                if let Err(e) = reader.read_exact(buffer) {
+                if let Err(e) = reader.read_exact(&mut buffer) {
                     if e.kind() == std::io::ErrorKind::UnexpectedEof {
                         if mandatory {
                             return Ok(None);
