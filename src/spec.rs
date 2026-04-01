@@ -241,11 +241,10 @@ pub(crate) trait FixedSizeBlock: Pod {
             inner: block,
         } = block_with_magic;
         let magic = Magic::from_le(magic);
-        let block = Self::from_le(block);
-
         if magic != Self::MAGIC {
             return Err(Self::WRONG_MAGIC_ERROR);
         }
+        let block = Self::from_le(block);
         Ok(block)
     }
 
