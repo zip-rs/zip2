@@ -2389,7 +2389,7 @@ fn update_aes_extra_data<W: Write + Seek>(
     };
     let mut vec = extra_field.to_vec();
     vec[aes_extra_data_start..aes_extra_data_start + size_of::<AexEncryption>()]
-        .copy_from_slice(&buf);
+        .copy_from_slice(buf);
     *extra_field = Arc::from(vec.into_boxed_slice());
 
     Ok(())
