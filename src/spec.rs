@@ -892,7 +892,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 
             // Attempt to find the first CDFH
             let subfinder = subfinder
-                .get_or_insert_with(OptimisticMagicFinder::new_empty)
+                .get_or_insert_with(|| OptimisticMagicFinder::new(&CDFH_SIG_BYTES))
                 .repurpose(
                     &CDFH_SIG_BYTES,
                     // The CDFH must be before the EOCD and after the relative offset,
@@ -957,7 +957,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 
         // Attempt to find the EOCD64 with an initial guess
         let subfinder = subfinder
-            .get_or_insert_with(OptimisticMagicFinder::new_empty)
+            .get_or_insert_with(|| OptimisticMagicFinder::new(&EOCD64_SIG_BYTES))
             .repurpose(
                 &EOCD64_SIG_BYTES,
                 (locator64.end_of_central_directory_offset, locator64_offset),
