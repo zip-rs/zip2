@@ -111,8 +111,11 @@ pub(crate) struct MagicFinder<Direction> {
 
 impl<'a, T: FinderDirection<'a, MagicSize>> MagicFinder<T> {
     /// Create a new magic bytes finder to look within specific bounds.
-    pub(crate) fn new(magic_bytes: &'a MagicSize, start_inclusive: u64, end_exclusive: u64) -> Self {
-
+    pub(crate) fn new(
+        magic_bytes: &'a MagicSize,
+        start_inclusive: u64,
+        end_exclusive: u64,
+    ) -> Self {
         // Smaller buffer size would be unable to locate bytes.
         // Equal buffer size would stall (the window could not be moved).
         debug_assert!(BUFFER_SIZE >= magic_bytes.len());
@@ -127,7 +130,11 @@ impl<'a, T: FinderDirection<'a, MagicSize>> MagicFinder<T> {
     }
 
     /// Repurpose the finder for different bytes or bounds.
-    pub(crate) fn repurpose(&mut self, magic_bytes: &'a MagicSize, bounds: (u64, u64)) -> &mut Self {
+    pub(crate) fn repurpose(
+        &mut self,
+        magic_bytes: &'a MagicSize,
+        bounds: (u64, u64),
+    ) -> &mut Self {
         debug_assert!(self.buffer.len() >= magic_bytes.len());
 
         self.finder = T::new(magic_bytes);
@@ -141,7 +148,10 @@ impl<'a, T: FinderDirection<'a, MagicSize>> MagicFinder<T> {
     }
 
     /// Find the next magic bytes in the direction specified in the type.
-    pub(crate) fn next<R: Read + Seek + ?Sized>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
+    pub(crate) fn next<R: Read + Seek + ?Sized>(
+        &mut self,
+        reader: &mut R,
+    ) -> ZipResult<Option<u64>> {
         loop {
             if self.cursor < self.bounds.0 || self.cursor >= self.bounds.1 {
                 // The finder is consumed
@@ -233,7 +243,6 @@ impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direct
         bounds: (u64, u64),
         initial_guess: Option<(u64, bool)>,
     ) -> &mut Self {
-
         self.inner.repurpose(magic_bytes, bounds);
         self.initial_guess = initial_guess;
 
@@ -242,7 +251,10 @@ impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direct
 
     /// Equivalent to `next_back`, with an optional initial guess attempted before
     /// proceeding with reading from the back of the reader.
-    pub(crate) fn next<R: Read + Seek + ?Sized>(&mut self, reader: &mut R) -> ZipResult<Option<u64>> {
+    pub(crate) fn next<R: Read + Seek + ?Sized>(
+        &mut self,
+        reader: &mut R,
+    ) -> ZipResult<Option<u64>> {
         if let Some((v, mandatory)) = self.initial_guess {
             reader.seek(SeekFrom::Start(v))?;
 
