@@ -566,7 +566,9 @@ impl Zip32CentralDirectoryEnd {
     }
 
     pub fn may_be_zip64(&self) -> bool {
-        self.number_of_files == u16::MAX || self.central_directory_offset == u32::MAX
+        self.number_of_files == u16::MAX
+            || self.central_directory_size == u32::MAX
+            || self.central_directory_offset == u32::MAX
     }
 }
 
@@ -693,11 +695,15 @@ pub(crate) struct Zip64CentralDirectoryEnd {
     pub number_of_files: u64,
     pub central_directory_size: u64,
     pub central_directory_offset: u64,
-    pub extensible_data_sector: Box<[u8]>,
+    pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn parse<T: Read + ?Sized>(
+    /// Minimum size of the block
+    /// Block - record_size - extensible_data
+    const MIN_SIZE: usize = 2 * size_of::<u16>() + 2 * size_of::<u32>() + 4 * size_of::<u64>();
+
+    pub(crate) fn parse<T: Read + ?Sized>(
         reader: &mut T,
         max_size: u64,
     ) -> ZipResult<Zip64CentralDirectoryEnd> {
@@ -714,21 +720,27 @@ impl Zip64CentralDirectoryEnd {
             ..
         } = Zip64CDEBlock::parse(reader)?;
 
-        if record_size < 44 {
+        if record_size < 40 {
             return Err(invalid!("Low EOCD64 record size"));
         } else if record_size.saturating_add(12) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
         }
 
-        let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
-        if let Err(e) = reader.read_exact(&mut zip_file_comment) {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Err(invalid!(
-                    "EOCD64 extensible data sector exceeds file boundary"
-                ));
+        let zip64_extensible_data_sector = if record_size > (Self::MIN_SIZE as u64) {
+            let mut extensible_data_sector =
+                vec![0u8; record_size as usize - Self::MIN_SIZE].into_boxed_slice();
+            if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(invalid!(
+                        "EOCD64 extensible data sector exceeds file boundary"
+                    ));
+                }
+                return Err(e.into());
             }
-            return Err(e.into());
-        }
+            Some(extensible_data_sector)
+        } else {
+            None
+        };
 
         Ok(Self {
             record_size,
@@ -740,11 +752,11 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            extensible_data_sector: zip_file_comment,
+            zip64_extensible_data_sector,
         })
     }
 
-    pub fn into_block_and_comment(self) -> (Zip64CDEBlock, Box<[u8]>) {
+    pub(crate) fn into_block_and_extensible_data(self) -> (Zip64CDEBlock, Option<Box<[u8]>>) {
         let Self {
             record_size,
             version_made_by,
@@ -755,7 +767,7 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            extensible_data_sector,
+            zip64_extensible_data_sector,
         } = self;
 
         (
@@ -771,14 +783,16 @@ impl Zip64CentralDirectoryEnd {
                 central_directory_size,
                 central_directory_offset,
             },
-            extensible_data_sector,
+            zip64_extensible_data_sector,
         )
     }
 
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        let (block, comment) = self.into_block_and_comment();
+    pub(crate) fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        let (block, zip64_extensible_data) = self.into_block_and_extensible_data();
         block.write(writer)?;
-        writer.write_all(&comment)?;
+        if let Some(extensible_data) = zip64_extensible_data {
+            writer.write_all(&extensible_data)?;
+        }
         Ok(())
     }
 }
@@ -1063,5 +1077,11 @@ mod tests {
         c.set_position(0);
         let block2 = TestBlock::parse(&mut c).unwrap();
         assert_eq!(block, block2);
+    }
+
+    #[test]
+    fn test_size_zip64_central_directory_end() {
+        use super::Zip64CentralDirectoryEnd;
+        assert_eq!(Zip64CentralDirectoryEnd::MIN_SIZE, 44);
     }
 }

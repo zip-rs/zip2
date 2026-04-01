@@ -50,7 +50,7 @@ fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResul
     let mut bytes = vec![0u8; comment_length];
     getrandom::fill(&mut bytes)
         .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
-    writer.set_raw_comment(bytes.into_boxed_slice());
+    writer.set_raw_comment(bytes.into_boxed_slice())?;
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
@@ -70,7 +70,7 @@ fn parse_archive_with_comment(bench: &mut Bencher) {
 
 const COMMENT_SIZE_64: usize = 500_000;
 
-fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResult<Vec<u8>> {
+fn generate_zip64_archive_with_random_extensible_data(comment_length: usize) -> ZipResult<Vec<u8>> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default()
@@ -80,7 +80,7 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
     let mut bytes = vec![0u8; comment_length];
     getrandom::fill(&mut bytes)
         .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
-    writer.set_raw_zip64_comment(Some(bytes.into_boxed_slice()));
+    writer.set_raw_zip64_extensible_data_sector(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
@@ -89,7 +89,7 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
 }
 
 fn parse_zip64_archive_with_comment(bench: &mut Bencher) {
-    let bytes = generate_zip64_archive_with_random_comment(COMMENT_SIZE_64).unwrap();
+    let bytes = generate_zip64_archive_with_random_extensible_data(COMMENT_SIZE_64).unwrap();
 
     bench.iter(|| {
         let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
