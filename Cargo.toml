@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "8.4.0"
+version = "8.5.0"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -128,6 +128,10 @@ harness = false
 
 [[bench]]
 name = "read_metadata"
+harness = false
+
+[[bench]]
+name = "read_many_entries"
 harness = false
 
 [[bench]]

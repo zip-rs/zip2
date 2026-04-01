@@ -235,14 +235,17 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
     // finished iterating over all the actual files).
     /* TODO: smallvec? */
 
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
+    let mut magic_buf = [0; size_of::<u32>()];
+    reader.read_exact(&mut magic_buf)?;
 
-    match block.magic().from_le() {
+    match Magic::from_le_bytes(magic_buf) {
         Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
+
+    let mut block = ZipLocalEntryBlock::zeroed();
+    reader.read_exact(block.as_bytes_mut())?;
 
     let block = block.from_le();
 
@@ -283,14 +286,17 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     reader: &mut R,
     compressed_size: u64,
 ) -> ZipResult<Option<ZipFile<'_, R>>> {
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
+    let mut magic_buf = [0; size_of::<u32>()];
+    reader.read_exact(&mut magic_buf)?;
 
-    match block.magic().from_le() {
+    match Magic::from_le_bytes(magic_buf) {
         Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
+
+    let mut block = ZipLocalEntryBlock::zeroed();
+    reader.read_exact(block.as_bytes_mut())?;
 
     let block = block.from_le();
 
