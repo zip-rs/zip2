@@ -195,9 +195,9 @@ pub struct ZipFileData {
     /// Raw file name. To be used when `file_name` was incorrectly decoded.
     pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Option<Arc<Vec<u8>>>,
+    pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
-    pub central_extra_field: Option<Arc<Vec<u8>>>,
+    pub central_extra_field: Option<Arc<[u8]>>,
     /// File comment
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
@@ -463,8 +463,11 @@ impl ZipFileData {
             uncompressed_size: raw_values.uncompressed_size,
             file_name, // Never used for saving, but used as map key in insert_file_data()
             file_name_raw,
-            extra_field: Some(extra_field.to_vec().into()),
-            central_extra_field: options.extended_options.central_extra_data().cloned(),
+            extra_field: Some(Arc::from(extra_field)),
+            central_extra_field: options
+                .extended_options
+                .central_extra_data()
+                .map(|v| Arc::from(v.as_ref().as_slice())),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,
             data_start: OnceLock::new(),
@@ -559,7 +562,7 @@ impl ZipFileData {
             uncompressed_size: uncompressed_size.into(),
             file_name,
             file_name_raw: file_name_raw.into(),
-            extra_field: Some(Arc::new(extra_field)),
+            extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
             // header_start and data start are not available, but also don't matter, since seeking is
