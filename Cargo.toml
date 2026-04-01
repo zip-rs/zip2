@@ -131,5 +131,9 @@ name = "read_metadata"
 harness = false
 
 [[bench]]
+name = "read_many_entries"
+harness = false
+
+[[bench]]
 name = "merge_archive"
 harness = false
