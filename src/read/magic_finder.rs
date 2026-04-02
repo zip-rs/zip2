@@ -1,8 +1,8 @@
 //! Code related to the MagicFinder
 
-use std::io::{Read, Seek, SeekFrom};
 use crate::result::ZipResult;
 use memchr::memmem::{Finder, FinderRev};
+use std::io::{Read, Seek, SeekFrom};
 
 const MAGIC_LENGTH: usize = 4;
 type MagicSize = [u8; MAGIC_LENGTH];
