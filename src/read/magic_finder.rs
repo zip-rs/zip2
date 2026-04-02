@@ -1,16 +1,16 @@
-use std::io::{Read, Seek, SeekFrom};
+//! Code related to the MagicFinder
 
+use std::io::{Read, Seek, SeekFrom};
+use crate::result::ZipResult;
 use memchr::memmem::{Finder, FinderRev};
 
-use crate::result::ZipResult;
-
-type MagicSize = [u8; 4];
+const MAGIC_LENGTH: usize = 4;
+type MagicSize = [u8; MAGIC_LENGTH];
 
 pub(crate) trait FinderDirection<'a, B> {
     fn new(needle: &'a B) -> Self;
     fn reset_cursor(bounds: (u64, u64), window_size: usize) -> u64;
     fn scope_window(window: &[u8], mid_window_offset: usize) -> (&[u8], usize);
-
     fn needle(&self) -> &[u8];
     fn find(&self, haystack: &[u8]) -> Option<usize>;
     fn move_cursor(&self, cursor: u64, bounds: (u64, u64), window_size: usize) -> Option<u64>;
@@ -40,14 +40,14 @@ impl<'a> FinderDirection<'a, MagicSize> for Forward<'a> {
     }
 
     fn move_cursor(&self, cursor: u64, bounds: (u64, u64), window_size: usize) -> Option<u64> {
-        let magic_overlap = self.needle().len().saturating_sub(1) as u64;
+        let magic_overlap = MAGIC_LENGTH.saturating_sub(1) as u64;
         let next = cursor.saturating_add(window_size as u64 - magic_overlap);
 
         if next >= bounds.1 { None } else { Some(next) }
     }
 
     fn move_scope(&self, offset: usize) -> usize {
-        offset + self.needle().len()
+        offset + MAGIC_LENGTH
     }
 }
 
@@ -77,7 +77,7 @@ impl<'a> FinderDirection<'a, MagicSize> for Backwards<'a> {
     }
 
     fn move_cursor(&self, cursor: u64, bounds: (u64, u64), window_size: usize) -> Option<u64> {
-        let magic_overlap = self.needle().len().saturating_sub(1) as u64;
+        let magic_overlap = MAGIC_LENGTH.saturating_sub(1) as u64;
 
         if cursor <= bounds.0 {
             None
@@ -116,10 +116,6 @@ impl<'a, T: FinderDirection<'a, MagicSize>> MagicFinder<T> {
         start_inclusive: u64,
         end_exclusive: u64,
     ) -> Self {
-        // Smaller buffer size would be unable to locate bytes.
-        // Equal buffer size would stall (the window could not be moved).
-        debug_assert!(BUFFER_SIZE >= magic_bytes.len());
-
         Self {
             buffer: [0; BUFFER_SIZE],
             finder: T::new(magic_bytes),
@@ -135,8 +131,6 @@ impl<'a, T: FinderDirection<'a, MagicSize>> MagicFinder<T> {
         magic_bytes: &'a MagicSize,
         bounds: (u64, u64),
     ) -> &mut Self {
-        debug_assert!(self.buffer.len() >= magic_bytes.len());
-
         self.finder = T::new(magic_bytes);
         self.cursor = T::reset_cursor(bounds, self.buffer.len());
         self.bounds = bounds;
