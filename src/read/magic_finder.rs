@@ -223,9 +223,9 @@ pub(crate) struct OptimisticMagicFinder<Direction> {
 
 impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direction> {
     /// Create a new empty optimistic magic bytes finder.
-    pub(crate) fn new(magic_bytes: &'a MagicSize) -> Self {
+    pub(crate) fn new_empty() -> Self {
         Self {
-            inner: MagicFinder::new(magic_bytes, 0, 0),
+            inner: MagicFinder::new(&[0, 0, 0, 0], 0, 0),
             initial_guess: None,
         }
     }
