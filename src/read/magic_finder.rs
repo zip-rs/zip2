@@ -96,7 +96,9 @@ impl<'a> FinderDirection<'a, MagicSize> for Backwards<'a> {
     }
 }
 
-const BUFFER_SIZE: usize = 2048;
+
+/// The buffer size that the finder will search
+const BUFFER_SIZE: usize = 1024;
 
 /// A utility for finding magic symbols from the end of a seekable reader.
 ///
