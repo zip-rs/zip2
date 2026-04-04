@@ -8,7 +8,11 @@ use std::hint::black_box;
 use std::io::{self, Cursor, Read, Seek, Write};
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
-// deterministic seeded randomness helper (SplitMix64, no external dependencies)
+// Deterministic seeded randomness helper (SplitMix64; no external dependencies, no syscalls).
+// Why we use this instead of the getrandom crate:
+// 1. Deterministic — always the same bytes.
+// 2. No syscalls — the getrandom crate calls the OS/platform RNG.
+// 3. No dependency here — getrandom is used elsewhere but remains optional and may change.
 fn seeded_random_bytes(size: usize) -> Vec<u8> {
     let mut x: u64 = 0xdead_beef_cafe_babe; // seed
     let mut out = vec![0u8; size];
