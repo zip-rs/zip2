@@ -111,50 +111,16 @@ fn perform_raw_copy_file<R: Read + Seek, W: Write + Seek>(
 const NUM_ENTRIES: usize = 100;
 const ENTRY_SIZE: usize = 1024;
 
-// Default sizes (desktop). When BENCH_PI=1 or BENCH_LOW_MEMORY=1, use smaller sizes for Pi 3B (~1 GB RAM).
-fn is_low_memory() -> bool {
-    std::env::var("BENCH_PI").as_deref() == Ok("1")
-        || std::env::var("BENCH_LOW_MEMORY").as_deref() == Ok("1")
-}
-
-fn file_count_meta() -> usize {
-    if is_low_memory() {
-        2_000 // ~2 MB archive instead of ~15 MB
-    } else {
-        FILE_COUNT
-    }
-}
-
-fn comment_size() -> usize {
-    if is_low_memory() { 10_000 } else { 50_000 }
-}
-
-fn read_all_entries_count() -> usize {
-    if is_low_memory() { 200 } else { 500 }
-}
-
-fn by_name_lookup_count() -> usize {
-    if is_low_memory() { 20 } else { 50 }
-}
-
-fn large_non_zip_size() -> usize {
-    if is_low_memory() {
-        5_000_000 // 5 MB instead of 17 MB
-    } else {
-        17_000_000
-    }
-}
-
-fn write_many_count() -> usize {
-    if is_low_memory() { 300 } else { 1_000 }
-}
+const COMMENT_BENCH_LEN: usize = 50_000;
+const READ_ALL_ENTRIES_FILES: usize = 500;
+const BY_NAME_LOOKUP_COUNT: usize = 50;
+const LARGE_NON_ZIP_BYTES: usize = 17_000_000;
+const WRITE_MANY_FILES: usize = 1_000;
 
 const STREAM_ENTRIES: usize = 20;
 const STREAM_ENTRY_SIZE: usize = 256;
 const WRITE_LARGE_SIZE: usize = 1024 * 1024;
 const ROUNDTRIP_ENTRIES: usize = 100;
-/// Reused output buffer for write benches: largest case is ~1 MiB stored payload + zip overhead (< 2 MiB).
-const WRITE_BENCH_BUF_CAP: usize = 2 * 1024 * 1024;
 
 fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -167,12 +133,24 @@ fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let size = 1024 * 1024;
-    let bytes = generate_random_archive(size);
+    // Shared directory: all fixtures use real files under here (see each section below).
+    let bench_dir = tempfile::TempDir::with_prefix("criterion_zip").unwrap();
+    let p = |name: &str| bench_dir.path().join(name);
+
+    // ============================================================================
+    // read_entry
+    // Single stored entry (~1 MiB payload); read full entry in a loop from disk.
+    // ============================================================================
+    let path_read_entry = p("read_entry.zip");
+    fs::write(
+        &path_read_entry,
+        generate_random_archive(1024 * 1024),
+    )
+    .unwrap();
 
     c.bench_function("read_entry", |b| {
         b.iter(|| {
-            let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+            let mut archive = ZipArchive::new(fs::File::open(&path_read_entry).unwrap()).unwrap();
             let mut file = archive.by_name("random.dat").unwrap();
             let mut buf = [0u8; 1024];
 
@@ -187,70 +165,100 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    let bytes_meta = generate_random_archive_meta(file_count_meta(), FILE_SIZE_META).unwrap();
+    // ============================================================================
+    // read_metadata / by_name_lookup_many
+    // One large archive on disk (FILE_COUNT × FILE_SIZE_META); shared by both benches.
+    // ============================================================================
+    let path_meta = p("meta.zip");
+    fs::write(
+        &path_meta,
+        generate_random_archive_meta(FILE_COUNT, FILE_SIZE_META).unwrap(),
+    )
+    .unwrap();
 
     c.bench_function("read_metadata", |b| {
         b.iter(|| {
             black_box(
-                ZipArchive::new(Cursor::new(bytes_meta.as_slice()))
+                ZipArchive::new(fs::File::open(&path_meta).unwrap())
                     .unwrap()
                     .len(),
             )
         });
     });
 
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-
-    let (len, src_bytes) = generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+    // ============================================================================
+    // merge_archive_stored
+    // Source zip on disk; merge into a new file each batch (stored method).
+    // ============================================================================
+    let merge_options =
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let path_merge_src = p("merge_src.zip");
+    let path_merge_out = p("merge_out.zip");
+    let (len, src_bytes) =
+        generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, merge_options).unwrap();
+    fs::write(&path_merge_src, &src_bytes).unwrap();
 
     c.bench_function("merge_archive_stored", |b| {
         b.iter_batched(
             || {
-                let src = ZipArchive::new(Cursor::new(src_bytes.clone())).unwrap();
-                let buf = Cursor::new(Vec::with_capacity(len));
-                (src, buf)
+                let src = ZipArchive::new(fs::File::open(&path_merge_src).unwrap()).unwrap();
+                let out = fs::File::create(&path_merge_out).unwrap();
+                (src, out)
             },
-            |(src, buf)| {
-                let zip = ZipWriter::new(buf);
+            |(src, out)| {
+                let zip = ZipWriter::new(out);
                 let zip = perform_merge(src, zip).unwrap();
-                let out = zip.finish().unwrap().into_inner();
-
-                assert_eq!(out.len(), len);
-
-                black_box(out)
+                let out = zip.finish().unwrap();
+                assert_eq!(out.metadata().unwrap().len() as usize, len);
+                black_box(out);
             },
             BatchSize::SmallInput,
         );
     });
 
+    // ============================================================================
+    // merge_archive_raw_copy_file_stored
+    // Second merge source (independent); raw_copy_file path.
+    // ============================================================================
+    let path_merge_src2 = p("merge_src2.zip");
+    let path_merge_out2 = p("merge_out2.zip");
     let (len2, src_bytes2) =
-        generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+        generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, merge_options).unwrap();
+    fs::write(&path_merge_src2, &src_bytes2).unwrap();
 
     c.bench_function("merge_archive_raw_copy_file_stored", |b| {
         b.iter_batched(
             || {
-                let src = ZipArchive::new(Cursor::new(src_bytes2.clone())).unwrap();
-                let buf = Cursor::new(Vec::with_capacity(len2));
-                (src, buf)
+                let src = ZipArchive::new(fs::File::open(&path_merge_src2).unwrap()).unwrap();
+                let out = fs::File::create(&path_merge_out2).unwrap();
+                (src, out)
             },
-            |(src, buf)| {
-                let zip = ZipWriter::new(buf);
+            |(src, out)| {
+                let zip = ZipWriter::new(out);
                 let zip = perform_raw_copy_file(src, zip).unwrap();
-                let out = zip.finish().unwrap().into_inner();
-
-                assert_eq!(out.len(), len2);
-
-                black_box(out)
+                let out = zip.finish().unwrap();
+                assert_eq!(out.metadata().unwrap().len() as usize, len2);
+                black_box(out);
             },
             BatchSize::SmallInput,
         );
     });
 
-    // --- read_all_entries: iterate by_index and read each entry ---
-    let bytes_all_entries = generate_random_archive_meta(read_all_entries_count(), 512).unwrap();
+    // ============================================================================
+    // read_all_entries
+    // Many small entries; read each by index to sink (from disk).
+    // ============================================================================
+    let path_all_entries = p("all_entries.zip");
+    fs::write(
+        &path_all_entries,
+        generate_random_archive_meta(READ_ALL_ENTRIES_FILES, 512).unwrap(),
+    )
+    .unwrap();
+
     c.bench_function("read_all_entries", |b| {
         b.iter(|| {
-            let mut archive = ZipArchive::new(Cursor::new(bytes_all_entries.as_slice())).unwrap();
+            let mut archive =
+                ZipArchive::new(fs::File::open(&path_all_entries).unwrap()).unwrap();
             for i in 0..archive.len() {
                 let mut entry = archive.by_index(i).unwrap();
                 let _ = io::copy(&mut entry, &mut io::sink()).unwrap();
@@ -258,33 +266,51 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    // --- by_name_lookup_many: look up many names in large archive ---
-    let lookup_names: Vec<String> = (0..by_name_lookup_count())
+    // ============================================================================
+    // by_name_lookup_many
+    // Uses meta.zip above; repeated by_name lookups (names prebuilt once).
+    // ============================================================================
+    let lookup_names: Vec<String> = (0..BY_NAME_LOOKUP_COUNT)
         .map(|i| format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat"))
         .collect();
     c.bench_function("by_name_lookup_many", |b| {
         b.iter(|| {
-            let mut archive = ZipArchive::new(Cursor::new(bytes_meta.as_slice())).unwrap();
+            let mut archive = ZipArchive::new(fs::File::open(&path_meta).unwrap()).unwrap();
             for name in &lookup_names {
                 let _ = archive.by_name(name).unwrap();
             }
         });
     });
 
-    // --- parse_archive_with_comment ---
-    let bytes_comment = generate_archive_with_comment(comment_size()).unwrap();
+    // ============================================================================
+    // parse_archive_with_comment
+    // Zip with large comment field; parse and read comment length from disk.
+    // ============================================================================
+    let path_comment = p("comment.zip");
+    fs::write(
+        &path_comment,
+        generate_archive_with_comment(COMMENT_BENCH_LEN).unwrap(),
+    )
+    .unwrap();
+
     c.bench_function("parse_archive_with_comment", |b| {
         b.iter(|| {
-            let archive = ZipArchive::new(Cursor::new(bytes_comment.as_slice())).unwrap();
+            let archive = ZipArchive::new(fs::File::open(&path_comment).unwrap()).unwrap();
             black_box(archive.comment().len());
         });
     });
 
-    // --- read_stream_entries: read_zipfile_from_stream until None ---
-    let bytes_stream = generate_random_archive_meta(STREAM_ENTRIES, STREAM_ENTRY_SIZE).unwrap();
-    let dir_stream = tempfile::TempDir::with_prefix("criterion_stream").unwrap();
-    let path_stream = dir_stream.path().join("bench.zip");
-    fs::write(&path_stream, &bytes_stream).unwrap();
+    // ============================================================================
+    // read_stream_entries
+    // Streaming API: read_zipfile_from_stream until None (file on disk).
+    // ============================================================================
+    let path_stream = p("stream.zip");
+    fs::write(
+        &path_stream,
+        generate_random_archive_meta(STREAM_ENTRIES, STREAM_ENTRY_SIZE).unwrap(),
+    )
+    .unwrap();
+
     c.bench_function("read_stream_entries", |b| {
         b.iter(|| {
             let mut f = fs::File::open(&path_stream).unwrap();
@@ -295,10 +321,13 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    // --- parse_large_non_zip_reject ---
-    let dir_reject = tempfile::TempDir::with_prefix("criterion_reject").unwrap();
-    let path_reject = dir_reject.path().join("zeros");
-    fs::write(&path_reject, vec![0u8; large_non_zip_size()]).unwrap();
+    // ============================================================================
+    // parse_large_non_zip_reject
+    // Large non-zip blob on disk; ZipArchive::new must fail (reject path).
+    // ============================================================================
+    let path_reject = p("zeros.bin");
+    fs::write(&path_reject, vec![0u8; LARGE_NON_ZIP_BYTES]).unwrap();
+
     c.bench_function("parse_large_non_zip_reject", |b| {
         b.iter(|| {
             let r = ZipArchive::new(fs::File::open(&path_reject).unwrap());
@@ -306,46 +335,55 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    // --- write_many_small_files ---
+    // ============================================================================
+    // write_many_small_files
+    // Payload in memory; write many stored entries to a file (truncated each iter).
+    // ============================================================================
+    let path_write_many = p("write_many.zip");
     let payload_small = seeded_random_bytes(128);
-    let mut write_many_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
+
     c.bench_function("write_many_small_files", |b| {
         b.iter(|| {
-            write_many_buffer.clear();
-            let mut writer = ZipWriter::new(Cursor::new(&mut write_many_buffer));
+            let mut writer = ZipWriter::new(fs::File::create(&path_write_many).unwrap());
             let options =
                 SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-            for i in 0..write_many_count() {
+            for i in 0..WRITE_MANY_FILES {
                 let name = format!("file_{i}.dat");
                 writer.start_file(name, options).unwrap();
                 writer.write_all(&payload_small).unwrap();
             }
-            black_box(writer.finish().unwrap().into_inner());
+            black_box(writer.finish().unwrap());
         });
     });
 
-    // --- write_one_large_file ---
+    // ============================================================================
+    // write_one_large_file
+    // ~1 MiB stored payload; single entry written to disk each iter.
+    // ============================================================================
+    let path_write_large = p("write_large.zip");
     let payload_large = seeded_random_bytes(WRITE_LARGE_SIZE);
-    let mut write_large_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
+
     c.bench_function("write_one_large_file", |b| {
         b.iter(|| {
-            write_large_buffer.clear();
-            let mut writer = ZipWriter::new(Cursor::new(&mut write_large_buffer));
+            let mut writer = ZipWriter::new(fs::File::create(&path_write_large).unwrap());
             let options =
                 SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             writer.start_file("large.dat", options).unwrap();
             writer.write_all(&payload_large).unwrap();
-            black_box(writer.finish().unwrap().into_inner());
+            black_box(writer.finish().unwrap());
         });
     });
 
-    // --- write_then_read_roundtrip ---
+    // ============================================================================
+    // write_then_read_roundtrip
+    // Write several entries to disk, reopen, read archive length.
+    // ============================================================================
+    let path_roundtrip = p("roundtrip.zip");
     let roundtrip_payload = seeded_random_bytes(256);
-    let mut roundtrip_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
+
     c.bench_function("write_then_read_roundtrip", |b| {
         b.iter(|| {
-            roundtrip_buffer.clear();
-            let mut writer = ZipWriter::new(Cursor::new(&mut roundtrip_buffer));
+            let mut writer = ZipWriter::new(fs::File::create(&path_roundtrip).unwrap());
             let options =
                 SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..ROUNDTRIP_ENTRIES {
@@ -354,42 +392,52 @@ fn criterion_benchmark(c: &mut Criterion) {
                     .unwrap();
                 writer.write_all(&roundtrip_payload).unwrap();
             }
-            let bytes = writer.finish().unwrap().into_inner();
-            let archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+            drop(writer.finish().unwrap());
+            let archive = ZipArchive::new(fs::File::open(&path_roundtrip).unwrap()).unwrap();
             black_box(archive.len());
         });
     });
 
-    // --- deflate: read deflated entry (when feature enabled) ---
     #[cfg(feature = "deflate")]
     {
-        let (_, deflated_bytes) = generate_random_archive_merge(
-            5,
-            4096,
-            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+        // ============================================================================
+        // read_deflated_entry
+        // Deflated entries on disk; read all to sink.
+        // ============================================================================
+        let path_deflate_read = p("deflate_read.zip");
+        fs::write(
+            &path_deflate_read,
+            generate_random_archive_merge(
+                5,
+                4096,
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+            )
+            .unwrap()
+            .1,
         )
         .unwrap();
+
         c.bench_function("read_deflated_entry", |b| {
             b.iter(|| {
-                let mut archive = ZipArchive::new(Cursor::new(deflated_bytes.as_slice())).unwrap();
+                let mut archive =
+                    ZipArchive::new(fs::File::open(&path_deflate_read).unwrap()).unwrap();
                 for i in 0..archive.len() {
                     let mut entry = archive.by_index(i).unwrap();
                     let _ = io::copy(&mut entry, &mut io::sink()).unwrap();
                 }
             });
         });
-    }
 
-    #[cfg(feature = "deflate")]
-    {
+        // ============================================================================
+        // write_deflated_entries
+        // Deflated writes to disk each iter.
+        // ============================================================================
+        let path_deflate_write = p("deflate_write.zip");
         let deflate_payload = seeded_random_bytes(2048);
-        let mut write_deflate_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
 
         c.bench_function("write_deflated_entries", |b| {
             b.iter(|| {
-                write_deflate_buffer.clear();
-
-                let mut writer = ZipWriter::new(Cursor::new(&mut write_deflate_buffer));
+                let mut writer = ZipWriter::new(fs::File::create(&path_deflate_write).unwrap());
 
                 let options =
                     SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -401,8 +449,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     writer.write_all(&deflate_payload).unwrap();
                 }
 
-                let cursor = writer.finish().unwrap();
-                black_box(cursor.into_inner());
+                black_box(writer.finish().unwrap());
             });
         });
     }
