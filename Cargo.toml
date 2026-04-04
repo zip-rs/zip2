@@ -38,6 +38,7 @@ arbitrary = { version = "1.3.2", features = ["derive"] }
 bencher = "0.1.5"
 criterion = { version = "0.8.2", features = ["html_reports"] }
 getrandom = { version = "0.2.14", features = ["js"] }
+tempfile = "3.27.0"
 walkdir = "2.5.0"
 time = { version = "0.3.34", features = ["formatting", "macros"] }
 
