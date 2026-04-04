@@ -153,6 +153,8 @@ const STREAM_ENTRIES: usize = 20;
 const STREAM_ENTRY_SIZE: usize = 256;
 const WRITE_LARGE_SIZE: usize = 1024 * 1024;
 const ROUNDTRIP_ENTRIES: usize = 100;
+/// Reused output buffer for write benches: largest case is ~1 MiB stored payload + zip overhead (< 2 MiB).
+const WRITE_BENCH_BUF_CAP: usize = 2 * 1024 * 1024;
 
 fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -306,9 +308,11 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // --- write_many_small_files ---
     let payload_small = seeded_random_bytes(128);
+    let mut write_many_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
     c.bench_function("write_many_small_files", |b| {
         b.iter(|| {
-            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            write_many_buffer.clear();
+            let mut writer = ZipWriter::new(Cursor::new(&mut write_many_buffer));
             let options =
                 SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..write_many_count() {
@@ -322,9 +326,11 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // --- write_one_large_file ---
     let payload_large = seeded_random_bytes(WRITE_LARGE_SIZE);
+    let mut write_large_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
     c.bench_function("write_one_large_file", |b| {
         b.iter(|| {
-            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            write_large_buffer.clear();
+            let mut writer = ZipWriter::new(Cursor::new(&mut write_large_buffer));
             let options =
                 SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             writer.start_file("large.dat", options).unwrap();
@@ -335,9 +341,11 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // --- write_then_read_roundtrip ---
     let roundtrip_payload = seeded_random_bytes(256);
+    let mut roundtrip_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
     c.bench_function("write_then_read_roundtrip", |b| {
         b.iter(|| {
-            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            roundtrip_buffer.clear();
+            let mut writer = ZipWriter::new(Cursor::new(&mut roundtrip_buffer));
             let options =
                 SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..ROUNDTRIP_ENTRIES {
@@ -375,13 +383,13 @@ fn criterion_benchmark(c: &mut Criterion) {
     #[cfg(feature = "deflate")]
     {
         let deflate_payload = seeded_random_bytes(2048);
-        let mut buffer = Vec::with_capacity(128 * 1024);
+        let mut write_deflate_buffer = Vec::with_capacity(WRITE_BENCH_BUF_CAP);
 
         c.bench_function("write_deflated_entries", |b| {
             b.iter(|| {
-                buffer.clear();
+                write_deflate_buffer.clear();
 
-                let mut writer = ZipWriter::new(Cursor::new(&mut buffer));
+                let mut writer = ZipWriter::new(Cursor::new(&mut write_deflate_buffer));
 
                 let options =
                     SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
