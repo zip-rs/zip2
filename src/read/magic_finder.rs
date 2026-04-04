@@ -96,7 +96,6 @@ impl<'a> FinderDirection<'a, MagicSize> for Backwards<'a> {
     }
 }
 
-
 /// The buffer size that the finder will search
 const BUFFER_SIZE: usize = 1024;
 
