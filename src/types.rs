@@ -1,75 +1,52 @@
 //! Types that specify what is contained in a ZIP.
 use path::{Component, Path, PathBuf};
+use std::fmt;
 use std::path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-#[cfg(not(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-)))]
-use std::sync::atomic;
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
+    pub const S_IFLNK: u32 = 0o0120000;
 }
 
-#[cfg(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-))]
-mod atomic {
-    use crossbeam_utils::sync::ShardedLock;
-    pub use std::sync::atomic::Ordering;
-
-    #[derive(Debug, Default)]
-    pub struct AtomicU64 {
-        value: ShardedLock<u64>,
-    }
-
-    impl AtomicU64 {
-        pub fn new(v: u64) -> Self {
-            Self {
-                value: ShardedLock::new(v),
-            }
-        }
-        pub fn get_mut(&mut self) -> &mut u64 {
-            self.value.get_mut().unwrap()
-        }
-        pub fn load(&self, _: Ordering) -> u64 {
-            *self.value.read().unwrap()
-        }
-        pub fn store(&self, value: u64, _: Ordering) {
-            *self.value.write().unwrap() = value;
-        }
-    }
-}
-
+use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
+use crate::spec::is_dir;
+use crate::types::ffi::S_IFDIR;
+use crate::CompressionMethod;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum System {
     Dos = 0,
     Unix = 3,
     Unknown,
 }
 
-impl System {
-    pub const fn from_u8(system: u8) -> System {
-        use self::System::*;
-
+impl From<u8> for System {
+    fn from(system: u8) -> Self {
         match system {
-            0 => Dos,
-            3 => Unix,
-            _ => Unknown,
+            0 => Self::Dos,
+            3 => Self::Unix,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl From<System> for u8 {
+    fn from(system: System) -> Self {
+        match system {
+            System::Dos => 0,
+            System::Unix => 3,
+            System::Unknown => 4,
         }
     }
 }
@@ -86,12 +63,11 @@ impl System {
 /// # Warning
 ///
 /// Because there is no timezone associated with the [`DateTime`], they should ideally only
-/// be used for user-facing descriptions. This also means [`DateTime::to_time`] returns an
-/// [`OffsetDateTime`] (which is the equivalent of chrono's `NaiveDateTime`).
+/// be used for user-facing descriptions.
 ///
-/// Modern zip files store more precise timestamps, which are ignored by [`crate::read::ZipArchive`],
-/// so keep in mind that these timestamps are unreliable. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904).
-#[derive(Debug, Clone, Copy)]
+/// Modern zip files store more precise timestamps; see [`crate::extra_fields::ExtendedTimestamp`]
+/// for details.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
     year: u16,
     month: u8,
@@ -99,6 +75,22 @@ pub struct DateTime {
     hour: u8,
     minute: u8,
     second: u8,
+}
+
+impl DateTime {
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(feature = "time")]
+    pub fn default_for_write() -> Self {
+        OffsetDateTime::now_utc()
+            .try_into()
+            .unwrap_or_else(|_| DateTime::default())
+    }
+
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(not(feature = "time"))]
+    pub fn default_for_write() -> Self {
+        DateTime::default()
+    }
 }
 
 #[cfg(fuzzing)]
@@ -132,14 +124,14 @@ impl TryFrom<NaiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "chrono")]
-impl TryInto<NaiveDateTime> for DateTime {
+impl TryFrom<DateTime> for NaiveDateTime {
     type Error = DateTimeRangeError;
 
-    fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
-        let date = NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+    fn try_from(value: DateTime) -> Result<Self, Self::Error> {
+        let date = NaiveDate::from_ymd_opt(value.year.into(), value.month.into(), value.day.into())
             .ok_or(DateTimeRangeError)?;
         let time =
-            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+            NaiveTime::from_hms_opt(value.hour.into(), value.minute.into(), value.second.into())
                 .ok_or(DateTimeRangeError)?;
         Ok(NaiveDateTime::new(date, time))
     }
@@ -159,9 +151,23 @@ impl Default for DateTime {
     }
 }
 
+impl fmt::Display for DateTime {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            self.year, self.month, self.day, self.hour, self.minute, self.second
+        )
+    }
+}
+
 impl DateTime {
     /// Converts an msdos (u16, u16) pair to a DateTime object
-    pub const fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
+    ///
+    /// # Safety
+    /// The caller must ensure the date and time are valid.
+    pub const unsafe fn from_msdos_unchecked(datepart: u16, timepart: u16) -> DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
@@ -177,6 +183,25 @@ impl DateTime {
             minute: minutes as u8,
             second: seconds as u8,
         }
+    }
+
+    /// Converts an msdos (u16, u16) pair to a DateTime object if it represents a valid date and
+    /// time.
+    pub fn try_from_msdos(datepart: u16, timepart: u16) -> Result<DateTime, DateTimeRangeError> {
+        let seconds = (timepart & 0b0000000000011111) << 1;
+        let minutes = (timepart & 0b0000011111100000) >> 5;
+        let hours = (timepart & 0b1111100000000000) >> 11;
+        let days = datepart & 0b0000000000011111;
+        let months = (datepart & 0b0000000111100000) >> 5;
+        let years = (datepart & 0b1111111000000000) >> 9;
+        Self::from_date_and_time(
+            years.checked_add(1980).ok_or(DateTimeRangeError)?,
+            months.try_into()?,
+            days.try_into()?,
+            hours.try_into()?,
+            minutes.try_into()?,
+            seconds.try_into()?,
+        )
     }
 
     /// Constructs a DateTime from a specific date and time
@@ -233,9 +258,9 @@ impl DateTime {
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
-    #[deprecated(note = "use `DateTime::try_from()`")]
+    #[deprecated(since = "0.6.4", note = "use `DateTime::try_from()` instead")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
-        dt.try_into().map_err(|_err| DateTimeRangeError)
+        dt.try_into()
     }
 
     /// Gets the time portion of this datetime in the msdos representation
@@ -250,11 +275,9 @@ impl DateTime {
 
     #[cfg(feature = "time")]
     /// Converts the DateTime to a OffsetDateTime structure
+    #[deprecated(since = "1.3.1", note = "use `OffsetDateTime::try_from()` instead")]
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
-        let date =
-            Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
-        let time = Time::from_hms(self.hour, self.minute, self.second)?;
-        Ok(PrimitiveDateTime::new(date, time).assume_utc())
+        (*self).try_into()
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -328,38 +351,18 @@ impl TryFrom<OffsetDateTime> for DateTime {
     }
 }
 
+#[cfg(feature = "time")]
+impl TryFrom<DateTime> for OffsetDateTime {
+    type Error = ComponentRange;
+
+    fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
+        let date = Date::from_calendar_date(dt.year as i32, Month::try_from(dt.month)?, dt.day)?;
+        let time = Time::from_hms(dt.hour, dt.minute, dt.second)?;
+        Ok(PrimitiveDateTime::new(date, time).assume_utc())
+    }
+}
+
 pub const DEFAULT_VERSION: u8 = 46;
-
-/// A type like `AtomicU64` except it implements `Clone` and has predefined
-/// ordering.
-///
-/// It uses `Relaxed` ordering because it is not used for synchronisation.
-#[derive(Debug)]
-pub struct AtomicU64(atomic::AtomicU64);
-
-impl AtomicU64 {
-    pub const fn new(v: u64) -> Self {
-        Self(atomic::AtomicU64::new(v))
-    }
-
-    pub fn load(&self) -> u64 {
-        self.0.load(atomic::Ordering::Relaxed)
-    }
-
-    pub fn store(&self, val: u64) {
-        self.0.store(val, atomic::Ordering::Relaxed)
-    }
-
-    pub fn get_mut(&mut self) -> &mut u64 {
-        self.0.get_mut()
-    }
-}
-
-impl Clone for AtomicU64 {
-    fn clone(&self) -> Self {
-        Self(atomic::AtomicU64::new(self.load()))
-    }
-}
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone)]
@@ -377,7 +380,7 @@ pub struct ZipFileData {
     /// Compression level to store the file
     pub compression_level: Option<i64>,
     /// Last modified time. This will only have a 2 second precision.
-    pub last_modified_time: DateTime,
+    pub last_modified_time: Option<DateTime>,
     /// CRC32 checksum
     pub crc32: u32,
     /// Size of the file in the ZIP
@@ -389,28 +392,40 @@ pub struct ZipFileData {
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Arc<Vec<u8>>,
+    pub extra_field: Option<Arc<Vec<u8>>>,
     /// Extra field only written to central directory
-    pub central_extra_field: Arc<Vec<u8>>,
+    pub central_extra_field: Option<Arc<Vec<u8>>>,
     /// File comment
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
+    /// Specifies where the extra data of the file starts
+    pub extra_data_start: Option<u64>,
     /// Specifies where the central header of the file starts
     ///
     /// Note that when this is not known, it is set to 0
     pub central_header_start: u64,
     /// Specifies where the compressed data of the file starts
-    pub data_start: AtomicU64,
+    pub data_start: OnceLock<u64>,
     /// External file attributes
     pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
     /// AES mode if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
+    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    /// Specifies where in the extra data the AES metadata starts
+    pub aes_extra_data_start: u64,
+
+    /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
+    pub extra_fields: Vec<ExtraField>,
 }
 
 impl ZipFileData {
+    #[allow(dead_code)]
+    pub fn is_dir(&self) -> bool {
+        is_dir(&self.file_name)
+    }
+
     pub fn file_name_sanitized(&self) -> PathBuf {
         let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],
@@ -480,20 +495,56 @@ impl ZipFileData {
         }
     }
 
-    pub const fn zip64_extension(&self) -> bool {
-        self.uncompressed_size > 0xFFFFFFFF
-            || self.compressed_size > 0xFFFFFFFF
-            || self.header_start > 0xFFFFFFFF
-    }
-
-    pub const fn version_needed(&self) -> u16 {
-        // higher versions matched first
-        match (self.zip64_extension(), self.compression_method) {
+    /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
+    pub fn version_needed(&self) -> u16 {
+        let compression_version: u16 = match self.compression_method {
+            CompressionMethod::Stored => 10,
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => 20,
             #[cfg(feature = "bzip2")]
-            (_, crate::compression::CompressionMethod::Bzip2) => 46,
-            (true, _) => 45,
-            _ => 20,
-        }
+            CompressionMethod::Bzip2 => 46,
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => 21,
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => 63,
+            // APPNOTE doesn't specify a version for Zstandard
+            _ => DEFAULT_VERSION as u16,
+        };
+        let crypto_version: u16 = if self.aes_mode.is_some() {
+            51
+        } else if self.encrypted {
+            20
+        } else {
+            10
+        };
+        let misc_feature_version: u16 = if self.large_file {
+            45
+        } else if self
+            .unix_mode()
+            .is_some_and(|mode| mode & S_IFDIR == S_IFDIR)
+        {
+            // file is directory
+            20
+        } else {
+            10
+        };
+        compression_version
+            .max(crypto_version)
+            .max(misc_feature_version)
+    }
+    #[inline(always)]
+    pub(crate) fn extra_field_len(&self) -> usize {
+        self.extra_field
+            .as_ref()
+            .map(|v| v.len())
+            .unwrap_or_default()
+    }
+    #[inline(always)]
+    pub(crate) fn central_extra_field_len(&self) -> usize {
+        self.central_extra_field
+            .as_ref()
+            .map(|v| v.len())
+            .unwrap_or_default()
     }
 }
 
@@ -502,25 +553,33 @@ impl ZipFileData {
 /// According to the [specification](https://www.winzip.com/win/en/aes_info.html#winzip11) AE-2
 /// does not make use of the CRC check.
 #[derive(Copy, Clone, Debug)]
+#[repr(u16)]
 pub enum AesVendorVersion {
-    Ae1,
-    Ae2,
+    Ae1 = 0x0001,
+    Ae2 = 0x0002,
 }
 
 /// AES variant used.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[repr(u8)]
 pub enum AesMode {
-    Aes128,
-    Aes192,
-    Aes256,
+    /// 128-bit AES encryption.
+    Aes128 = 0x01,
+    /// 192-bit AES encryption.
+    Aes192 = 0x02,
+    /// 256-bit AES encryption.
+    Aes256 = 0x03,
 }
 
 #[cfg(feature = "aes-crypto")]
 impl AesMode {
+    /// Length of the salt for the given AES mode.
     pub const fn salt_length(&self) -> usize {
         self.key_length() / 2
     }
 
+    /// Length of the key for the given AES mode.
     pub const fn key_length(&self) -> usize {
         match self {
             Self::Aes128 => 16,
@@ -535,10 +594,14 @@ mod test {
     #[test]
     fn system() {
         use super::System;
-        assert_eq!(System::Dos as u16, 0u16);
-        assert_eq!(System::Unix as u16, 3u16);
-        assert_eq!(System::from_u8(0), System::Dos);
-        assert_eq!(System::from_u8(3), System::Unix);
+        assert_eq!(u8::from(System::Dos), 0u8);
+        assert_eq!(System::Dos as u8, 0u8);
+        assert_eq!(System::Unix as u8, 3u8);
+        assert_eq!(u8::from(System::Unix), 3u8);
+        assert_eq!(System::from(0), System::Dos);
+        assert_eq!(System::from(3), System::Unix);
+        assert_eq!(u8::from(System::Unknown), 4u8);
+        assert_eq!(System::Unknown as u8, 4u8);
     }
 
     #[test]
@@ -552,21 +615,24 @@ mod test {
             using_data_descriptor: false,
             compression_method: crate::compression::CompressionMethod::Stored,
             compression_level: None,
-            last_modified_time: DateTime::default(),
+            last_modified_time: None,
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
             file_name: file_name.clone().into_boxed_str(),
             file_name_raw: file_name.into_bytes().into_boxed_slice(),
-            extra_field: Arc::new(vec![]),
-            central_extra_field: Arc::new(vec![]),
+            extra_field: None,
+            central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
-            data_start: AtomicU64::new(0),
+            extra_data_start: None,
+            data_start: OnceLock::new(),
             central_header_start: 0,
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
+            aes_extra_data_start: 0,
+            extra_fields: Vec::new(),
         };
         assert_eq!(data.file_name_sanitized(), PathBuf::from("path/etc/passwd"));
     }
@@ -587,6 +653,70 @@ mod test {
         let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
         assert_eq!(dt.timepart(), 0b10111_111011_11110);
         assert_eq!(dt.datepart(), 0b1111111_1100_11111);
+    }
+
+    #[test]
+    fn datetime_equality() {
+        use super::DateTime;
+
+        let dt = DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap();
+        assert_eq!(
+            dt,
+            DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()
+        );
+        assert_ne!(dt, DateTime::default());
+    }
+
+    #[test]
+    fn datetime_order() {
+        use std::cmp::Ordering;
+
+        use super::DateTime;
+
+        let dt = DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap();
+        assert_eq!(
+            dt.cmp(&DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()),
+            Ordering::Equal
+        );
+        // year
+        assert!(dt < DateTime::from_date_and_time(2019, 11, 17, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2017, 11, 17, 10, 38, 30).unwrap());
+        // month
+        assert!(dt < DateTime::from_date_and_time(2018, 12, 17, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 10, 17, 10, 38, 30).unwrap());
+        // day
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 18, 10, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 16, 10, 38, 30).unwrap());
+        // hour
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 11, 38, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 9, 38, 30).unwrap());
+        // minute
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 39, 30).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 37, 30).unwrap());
+        // second
+        assert!(dt < DateTime::from_date_and_time(2018, 11, 17, 10, 38, 31).unwrap());
+        assert!(dt > DateTime::from_date_and_time(2018, 11, 17, 10, 38, 29).unwrap());
+    }
+
+    #[test]
+    fn datetime_display() {
+        use super::DateTime;
+
+        assert_eq!(format!("{}", DateTime::default()), "1980-01-01 00:00:00");
+        assert_eq!(
+            format!(
+                "{}",
+                DateTime::from_date_and_time(2018, 11, 17, 10, 38, 30).unwrap()
+            ),
+            "2018-11-17 10:38:30"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                DateTime::from_date_and_time(2107, 12, 31, 23, 59, 59).unwrap()
+            ),
+            "2107-12-31 23:59:59"
+        );
     }
 
     #[test]
@@ -613,9 +743,24 @@ mod test {
 
     #[cfg(feature = "time")]
     #[test]
-    fn datetime_try_from_bounds() {
-        use std::convert::TryFrom;
+    fn datetime_try_from_offset_datetime() {
+        use time::macros::datetime;
 
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30
+        let dt = DateTime::try_from(datetime!(2018-11-17 10:38:30 UTC)).unwrap();
+        assert_eq!(dt.year(), 2018);
+        assert_eq!(dt.month(), 11);
+        assert_eq!(dt.day(), 17);
+        assert_eq!(dt.hour(), 10);
+        assert_eq!(dt.minute(), 38);
+        assert_eq!(dt.second(), 30);
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn datetime_try_from_bounds() {
         use super::DateTime;
         use time::macros::datetime;
 
@@ -632,10 +777,42 @@ mod test {
         assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00 UTC)).is_err());
     }
 
+    #[cfg(feature = "time")]
     #[test]
+    fn offset_datetime_try_from_datetime() {
+        use time::macros::datetime;
+
+        use super::DateTime;
+
+        // 2018-11-17 10:38:30 UTC
+        let dt =
+            OffsetDateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
+        assert_eq!(dt, datetime!(2018-11-17 10:38:30 UTC));
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn offset_datetime_try_from_bounds() {
+        use super::DateTime;
+
+        // 1980-00-00 00:00:00
+        assert!(OffsetDateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0x0000, 0x0000)
+        })
+        .is_err());
+
+        // 2107-15-31 31:63:62
+        assert!(OffsetDateTime::try_from(unsafe {
+            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
+        })
+        .is_err());
+    }
+
+    #[test]
+    #[allow(deprecated)]
     fn time_conversion() {
         use super::DateTime;
-        let dt = DateTime::from_msdos(0x4D71, 0x54CF);
+        let dt = DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap();
         assert_eq!(dt.year(), 2018);
         assert_eq!(dt.month(), 11);
         assert_eq!(dt.day(), 17);
@@ -651,9 +828,10 @@ mod test {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn time_out_of_bounds() {
         use super::DateTime;
-        let dt = DateTime::from_msdos(0xFFFF, 0xFFFF);
+        let dt = unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) };
         assert_eq!(dt.year(), 2107);
         assert_eq!(dt.month(), 15);
         assert_eq!(dt.day(), 31);
@@ -664,7 +842,7 @@ mod test {
         #[cfg(feature = "time")]
         assert!(dt.to_time().is_err());
 
-        let dt = DateTime::from_msdos(0x0000, 0x0000);
+        let dt = unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) };
         assert_eq!(dt.year(), 1980);
         assert_eq!(dt.month(), 0);
         assert_eq!(dt.day(), 0);
@@ -680,7 +858,6 @@ mod test {
     #[test]
     fn time_at_january() {
         use super::DateTime;
-        use std::convert::TryFrom;
 
         // 2020-01-01 00:00:00
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();

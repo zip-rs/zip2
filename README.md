@@ -1,17 +1,17 @@
-zip_next
+zip
 ========
 
-[![Build Status](https://github.com/Pr0methean/zip-next/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip-next/actions?query=branch%3Amaster+workflow%3ACI)
-[![Crates.io version](https://img.shields.io/crates/v/zip_next.svg)](https://crates.io/crates/zip_next)
+[![Build Status](https://github.com/zip-rs/zip2/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip/actions?query=branch%3Amaster+workflow%3ACI)
+[![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
 
-[Documentation](https://docs.rs/zip_next/1.0.0/zip_next/)
+[Documentation](https://docs.rs/zip/latest/zip/)
 
 Info
 ----
 
 
-A zip library for rust which supports reading and writing of simple ZIP files. Forked from https://crates.io/crates/zip 
-to add more features and improve test coverage.
+A zip library for rust which supports reading and writing of simple ZIP files. Formerly hosted at 
+https://github.com/zip-rs/zip2.
 
 Supported compression formats:
 
@@ -20,57 +20,46 @@ Supported compression formats:
 * deflate64 (decompression only)
 * bzip2
 * zstd
+* lzma (decompression only)
 
 Currently unsupported zip extensions:
 
-* Encryption
 * Multi-disk
 
-Usage
------
-
-With all default features:
-
-```toml
-[dependencies]
-zip_next = "1.0.0"
-```
-
-Without the default features:
-
-```toml
-[dependencies]
-zip_next = { version = "1.0.0", default-features = false }
-```
+Features
+--------
 
 The features available are:
 
 * `aes-crypto`: Enables decryption of files which were encrypted with AES. Supports AE-1 and AE-2 methods.
-* `deflate`: Enables decompressing the deflate compression algorithm, which is the default for zip files.
-* `deflate-miniz`: Enables deflating files with the `miniz_oxide` library (used when compression quality is 0..=9).
-* `deflate-zlib`: Enables deflating files with the `zlib` library (used when compression quality is 0..=9).
-* `deflate-zlib-ng`: Enables deflating files with the `zlib-ng` library (used when compression quality is 0..=9).
-  This is the fastest `deflate` implementation available.
+* `deflate`: Enables compressing and decompressing an unspecified implementation (that may change in future versions) of
+ the deflate compression algorithm, which is the default for zip files. Supports compression quality 1..=264.
+* `deflate-flate2`: Combine this with any `flate2` feature flag that enables a back-end, to support deflate compression 
+  at quality 1..=9.
 * `deflate-zopfli`: Enables deflating files with the `zopfli` library (used when compression quality is 10..=264). This
-  is the most effective `deflate` implementation available.
-* `deflate64`: Enables the deflate64 compression algorithm. Decompression is only supported.
+  is the most effective `deflate` implementation available, but also among the slowest.
+* `deflate64`: Enables the deflate64 compression algorithm. Only decompression is supported.
+* `lzma`: Enables the LZMA compression algorithm. Only decompression is supported.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
-* `chrono`: Enables converting last-modified `zip_next::DateTime` to and from `chrono::NaiveDateTime`.
+* `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.
 * `zstd`: Enables the Zstandard compression algorithm.
 
 By default `aes-crypto`, `deflate`, `deflate-zlib-ng`, `deflate-zopfli`, `bzip2`, `time` and `zstd` are enabled.
 
+The following feature flags are deprecated:
+
+* `deflate-miniz`: Use `flate2`'s default backend for compression. Currently the same as `deflate`.
+
 MSRV
 ----
 
-Our current Minimum Supported Rust Version is **1.66.0**. When adding features,
+Our current Minimum Supported Rust Version is **1.73**. When adding features,
 we will follow these guidelines:
 
 - We will always support the latest four minor Rust versions. This gives you a 6
   month window to upgrade your compiler.
-- Any change to the MSRV will be accompanied with a **minor** version bump
-   - While the crate is pre-1.0, this will be a change to the PATCH version.
+- Any change to the MSRV will be accompanied with a **minor** version bump.
 
 Examples
 --------
@@ -81,6 +70,7 @@ See the [examples directory](examples) for:
    * How to extract a zip file.
    * How to extract a single file from a zip.
    * How to read a zip from the standard input.
+   * How to append a directory to an existing archive
 
 Fuzzing
 -------

@@ -14,7 +14,7 @@ fn real_main() -> i32 {
     let fname = std::path::Path::new(&*args[1]);
     let file = fs::File::open(fname).unwrap();
 
-    let mut archive = zip_next::ZipArchive::new(file).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).unwrap();
@@ -30,7 +30,7 @@ fn real_main() -> i32 {
             }
         }
 
-        if (*file.name()).ends_with('/') {
+        if file.is_dir() {
             println!("File {} extracted to \"{}\"", i, outpath.display());
             fs::create_dir_all(&outpath).unwrap();
         } else {

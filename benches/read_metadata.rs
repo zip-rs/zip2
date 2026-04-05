@@ -3,8 +3,8 @@ use bencher::{benchmark_group, benchmark_main};
 use std::io::{Cursor, Write};
 
 use bencher::Bencher;
-use zip_next::write::FileOptions;
-use zip_next::{CompressionMethod, ZipArchive, ZipWriter};
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 const FILE_COUNT: usize = 15_000;
 const FILE_SIZE: usize = 1024;
@@ -12,13 +12,13 @@ const FILE_SIZE: usize = 1024;
 fn generate_random_archive(count_files: usize, file_size: usize) -> Vec<u8> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     let bytes = vec![0u8; file_size];
 
     for i in 0..count_files {
         let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
-        writer.start_file(name, options.clone()).unwrap();
+        writer.start_file(name, options).unwrap();
         writer.write_all(&bytes).unwrap();
     }
 
