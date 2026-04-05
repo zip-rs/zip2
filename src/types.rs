@@ -776,6 +776,19 @@ impl AesVendorVersion {
     }
 }
 
+impl TryFrom<u16> for AesVendorVersion {
+    type Error = &'static str;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        let aes_vendor_version = match value {
+            0x0001 => AesVendorVersion::Ae1,
+            0x0002 => AesVendorVersion::Ae2,
+            _ => return Err("Invalid AES vendor version"),
+        };
+        Ok(aes_vendor_version)
+    }
+}
+
 impl From<AesVendorVersion> for u16 {
     fn from(value: AesVendorVersion) -> Self {
         value as u16
@@ -810,6 +823,20 @@ impl Display for AesMode {
             Self::Aes192 => write!(f, "AES-192"),
             Self::Aes256 => write!(f, "AES-256"),
         }
+    }
+}
+
+impl TryFrom<u8> for AesMode {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let mode = match value {
+            0x01 => AesMode::Aes128,
+            0x02 => AesMode::Aes192,
+            0x03 => AesMode::Aes256,
+            _ => return Err("Invalid AES encryption strength"),
+        };
+        Ok(mode)
     }
 }
 
