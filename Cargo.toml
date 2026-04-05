@@ -52,6 +52,7 @@ getrandom = { version = "0.4", default-features = false, optional = true }
 time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
 getrandom = { version = "0.4", default-features = false }
 
 # wasm32
@@ -67,7 +68,7 @@ getrandom = { version = "0.4", default-features = false, features = ["wasm_js"] 
 wasm-bindgen-test = "^0.3.56"
 
 [dev-dependencies]
-bencher = "0.1"
+bencher = "0.1.5"
 getrandom = { version = "0.4", default-features = false }
 walkdir = "2.5"
 time = { version = "^0.3.47", features = ["formatting", "macros"] }
@@ -137,3 +138,8 @@ harness = false
 [[bench]]
 name = "merge_archive"
 harness = false
+
+[[bench]]
+name = "criterion_bench"
+harness = false
+
