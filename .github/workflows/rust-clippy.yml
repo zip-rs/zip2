@@ -1,0 +1,61 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+# rust-clippy is a tool that runs a bunch of lints to catch common
+# mistakes in your Rust code and help improve your Rust code.
+# More details at https://github.com/rust-lang/rust-clippy
+# and https://rust-lang.github.io/rust-clippy/
+
+name: rust-clippy analyze
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: [ "master" ]
+  schedule:
+    - cron: '41 16 * * 6'
+
+jobs:
+  rust-clippy-analyze:
+    name: Run rust-clippy analyzing
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      - name: Run rust-clippy
+        run: |
+          # Check with default features
+          cargo clippy --message-format=json | clippy-sarif | tee rust-clippy-results-default.sarif | sarif-fmt
+          # Check with all features
+          cargo clippy --all-features --message-format=json | clippy-sarif | tee rust-clippy-results-all.sarif | sarif-fmt
+          # Check with no default features
+          cargo clippy --no-default-features --message-format=json | clippy-sarif | tee rust-clippy-results-no-default.sarif | sarif-fmt
+        continue-on-error: true
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Upload analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rust-clippy-results-*.sarif
+          wait-for-processing: true
+          components: clippy
+          override: true
+
+      - name: Install required cargo
+        run: cargo install clippy-sarif sarif-fmt
+
+      - name: Run rust-clippy
+        run:
+          cargo clippy
+          --all-features
+          --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        continue-on-error: true
+
+      - name: Upload analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rust-clippy-results.sarif
+          wait-for-processing: true
