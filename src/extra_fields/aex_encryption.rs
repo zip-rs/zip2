@@ -1,10 +1,14 @@
 //! AE-x encryption structure extra field
 
+use std::io::{ErrorKind, Read};
+
 use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
+use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
 use crate::spec::Pod;
 use crate::types::AesVendorVersion;
+use crate::unstable::LittleEndianReadExt;
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
@@ -47,6 +51,43 @@ impl AexEncryption {
             compression_method: compression_method.serialize_to_u16(),
         }
         .to_le()
+    }
+
+    #[inline]
+    pub(crate) fn parse<R: Read>(
+        reader: &mut R,
+        len: u16,
+        aes_mode_options: &mut Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+        compression_method: &mut CompressionMethod,
+    ) -> ZipResult<()> {
+        if len != 7 {
+            return Err(ZipError::UnsupportedArchive(
+                "AES extra data field has an unsupported length",
+            ));
+        }
+        let vendor_version = reader.read_u16_le()?;
+        let vendor_id = reader.read_u16_le()?;
+        let mut buff = [0u8];
+        if let Err(e) = reader.read_exact(&mut buff) {
+            if e.kind() == ErrorKind::UnexpectedEof {
+                return Err(invalid!("AES extra field truncated"));
+            }
+            return Err(e.into());
+        }
+        let aes_mode = buff[0]
+            .try_into()
+            .map_err(|msg| invalid_archive_const(msg))?;
+        let comp_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
+
+        if vendor_id != 0x4541 {
+            return Err(invalid!("Invalid AES vendor"));
+        }
+        let vendor_version = vendor_version
+            .try_into()
+            .map_err(|msg| invalid_archive_const(msg))?;
+        *aes_mode_options = Some((aes_mode, vendor_version, comp_method));
+        *compression_method = comp_method;
+        Ok(())
     }
 }
 
