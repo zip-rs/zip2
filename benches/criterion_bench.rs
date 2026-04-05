@@ -146,7 +146,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_read_entry,
         generate_random_archive(1024 * 1024),
     )
-    .unwrap();
+        .unwrap();
 
     c.bench_function("read_entry", |b| {
         b.iter(|| {
@@ -174,7 +174,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_meta,
         generate_random_archive_meta(FILE_COUNT, FILE_SIZE_META).unwrap(),
     )
-    .unwrap();
+        .unwrap();
 
     c.bench_function("read_metadata", |b| {
         b.iter(|| {
@@ -253,7 +253,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_all_entries,
         generate_random_archive_meta(READ_ALL_ENTRIES_FILES, 512).unwrap(),
     )
-    .unwrap();
+        .unwrap();
 
     c.bench_function("read_all_entries", |b| {
         b.iter(|| {
@@ -291,7 +291,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_comment,
         generate_archive_with_comment(COMMENT_BENCH_LEN).unwrap(),
     )
-    .unwrap();
+        .unwrap();
 
     c.bench_function("parse_archive_with_comment", |b| {
         b.iter(|| {
@@ -309,7 +309,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_stream,
         generate_random_archive_meta(STREAM_ENTRIES, STREAM_ENTRY_SIZE).unwrap(),
     )
-    .unwrap();
+        .unwrap();
 
     c.bench_function("read_stream_entries", |b| {
         b.iter(|| {
@@ -412,10 +412,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                 4096,
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
             )
-            .unwrap()
-            .1,
+                .unwrap()
+                .1,
         )
-        .unwrap();
+            .unwrap();
 
         c.bench_function("read_deflated_entry", |b| {
             b.iter(|| {
