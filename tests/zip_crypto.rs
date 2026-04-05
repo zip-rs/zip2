@@ -101,6 +101,22 @@ fn encrypted_file() {
         file.read_to_end(&mut data).unwrap();
         assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
     }
+
+    // Again, but with the options API.
+    {
+        use zip::read::ZipReadOptions;
+
+        // Correct password, read contents
+        let mut file = archive
+            .by_index_with_options(0, ZipReadOptions::new().password(Some("test".as_bytes())))
+            .unwrap();
+        let file_name = file.enclosed_name().unwrap();
+        assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
+
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
+    }
 }
 
 #[test]
