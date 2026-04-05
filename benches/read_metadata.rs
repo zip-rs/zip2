@@ -1,12 +1,12 @@
 use bencher::{benchmark_group, benchmark_main};
 
 use std::fs;
-use std::io::{self, prelude::*, Cursor};
+use std::io::{Cursor, Write};
 
 use bencher::Bencher;
 use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
-use zip::{result::ZipResult, CompressionMethod, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult};
 
 const FILE_COUNT: usize = 15_000;
 const FILE_SIZE: usize = 1024;
@@ -18,10 +18,12 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> ZipResult<Ve
 
     let mut bytes = vec![0u8; file_size];
 
-    for i in 0..count_files {
-        let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
+    for file_index in 0..count_files {
+        let name =
+            format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{file_index}.dat");
         writer.start_file(name, options)?;
-        getrandom::fill(&mut bytes).map_err(io::Error::from)?;
+        getrandom::fill(&mut bytes)
+            .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
         writer.write_all(&bytes)?;
     }
 
@@ -46,7 +48,8 @@ fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResul
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes).unwrap();
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
     writer.set_raw_comment(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
@@ -75,8 +78,9 @@ fn generate_zip64_archive_with_random_comment(comment_length: usize) -> ZipResul
         .large_file(true);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes).unwrap();
-    writer.set_raw_comment(bytes.into_boxed_slice());
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+    writer.set_raw_zip64_comment(Some(bytes.into_boxed_slice()));
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
@@ -100,7 +104,7 @@ fn parse_stream_archive(bench: &mut Bencher) {
 
     let bytes = generate_random_archive(STREAM_ZIP_ENTRIES, STREAM_FILE_SIZE).unwrap();
 
-    /* Write to a temporary file path to incur some filesystem overhead from repeated reads */
+    // Write to a temporary file path to incur some filesystem overhead from repeated reads
     let dir = TempDir::with_prefix("stream-bench").unwrap();
     let out = dir.path().join("bench-out.zip");
     fs::write(&out, &bytes).unwrap();
@@ -116,13 +120,13 @@ fn parse_stream_archive(bench: &mut Bencher) {
 }
 
 fn parse_large_non_zip(bench: &mut Bencher) {
-    const FILE_SIZE: usize = 17_000_000;
+    const LARGE_FILE_SIZE: usize = 17_000_000;
 
     // Create a large file that doesn't have a zip header (generating random data _might_ make a zip magic
     // number somewhere which is _not_ what we're trying to test).
     let dir = TempDir::with_prefix("large-non-zip-bench").unwrap();
     let file = dir.path().join("zeros");
-    let buf = vec![0u8; FILE_SIZE];
+    let buf = vec![0u8; LARGE_FILE_SIZE];
     fs::write(&file, &buf).unwrap();
 
     bench.iter(|| {

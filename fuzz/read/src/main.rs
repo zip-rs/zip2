@@ -1,15 +1,19 @@
+#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
+
+#[cfg(fuzzing)]
 use afl::fuzz;
 use std::io::{Read, Seek, SeekFrom};
+#[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
 use zip::read::read_zipfile_from_stream;
 
 const MAX_BYTES_TO_READ: u64 = 1 << 24;
 
+#[cfg(fuzzing)]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    let reader = std::io::Cursor::new(data);
+fn decompress_all(reader: impl Read + Seek) -> Result<(), Box<dyn std::error::Error>> {
     let mut zip = zip::ZipArchive::new(reader)?;
 
     for i in 0..zip.len() {
@@ -25,7 +29,17 @@ fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() {
+    #[cfg(fuzzing)]
     fuzz!(|data: &[u8]| {
-        let _ = decompress_all(data);
+        let reader = std::io::Cursor::new(data);
+        let _ = decompress_all(reader);
     });
+
+    #[cfg(not(fuzzing))]
+    {
+        let mut v = Vec::new();
+        std::io::stdin().read_to_end(&mut v).unwrap();
+        let reader = std::io::Cursor::new(v);
+        decompress_all(reader).unwrap();
+    }
 }

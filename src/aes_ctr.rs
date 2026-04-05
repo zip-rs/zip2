@@ -2,12 +2,11 @@
 //!
 //! This was implemented since the zip specification requires the mode to not use a nonce and uses a
 //! different byte order (little endian) than NIST (big endian).
-//! See [AesCtrZipKeyStream] for more information.
+//! See [`AesCtrZipKeyStream`] for more information.
 
-use crate::unstable::LittleEndianWriteExt;
-use aes::cipher::generic_array::GenericArray;
+use crate::result::{ZipError, ZipResult};
 use aes::cipher::{BlockEncrypt, KeyInit};
-use std::{any, fmt};
+use core::{any, fmt};
 
 /// Internal block size of an AES cipher.
 const AES_BLOCK_SIZE: usize = 16;
@@ -15,7 +14,7 @@ const AES_BLOCK_SIZE: usize = 16;
 /// AES-128.
 #[derive(Debug)]
 pub struct Aes128;
-/// AES-192
+/// AES-192.
 #[derive(Debug)]
 pub struct Aes192;
 /// AES-256.
@@ -47,9 +46,9 @@ impl AesKind for Aes256 {
 
 /// An AES-CTR key stream generator.
 ///
-/// Implements the slightly non-standard AES-CTR variant used by WinZip AES encryption.
+/// Implements the slightly non-standard AES-CTR variant used by `WinZip` AES encryption.
 ///
-/// Typical AES-CTR implementations combine a nonce with a 64 bit counter. WinZIP AES instead uses
+/// Typical AES-CTR implementations combine a nonce with a 64 bit counter. `WinZIP` AES instead uses
 /// no nonce and also uses a different byte order (little endian) than NIST (big endian).
 ///
 /// The stream implements the `Read` trait; encryption or decryption is performed by XOR-ing the
@@ -86,16 +85,14 @@ where
 {
     /// Creates a new zip variant AES-CTR key stream.
     ///
-    /// # Panics
-    ///
-    /// This panics if `key` doesn't have the correct size for cipher `C`.
-    pub fn new(key: &[u8]) -> AesCtrZipKeyStream<C> {
-        AesCtrZipKeyStream {
+    /// Returns `ZipError::InvalidPassword` if `key` doesn't have the correct size for cipher `C`.
+    pub fn new(key: &[u8]) -> ZipResult<AesCtrZipKeyStream<C>> {
+        Ok(AesCtrZipKeyStream {
             counter: 1,
-            cipher: C::Cipher::new(GenericArray::from_slice(key)),
+            cipher: C::Cipher::new_from_slice(key).map_err(|_| ZipError::InvalidPassword)?,
             buffer: [0u8; AES_BLOCK_SIZE],
             pos: AES_BLOCK_SIZE,
-        }
+        })
     }
 }
 
@@ -109,13 +106,8 @@ where
     fn crypt_in_place(&mut self, mut target: &mut [u8]) {
         while !target.is_empty() {
             if self.pos == AES_BLOCK_SIZE {
-                // Note: AES block size is always 16 bytes, same as u128.
-                self.buffer
-                    .as_mut()
-                    .write_u128_le(self.counter)
-                    .expect("did not expect u128 le conversion to fail");
-                self.cipher
-                    .encrypt_block(GenericArray::from_mut_slice(&mut self.buffer));
+                self.buffer = self.counter.to_le_bytes();
+                self.cipher.encrypt_block(self.buffer.as_mut().into());
                 self.counter += 1;
                 self.pos = 0;
             }
@@ -140,7 +132,11 @@ pub trait AesCipher {
 /// XORs a slice in place with another slice.
 #[inline]
 fn xor(dest: &mut [u8], src: &[u8]) {
-    assert_eq!(dest.len(), src.len());
+    debug_assert_eq!(
+        dest.len(),
+        src.len(),
+        "XOR operation requires destination and source slices to have equal length"
+    );
 
     for (lhs, rhs) in dest.iter_mut().zip(src.iter()) {
         *lhs ^= *rhs;
@@ -153,28 +149,28 @@ mod tests {
     use aes::cipher::{BlockEncrypt, KeyInit};
 
     /// Checks whether `crypt_in_place` produces the correct plaintext after one use and yields the
-    /// cipertext again after applying it again.
+    /// ciphertext again after applying it again.
     fn roundtrip<Aes>(key: &[u8], ciphertext: &[u8], expected_plaintext: &[u8])
     where
         Aes: AesKind,
         Aes::Cipher: KeyInit + BlockEncrypt,
     {
-        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
+        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key).unwrap();
 
         let mut plaintext = ciphertext.to_vec().into_boxed_slice();
         key_stream.crypt_in_place(&mut plaintext);
         assert_eq!(*plaintext, *expected_plaintext);
 
         // Round-tripping should yield the ciphertext again.
-        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
+        let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key).unwrap();
         key_stream.crypt_in_place(&mut plaintext);
         assert_eq!(*plaintext, *ciphertext);
     }
 
     #[test]
-    #[should_panic]
     fn new_with_wrong_key_size() {
-        AesCtrZipKeyStream::<Aes128>::new(&[1, 2, 3, 4, 5]);
+        AesCtrZipKeyStream::<Aes128>::new(&[1, 2, 3, 4, 5])
+            .expect_err("Wrong key size should fail");
     }
 
     // The data used in these tests was generated with p7zip without any compression.
