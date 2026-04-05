@@ -6,9 +6,7 @@ use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::fs;
 use std::hint::black_box;
 use std::io::{self, Cursor, Read, Seek, Write};
-use zip_next::{
-    CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::FileOptions,
-};
+use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 // Deterministic seeded randomness helper (SplitMix64; no external dependencies, no syscalls).
 // Why we use this instead of the getrandom crate:
@@ -39,7 +37,7 @@ fn seeded_random_bytes(size: usize) -> Vec<u8> {
 
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     writer.start_file("random.dat", options).unwrap();
 
     // generate deterministic seeded random data
@@ -54,14 +52,14 @@ const FILE_SIZE_META: usize = 1024;
 
 fn generate_random_archive_meta(count_files: usize, file_size: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     // seeded random payload reused across entries
     let bytes = seeded_random_bytes(file_size);
 
     for i in 0..count_files {
         let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
-        writer.start_file(name, options.clone())?;
+        writer.start_file(name, options)?;
         writer.write_all(&bytes)?;
     }
 
@@ -71,7 +69,7 @@ fn generate_random_archive_meta(count_files: usize, file_size: usize) -> ZipResu
 fn generate_random_archive_merge(
     num_entries: usize,
     entry_size: usize,
-    options: FileOptions,
+    options: SimpleFileOptions,
 ) -> ZipResult<(usize, Vec<u8>)> {
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
@@ -81,7 +79,7 @@ fn generate_random_archive_merge(
 
     for i in 0..num_entries {
         let name = format!("random{i}.dat");
-        zip.start_file(name, options.clone())?;
+        zip.start_file(name, options)?;
         zip.write_all(&bytes)?;
     }
 
@@ -89,6 +87,14 @@ fn generate_random_archive_merge(
     let len = buf.len();
 
     Ok((len, buf))
+}
+
+fn perform_merge<R: Read + Seek, W: Write + Seek>(
+    src: ZipArchive<R>,
+    mut target: ZipWriter<W>,
+) -> ZipResult<ZipWriter<W>> {
+    target.merge_archive(src)?;
+    Ok(target)
 }
 
 fn perform_raw_copy_file<R: Read + Seek, W: Write + Seek>(
@@ -118,9 +124,9 @@ const ROUNDTRIP_ENTRIES: usize = 100;
 
 fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let comment = seeded_random_bytes(comment_len);
-    writer.set_raw_comment(comment);
+    writer.set_raw_comment(comment.into_boxed_slice());
     writer.start_file("data.txt", options)?;
     writer.write_all(b"x")?;
     Ok(writer.finish()?.into_inner())
@@ -181,11 +187,39 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     // ============================================================================
+    // merge_archive_stored
+    // Source zip on disk; merge into a new file each batch (stored method).
+    // ============================================================================
+    let merge_options =
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let path_merge_src = p("merge_src.zip");
+    let path_merge_out = p("merge_out.zip");
+    let (len, src_bytes) =
+        generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, merge_options).unwrap();
+    fs::write(&path_merge_src, &src_bytes).unwrap();
+
+    c.bench_function("merge_archive_stored", |b| {
+        b.iter_batched(
+            || {
+                let src = ZipArchive::new(fs::File::open(&path_merge_src).unwrap()).unwrap();
+                let out = fs::File::create(&path_merge_out).unwrap();
+                (src, out)
+            },
+            |(src, out)| {
+                let zip = ZipWriter::new(out);
+                let zip = perform_merge(src, zip).unwrap();
+                let out = zip.finish().unwrap();
+                assert_eq!(out.metadata().unwrap().len() as usize, len);
+                black_box(out);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    // ============================================================================
     // merge_archive_raw_copy_file_stored
     // Second merge source (independent); raw_copy_file path.
     // ============================================================================
-    let merge_options =
-        FileOptions::default().compression_method(CompressionMethod::Stored);
     let path_merge_src2 = p("merge_src2.zip");
     let path_merge_out2 = p("merge_out2.zip");
     let (len2, src_bytes2) =
@@ -201,7 +235,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
             |(src, out)| {
                 let zip = ZipWriter::new(out);
-                let mut zip = perform_raw_copy_file(src, zip).unwrap();
+                let zip = perform_raw_copy_file(src, zip).unwrap();
                 let out = zip.finish().unwrap();
                 assert_eq!(out.metadata().unwrap().len() as usize, len2);
                 black_box(out);
@@ -280,7 +314,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("read_stream_entries", |b| {
         b.iter(|| {
             let mut f = fs::File::open(&path_stream).unwrap();
-            while zip_next::read::read_zipfile_from_stream(&mut f)
+            while zip::read::read_zipfile_from_stream(&mut f)
                 .unwrap()
                 .is_some()
             {}
@@ -312,10 +346,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut writer = ZipWriter::new(fs::File::create(&path_write_many).unwrap());
             let options =
-                FileOptions::default().compression_method(CompressionMethod::Stored);
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..WRITE_MANY_FILES {
                 let name = format!("file_{i}.dat");
-                writer.start_file(name, options.clone()).unwrap();
+                writer.start_file(name, options).unwrap();
                 writer.write_all(&payload_small).unwrap();
             }
             black_box(writer.finish().unwrap());
@@ -333,7 +367,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut writer = ZipWriter::new(fs::File::create(&path_write_large).unwrap());
             let options =
-                FileOptions::default().compression_method(CompressionMethod::Stored);
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             writer.start_file("large.dat", options).unwrap();
             writer.write_all(&payload_large).unwrap();
             black_box(writer.finish().unwrap());
@@ -351,10 +385,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut writer = ZipWriter::new(fs::File::create(&path_roundtrip).unwrap());
             let options =
-                FileOptions::default().compression_method(CompressionMethod::Stored);
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
             for i in 0..ROUNDTRIP_ENTRIES {
                 writer
-                    .start_file(format!("entry_{i}.dat"), options.clone())
+                    .start_file(format!("entry_{i}.dat"), options)
                     .unwrap();
                 writer.write_all(&roundtrip_payload).unwrap();
             }
@@ -376,7 +410,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             generate_random_archive_merge(
                 5,
                 4096,
-                FileOptions::default().compression_method(CompressionMethod::Deflated),
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
             )
                 .unwrap()
                 .1,
@@ -406,11 +440,11 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let mut writer = ZipWriter::new(fs::File::create(&path_deflate_write).unwrap());
 
                 let options =
-                    FileOptions::default().compression_method(CompressionMethod::Deflated);
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
                 for i in 0..20 {
                     writer
-                        .start_file(format!("deflated_{i}.dat"), options.clone())
+                        .start_file(format!("deflated_{i}.dat"), options)
                         .unwrap();
                     writer.write_all(&deflate_payload).unwrap();
                 }
