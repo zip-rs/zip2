@@ -76,7 +76,7 @@ impl AexEncryption {
         }
         let aes_mode = buff[0]
             .try_into()
-            .map_err(|msg| invalid_archive_const(msg))?;
+            .map_err(invalid_archive_const)?;
         let comp_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
 
         if vendor_id != 0x4541 {
@@ -84,7 +84,7 @@ impl AexEncryption {
         }
         let vendor_version = vendor_version
             .try_into()
-            .map_err(|msg| invalid_archive_const(msg))?;
+            .map_err(invalid_archive_const)?;
         *aes_mode_options = Some((aes_mode, vendor_version, comp_method));
         *compression_method = comp_method;
         Ok(())
