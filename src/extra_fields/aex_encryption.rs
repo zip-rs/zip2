@@ -115,4 +115,67 @@ mod tests {
         // test length used in write.rs
         assert_eq!(buf[std::mem::offset_of!(AexEncryption, version)..].len(), 7);
     }
+
+    #[test]
+    fn test_too_long_length() {
+        use super::AexEncryption;
+        use crate::CompressionMethod;
+        use std::io::Cursor;
+
+        let data = &[0, 1, 2, 3, 4, 5, 6, 7];
+        let len = data.len() as u16;
+        let mut cursor = Cursor::new(data);
+        let mut aes_mode_options = None;
+        let mut compression_method = CompressionMethod::Stored;
+
+        let res = AexEncryption::parse(
+            &mut cursor,
+            len,
+            &mut aes_mode_options,
+            &mut compression_method,
+        );
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_serialize_parse() {
+        use super::AexEncryption;
+        use crate::AesMode;
+        use crate::CompressionMethod;
+        use crate::spec::Pod;
+        use crate::types::AesVendorVersion;
+        use std::io::Cursor;
+
+        let aex_encryption = AexEncryption::new(
+            AesVendorVersion::Ae2,
+            AesMode::Aes256,
+            CompressionMethod::Stored,
+        );
+
+        let data = aex_encryption.as_bytes();
+        let len_data = u16::from_le_bytes([data[2], data[3]]);
+        let data = &data[4..]; // remove the signature
+        let len = data.len() as u16;
+        assert_eq!(len_data, len);
+        assert_eq!(len, 7);
+        let mut cursor = Cursor::new(data);
+        let mut aes_mode_options = None;
+        let mut compression_method = CompressionMethod::Stored;
+
+        let res = AexEncryption::parse(
+            &mut cursor,
+            len,
+            &mut aes_mode_options,
+            &mut compression_method,
+        );
+        assert!(res.is_ok());
+        assert_eq!(
+            aes_mode_options,
+            Some((
+                AesMode::Aes256,
+                AesVendorVersion::Ae2,
+                CompressionMethod::Stored
+            ))
+        );
+    }
 }
