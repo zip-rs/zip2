@@ -780,12 +780,12 @@ impl TryFrom<u16> for AesVendorVersion {
     type Error = &'static str;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        let mode = match value {
+        let aes_vendor_version = match value {
             0x0001 => AesVendorVersion::Ae1,
             0x0002 => AesVendorVersion::Ae2,
             _ => return Err("Invalid AES vendor version"),
         };
-        Ok(mode)
+        Ok(aes_vendor_version)
     }
 }
 
