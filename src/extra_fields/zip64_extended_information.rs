@@ -188,7 +188,7 @@ impl Zip64ExtendedInformation {
                 }
                 Err(e) => return Err(e.into()),
             };
-            consumed_len += size_of::<u64>();
+            consumed_len += mem::size_of::<u64>();
         }
 
         if len >= 24 || *compressed_size == ZIP64_BYTES_THR {
@@ -199,7 +199,7 @@ impl Zip64ExtendedInformation {
                 }
                 Err(e) => return Err(e.into()),
             };
-            consumed_len += size_of::<u64>();
+            consumed_len += mem::size_of::<u64>();
         }
 
         if len >= 24 || *header_start == ZIP64_BYTES_THR {
@@ -210,7 +210,7 @@ impl Zip64ExtendedInformation {
                 }
                 Err(e) => return Err(e.into()),
             };
-            consumed_len += size_of::<u64>();
+            consumed_len += mem::size_of::<u64>();
         }
 
         let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
