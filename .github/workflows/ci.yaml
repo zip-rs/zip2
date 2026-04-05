@@ -1,6 +1,7 @@
 name: CI
 permissions:
   contents: read
+  security-events: write
 
 on:
   pull_request:
@@ -59,7 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-    - run: sudo apt install gcc-s390x-linux-gnu
+    - run: sudo apt-get update
+    - run: sudo apt-get install crossbuild-essential-s390x
     - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
     - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
     - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
@@ -115,8 +117,15 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-    - run: cargo clippy --all-targets ${{ matrix.feature_flag }} -- -D warnings
+    - name: Install required cargo
+      run: cargo install clippy-sarif sarif-fmt
+    - run: cargo clippy --all-targets ${{ matrix.feature_flag }} -- -D warnings --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+    - name: Upload analysis results to GitHub
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: rust-clippy-results.sarif
+        wait-for-processing: true
     - run: cargo doc --no-deps ${{ matrix.feature_flag }}
 
   fuzz_read:

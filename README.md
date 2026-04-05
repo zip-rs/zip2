@@ -1,33 +1,8 @@
 zip
 ========
 
-[![Build Status](https://github.com/zip-rs/zip2/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip/actions?query=branch%3Amaster+workflow%3ACI)
+[![Build Status](https://github.com/zip-rs/zip2/actions/workflows/ci.yaml/badge.svg)](https://github.com/zip-rs/zip2/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
-
-[Documentation](https://docs.rs/zip/latest/zip/)
-
-Info
-----
-
-
-A zip library for rust which supports reading and writing of simple ZIP files. Formerly hosted at
-https://github.com/zip-rs/zip2.
-
-Supported compression formats:
-
-* stored (i.e. none)
-* deflate
-* deflate64 (decompression only)
-* bzip2
-* zstd
-* lzma (decompression only)
-* xz
-* ppmd
-
-Currently unsupported zip extensions:
-
-* Multi-disk
-
 Features
 --------
 

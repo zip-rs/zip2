@@ -3,6 +3,7 @@ dependencies_update = true # update dependencies with `cargo update`
 pr_labels = ["release"] # add the `release` label to the release Pull Request
 release_commits = "^(feat|fix|perf|refactor):" # prepare release only if at least one commit matches a regex
 git_release_type = "auto"
+release_always = false
 
 [changelog]
 protect_breaking_commits = true
