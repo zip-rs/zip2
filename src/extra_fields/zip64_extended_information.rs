@@ -11,8 +11,7 @@
 //!
 
 use core::mem;
-use std::io::ErrorKind;
-use std::io::Read;
+use std::io::{ErrorKind, Read, copy, sink};
 
 use crate::unstable::LittleEndianReadExt;
 use crate::{
@@ -216,7 +215,8 @@ impl Zip64ExtendedInformation {
         let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
             return Err(invalid!("ZIP64 extra-data field is the wrong length"));
         };
-        if let Err(e) = reader.read_exact(&mut vec![0u8; leftover_len]) {
+        let mut limited = reader.take(leftover_len as u64);
+        if let Err(e) = copy(&mut limited, &mut sink()) {
             if e.kind() == ErrorKind::UnexpectedEof {
                 return Err(invalid!("ZIP64 extra field truncated"));
             }
