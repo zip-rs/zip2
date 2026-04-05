@@ -13,9 +13,20 @@ use zip::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
 #[test]
 fn end_to_end() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
+        if method == CompressionMethod::DEFLATE
+            && cfg!(all(
+                feature = "deflate-zopfli",
+                not(feature = "deflate-flate2")
+            ))
+        {
+            // We do not support DEFLATE decompression without the `flate2` feature.
+            continue;
+        }
+
         if method == CompressionMethod::DEFLATE64 {
             continue;
         }
+
         let file = &mut Cursor::new(Vec::new());
 
         println!("Writing file with {method} compression");
@@ -32,9 +43,20 @@ fn end_to_end() {
 #[test]
 fn copy() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
+        if method == CompressionMethod::DEFLATE
+            && cfg!(all(
+                feature = "deflate-zopfli",
+                not(feature = "deflate-flate2")
+            ))
+        {
+            // We do not support DEFLATE decompression without the `flate2` feature.
+            continue;
+        }
+
         if method == CompressionMethod::DEFLATE64 {
             continue;
         }
+
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method, false);
 
@@ -74,9 +96,20 @@ fn copy() {
 #[test]
 fn append() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
+        if method == CompressionMethod::DEFLATE
+            && cfg!(all(
+                feature = "deflate-zopfli",
+                not(feature = "deflate-flate2")
+            ))
+        {
+            // We do not support DEFLATE decompression without the `flate2` feature.
+            continue;
+        }
+
         if method == CompressionMethod::DEFLATE64 {
             continue;
         }
+
         for shallow_copy in &[false, true] {
             println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
             let mut file = &mut Cursor::new(Vec::new());
@@ -128,7 +161,9 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
     zip.start_file("test/☃.txt", options.clone()).unwrap();
     zip.write_all(b"Hello, World!\n").unwrap();
 
-    options.add_extra_data(0xbeef, EXTRA_DATA, false).unwrap();
+    options
+        .add_extra_data(0xbeef, EXTRA_DATA.to_owned().into_boxed_slice(), false)
+        .unwrap();
 
     zip.start_file("test_with_extra_data/🐢.txt", options)
         .unwrap();
