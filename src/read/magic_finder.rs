@@ -5,7 +5,7 @@ use memchr::memmem::{Finder, FinderRev};
 use std::io::{Read, Seek, SeekFrom};
 
 const MAGIC_LENGTH: usize = 4;
-type MagicSize = [u8; MAGIC_LENGTH];
+type MagicLengthByteArray = [u8; MAGIC_LENGTH];
 
 pub(crate) trait FinderDirection<'a, B> {
     fn new(needle: &'a B) -> Self;
@@ -18,8 +18,8 @@ pub(crate) trait FinderDirection<'a, B> {
 }
 
 pub(crate) struct Forward<'a>(Finder<'a>);
-impl<'a> FinderDirection<'a, MagicSize> for Forward<'a> {
-    fn new(needle: &'a MagicSize) -> Self {
+impl<'a> FinderDirection<'a, MagicLengthByteArray> for Forward<'a> {
+    fn new(needle: &'a MagicLengthByteArray) -> Self {
         Self(Finder::new(needle))
     }
 
@@ -52,8 +52,8 @@ impl<'a> FinderDirection<'a, MagicSize> for Forward<'a> {
 }
 
 pub(crate) struct Backwards<'a>(FinderRev<'a>);
-impl<'a> FinderDirection<'a, MagicSize> for Backwards<'a> {
-    fn new(needle: &'a MagicSize) -> Self {
+impl<'a> FinderDirection<'a, MagicLengthByteArray> for Backwards<'a> {
+    fn new(needle: &'a MagicLengthByteArray) -> Self {
         Self(FinderRev::new(needle))
     }
 
@@ -110,10 +110,10 @@ pub(crate) struct MagicFinder<Direction> {
     bounds: (u64, u64),
 }
 
-impl<'a, T: FinderDirection<'a, MagicSize>> MagicFinder<T> {
+impl<'a, T: FinderDirection<'a, MagicLengthByteArray>> MagicFinder<T> {
     /// Create a new magic bytes finder to look within specific bounds.
     pub(crate) fn new(
-        magic_bytes: &'a MagicSize,
+        magic_bytes: &'a MagicLengthByteArray,
         start_inclusive: u64,
         end_exclusive: u64,
     ) -> Self {
@@ -129,7 +129,7 @@ impl<'a, T: FinderDirection<'a, MagicSize>> MagicFinder<T> {
     /// Repurpose the finder for different bytes or bounds.
     pub(crate) fn repurpose(
         &mut self,
-        magic_bytes: &'a MagicSize,
+        magic_bytes: &'a MagicLengthByteArray,
         bounds: (u64, u64),
     ) -> &mut Self {
         self.finder = T::new(magic_bytes);
@@ -222,7 +222,7 @@ pub(crate) struct OptimisticMagicFinder<Direction> {
     initial_guess: Option<(u64, bool)>,
 }
 
-impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direction> {
+impl<'a, Direction: FinderDirection<'a, MagicLengthByteArray>> OptimisticMagicFinder<Direction> {
     /// Create a new empty optimistic magic bytes finder.
     pub(crate) fn new_empty() -> Self {
         Self {
@@ -234,7 +234,7 @@ impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direct
     /// Repurpose the finder for different bytes, bounds and initial guesses.
     pub(crate) fn repurpose(
         &mut self,
-        magic_bytes: &'a MagicSize,
+        magic_bytes: &'a MagicLengthByteArray,
         bounds: (u64, u64),
         initial_guess: Option<(u64, bool)>,
     ) -> &mut Self {
@@ -253,7 +253,7 @@ impl<'a, Direction: FinderDirection<'a, MagicSize>> OptimisticMagicFinder<Direct
         if let Some((v, mandatory)) = self.initial_guess {
             reader.seek(SeekFrom::Start(v))?;
 
-            let mut buffer: MagicSize = [0; 4];
+            let mut buffer = MagicLengthByteArray::default();
 
             // Attempt to match only if there's enough space for the needle
             if v.saturating_add(buffer.len() as u64) <= self.inner.bounds.1 {
