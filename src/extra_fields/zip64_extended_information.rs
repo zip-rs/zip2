@@ -11,8 +11,14 @@
 //!
 
 use core::mem;
+use std::io::{ErrorKind, Read, copy, sink};
 
-use crate::{ZIP64_BYTES_THR, extra_fields::UsedExtraField};
+use crate::unstable::LittleEndianReadExt;
+use crate::{
+    ZIP64_BYTES_THR,
+    extra_fields::UsedExtraField,
+    result::{ZipResult, invalid},
+};
 
 /// Zip64 extended information extra field
 #[derive(Copy, Clone, Debug)]
@@ -162,5 +168,61 @@ impl Zip64ExtendedInformation {
 
             ret.into_boxed_slice()
         }
+    }
+
+    #[inline]
+    pub(crate) fn parse<R: Read>(
+        reader: &mut R,
+        len: u16,
+        uncompressed_size: &mut u64,
+        compressed_size: &mut u64,
+        header_start: &mut u64,
+    ) -> ZipResult<()> {
+        let mut consumed_len = 0;
+        if len >= 24 || *uncompressed_size == ZIP64_BYTES_THR {
+            *uncompressed_size = match reader.read_u64_le() {
+                Ok(v) => v,
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                    return Err(invalid!("ZIP64 extra field truncated"));
+                }
+                Err(e) => return Err(e.into()),
+            };
+            consumed_len += mem::size_of::<u64>();
+        }
+
+        if len >= 24 || *compressed_size == ZIP64_BYTES_THR {
+            *compressed_size = match reader.read_u64_le() {
+                Ok(v) => v,
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                    return Err(invalid!("ZIP64 extra field truncated"));
+                }
+                Err(e) => return Err(e.into()),
+            };
+            consumed_len += mem::size_of::<u64>();
+        }
+
+        if len >= 24 || *header_start == ZIP64_BYTES_THR {
+            *header_start = match reader.read_u64_le() {
+                Ok(v) => v,
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                    return Err(invalid!("ZIP64 extra field truncated"));
+                }
+                Err(e) => return Err(e.into()),
+            };
+            consumed_len += mem::size_of::<u64>();
+        }
+
+        let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
+            return Err(invalid!("ZIP64 extra-data field is the wrong length"));
+        };
+        let mut limited = reader.take(leftover_len as u64);
+        if let Err(e) = copy(&mut limited, &mut sink()) {
+            if e.kind() == ErrorKind::UnexpectedEof {
+                return Err(invalid!("ZIP64 extra field truncated"));
+            }
+            return Err(e.into());
+        }
+
+        Ok(())
     }
 }
