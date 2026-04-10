@@ -513,9 +513,7 @@ impl<R: io::BufRead> Decompressor<R> {
                 crate::legacy::implode::ImplodeDecoder::new(reader, uncompressed_size, flags),
             ),
             _ => {
-                return Err(crate::result::ZipError::UnsupportedArchive(
-                    "Compression method not supported",
-                ));
+                return Err(crate::result::ZipError::CompressionMethodNotSupported);
             }
         })
     }
