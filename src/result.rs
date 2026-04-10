@@ -29,7 +29,7 @@ pub enum ZipError {
     InvalidPassword,
 
     /// Compression method not supported
-    CompressionMethodNotSupported,
+    CompressionMethodNotSupported(u16),
 }
 
 impl ZipError {
@@ -55,7 +55,9 @@ impl Display for ZipError {
             Self::UnsupportedArchive(e) => write!(f, "unsupported Zip archive: {e}"),
             Self::FileNotFound => f.write_str("specified file not found in archive"),
             Self::InvalidPassword => f.write_str("provided password is incorrect"),
-            Self::CompressionMethodNotSupported => f.write_str("compression method not supported"),
+            Self::CompressionMethodNotSupported(id) => {
+                write!(f, "compression method not supported: {id}")
+            }
         }
     }
 }
@@ -68,7 +70,7 @@ impl Error for ZipError {
             | Self::UnsupportedArchive(_)
             | Self::FileNotFound
             | Self::InvalidPassword
-            | Self::CompressionMethodNotSupported => None,
+            | Self::CompressionMethodNotSupported(_) => None,
         }
     }
 }
@@ -78,7 +80,7 @@ impl From<ZipError> for io::Error {
         let kind = match &err {
             ZipError::Io(err) => err.kind(),
             ZipError::InvalidArchive(_) => io::ErrorKind::InvalidData,
-            ZipError::UnsupportedArchive(_) | ZipError::CompressionMethodNotSupported => {
+            ZipError::UnsupportedArchive(_) | ZipError::CompressionMethodNotSupported(_) => {
                 io::ErrorKind::Unsupported
             }
             ZipError::FileNotFound => io::ErrorKind::NotFound,

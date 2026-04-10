@@ -512,8 +512,16 @@ impl<R: io::BufRead> Decompressor<R> {
             CompressionMethod::Implode => Decompressor::Implode(
                 crate::legacy::implode::ImplodeDecoder::new(reader, uncompressed_size, flags),
             ),
-            _ => {
-                return Err(crate::result::ZipError::CompressionMethodNotSupported);
+            #[cfg(feature = "aes-crypto")]
+            CompressionMethod::Aes => {
+                let method = CompressionMethod::Aes.serialize_to_u16();
+                return Err(crate::result::ZipError::CompressionMethodNotSupported(
+                    method,
+                ));
+            }
+            #[allow(deprecated)]
+            CompressionMethod::Unsupported(id) => {
+                return Err(crate::result::ZipError::CompressionMethodNotSupported(id));
             }
         })
     }
