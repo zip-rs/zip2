@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.5.1](https://github.com/zip-rs/zip2/compare/v8.5.0...v8.5.1) - 2026-04-06
+
+### <!-- 2 -->🚜 Refactor
+
+- change magic finder to stack buffer ([#763](https://github.com/zip-rs/zip2/pull/763))
+- simplify extra field parsing ([#764](https://github.com/zip-rs/zip2/pull/764))
+
 ## [8.5.0](https://github.com/zip-rs/zip2/compare/v8.4.0...v8.5.0) - 2026-04-01
 
 ### <!-- 1 -->🐛 Bug Fixes
