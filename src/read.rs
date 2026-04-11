@@ -277,7 +277,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         /* Copy over file data from source archive directly. */
         io::copy(&mut limited_raw, &mut w)?;
 
-        let new_files = new_files.into_iter().map(|f| (f.0.into_boxed_bytes(), f.1)).collect();
+        let new_files = new_files
+            .into_iter()
+            .map(|f| (f.0.into_boxed_bytes(), f.1))
+            .collect();
         /* Return the files we've just written to the data stream. */
         Ok(new_files)
     }
