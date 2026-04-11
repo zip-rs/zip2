@@ -996,10 +996,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 }
 
 pub(crate) fn is_dir(filename: &str) -> bool {
-    filename
-        .chars()
-        .next_back()
-        .is_some_and(|c| c == '/' || c == '\\')
+    filename.ends_with(['/', '\\'])
 }
 
 #[cfg(test)]
