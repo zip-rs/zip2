@@ -995,11 +995,9 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
     Err(parsing_error.unwrap_or(invalid!("Could not find EOCD")))
 }
 
+#[inline]
 pub(crate) fn is_dir(filename: &str) -> bool {
-    filename
-        .chars()
-        .next_back()
-        .is_some_and(|c| c == '/' || c == '\\')
+    matches!(filename.as_bytes().last(), Some(b'/') | Some(b'\\'))
 }
 
 #[cfg(test)]
