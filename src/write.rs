@@ -842,7 +842,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .collect();
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: files,
+            files,
             stats: ZipWriterStats::default(),
             writing_to_file: false,
             comment: shared.comment,
@@ -992,15 +992,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let comment = mem::take(&mut self.comment);
         let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
         let files = mem::take(&mut self.files);
-        let files: IndexMap<Box<str>, ZipFileData> = files
+        let files = files
             .into_iter()
             .map(|f| {
-                let s = String::from_utf8(f.0.into_vec())
-                    .expect("invalid UTF-8")
-                    .into_boxed_str();
-                (s, f.1)
+                let s = String::from_utf8(f.0.into_vec())?.into_boxed_str();
+                Ok((s, f.1))
             })
-            .collect();
+            .collect::<Result<_, ZipError>>()?;
         Ok(ZipArchive::from_finalized_writer(
             files,
             comment,
