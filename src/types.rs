@@ -166,62 +166,62 @@ pub const DEFAULT_VERSION: u8 = 45;
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub(crate) struct ZipFileData {
+pub struct ZipFileData {
     /// Compatibility of the file attribute information
-    pub(crate) system: System,
+    pub system: System,
     /// Specification version
-    pub(crate) version_made_by: u8,
+    pub version_made_by: u8,
     /// ZIP flags
-    pub(crate) flags: u16,
+    pub flags: u16,
     /// True if the file is encrypted.
-    pub(crate) encrypted: bool,
+    pub encrypted: bool,
     /// True if `file_name` and `file_comment` are UTF8
-    pub(crate) is_utf8: bool,
+    pub is_utf8: bool,
     /// True if the file uses a data-descriptor section
-    pub(crate) using_data_descriptor: bool,
+    pub using_data_descriptor: bool,
     /// Compression method used to store the file
-    pub(crate) compression_method: crate::compression::CompressionMethod,
+    pub compression_method: crate::compression::CompressionMethod,
     /// Compression level to store the file
-    pub(crate) compression_level: Option<i64>,
+    pub compression_level: Option<i64>,
     /// Last modified time. This will only have a 2 second precision.
-    pub(crate) last_modified_time: Option<DateTime>,
+    pub last_modified_time: Option<DateTime>,
     /// CRC32 checksum
-    pub(crate) crc32: u32,
+    pub crc32: u32,
     /// Size of the file in the ZIP
-    pub(crate) compressed_size: u64,
+    pub compressed_size: u64,
     /// Size of the file when extracted
-    pub(crate) uncompressed_size: u64,
+    pub uncompressed_size: u64,
     /// Name of the file
-    pub(crate) file_name: Box<str>,
+    pub file_name: Box<str>,
     /// Raw file name. To be used when `file_name` was incorrectly decoded.
-    pub(crate) file_name_raw: Box<[u8]>,
+    pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
-    pub(crate) extra_field: Option<Arc<[u8]>>,
+    pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
-    pub(crate) central_extra_field: Option<Arc<[u8]>>,
+    pub central_extra_field: Option<Arc<[u8]>>,
     /// File comment
-    pub(crate) file_comment: Box<str>,
+    pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
-    pub(crate) header_start: u64,
+    pub header_start: u64,
     /// Specifies where the extra data of the file starts
-    pub(crate) extra_data_start: Option<u64>,
+    pub extra_data_start: Option<u64>,
     /// Specifies where the central header of the file starts
     ///
     /// Note that when this is not known, it is set to 0
-    pub(crate) central_header_start: u64,
+    pub central_header_start: u64,
     /// Specifies where the compressed data of the file starts
-    pub(crate) data_start: OnceLock<u64>,
+    pub data_start: OnceLock<u64>,
     /// External file attributes
-    pub(crate) external_attributes: u32,
+    pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
-    pub(crate) large_file: bool,
+    pub large_file: bool,
     /// AES mode if applicable
-    pub(crate) aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
     /// Specifies where in the extra data the AES metadata starts
-    pub(crate) aes_extra_data_start: u64,
+    pub aes_extra_data_start: u64,
 
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
-    pub(crate) extra_fields: Vec<ExtraField>,
+    pub extra_fields: Vec<ExtraField>,
 }
 
 impl ZipFileData {
