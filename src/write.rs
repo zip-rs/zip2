@@ -835,14 +835,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
         let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
-        let files = shared
-            .files
-            .into_iter()
-            .map(|f| (f.0.into_boxed_bytes(), f.1))
-            .collect();
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files,
+            files: shared.files,
             stats: ZipWriterStats::default(),
             writing_to_file: false,
             comment: shared.comment,
@@ -992,13 +987,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let comment = mem::take(&mut self.comment);
         let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
         let files = mem::take(&mut self.files);
-        let files = files
-            .into_iter()
-            .map(|f| {
-                let s = String::from_utf8(f.0.into_vec())?.into_boxed_str();
-                Ok((s, f.1))
-            })
-            .collect::<Result<_, ZipError>>()?;
         Ok(ZipArchive::from_finalized_writer(
             files,
             comment,
@@ -1390,12 +1378,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
-        if self.files.contains_key(file.file_name.as_bytes()) {
+        if self.files.contains_key(&file.file_name_raw) {
             return Err(invalid!("Duplicate filename: {}", file.file_name));
         }
-        let (index, _) = self
-            .files
-            .insert_full(file.file_name.as_bytes().to_vec().into_boxed_slice(), file);
+        let (index, _) = self.files.insert_full(file.file_name_raw.clone(), file);
         Ok(index)
     }
 

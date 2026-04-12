@@ -78,7 +78,7 @@ pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), Zi
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    _existing_files: &IndexMap<Box<str>, T>,
+    _existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
     Ok(())
@@ -88,7 +88,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    existing_files: &IndexMap<Box<str>, T>,
+    existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive = existing_files.contains_key(target_str) && is_dir(target_str);
@@ -111,7 +111,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<str>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -123,7 +123,7 @@ pub(crate) fn make_symlink<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<str>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -277,10 +277,6 @@ impl<R: Read + Seek> ZipArchive<R> {
         /* Copy over file data from source archive directly. */
         io::copy(&mut limited_raw, &mut w)?;
 
-        let new_files = new_files
-            .into_iter()
-            .map(|f| (f.0.into_boxed_bytes(), f.1))
-            .collect();
         /* Return the files we've just written to the data stream. */
         Ok(new_files)
     }
