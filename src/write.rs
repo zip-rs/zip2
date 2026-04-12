@@ -2626,7 +2626,6 @@ mod tests {
     use crate::ZipArchive;
     use crate::compression::CompressionMethod;
     use crate::datetime::DateTime;
-    use crate::read::HasZipMetadata;
     use crate::result::ZipResult;
     use crate::types::System;
     use crate::write::EncryptWith::ZipCrypto;
@@ -4506,6 +4505,7 @@ mod tests {
 
     #[test]
     fn test_explicit_system_roundtrip() -> ZipResult<()> {
+        use crate::read::HasZipMetadata;
         // Test round-trip: write with various systems, read back and verify
         let systems = vec![System::Unix, System::Dos, System::WindowsNTFS];
 
@@ -4537,6 +4537,7 @@ mod tests {
 
     #[test]
     fn test_system_default_behavior() -> ZipResult<()> {
+        use crate::read::HasZipMetadata;
         // Test that when system is not set, default behavior is preserved
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(Stored);
