@@ -91,7 +91,8 @@ pub(crate) fn make_symlink_impl<T>(
     existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     let target = Path::new(OsStr::new(&target_str));
-    let target_is_dir_from_archive = existing_files.contains_key(target_str.as_bytes()) && is_dir(target_str);
+    let target_is_dir_from_archive =
+        existing_files.contains_key(target_str.as_bytes()) && is_dir(target_str);
     let target_is_dir = if target_is_dir_from_archive {
         true
     } else if let Ok(meta) = std::fs::metadata(target) {
