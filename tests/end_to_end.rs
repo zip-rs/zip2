@@ -306,7 +306,7 @@ fn test_explicit_system_roundtrip() {
     use std::io::Cursor;
     use std::io::Write;
     use zip::CompressionMethod::Stored;
-    use zip::HasZipMetadata;
+    use zip::HasZipMetadata; // We use the trait here
     use zip::System;
     use zip::ZipArchive;
     use zip::ZipWriter;
