@@ -35,7 +35,7 @@ impl From<ExtendedTimestampFlags> for u8 {
 }
 
 /// Extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ExtendedTimestamp {
     modified: Option<u32>,
     accessed: Option<u32>,
