@@ -1,6 +1,9 @@
+//! Read Config
+
 /// Configuration for reading ZIP archives.
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy)]
+#[non_exhaustive]
 pub struct Config {
     /// An offset into the reader to use to find the start of the archive.
     pub archive_offset: ArchiveOffset,
