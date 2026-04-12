@@ -32,12 +32,12 @@ pub struct ZipArchiveMetadata {
 
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
-    pub(crate) files: Vec<super::ZipFileData>,
+    pub(crate) files: Vec<ZipFileData>,
     pub(super) offset: u64,
     pub(super) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
     #[allow(dead_code)]
-    pub(super) config: super::Config,
+    pub(super) config: Config,
 }
 
 impl SharedBuilder {

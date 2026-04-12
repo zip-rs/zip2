@@ -52,7 +52,7 @@ pub struct ZipFile<'a, R: Read + ?Sized> {
 }
 
 /// A struct for reading and seeking a zip file
-pub struct ZipFileSeek<'a, R> {
+pub(crate) struct ZipFileSeek<'a, R> {
     data: Cow<'a, ZipFileData>,
     reader: ZipFileSeekReader<'a, R>,
 }
@@ -194,7 +194,7 @@ struct UnixFileModes {
 #[cfg(unix)]
 impl UnixFileModes {
     #[cfg_attr(not(debug_assertions), allow(unused))]
-    pub fn add_mode(&mut self, path: PathBuf, mode: u32) {
+    pub(crate) fn add_mode(&mut self, path: PathBuf, mode: u32) {
         // We don't print a warning or consider it remotely out of the ordinary to receive two
         // separate modes for the same path: just take the later one.
         let old_entry = self.map.insert(path, mode);
@@ -202,7 +202,7 @@ impl UnixFileModes {
     }
 
     // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
-    pub fn all_perms_with_children_first(
+    pub(crate) fn all_perms_with_children_first(
         self,
     ) -> impl IntoIterator<Item = (PathBuf, std::fs::Permissions)> {
         use std::os::unix::fs::PermissionsExt;
@@ -649,7 +649,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 Err(_e) => {
                     // Consume remaining bytes to avoid infinite loop in caller
                     let mut buf = Vec::new();
-                    let _ = reader.read_to_end(&mut buf);
+                    let _unused = reader.read_to_end(&mut buf);
                     return Ok(false);
                 }
             }
@@ -731,7 +731,7 @@ pub trait HasZipMetadata {
 
 /// Options for reading a file from an archive.
 #[derive(Default)]
-pub struct ZipReadOptions<'a> {
+pub(crate) struct ZipReadOptions<'a> {
     /// The password to use when decrypting the file.  This is ignored if not required.
     password: Option<&'a [u8]>,
 
@@ -1130,7 +1130,7 @@ impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {
         if let Cow::Owned(_) = self.data {
             // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
             if let Ok(mut inner) = self.take_raw_reader() {
-                let _ = copy(&mut inner, &mut sink());
+                let _unused = copy(&mut inner, &mut sink());
             }
         }
     }

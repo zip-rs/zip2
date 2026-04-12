@@ -16,7 +16,6 @@ use core::mem::{self, offset_of, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
-use std::borrow::ToOwned;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
@@ -1161,7 +1160,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn ok_or_abort_file<T, E: Into<ZipError>>(&mut self, result: Result<T, E>) -> ZipResult<T> {
         match result {
             Err(e) => {
-                let _ = self.abort_file();
+                let _unused = self.abort_file();
                 Err(e.into())
             }
             Ok(t) => Ok(t),
@@ -2027,7 +2026,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
         if !self.inner.is_closed()
             && let Err(e) = self.finalize()
         {
-            let _ = write!(
+            let _unused = write!(
                 io::stderr(),
                 "ZipWriter::drop: failed to finalize archive: {e:?}"
             );
@@ -2558,6 +2557,7 @@ pub(crate) fn strip_alignment_extra_field(extra_field: &[u8], remove_zip64: bool
 
 /// Wrapper around a [Write] implementation that implements the [Seek] trait, but where seeking
 /// returns an error unless it's a no-op.
+#[derive(Debug)]
 pub struct StreamWriter<W: Write> {
     inner: W,
     bytes_written: u64,

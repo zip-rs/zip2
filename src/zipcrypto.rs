@@ -94,7 +94,7 @@ impl ZipCryptoKeys {
     }
 
     #[allow(unused)]
-    pub const fn of(key_0: u32, key_1: u32, key_2: u32) -> ZipCryptoKeys {
+    pub(crate) const fn of(key_0: u32, key_1: u32, key_2: u32) -> ZipCryptoKeys {
         ZipCryptoKeys {
             key_0: Wrapping(key_0),
             key_1: Wrapping(key_1),
@@ -143,12 +143,12 @@ impl ZipCryptoKeys {
 
 /// A `ZipCrypto` reader with unverified password
 #[derive(Debug)]
-pub struct ZipCryptoReader<R> {
+pub(crate) struct ZipCryptoReader<R> {
     file: R,
     keys: ZipCryptoKeys,
 }
 
-pub enum ZipCryptoValidator {
+pub(crate) enum ZipCryptoValidator {
     PkzipCrc32(u32),
     InfoZipMsdosTime(u16),
 }
@@ -160,7 +160,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     /// Therefore, if `&str` was used, the password would be UTF-8 and it
     /// would be impossible to decrypt files that were encrypted with a
     /// password byte sequence that is unrepresentable in UTF-8.
-    pub fn new(file: R, password: &[u8]) -> ZipCryptoReader<R> {
+    pub(crate) fn new(file: R, password: &[u8]) -> ZipCryptoReader<R> {
         ZipCryptoReader {
             file,
             keys: ZipCryptoKeys::derive(password),
@@ -168,7 +168,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     }
 
     /// Read the `ZipCrypto` header bytes and validate the password.
-    pub fn validate(
+    pub(crate) fn validate(
         mut self,
         validator: ZipCryptoValidator,
     ) -> Result<ZipCryptoReaderValid<R>, ZipError> {
@@ -219,12 +219,12 @@ pub(crate) struct ZipCryptoWriter<W> {
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
     /// Gets a reference to the underlying writer.
-    pub fn get_ref(&self) -> &W {
+    pub(crate) fn get_ref(&self) -> &W {
         &self.writer
     }
 
     /// Gets a mutable reference to the underlying writer.
-    pub fn get_mut(&mut self) -> &mut W {
+    pub(crate) fn get_mut(&mut self) -> &mut W {
         &mut self.writer
     }
 
@@ -252,7 +252,7 @@ impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
 
 /// A `ZipCrypto` reader with verified password
 #[derive(Debug)]
-pub struct ZipCryptoReaderValid<R> {
+pub(crate) struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
 
@@ -271,7 +271,7 @@ impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
 
 impl<R: std::io::Read> ZipCryptoReaderValid<R> {
     /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> R {
+    pub(crate) fn into_inner(self) -> R {
         self.reader.file
     }
 }

@@ -22,9 +22,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 pub(crate) mod ffi {
-    pub const S_IFDIR: u32 = 0o0_040_000;
-    pub const S_IFREG: u32 = 0o0_100_000;
-    pub const S_IFLNK: u32 = 0o0_120_000;
+    pub(crate) const S_IFDIR: u32 = 0o0_040_000;
+    pub(crate) const S_IFREG: u32 = 0o0_100_000;
+    pub(crate) const S_IFLNK: u32 = 0o0_120_000;
 }
 
 pub(crate) struct ZipRawValues {
@@ -160,8 +160,8 @@ impl FileOptions<'static, ()> {
     const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
 }
 
-pub const MIN_VERSION: u8 = 10;
-pub const DEFAULT_VERSION: u8 = 45;
+pub(crate) const MIN_VERSION: u8 = 10;
+pub(crate) const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]

@@ -137,3 +137,8 @@ harness = false
 [[bench]]
 name = "merge_archive"
 harness = false
+
+
+[lints.rust]
+unused_qualifications                = "warn"
+redundant_imports                    = "warn"

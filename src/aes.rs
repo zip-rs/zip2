@@ -12,7 +12,7 @@ use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
-use std::io::{self, Error, ErrorKind, Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use zeroize::{Zeroize, Zeroizing};
 
 /// The length of the password verification value in bytes
@@ -35,7 +35,7 @@ pub struct AesInfo {
     /// The AES encryption mode
     pub aes_mode: AesMode,
     /// The verification key
-    pub verification_value: [u8; crate::aes::PWD_VERIFY_LENGTH],
+    pub verification_value: [u8; PWD_VERIFY_LENGTH],
     /// The salt
     pub salt: Vec<u8>,
 }
@@ -106,7 +106,7 @@ impl AesSalt {
 
     pub(crate) fn salt_error(mode: AesMode, err: std::array::TryFromSliceError) -> std::io::Error {
         std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
+            ErrorKind::InvalidInput,
             format!(
                 "Salt for {mode} must be {} bytes long: {err}",
                 mode.salt_length(),
@@ -209,7 +209,7 @@ impl<R: Read> AesReader<R> {
 
         // use PBKDF2 with HMAC-Sha1 to derive the key
         pbkdf2::pbkdf2::<Hmac<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
-            .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
+            .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
         let decrypt_key = &derived_key[0..key_length];
         let hmac_key = &derived_key[key_length..key_length * 2];
         let pwd_verify = &derived_key[derived_key_len - 2..];
@@ -243,7 +243,7 @@ impl<R: Read> AesReader<R> {
     /// the verification value and the salt
     pub fn get_verification_value_and_salt(
         mut self,
-    ) -> io::Result<([u8; PWD_VERIFY_LENGTH], Vec<u8>)> {
+    ) -> std::io::Result<([u8; PWD_VERIFY_LENGTH], Vec<u8>)> {
         let salt_length = self.aes_mode.salt_length();
 
         let mut salt = vec![0; salt_length];
@@ -280,7 +280,7 @@ impl<R: Read> Read for AesReaderValid<R> {
     /// Whether this applies to errors that occur while reading the encrypted data depends on the
     /// underlying reader. If the error occurs while verifying the HMAC, the reader might become
     /// practically unusable, since its position after the error is not known.
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.data_remaining == 0 {
             return Ok(0);
         }
@@ -313,7 +313,7 @@ impl<R: Read> Read for AesReaderValid<R> {
 
             // use constant time comparison to mitigate timing attacks
             if !constant_time_eq(computed_auth_code, &read_auth_code) {
-                return Err(Error::new(
+                return Err(std::io::Error::new(
                     ErrorKind::InvalidData,
                     "Invalid authentication code, this could be due to an invalid password or errors in the data",
                 ));
@@ -369,7 +369,7 @@ impl<W: Write> AesWriter<W> {
 
         // Use PBKDF2 with HMAC-Sha1 to derive the key.
         pbkdf2::pbkdf2::<Hmac<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
-            .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
+            .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
         let encryption_key = &derived_key[0..key_length];
         let hmac_key = &derived_key[key_length..key_length * 2];
 
@@ -404,7 +404,7 @@ impl<W: Write> AesWriter<W> {
         &mut self.writer
     }
 
-    pub fn finish(mut self) -> io::Result<W> {
+    pub fn finish(mut self) -> std::io::Result<W> {
         self.write_encrypted_file_header()?;
 
         // Zip uses HMAC-Sha1-80, which only uses the first half of the hash
@@ -418,7 +418,7 @@ impl<W: Write> AesWriter<W> {
     /// The AES encryption specification requires some metadata being written at the start of the
     /// file data section, but this can only be done once the extra data writing has been finished
     /// so we can't do it when the writer is constructed.
-    fn write_encrypted_file_header(&mut self) -> io::Result<()> {
+    fn write_encrypted_file_header(&mut self) -> std::io::Result<()> {
         if let Some(header) = self.encrypted_file_header.take() {
             self.writer.write_all(&header)?;
         }
@@ -428,7 +428,7 @@ impl<W: Write> AesWriter<W> {
 }
 
 impl<W: Write> Write for AesWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.write_encrypted_file_header()?;
 
         // Fill the internal buffer and encrypt it in-place.
@@ -451,7 +451,7 @@ impl<W: Write> Write for AesWriter<W> {
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> std::io::Result<()> {
         self.writer.flush()
     }
 }

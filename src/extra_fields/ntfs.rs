@@ -13,7 +13,7 @@ use crate::{
 ///
 /// [PKWARE's APPNOTE.TXT v6.3.9]: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 /// [Windows file times]: https://docs.microsoft.com/en-us/windows/win32/sysinfo/file-times
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Ntfs {
     mtime: u64,
     atime: u64,

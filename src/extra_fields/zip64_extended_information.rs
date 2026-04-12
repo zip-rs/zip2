@@ -125,7 +125,7 @@ impl Zip64ExtendedInformation {
     }
 
     /// Serialize the block
-    pub fn serialize(self) -> Box<[u8]> {
+    pub(crate) fn serialize(self) -> Box<[u8]> {
         let Self {
             is_local_header,
             magic,

@@ -1,7 +1,7 @@
 //! Possible ZIP compression methods.
 
-use core::fmt;
-use std::{fmt::Debug, io};
+use core::fmt::{self, Debug};
+use std::io;
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -304,7 +304,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
 }
 
 impl<R: io::BufRead> Debug for Decompressor<R> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Stored(_) => write!(f, "StoredDecompressor"),
             #[cfg(feature = "deflate-flate2")]
@@ -373,11 +373,11 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                     reader.read_exact(&mut header)?;
                     let _version_information =
                         u16::from_le_bytes(header[0..2].try_into().map_err(|e| {
-                            std::io::Error::other(format!("Cannot transform header to u16: {e}"))
+                            io::Error::other(format!("Cannot transform header to u16: {e}"))
                         })?);
                     let properties_size =
                         u16::from_le_bytes(header[2..4].try_into().map_err(|e| {
-                            std::io::Error::other(format!("Cannot transform header to u16: {e}"))
+                            io::Error::other(format!("Cannot transform header to u16: {e}"))
                         })?);
                     if properties_size != 5 {
                         return Err(io::Error::new(
@@ -391,7 +391,7 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                     let props = props_data[0];
                     let dict_size =
                         u32::from_le_bytes(props_data[1..5].try_into().map_err(|e| {
-                            std::io::Error::other(format!("Cannot transform header to u32: {e}"))
+                            io::Error::other(format!("Cannot transform header to u32: {e}"))
                         })?);
 
                     // We don't need to handle the end-of-stream marker here, since the LZMA reader

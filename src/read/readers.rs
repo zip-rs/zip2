@@ -21,7 +21,7 @@ pub(crate) struct SeekableTake<'a, R: ?Sized> {
 }
 
 impl<'a, R: Seek + ?Sized> SeekableTake<'a, R> {
-    pub fn new(inner: &'a mut R, length: u64) -> io::Result<Self> {
+    pub(crate) fn new(inner: &'a mut R, length: u64) -> io::Result<Self> {
         let inner_starting_offset = inner.stream_position()?;
         Ok(Self {
             inner,
@@ -126,7 +126,7 @@ impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
 
 impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
     /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> io::Take<&'a mut R> {
+    pub(crate) fn into_inner(self) -> io::Take<&'a mut R> {
         match self {
             CryptoReader::Plaintext(r) => r,
             CryptoReader::ZipCrypto(r) => r.into_inner(),
@@ -137,7 +137,7 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
 
     /// Returns `true` if the data is encrypted using AE2.
     #[cfg(feature = "aes-crypto")]
-    pub const fn is_ae2_encrypted(&self) -> bool {
+    pub(crate) const fn is_ae2_encrypted(&self) -> bool {
         matches!(
             self,
             CryptoReader::Aes {
@@ -149,7 +149,7 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
 
     /// `false` since the feature `aes-crypto` is not enabled
     #[cfg(not(feature = "aes-crypto"))]
-    pub const fn is_ae2_encrypted(&self) -> bool {
+    pub(crate) const fn is_ae2_encrypted(&self) -> bool {
         false
     }
 }
