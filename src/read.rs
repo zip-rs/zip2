@@ -52,7 +52,7 @@ pub struct ZipFile<'a, R: Read + ?Sized> {
 }
 
 /// A struct for reading and seeking a zip file
-pub(crate) struct ZipFileSeek<'a, R> {
+pub struct ZipFileSeek<'a, R> {
     data: Cow<'a, ZipFileData>,
     reader: ZipFileSeekReader<'a, R>,
 }
@@ -731,7 +731,7 @@ pub trait HasZipMetadata {
 
 /// Options for reading a file from an archive.
 #[derive(Default)]
-pub(crate) struct ZipReadOptions<'a> {
+pub struct ZipReadOptions<'a> {
     /// The password to use when decrypting the file.  This is ignored if not required.
     password: Option<&'a [u8]>,
 

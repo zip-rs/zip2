@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "8.5.1"
+version = "8.5.2"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -139,6 +139,190 @@ name = "merge_archive"
 harness = false
 
 
+
 [lints.rust]
 unused_qualifications                = "warn"
 redundant_imports                    = "warn"
+# Note: I basically went through every allow-by-default lint, and am linting against
+# almost everything, except lints just related to migrating to Edition 2018, 2021, or 2024;
+# since this codebase is in Edition 2024, those lints don't have any use here.
+
+ambiguous_negative_literals          = "warn"
+closure_returning_async_block        = "warn"
+deprecated_in_future                 = "warn"
+deref_into_dyn_supertrait            = "warn"
+elided_lifetimes_in_paths            = "warn"
+explicit_outlives_requirements       = "warn"
+ffi_unwind_calls                     = "warn"
+impl_trait_redundant_captures        = "warn"
+let_underscore_drop                  = "warn"
+macro_use_extern_crate               = "warn"
+# Note: this lint may have false positives.
+meta_variable_misuse                 = "warn"
+# Note: may be a noisy lint, but explicitly disabling it when necessary should be less error-prone
+# than remembering to derive Copy in almost all applicable cases
+missing_copy_implementations         = "warn"
+missing_debug_implementations        = "warn"
+missing-unsafe-on-extern             = "warn"
+non_ascii_idents                     = "warn"
+redundant_lifetimes                  = "warn"
+# The below lint seems like it might still be worth enabling in Edition 2024; idk, default to "sure"
+rust_2024_incompatible_pat           = "warn"
+# Note: this lint may have false positives.
+single_use_lifetimes                 = "warn"
+unexpected_cfgs                      = { level = "warn", check-cfg = [
+    'cfg(skiplist_loom)',
+    'cfg(skiplist_loom_hard)',
+    'cfg(miri)',
+    'cfg(tests_with_leaks)',
+] }
+unit_bindings                        = "warn"
+unnameable_types                     = "warn"
+unreachable_pub                      = "warn"
+# Note: this lint could have false positives in a package with multiple crates.
+# Here, the packages have one crate each, so it's fine.
+unused_extern_crates                 = "warn"
+unused_import_braces                 = "warn"
+unused_lifetimes                     = "warn"
+unused_macro_rules                   = "warn"
+variant_size_differences             = "warn"
+
+# TODO: lint against missing documentation
+# missing_docs                         = "warn"
+
+future_incompatible                  = { level = "warn", priority = -1 }
+keyword-idents                       = { level = "warn", priority = -1 }
+# Currently, every lint in the `nonstandard_style` group is actually warn-by-default already.
+nonstandard_style                    = { level = "warn", priority = -1 }
+
+# Note that the `unused_results` lint is intentionally left as `allow`
+# `linker-messages` is left as `allow` in absence of a reason to worry about the linker
+
+# I would enable the following lints if possible, but they're unstable as of the middle of 2025:
+#   - fuzzy_provenance_casts
+#   - lossy_provenance_casts
+#   - multiple_supertrait_upcastable
+#   - must_not_suspend
+#   - non_exhaustive_omitted_patterns
+#   - resolving_to_items_shadowing_supertrait_items
+#   - shadowing_supertrait_items
+#   - unqualified_local_imports
+# `just clippy` and friends will use the above lints on the nightly channel.
+
+
+[workspace.lints.clippy]
+# Note: the strategy here, unlike with rust lints, is to just enable everything, and carve out
+# exceptions as needed.
+# See clippy.toml as well.
+
+
+# Defaults
+correctness = { level = "deny", priority = -1 }
+
+suspicious  = { level = "warn", priority = -1 }
+style       = { level = "warn", priority = -1 }
+complexity  = { level = "warn", priority = -1 }
+perf        = { level = "warn", priority = -1 }
+
+# The rest
+pedantic    = { level = "warn", priority = -1 }
+restriction = { level = "warn", priority = -1 }
+nursery     = { level = "warn", priority = -1 }
+cargo       = { level = "warn", priority = -1 }
+
+
+# Warnings that should eventually be enabled
+missing_docs_in_private_items       = "allow"
+missing_errors_doc                  = "allow"
+todo                                = "allow"
+
+
+# Correctness exceptions: there are none.
+
+
+# Suspicious exceptions
+
+# Yes, it's normally an awful idea to blanket-enable the `restriction` group,
+# but it's easier to be warned about a dumb lint and disable it below
+# than to figure out in advance which ones deserve to be enabled.
+blanket_clippy_restriction_lints    = "allow"
+
+
+# Style exceptions
+
+# `parse` seems too opaque, the meaning of the `from_str_radix` method is immediately clear.
+from_str_radix_10                   = "allow"
+# I think `(3..8).contains(x)` looks worse than `3 <= x && x < 8`.
+manual_range_contains               = "allow"
+# Sometimes I like to be more explicit.
+unwrap_or_default                   = "allow"
+
+
+# Complexity exceptions
+
+# Sometimes helpful with rust-analyzer to not have a super-long type hint.
+let_with_type_underscore            = "allow"
+
+
+# Pedantic exceptions
+
+bool_to_int_with_if                 = "allow"
+# `map(..).unwrap_or(..)` is, I think, more readable than `map_or(.., ..)`.
+map_unwrap_or                       = "allow"
+redundant_else                      = "allow"
+
+
+# Restriction exceptions
+
+# `#[allow]` attributes should be used sparingly, but it's more convenient to simply be able
+# to use them when necessary, without extra shenanigans.
+# `just find-allow-attributes` can show where any `[allow(` string is, to find the attributes.
+allow_attributes                    = "allow"
+arbitrary_source_item_ordering      = "allow"
+arithmetic_side_effects             = "allow"
+decimal_literal_representation      = "allow"
+# A good lint, but the various "*_fs" modules in anchored-vfs have so many similar structs,
+# no point in adding weird acronym prefixes instead of leaving them namespaced.
+error_impl_error                    = "allow"
+# Most enums and structs don't need to be #[non_exhaustive] for the sake of semver.
+exhaustive_enums                    = "allow"
+exhaustive_structs                  = "allow"
+# Similar to map_unwrap_or and whatnot
+if_then_some_else_none              = "allow"
+implicit_return                     = "allow"
+integer_division_remainder_used     = "allow"
+little_endian_bytes                 = "allow"
+missing_trait_methods               = "allow"
+missing_inline_in_public_items      = "allow"
+mod_module_files                    = "allow"
+multiple_inherent_impl              = "allow"
+# The extra verbosity seems unnecessary
+pattern_type_mismatch               = "allow"
+pub_use                             = "allow"
+pub_with_shorthand                  = "allow"
+separated_literal_suffix            = "allow"
+shadow_reuse                        = "allow"
+shadow_same                         = "allow"
+single_call_fn                      = "allow"
+single_char_lifetime_names          = "allow"
+# Would only make sense in a #[no_std] crate
+std_instead_of_alloc                = "allow"
+std_instead_of_core                 = "allow"
+question_mark_used                  = "allow"
+# This is covered by the `unwrap_used` lint, and seems to be more annoying to `#[expect]`.
+unwrap_in_result                    = "allow"
+
+
+# Nursery exceptions
+
+# I find `if let` and `else` to look much better than `map_or_else`.
+option_if_let_else                  = "allow"
+# I prefer the redundant item-level pub(crate)'s, and unreachable impl-level pub's elsewhere.
+redundant_pub_crate                 = "allow"
+# Doesn't really help much, and `#[expect]`ing it is a hassle. Might be good to run the lint
+# once in a while, though.
+significant_drop_tightening         = "allow"
+
+
+[workspace.lints.rustdoc]
+all = { level = "warn", priority = -1 }

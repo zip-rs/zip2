@@ -17,40 +17,40 @@ use std::io::{self, Read, Seek, Write};
 pub(crate) struct Magic(u32);
 
 impl Magic {
-    pub const fn literal(x: u32) -> Self {
+    pub(crate) const fn literal(x: u32) -> Self {
         Self(x)
     }
 
     #[inline(always)]
     #[allow(dead_code)]
-    pub const fn from_le_bytes(bytes: [u8; 4]) -> Self {
+    pub(crate) const fn from_le_bytes(bytes: [u8; 4]) -> Self {
         Self(u32::from_le_bytes(bytes))
     }
 
     #[inline(always)]
-    pub const fn to_le_bytes(self) -> [u8; 4] {
+    pub(crate) const fn to_le_bytes(self) -> [u8; 4] {
         self.0.to_le_bytes()
     }
 
     #[allow(clippy::wrong_self_convention)]
     #[allow(unused)]
     #[inline(always)]
-    pub fn from_le(self) -> Self {
+    pub(crate) fn from_le(self) -> Self {
         Self(u32::from_le(self.0))
     }
 
     #[allow(clippy::wrong_self_convention)]
     #[inline(always)]
-    pub fn to_le(self) -> Self {
+    pub(crate) fn to_le(self) -> Self {
         Self(u32::to_le(self.0))
     }
 
-    pub const LOCAL_FILE_HEADER_SIGNATURE: Self = Self::literal(0x0403_4b50);
-    pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Self = Self::literal(0x0201_4b50);
-    pub const CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0605_4b50);
-    pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0606_4b50);
-    pub const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Self = Self::literal(0x0706_4b50);
-    pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x0807_4b50);
+    pub(crate) const LOCAL_FILE_HEADER_SIGNATURE: Self = Self::literal(0x0403_4b50);
+    pub(crate) const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Self = Self::literal(0x0201_4b50);
+    pub(crate) const CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0605_4b50);
+    pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0606_4b50);
+    pub(crate) const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE: Self = Self::literal(0x0706_4b50);
+    pub(crate) const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x0807_4b50);
 }
 
 /// Zip flags
@@ -501,7 +501,7 @@ impl Zip32CentralDirectoryEnd {
         (block, zip_file_comment)
     }
 
-    pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
+    pub(crate) fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
         let Zip32CDEBlock {
             disk_number,
             disk_with_central_directory,
@@ -533,7 +533,7 @@ impl Zip32CentralDirectoryEnd {
         })
     }
 
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    pub(crate) fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         let (block, comment) = self.into_block_and_comment();
 
         if comment.len() > u16::MAX as usize {
@@ -545,7 +545,7 @@ impl Zip32CentralDirectoryEnd {
         Ok(())
     }
 
-    pub fn may_be_zip64(&self) -> bool {
+    pub(crate) fn may_be_zip64(&self) -> bool {
         self.number_of_files == u16::MAX
             || self.central_directory_size == u32::MAX
             || self.central_directory_offset == u32::MAX
@@ -581,7 +581,7 @@ pub(crate) struct Zip64CentralDirectoryEndLocator {
 }
 
 impl Zip64CentralDirectoryEndLocator {
-    pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
+    pub(crate) fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let Zip64CDELocatorBlock {
             disk_with_central_directory,
             end_of_central_directory_offset,
@@ -596,7 +596,7 @@ impl Zip64CentralDirectoryEndLocator {
         })
     }
 
-    pub fn block(self) -> Zip64CDELocatorBlock {
+    pub(crate) fn block(self) -> Zip64CDELocatorBlock {
         let Self {
             disk_with_central_directory,
             end_of_central_directory_offset,
@@ -609,7 +609,7 @@ impl Zip64CentralDirectoryEndLocator {
         }
     }
 
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    pub(crate) fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         self.block().write(writer)
     }
 }

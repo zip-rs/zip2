@@ -102,7 +102,7 @@ impl From<std::string::FromUtf8Error> for ZipError {
 
 /// Error type for time parsing
 #[derive(Debug)]
-pub(crate) struct DateTimeRangeError;
+pub struct DateTimeRangeError;
 
 // TryFromIntError is also an out-of-range error.
 impl From<TryFromIntError> for DateTimeRangeError {
