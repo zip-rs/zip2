@@ -59,6 +59,7 @@ impl Magic {
 #[rustfmt::skip]
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub(crate) enum ZipFlags {
     /// If set, indicates that the file is encrypted.
     Encrypted                   = 0b0000_0000_0000_0001,

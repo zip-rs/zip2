@@ -46,12 +46,14 @@ pub use crate::aes::AesInfo;
 ///
 /// If your logic depends on the buffer being completely populated, use [`Self::read_exact()`] instead. It will continue reading until the entire buffer is filled or an error occurs.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct ZipFile<'a, R: Read + ?Sized> {
     pub(crate) data: Cow<'a, ZipFileData>,
     pub(crate) reader: ZipFileReader<'a, R>,
 }
 
 /// A struct for reading and seeking a zip file
+#[non_exhaustive]
 pub struct ZipFileSeek<'a, R> {
     data: Cow<'a, ZipFileData>,
     reader: ZipFileSeekReader<'a, R>,
