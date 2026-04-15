@@ -52,7 +52,6 @@ pub struct ZipFile<'a, R: Read + ?Sized> {
 }
 
 /// A struct for reading and seeking a zip file
-#[non_exhaustive]
 pub struct ZipFileSeek<'a, R> {
     data: Cow<'a, ZipFileData>,
     reader: ZipFileSeekReader<'a, R>,
