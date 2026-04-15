@@ -142,7 +142,6 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
-      - run: sudo apt update
       - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - run: cargo +nightly miri test --target aarch64_be-unknown-linux-gnu --all --no-default-features
