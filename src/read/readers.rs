@@ -161,7 +161,6 @@ macro_rules! invalid_state {
 }
 
 #[derive(Debug)]
-#[non_exhaustive]
 pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
     NoReader,
     Raw(io::Take<&'a mut R>),
