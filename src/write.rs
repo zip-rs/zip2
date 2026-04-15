@@ -835,9 +835,10 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
         let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
+        let files = shared.files.into_iter().map(|(k,v)| (k.clone(), v.into_zip_file_data(k))).collect();
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: shared.files,
+            files,
             stats: ZipWriterStats::default(),
             writing_to_file: false,
             comment: shared.comment,
@@ -1275,8 +1276,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
+        let file_name: Box<str> = name.to_string().into_boxed_str();
+        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
         let mut file = ZipFileData::initialize_local_block(
-            name,
+            file_name,
+            &file_name_raw,
             &options,
             &raw_values,
             header_start,
@@ -1575,6 +1579,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         /* Get the file entries from the source archive. */
         let new_files = source.merge_contents(writer)?;
 
+        let new_files: IndexMap<Box<[u8]>, ZipFileData> = new_files.into_iter().map(|(k,v)| (k, v.into_zip_file_data(&k))).collect();
         /* These file entries are now ours! */
         self.files.extend(new_files);
 

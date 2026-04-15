@@ -14,7 +14,7 @@ use crate::spec::{
     CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
 };
-use crate::types::{SimpleFileOptions, System, ZipFileData, ffi};
+use crate::types::{SimpleFileOptions, System, ZipFileData, ZipFileDataInner, ffi};
 use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;
 use indexmap::IndexMap;
@@ -218,7 +218,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
+    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileDataInner>> {
         if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }

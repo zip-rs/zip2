@@ -165,7 +165,97 @@ pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
-pub struct ZipFileData {
+pub struct ZipFileDataInner {
+    /// Compatibility of the file attribute information
+    pub system: System,
+    /// Specification version
+    pub version_made_by: u8,
+    /// ZIP flags
+    pub flags: u16,
+    /// True if the file is encrypted.
+    pub encrypted: bool,
+    /// True if `file_name` and `file_comment` are UTF8
+    pub is_utf8: bool,
+    /// True if the file uses a data-descriptor section
+    pub using_data_descriptor: bool,
+    /// Compression method used to store the file
+    pub compression_method: crate::compression::CompressionMethod,
+    /// Compression level to store the file
+    pub compression_level: Option<i64>,
+    /// Last modified time. This will only have a 2 second precision.
+    pub last_modified_time: Option<DateTime>,
+    /// CRC32 checksum
+    pub crc32: u32,
+    /// Size of the file in the ZIP
+    pub compressed_size: u64,
+    /// Size of the file when extracted
+    pub uncompressed_size: u64,
+    /// Name of the file
+    pub file_name: Box<str>,
+    /// Extra field usually used for storage expansion
+    pub extra_field: Option<Arc<[u8]>>,
+    /// Extra field only written to central directory
+    pub central_extra_field: Option<Arc<[u8]>>,
+    /// File comment
+    pub file_comment: Box<str>,
+    /// Specifies where the local header of the file starts
+    pub header_start: u64,
+    /// Specifies where the extra data of the file starts
+    pub extra_data_start: Option<u64>,
+    /// Specifies where the central header of the file starts
+    ///
+    /// Note that when this is not known, it is set to 0
+    pub central_header_start: u64,
+    /// Specifies where the compressed data of the file starts
+    pub data_start: OnceLock<u64>,
+    /// External file attributes
+    pub external_attributes: u32,
+    /// Reserve local ZIP64 extra field
+    pub large_file: bool,
+    /// AES mode if applicable
+    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    /// Specifies where in the extra data the AES metadata starts
+    pub aes_extra_data_start: u64,
+    /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
+    pub extra_fields: Vec<ExtraField>,
+}
+
+impl ZipFileDataInner {
+    pub fn into_zip_file_data<'a>(&'a self, file_name_raw: &'a Box<[u8]>) -> ZipFileData<'a> {
+         ZipFileData {
+            system: self.system,
+            version_made_by: self.version_made_by,
+            flags: self.flags,
+            encrypted: self.encrypted,
+            is_utf8: self.is_utf8,
+            using_data_descriptor: self.using_data_descriptor,
+            compression_method: self.compression_method,
+            compression_level: self.compression_level,
+            last_modified_time: self.last_modified_time,
+            crc32: self.crc32,
+            compressed_size: self.compressed_size,
+            uncompressed_size: self.uncompressed_size,
+            file_name: self.file_name,
+            file_name_raw,
+            extra_field: self.extra_field,
+            central_extra_field: self.central_extra_field,
+            file_comment: self.file_comment,
+            header_start: self.header_start,
+            extra_data_start: self.extra_data_start,
+            central_header_start: self.central_header_start,
+            data_start: self.data_start,
+            external_attributes: self.external_attributes,
+            large_file: self.large_file,
+            aes_mode: self.aes_mode,
+            aes_extra_data_start: self.aes_extra_data_start,
+            extra_fields: self.extra_fields,
+        }
+    }
+}
+
+/// Structure representing a ZIP file.
+#[derive(Debug, Clone, Default)]
+pub struct ZipFileData<'a> {
     /// Compatibility of the file attribute information
     pub system: System,
     /// Specification version
@@ -193,7 +283,7 @@ pub struct ZipFileData {
     /// Name of the file
     pub file_name: Box<str>,
     /// Raw file name. To be used when `file_name` was incorrectly decoded.
-    pub file_name_raw: Box<[u8]>,
+    pub file_name_raw: &'a Box<[u8]>,
     /// Extra field usually used for storage expansion
     pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
@@ -224,6 +314,36 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    pub fn into_inner(self) -> ZipFileDataInner {
+         ZipFileDataInner {
+            system: self.system,
+            version_made_by: self.version_made_by,
+            flags: self.flags,
+            encrypted: self.encrypted,
+            is_utf8: self.is_utf8,
+            using_data_descriptor: self.using_data_descriptor,
+            compression_method: self.compression_method,
+            compression_level: self.compression_level,
+            last_modified_time: self.last_modified_time,
+            crc32: self.crc32,
+            compressed_size: self.compressed_size,
+            uncompressed_size: self.uncompressed_size,
+            file_name: self.file_name, 
+            file_comment: self.file_comment,
+            extra_field: self.extra_field,
+            central_extra_field: self.central_extra_field,
+            header_start: self.header_start,
+            extra_data_start: self.extra_data_start,
+            central_header_start: self.central_header_start,
+            data_start: self.data_start,
+            external_attributes: self.external_attributes,
+            large_file: self.large_file,
+            aes_mode: self.aes_mode,
+            aes_extra_data_start: self.aes_extra_data_start,
+            extra_fields: self.extra_fields,
+        }
+    }
+
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
@@ -404,7 +524,8 @@ impl ZipFileData {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
-        name: &S,
+        file_name: Box<str>,
+        file_name_raw: &Box<[u8]>,
         options: &FileOptions<'_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
@@ -420,8 +541,6 @@ impl ZipFileData {
         let permissions = options
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
-        let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix

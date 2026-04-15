@@ -9,6 +9,7 @@ use crate::read::{
 };
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
+use crate::types::ZipFileDataInner;
 use crate::types::ZipFileData;
 use crate::unstable::path_to_string;
 use core::ops::Range;
@@ -20,7 +21,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) files: IndexMap<Box<[u8]>, ZipFileDataInner>,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -32,7 +33,7 @@ pub struct ZipArchiveMetadata {
 
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
-    pub(crate) files: Vec<super::ZipFileData>,
+    pub(crate) files: Vec<ZipFileData>,
     pub(super) offset: u64,
     pub(super) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -48,7 +49,7 @@ impl SharedBuilder {
     ) -> ZipArchiveMetadata {
         let mut index_map = IndexMap::with_capacity(self.files.len());
         self.files.into_iter().for_each(|file| {
-            index_map.insert(file.file_name_raw.clone(), file);
+            index_map.insert(file.file_name_raw.clone(), file.into_inner());
         });
         ZipArchiveMetadata {
             files: index_map,
@@ -100,6 +101,7 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
+        let files = files.into_iter().map(|(k,v)| (k, v.into_inner())).collect();
         let shared = Arc::new(ZipArchiveMetadata {
             files,
             offset: initial_offset,
@@ -225,12 +227,12 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         file_number: usize,
     ) -> ZipResult<Option<crate::aes::AesInfo>> {
-        let (_, data) = self
+        let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
-
+        let data = data.into_zip_file_data(file_name_raw);
         let limit_reader = data.find_content(&mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
@@ -372,7 +374,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// copies would take up space independently in the destination.
     pub fn has_overlapping_files(&mut self) -> ZipResult<bool> {
         let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
-        for file in self.shared.files.values() {
+        for (file_name_raw, file) in &self.shared.files {
+            let file = file.into_zip_file_data(file_name_raw);
             if file.compressed_size == 0 {
                 continue;
             }
@@ -477,7 +480,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             .files
             .get_index(index)
             .ok_or(ZipError::FileNotFound)
-            .and_then(move |(_, data)| {
+            .and_then(move |(ff, data)| {
+                let data = data.into_zip_file_data(ff);
                 let seek_reader = match data.compression_method {
                     CompressionMethod::Stored => {
                         ZipFileSeekReader::Raw(data.find_content_seek(reader)?)
@@ -535,11 +539,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get a contained file by index without decompressing it
     pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
         let reader = &mut self.reader;
-        let (_, data) = self
+        let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
+        let data = data.into_zip_file_data(file_name_raw);
         Ok(ZipFile {
             reader: ZipFileReader::Raw(data.find_content(reader)?),
             data: Cow::Borrowed(data),
@@ -552,12 +557,12 @@ impl<R: Read + Seek> ZipArchive<R> {
         file_number: usize,
         mut options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'_, R>> {
-        let (_, data) = self
+        let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
-
+        let data = data.into_zip_file_data(file_name_raw);
         if options.ignore_encryption_flag {
             // Always use no password when we're ignoring the encryption flag.
             options.password = None;
@@ -610,11 +615,13 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut root_dir: Option<PathBuf> = None;
 
         for i in 0..self.len() {
-            let (_, file) = self
+            let (filename, file) = self
                 .shared
                 .files
                 .get_index(i)
                 .ok_or(ZipError::FileNotFound)?;
+
+            let file = file.into_zip_file_data(filename);
 
             let path = match file.enclosed_name() {
                 Some(path) => path,
