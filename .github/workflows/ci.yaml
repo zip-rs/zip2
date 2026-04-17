@@ -317,20 +317,20 @@ jobs:
           find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_read_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_read_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_read_coverage
           path: map
@@ -373,14 +373,14 @@ jobs:
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_read_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_read_coverage_no_features
           path: map
@@ -425,20 +425,20 @@ jobs:
           find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_write_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_write_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_write_coverage
           path: map
@@ -481,14 +481,14 @@ jobs:
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_write_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz_write_coverage_no_features
           path: map
