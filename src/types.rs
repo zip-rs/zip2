@@ -9,8 +9,8 @@ use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
-    self, FixedSizeBlock, Zip64DataDescriptorBlock, ZipCentralEntryBlock, ZipDataDescriptorBlock,
-    ZipFlags, ZipLocalEntryBlock,
+    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock,
+    ZipDataDescriptorBlock, ZipFlags, ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
@@ -195,9 +195,9 @@ pub struct ZipFileData {
     /// Raw file name. To be used when `file_name` was incorrectly decoded.
     pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Option<Arc<Vec<u8>>>,
+    pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
-    pub central_extra_field: Option<Arc<Vec<u8>>>,
+    pub central_extra_field: Option<Arc<[u8]>>,
     /// File comment
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
@@ -247,8 +247,9 @@ impl ZipFileData {
         // Each of these fields must be converted to u64 before adding, as the result may
         // easily overflow a u16.
         u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-        let data_start =
-            self.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+        let data_start = self.header_start
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+            + variable_fields_len;
 
         // Set the value so we don't have to read it again.
         match self.data_start.set(data_start) {
@@ -286,7 +287,6 @@ impl ZipFileData {
         Ok(SeekableTake::new(reader, self.compressed_size)?)
     }
 
-    #[allow(dead_code)]
     pub fn is_dir(&self) -> bool {
         is_dir(&self.file_name)
     }
@@ -463,8 +463,11 @@ impl ZipFileData {
             uncompressed_size: raw_values.uncompressed_size,
             file_name, // Never used for saving, but used as map key in insert_file_data()
             file_name_raw,
-            extra_field: Some(extra_field.to_vec().into()),
-            central_extra_field: options.extended_options.central_extra_data().cloned(),
+            extra_field: Some(Arc::from(extra_field)),
+            central_extra_field: options
+                .extended_options
+                .central_extra_data()
+                .map(|v| Arc::from(v.as_ref().as_slice())),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,
             data_start: OnceLock::new(),
@@ -485,7 +488,6 @@ impl ZipFileData {
         reader: &mut R,
     ) -> ZipResult<Self> {
         let ZipLocalEntryBlock {
-            // magic,
             version_made_by,
             flags,
             compression_method,
@@ -559,7 +561,7 @@ impl ZipFileData {
             uncompressed_size: uncompressed_size.into(),
             file_name,
             file_name_raw: file_name_raw.into(),
-            extra_field: Some(Arc::new(extra_field)),
+            extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
             // header_start and data start are not available, but also don't matter, since seeking is
@@ -634,7 +636,6 @@ impl ZipFileData {
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
         Ok(ZipLocalEntryBlock {
-            magic: ZipLocalEntryBlock::MAGIC,
             version_made_by: self.version_needed(),
             flags: self.flags(),
             compression_method: self.compression_method.serialize_to_u16(),
@@ -688,7 +689,6 @@ impl ZipFileData {
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
         Ok(ZipCentralEntryBlock {
-            magic: ZipCentralEntryBlock::MAGIC,
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
             flags: self.flags(),
@@ -741,7 +741,6 @@ impl ZipFileData {
 
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
         ZipDataDescriptorBlock {
-            magic: ZipDataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size as u32,
             uncompressed_size: self.uncompressed_size as u32,
@@ -750,7 +749,6 @@ impl ZipFileData {
 
     pub(crate) fn zip64_data_descriptor_block(&self) -> Zip64DataDescriptorBlock {
         Zip64DataDescriptorBlock {
-            magic: Zip64DataDescriptorBlock::MAGIC,
             crc32: self.crc32,
             compressed_size: self.compressed_size,
             uncompressed_size: self.uncompressed_size,
@@ -774,6 +772,19 @@ impl AesVendorVersion {
     #[must_use]
     pub const fn as_u16(self) -> u16 {
         self as u16
+    }
+}
+
+impl TryFrom<u16> for AesVendorVersion {
+    type Error = &'static str;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        let aes_vendor_version = match value {
+            0x0001 => AesVendorVersion::Ae1,
+            0x0002 => AesVendorVersion::Ae2,
+            _ => return Err("Invalid AES vendor version"),
+        };
+        Ok(aes_vendor_version)
     }
 }
 
@@ -811,6 +822,20 @@ impl Display for AesMode {
             Self::Aes192 => write!(f, "AES-192"),
             Self::Aes256 => write!(f, "AES-256"),
         }
+    }
+}
+
+impl TryFrom<u8> for AesMode {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let mode = match value {
+            0x01 => AesMode::Aes128,
+            0x02 => AesMode::Aes192,
+            0x03 => AesMode::Aes256,
+            _ => return Err("Invalid AES encryption strength"),
+        };
+        Ok(mode)
     }
 }
 

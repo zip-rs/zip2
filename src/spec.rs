@@ -33,6 +33,7 @@ impl Magic {
     }
 
     #[allow(clippy::wrong_self_convention)]
+    #[allow(unused)]
     #[inline(always)]
     pub fn from_le(self) -> Self {
         Self(u32::from_le(self.0))
@@ -58,6 +59,7 @@ impl Magic {
 #[rustfmt::skip]
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub(crate) enum ZipFlags {
     /// If set, indicates that the file is encrypted.
     Encrypted                   = 0b0000_0000_0000_0001,
@@ -203,11 +205,24 @@ pub(crate) unsafe trait Pod: Copy + 'static {
     }
 }
 
-pub(crate) trait FixedSizeBlock: Pod {
-    type Magic: Copy + Eq;
-    const MAGIC: Self::Magic;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+struct BlockWithMagic<T: FixedSizeBlock> {
+    magic: Magic,
+    inner: T,
+}
+unsafe impl<T: FixedSizeBlock> Pod for BlockWithMagic<T> {}
 
-    fn magic(self) -> Self::Magic;
+impl<T: FixedSizeBlock> BlockWithMagic<T> {
+    fn to_le(mut self) -> Self {
+        self.magic = self.magic.to_le();
+        self.inner = self.inner.to_le();
+        self
+    }
+}
+
+pub(crate) trait FixedSizeBlock: Pod {
+    const MAGIC: Magic;
 
     const WRONG_MAGIC_ERROR: ZipError;
 
@@ -215,25 +230,33 @@ pub(crate) trait FixedSizeBlock: Pod {
     fn from_le(self) -> Self;
 
     fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
-        let mut block = Self::zeroed();
-        if let Err(e) = reader.read_exact(block.as_bytes_mut()) {
+        let mut block_with_magic = BlockWithMagic::zeroed();
+        if let Err(e) = reader.read_exact(block_with_magic.as_bytes_mut()) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Err(invalid!("Unexpected end of {}", type_name::<Self>()));
             }
             return Err(e.into());
         }
-        let block = Self::from_le(block);
-
-        if block.magic() != Self::MAGIC {
+        let BlockWithMagic {
+            magic,
+            inner: block,
+        } = block_with_magic;
+        let magic = Magic::from_le(magic);
+        if magic != Self::MAGIC {
             return Err(Self::WRONG_MAGIC_ERROR);
         }
+        let block = Self::from_le(block);
         Ok(block)
     }
 
     fn to_le(self) -> Self;
 
     fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
-        let block = self.to_le();
+        let block = BlockWithMagic {
+            magic: Self::MAGIC,
+            inner: self,
+        };
+        let block = block.to_le();
         writer.write_all(block.as_bytes())?;
         Ok(())
     }
@@ -289,7 +312,6 @@ macro_rules! to_and_from_le {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipCentralEntryBlock {
-    pub(crate) magic: Magic,
     pub version_made_by: u16,
     pub version_to_extract: u16,
     pub flags: u16,
@@ -311,18 +333,11 @@ pub(crate) struct ZipCentralEntryBlock {
 unsafe impl Pod for ZipCentralEntryBlock {}
 
 impl FixedSizeBlock for ZipCentralEntryBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid Central Directory header");
 
     to_and_from_le![
-        (magic, Magic),
         (version_made_by, u16),
         (version_to_extract, u16),
         (flags, u16),
@@ -345,7 +360,6 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipLocalEntryBlock {
-    pub(crate) magic: Magic,
     pub version_made_by: u16,
     pub flags: u16,
     pub compression_method: u16,
@@ -361,18 +375,11 @@ pub(crate) struct ZipLocalEntryBlock {
 unsafe impl Pod for ZipLocalEntryBlock {}
 
 impl FixedSizeBlock for ZipLocalEntryBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid local file header");
 
     to_and_from_le![
-        (magic, Magic),
         (version_made_by, u16),
         (flags, u16),
         (compression_method, u16),
@@ -389,7 +396,6 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipDataDescriptorBlock {
-    pub(crate) magic: Magic,
     pub crc32: u32,
     pub compressed_size: u32,
     pub uncompressed_size: u32,
@@ -398,18 +404,11 @@ pub(crate) struct ZipDataDescriptorBlock {
 unsafe impl Pod for ZipDataDescriptorBlock {}
 
 impl FixedSizeBlock for ZipDataDescriptorBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid data descriptor header");
 
     to_and_from_le![
-        (magic, Magic),
         (crc32, u32),
         (compressed_size, u32),
         (uncompressed_size, u32),
@@ -419,7 +418,6 @@ impl FixedSizeBlock for ZipDataDescriptorBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct Zip64DataDescriptorBlock {
-    pub(crate) magic: Magic,
     pub crc32: u32,
     pub compressed_size: u64,
     pub uncompressed_size: u64,
@@ -428,18 +426,11 @@ pub(crate) struct Zip64DataDescriptorBlock {
 unsafe impl Pod for Zip64DataDescriptorBlock {}
 
 impl FixedSizeBlock for Zip64DataDescriptorBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
-
-    #[inline]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 data descriptor header");
 
     to_and_from_le![
-        (magic, Magic),
         (crc32, u32),
         (compressed_size, u64),
         (uncompressed_size, u64),
@@ -449,7 +440,6 @@ impl FixedSizeBlock for Zip64DataDescriptorBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct Zip32CDEBlock {
-    magic: Magic,
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
     pub number_of_files_on_this_disk: u16,
@@ -462,18 +452,11 @@ pub(crate) struct Zip32CDEBlock {
 unsafe impl Pod for Zip32CDEBlock {}
 
 impl FixedSizeBlock for Zip32CDEBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid digital signature header");
 
     to_and_from_le![
-        (magic, Magic),
         (disk_number, u16),
         (disk_with_central_directory, u16),
         (number_of_files_on_this_disk, u16),
@@ -507,7 +490,6 @@ impl Zip32CentralDirectoryEnd {
             zip_file_comment,
         } = self;
         let block = Zip32CDEBlock {
-            magic: Zip32CDEBlock::MAGIC,
             disk_number,
             disk_with_central_directory,
             number_of_files_on_this_disk,
@@ -522,7 +504,6 @@ impl Zip32CentralDirectoryEnd {
 
     pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
         let Zip32CDEBlock {
-            // magic,
             disk_number,
             disk_with_central_directory,
             number_of_files_on_this_disk,
@@ -566,14 +547,15 @@ impl Zip32CentralDirectoryEnd {
     }
 
     pub fn may_be_zip64(&self) -> bool {
-        self.number_of_files == u16::MAX || self.central_directory_offset == u32::MAX
+        self.number_of_files == u16::MAX
+            || self.central_directory_size == u32::MAX
+            || self.central_directory_offset == u32::MAX
     }
 }
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
 pub(crate) struct Zip64CDELocatorBlock {
-    magic: Magic,
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
@@ -582,18 +564,11 @@ pub(crate) struct Zip64CDELocatorBlock {
 unsafe impl Pod for Zip64CDELocatorBlock {}
 
 impl FixedSizeBlock for Zip64CDELocatorBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
-
-    #[inline(always)]
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 locator digital signature header");
 
     to_and_from_le![
-        (magic, Magic),
         (disk_with_central_directory, u32),
         (end_of_central_directory_offset, u64),
         (number_of_disks, u32),
@@ -609,7 +584,6 @@ pub(crate) struct Zip64CentralDirectoryEndLocator {
 impl Zip64CentralDirectoryEndLocator {
     pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let Zip64CDELocatorBlock {
-            // magic,
             disk_with_central_directory,
             end_of_central_directory_offset,
             number_of_disks,
@@ -630,7 +604,6 @@ impl Zip64CentralDirectoryEndLocator {
             number_of_disks,
         } = self;
         Zip64CDELocatorBlock {
-            magic: Zip64CDELocatorBlock::MAGIC,
             disk_with_central_directory,
             end_of_central_directory_offset,
             number_of_disks,
@@ -645,7 +618,6 @@ impl Zip64CentralDirectoryEndLocator {
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
 pub(crate) struct Zip64CDEBlock {
-    magic: Magic,
     pub record_size: u64,
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
@@ -660,17 +632,11 @@ pub(crate) struct Zip64CDEBlock {
 unsafe impl Pod for Zip64CDEBlock {}
 
 impl FixedSizeBlock for Zip64CDEBlock {
-    type Magic = Magic;
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
-
-    fn magic(self) -> Magic {
-        self.magic
-    }
 
     const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid digital signature header");
 
     to_and_from_le![
-        (magic, Magic),
         (record_size, u64),
         (version_made_by, u16),
         (version_needed_to_extract, u16),
@@ -693,11 +659,15 @@ pub(crate) struct Zip64CentralDirectoryEnd {
     pub number_of_files: u64,
     pub central_directory_size: u64,
     pub central_directory_offset: u64,
-    pub extensible_data_sector: Box<[u8]>,
+    pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn parse<T: Read + ?Sized>(
+    /// Minimum size of the block
+    /// Block - record_size - extensible_data
+    const MIN_SIZE: usize = 2 * size_of::<u16>() + 2 * size_of::<u32>() + 4 * size_of::<u64>();
+
+    pub(crate) fn parse<T: Read + ?Sized>(
         reader: &mut T,
         max_size: u64,
     ) -> ZipResult<Zip64CentralDirectoryEnd> {
@@ -714,21 +684,27 @@ impl Zip64CentralDirectoryEnd {
             ..
         } = Zip64CDEBlock::parse(reader)?;
 
-        if record_size < 44 {
+        if record_size < 40 {
             return Err(invalid!("Low EOCD64 record size"));
         } else if record_size.saturating_add(12) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
         }
 
-        let mut zip_file_comment = vec![0u8; record_size as usize - 44].into_boxed_slice();
-        if let Err(e) = reader.read_exact(&mut zip_file_comment) {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Err(invalid!(
-                    "EOCD64 extensible data sector exceeds file boundary"
-                ));
+        let zip64_extensible_data_sector = if record_size > (Self::MIN_SIZE as u64) {
+            let mut extensible_data_sector =
+                vec![0u8; record_size as usize - Self::MIN_SIZE].into_boxed_slice();
+            if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(invalid!(
+                        "EOCD64 extensible data sector exceeds file boundary"
+                    ));
+                }
+                return Err(e.into());
             }
-            return Err(e.into());
-        }
+            Some(extensible_data_sector)
+        } else {
+            None
+        };
 
         Ok(Self {
             record_size,
@@ -740,11 +716,11 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            extensible_data_sector: zip_file_comment,
+            zip64_extensible_data_sector,
         })
     }
 
-    pub fn into_block_and_comment(self) -> (Zip64CDEBlock, Box<[u8]>) {
+    pub(crate) fn into_block_and_extensible_data(self) -> (Zip64CDEBlock, Option<Box<[u8]>>) {
         let Self {
             record_size,
             version_made_by,
@@ -755,12 +731,11 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            extensible_data_sector,
+            zip64_extensible_data_sector,
         } = self;
 
         (
             Zip64CDEBlock {
-                magic: Zip64CDEBlock::MAGIC,
                 record_size,
                 version_made_by,
                 version_needed_to_extract,
@@ -771,14 +746,16 @@ impl Zip64CentralDirectoryEnd {
                 central_directory_size,
                 central_directory_offset,
             },
-            extensible_data_sector,
+            zip64_extensible_data_sector,
         )
     }
 
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        let (block, comment) = self.into_block_and_comment();
+    pub(crate) fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        let (block, zip64_extensible_data) = self.into_block_and_extensible_data();
         block.write(writer)?;
-        writer.write_all(&comment)?;
+        if let Some(extensible_data) = zip64_extensible_data {
+            writer.write_all(&extensible_data)?;
+        }
         Ok(())
     }
 }
@@ -855,11 +832,14 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                 reader: &mut (impl Read + Seek + ?Sized),
                 eocd_offset: u64,
             ) -> ZipResult<(u64, Zip64CentralDirectoryEndLocator)> {
-                if eocd_offset < mem::size_of::<Zip64CDELocatorBlock>() as u64 {
+                if eocd_offset
+                    < (mem::size_of::<Magic>() + mem::size_of::<Zip64CDELocatorBlock>()) as u64
+                {
                     return Err(invalid!("EOCD64 Locator does not fit in file"));
                 }
 
-                let locator64_offset = eocd_offset - mem::size_of::<Zip64CDELocatorBlock>() as u64;
+                let locator64_offset = eocd_offset
+                    - (mem::size_of::<Magic>() + mem::size_of::<Zip64CDELocatorBlock>()) as u64;
 
                 reader.seek(io::SeekFrom::Start(locator64_offset))?;
                 let locator64 = Zip64CentralDirectoryEndLocator::parse(reader);
@@ -987,7 +967,10 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
                     if eocd64_offset
                         < eocd64
                             .number_of_files
-                            .saturating_mul(mem::size_of::<ZipCentralEntryBlock>() as u64)
+                            .saturating_mul(
+                                (mem::size_of::<Magic>() + mem::size_of::<ZipCentralEntryBlock>())
+                                    as u64,
+                            )
                             .saturating_add(eocd64.central_directory_offset)
                     {
                         local_error =
@@ -1013,11 +996,9 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
     Err(parsing_error.unwrap_or(invalid!("Could not find EOCD")))
 }
 
+#[inline]
 pub(crate) fn is_dir(filename: &str) -> bool {
-    filename
-        .chars()
-        .next_back()
-        .is_some_and(|c| c == '/' || c == '\\')
+    matches!(filename.as_bytes().last(), Some(b'/') | Some(b'\\'))
 }
 
 #[cfg(test)]
@@ -1032,30 +1013,23 @@ mod tests {
     #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
     #[repr(packed, C)]
     pub struct TestBlock {
-        magic: Magic,
         pub file_name_length: u16,
     }
 
     unsafe impl Pod for TestBlock {}
 
     impl FixedSizeBlock for TestBlock {
-        type Magic = Magic;
         const MAGIC: Magic = Magic::literal(0x01111);
-
-        fn magic(self) -> Magic {
-            self.magic
-        }
 
         const WRONG_MAGIC_ERROR: ZipError = invalid!("unreachable");
 
-        to_and_from_le![(magic, Magic), (file_name_length, u16)];
+        to_and_from_le![(file_name_length, u16)];
     }
 
     /// Demonstrate that a block object can be safely written to memory and deserialized back out.
     #[test]
     fn block_serde() {
         let block = TestBlock {
-            magic: TestBlock::MAGIC,
             file_name_length: 3,
         };
         let mut c = Cursor::new(Vec::new());
@@ -1063,5 +1037,11 @@ mod tests {
         c.set_position(0);
         let block2 = TestBlock::parse(&mut c).unwrap();
         assert_eq!(block, block2);
+    }
+
+    #[test]
+    fn test_size_zip64_central_directory_end() {
+        use super::Zip64CentralDirectoryEnd;
+        assert_eq!(Zip64CentralDirectoryEnd::MIN_SIZE, 44);
     }
 }

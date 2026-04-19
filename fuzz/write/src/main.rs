@@ -264,7 +264,7 @@ fn do_operation(
         }
         BasicFileOperation::SetArchiveComment(comment) => {
             writeln!(stringifier, "writer.set_raw_comment({comment:?})?;")?;
-            writer.set_raw_comment(comment.clone());
+            writer.set_raw_comment(comment.clone())?;
         }
     }
     if abort && *files_added != 0 {

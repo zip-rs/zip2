@@ -681,3 +681,38 @@ fn force_large_file() {
         ]
     );
 }
+
+// Warning the generated zip is not correct since the zip64_extensible_data_sector should
+// use a specific format - here we are using random bytes
+// See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
+#[test]
+fn zip64_extensible_data_sector() {
+    use std::io::{Cursor, Write};
+    use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
+
+    let extensible_data_length = 1024;
+    let data = Vec::new();
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+    let mut bytes = vec![0u8; extensible_data_length];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))
+        .unwrap();
+
+    let mut writer = ZipWriter::new(Cursor::new(data));
+    writer.set_raw_zip64_extensible_data_sector(bytes.clone().into_boxed_slice());
+    writer.start_file("asdf.txt", options).unwrap();
+    writer.write_all(b"asdf").unwrap();
+    let archive_as_bytes = writer.finish().unwrap().into_inner();
+
+    // debug
+    // eprintln!("{:x?}", archive_as_bytes);
+
+    // reading
+    let zip_reader = ZipArchive::new(Cursor::new(archive_as_bytes)).unwrap();
+    let extensible_data = zip_reader.raw_zip64_extensible_data_sector().unwrap();
+
+    assert_eq!(extensible_data.len(), extensible_data_length);
+    assert_eq!(extensible_data, bytes);
+}

@@ -269,3 +269,68 @@ fn test_extra_field_mapping_contains_expected_values() {
     // Info-ZIP Unix (UID/GID) - 0x7875
     assert!(EXTRA_FIELD_MAPPING.contains(&0x7875));
 }
+
+#[test]
+fn test_long_comment_is_cut() {
+    use std::io::{Cursor, Write};
+    use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
+
+    let comment_length = (u16::MAX as usize) + 100; // the comment is larger than the max
+    let data = Vec::new();
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+    let mut bytes = vec![0u8; comment_length];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))
+        .unwrap();
+
+    let mut writer = ZipWriter::new(Cursor::new(data));
+    let res = writer.set_raw_comment(bytes.clone().into_boxed_slice());
+    assert!(res.is_err()); // `set_raw_comment` will throw an error
+    writer.start_file("asdf.txt", options).unwrap();
+    writer.write_all(b"asdf").unwrap();
+    let archive_as_bytes = writer.finish().unwrap().into_inner();
+
+    // reading
+    let zip_reader = ZipArchive::new(Cursor::new(archive_as_bytes)).unwrap();
+    let comment = zip_reader.comment();
+
+    assert_eq!(comment.len(), u16::MAX as usize);
+    assert_eq!(comment, &bytes[..(u16::MAX as usize)]);
+}
+
+// Test to use the HasZipMetadata trait which use a private unnamed type
+#[test]
+fn test_explicit_system_roundtrip() {
+    use std::io::Cursor;
+    use std::io::Write;
+    use zip::CompressionMethod::Stored;
+    use zip::HasZipMetadata; // We use the trait here
+    use zip::System;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+    let system = System::Unix;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default()
+        .compression_method(Stored)
+        .system(system);
+
+    let filename = format!("test_{:?}.txt", system);
+    writer.start_file(&filename, options).unwrap();
+    writer.write_all(b"content").unwrap();
+
+    // Write and read back
+    let bytes = writer.finish().unwrap().into_inner();
+    let mut reader = ZipArchive::new(Cursor::new(bytes)).unwrap();
+
+    let file = reader.by_index(0).unwrap();
+    assert_eq!(
+        file.get_metadata().system, // We use the trait here
+        system,
+        "System mismatch for {:?}",
+        system
+    );
+}

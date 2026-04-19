@@ -3,19 +3,20 @@
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
+use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UnicodeExtraField;
+use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
-    self, CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
+    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
 };
-use crate::types::{AesMode, AesVendorVersion, SimpleFileOptions, System, ZipFileData, ffi};
+use crate::types::{SimpleFileOptions, System, ZipFileData, ffi};
 use crate::unstable::LittleEndianReadExt;
-use core::mem::{replace, size_of};
-use core::ops::Deref;
+use core::mem::replace;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -549,7 +550,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         flags,
         file_name,
         file_name_raw,
-        extra_field: Some(Arc::new(extra_field.to_vec())),
+        extra_field: Some(Arc::from(extra_field)),
         central_extra_field: None,
         file_comment,
         header_start: offset.into(),
@@ -613,7 +614,7 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
             }
         }
         if modified {
-            *field_group = Some(Arc::new(processed_extra_field));
+            *field_group = Some(Arc::from(processed_extra_field.into_boxed_slice()));
         }
     }
     file.extra_field = extra_field;
@@ -661,46 +662,13 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
             }
             file.large_file = true;
-            let mut consumed_len = 0;
-            if len >= 24 || file.uncompressed_size == spec::ZIP64_BYTES_THR {
-                file.uncompressed_size = match reader.read_u64_le() {
-                    Ok(v) => v,
-                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                        return Err(invalid!("ZIP64 extra field truncated"));
-                    }
-                    Err(e) => return Err(e.into()),
-                };
-                consumed_len += size_of::<u64>();
-            }
-            if len >= 24 || file.compressed_size == spec::ZIP64_BYTES_THR {
-                file.compressed_size = match reader.read_u64_le() {
-                    Ok(v) => v,
-                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                        return Err(invalid!("ZIP64 extra field truncated"));
-                    }
-                    Err(e) => return Err(e.into()),
-                };
-                consumed_len += size_of::<u64>();
-            }
-            if len >= 24 || file.header_start == spec::ZIP64_BYTES_THR {
-                file.header_start = match reader.read_u64_le() {
-                    Ok(v) => v,
-                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                        return Err(invalid!("ZIP64 extra field truncated"));
-                    }
-                    Err(e) => return Err(e.into()),
-                };
-                consumed_len += size_of::<u64>();
-            }
-            let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
-                return Err(invalid!("ZIP64 extra-data field is the wrong length"));
-            };
-            if let Err(e) = reader.read_exact(&mut vec![0u8; leftover_len]) {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Err(invalid!("ZIP64 extra field truncated"));
-                }
-                return Err(e.into());
-            }
+            Zip64ExtendedInformation::parse(
+                reader,
+                len,
+                &mut file.uncompressed_size,
+                &mut file.compressed_size,
+                &mut file.header_start,
+            )?;
             return Ok(true);
         }
         Ok(UsedExtraField::Ntfs) => {
@@ -710,38 +678,12 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         }
         Ok(UsedExtraField::AeXEncryption) => {
             // AES
-            if len != 7 {
-                return Err(ZipError::UnsupportedArchive(
-                    "AES extra data field has an unsupported length",
-                ));
-            }
-            let vendor_version = reader.read_u16_le()?;
-            let vendor_id = reader.read_u16_le()?;
-            let mut out = [0u8];
-            if let Err(e) = reader.read_exact(&mut out) {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Err(invalid!("AES extra field truncated"));
-                }
-                return Err(e.into());
-            }
-            let aes_mode = out[0];
-            let compression_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
-
-            if vendor_id != 0x4541 {
-                return Err(invalid!("Invalid AES vendor"));
-            }
-            let vendor_version = match vendor_version {
-                0x0001 => AesVendorVersion::Ae1,
-                0x0002 => AesVendorVersion::Ae2,
-                _ => return Err(invalid!("Invalid AES vendor version")),
-            };
-            match aes_mode {
-                0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version, compression_method)),
-                0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version, compression_method)),
-                0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version, compression_method)),
-                _ => return Err(invalid!("Invalid AES encryption strength")),
-            }
-            file.compression_method = compression_method;
+            AexEncryption::parse(
+                reader,
+                len,
+                &mut file.aes_mode,
+                &mut file.compression_method,
+            )?;
             file.aes_extra_data_start = bytes_already_read;
         }
         Ok(UsedExtraField::ExtendedTimestamp) => {
@@ -1081,10 +1023,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
     /// Get the extra data of the zip header for this file
     pub fn extra_data(&self) -> Option<&[u8]> {
-        self.get_metadata()
-            .extra_field
-            .as_ref()
-            .map(|v| v.deref().deref())
+        self.get_metadata().extra_field.as_deref()
     }
 
     /// Get the starting offset of the data of the compressed file

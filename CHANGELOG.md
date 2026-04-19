@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.5.1](https://github.com/zip-rs/zip2/compare/v8.5.0...v8.5.1) - 2026-04-06
+
+### <!-- 2 -->🚜 Refactor
+
+- change magic finder to stack buffer ([#763](https://github.com/zip-rs/zip2/pull/763))
+- simplify extra field parsing ([#764](https://github.com/zip-rs/zip2/pull/764))
+
+## [8.5.0](https://github.com/zip-rs/zip2/compare/v8.4.0...v8.5.0) - 2026-04-01
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- remove `zip64 comment` and add `zip64 extensible data sector` ([#747](https://github.com/zip-rs/zip2/pull/747))
+
+### <!-- 2 -->🚜 Refactor
+
+- remove useless magic in struct ([#730](https://github.com/zip-rs/zip2/pull/730))
+- change extra_field from Arc<Vec<u8>> to Arc<[u8]> ([#741](https://github.com/zip-rs/zip2/pull/741))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- cleanup README ([#758](https://github.com/zip-rs/zip2/pull/758))
+
 ## [8.4.0](https://github.com/zip-rs/zip2/compare/v8.3.1...v8.4.0) - 2026-03-23
 
 ### <!-- 0 -->🚀 Features
