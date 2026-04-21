@@ -580,7 +580,10 @@ fn central_header_to_zip_file_inner<R: Read>(
     Ok((result, file_name_raw.into()))
 }
 
-pub(crate) fn parse_extra_field(file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
+pub(crate) fn parse_extra_field(
+    file: &mut ZipFileData,
+    file_name_raw: &mut Vec<u8>,
+) -> ZipResult<()> {
     let mut extra_field = file.extra_field.clone();
     let mut central_extra_field = file.central_extra_field.clone();
     for field_group in [&mut extra_field, &mut central_extra_field] {

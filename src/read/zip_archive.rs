@@ -100,7 +100,6 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
-        // let files = files.into_iter().map(|(k,v)| (k, v.into_inner())).collect();
         let shared = Arc::new(ZipArchiveMetadata {
             files,
             offset: initial_offset,
@@ -226,11 +225,12 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         file_number: usize,
     ) -> ZipResult<Option<crate::aes::AesInfo>> {
-        let (_file_name_raw, data) = self
+        let (_, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
+
         let limit_reader = data.find_content(&mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
@@ -372,7 +372,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// copies would take up space independently in the destination.
     pub fn has_overlapping_files(&mut self) -> ZipResult<bool> {
         let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
-        for (_file_name_raw, file) in &self.shared.files {
+        for file in self.shared.files.values() {
             if file.compressed_size == 0 {
                 continue;
             }
@@ -477,7 +477,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .files
             .get_index(index)
             .ok_or(ZipError::FileNotFound)
-            .and_then(move |(_file_name_raw, data)| {
+            .and_then(move |(_, data)| {
                 let seek_reader = match data.compression_method {
                     CompressionMethod::Stored => {
                         ZipFileSeekReader::Raw(data.find_content_seek(reader)?)
@@ -611,7 +611,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut root_dir: Option<PathBuf> = None;
 
         for i in 0..self.len() {
-            let (_filename, file) = self
+            let (_, file) = self
                 .shared
                 .files
                 .get_index(i)

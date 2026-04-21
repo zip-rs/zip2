@@ -411,8 +411,7 @@ impl ZipFileData {
         compression_method: crate::compression::CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
         extra_field: &[u8],
-    ) -> Self
-    {
+    ) -> Self {
         let permissions = options
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
@@ -575,13 +574,10 @@ impl ZipFileData {
         Ok((data, file_name_raw))
     }
 
-    fn is_ascii(&self) -> bool {
-        self.file_name.is_ascii() && self.file_comment.is_ascii()
-    }
-
     fn flags(&self, file_name_raw: &[u8]) -> u16 {
         let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
-        let utf8_bit: u16 = if is_utf8 && !self.is_ascii() {
+        let is_ascii = file_name_raw.is_ascii() && self.file_comment.is_ascii();
+        let utf8_bit: u16 = if is_utf8 && !is_ascii {
             ZipFlags::LanguageEncoding.as_u16()
         } else {
             0

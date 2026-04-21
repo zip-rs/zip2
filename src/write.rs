@@ -399,10 +399,7 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(
-        data: &[u8],
-        disallow_zip64: bool,
-    ) -> ZipResult<()> {
+    fn validate_extra_data(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
         let len = data.len() as u64;
         if len == 0 {
             return Ok(());
@@ -844,6 +841,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
         let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
+
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
             files: shared.files,
@@ -902,12 +900,12 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .try_inner_mut()?
             .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
-        let file_name_raw = dest_name.as_bytes();
+        let dest_name_raw = dest_name.as_bytes();
         new_data.file_name = dest_name.into();
         new_data.header_start = write_position;
         let extra_data_start = write_position
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + file_name_raw.len() as u64;
+            + dest_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
             let stripped = strip_alignment_extra_field(extra, false);
@@ -925,13 +923,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.data_start.take();
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
-        let block = new_data.local_block(file_name_raw)?;
-        let index = self.insert_file_data(new_data, file_name_raw)?;
+        let block = new_data.local_block(dest_name_raw)?;
+        let index = self.insert_file_data(dest_name_raw, new_data)?;
         let new_data = &self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
             block.write(plain_writer)?;
-            plain_writer.write_all(&file_name_raw)?;
+            plain_writer.write_all(&dest_name_raw)?;
             if let Some(data) = &new_data.extra_field {
                 plain_writer.write_all(data)?;
             }
@@ -996,6 +994,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let comment = mem::take(&mut self.comment);
         let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
         let files = mem::take(&mut self.files);
+
         Ok(ZipArchive::from_finalized_writer(
             files,
             comment,
@@ -1310,7 +1309,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
-        let index = self.insert_file_data(file, &file_name_raw)?;
+        let index = self.insert_file_data(&file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
             ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
@@ -1388,7 +1387,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn insert_file_data(&mut self, file: ZipFileData, file_name_raw: &[u8]) -> ZipResult<usize> {
+    fn insert_file_data(&mut self, file_name_raw: &[u8], file: ZipFileData) -> ZipResult<usize> {
         if self.files.contains_key(file_name_raw) {
             return Err(invalid!("Duplicate filename: {}", file.file_name));
         }
@@ -1989,7 +1988,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         dest_data.file_name = dest_name.into();
         let file_name_raw = dest_name.as_bytes().into();
         dest_data.central_header_start = 0;
-        self.insert_file_data(dest_data, file_name_raw)?;
+        self.insert_file_data(file_name_raw, dest_data)?;
 
         Ok(())
     }
@@ -2478,7 +2477,11 @@ impl ZipFileData {
         Ok(())
     }
 
-    fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T, file_name_raw: &[u8]) -> ZipResult<()> {
+    fn update_local_zip64_extra_field<T: Write + Seek>(
+        &mut self,
+        writer: &mut T,
+        file_name_raw: &[u8],
+    ) -> ZipResult<()> {
         let zip64_block = Zip64ExtendedInformation::local_header(
             self.large_file,
             self.uncompressed_size,
