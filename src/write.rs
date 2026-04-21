@@ -1412,9 +1412,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         let writer = self.inner.try_inner_mut()?;
 
         if !self.writing_raw {
-            let file = match self.files.last_mut() {
+            let (file_name_raw, file) = match self.files.last_mut() {
                 None => return Ok(()),
-                Some((_, f)) => f,
+                Some(s) => s,
             };
             file.uncompressed_size = self.stats.bytes_written;
 
@@ -1440,7 +1440,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.using_data_descriptor {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
-                file.update_local_file_header(writer)?;
+                file.update_local_file_header(writer, file_name_raw)?;
                 writer.seek(SeekFrom::Start(file_end))?;
             }
         }
@@ -2450,6 +2450,7 @@ impl ZipFileData {
     pub(crate) fn update_local_file_header<T: Write + Seek>(
         &mut self,
         writer: &mut T,
+        file_name_raw: &[u8],
     ) -> ZipResult<()> {
         writer.seek(SeekFrom::Start(
             self.header_start + (size_of::<Magic>() + offset_of!(ZipLocalEntryBlock, crc32)) as u64,
@@ -2459,7 +2460,7 @@ impl ZipFileData {
             writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
             writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
 
-            self.update_local_zip64_extra_field(writer)?;
+            self.update_local_zip64_extra_field(writer, file_name_raw)?;
 
             // self.compressed_size = spec::ZIP64_BYTES_THR;
             // self.uncompressed_size = spec::ZIP64_BYTES_THR;
@@ -2477,7 +2478,7 @@ impl ZipFileData {
         Ok(())
     }
 
-    fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T) -> ZipResult<()> {
+    fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T, file_name_raw: &[u8]) -> ZipResult<()> {
         let zip64_block = Zip64ExtendedInformation::local_header(
             self.large_file,
             self.uncompressed_size,
@@ -2489,7 +2490,7 @@ impl ZipFileData {
 
         let zip64_extra_field_start = self.header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + self.file_name.as_bytes().len() as u64;
+            + file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
         let zip64_block = zip64_block.serialize();
