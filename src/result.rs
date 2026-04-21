@@ -94,8 +94,8 @@ impl From<DateTimeRangeError> for ZipError {
     }
 }
 
-impl From<std::string::FromUtf8Error> for ZipError {
-    fn from(_: std::string::FromUtf8Error) -> Self {
+impl From<std::str::Utf8Error> for ZipError {
+    fn from(_: std::str::Utf8Error) -> Self {
         invalid!("Invalid UTF-8")
     }
 }

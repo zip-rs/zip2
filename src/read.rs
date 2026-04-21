@@ -14,7 +14,7 @@ use crate::spec::{
     CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
 };
-use crate::types::{SimpleFileOptions, System, ZipFileData, ZipFileDataInner, ffi};
+use crate::types::{SimpleFileOptions, System, ZipFileData, ffi};
 use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;
 use indexmap::IndexMap;
@@ -47,6 +47,7 @@ pub use crate::aes::AesInfo;
 /// If your logic depends on the buffer being completely populated, use [`Self::read_exact()`] instead. It will continue reading until the entire buffer is filled or an error occurs.
 #[derive(Debug)]
 pub struct ZipFile<'a, R: Read + ?Sized> {
+    pub(crate) file_name_raw: Cow<'a, [u8]>,
     pub(crate) data: Cow<'a, ZipFileData>,
     pub(crate) reader: ZipFileReader<'a, R>,
 }
@@ -218,7 +219,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileDataInner>> {
+    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
         if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
@@ -455,13 +456,13 @@ impl<R: Read + Seek> ZipArchive<R> {
 pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     reader: &mut R,
     central_directory: &CentralDirectoryInfo,
-) -> ZipResult<ZipFileData> {
+) -> ZipResult<(ZipFileData, Box<[u8]>)> {
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
     let block = ZipCentralEntryBlock::parse(reader)?;
 
-    let file = central_header_to_zip_file_inner(
+    let (file, file_name_raw) = central_header_to_zip_file_inner(
         reader,
         central_directory.archive_offset,
         central_header_start,
@@ -471,7 +472,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_end = reader.stream_position()?;
 
     reader.seek(SeekFrom::Start(central_header_end))?;
-    Ok(file)
+    Ok((file, file_name_raw))
 }
 
 #[inline]
@@ -494,7 +495,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     archive_offset: u64,
     central_header_start: u64,
     block: ZipCentralEntryBlock,
-) -> ZipResult<ZipFileData> {
+) -> ZipResult<(ZipFileData, Box<[u8]>)> {
     let ZipCentralEntryBlock {
         // magic,
         version_made_by,
@@ -520,7 +521,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     let is_utf8 = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
     let using_data_descriptor = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
 
-    let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
+    let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
     let file_name: Box<str> = if is_utf8 {
@@ -550,7 +551,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         uncompressed_size: uncompressed_size.into(),
         flags,
         file_name,
-        file_name_raw,
         extra_field: Some(Arc::from(extra_field)),
         central_extra_field: None,
         file_comment,
@@ -564,7 +564,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
-    parse_extra_field(&mut result)?;
+    parse_extra_field(&mut result, &mut file_name_raw)?;
 
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
@@ -577,10 +577,10 @@ fn central_header_to_zip_file_inner<R: Read>(
         .checked_add(archive_offset)
         .ok_or(invalid!("Archive header is too large"))?;
 
-    Ok(result)
+    Ok((result, file_name_raw))
 }
 
-pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+pub(crate) fn parse_extra_field(file: &mut ZipFileData, file_name_raw: &mut [u8]) -> ZipResult<()> {
     let mut extra_field = file.extra_field.clone();
     let mut central_extra_field = file.central_extra_field.clone();
     for field_group in [&mut extra_field, &mut central_extra_field] {
@@ -595,7 +595,7 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         let mut position = reader.position();
         while position < len as u64 {
             let old_position = position;
-            let remove = parse_single_extra_field(file, &mut reader, position, false)?;
+            let remove = parse_single_extra_field(file, &mut reader, position, false, file_name_raw)?;
             position = reader.position();
             if remove {
                 modified = true;
@@ -628,6 +628,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     reader: &mut R,
     bytes_already_read: u64,
     disallow_zip64: bool,
+    file_name_raw: &mut [u8],
 ) -> ZipResult<bool> {
     let kind = match reader.read_u16_le() {
         Ok(kind) => kind,
@@ -705,10 +706,10 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         Ok(UsedExtraField::UnicodePath) => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            file.file_name_raw = UnicodeExtraField::try_from_reader(reader, len)?
-                .unwrap_valid(&file.file_name_raw)?;
+            file_name_raw = &mut UnicodeExtraField::try_from_reader(reader, len)?
+                .unwrap_valid(&file_name_raw)?;
             file.file_name =
-                String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
+                std::str::from_utf8(file_name_raw)?.into_boxed_str();
             file.is_utf8 = true;
         }
         _ => {
@@ -806,7 +807,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     ///
     /// The encoding of this data is currently undefined.
     pub fn name_raw(&self) -> &[u8] {
-        &self.get_metadata().file_name_raw
+        &self.file_name_raw
     }
 
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
