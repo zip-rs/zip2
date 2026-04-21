@@ -401,7 +401,7 @@ impl ZipFileData {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
+    pub(crate) fn initialize_local_block<T: FileOptionExtension>(
         file_name: Box<str>,
         options: &FileOptions<'_, T>,
         raw_values: &ZipRawValues,
@@ -412,8 +412,6 @@ impl ZipFileData {
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
         extra_field: &[u8],
     ) -> Self
-    where
-        S: ToString,
     {
         let permissions = options
             .permissions
@@ -577,16 +575,13 @@ impl ZipFileData {
         Ok((data, file_name_raw))
     }
 
-    fn is_utf8(&self) -> bool {
-        std::str::from_utf8(&self.file_name_raw).is_ok()
-    }
-
     fn is_ascii(&self) -> bool {
         self.file_name.is_ascii() && self.file_comment.is_ascii()
     }
 
-    fn flags(&self) -> u16 {
-        let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
+    fn flags(&self, file_name_raw: &[u8]) -> u16 {
+        let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
+        let utf8_bit: u16 = if is_utf8 && !self.is_ascii() {
             ZipFlags::LanguageEncoding.as_u16()
         } else {
             0
@@ -633,7 +628,7 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         Ok(ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
@@ -686,7 +681,7 @@ impl ZipFileData {
         Ok(ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
@@ -906,7 +901,6 @@ mod tests {
             compressed_size: 0,
             uncompressed_size: 0,
             file_name: file_name.clone().into_boxed_str(),
-            file_name_raw: file_name.into_bytes().into_boxed_slice(),
             extra_field: None,
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),

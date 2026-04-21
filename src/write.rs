@@ -399,7 +399,10 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(data: &[u8], disallow_zip64: bool, file_name_raw: &mut [u8]) -> ZipResult<()> {
+    fn validate_extra_data(
+        data: &[u8],
+        disallow_zip64: bool,
+    ) -> ZipResult<()> {
         let len = data.len() as u64;
         if len == 0 {
             return Ok(());
@@ -435,7 +438,13 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, disallow_zip64, file_name_raw)?;
+            parse_single_extra_field(
+                &mut ZipFileData::default(),
+                &mut data,
+                pos,
+                disallow_zip64,
+                &mut Vec::new(),
+            )?;
             pos = data.position();
         }
         Ok(())
@@ -893,7 +902,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .try_inner_mut()?
             .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
-        let file_name_raw = dest_name.as_bytes().into();
+        let file_name_raw = dest_name.as_bytes();
         new_data.file_name = dest_name.into();
         new_data.header_start = write_position;
         let extra_data_start = write_position
@@ -1276,7 +1285,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
         let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
+        let file_name_raw = file_name.as_bytes().to_vec();
         let mut file = ZipFileData::initialize_local_block(
             file_name,
             &options,
@@ -1304,7 +1313,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let index = self.insert_file_data(file, &file_name_raw)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
-            ExtendedFileOptions::validate_extra_data(&extra_data, false, &mut file_name_raw)?;
+            ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
             let file = &mut self.files[index];
             let block = file.local_block(&file_name_raw)?;
             let writer = self.inner.try_inner_mut()?;
@@ -2488,7 +2497,11 @@ impl ZipFileData {
         Ok(())
     }
 
-    pub(crate) fn write_central_directory_header<T: Write>(&self, writer: &mut T, file_name_raw: &[u8]) -> ZipResult<()> {
+    pub(crate) fn write_central_directory_header<T: Write>(
+        &self,
+        writer: &mut T,
+        file_name_raw: &[u8],
+    ) -> ZipResult<()> {
         let mut block = self.block(file_name_raw)?;
         let stripped_extra = if let Some(extra) = &self.extra_field {
             strip_alignment_extra_field(extra, true)

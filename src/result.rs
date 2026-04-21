@@ -94,12 +94,6 @@ impl From<DateTimeRangeError> for ZipError {
     }
 }
 
-impl From<std::str::Utf8Error> for ZipError {
-    fn from(_: std::str::Utf8Error) -> Self {
-        invalid!("Invalid UTF-8")
-    }
-}
-
 /// Error type for time parsing
 #[derive(Debug)]
 pub struct DateTimeRangeError;
@@ -108,6 +102,12 @@ pub struct DateTimeRangeError;
 impl From<TryFromIntError> for DateTimeRangeError {
     fn from(_value: TryFromIntError) -> Self {
         DateTimeRangeError
+    }
+}
+
+impl From<std::string::FromUtf8Error> for ZipError {
+    fn from(_: std::string::FromUtf8Error) -> Self {
+        invalid!("Invalid UTF-8")
     }
 }
 

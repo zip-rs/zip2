@@ -476,8 +476,8 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
 }
 
 #[inline]
-fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipResult<Box<[u8]>> {
-    let mut data = vec![0; len].into_boxed_slice();
+fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipResult<Vec<u8>> {
+    let mut data = vec![0; len];
     if let Err(e) = reader.read_exact(&mut data) {
         if e.kind() == io::ErrorKind::UnexpectedEof {
             return Err(invalid!(
@@ -577,10 +577,10 @@ fn central_header_to_zip_file_inner<R: Read>(
         .checked_add(archive_offset)
         .ok_or(invalid!("Archive header is too large"))?;
 
-    Ok((result, file_name_raw))
+    Ok((result, file_name_raw.into()))
 }
 
-pub(crate) fn parse_extra_field(file: &mut ZipFileData, file_name_raw: &mut [u8]) -> ZipResult<()> {
+pub(crate) fn parse_extra_field(file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
     let mut extra_field = file.extra_field.clone();
     let mut central_extra_field = file.central_extra_field.clone();
     for field_group in [&mut extra_field, &mut central_extra_field] {
@@ -595,7 +595,8 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData, file_name_raw: &mut [u8]
         let mut position = reader.position();
         while position < len as u64 {
             let old_position = position;
-            let remove = parse_single_extra_field(file, &mut reader, position, false, file_name_raw)?;
+            let remove =
+                parse_single_extra_field(file, &mut reader, position, false, file_name_raw)?;
             position = reader.position();
             if remove {
                 modified = true;
@@ -628,7 +629,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     reader: &mut R,
     bytes_already_read: u64,
     disallow_zip64: bool,
-    file_name_raw: &mut [u8],
+    file_name_raw: &mut Vec<u8>,
 ) -> ZipResult<bool> {
     let kind = match reader.read_u16_le() {
         Ok(kind) => kind,
@@ -706,10 +707,11 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         Ok(UsedExtraField::UnicodePath) => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            file_name_raw = &mut UnicodeExtraField::try_from_reader(reader, len)?
-                .unwrap_valid(&file_name_raw)?;
-            file.file_name =
-                std::str::from_utf8(file_name_raw)?.into_boxed_str();
+            let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
+            let file_name = unicode.unwrap_valid(&file_name_raw)?;
+            file_name_raw.clear();
+            file_name_raw.extend_from_slice(&file_name);
+            file.file_name = String::from_utf8(file_name_raw.to_vec())?.into_boxed_str();
             file.is_utf8 = true;
         }
         _ => {
