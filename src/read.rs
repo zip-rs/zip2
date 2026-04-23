@@ -1077,9 +1077,16 @@ impl<R: Read> ZipFile<'_, R> {
     }
 }
 
+impl<R: Read + ?Sized> ZipFile<'_, R> {
+    /// Get the ZipFileData
+    pub fn get_metadata(&self) -> &ZipFileData {
+        self.data.as_ref()
+    }
+}
+
 impl<R: Read + ?Sized> HasZipMetadata for ZipFile<'_, R> {
     fn get_metadata(&self) -> &ZipFileData {
-        self.data.as_ref()
+        ZipFile::get_metadata(self)
     }
 }
 
@@ -1117,9 +1124,16 @@ impl<R: Seek> Seek for ZipFileSeek<'_, R> {
     }
 }
 
-impl<R> HasZipMetadata for ZipFileSeek<'_, R> {
+impl<R> ZipFileSeek<'_, R> {
+    /// Get the ZipFileData
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
+    }
+}
+
+impl<R> HasZipMetadata for ZipFileSeek<'_, R> {
+    fn get_metadata(&self) -> &ZipFileData {
+        ZipFileSeek::get_metadata(self)
     }
 }
 
