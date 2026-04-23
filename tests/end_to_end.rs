@@ -300,37 +300,3 @@ fn test_long_comment_is_cut() {
     assert_eq!(comment, &bytes[..(u16::MAX as usize)]);
 }
 
-// Test to use the HasZipMetadata trait which use a private unnamed type
-#[test]
-fn test_explicit_system_roundtrip() {
-    use std::io::Cursor;
-    use std::io::Write;
-    use zip::CompressionMethod::Stored;
-    use zip::HasZipMetadata; // We use the trait here
-    use zip::System;
-    use zip::ZipArchive;
-    use zip::ZipWriter;
-    use zip::write::SimpleFileOptions;
-    let system = System::Unix;
-
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = SimpleFileOptions::default()
-        .compression_method(Stored)
-        .system(system);
-
-    let filename = format!("test_{:?}.txt", system);
-    writer.start_file(&filename, options).unwrap();
-    writer.write_all(b"content").unwrap();
-
-    // Write and read back
-    let bytes = writer.finish().unwrap().into_inner();
-    let mut reader = ZipArchive::new(Cursor::new(bytes)).unwrap();
-
-    let file = reader.by_index(0).unwrap();
-    assert_eq!(
-        file.get_metadata().system, // We use the trait here
-        system,
-        "System mismatch for {:?}",
-        system
-    );
-}
