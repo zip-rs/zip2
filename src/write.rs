@@ -929,7 +929,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
             block.write(plain_writer)?;
-            plain_writer.write_all(&dest_name_raw)?;
+            plain_writer.write_all(dest_name_raw)?;
             if let Some(data) = &new_data.extra_field {
                 plain_writer.write_all(data)?;
             }
@@ -1909,7 +1909,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
         for (filename_raw, file) in &self.files {
-            file.write_central_directory_header(writer, &filename_raw)?;
+            file.write_central_directory_header(writer, filename_raw)?;
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
@@ -1986,7 +1986,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let src_index = self.index_by_name(src_name.as_bytes())?;
         let mut dest_data = self.files[src_index].clone();
         dest_data.file_name = dest_name.into();
-        let file_name_raw = dest_name.as_bytes().into();
+        let file_name_raw = dest_name.as_bytes();
         dest_data.central_header_start = 0;
         self.insert_file_data(file_name_raw, dest_data)?;
 
