@@ -2639,6 +2639,7 @@ impl<W: Write> Seek for StreamWriter<W> {
 mod tests {
     use super::{ExtendedFileOptions, FileOptions, FullFileOptions, ZipWriter};
     use crate::CompressionMethod::Stored;
+    use crate::ZipArchive;
     use crate::compression::CompressionMethod;
     use crate::datetime::DateTime;
     use crate::result::ZipResult;
@@ -2646,7 +2647,6 @@ mod tests {
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
-    use crate::{HasZipMetadata, ZipArchive};
     #[cfg(feature = "deflate-flate2")]
     use std::io::Read;
     use std::io::{Cursor, Write};
@@ -4521,6 +4521,7 @@ mod tests {
 
     #[test]
     fn test_explicit_system_roundtrip() -> ZipResult<()> {
+        use crate::read::HasZipMetadata;
         // Test round-trip: write with various systems, read back and verify
         let systems = vec![System::Unix, System::Dos, System::WindowsNTFS];
 
@@ -4552,6 +4553,7 @@ mod tests {
 
     #[test]
     fn test_system_default_behavior() -> ZipResult<()> {
+        use crate::read::HasZipMetadata;
         // Test that when system is not set, default behavior is preserved
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(Stored);

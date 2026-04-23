@@ -285,7 +285,6 @@ impl ZipFileData {
         Ok(SeekableTake::new(reader, self.compressed_size)?)
     }
 
-    #[allow(dead_code)]
     pub fn is_dir(&self) -> bool {
         is_dir(&self.file_name)
     }

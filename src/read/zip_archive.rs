@@ -67,10 +67,9 @@ impl SharedBuilder {
 /// reader it uses. However, this is not guaranteed by this crate and it may
 /// change in the future.
 ///
-/// ```no_run
+/// ```
 /// use std::io::{Read, Seek};
 /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
-///     use zip::HasZipMetadata;
 ///     let mut zip = zip::ZipArchive::new(reader)?;
 ///
 ///     for i in 0..zip.len() {
