@@ -711,7 +711,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
             let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
-            let file_name = unicode.unwrap_valid(&file_name_raw)?;
+            let file_name = unicode.unwrap_valid(file_name_raw)?;
             file.file_name = String::from_utf8(file_name.to_vec())?.into_boxed_str();
             *file_name_raw = file_name.into_vec();
             file.is_utf8 = true;
