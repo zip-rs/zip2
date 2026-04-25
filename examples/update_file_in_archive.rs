@@ -60,7 +60,7 @@ fn update_file(archive_filename: &str, file_to_update: &str, in_place: bool) -> 
     let new = b"Lorem ipsum";
     for i in 0..archive.len() {
         let file = archive.by_index_raw(i)?;
-        match file.enclosed_name() {
+        match file.enclosed_name()? {
             Some(p) if p == target => {
                 new_archive.start_file(file_to_update, SimpleFileOptions::default())?;
                 new_archive.write_all(new)?;

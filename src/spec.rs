@@ -997,8 +997,8 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 }
 
 #[inline]
-pub(crate) fn is_dir(filename: &str) -> bool {
-    matches!(filename.as_bytes().last(), Some(b'/') | Some(b'\\'))
+pub(crate) fn is_dir(filename: &[u8]) -> bool {
+    matches!(filename.last(), Some(b'/') | Some(b'\\'))
 }
 
 #[cfg(test)]

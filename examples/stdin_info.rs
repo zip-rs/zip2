@@ -11,9 +11,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     loop {
         match zip::read::read_zipfile_from_stream(&mut stdin_handle) {
             Ok(Some(mut file)) => {
+                let file_name = file.name()?;
                 println!(
                     "{}: {} bytes ({} bytes packed)",
-                    file.name(),
+                    file_name,
                     file.size(),
                     file.compressed_size()
                 );

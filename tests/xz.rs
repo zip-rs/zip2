@@ -12,7 +12,8 @@ pub fn decompress_xz() {
     let mut file = archive
         .by_name("hello.txt")
         .expect("couldn't find hello.txt in archive");
-    assert_eq!("hello.txt", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("hello.txt", file_name);
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)

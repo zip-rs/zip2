@@ -98,7 +98,7 @@ fn test_encrypted_file_operations() {
     {
         // Correct password, read contents
         let mut file = archive.by_index_decrypt(0, b"test").unwrap();
-        let file_name = file.enclosed_name().unwrap();
+        let file_name = file.enclosed_name().unwrap().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
         let mut decrypted_file = Vec::new();
@@ -117,7 +117,7 @@ fn test_encrypted_file_operations() {
         let mut file = archive
             .by_index_with_options(0, ZipReadOptions::new().password(Some("test".as_bytes())))
             .unwrap();
-        let file_name = file.enclosed_name().unwrap();
+        let file_name = file.enclosed_name().unwrap().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
         let mut decrypted_file = Vec::new();

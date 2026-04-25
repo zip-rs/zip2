@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             }
         };
-        let out_path = match file.enclosed_name() {
+        let out_path = match file.enclosed_name()? {
             Some(path) => path,
             None => {
                 eprintln!(

@@ -11,7 +11,8 @@ pub fn decompress_lzma() {
     let mut file = archive
         .by_name("binary.wmv")
         .expect("couldn't find file in archive");
-    assert_eq!("binary.wmv", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("binary.wmv", file_name);
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)

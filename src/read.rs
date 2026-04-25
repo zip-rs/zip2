@@ -9,7 +9,6 @@ use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::is_dir;
 use crate::spec::{
     CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
@@ -524,11 +523,6 @@ fn central_header_to_zip_file_inner<R: Read>(
     let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
-    let file_name: Box<str> = if is_utf8 {
-        String::from_utf8_lossy(&file_name_raw).into()
-    } else {
-        file_name_raw.from_cp437()?.into()
-    };
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()
     } else {
@@ -550,7 +544,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
         flags,
-        file_name,
         extra_field: Some(Arc::from(extra_field)),
         central_extra_field: None,
         file_comment,
@@ -712,7 +705,6 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
             let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
             let file_name = unicode.unwrap_valid(file_name_raw)?;
-            file.file_name = String::from_utf8(file_name.to_vec())?.into_boxed_str();
             *file_name_raw = file_name.into_vec();
             file.is_utf8 = true;
         }
@@ -803,8 +795,8 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     ///
     /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
-    pub fn name(&self) -> &str {
-        &self.get_metadata().file_name
+    pub fn name(&self) -> ZipResult<Cow<'_, str>> {
+        self.data.name(&self.file_name_raw)
     }
 
     /// Get the name of the file, in the raw (internal) byte representation.
@@ -821,7 +813,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         note = "by stripping `..`s from the path, the meaning of paths can change.
                 `mangled_name` can be used if this behaviour is desirable"
     )]
-    pub fn sanitized_name(&self) -> PathBuf {
+    pub fn sanitized_name(&self) -> ZipResult<PathBuf> {
         self.mangled_name()
     }
 
@@ -837,8 +829,10 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> PathBuf {
-        self.get_metadata().file_name_sanitized()
+    pub fn mangled_name(&self) -> ZipResult<PathBuf> {
+        let file_name = self.name()?;
+        let sanitized = self.data.file_name_sanitized(&file_name);
+        Ok(sanitized)
     }
 
     /// Ensure the file path is safe to use as a [`Path`].
@@ -851,14 +845,18 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<PathBuf> {
-        self.get_metadata().enclosed_name()
+    pub fn enclosed_name(&self) -> ZipResult<Option<PathBuf>> {
+        let file_name = self.name()?;
+        let enclosed = self.data.enclosed_name(&file_name);
+        Ok(enclosed)
     }
-
-    pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
-        self.get_metadata().simplified_components()
-    }
-
+    /*
+        pub(crate) fn simplified_components<'b>(&'b self) -> ZipResult<Option<Vec<OsString>>> {
+            let file_name = self.name()?;
+            let simplified = self.data.simplified_components(&file_name).map(|v| v.into_iter().map(|s| s.to_os_string()).collect());
+            Ok(simplified)
+        }
+    */
     /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
     ///
     /// `base_path` parameter is assumed to be canonicalized.
@@ -868,8 +866,10 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         outpath: &mut PathBuf,
         root_dir: Option<&(Vec<&OsStr>, impl RootDirFilter)>,
     ) -> ZipResult<()> {
+        let file_name = self.name()?;
         let components = self
-            .simplified_components()
+            .data
+            .simplified_components(&file_name)
             .ok_or(invalid!("Invalid file path"))?;
 
         let components = match root_dir {
@@ -904,7 +904,6 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
         for (is_last, component) in components
             .iter()
-            .copied()
             .enumerate()
             .map(|(i, c)| (i == components_len - 1, c))
         {
@@ -1003,7 +1002,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     }
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-        is_dir(self.name())
+        self.data.is_dir(&self.file_name_raw)
     }
 
     /// Returns whether the file is actually a symbolic link

@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Could not open {fname_arg:?}: {e}"))?;
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        let outpath = match file.enclosed_name() {
+        let outpath = match file.enclosed_name()? {
             Some(path) => path,
             None => {
                 println!("Entry {:?} has a suspicious path", file.name());

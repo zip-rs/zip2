@@ -164,7 +164,7 @@ pub mod tests {
             let file = archive.by_index(i).unwrap();
 
             // After our fix, enclosed_name should return a safe relative path
-            let enclosed_name = file.enclosed_name();
+            let enclosed_name = file.enclosed_name().unwrap();
 
             // Should now return Some with the absolute prefix stripped
             assert!(enclosed_name.is_some());
@@ -196,13 +196,13 @@ pub mod tests {
         // These should still fail due to directory traversal protection
         for i in 0..archive.len() {
             let file = archive.by_index(i).unwrap();
-            let enclosed_name = file.enclosed_name();
+            let enclosed_name = file.enclosed_name().unwrap();
 
             // Directory traversal attempts should still return None
             assert!(
                 enclosed_name.is_none(),
                 "Directory traversal should still be blocked for: {}",
-                file.name()
+                file.name().unwrap()
             );
         }
     }

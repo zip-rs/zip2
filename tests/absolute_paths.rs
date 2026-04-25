@@ -40,11 +40,12 @@ fn test_absolute_paths() -> zip::result::ZipResult<()> {
         // Verify that enclosed_name properly handles the paths
         let enclosed_name = file
             .enclosed_name()
+            .unwrap()
             .expect("enclosed_name should not be None for valid paths");
         assert!(
             !enclosed_name.is_absolute(),
             "enclosed_name for '{}' should be relative, but was: {:?}",
-            file.name(),
+            file.name().unwrap(),
             enclosed_name
         );
     }

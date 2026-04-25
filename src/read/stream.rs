@@ -6,7 +6,7 @@ use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
 use crate::result::ZipError;
-use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock, is_dir};
+use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
@@ -95,7 +95,7 @@ impl<R: Read> ZipStreamReader<R> {
                     use super::ZipError;
                     use std::os::unix::fs::PermissionsExt;
                     let filepath = metadata
-                        .enclosed_name()
+                        .enclosed_name()?
                         .ok_or(crate::result::invalid!("Invalid file path"))?;
 
                     let outpath = self.0.join(filepath);
@@ -148,8 +148,8 @@ impl ZipStreamFileMetadata {
     ///
     /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
-    pub fn name(&self) -> &str {
-        &self.0.file_name
+    pub fn name<'a>(&'a self) -> ZipResult<Cow<'a, str>> {
+        self.0.name(&self.1)
     }
 
     /// Get the name of the file, in the raw (internal) byte representation.
@@ -169,8 +169,10 @@ impl ZipStreamFileMetadata {
     /// any archive, but will easily misrepresent trivial paths like
     /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
-    pub fn mangled_name(&self) -> PathBuf {
-        self.0.file_name_sanitized()
+    pub fn mangled_name(&self) -> ZipResult<PathBuf> {
+        let name = self.name()?;
+        let sanitized = self.0.file_name_sanitized(&name);
+        Ok(sanitized)
     }
 
     /// Ensure the file path is safe to use as a [`Path`].
@@ -183,13 +185,16 @@ impl ZipStreamFileMetadata {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<PathBuf> {
-        self.0.enclosed_name()
+    pub fn enclosed_name(&self) -> ZipResult<Option<PathBuf>> {
+        let name = self.name()?;
+        let enclosed = self.0.enclosed_name(&name);
+        Ok(enclosed)
     }
 
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-        is_dir(self.name())
+        let cowed = Cow::Borrowed(&*self.1);
+        self.0.is_dir(&cowed)
     }
 
     /// Returns whether the file is a regular file
@@ -401,20 +406,22 @@ mod tests {
         impl ZipStreamVisitor for V {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
                 if file.is_file() {
-                    self.filenames.insert(file.name().into());
+                    let file_name = file.name().unwrap();
+                    self.filenames.insert(file_name.into());
                 }
 
                 Ok(())
             }
             fn visit_additional_metadata(
                 &mut self,
-                metadata: &ZipStreamFileMetadata,
+                zip_file_metadata: &ZipStreamFileMetadata,
             ) -> ZipResult<()> {
-                if metadata.is_file() {
+                if zip_file_metadata.is_file() {
+                    let file_name = zip_file_metadata.name().unwrap();
                     assert!(
-                        self.filenames.contains(metadata.name()),
+                        self.filenames.contains(file_name.as_ref()),
                         "{} is missing its file content",
-                        metadata.name()
+                        file_name
                     );
                 }
 
@@ -437,7 +444,7 @@ mod tests {
         }
         impl ZipStreamVisitor for V {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-                let full_name = file.enclosed_name().unwrap();
+                let full_name = file.enclosed_name().unwrap().unwrap();
                 let file_name = full_name.file_name().unwrap().to_str().unwrap();
                 assert!(
                     (file_name.starts_with("dir") && file.is_dir())
@@ -445,20 +452,22 @@ mod tests {
                 );
 
                 if file.is_file() {
-                    self.filenames.insert(file.name().into());
+                    let file_name = file.name().unwrap();
+                    self.filenames.insert(file_name.into());
                 }
 
                 Ok(())
             }
             fn visit_additional_metadata(
                 &mut self,
-                metadata: &ZipStreamFileMetadata,
+                zip_file_metadata: &ZipStreamFileMetadata,
             ) -> ZipResult<()> {
-                if metadata.is_file() {
+                if zip_file_metadata.is_file() {
+                    let file_name = zip_file_metadata.name().unwrap();
                     assert!(
-                        self.filenames.contains(metadata.name()),
+                        self.filenames.contains(file_name.as_ref()),
                         "{} is missing its file content",
-                        metadata.name()
+                        file_name
                     );
                 }
 

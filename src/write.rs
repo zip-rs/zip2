@@ -16,7 +16,6 @@ use core::mem::{self, offset_of, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
-use std::borrow::ToOwned;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
@@ -901,7 +900,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
         let dest_name_raw = dest_name.as_bytes();
-        new_data.file_name = dest_name.into();
         new_data.header_start = write_position;
         let extra_data_start = write_position
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
@@ -1174,9 +1172,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S: ToString, T: FileOptionExtension>(
+    fn start_entry<T: FileOptionExtension>(
         &mut self,
-        name: &S,
+        file_name_raw: &[u8],
         mut options: FileOptions<'_, T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()> {
@@ -1243,7 +1241,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let header_end = header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + name.to_string().len() as u64;
+            + file_name_raw.len() as u64;
 
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
@@ -1283,10 +1281,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
-        let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw = file_name.as_bytes().to_vec();
         let mut file = ZipFileData::initialize_local_block(
-            file_name,
+            file_name_raw,
             &options,
             &raw_values,
             header_start,
@@ -1309,16 +1305,16 @@ impl<W: Write + Seek> ZipWriter<W> {
             !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
-        let index = self.insert_file_data(&file_name_raw, file)?;
+        let index = self.insert_file_data(file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
             ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
             let file = &mut self.files[index];
-            let block = file.local_block(&file_name_raw)?;
+            let block = file.local_block(file_name_raw)?;
             let writer = self.inner.try_inner_mut()?;
             block.write(writer)?;
             // file name
-            writer.write_all(&file_name_raw)?;
+            writer.write_all(file_name_raw)?;
             if extra_data_len > 0 {
                 writer.write_all(&extra_data)?;
                 file.extra_field = Some(Arc::from(extra_data.into_boxed_slice()));
@@ -1389,7 +1385,11 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     fn insert_file_data(&mut self, file_name_raw: &[u8], file: ZipFileData) -> ZipResult<usize> {
         if self.files.contains_key(file_name_raw) {
-            return Err(invalid!("Duplicate filename: {}", file.file_name));
+            let lossy = String::from_utf8_lossy(file_name_raw);
+            return Err(invalid!(
+                "Duplicate filename: {} (lossy utf8 representation)",
+                lossy
+            ));
         }
         let (index, _) = self.files.insert_full(file_name_raw.into(), file);
         Ok(index)
@@ -1520,7 +1520,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             options.zopfli_buffer_size,
         )?;
-        self.start_entry(&name, options, None)?;
+        let file_name = name.to_string();
+        self.start_entry(file_name.as_bytes(), options, None)?;
         let result = self.inner.switch_to(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
@@ -1639,13 +1640,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
-        self.raw_copy_file_rename_internal(file, &name, options)
+        let file_name = name.to_string();
+        self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options)
     }
 
-    fn raw_copy_file_rename_internal<R: Read, S: ToString, T: FileOptionExtension>(
+    fn raw_copy_file_rename_internal<R: Read, T: FileOptionExtension>(
         &mut self,
         mut file: ZipFile<'_, R>,
-        name: &S,
+        name: &[u8],
         options: FileOptions<'_, T>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
@@ -1699,8 +1701,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// }
     /// ```
     pub fn raw_copy_file<R: Read>(&mut self, file: ZipFile<'_, R>) -> ZipResult<()> {
-        let name = file.name().to_owned();
-        self.raw_copy_file_rename(file, name)
+        let file_name = file.name()?.into_owned();
+        self.raw_copy_file_rename(file, file_name)
     }
 
     /// Add a new file using the already compressed data from a ZIP file being read and set the last
@@ -1732,8 +1734,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         last_modified_time: DateTime,
         unix_mode: Option<u32>,
     ) -> ZipResult<()> {
-        let name = file.name().to_owned();
-
         let mut options = file.options().into_full_options();
 
         options = options.last_modified_time(last_modified_time);
@@ -1747,8 +1747,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         options.normalize();
-
-        self.raw_copy_file_rename_internal(file, &name, options)
+        let file_name_raw = file.name_raw().to_owned();
+        self.raw_copy_file_rename_internal(file, &file_name_raw, options)
     }
 
     /// Add a directory entry.
@@ -1779,7 +1779,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(&name_with_slash, options, None)?;
+        self.start_entry(name_with_slash.as_bytes(), options, None)?;
         self.writing_to_file = false;
         self.switch_to_non_encrypting_writer()?;
         Ok(())
@@ -1847,7 +1847,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         // likely wastes space. So always store.
         options.compression_method = Stored;
 
-        self.start_entry(&name, options, None)?;
+        let file_name = name.to_string();
+        self.start_entry(file_name.as_bytes(), options, None)?;
         self.writing_to_file = true;
         let result = self.write_all(target.to_string().as_bytes());
         self.ok_or_abort_file(result)?;
@@ -1985,7 +1986,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let src_index = self.index_by_name(src_name.as_bytes())?;
         let mut dest_data = self.files[src_index].clone();
-        dest_data.file_name = dest_name.into();
         let file_name_raw = dest_name.as_bytes();
         dest_data.central_header_start = 0;
         self.insert_file_data(file_name_raw, dest_data)?;
@@ -2800,7 +2800,10 @@ mod tests {
             .start_file_from_path(path, SimpleFileOptions::default())
             .unwrap();
         let archive = writer.finish_into_readable().unwrap();
-        assert_eq!(Some("foo/example.txt"), archive.name_for_index(0));
+        assert_eq!(
+            "foo/example.txt",
+            archive.name_for_index(0).unwrap().unwrap()
+        );
     }
 
     #[test]
@@ -2952,6 +2955,8 @@ mod tests {
     #[test]
     #[cfg(feature = "deflate-flate2")]
     fn test_shallow_copy() {
+        use std::borrow::Cow;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: CompressionMethod::default(),
@@ -2982,7 +2987,7 @@ mod tests {
             .shallow_copy_file(SECOND_FILENAME, SECOND_FILENAME)
             .expect_err("Duplicate filename");
         let mut reader = writer.finish_into_readable().unwrap();
-        let mut file_names: Vec<&str> = reader.file_names().collect();
+        let mut file_names: Vec<Cow<'_, str>> = reader.file_names().map(|f| f.unwrap()).collect();
         file_names.sort();
         let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME];
         expected_file_names.sort();
@@ -3006,6 +3011,8 @@ mod tests {
     #[test]
     #[cfg(feature = "deflate-flate2")]
     fn test_deep_copy() {
+        use std::borrow::Cow;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: CompressionMethod::default(),
@@ -3036,7 +3043,7 @@ mod tests {
             .unwrap();
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
-        let mut file_names: Vec<&str> = reader.file_names().collect();
+        let mut file_names: Vec<Cow<'_, str>> = reader.file_names().map(|f| f.unwrap()).collect();
         file_names.sort();
         let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME, THIRD_FILENAME];
         expected_file_names.sort();
@@ -3266,7 +3273,7 @@ mod tests {
         let _count = zip.write(&contents[..]).unwrap();
         let mut zip = zip.finish_into_readable().unwrap();
         let file = zip.by_index(0).unwrap();
-        assert_eq!(file.name(), "sleep");
+        assert_eq!(file.name().unwrap(), "sleep");
         let data_start = file.data_start().unwrap();
         assert_eq!(data_start, u64::from(page_size));
     }
@@ -3288,7 +3295,7 @@ mod tests {
         {
             let mut zip = ZipArchive::new(Cursor::new(&mut data)).unwrap();
             let file = zip.by_index(0).unwrap();
-            assert_eq!(file.name(), "sleep");
+            assert_eq!(file.name().unwrap(), "sleep");
             let data_start = file.data_start().unwrap();
             assert_eq!(data_start, u64::from(page_size));
         }

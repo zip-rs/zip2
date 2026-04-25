@@ -12,7 +12,7 @@ fn test_prepended_garbage() {
 
     for file_idx in 0..archive.len() {
         let file = archive.by_index(file_idx).unwrap();
-        let outpath = file.enclosed_name().unwrap();
+        let outpath = file.enclosed_name().unwrap().unwrap();
 
         println!(
             "Entry {} has name \"{}\" ({} bytes)",

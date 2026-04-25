@@ -64,9 +64,21 @@ fn test_append_near_4gb() {
 
         assert_eq!(archive.len(), 3);
         assert!(!archive.has_overlapping_files().unwrap());
-        assert!(archive.file_names().any(|name| name == "close_to_4gb"));
-        assert!(archive.file_names().any(|name| name == "small_file"));
-        assert!(archive.file_names().any(|name| name == "appended_file"));
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "small_file")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "appended_file")
+        );
     }
 }
 
@@ -127,12 +139,36 @@ fn test_append_near_4gb_with_1gb_files() {
 
         assert_eq!(archive.len(), 6);
         assert!(!archive.has_overlapping_files().unwrap());
-        assert!(archive.file_names().any(|name| name == "close_to_4gb_0"));
-        assert!(archive.file_names().any(|name| name == "close_to_4gb_1"));
-        assert!(archive.file_names().any(|name| name == "close_to_4gb_2"));
-        assert!(archive.file_names().any(|name| name == "close_to_4gb_3"));
-        assert!(archive.file_names().any(|name| name == "small_file"));
-        assert!(archive.file_names().any(|name| name == "appended_file"));
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_0")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_1")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_2")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_3")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "small_file")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "appended_file")
+        );
     }
 }
 
@@ -184,7 +220,7 @@ fn test_append_with_large_file_flag() {
         let archive = zip::ZipArchive::new(file).unwrap();
 
         assert_eq!(archive.len(), 2);
-        assert!(archive.file_names().any(|name| name == "file1"));
-        assert!(archive.file_names().any(|name| name == "file2"));
+        assert!(archive.file_names().any(|name| name.unwrap() == "file1"));
+        assert!(archive.file_names().any(|name| name.unwrap() == "file2"));
     }
 }

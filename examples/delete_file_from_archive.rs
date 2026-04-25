@@ -48,7 +48,7 @@ fn remove_file(
     let target: &std::path::Path = file_to_remove.as_ref();
     for i in 0..archive.len() {
         let file = archive.by_index_raw(i)?;
-        match file.enclosed_name() {
+        match file.enclosed_name()? {
             Some(p) if p == target => (),
             _ => new_archive.raw_copy_file(file)?,
         }

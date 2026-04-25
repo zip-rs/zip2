@@ -19,7 +19,8 @@ pub fn aes256_encrypted_uncompressed_file() {
     let mut file = archive
         .by_name_decrypt("secret_data_256_uncompressed", PASSWORD)
         .expect("couldn't find file in archive");
-    assert_eq!("secret_data_256_uncompressed", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("secret_data_256_uncompressed", file_name);
 
     let mut decrypted_content = String::new();
     file.read_to_string(&mut decrypted_content)
@@ -35,7 +36,8 @@ fn aes256_encrypted_file() {
     let mut file = archive
         .by_name_decrypt("secret_data_256", PASSWORD)
         .expect("couldn't find file in archive");
-    assert_eq!("secret_data_256", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("secret_data_256", file_name);
 
     let mut content = String::new();
     file.read_to_string(&mut content)
@@ -51,7 +53,8 @@ fn aes192_encrypted_file() {
     let mut file = archive
         .by_name_decrypt("secret_data_192", PASSWORD)
         .expect("couldn't find file in archive");
-    assert_eq!("secret_data_192", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("secret_data_192", file_name);
 
     let mut content = String::new();
     file.read_to_string(&mut content)
@@ -67,7 +70,8 @@ fn aes128_encrypted_file() {
     let mut file = archive
         .by_name_decrypt("secret_data_128", PASSWORD)
         .expect("couldn't find file in archive");
-    assert_eq!("secret_data_128", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("secret_data_128", file_name);
 
     let mut content = String::new();
     file.read_to_string(&mut content)
@@ -167,7 +171,7 @@ fn raw_copy_from_aes_zip() {
         let total = src.len();
         for i in 0..total {
             let file = src.by_index_raw(i).expect("read source entry");
-            let name = file.name().to_string();
+            let name = file.name().unwrap().to_string();
             if file.is_dir() {
                 dst.add_directory(&name, SimpleFileOptions::default())
                     .expect("add directory");
@@ -187,7 +191,7 @@ fn raw_copy_from_aes_zip() {
         // Copy out simple header fields without holding borrows across later reads
         let (name, is_dir, s_encrypted, d_encrypted, s_comp, d_comp) = {
             let s = src_zip.by_index_raw(i).expect("src by_index_raw");
-            let name = s.name().to_string();
+            let name = s.name().unwrap().to_string();
             let is_dir = s.is_dir();
             let s_encrypted = s.encrypted();
             let s_comp = s.compression();
