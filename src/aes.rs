@@ -10,7 +10,7 @@ use crate::result::ZipResult;
 use crate::types::{AesMode, AesVendorVersion};
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
-use hmac::{SimpleHmacReset, KeyInit, Mac};
+use hmac::{KeyInit, Mac, SimpleHmacReset};
 use sha1::Sha1;
 use std::io::{self, Error, ErrorKind, Read, Write};
 use zeroize::{Zeroize, Zeroizing};
