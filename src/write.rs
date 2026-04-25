@@ -840,7 +840,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
         let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
-
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
             files: shared.files,
@@ -992,7 +991,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let comment = mem::take(&mut self.comment);
         let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
         let files = mem::take(&mut self.files);
-
         Ok(ZipArchive::from_finalized_writer(
             files,
             comment,
