@@ -108,7 +108,10 @@ where
             if self.pos == AES_BLOCK_SIZE {
                 self.buffer = self.counter.to_le_bytes();
                 #[allow(deprecated)]
-                self.cipher.encrypt_block(aes::cipher::Block::<C::Cipher>::from_mut_slice(&mut self.buffer));
+                self.cipher
+                    .encrypt_block(aes::cipher::Block::<C::Cipher>::from_mut_slice(
+                        &mut self.buffer,
+                    ));
                 self.counter += 1;
                 self.pos = 0;
             }
