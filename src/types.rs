@@ -192,8 +192,6 @@ pub struct ZipFileData {
     pub uncompressed_size: u64,
     /// Name of the file
     pub file_name: Box<str>,
-    /// Raw file name. To be used when `file_name` was incorrectly decoded.
-    pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
     pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
@@ -402,8 +400,8 @@ impl ZipFileData {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
-        name: &S,
+    pub(crate) fn initialize_local_block<T: FileOptionExtension>(
+        file_name: Box<str>,
         options: &FileOptions<'_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
@@ -412,15 +410,10 @@ impl ZipFileData {
         compression_method: crate::compression::CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
         extra_field: &[u8],
-    ) -> Self
-    where
-        S: ToString,
-    {
+    ) -> Self {
         let permissions = options
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
-        let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
@@ -462,7 +455,6 @@ impl ZipFileData {
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
             file_name, // Never used for saving, but used as map key in insert_file_data()
-            file_name_raw,
             extra_field: Some(Arc::from(extra_field)),
             central_extra_field: options
                 .extended_options
@@ -486,7 +478,7 @@ impl ZipFileData {
     pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
         block: ZipLocalEntryBlock,
         reader: &mut R,
-    ) -> ZipResult<Self> {
+    ) -> ZipResult<(Self, Vec<u8>)> {
         let ZipLocalEntryBlock {
             version_made_by,
             flags,
@@ -546,7 +538,7 @@ impl ZipFileData {
         };
 
         let (version_made_by, system) = System::extract_bytes(version_made_by);
-        Ok(ZipFileData {
+        let data = ZipFileData {
             system,
             version_made_by,
             flags,
@@ -560,7 +552,6 @@ impl ZipFileData {
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
             file_name,
-            file_name_raw: file_name_raw.into(),
             extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
@@ -578,19 +569,14 @@ impl ZipFileData {
             extra_fields: Vec::new(),
             extra_data_start: None,
             aes_extra_data_start: 0,
-        })
+        };
+        Ok((data, file_name_raw))
     }
 
-    fn is_utf8(&self) -> bool {
-        std::str::from_utf8(&self.file_name_raw).is_ok()
-    }
-
-    fn is_ascii(&self) -> bool {
-        self.file_name_raw.is_ascii() && self.file_comment.is_ascii()
-    }
-
-    fn flags(&self) -> u16 {
-        let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
+    fn flags(&self, file_name_raw: &[u8]) -> u16 {
+        let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
+        let is_ascii = file_name_raw.is_ascii() && self.file_comment.is_ascii();
+        let utf8_bit: u16 = if is_utf8 && !is_ascii {
             ZipFlags::LanguageEncoding.as_u16()
         } else {
             0
@@ -618,7 +604,7 @@ impl ZipFileData {
         }
     }
 
-    pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
+    pub(crate) fn local_block(&self, file_name_raw: &[u8]) -> ZipResult<ZipLocalEntryBlock> {
         let (compressed_size, uncompressed_size) = if self.using_data_descriptor {
             (0, 0)
         } else {
@@ -637,15 +623,14 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         Ok(ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length: self
-                .file_name_raw
+            file_name_length: file_name_raw
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
@@ -653,7 +638,7 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
+    pub(crate) fn block(&self, file_name_raw: &[u8]) -> ZipResult<ZipCentralEntryBlock> {
         let compressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
         } else {
@@ -691,15 +676,14 @@ impl ZipFileData {
         Ok(ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length: self
-                .file_name_raw
+            file_name_length: file_name_raw
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
@@ -912,7 +896,6 @@ mod tests {
             compressed_size: 0,
             uncompressed_size: 0,
             file_name: file_name.clone().into_boxed_str(),
-            file_name_raw: file_name.into_bytes().into_boxed_slice(),
             extra_field: None,
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),

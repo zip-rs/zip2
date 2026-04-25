@@ -435,7 +435,13 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, disallow_zip64)?;
+            parse_single_extra_field(
+                &mut ZipFileData::default(),
+                &mut data,
+                pos,
+                disallow_zip64,
+                &mut Vec::new(),
+            )?;
             pos = data.position();
         }
         Ok(())
@@ -893,12 +899,12 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .try_inner_mut()?
             .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
-        new_data.file_name_raw = dest_name.as_bytes().into();
+        let dest_name_raw = dest_name.as_bytes();
         new_data.file_name = dest_name.into();
         new_data.header_start = write_position;
         let extra_data_start = write_position
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + new_data.file_name_raw.len() as u64;
+            + dest_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
             let stripped = strip_alignment_extra_field(extra, false);
@@ -916,13 +922,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.data_start.take();
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
-        let block = new_data.local_block()?;
-        let index = self.insert_file_data(new_data)?;
+        let block = new_data.local_block(dest_name_raw)?;
+        let index = self.insert_file_data(dest_name_raw, new_data)?;
         let new_data = &self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
             block.write(plain_writer)?;
-            plain_writer.write_all(&new_data.file_name_raw)?;
+            plain_writer.write_all(dest_name_raw)?;
             if let Some(data) = &new_data.extra_field {
                 plain_writer.write_all(data)?;
             }
@@ -1275,8 +1281,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
+        let file_name: Box<str> = name.to_string().into_boxed_str();
+        let file_name_raw = file_name.as_bytes().to_vec();
         let mut file = ZipFileData::initialize_local_block(
-            name,
+            file_name,
             &options,
             &raw_values,
             header_start,
@@ -1299,16 +1307,16 @@ impl<W: Write + Seek> ZipWriter<W> {
             !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
-        let index = self.insert_file_data(file)?;
+        let index = self.insert_file_data(&file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
             ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
             let file = &mut self.files[index];
-            let block = file.local_block()?;
+            let block = file.local_block(&file_name_raw)?;
             let writer = self.inner.try_inner_mut()?;
             block.write(writer)?;
             // file name
-            writer.write_all(&file.file_name_raw)?;
+            writer.write_all(&file_name_raw)?;
             if extra_data_len > 0 {
                 writer.write_all(&extra_data)?;
                 file.extra_field = Some(Arc::from(extra_data.into_boxed_slice()));
@@ -1377,11 +1385,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
-        if self.files.contains_key(&file.file_name_raw) {
+    fn insert_file_data(&mut self, file_name_raw: &[u8], file: ZipFileData) -> ZipResult<usize> {
+        if self.files.contains_key(file_name_raw) {
             return Err(invalid!("Duplicate filename: {}", file.file_name));
         }
-        let (index, _) = self.files.insert_full(file.file_name_raw.clone(), file);
+        let (index, _) = self.files.insert_full(file_name_raw.into(), file);
         Ok(index)
     }
 
@@ -1401,9 +1409,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         let writer = self.inner.try_inner_mut()?;
 
         if !self.writing_raw {
-            let file = match self.files.last_mut() {
+            let (file_name_raw, file) = match self.files.last_mut() {
                 None => return Ok(()),
-                Some((_, f)) => f,
+                Some(s) => s,
             };
             file.uncompressed_size = self.stats.bytes_written;
 
@@ -1429,7 +1437,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.using_data_descriptor {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
-                file.update_local_file_header(writer)?;
+                file.update_local_file_header(writer, file_name_raw)?;
                 writer.seek(SeekFrom::Start(file_end))?;
             }
         }
@@ -1898,8 +1906,8 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
-        for file in self.files.values() {
-            file.write_central_directory_header(writer)?;
+        for (filename_raw, file) in &self.files {
+            file.write_central_directory_header(writer, filename_raw)?;
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
@@ -1976,9 +1984,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         let src_index = self.index_by_name(src_name.as_bytes())?;
         let mut dest_data = self.files[src_index].clone();
         dest_data.file_name = dest_name.into();
-        dest_data.file_name_raw = dest_name.as_bytes().into();
+        let file_name_raw = dest_name.as_bytes();
         dest_data.central_header_start = 0;
-        self.insert_file_data(dest_data)?;
+        self.insert_file_data(file_name_raw, dest_data)?;
 
         Ok(())
     }
@@ -2439,6 +2447,7 @@ impl ZipFileData {
     pub(crate) fn update_local_file_header<T: Write + Seek>(
         &mut self,
         writer: &mut T,
+        file_name_raw: &[u8],
     ) -> ZipResult<()> {
         writer.seek(SeekFrom::Start(
             self.header_start + (size_of::<Magic>() + offset_of!(ZipLocalEntryBlock, crc32)) as u64,
@@ -2448,7 +2457,7 @@ impl ZipFileData {
             writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
             writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
 
-            self.update_local_zip64_extra_field(writer)?;
+            self.update_local_zip64_extra_field(writer, file_name_raw)?;
 
             // self.compressed_size = spec::ZIP64_BYTES_THR;
             // self.uncompressed_size = spec::ZIP64_BYTES_THR;
@@ -2466,7 +2475,11 @@ impl ZipFileData {
         Ok(())
     }
 
-    fn update_local_zip64_extra_field<T: Write + Seek>(&mut self, writer: &mut T) -> ZipResult<()> {
+    fn update_local_zip64_extra_field<T: Write + Seek>(
+        &mut self,
+        writer: &mut T,
+        file_name_raw: &[u8],
+    ) -> ZipResult<()> {
         let zip64_block = Zip64ExtendedInformation::local_header(
             self.large_file,
             self.uncompressed_size,
@@ -2478,7 +2491,7 @@ impl ZipFileData {
 
         let zip64_extra_field_start = self.header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + self.file_name_raw.len() as u64;
+            + file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
         let zip64_block = zip64_block.serialize();
@@ -2486,8 +2499,12 @@ impl ZipFileData {
         Ok(())
     }
 
-    pub(crate) fn write_central_directory_header<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        let mut block = self.block()?;
+    pub(crate) fn write_central_directory_header<T: Write>(
+        &self,
+        writer: &mut T,
+        file_name_raw: &[u8],
+    ) -> ZipResult<()> {
+        let mut block = self.block(file_name_raw)?;
         let stripped_extra = if let Some(extra) = &self.extra_field {
             strip_alignment_extra_field(extra, true)
         } else {
@@ -2511,7 +2528,7 @@ impl ZipFileData {
 
         block.write(writer)?;
         // file name
-        writer.write_all(&self.file_name_raw)?;
+        writer.write_all(file_name_raw)?;
         // extra field
         if let Some(zip64_extra_field) = zip64_extra_field_block {
             writer.write_all(&zip64_extra_field.serialize())?;

@@ -32,13 +32,13 @@ impl<R: Read> ZipStreamReader<R> {
 
         // Parse central header
         let block = ZipCentralEntryBlock::parse(&mut self.0)?;
-        let file = central_header_to_zip_file_inner(
+        let (file, file_name_raw) = central_header_to_zip_file_inner(
             &mut self.0,
             archive_offset,
             central_header_start,
             block,
         )?;
-        Ok(ZipStreamFileMetadata(file))
+        Ok(ZipStreamFileMetadata(file, file_name_raw))
     }
 
     /// Iterate over the stream and extract all file and their
@@ -133,7 +133,7 @@ pub trait ZipStreamVisitor {
 
 /// Additional metadata for the file.
 #[derive(Debug)]
-pub struct ZipStreamFileMetadata(ZipFileData);
+pub struct ZipStreamFileMetadata(ZipFileData, Box<[u8]>);
 
 impl ZipStreamFileMetadata {
     /// Get the name of the file
@@ -156,7 +156,7 @@ impl ZipStreamFileMetadata {
     ///
     /// The encoding of this data is currently undefined.
     pub fn name_raw(&self) -> &[u8] {
-        &self.0.file_name_raw
+        &self.1
     }
 
     /// Rewrite the path, ignoring any path components with special meaning.
@@ -244,9 +244,9 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
     let block = block.from_le();
 
-    let mut result = ZipFileData::from_local_block(block, reader)?;
+    let (mut result, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
 
-    match parse_extra_field(&mut result) {
+    match parse_extra_field(&mut result, &mut file_name_raw) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
@@ -263,6 +263,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
     } = result;
 
     Ok(Some(ZipFile {
+        file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(result),
         reader: make_reader(
             compression_method,
@@ -295,7 +296,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
 
     let block = block.from_le();
 
-    let mut result = ZipFileData::from_local_block(block, reader)?;
+    let (mut result, file_name_raw) = ZipFileData::from_local_block(block, reader)?;
     result.compressed_size = compressed_size;
 
     if result.encrypted {
@@ -316,6 +317,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     } = result;
 
     Ok(Some(ZipFile {
+        file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(result),
         reader: make_reader(
             compression_method,
