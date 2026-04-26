@@ -129,7 +129,7 @@ fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let comment = seeded_random_bytes(comment_len);
-    writer.set_raw_comment(comment.into_boxed_slice())?;
+    writer.set_raw_comment(comment.into_boxed_slice());
     writer.start_file("data.txt", options)?;
     writer.write_all(b"x")?;
     Ok(writer.finish()?.into_inner())
