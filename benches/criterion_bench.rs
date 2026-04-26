@@ -1,9 +1,6 @@
-// Criterion-based benchmarks (baseline storage, regression detection).
-// Run: cargo bench --bench criterion_bench
-// First run saves baseline; later runs compare and can fail on regression.
-//
-// Merge / raw_copy benches use a longer measurement window (10s) so 100 samples can
-// complete without Criterion’s default 5s cap — helps on SBCs (e.g. Raspberry Pi).
+// Criterion-based benchmarks. Run: `cargo bench --bench criterion_bench`.
+// Optional baselines: pass Criterion flags after `--` (e.g. `--save-baseline`, `--baseline <name>`).
+// Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::fs;
@@ -138,6 +135,64 @@ fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
     Ok(writer.finish()?.into_inner())
 }
 
+/// `merge_archive_stored` and `merge_archive_raw_copy_file_stored` only. Uses a
+/// longer Criterion window than the default (see `merge_archive_benches` group) for
+/// stable timing on slow hosts.
+fn merge_archive_benchmarks(c: &mut Criterion) {
+    let bench_dir = tempfile::TempDir::with_prefix("criterion_zip_merge").unwrap();
+    let p = |name: &str| bench_dir.path().join(name);
+
+    let merge_options =
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let path_merge_src = p("merge_src.zip");
+    let path_merge_out = p("merge_out.zip");
+    let (len, src_bytes) =
+        generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, merge_options).unwrap();
+    fs::write(&path_merge_src, &src_bytes).unwrap();
+
+    c.bench_function("merge_archive_stored", |b| {
+        b.iter_batched(
+            || {
+                let src = ZipArchive::new(fs::File::open(&path_merge_src).unwrap()).unwrap();
+                let out = fs::File::create(&path_merge_out).unwrap();
+                (src, out)
+            },
+            |(src, out)| {
+                let zip = ZipWriter::new(out);
+                let zip = perform_merge(src, zip).unwrap();
+                let out = zip.finish().unwrap();
+                assert_eq!(out.metadata().unwrap().len() as usize, len);
+                black_box(out);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    let path_merge_src2 = p("merge_src2.zip");
+    let path_merge_out2 = p("merge_out2.zip");
+    let (len2, src_bytes2) =
+        generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, merge_options).unwrap();
+    fs::write(&path_merge_src2, &src_bytes2).unwrap();
+
+    c.bench_function("merge_archive_raw_copy_file_stored", |b| {
+        b.iter_batched(
+            || {
+                let src = ZipArchive::new(fs::File::open(&path_merge_src2).unwrap()).unwrap();
+                let out = fs::File::create(&path_merge_out2).unwrap();
+                (src, out)
+            },
+            |(src, out)| {
+                let zip = ZipWriter::new(out);
+                let zip = perform_raw_copy_file(src, zip).unwrap();
+                let out = zip.finish().unwrap();
+                assert_eq!(out.metadata().unwrap().len() as usize, len2);
+                black_box(out);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
     // Shared directory: all fixtures use real files under here (see each section below).
     let bench_dir = tempfile::TempDir::with_prefix("criterion_zip").unwrap();
@@ -148,11 +203,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Single stored entry (~1 MiB payload); read full entry in a loop from disk.
     // ============================================================================
     let path_read_entry = p("read_entry.zip");
-    fs::write(
-        &path_read_entry,
-        generate_random_archive(1024 * 1024),
-    )
-        .unwrap();
+    fs::write(&path_read_entry, generate_random_archive(1024 * 1024)).unwrap();
 
     c.bench_function("read_entry", |b| {
         b.iter(|| {
@@ -180,7 +231,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_meta,
         generate_random_archive_meta(FILE_COUNT, FILE_SIZE_META).unwrap(),
     )
-        .unwrap();
+    .unwrap();
 
     c.bench_function("read_metadata", |b| {
         b.iter(|| {
@@ -192,65 +243,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-
-    /// `merge_archive_stored` and `merge_archive_raw_copy_file_stored` only. Uses a
-    /// longer Criterion window than the default for stable timing on slow hosts.
-    fn merge_archive_benchmarks(c: &mut Criterion) {
-        let bench_dir = tempfile::TempDir::with_prefix("criterion_zip_merge").unwrap();
-        let p = |name: &str| bench_dir.path().join(name);
-
-        let merge_options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        let path_merge_src = p("merge_src.zip");
-        let path_merge_out = p("merge_out.zip");
-        let (len, src_bytes) =
-            generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, merge_options).unwrap();
-        fs::write(&path_merge_src, &src_bytes).unwrap();
-
-        c.bench_function("merge_archive_stored", |b| {
-            b.iter_batched(
-                || {
-                    let src = ZipArchive::new(fs::File::open(&path_merge_src).unwrap()).unwrap();
-                    let out = fs::File::create(&path_merge_out).unwrap();
-                    (src, out)
-                },
-                |(src, out)| {
-                    let zip = ZipWriter::new(out);
-                    let zip = perform_merge(src, zip).unwrap();
-                    let out = zip.finish().unwrap();
-                    assert_eq!(out.metadata().unwrap().len() as usize, len);
-                    black_box(out);
-                },
-                BatchSize::SmallInput,
-            );
-        });
-
-        let path_merge_src2 = p("merge_src2.zip");
-        let path_merge_out2 = p("merge_out2.zip");
-        let (len2, src_bytes2) =
-            generate_random_archive_merge(NUM_ENTRIES, ENTRY_SIZE, merge_options).unwrap();
-        fs::write(&path_merge_src2, &src_bytes2).unwrap();
-
-        c.bench_function("merge_archive_raw_copy_file_stored", |b| {
-            b.iter_batched(
-                || {
-                    let src = ZipArchive::new(fs::File::open(&path_merge_src2).unwrap()).unwrap();
-                    let out = fs::File::create(&path_merge_out2).unwrap();
-                    (src, out)
-                },
-                |(src, out)| {
-                    let zip = ZipWriter::new(out);
-                    let zip = perform_raw_copy_file(src, zip).unwrap();
-                    let out = zip.finish().unwrap();
-                    assert_eq!(out.metadata().unwrap().len() as usize, len2);
-                    black_box(out);
-                },
-                BatchSize::SmallInput,
-            );
-        });
-    }
-
-
     // ============================================================================
     // read_all_entries
     // Many small entries; read each by index to sink (from disk).
@@ -260,12 +252,11 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_all_entries,
         generate_random_archive_meta(READ_ALL_ENTRIES_FILES, 512).unwrap(),
     )
-        .unwrap();
+    .unwrap();
 
     c.bench_function("read_all_entries", |b| {
         b.iter(|| {
-            let mut archive =
-                ZipArchive::new(fs::File::open(&path_all_entries).unwrap()).unwrap();
+            let mut archive = ZipArchive::new(fs::File::open(&path_all_entries).unwrap()).unwrap();
             for i in 0..archive.len() {
                 let mut entry = archive.by_index(i).unwrap();
                 let _ = io::copy(&mut entry, &mut io::sink()).unwrap();
@@ -298,7 +289,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_comment,
         generate_archive_with_comment(COMMENT_BENCH_LEN).unwrap(),
     )
-        .unwrap();
+    .unwrap();
 
     c.bench_function("parse_archive_with_comment", |b| {
         b.iter(|| {
@@ -316,7 +307,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         &path_stream,
         generate_random_archive_meta(STREAM_ENTRIES, STREAM_ENTRY_SIZE).unwrap(),
     )
-        .unwrap();
+    .unwrap();
 
     c.bench_function("read_stream_entries", |b| {
         b.iter(|| {
@@ -419,10 +410,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                 4096,
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
             )
-                .unwrap()
-                .1,
+            .unwrap()
+            .1,
         )
-            .unwrap();
+        .unwrap();
 
         c.bench_function("read_deflated_entry", |b| {
             b.iter(|| {
