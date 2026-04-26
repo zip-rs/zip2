@@ -587,16 +587,13 @@ impl ZipFileData {
         })
     }
 
-    fn is_utf8(&self) -> bool {
-        std::str::from_utf8(&self.file_name_raw).is_ok()
-    }
-
     fn is_ascii(&self) -> bool {
         self.file_name_raw.is_ascii() && self.file_comment.is_ascii()
     }
 
     fn flags(&self) -> u16 {
-        let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
+        let is_utf8 = std::str::from_utf8(&self.file_name_raw).is_ok(); // file_comment is always utf8
+        let utf8_bit: u16 = if is_utf8 && !self.is_ascii() {
             ZipFlags::LanguageEncoding.as_u16()
         } else {
             0
