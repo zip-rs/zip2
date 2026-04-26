@@ -173,8 +173,6 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// ZIP flags
     pub flags: u16,
-    /// True if `file_name` and `file_comment` are UTF8
-    pub is_utf8: bool,
     /// Compression method used to store the file
     pub compression_method: crate::compression::CompressionMethod,
     /// Compression level to store the file
@@ -459,11 +457,13 @@ impl ZipFileData {
         if encrypted {
             flags |= ZipFlags::Encrypted.as_u16();
         }
+        if std::str::from_utf8(&file_name_raw).is_ok() {
+            flags |= ZipFlags::LanguageEncoding.as_u16();
+        }
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
             flags,
-            is_utf8: !file_name.is_ascii(),
             compression_method,
             compression_level: options.compression_level,
             last_modified_time: Some(options.last_modified_time),
@@ -559,7 +559,6 @@ impl ZipFileData {
             system,
             version_made_by,
             flags,
-            is_utf8,
             compression_method,
             compression_level: None,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
@@ -909,7 +908,6 @@ mod tests {
             system: System::Dos,
             version_made_by: 0,
             flags: 0,
-            is_utf8: true,
             compression_method: crate::compression::CompressionMethod::Stored,
             compression_level: None,
             last_modified_time: None,

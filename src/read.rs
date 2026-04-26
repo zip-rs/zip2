@@ -537,7 +537,6 @@ fn central_header_to_zip_file_inner<R: Read>(
     let mut result = ZipFileData {
         system,
         version_made_by,
-        is_utf8,
         compression_method: CompressionMethod::parse_from_u16(compression_method),
         compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
@@ -705,7 +704,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 .unwrap_valid(&file.file_name_raw)?;
             file.file_name =
                 String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
-            file.is_utf8 = true;
+            file.flags |= ZipFlags::LanguageEncoding.as_u16();
         }
         _ => {
             if let Err(e) = reader.read_exact(&mut vec![0u8; len as usize]) {

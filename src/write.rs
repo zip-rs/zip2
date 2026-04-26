@@ -1292,7 +1292,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 return Err(invalid!("File comment must be less than 64KiB"));
             }
             if !comment.is_ascii() {
-                file.is_utf8 = true;
+                file.flags |= ZipFlags::LanguageEncoding.as_u16();
             }
             file.file_comment = comment;
         }
