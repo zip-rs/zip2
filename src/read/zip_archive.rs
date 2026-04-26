@@ -117,7 +117,7 @@ impl<R> ZipArchive<R> {
     pub fn decompressed_size(&self) -> Option<u128> {
         let mut total = 0u128;
         for file in self.shared.files.values() {
-            if file.using_data_descriptor {
+            if file.is_using_data_descriptor() {
                 return None;
             }
             total = total.checked_add(u128::from(file.uncompressed_size))?;
@@ -562,7 +562,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             options.password = None;
         } else {
             // Require and use the password only if the file is encrypted.
-            match (options.password, data.encrypted) {
+            match (options.password, data.is_encrypted()) {
                 (None, true) => {
                     return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
                 }

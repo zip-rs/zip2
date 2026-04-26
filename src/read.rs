@@ -516,9 +516,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         ..
     } = block;
 
-    let encrypted = ZipFlags::matching(flags, ZipFlags::Encrypted);
     let is_utf8 = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
-    let using_data_descriptor = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
 
     let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
@@ -539,8 +537,6 @@ fn central_header_to_zip_file_inner<R: Read>(
     let mut result = ZipFileData {
         system,
         version_made_by,
-        encrypted,
-        using_data_descriptor,
         is_utf8,
         compression_method: CompressionMethod::parse_from_u16(compression_method),
         compression_level: None,
@@ -979,7 +975,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
     /// Get if the files is encrypted or not
     pub fn encrypted(&self) -> bool {
-        self.data.encrypted
+        self.data.is_encrypted()
     }
 
     /// Get the size of the file, in bytes, in the archive
