@@ -180,7 +180,7 @@ pub struct ZipFileData {
     /// True if the file uses a data-descriptor section
     pub using_data_descriptor: bool,
     /// Compression method used to store the file
-    pub compression_method: crate::compression::CompressionMethod,
+    pub compression_method: CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: Option<DateTime>,
     /// CRC32 checksum
@@ -408,7 +408,7 @@ impl ZipFileData {
         header_start: u64,
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
-        compression_method: crate::compression::CompressionMethod,
+        compression_method: CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
         extra_field: &[u8],
     ) -> Self
@@ -515,7 +515,7 @@ impl ZipFileData {
         }
 
         let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
-        let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
+        let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
 
@@ -891,7 +891,7 @@ mod tests {
 
     #[test]
     fn sanitize() {
-        use super::{System, ZipFileData};
+        use super::{System, ZipFileData, CompressionMethod};
         use std::{path::PathBuf, sync::OnceLock};
 
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
@@ -902,7 +902,7 @@ mod tests {
             encrypted: false,
             using_data_descriptor: false,
             is_utf8: true,
-            compression_method: crate::compression::CompressionMethod::Stored,
+            compression_method: CompressionMethod::Stored,
             last_modified_time: None,
             crc32: 0,
             compressed_size: 0,
