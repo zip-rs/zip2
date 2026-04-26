@@ -543,7 +543,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         using_data_descriptor,
         is_utf8,
         compression_method: CompressionMethod::parse_from_u16(compression_method),
-        compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,
         compressed_size: compressed_size.into(),

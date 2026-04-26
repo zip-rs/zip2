@@ -165,6 +165,7 @@ pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,
@@ -180,8 +181,6 @@ pub struct ZipFileData {
     pub using_data_descriptor: bool,
     /// Compression method used to store the file
     pub compression_method: crate::compression::CompressionMethod,
-    /// Compression level to store the file
-    pub compression_level: Option<i64>,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: Option<DateTime>,
     /// CRC32 checksum
@@ -456,7 +455,6 @@ impl ZipFileData {
             using_data_descriptor: false,
             is_utf8: !file_name.is_ascii(),
             compression_method,
-            compression_level: options.compression_level,
             last_modified_time: Some(options.last_modified_time),
             crc32: raw_values.crc32,
             compressed_size: raw_values.compressed_size,
@@ -554,7 +552,6 @@ impl ZipFileData {
             using_data_descriptor,
             is_utf8,
             compression_method,
-            compression_level: None,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
             crc32,
             compressed_size: compressed_size.into(),
@@ -906,7 +903,6 @@ mod tests {
             using_data_descriptor: false,
             is_utf8: true,
             compression_method: crate::compression::CompressionMethod::Stored,
-            compression_level: None,
             last_modified_time: None,
             crc32: 0,
             compressed_size: 0,
