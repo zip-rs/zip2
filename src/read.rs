@@ -850,13 +850,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         let enclosed = self.data.enclosed_name(&file_name);
         Ok(enclosed)
     }
-    /*
-        pub(crate) fn simplified_components<'b>(&'b self) -> ZipResult<Option<Vec<OsString>>> {
-            let file_name = self.name()?;
-            let simplified = self.data.simplified_components(&file_name).map(|v| v.into_iter().map(|s| s.to_os_string()).collect());
-            Ok(simplified)
-        }
-    */
+
     /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
     ///
     /// `base_path` parameter is assumed to be canonicalized.

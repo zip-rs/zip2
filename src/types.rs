@@ -221,7 +221,7 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
-    pub fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
+    pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
         let file_name = if self.is_utf8 {
             String::from_utf8_lossy(file_name_raw)
         } else {
