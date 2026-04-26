@@ -34,6 +34,7 @@ impl ExtraFieldVersion for CentralHeaderVersion {}
 
 /// contains one extra field
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ExtraField {
     /// NTFS extra field
     Ntfs(Ntfs),
