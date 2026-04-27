@@ -7,6 +7,7 @@ use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
+use crate::spec::ZipFlags;
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
@@ -1291,12 +1292,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                 return Err(invalid!("File comment must be less than 64KiB"));
             }
             if !comment.is_ascii() {
-                file.is_utf8 = true;
+                file.flags |= ZipFlags::LanguageEncoding.as_u16();
             }
             file.file_comment = comment;
         }
-        file.using_data_descriptor =
-            !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..)));
+        if !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..))) {
+            file.flags |= ZipFlags::UsingDataDescriptor.as_u16();
+        }
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file)?;
@@ -1411,7 +1413,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
 
-            if !file.using_data_descriptor {
+            if !file.is_using_data_descriptor() {
                 // Not using a data descriptor means the underlying writer
                 // supports seeking, so we can go back and update the AES Extra
                 // Data header to use AE1 for large files.
@@ -1426,7 +1428,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 0
             };
 
-            if file.using_data_descriptor {
+            if file.is_using_data_descriptor() {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
                 file.update_local_file_header(writer)?;
