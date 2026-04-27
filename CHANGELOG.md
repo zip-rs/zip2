@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0](https://github.com/zip-rs/zip2/compare/v8.6.0...v9.0.0) - 2026-04-27
+
+### <!-- 2 -->🚜 Refactor
+
+- Remove useless compressed level ([#791](https://github.com/zip-rs/zip2/pull/791))
+- add non exhaustive to extra fields ([#793](https://github.com/zip-rs/zip2/pull/793))
+- remove macro export ([#792](https://github.com/zip-rs/zip2/pull/792))
+
 ## [8.6.0](https://github.com/zip-rs/zip2/compare/v8.5.1...v8.6.0) - 2026-04-25
 
 ### <!-- 0 -->🚀 Features
