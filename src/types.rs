@@ -457,7 +457,7 @@ impl ZipFileData {
         if encrypted {
             flags |= ZipFlags::Encrypted.as_u16();
         }
-        if std::str::from_utf8(&file_name_raw).is_ok() && !file_name.is_ascii() {
+        if !file_name.is_ascii() {
             flags |= ZipFlags::LanguageEncoding.as_u16();
         }
         let mut local_block = ZipFileData {
