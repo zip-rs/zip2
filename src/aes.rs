@@ -64,7 +64,7 @@ impl AesModeOptions {
         }
     }
 
-    /// Used to create a the `aes_mode` of `ZipFileData`
+    /// Used to create the `aes_mode` of `ZipFileData`
     pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
         (
             self.mode,
