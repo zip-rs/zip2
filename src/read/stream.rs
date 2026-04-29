@@ -298,7 +298,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     let mut result = ZipFileData::from_local_block(block, reader)?;
     result.compressed_size = compressed_size;
 
-    if result.encrypted {
+    if result.is_encrypted() {
         return Err(ZipError::UnsupportedArchive(
             "Encrypted files are not supported",
         ));
