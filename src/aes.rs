@@ -114,7 +114,7 @@ impl AesSalt {
         )
     }
 
-    /// Creates a new `CustomSalt` with the given `mode` and `salt`.
+    /// Creates a new `AesSalt` with the given `mode` and `salt`.
     /// The length of `salt` must be at least the required salt length for the given `mode`, otherwise an error is returned.
     ///
     /// # Errors
