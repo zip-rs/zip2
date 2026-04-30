@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn unicode_extra_field_crc32_correct() {
         let data = [
-            0x01, 0xef, 0x39, 0x8e, 0x4b, 'u' as u8, 't' as u8, 'f' as u8, '-' as u8, '8' as u8,
+            0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8',
         ];
         let extra =
             UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn unicode_extra_field_crc32_incorrect() {
         let data = [
-            0x01, 0x00, 0x00, 0x00, 0x00, 'u' as u8, 't' as u8, 'f' as u8, '-' as u8, '8' as u8,
+            0x01, 0x00, 0x00, 0x00, 0x00, b'u', b't', b'f', b'-', b'8',
         ];
         let extra =
             UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
