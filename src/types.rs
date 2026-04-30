@@ -184,7 +184,7 @@ pub struct ZipFileData {
     /// Size of the file when extracted
     pub uncompressed_size: u64,
     /// Name of the file
-    pub file_name: Box<str>,
+    pub file_name: Arc<str>,
     /// Extra field usually used for storage expansion
     pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
@@ -404,7 +404,7 @@ impl ZipFileData {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
-        file_name: Box<str>,
+        file_name: Arc<str>,
         options: &FileOptions<'_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
@@ -534,7 +534,7 @@ impl ZipFileData {
             return Err(e.into());
         }
 
-        let file_name: Box<str> = if is_utf8 {
+        let file_name: Arc<str> = if is_utf8 {
             String::from_utf8_lossy(&file_name_raw).into()
         } else {
             file_name_raw
@@ -893,7 +893,7 @@ mod tests {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.clone().into_boxed_str(),
+            file_name: file_name.into(),
             extra_field: None,
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),

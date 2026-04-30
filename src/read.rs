@@ -79,7 +79,7 @@ pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), Zi
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    _existing_files: &IndexMap<Box<[u8]>, T>,
+    _existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
     Ok(())
@@ -89,7 +89,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    existing_files: &IndexMap<Box<[u8]>, T>,
+    existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
@@ -113,7 +113,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -125,7 +125,7 @@ pub(crate) fn make_symlink<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -219,7 +219,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
+    ) -> ZipResult<IndexMap<Arc<[u8]>, ZipFileData>> {
         if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
@@ -456,7 +456,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     reader: &mut R,
     central_directory: &CentralDirectoryInfo,
-) -> ZipResult<(ZipFileData, Box<[u8]>)> {
+) -> ZipResult<(ZipFileData, Arc<[u8]>)> {
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
@@ -495,7 +495,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     archive_offset: u64,
     central_header_start: u64,
     block: ZipCentralEntryBlock,
-) -> ZipResult<(ZipFileData, Box<[u8]>)> {
+) -> ZipResult<(ZipFileData, Arc<[u8]>)> {
     let ZipCentralEntryBlock {
         // magic,
         version_made_by,
@@ -522,11 +522,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
-    let file_name: Box<str> = if is_utf8 {
-        String::from_utf8_lossy(&file_name_raw).into()
-    } else {
-        file_name_raw.from_cp437()?.into()
-    };
+
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()
     } else {
@@ -544,7 +540,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
         flags,
-        file_name,
+        file_name: Arc::from(""), // temporary
         extra_field: Some(Arc::from(extra_field)),
         central_extra_field: None,
         file_comment,
@@ -560,6 +556,23 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
     parse_extra_field(&mut result, &mut file_name_raw)?;
 
+    let is_utf8 = ZipFlags::matching(result.flags, ZipFlags::LanguageEncoding);
+    let file_name_arc: Arc<str>;
+    let file_name_raw_arc: Arc<[u8]>;
+    if is_utf8 {
+        if let Ok(s) = std::str::from_utf8(&file_name_raw) {
+            file_name_arc = Arc::from(s);
+            file_name_raw_arc = unsafe { Arc::from_raw(Arc::into_raw(file_name_arc.clone()) as *const [u8]) };
+        } else {
+            file_name_arc = String::from_utf8_lossy(&file_name_raw).into();
+            file_name_raw_arc = file_name_raw.into();
+        }
+    } else {
+        file_name_arc = file_name_raw.from_cp437()?.into();
+        file_name_raw_arc = file_name_raw.into();
+    }
+    result.file_name = file_name_arc;
+
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
         return Err(invalid!("AES encryption without AES extra data field"));
@@ -571,7 +584,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         .checked_add(archive_offset)
         .ok_or(invalid!("Archive header is too large"))?;
 
-    Ok((result, file_name_raw.into()))
+    Ok((result, file_name_raw_arc))
 }
 
 pub(crate) fn parse_extra_field(
@@ -706,7 +719,6 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
             let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
             let file_name = unicode.unwrap_valid(file_name_raw)?;
-            file.file_name = String::from_utf8(file_name.to_vec())?.into_boxed_str();
             *file_name_raw = file_name.into_vec();
             file.flags |= ZipFlags::LanguageEncoding.as_u16();
         }
