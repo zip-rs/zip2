@@ -247,7 +247,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
             vendor_version,
         },
         (Some(password), None) => {
-            let validator = if data.using_data_descriptor {
+            let validator = if data.is_using_data_descriptor() {
                 ZipCryptoValidator::InfoZipMsdosTime(
                     data.last_modified_time.map_or(0, |x| x.timepart()),
                 )

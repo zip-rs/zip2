@@ -453,7 +453,7 @@ unsafe impl Pod for Zip32CDEBlock {}
 impl FixedSizeBlock for Zip32CDEBlock {
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
 
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid Central Directory End header");
 
     to_and_from_le![
         (disk_number, u16),
@@ -633,7 +633,7 @@ unsafe impl Pod for Zip64CDEBlock {}
 impl FixedSizeBlock for Zip64CDEBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
 
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid ZIP64 Central Directory End header");
 
     to_and_from_le![
         (record_size, u64),

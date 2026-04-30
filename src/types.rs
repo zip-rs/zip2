@@ -173,12 +173,6 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// ZIP flags
     pub flags: u16,
-    /// True if the file is encrypted.
-    pub encrypted: bool,
-    /// True if `file_name` and `file_comment` are UTF8
-    pub is_utf8: bool,
-    /// True if the file uses a data-descriptor section
-    pub using_data_descriptor: bool,
     /// Compression method used to store the file
     pub compression_method: CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
@@ -221,6 +215,16 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    /// Check if the encrypted flag is set
+    pub fn is_encrypted(&self) -> bool {
+        ZipFlags::matching(self.flags, ZipFlags::Encrypted)
+    }
+
+    /// Check if the data descriptor flag is set
+    pub fn is_using_data_descriptor(&self) -> bool {
+        ZipFlags::matching(self.flags, ZipFlags::UsingDataDescriptor)
+    }
+
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
@@ -363,7 +367,7 @@ impl ZipFileData {
         };
         let crypto_version: u16 = if self.aes_mode.is_some() {
             51
-        } else if self.encrypted {
+        } else if self.is_encrypted() {
             20
         } else {
             10
@@ -437,16 +441,20 @@ impl ZipFileData {
                 external_attributes |= 0x01;
             }
         }
+        let mut flags = 0;
         let encrypted = options.encrypt_with.is_some();
         #[cfg(feature = "aes-crypto")]
         let encrypted = encrypted || options.aes_mode.is_some();
+        if encrypted {
+            flags |= ZipFlags::Encrypted.as_u16();
+        }
+        if !file_name.is_ascii() {
+            flags |= ZipFlags::LanguageEncoding.as_u16();
+        }
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
-            flags: 0,
-            encrypted,
-            using_data_descriptor: false,
-            is_utf8: !file_name.is_ascii(),
+            flags,
             compression_method,
             last_modified_time: Some(options.last_modified_time),
             crc32: raw_values.crc32,
@@ -540,9 +548,6 @@ impl ZipFileData {
             system,
             version_made_by,
             flags,
-            encrypted,
-            using_data_descriptor,
-            is_utf8,
             compression_method,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
             crc32,
@@ -579,13 +584,13 @@ impl ZipFileData {
             0
         };
 
-        let using_data_descriptor_bit = if self.using_data_descriptor {
+        let using_data_descriptor_bit = if self.is_using_data_descriptor() {
             ZipFlags::UsingDataDescriptor.as_u16()
         } else {
             0
         };
 
-        let encrypted_bit: u16 = if self.encrypted { 1u16 << 0 } else { 0 };
+        let encrypted_bit: u16 = if self.is_encrypted() { 1u16 << 0 } else { 0 };
 
         utf8_bit | using_data_descriptor_bit | encrypted_bit
     }
@@ -602,7 +607,7 @@ impl ZipFileData {
     }
 
     pub(crate) fn local_block(&self, file_name_raw: &[u8]) -> ZipResult<ZipLocalEntryBlock> {
-        let (compressed_size, uncompressed_size) = if self.using_data_descriptor {
+        let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
             (0, 0)
         } else {
             (
@@ -883,9 +888,6 @@ mod tests {
             system: System::Dos,
             version_made_by: 0,
             flags: 0,
-            encrypted: false,
-            using_data_descriptor: false,
-            is_utf8: true,
             compression_method: CompressionMethod::Stored,
             last_modified_time: None,
             crc32: 0,
