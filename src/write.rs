@@ -1411,9 +1411,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         let writer = self.inner.try_inner_mut()?;
 
         if !self.writing_raw {
-            let (file_name_raw, file) = match self.files.last_mut() {
-                None => return Ok(()),
-                Some(s) => s,
+            let Some((file_name_raw, file)) = self.files.last_mut() else {
+                return Ok(())
             };
             file.uncompressed_size = self.stats.bytes_written;
 
