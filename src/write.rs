@@ -1319,11 +1319,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         let result: ZipResult<()> = {
             ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
             let file = &mut self.files[index];
-            let block = file.local_block(&file_name_raw)?;
+            let block = file.local_block(file_name_raw)?;
             let writer = self.inner.try_inner_mut()?;
             block.write(writer)?;
             // file name
-            writer.write_all(&file_name_raw)?;
+            writer.write_all(file_name_raw)?;
             if extra_data_len > 0 {
                 writer.write_all(&extra_data)?;
                 file.extra_field = Some(Arc::from(extra_data.into_boxed_slice()));
