@@ -562,7 +562,8 @@ fn central_header_to_zip_file_inner<R: Read>(
     if is_utf8 {
         if let Ok(s) = std::str::from_utf8(&file_name_raw) {
             file_name_arc = Arc::from(s);
-            file_name_raw_arc = unsafe { Arc::from_raw(Arc::into_raw(file_name_arc.clone()) as *const [u8]) };
+            file_name_raw_arc =
+                unsafe { Arc::from_raw(Arc::into_raw(file_name_arc.clone()) as *const [u8]) };
         } else {
             file_name_arc = String::from_utf8_lossy(&file_name_raw).into();
             file_name_raw_arc = file_name_raw.into();

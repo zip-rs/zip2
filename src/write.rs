@@ -903,7 +903,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let mut new_data = src_data.clone();
         let dest_name_string = dest_name.to_string();
         let dest_name_arc: Arc<str> = dest_name_string.into();
-        let dest_name_raw_arc: Arc<[u8]> = unsafe { Arc::from_raw(Arc::into_raw(dest_name_arc.clone()) as *const [u8]) };
+        let dest_name_raw_arc: Arc<[u8]> =
+            unsafe { Arc::from_raw(Arc::into_raw(dest_name_arc.clone()) as *const [u8]) };
         let dest_name_raw = dest_name_raw_arc.as_ref();
         new_data.file_name = dest_name_arc;
         new_data.header_start = write_position;
@@ -1287,7 +1288,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
         let file_name: Arc<str> = name.to_string().into();
-        let file_name_raw_arc: Arc<[u8]> = unsafe { Arc::from_raw(Arc::into_raw(file_name.clone()) as *const [u8]) };
+        let file_name_raw_arc: Arc<[u8]> =
+            unsafe { Arc::from_raw(Arc::into_raw(file_name.clone()) as *const [u8]) };
         let file_name_raw = file_name_raw_arc.as_ref();
         let mut file = ZipFileData::initialize_local_block(
             file_name,
@@ -1392,7 +1394,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn insert_file_data(&mut self, file_name_raw: Arc<[u8]>, file: ZipFileData) -> ZipResult<usize> {
+    fn insert_file_data(
+        &mut self,
+        file_name_raw: Arc<[u8]>,
+        file: ZipFileData,
+    ) -> ZipResult<usize> {
         if self.files.contains_key(file_name_raw.as_ref()) {
             return Err(invalid!("Duplicate filename: {}", file.file_name));
         }
@@ -1991,7 +1997,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut dest_data = self.files[src_index].clone();
         let dest_name_string = dest_name.to_string();
         let dest_name_arc: Arc<str> = dest_name_string.into();
-        let dest_name_raw_arc: Arc<[u8]> = unsafe { Arc::from_raw(Arc::into_raw(dest_name_arc.clone()) as *const [u8]) };
+        let dest_name_raw_arc: Arc<[u8]> =
+            unsafe { Arc::from_raw(Arc::into_raw(dest_name_arc.clone()) as *const [u8]) };
         dest_data.file_name = dest_name_arc;
         dest_data.central_header_start = 0;
         self.insert_file_data(dest_name_raw_arc, dest_data)?;
