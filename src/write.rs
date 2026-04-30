@@ -1412,7 +1412,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         if !self.writing_raw {
             let Some((file_name_raw, file)) = self.files.last_mut() else {
-                return Ok(())
+                return Ok(());
             };
             file.uncompressed_size = self.stats.bytes_written;
 

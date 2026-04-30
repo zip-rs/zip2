@@ -570,9 +570,12 @@ mod tests {
 
         let mut reader = Cursor::new(bytes);
         loop {
-            if read_zipfile_from_stream_with_compressed_size(&mut reader, u64::from(compressed_size))
-                .unwrap()
-                .is_none()
+            if read_zipfile_from_stream_with_compressed_size(
+                &mut reader,
+                u64::from(compressed_size),
+            )
+            .unwrap()
+            .is_none()
             {
                 break;
             }
