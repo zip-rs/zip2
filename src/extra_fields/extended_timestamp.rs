@@ -222,21 +222,21 @@ mod tests {
     fn check_extended_timestamp_value() {
         let mut cursor = Cursor::new(&[0b0000_0001_u8, 0x00, 0x00, 0x00, 0x01]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
-        assert_eq!(result.mod_time(), Some(16777216));
+        assert_eq!(result.mod_time(), Some(1 << 24));
         assert_eq!(result.ac_time(), None);
         assert_eq!(result.cr_time(), None);
 
         let mut cursor = Cursor::new(&[0b0000_0010_u8, 0x00, 0x00, 0x00, 0x02]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
         assert_eq!(result.mod_time(), None);
-        assert_eq!(result.ac_time(), Some(33554432));
+        assert_eq!(result.ac_time(), Some(2 << 24));
         assert_eq!(result.cr_time(), None);
 
         let mut cursor = Cursor::new(&[0b0000_0100_u8, 0x00, 0x00, 0x00, 0x03]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
         assert_eq!(result.mod_time(), None);
         assert_eq!(result.ac_time(), None);
-        assert_eq!(result.cr_time(), Some(50331648));
+        assert_eq!(result.cr_time(), Some(3 << 24));
 
         let mut cursor = Cursor::new(&[
             0b0000_0011_u8,
@@ -250,8 +250,8 @@ mod tests {
             0x02,
         ]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 9).unwrap();
-        assert_eq!(result.mod_time(), Some(16777216));
-        assert_eq!(result.ac_time(), Some(33554432));
+        assert_eq!(result.mod_time(), Some(1 << 24));
+        assert_eq!(result.ac_time(), Some(2 << 24));
         assert_eq!(result.cr_time(), None);
 
         let mut cursor = Cursor::new(&[
@@ -270,9 +270,9 @@ mod tests {
             0x03,
         ]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 13).unwrap();
-        assert_eq!(result.mod_time(), Some(16777216));
-        assert_eq!(result.ac_time(), Some(33554432));
-        assert_eq!(result.cr_time(), Some(50331648));
+        assert_eq!(result.mod_time(), Some(1 << 24));
+        assert_eq!(result.ac_time(), Some(2 << 24));
+        assert_eq!(result.cr_time(), Some(3 << 24));
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
         // in the central header
         let mut cursor = Cursor::new(&[0b0000_0111_u8, 0x00, 0x00, 0x00, 0x01]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5).unwrap();
-        assert_eq!(result.mod_time(), Some(16777216));
+        assert_eq!(result.mod_time(), Some(1 << 24));
         assert_eq!(result.ac_time(), None);
         assert_eq!(result.cr_time(), None);
 
@@ -301,8 +301,8 @@ mod tests {
             0x03,
         ]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 13).unwrap();
-        assert_eq!(result.mod_time(), Some(16777216));
-        assert_eq!(result.ac_time(), Some(33554432));
-        assert_eq!(result.cr_time(), Some(50331648));
+        assert_eq!(result.mod_time(), Some(1 << 24));
+        assert_eq!(result.ac_time(), Some(2 << 24));
+        assert_eq!(result.cr_time(), Some(3 << 24));
     }
 }
