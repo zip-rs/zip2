@@ -919,6 +919,8 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
             locator64: &Zip64CentralDirectoryEndLocator,
             expected_length: u64,
         ) -> ZipResult<Zip64CentralDirectoryEnd> {
+            const ZIP64_EOCD_RECORD_OVERHEAD: u64 = 12;
+
             let z64 = Zip64CentralDirectoryEnd::parse(reader, expected_length)?;
 
             // Consistency check: EOCD64 locator should agree with the EOCD64
@@ -927,7 +929,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
             }
 
             // Consistency check: the EOCD64 must have the expected length
-            if z64.record_size + 12 != expected_length {
+            if z64.record_size + ZIP64_EOCD_RECORD_OVERHEAD != expected_length {
                 return Err(invalid!("Invalid EOCD64: inconsistent length"));
             }
 
