@@ -420,7 +420,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 make_symlink(&outpath, &target, &self.shared.files)?;
                 continue;
             } else if file.is_dir() {
-                crate::read::make_writable_dir_all(&outpath)?;
+                make_writable_dir_all(&outpath)?;
                 continue;
             }
             let mut outfile = fs::File::create(&outpath)?;
@@ -800,17 +800,6 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         &self.file_name_raw
     }
 
-    /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
-    /// removes a leading '/' and removes '..' parts.
-    #[deprecated(
-        since = "0.5.7",
-        note = "by stripping `..`s from the path, the meaning of paths can change.
-                `mangled_name` can be used if this behaviour is desirable"
-    )]
-    pub fn sanitized_name(&self) -> ZipResult<PathBuf> {
-        self.mangled_name()
-    }
-
     /// Rewrite the path, ignoring any path components with special meaning.
     ///
     /// - Absolute paths are made relative
@@ -904,7 +893,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
                     Ok(meta) => meta,
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {
                         if !is_last {
-                            crate::read::make_writable_dir_all(&outpath)?;
+                            make_writable_dir_all(&outpath)?;
                         }
                         break;
                     }
@@ -1081,16 +1070,16 @@ impl<R: Read + ?Sized> Read for ZipFile<'_, R> {
         self.reader.read(buf)
     }
 
-    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.reader.read_exact(buf)
-    }
-
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
         self.reader.read_to_end(buf)
     }
 
     fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
         self.reader.read_to_string(buf)
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        self.reader.read_exact(buf)
     }
 }
 
