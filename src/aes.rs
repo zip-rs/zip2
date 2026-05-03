@@ -79,11 +79,11 @@ impl AesModeOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AesSalt {
     /// AES 128 salt
-    Aes128([u8; AesMode::Aes128.salt_length()]),
+    Aes128([u8; 8]),
     /// AES 192 salt
-    Aes192([u8; AesMode::Aes192.salt_length()]),
+    Aes192([u8; 12]),
     /// AES 256 salt
-    Aes256([u8; AesMode::Aes256.salt_length()]),
+    Aes256([u8; 16]),
 }
 
 impl AesSalt {
