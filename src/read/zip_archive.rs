@@ -295,7 +295,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///         }},
     ///         |archive, i| {
     ///             let mut file = archive.by_index(i).unwrap();
-    ///             file.enclosed_name().unwrap()
+    ///             file.enclosed_name()
     ///         }
     ///     )
     ///     .filter_map(|name| name)
