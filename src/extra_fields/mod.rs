@@ -20,7 +20,6 @@ pub use zipinfo_utf8::UnicodeExtraField;
 pub trait ExtraFieldVersion {}
 
 /// Marker type for extra fields specified in a local file header.
-
 #[derive(Debug, Clone)]
 pub struct LocalHeaderVersion;
 
