@@ -323,7 +323,8 @@ impl ZipFileData {
         if file_name.contains('\0') {
             return None;
         }
-        enclosed_name(file_name)
+        let enclosed = enclosed_name(file_name)?;
+        Some(enclosed)
     }
 
     /// Get unix mode for the file

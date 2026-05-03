@@ -95,7 +95,7 @@ impl<R: Read> ZipStreamReader<R> {
                     use super::ZipError;
                     use std::os::unix::fs::PermissionsExt;
                     let filepath = metadata
-                        .enclosed_name()?
+                        .enclosed_name()
                         .ok_or(crate::result::invalid!("Invalid file path"))?;
 
                     let outpath = self.0.join(filepath);
@@ -185,10 +185,12 @@ impl ZipStreamFileMetadata {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> ZipResult<Option<PathBuf>> {
-        let name = self.name()?;
-        let enclosed = self.0.enclosed_name(&name);
-        Ok(enclosed)
+    pub fn enclosed_name(&self) -> Option<PathBuf> {
+        let Ok(name) = self.name() else {
+            return None;
+        };
+        let enclosed = self.0.enclosed_name(&name)?;
+        Some(enclosed)
     }
 
     /// Returns whether the file is actually a directory
@@ -444,7 +446,7 @@ mod tests {
         }
         impl ZipStreamVisitor for V {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-                let full_name = file.enclosed_name().unwrap().unwrap();
+                let full_name = file.enclosed_name().unwrap();
                 let file_name = full_name.file_name().unwrap().to_str().unwrap();
                 assert!(
                     (file_name.starts_with("dir") && file.is_dir())

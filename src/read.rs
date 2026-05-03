@@ -829,10 +829,12 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> ZipResult<Option<PathBuf>> {
-        let file_name = self.name()?;
-        let enclosed = self.data.enclosed_name(&file_name);
-        Ok(enclosed)
+    pub fn enclosed_name(&self) -> Option<PathBuf> {
+        let Ok(file_name) = self.name() else {
+            return None;
+        };
+        let enclosed = self.data.enclosed_name(&file_name)?;
+        Some(enclosed)
     }
 
     /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.

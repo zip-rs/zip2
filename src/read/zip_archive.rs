@@ -775,7 +775,7 @@ mod tests {
 
         for i in 0..zip.len() {
             let zip_file = zip.by_index(i).unwrap();
-            let full_name = zip_file.enclosed_name().unwrap().unwrap();
+            let full_name = zip_file.enclosed_name().unwrap();
             let file_name = full_name.file_name().unwrap().to_str().unwrap();
             assert!(
                 (file_name.starts_with("dir") && zip_file.is_dir())
