@@ -930,7 +930,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
             }
 
             // Consistency check: the EOCD64 must have the expected length
-            if z64.record_size + ZIP64_EOCD_RECORD_OVERHEAD != expected_length {
+            if z64.record_size + Zip64CentralDirectoryEnd::RECORD_OVERHEAD != expected_length {
                 return Err(invalid!("Invalid EOCD64: inconsistent length"));
             }
 
