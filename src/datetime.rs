@@ -540,7 +540,7 @@ mod tests {
         // common year: divisible by 100 but not by 400
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
-    
+
     #[cfg(feature = "time")]
     #[test]
     fn datetime_try_from_primitive_datetime() {
