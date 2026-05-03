@@ -11,7 +11,6 @@ use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// Stream decoder for zip.
 #[derive(Debug)]
@@ -39,7 +38,7 @@ impl<R: Read> ZipStreamReader<R> {
             central_header_start,
             block,
         )?;
-        Ok(ZipStreamFileMetadata(file, file_name_raw))
+        Ok(ZipStreamFileMetadata(file, file_name_raw.into()))
     }
 
     /// Iterate over the stream and extract all file and their
@@ -62,7 +61,7 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        struct Extractor(PathBuf, IndexMap<Arc<[u8]>, ()>);
+        struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
                 self.1.insert(file.name_raw().into(), ());

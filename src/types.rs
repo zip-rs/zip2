@@ -215,7 +215,8 @@ pub struct ZipFileData {
 
 impl ZipFileData {
     pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
-        let file_name = if self.is_utf8 {
+        let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
+        let file_name = if is_utf8 {
             String::from_utf8_lossy(file_name_raw)
         } else {
             file_name_raw.from_cp437().map_err(std::io::Error::other)?
@@ -457,7 +458,7 @@ impl ZipFileData {
         if encrypted {
             flags |= ZipFlags::Encrypted.as_u16();
         }
-        if !file_name.is_ascii() {
+        if std::str::from_utf8(file_name_raw).is_ok() && !file_name_raw.is_ascii() {
             flags |= ZipFlags::LanguageEncoding.as_u16();
         }
         let mut local_block = ZipFileData {
@@ -522,7 +523,6 @@ impl ZipFileData {
             ));
         }
 
-        let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();

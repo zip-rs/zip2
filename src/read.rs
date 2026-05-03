@@ -78,7 +78,7 @@ pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), Zi
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    _existing_files: &IndexMap<Arc<[u8]>, T>,
+    _existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
     Ok(())
@@ -88,7 +88,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    existing_files: &IndexMap<Arc<[u8]>, T>,
+    existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
@@ -112,7 +112,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Arc<[u8]>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -218,7 +218,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<IndexMap<Arc<[u8]>, ZipFileData>> {
+    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
         if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
@@ -471,7 +471,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_end = reader.stream_position()?;
 
     reader.seek(SeekFrom::Start(central_header_end))?;
-    Ok((file, file_name_raw))
+    Ok((file, file_name_raw.into()))
 }
 
 #[inline]
@@ -494,7 +494,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     archive_offset: u64,
     central_header_start: u64,
     block: ZipCentralEntryBlock,
-) -> ZipResult<(ZipFileData, Box<[u8]>)> {
+) -> ZipResult<(ZipFileData, Vec<u8>)> {
     let ZipCentralEntryBlock {
         // magic,
         version_made_by,
@@ -553,20 +553,6 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
     parse_extra_field(&mut result, &mut file_name_raw)?;
 
-    let is_utf8 = ZipFlags::matching(result.flags, ZipFlags::LanguageEncoding);
-    let file_name_raw_arc: Arc<[u8]>;
-    if is_utf8 {
-        if let Ok(s) = std::str::from_utf8(&file_name_raw) {
-            file_name_raw_arc =
-                unsafe { Arc::from_raw(Arc::into_raw(file_name_arc.clone()) as *const [u8]) };
-        } else {
-            file_name_raw_arc = file_name_raw.into();
-        }
-    } else {
-        file_name_raw_arc = file_name_raw.into();
-    }
-    result.file_name = file_name_arc;
-
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
         return Err(invalid!("AES encryption without AES extra data field"));
@@ -578,7 +564,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         .checked_add(archive_offset)
         .ok_or(invalid!("Archive header is too large"))?;
 
-    Ok((result, file_name_raw_arc))
+    Ok((result, file_name_raw))
 }
 
 pub(crate) fn parse_extra_field(

@@ -145,7 +145,6 @@ pub(crate) mod zip_writer {
     use core::fmt::{Debug, Formatter};
     use indexmap::IndexMap;
     use std::io::{Seek, Write};
-    use std::sync::Arc;
 
     /// ZIP archive generator
     ///
@@ -182,7 +181,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: IndexMap<Arc<[u8]>, ZipFileData>,
+        pub(super) files: IndexMap<Box<[u8]>, ZipFileData>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -910,10 +909,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
         let dest_name_raw = dest_name.as_bytes();
-        let dest_name_arc: Arc<str> = dest_name_string.into();
-        let dest_name_raw_arc: Arc<[u8]> =
-            unsafe { Arc::from_raw(Arc::into_raw(dest_name_arc.clone()) as *const [u8]) };
-        let dest_name_raw = dest_name_raw_arc.as_ref();
         new_data.header_start = write_position;
         let extra_data_start = write_position
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
@@ -936,7 +931,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
         let block = new_data.local_block(dest_name_raw)?;
-        let index = self.insert_file_data(dest_name_raw_arc.clone(), new_data)?;
+        let index = self.insert_file_data(dest_name_raw, new_data)?;
         let new_data = &self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
@@ -1294,10 +1289,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         #[cfg(feature = "aes-crypto")]
         let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
-        let file_name: Arc<str> = name.to_string().into();
-        let file_name_raw_arc: Arc<[u8]> =
-            unsafe { Arc::from_raw(Arc::into_raw(file_name.clone()) as *const [u8]) };
-        let file_name_raw = file_name_raw_arc.as_ref();
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,

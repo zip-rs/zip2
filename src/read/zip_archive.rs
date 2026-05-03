@@ -20,7 +20,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Arc<[u8]>, ZipFileData>,
+    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -89,7 +89,7 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: IndexMap<Arc<[u8]>, ZipFileData>,
+        files: IndexMap<Box<[u8]>, ZipFileData>,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
