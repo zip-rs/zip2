@@ -565,7 +565,7 @@ unsafe impl Pod for Zip64CDELocatorBlock {}
 impl FixedSizeBlock for Zip64CDELocatorBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 locator digital signature header");
+    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid ZIP64 End of Central Directory Locator header");
 
     to_and_from_le![
         (disk_with_central_directory, u32),
