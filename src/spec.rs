@@ -147,7 +147,7 @@ impl From<ZipFlags> for u16 {
 ///     zip.start_file("one.dat", options)?;
 ///     let zip = zip.finish_into_readable()?;
 ///     let names: Vec<_> = zip.file_names().collect();
-///     assert_eq!(&names, &["one.dat"]);
+///     assert_eq!(names[0].as_ref().unwrap().as_ref(), "one.dat");
 /// }
 ///
 /// // Create a new zip output.

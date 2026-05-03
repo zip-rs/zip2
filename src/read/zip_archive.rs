@@ -74,7 +74,8 @@ impl SharedBuilder {
 ///
 ///     for i in 0..zip.len() {
 ///         let mut file = zip.by_index(i)?;
-///         println!("Filename: {}", file.name());
+///         let name = file.name()?;
+///         println!("Filename: {}", name);
 ///         std::io::copy(&mut file, &mut std::io::stdout())?;
 ///     }
 ///
@@ -294,7 +295,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///         }},
     ///         |archive, i| {
     ///             let mut file = archive.by_index(i).unwrap();
-    ///             file.enclosed_name()
+    ///             file.enclosed_name().unwrap()
     ///         }
     ///     )
     ///     .filter_map(|name| name)
