@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Stream decoder for zip.
 #[derive(Debug)]
@@ -61,7 +62,7 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
+        struct Extractor(PathBuf, IndexMap<Arc<[u8]>, ()>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
                 self.1.insert(file.name_raw().into(), ());
@@ -304,7 +305,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     let (mut result, file_name_raw) = ZipFileData::from_local_block(block, reader)?;
     result.compressed_size = compressed_size;
 
-    if result.encrypted {
+    if result.is_encrypted() {
         return Err(ZipError::UnsupportedArchive(
             "Encrypted files are not supported",
         ));
@@ -579,9 +580,12 @@ mod tests {
 
         let mut reader = Cursor::new(bytes);
         loop {
-            if read_zipfile_from_stream_with_compressed_size(&mut reader, compressed_size as u64)
-                .unwrap()
-                .is_none()
+            if read_zipfile_from_stream_with_compressed_size(
+                &mut reader,
+                u64::from(compressed_size),
+            )
+            .unwrap()
+            .is_none()
             {
                 break;
             }

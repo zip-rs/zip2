@@ -19,13 +19,11 @@ pub use zipinfo_utf8::UnicodeExtraField;
 /// marker trait to denote the place where this extra field has been stored
 pub trait ExtraFieldVersion {}
 
-/// use this to mark extra fields specified in a local header
-
+/// Marker type for extra fields specified in a local file header.
 #[derive(Debug, Clone)]
 pub struct LocalHeaderVersion;
 
-/// use this to mark extra fields specified in the central header
-
+/// Use this marker type for extra fields specified in the central header.
 #[derive(Debug, Clone)]
 pub struct CentralHeaderVersion;
 

@@ -20,7 +20,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) files: IndexMap<Arc<[u8]>, ZipFileData>,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -89,7 +89,7 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: IndexMap<Box<[u8]>, ZipFileData>,
+        files: IndexMap<Arc<[u8]>, ZipFileData>,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
@@ -117,7 +117,7 @@ impl<R> ZipArchive<R> {
     pub fn decompressed_size(&self) -> Option<u128> {
         let mut total = 0u128;
         for file in self.shared.files.values() {
-            if file.using_data_descriptor {
+            if file.is_using_data_descriptor() {
                 return None;
             }
             total = total.checked_add(u128::from(file.uncompressed_size))?;
@@ -565,7 +565,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             options.password = None;
         } else {
             // Require and use the password only if the file is encrypted.
-            match (options.password, data.encrypted) {
+            match (options.password, data.is_encrypted()) {
                 (None, true) => {
                     return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
                 }
