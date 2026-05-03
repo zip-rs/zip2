@@ -565,7 +565,8 @@ unsafe impl Pod for Zip64CDELocatorBlock {}
 impl FixedSizeBlock for Zip64CDELocatorBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid ZIP64 End of Central Directory Locator header");
+    const WRONG_MAGIC_ERROR: ZipError =
+        invalid!("Invalid ZIP64 End of Central Directory Locator header");
 
     to_and_from_le![
         (disk_with_central_directory, u32),
@@ -666,8 +667,7 @@ impl Zip64CentralDirectoryEnd {
     /// Block - record_size - extensible_data
     const MIN_SIZE: usize = 2 * size_of::<u16>() + 2 * size_of::<u32>() + 4 * size_of::<u64>();
     /// Size of ZIP64 EOCD signature + record_size field.
-    const RECORD_OVERHEAD: u64 =
-        (size_of::<Magic>() + size_of::<u64>()) as u64;
+    const RECORD_OVERHEAD: u64 = (size_of::<Magic>() + size_of::<u64>()) as u64;
 
     pub(crate) fn parse<T: Read + ?Sized>(
         reader: &mut T,
