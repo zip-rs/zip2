@@ -922,8 +922,6 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
             locator64: &Zip64CentralDirectoryEndLocator,
             expected_length: u64,
         ) -> ZipResult<Zip64CentralDirectoryEnd> {
-            const ZIP64_EOCD_RECORD_OVERHEAD: u64 = 12;
-
             let z64 = Zip64CentralDirectoryEnd::parse(reader, expected_length)?;
 
             // Consistency check: EOCD64 locator should agree with the EOCD64
