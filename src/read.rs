@@ -90,6 +90,7 @@ pub(crate) fn make_symlink_impl<T>(
     target_str: &str,
     existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
+    use crate::spec::is_dir;
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
         existing_files.contains_key(target_str.as_bytes()) && is_dir(target_str);
