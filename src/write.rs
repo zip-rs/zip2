@@ -812,9 +812,9 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        match self.inner.ref_mut() {
-            Some(ref mut w) => w.flush(),
-            None => Err(io::Error::new(
+        match self.inner.try_inner_mut() {
+            Ok(w) => w.flush(),
+            Err(_) => Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
                 "flush(): ZipWriter was already closed",
             )),
