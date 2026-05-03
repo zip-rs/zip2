@@ -419,7 +419,7 @@ mod tests {
                 if zip_file_metadata.is_file() {
                     let file_name = zip_file_metadata.name().unwrap();
                     assert!(
-                        self.filenames.contains(file_name.as_ref()),
+                        self.filenames.contains::<str>(file_name.as_ref()),
                         "{} is missing its file content",
                         file_name
                     );
@@ -465,7 +465,7 @@ mod tests {
                 if zip_file_metadata.is_file() {
                     let file_name = zip_file_metadata.name().unwrap();
                     assert!(
-                        self.filenames.contains(file_name.as_ref()),
+                        self.filenames.contains::<str>(file_name.as_ref()),
                         "{} is missing its file content",
                         file_name
                     );
