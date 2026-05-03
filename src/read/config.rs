@@ -11,10 +11,8 @@ pub struct Config {
 /// The offset of the start of the archive from the beginning of the reader.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArchiveOffset {
-    /// Try to detect the archive offset automatically.
-    ///
-    /// This will look at the central directory specified by `FromCentralDirectory` for a header.
-    /// If missing, this will behave as if `None` were specified.
+    /// Detect the archive offset automatically by searching for the central directory's actual
+    /// location and the location specified by the End of Central Directory (EOCD) record.
     #[default]
     Detect,
     /// Specify a fixed archive offset.
