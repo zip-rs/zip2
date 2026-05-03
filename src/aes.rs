@@ -222,9 +222,8 @@ impl<R: Read> AesReader<R> {
         }
 
         let cipher = Cipher::from_mode(self.aes_mode, decrypt_key)?;
-        let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key).map_err(|_e| {
-            ZipError::Io(std::io::Error::other("Failed to initialize HMAC"))
-        })?;
+        let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key)
+            .map_err(|_e| ZipError::Io(std::io::Error::other("Failed to initialize HMAC")))?;
 
         Ok(AesReaderValid {
             reader: self.reader,
