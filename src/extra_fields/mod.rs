@@ -25,7 +25,6 @@ pub trait ExtraFieldVersion {}
 pub struct LocalHeaderVersion;
 
 /// Use this marker type for extra fields specified in the central header.
-
 #[derive(Debug, Clone)]
 pub struct CentralHeaderVersion;
 
