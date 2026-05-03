@@ -17,9 +17,6 @@ pub enum ArchiveOffset {
     /// If missing, this will behave as if `None` were specified.
     #[default]
     Detect,
-    /// Use the central directory length and offset to determine the start of the archive.
-    #[deprecated(since = "2.3.0", note = "use `Detect` instead")]
-    FromCentralDirectory,
     /// Specify a fixed archive offset.
     Known(u64),
 }

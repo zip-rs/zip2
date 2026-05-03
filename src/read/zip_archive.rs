@@ -37,7 +37,7 @@ pub(crate) struct SharedBuilder {
     pub(super) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
     #[allow(dead_code)]
-    pub(super) config: super::Config,
+    pub(super) config: Config,
 }
 
 impl SharedBuilder {
@@ -345,15 +345,6 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the comment of the zip archive.
     pub fn comment(&self) -> &[u8] {
         &self.shared.comment
-    }
-
-    /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn zip64_comment(&self) -> Option<&[u8]> {
-        // no-op since deprecated
-        None
     }
 
     /// Get the ZIP64 extensible_data of the zip archive, if it is ZIP64.

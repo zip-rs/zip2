@@ -379,15 +379,6 @@ impl DateTime {
     }
 }
 
-#[cfg(all(feature = "time", feature = "deprecated-time"))]
-impl TryFrom<time::OffsetDateTime> for DateTime {
-    type Error = DateTimeRangeError;
-
-    fn try_from(dt: time::OffsetDateTime) -> Result<Self, Self::Error> {
-        Self::try_from(time::PrimitiveDateTime::new(dt.date(), dt.time()))
-    }
-}
-
 #[cfg(feature = "time")]
 impl TryFrom<time::PrimitiveDateTime> for DateTime {
     type Error = DateTimeRangeError;
@@ -401,15 +392,6 @@ impl TryFrom<time::PrimitiveDateTime> for DateTime {
             dt.minute(),
             dt.second(),
         )
-    }
-}
-
-#[cfg(all(feature = "time", feature = "deprecated-time"))]
-impl TryFrom<DateTime> for time::OffsetDateTime {
-    type Error = time::error::ComponentRange;
-
-    fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
-        time::PrimitiveDateTime::try_from(dt).map(time::PrimitiveDateTime::assume_utc)
     }
 }
 
