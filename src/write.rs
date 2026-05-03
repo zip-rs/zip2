@@ -44,6 +44,15 @@ impl<W: Write> MaybeEncrypted<W> {
             MaybeEncrypted::ZipCrypto(w) => w.get_ref(),
         }
     }
+    /// Returns a mutable reference to the underlying writer.
+    ///
+    /// # Safety
+    /// The caller must preserve all invariants expected by the active wrapper
+    /// (`Unencrypted`, `Aes`, or `ZipCrypto`):
+    /// - Do not mutate the writer in a way that desynchronizes ZIP/encryption state.
+    /// - Do not seek/write behind the wrapper's back such that subsequent writes
+    ///   produce an invalid archive.
+    /// - Ensure normal `&mut` exclusivity guarantees are upheld for the returned reference.
     unsafe fn get_mut(&mut self) -> &mut W {
         match self {
             MaybeEncrypted::Unencrypted(w) => w,
