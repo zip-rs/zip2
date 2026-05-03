@@ -688,7 +688,7 @@ impl Zip64CentralDirectoryEnd {
 
         if record_size < 40 {
             return Err(invalid!("Low EOCD64 record size"));
-        } else if record_size.saturating_add(Self::SIZE_WITH_SIGNATURE_AND_RECORD_SIZE) > max_size {
+        } else if record_size.saturating_add(Self::RECORD_OVERHEAD) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
         }
 
