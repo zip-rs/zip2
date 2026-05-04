@@ -19,8 +19,7 @@ pub fn decompress_xz() {
     file.read_to_end(&mut content)
         .expect("failed to read content from hello.txt");
     assert_eq!(
-        "Hello world\n",
-        String::from_utf8(content)
-            .unwrap_or_else(|e| panic!("content from hello.txt should be valid UTF-8: {}", e))
+        content,
+        b"Hello world\n",
     );
 }
