@@ -6,7 +6,7 @@
 
 use crate::aes_ctr::AesCipher;
 use crate::result::ZipResult;
-use crate::types::{AesMode, AesVendorVersion};
+use crate::types::AesMode;
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{KeyInit, Mac, SimpleHmacReset};
@@ -37,33 +37,6 @@ pub struct AesInfo {
     pub verification_value: [u8; PWD_VERIFY_LENGTH],
     /// The salt
     pub salt: Vec<u8>,
-}
-
-#[non_exhaustive]
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub(crate) struct AesModeOptions {
-    pub(crate) mode: AesMode,
-    pub(crate) vendor_version: AesVendorVersion,
-    pub(crate) custom_salt: Option<AesSalt>,
-}
-
-impl AesModeOptions {
-    pub(crate) fn new(
-        mode: AesMode,
-        vendor_version: AesVendorVersion,
-        custom_salt: Option<AesSalt>,
-    ) -> Self {
-        Self {
-            mode,
-            vendor_version,
-            custom_salt,
-        }
-    }
-
-    /// Used to create the `aes_mode` of `ZipFileData`
-    pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion) {
-        (self.mode, self.vendor_version)
-    }
 }
 
 /// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.

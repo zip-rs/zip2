@@ -1166,36 +1166,30 @@ impl<W: Write + Seek> ZipWriter<W> {
         // AES encryption.
         // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
+        #[allow(unused_mut)]
+        let mut aes_extra_data_start = 0;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, salt, vendor_version, .. }) => Some(crate::aes::AesModeOptions::new(
+            Some(EncryptWith::Aes {
                 mode,
                 vendor_version,
-                salt,
-            )),
+                ..
+            }) => {
+                // Write AES encryption extra data.
+                // For raw copies of AES entries, write the correct AES extra data immediately
+                let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
+                let buf = &aex_extra_field.as_bytes()[offset_of!(AexEncryption, version)..];
+                aes_extra_data_start = extra_data.len() as u64;
+                ExtendedFileOptions::add_extra_data_unchecked(
+                    &mut extra_data,
+                    UsedExtraField::AeXEncryption.as_u16(),
+                    buf,
+                )?;
+                Some((mode, vendor_version))
+            }
             _ => None,
         };
 
-        // Write AES encryption extra data.
-        #[allow(unused_mut)]
-        let mut aes_extra_data_start = 0;
-        #[cfg(feature = "aes-crypto")]
-        if let Some(crate::aes::AesModeOptions {
-            mode,
-            vendor_version,
-            ..
-        }) = aes_mode_options
-        {
-            // For raw copies of AES entries, write the correct AES extra data immediately
-            let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
-            let buf = &aex_extra_field.as_bytes()[offset_of!(AexEncryption, version)..];
-            aes_extra_data_start = extra_data.len() as u64;
-            ExtendedFileOptions::add_extra_data_unchecked(
-                &mut extra_data,
-                UsedExtraField::AeXEncryption.as_u16(),
-                buf,
-            )?;
-        }
         let header_end = header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + file_name_raw.len() as u64;
@@ -1236,8 +1230,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
-        #[cfg(feature = "aes-crypto")]
-        let aes_mode_options = aes_mode_options.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -1285,18 +1277,16 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes {
                 mode,
-                password,
+                // If the password is None (when we use the `options()` method)
+                // we re-use the same encryption
+                password: Some(password),
                 salt,
                 ..
             }) => {
-                // If the password is None (when we use the `options()` method)
-                // we re-use the same encryption
-                if let Some(password) = password {
-                    let writer = self.close_writer()?;
-                    let aeswriter =
-                        crate::aes::AesWriter::new_with_options(writer, mode, password, salt)?;
-                    self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
-                }
+                let writer = self.close_writer()?;
+                let aeswriter =
+                    crate::aes::AesWriter::new_with_options(writer, mode, password, salt)?;
+                self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
                 let writer = self.close_writer()?;
@@ -1336,7 +1326,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.ok_or_abort_file(result)?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::ZipCrypto(zipwriter));
             }
-            None => {}
+            _ => {}
         }
         let file = &mut self.files[index];
         debug_assert!(file.data_start.get().is_none());
