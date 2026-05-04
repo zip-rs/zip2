@@ -174,7 +174,7 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// ZIP flags
     pub flags: u16,
-    /// Compression method used to store the file
+    /// Compression method used to store the file (get the inner compression method if encryption is used)
     pub compression_method: CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: Option<DateTime>,
@@ -204,8 +204,8 @@ pub struct ZipFileData {
     pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
-    /// AES mode if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    /// AES settings if applicable
+    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
     /// Specifies where in the extra data the AES metadata starts
     pub aes_extra_data_start: u64,
 
@@ -421,7 +421,7 @@ impl ZipFileData {
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
         compression_method: CompressionMethod,
-        aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+        aes_settings: Option<(AesMode, AesVendorVersion)>,
         extra_field: &[u8],
     ) -> Self {
         let permissions = options
@@ -452,10 +452,8 @@ impl ZipFileData {
             }
         }
         let mut flags = 0;
-        let encrypted = options.encrypt_with.is_some();
-        #[cfg(feature = "aes-crypto")]
-        let encrypted = encrypted || options.aes_mode.is_some();
-        if encrypted {
+        if options.has_encryption() {
+            // encrypt_with is AES or ZipCrypto
             flags |= ZipFlags::Encrypted.as_u16();
         }
         if std::str::from_utf8(file_name_raw).is_ok() && !file_name_raw.is_ascii() {
@@ -481,7 +479,7 @@ impl ZipFileData {
             central_header_start: 0,
             external_attributes,
             large_file: options.large_file,
-            aes_mode,
+            aes_mode: aes_settings,
             extra_fields: Vec::new(),
             extra_data_start,
             aes_extra_data_start,
@@ -621,10 +619,15 @@ impl ZipFileData {
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
         Ok(ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),
-            compression_method: self.compression_method.serialize_to_u16(),
+            compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
@@ -673,11 +676,16 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
         Ok(ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
             flags: self.flags(file_name_raw),
-            compression_method: self.compression_method.serialize_to_u16(),
+            compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,

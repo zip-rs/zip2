@@ -234,7 +234,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let limit_reader = data.find_content(&mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
-            Some((aes_mode, _, _)) => {
+            Some((aes_mode, _)) => {
                 let (verification_value, salt) =
                     crate::aes::AesReader::new(limit_reader, aes_mode, data.compressed_size)
                         .get_verification_value_and_salt()?;
