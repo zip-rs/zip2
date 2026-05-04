@@ -538,11 +538,6 @@ impl ZipFileData {
         } = block;
 
         let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
-        if encrypted {
-            return Err(ZipError::UnsupportedArchive(
-                "Encrypted files are not supported",
-            ));
-        }
 
         /* FIXME: these were previously incorrect: add testing! */
         let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
