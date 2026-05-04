@@ -148,7 +148,7 @@ impl ZipStreamFileMetadata {
     ///
     /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
-    pub fn name<'a>(&'a self) -> ZipResult<Cow<'a, str>> {
+    pub fn name(&self) -> ZipResult<Cow<str>> {
         self.0.name(&self.1)
     }
 
