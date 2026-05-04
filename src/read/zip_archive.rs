@@ -645,8 +645,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             // If this entry is located at the root of the archive...
             if path.components().count() == 1 {
-                let cowed = Cow::Borrowed(file_name_raw.as_ref());
-                if file.is_dir(&cowed) {
+                if file.is_dir(file_name_raw.as_ref()) {
                     // If it's a directory, it could be the root directory.
                     replace_root_dir!(path);
                 }
