@@ -30,7 +30,7 @@ pub struct CentralHeaderVersion;
 impl ExtraFieldVersion for LocalHeaderVersion {}
 impl ExtraFieldVersion for CentralHeaderVersion {}
 
-/// contains one extra field
+/// Contains one extra field.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum ExtraField {
