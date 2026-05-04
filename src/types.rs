@@ -215,9 +215,8 @@ pub struct ZipFileData {
 
 impl ZipFileData {
     pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
-        let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
-        let file_name = if is_utf8 {
-            String::from_utf8_lossy(file_name_raw)
+        if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {
+            Ok(file_name_utf8.into())
         } else {
             file_name_raw.from_cp437().map_err(std::io::Error::other)?
         };
