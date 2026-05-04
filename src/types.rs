@@ -157,7 +157,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
                 mode: crate::AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&[u8]>()?,
+                password: Some(u.arbitrary::<&[u8]>()?),
                 salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
             });
         }
