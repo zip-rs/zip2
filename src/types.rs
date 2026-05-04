@@ -215,11 +215,13 @@ pub struct ZipFileData {
 
 impl ZipFileData {
     pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
-        Ok(if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {
-            file_name_utf8.into()
-        } else {
-            file_name_raw.from_cp437().map_err(std::io::Error::other)?
-        })
+        Ok(
+            if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {
+                file_name_utf8.into()
+            } else {
+                file_name_raw.from_cp437().map_err(std::io::Error::other)?
+            },
+        )
     }
 
     /// Check if the encrypted flag is set

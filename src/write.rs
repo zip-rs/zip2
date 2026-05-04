@@ -1394,7 +1394,10 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     fn insert_file_data(&mut self, file_name_raw: &[u8], file: ZipFileData) -> ZipResult<usize> {
         if self.files.contains_key(file_name_raw) {
-            return Err(invalid!("Duplicate filename: {:?}", file_name_raw.escape_ascii()));
+            return Err(invalid!(
+                "Duplicate filename: {:?}",
+                file_name_raw.escape_ascii()
+            ));
         }
         let (index, _) = self.files.insert_full(file_name_raw.into(), file);
         Ok(index)
