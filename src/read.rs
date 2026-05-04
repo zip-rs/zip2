@@ -830,11 +830,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
     pub fn enclosed_name(&self) -> Option<PathBuf> {
-        let Ok(file_name) = self.name() else {
-            return None;
-        };
-        let enclosed = self.data.enclosed_name(&file_name)?;
-        Some(enclosed)
+        self.data.enclosed_name(self.name().ok()?)
     }
 
     /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
