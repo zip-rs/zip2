@@ -668,6 +668,8 @@ impl Zip64CentralDirectoryEnd {
     const MIN_SIZE: usize = 2 * size_of::<u16>() + 2 * size_of::<u32>() + 4 * size_of::<u64>();
     /// Size of ZIP64 EOCD signature + record_size field.
     const RECORD_OVERHEAD: u64 = (size_of::<Magic>() + size_of::<u64>()) as u64;
+    /// Minimum valid ZIP64 EOCD `record_size` field value (excludes signature and size field).
+    const MIN_RECORD_SIZE_FIELD: u64 = Self::MIN_SIZE as u64 - Self::RECORD_OVERHEAD;
 
     pub(crate) fn parse<T: Read + ?Sized>(
         reader: &mut T,
@@ -686,7 +688,7 @@ impl Zip64CentralDirectoryEnd {
             ..
         } = Zip64CDEBlock::parse(reader)?;
 
-        if record_size < 40 {
+        if record_size < Self::MIN_RECORD_SIZE_FIELD {
             return Err(invalid!("Low EOCD64 record size"));
         } else if record_size.saturating_add(Self::RECORD_OVERHEAD) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
