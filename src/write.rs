@@ -1249,7 +1249,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
         #[cfg(feature = "aes-crypto")]
-        let aes_mode = aes_mode_options.map(super::aes::AesModeOptions::to_tuple);
+        let aes_mode_options = aes_mode_options.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -1258,7 +1258,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None,
             aes_extra_data_start,
             compression_method,
-            aes_mode,
+            aes_mode: aes_mode_options,
             &extra_data,
         );
         if let Some(comment) = options.extended_options.take_file_comment() {
