@@ -93,7 +93,7 @@ pub(crate) fn make_symlink_impl<T>(
     use crate::spec::is_dir;
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
-        existing_files.contains_key(target_str.as_bytes()) && is_dir(target_str.as_bytes());
+        is_dir(target_str.as_bytes()) && existing_files.contains_key(target_str.as_bytes());
     let target_is_dir = if target_is_dir_from_archive {
         true
     } else if let Ok(meta) = std::fs::metadata(target) {
