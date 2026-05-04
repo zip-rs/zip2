@@ -1,11 +1,11 @@
 //! Code related to stream reading
 
+use crate::ZipReadOptions;
 use crate::read::parse_extra_field;
 use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
-use crate::ZipReadOptions;
 use crate::result::ZipError;
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
@@ -289,8 +289,12 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     reader: &mut R,
     compressed_size: u64,
-) -> ZipResult<Option<ZipFile<'_, R>>>{
-    read_zipfile_from_stream_with_compressed_size_and_options(reader, compressed_size, ZipReadOptions::default())
+) -> ZipResult<Option<ZipFile<'_, R>>> {
+    read_zipfile_from_stream_with_compressed_size_and_options(
+        reader,
+        compressed_size,
+        ZipReadOptions::default(),
+    )
 }
 
 pub fn read_zipfile_from_stream_with_compressed_size_and_options<'a, R: io::Read>(
@@ -625,10 +629,10 @@ mod tests {
     #[cfg(feature = "deflate")]
     fn zip_read_streaming_compressed_and_aes() {
         use super::read_zipfile_from_stream_with_compressed_size_and_options;
+        use crate::ZipReadOptions;
         use crate::ZipWriter;
         use crate::write::SimpleFileOptions;
         use std::io::Write;
-        use crate::ZipReadOptions;
 
         let bytes = include_bytes!("../../tests/data/aes_archive.zip");
         let compressed_size = 46;
