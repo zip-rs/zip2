@@ -254,7 +254,7 @@ fn aes_custom_salt_for_reproducible_zip() {
         ),
         (
             AesMode::Aes128,
-            [1, 2, 3, 4, 5, 6, 7, 8, 9].into(), // salt too long should work
+            [1, 2, 3, 4, 5, 6, 7, 8, 9].into(), // salt too long should be rejected
             Some("Salt for AES-128 must be 8 bytes long: could not convert slice to array"),
         ),
         (
@@ -269,7 +269,7 @@ fn aes_custom_salt_for_reproducible_zip() {
         ),
         (
             AesMode::Aes192,
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].into(), // salt too long should works
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].into(), // salt too long should be rejected
             Some("Salt for AES-192 must be 12 bytes long: could not convert slice to array"),
         ),
         (
@@ -284,7 +284,8 @@ fn aes_custom_salt_for_reproducible_zip() {
         ),
         (
             AesMode::Aes256,
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].into(), // salt too long
+            // salt too long should be rejected
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].into(),
             Some("Salt for AES-256 must be 16 bytes long: could not convert slice to array"),
         ),
     ] {
