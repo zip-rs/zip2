@@ -202,7 +202,7 @@ pub mod tests {
             assert!(
                 enclosed_name.is_none(),
                 "Directory traversal should still be blocked for: {}",
-                file.name()
+                file.name().unwrap()
             );
         }
     }

@@ -162,8 +162,12 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
             ENTRY_NAME,
             INTERNAL_COPY_ENTRY_NAME,
         ];
-        let expected_file_names = HashSet::from_iter(expected_file_names.iter().copied());
-        let file_names = archive.file_names().collect::<HashSet<_>>();
+        let expected_file_names: HashSet<String> =
+            expected_file_names.iter().map(|f| f.to_string()).collect();
+        let file_names: HashSet<String> = archive
+            .file_names()
+            .map(|f| f.unwrap().into_owned())
+            .collect();
         assert_eq!(file_names, expected_file_names);
     }
 

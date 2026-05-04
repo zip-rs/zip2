@@ -35,7 +35,7 @@ pub struct AesInfo {
     /// The AES encryption mode
     pub aes_mode: AesMode,
     /// The verification key
-    pub verification_value: [u8; crate::aes::PWD_VERIFY_LENGTH],
+    pub verification_value: [u8; PWD_VERIFY_LENGTH],
     /// The salt
     pub salt: Vec<u8>,
 }
@@ -205,8 +205,7 @@ impl<R: Read> AesReader<R> {
         // derive a key from the password and salt
         // the length depends on the aes key length
         let derived_key_len = 2 * key_length + PWD_VERIFY_LENGTH;
-        let mut derived_key: Zeroizing<Box<[u8]>> =
-            Zeroizing::new(vec![0; derived_key_len].into_boxed_slice());
+        let mut derived_key: Zeroizing<Vec<u8>> = Zeroizing::new(vec![0; derived_key_len]);
 
         // use PBKDF2 with HMAC-Sha1 to derive the key
         pbkdf2::pbkdf2::<SimpleHmacReset<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
@@ -297,10 +296,16 @@ impl<R: Read> Read for AesReaderValid<R> {
 
         // if there is no data left to read, check the integrity of the data
         if self.data_remaining == 0 {
-            assert!(
+            debug_assert!(
                 !self.finalized,
                 "Tried to use an already finalized HMAC. This is a bug!"
             );
+            if self.finalized {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Tried to use an already finalized HMAC",
+                ));
+            }
             self.finalized = true;
 
             // Zip uses HMAC-Sha1-80, which only uses the first half of the hash
@@ -376,7 +381,7 @@ impl<W: Write> AesWriter<W> {
 
         let cipher = Cipher::from_mode(aes_mode, encryption_key)?;
         let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key)
-            .map_err(|e| std::io::Error::other(format!("Cannot create hmac with key: {e}")))?;
+            .map_err(|_| std::io::Error::other("Failed to initialize HMAC"))?;
 
         Ok(Self {
             writer,

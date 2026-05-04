@@ -389,7 +389,7 @@ impl Debug for FuzzTestCase<'_> {
                 "let mut initial_junk = Cursor::new(vec!{:?});\n\
                          initial_junk.seek(SeekFrom::End(0))?;\n\
                          let mut writer = ZipWriter::new(initial_junk);",
-                &self.initial_junk
+                self.initial_junk
             )?;
         }
         let _ = self.clone().execute(f, false);
