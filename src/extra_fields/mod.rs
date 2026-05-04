@@ -16,7 +16,7 @@ pub use extended_timestamp::ExtendedTimestamp;
 pub use ntfs::Ntfs;
 pub use zipinfo_utf8::UnicodeExtraField;
 
-/// marker trait to denote the place where this extra field has been stored
+/// Marker trait to denote the place where this extra field has been stored.
 pub trait ExtraFieldVersion {}
 
 /// Marker type for extra fields specified in a local file header.
