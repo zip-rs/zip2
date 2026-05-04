@@ -1094,47 +1094,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         &self.comment
     }
 
-    /// Set ZIP64 archive comment.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>) -> ZipResult<()>
-    where
-        S: Into<Box<str>>,
-    {
-        if let Some(com) = comment {
-            self.set_comment(com)?;
-        }
-        Ok(())
-    }
-
-    /// Set raw ZIP64 archive comment.
-    ///
-    /// This sets the raw bytes of the comment. The comment
-    /// is typically expected to be encoded in UTF-8.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) -> ZipResult<()> {
-        if let Some(com) = comment {
-            self.set_raw_comment(com)?;
-        }
-        Ok(())
-    }
-
     /// Get the zip64 extensible data. Use at your own risk
     /// See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
     pub fn set_raw_zip64_extensible_data_sector(&mut self, extensible_data: Box<[u8]>) {
         self.zip64_extensible_data_sector = Some(extensible_data);
-    }
-
-    /// Get ZIP64 archive comment.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn get_zip64_comment(&self) -> Option<Result<&str, Utf8Error>> {
-        // no-op since deprecated
-        None
     }
 
     /// Get raw ZIP64 archive comment.
