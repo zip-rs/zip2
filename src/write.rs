@@ -1168,9 +1168,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         let compression_method = options.compression_method;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, salt, .. }) => Some(crate::aes::AesModeOptions::new(
+            Some(EncryptWith::Aes { mode, salt, vendor_version, .. }) => Some(crate::aes::AesModeOptions::new(
                 mode,
-                AesVendorVersion::Ae2,
+                vendor_version,
                 salt,
             )),
             _ => None,
@@ -1389,9 +1389,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 update_aes_extra_data(writer, file, self.stats.bytes_written)?;
             }
 
-            let crc = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2)));
+            let crc_in_header = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2)));
 
-            file.crc32 = if crc {
+            file.crc32 = if crc_in_header {
                 self.stats.hasher.clone().finalize()
             } else {
                 0

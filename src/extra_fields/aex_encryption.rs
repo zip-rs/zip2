@@ -150,7 +150,7 @@ mod tests {
         let res = AexEncryption::parse(&mut cursor, len);
         assert!(res.is_ok());
         let (aes_mode_options, inner_compression_method) = res.unwrap();
-        assert_eq!(aes_mode_options, (AesMode::Aes256, AesVendorVersion::Ae2,));
+        assert_eq!(aes_mode_options, (AesMode::Aes256, AesVendorVersion::Ae2));
         assert_eq!(inner_compression_method, CompressionMethod::Stored);
     }
 }
