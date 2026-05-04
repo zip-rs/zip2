@@ -158,6 +158,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
             return Ok(EncryptWith::Aes {
                 mode: crate::AesMode::arbitrary(u)?,
                 password: Some(u.arbitrary::<&[u8]>()?),
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
             });
         }
