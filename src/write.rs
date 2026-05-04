@@ -1747,7 +1747,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        options.permissions = Some(options.permissions.unwrap_or(DEFAULT_DIR_PERMISSIONS) | 0o40000);
+        *options.permissions.get_or_insert(DEFAULT_DIR_PERMISSIONS) |= 0o40000;
         options.compression_method = Stored;
         options.encrypt_with = None;
 
