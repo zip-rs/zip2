@@ -1787,7 +1787,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         *options
             .permissions
             .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |= 0o40000;
+            .expect("internal invariant violated: directory permissions must be set before applying directory bit") |= 0o40000;
         options.compression_method = Stored;
         options.encrypt_with = None;
 
