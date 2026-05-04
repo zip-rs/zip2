@@ -1747,13 +1747,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        if options.permissions.is_none() {
-            options.permissions = Some(DEFAULT_DIR_PERMISSIONS);
-        }
-        *options
-            .permissions
-            .as_mut()
-            .expect("internal invariant violated: directory permissions must be set before applying directory bit") |= 0o40000;
+        options.permissions = Some(options.permissions.unwrap_or(DEFAULT_DIR_PERMISSIONS) | 0o40000);
         options.compression_method = Stored;
         options.encrypt_with = None;
 
