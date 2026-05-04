@@ -35,7 +35,7 @@ pub struct AesInfo {
     /// The AES encryption mode
     pub aes_mode: AesMode,
     /// The verification key
-    pub verification_value: [u8; crate::aes::PWD_VERIFY_LENGTH],
+    pub verification_value: [u8; PWD_VERIFY_LENGTH],
     /// The salt
     pub salt: Vec<u8>,
 }
