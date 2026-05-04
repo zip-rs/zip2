@@ -40,7 +40,7 @@ pub struct AesInfo {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub(crate) struct AesModeOptions {
     pub(crate) mode: AesMode,
     pub(crate) vendor_version: AesVendorVersion,
