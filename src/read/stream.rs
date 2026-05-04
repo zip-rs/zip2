@@ -258,7 +258,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
     }
 
     let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
+    let crypto_reader = make_crypto_reader(&result, limit_reader, None)?;
     let ZipFileData {
         crc32,
         uncompressed_size,
@@ -275,6 +275,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
             compression_method,
             uncompressed_size,
             Some(crc32),
+            None,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
@@ -312,7 +313,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
     }
 
     let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
+    let crypto_reader = make_crypto_reader(&result, limit_reader, None)?;
     let ZipFileData {
         crc32,
         compression_method,
@@ -329,6 +330,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
             compression_method,
             uncompressed_size,
             Some(crc32),
+            None,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
