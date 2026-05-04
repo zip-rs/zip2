@@ -621,7 +621,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: salt.mode(),
-                password,
+                password: Some(password),
                 vendor_version: AesVendorVersion::Ae2,
                 salt: Some(salt),
             }),
@@ -645,7 +645,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode,
-                password,
+                password: Some(password),
                 vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
@@ -1168,11 +1168,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         let compression_method = options.compression_method;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, salt, password, .. }) => Some(crate::aes::AesModeOptions::new(
+            Some(EncryptWith::Aes { mode, salt, .. }) => Some(crate::aes::AesModeOptions::new(
                 mode,
                 AesVendorVersion::Ae2,
                 salt,
-                password.to_vec(),
             )),
             _ => None,
         };
@@ -1287,13 +1286,17 @@ impl<W: Write + Seek> ZipWriter<W> {
             Some(EncryptWith::Aes {
                 mode,
                 password,
-                vendor_version: _,
                 salt,
+                ..
             }) => {
-                let writer = self.close_writer()?;
-                let aeswriter =
-                    crate::aes::AesWriter::new_with_options(writer, mode, password, salt)?;
-                self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
+                // If the password is None (when we use the `options()` method)
+                // we re-use the same encryption
+                if let Some(password) = password {
+                    let writer = self.close_writer()?;
+                    let aeswriter =
+                        crate::aes::AesWriter::new_with_options(writer, mode, password, salt)?;
+                    self.inner = GenericZipWriter::Storer(MaybeEncrypted::Aes(aeswriter));
+                }
             }
             Some(EncryptWith::ZipCrypto(keys, ..)) => {
                 let writer = self.close_writer()?;
@@ -3615,7 +3618,7 @@ mod tests {
             large_file: true,
             encrypt_with: Some(EncryptWith::Aes {
                 mode: Aes256,
-                password: &[],
+                password: Some(&[]),
                 vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
@@ -4155,7 +4158,7 @@ mod tests {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: crate::AesMode::Aes256,
                 vendor_version: AesVendorVersion::Ae2,
-                password: &[],
+                password: Some(&[]),
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {
@@ -4340,7 +4343,7 @@ mod tests {
             large_file: true,
             encrypt_with: Some(EncryptWith::Aes {
                 mode: Aes128,
-                password: &[],
+                password: Some(&[]),
                 vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),

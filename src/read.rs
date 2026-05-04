@@ -1036,7 +1036,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
                 mode,
                 vendor_version,
                 salt: None,
-                password: &[],
+                password: None,
             });
         }
         options
