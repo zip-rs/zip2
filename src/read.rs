@@ -13,6 +13,7 @@ use crate::spec::{
     CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
     ZipCentralEntryBlock, ZipFlags,
 };
+use crate::types::EncryptWith;
 use crate::types::{SimpleFileOptions, System, ZipFileData, ffi};
 use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;
@@ -1031,11 +1032,12 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         if let Some((mode, vendor_version)) = self.get_metadata().aes_mode {
             // Preserve AES metadata in options for downstream writers.
             // This is metadata-only and does not trigger encryption.
-            options.aes_mode = Some(crate::aes::AesModeOptions::new(
+            options.encrypt_with = Some(EncryptWith::Aes {
                 mode,
                 vendor_version,
-                None,
-            ));
+                salt: None,
+                password: &[],
+            });
         }
         options
     }

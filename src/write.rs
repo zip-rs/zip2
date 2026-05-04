@@ -9,6 +9,7 @@ use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::ZipFlags;
 use crate::spec::{self, FixedSizeBlock, Magic, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::types::EncryptWith;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -264,7 +265,7 @@ use crate::CompressionMethod::Stored;
 use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::LittleEndianWriteExt;
 use crate::unstable::path_to_string;
-use crate::zipcrypto::{CHUNK_SIZE, EncryptWith, ZipCryptoKeys};
+use crate::zipcrypto::{CHUNK_SIZE, ZipCryptoKeys};
 pub use zip_writer::ZipWriter;
 
 #[derive(Default, Debug)]
@@ -522,14 +523,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 
     /// Indicates whether this file will be encrypted (whether with AES or `ZipCrypto`).
     pub const fn has_encryption(&self) -> bool {
-        #[cfg(feature = "aes-crypto")]
-        {
-            self.encrypt_with.is_some() || self.aes_mode.is_some()
-        }
-        #[cfg(not(feature = "aes-crypto"))]
-        {
-            self.encrypt_with.is_some()
-        }
+        self.encrypt_with.is_some()
     }
 
     /// Set the compression method for the new file
@@ -628,6 +622,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: salt.mode(),
                 password,
+                vendor_version: AesVendorVersion::Ae2,
                 salt: Some(salt),
             }),
             ..self
@@ -651,6 +646,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
             encrypt_with: Some(EncryptWith::Aes {
                 mode,
                 password,
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
             ..self
@@ -727,8 +723,6 @@ impl FileOptions<'static, ()> {
         alignment: 1,
         #[cfg(feature = "deflate-zopfli")]
         zopfli_buffer_size: Some(1 << 15),
-        #[cfg(feature = "aes-crypto")]
-        aes_mode: None,
         system: None,
     };
 }
@@ -748,8 +742,6 @@ impl<'k> FileOptions<'k, ()> {
             alignment: self.alignment,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: self.zopfli_buffer_size,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: self.aes_mode,
             system: self.system,
         }
     }
@@ -769,8 +761,6 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
             alignment: 1,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: Some(1 << 15),
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
         }
     }
@@ -1174,9 +1164,6 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
-            // Preserve AES method for raw copies without needing a password
-            #[cfg(feature = "aes-crypto")]
-            None if options.aes_mode.is_some() => (CompressionMethod::Aes, options.aes_mode),
         let compression_method = options.compression_method;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
@@ -1298,6 +1285,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             Some(EncryptWith::Aes {
                 mode,
                 password,
+                vendor_version: _,
                 salt,
             }) => {
                 let writer = self.close_writer()?;
@@ -2811,8 +2799,6 @@ mod tests {
             alignment: 1,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
         };
         writer.start_file("mimetype", options).unwrap();
@@ -2861,8 +2847,6 @@ mod tests {
             alignment: 1,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
         };
 
@@ -2925,8 +2909,6 @@ mod tests {
             alignment: 0,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -2981,8 +2963,6 @@ mod tests {
             alignment: 0,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -3619,8 +3599,10 @@ mod tests {
     #[test]
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
         use crate::AesMode::Aes256;
-        use crate::write::EncryptWith::Aes;
+        use crate::types::AesVendorVersion;
+        use crate::write::EncryptWith;
         use CompressionMethod::Deflated;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -3629,9 +3611,10 @@ mod tests {
             last_modified_time: DateTime::from_date_and_time(2107, 4, 8, 15, 54, 19)?,
             permissions: None,
             large_file: true,
-            encrypt_with: Some(Aes {
+            encrypt_with: Some(EncryptWith::Aes {
                 mode: Aes256,
                 password: &[],
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {
@@ -4153,6 +4136,9 @@ mod tests {
     #[cfg(all(feature = "_bzip2_any", feature = "aes-crypto", not(miri)))]
     #[test]
     fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
+        use crate::types::AesVendorVersion;
+        use crate::types::EncryptWith;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(true);
         writer.set_raw_comment([0].into())?;
@@ -4164,8 +4150,9 @@ mod tests {
             last_modified_time: DateTime::from_date_and_time(2009, 6, 3, 13, 37, 39)?,
             permissions: Some(2644352413),
             large_file: true,
-            encrypt_with: Some(crate::write::EncryptWith::Aes {
+            encrypt_with: Some(EncryptWith::Aes {
                 mode: crate::AesMode::Aes256,
+                vendor_version: AesVendorVersion::Ae2,
                 password: &[],
                 salt: None,
             }),
@@ -4338,7 +4325,9 @@ mod tests {
     #[cfg(feature = "aes-crypto")]
     fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
         use crate::AesMode::Aes128;
-        use crate::write::EncryptWith::Aes;
+        use crate::types::AesVendorVersion;
+        use crate::write::EncryptWith;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -4347,9 +4336,10 @@ mod tests {
             last_modified_time: DateTime::from_date_and_time(2107, 6, 5, 13, 0, 21)?,
             permissions: None,
             large_file: true,
-            encrypt_with: Some(Aes {
+            encrypt_with: Some(EncryptWith::Aes {
                 mode: Aes128,
                 password: &[],
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {

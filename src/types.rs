@@ -13,9 +13,10 @@ use crate::spec::{
     ZipDataDescriptorBlock, ZipFlags, ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
-use crate::zipcrypto::EncryptWith;
+use crate::zipcrypto::ZipCryptoKeys;
 use core::fmt::Debug;
 use core::fmt::Display;
+use core::marker::PhantomData;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
@@ -136,6 +137,37 @@ impl From<System> for u8 {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EncryptWith<'k> {
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        mode: crate::AesMode,
+        vendor_version: AesVendorVersion,
+        password: &'k [u8],
+        salt: Option<crate::aes::AesSalt>,
+    },
+    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
+}
+
+#[cfg(feature = "_arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        #[cfg(feature = "aes-crypto")]
+        if bool::arbitrary(u)? {
+            return Ok(EncryptWith::Aes {
+                mode: crate::AesMode::arbitrary(u)?,
+                password: u.arbitrary::<&[u8]>()?,
+                salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
+            });
+        }
+
+        Ok(EncryptWith::ZipCrypto(
+            ZipCryptoKeys::arbitrary(u)?,
+            PhantomData,
+        ))
+    }
+}
+
 /// Metadata for a file to be written
 #[non_exhaustive]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
@@ -150,8 +182,6 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) alignment: u16,
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
-    #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<crate::aes::AesModeOptions>,
     pub(crate) system: Option<System>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
