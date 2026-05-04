@@ -1755,7 +1755,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         options.normalize();
-        let file_name_raw = file.name_raw().to_owned();
+        let file_name_raw = file.name_raw();
         self.raw_copy_file_rename_internal(file, &file_name_raw, options)
     }
 
