@@ -461,8 +461,11 @@ impl ExtendedFileOptions {
 
 impl Debug for ExtendedFileOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-        f.write_fmt(format_args!("ExtendedFileOptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
-        self.extra_data, self.central_extra_data))
+        f.debug_struct("ExtendedFileOptions")
+            .field("extra_data", &self.extra_data)
+            .field("central_extra_data", &self.central_extra_data)
+            .field("file_comment", &self.file_comment)
+            .finish()
     }
 }
 
@@ -1079,7 +1082,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Get ZIP archive comment.
-    pub fn get_comment(&mut self) -> Result<&str, Utf8Error> {
+    pub fn get_comment(&self) -> Result<&str, Utf8Error> {
         from_utf8(self.get_raw_comment())
     }
 
@@ -1091,47 +1094,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         &self.comment
     }
 
-    /// Set ZIP64 archive comment.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>) -> ZipResult<()>
-    where
-        S: Into<Box<str>>,
-    {
-        if let Some(com) = comment {
-            self.set_comment(com)?;
-        }
-        Ok(())
-    }
-
-    /// Set raw ZIP64 archive comment.
-    ///
-    /// This sets the raw bytes of the comment. The comment
-    /// is typically expected to be encoded in UTF-8.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) -> ZipResult<()> {
-        if let Some(com) = comment {
-            self.set_raw_comment(com)?;
-        }
-        Ok(())
-    }
-
     /// Get the zip64 extensible data. Use at your own risk
     /// See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
     pub fn set_raw_zip64_extensible_data_sector(&mut self, extensible_data: Box<[u8]>) {
         self.zip64_extensible_data_sector = Some(extensible_data);
-    }
-
-    /// Get ZIP64 archive comment.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
-        // no-op since deprecated
-        None
     }
 
     /// Get raw ZIP64 archive comment.
@@ -1781,13 +1747,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        if options.permissions.is_none() {
-            options.permissions = Some(DEFAULT_DIR_PERMISSIONS);
-        }
-        *options
-            .permissions
-            .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |= 0o40000;
+        *options.permissions.get_or_insert(DEFAULT_DIR_PERMISSIONS) |= 0o40000;
         options.compression_method = Stored;
         options.encrypt_with = None;
 
@@ -1854,14 +1814,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         target: T,
         mut options: FileOptions<'_, E>,
     ) -> ZipResult<()> {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o777);
-        }
-        *options
-            .permissions
-            .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |=
-            ffi::S_IFLNK;
+        let permissions = options.permissions.get_or_insert(0o777);
+        *permissions |= ffi::S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
