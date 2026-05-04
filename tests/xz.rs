@@ -18,8 +18,5 @@ pub fn decompress_xz() {
     let mut content = Vec::new();
     file.read_to_end(&mut content)
         .expect("failed to read content from hello.txt");
-    assert_eq!(
-        content,
-        b"Hello world\n",
-    );
+    assert_eq!(content, b"Hello world\n",);
 }
