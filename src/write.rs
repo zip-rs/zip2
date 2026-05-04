@@ -1709,7 +1709,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// }
     /// ```
     pub fn raw_copy_file<R: Read>(&mut self, file: ZipFile<'_, R>) -> ZipResult<()> {
-        let file_name = file.name()?.into_owned();
+        let file_name = file.name()?;
         self.raw_copy_file_rename(file, file_name)
     }
 
