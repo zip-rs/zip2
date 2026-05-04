@@ -195,7 +195,7 @@ impl ZipStreamFileMetadata {
 
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-            self.0.is_dir(&*self.1)
+        self.0.is_dir(&*self.1)
     }
 
     /// Returns whether the file is a regular file
