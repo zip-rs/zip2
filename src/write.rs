@@ -1129,7 +1129,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     #[deprecated(
         note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
     )]
-    pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
+    pub fn get_zip64_comment(&self) -> Option<Result<&str, Utf8Error>> {
         // no-op since deprecated
         None
     }
