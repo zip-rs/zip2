@@ -1174,11 +1174,11 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
-            // Preserve AES method for raw copies without needing a password
-            #[cfg(feature = "aes-crypto")]
-            None if options.aes_mode.is_some() => (CompressionMethod::Aes, options.aes_mode),
+        // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
         let aes_mode_options = match options.encrypt_with {
+            #[cfg(feature = "aes-crypto")]
+            None if options.aes_mode.is_some() => options.aes_mode,
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, salt, .. }) => {
                 let aes_mode_options =

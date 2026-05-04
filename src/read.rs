@@ -1031,11 +1031,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         if let Some((mode, vendor_version)) = self.get_metadata().aes_mode {
             // Preserve AES metadata in options for downstream writers.
             // This is metadata-only and does not trigger encryption.
-            options.aes_mode = Some(crate::aes::AesModeOptions::new(
-                mode,
-                vendor_version,
-                None,
-            ));
+            options.aes_mode = Some(crate::aes::AesModeOptions::new(mode, vendor_version, None));
         }
         options
     }
