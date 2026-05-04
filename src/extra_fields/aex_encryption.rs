@@ -57,9 +57,7 @@ impl AexEncryption {
     pub(crate) fn parse<R: Read>(
         reader: &mut R,
         len: u16,
-        aes_mode_options: &mut Option<(AesMode, AesVendorVersion, CompressionMethod)>,
-        compression_method: &mut CompressionMethod,
-    ) -> ZipResult<()> {
+    ) -> ZipResult<((AesMode, AesVendorVersion), CompressionMethod)> {
         if len != 7 {
             return Err(ZipError::UnsupportedArchive(
                 "AES extra data field has an unsupported length",
@@ -79,10 +77,8 @@ impl AexEncryption {
         }
         let vendor_version = vendor_version.try_into().map_err(invalid_archive_const)?;
         let aes_mode = buff[0].try_into().map_err(invalid_archive_const)?;
-        let comp_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
-        *aes_mode_options = Some((aes_mode, vendor_version, comp_method));
-        *compression_method = comp_method;
-        Ok(())
+        let inner_comp_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
+        Ok(((aes_mode, vendor_version), inner_comp_method))
     }
 }
 
@@ -118,21 +114,13 @@ mod tests {
     #[test]
     fn test_too_long_length() {
         use super::AexEncryption;
-        use crate::CompressionMethod;
         use std::io::Cursor;
 
         let data = &[0, 1, 2, 3, 4, 5, 6, 7];
         let len = data.len() as u16;
         let mut cursor = Cursor::new(data);
-        let mut aes_mode_options = None;
-        let mut compression_method = CompressionMethod::Stored;
 
-        let res = AexEncryption::parse(
-            &mut cursor,
-            len,
-            &mut aes_mode_options,
-            &mut compression_method,
-        );
+        let res = AexEncryption::parse(&mut cursor, len);
         assert!(res.is_err());
     }
 
@@ -158,23 +146,11 @@ mod tests {
         assert_eq!(len_data, len);
         assert_eq!(len, 7);
         let mut cursor = Cursor::new(data);
-        let mut aes_mode_options = None;
-        let mut compression_method = CompressionMethod::Stored;
 
-        let res = AexEncryption::parse(
-            &mut cursor,
-            len,
-            &mut aes_mode_options,
-            &mut compression_method,
-        );
+        let res = AexEncryption::parse(&mut cursor, len);
         assert!(res.is_ok());
-        assert_eq!(
-            aes_mode_options,
-            Some((
-                AesMode::Aes256,
-                AesVendorVersion::Ae2,
-                CompressionMethod::Stored
-            ))
-        );
+        let (aes_mode_options, inner_compression_method) = res.unwrap();
+        assert_eq!(aes_mode_options, (AesMode::Aes256, AesVendorVersion::Ae2,));
+        assert_eq!(inner_compression_method, CompressionMethod::Stored);
     }
 }

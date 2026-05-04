@@ -4,7 +4,6 @@
 //! Note that using CRC with AES depends on the used encryption specification, AE-1 or AE-2.
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
-use crate::CompressionMethod;
 use crate::aes_ctr::AesCipher;
 use crate::result::ZipResult;
 use crate::types::{AesMode, AesVendorVersion};
@@ -45,7 +44,6 @@ pub struct AesInfo {
 pub(crate) struct AesModeOptions {
     pub(crate) mode: AesMode,
     pub(crate) vendor_version: AesVendorVersion,
-    pub(crate) actual_compression_method: CompressionMethod,
     pub(crate) custom_salt: Option<AesSalt>,
 }
 
@@ -53,24 +51,18 @@ impl AesModeOptions {
     pub(crate) fn new(
         mode: AesMode,
         vendor_version: AesVendorVersion,
-        actual_compression_method: CompressionMethod,
         custom_salt: Option<AesSalt>,
     ) -> Self {
         Self {
             mode,
             vendor_version,
-            actual_compression_method,
             custom_salt,
         }
     }
 
     /// Used to create the `aes_mode` of `ZipFileData`
-    pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
-        (
-            self.mode,
-            self.vendor_version,
-            self.actual_compression_method,
-        )
+    pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion) {
+        (self.mode, self.vendor_version)
     }
 }
 
