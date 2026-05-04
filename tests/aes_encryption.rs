@@ -284,7 +284,7 @@ fn aes_custom_salt_for_reproducible_zip() {
         ),
         (
             AesMode::Aes256,
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].into(), // salt too long should works
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].into(), // salt too long should work
             Some("Salt for AES-256 must be 16 bytes long: could not convert slice to array"),
         ),
     ] {
