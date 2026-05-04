@@ -41,7 +41,11 @@ pub enum ExtraField {
     ExtendedTimestamp(ExtendedTimestamp),
 }
 
-/// Extra field used in this crate
+/// Internal extra-field identifiers (`u16` tags) recognized by this crate.
+///
+/// This enum is crate-private and used for matching/dispatch on raw ZIP extra
+/// field IDs. It is distinct from [`ExtraField`], which represents parsed,
+/// public extra-field data structures.
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum UsedExtraField {
