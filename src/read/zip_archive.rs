@@ -370,7 +370,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             let end = start + file.compressed_size;
             if ranges
                 .iter()
-                .any(|range| range.start < end && start < range.end)
+                .any(|range| range.start <= end && start <= range.end)
             {
                 return Ok(true);
             }
