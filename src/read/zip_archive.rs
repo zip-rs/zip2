@@ -20,7 +20,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) files: IndexMap<Arc<[u8]>, ZipFileData>,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -32,12 +32,12 @@ pub struct ZipArchiveMetadata {
 
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
-    pub(crate) files: Vec<super::ZipFileData>,
+    pub(crate) files: Vec<(Arc<[u8]>, ZipFileData)>,
     pub(super) offset: u64,
     pub(super) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
     #[allow(dead_code)]
-    pub(super) config: super::Config,
+    pub(super) config: Config,
 }
 
 impl SharedBuilder {
@@ -47,8 +47,8 @@ impl SharedBuilder {
         zip64_extensible_data_sector: Option<Box<[u8]>>,
     ) -> ZipArchiveMetadata {
         let mut index_map = IndexMap::with_capacity(self.files.len());
-        self.files.into_iter().for_each(|file| {
-            index_map.insert(file.file_name_raw.clone(), file);
+        self.files.into_iter().for_each(|(file_name_raw, file)| {
+            index_map.insert(file_name_raw, file);
         });
         ZipArchiveMetadata {
             files: index_map,
@@ -89,7 +89,7 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: IndexMap<Box<[u8]>, ZipFileData>,
+        files: IndexMap<Arc<[u8]>, ZipFileData>,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
@@ -117,7 +117,7 @@ impl<R> ZipArchive<R> {
     pub fn decompressed_size(&self) -> Option<u128> {
         let mut total = 0u128;
         for file in self.shared.files.values() {
-            if file.using_data_descriptor {
+            if file.is_using_data_descriptor() {
                 return None;
             }
             total = total.checked_add(u128::from(file.uncompressed_size))?;
@@ -200,8 +200,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
-            let file = central_header_to_zip_file(reader, dir_info)?;
-            files.push(file);
+            let (file, file_name_raw) = central_header_to_zip_file(reader, dir_info)?;
+            files.push((file_name_raw, file));
         }
 
         Ok(SharedBuilder {
@@ -345,15 +345,6 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the comment of the zip archive.
     pub fn comment(&self) -> &[u8] {
         &self.shared.comment
-    }
-
-    /// Get the ZIP64 comment of the zip archive, if it is ZIP64.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn zip64_comment(&self) -> Option<&[u8]> {
-        // no-op since deprecated
-        None
     }
 
     /// Get the ZIP64 extensible_data of the zip archive, if it is ZIP64.
@@ -534,12 +525,13 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get a contained file by index without decompressing it
     pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
         let reader = &mut self.reader;
-        let (_, data) = self
+        let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
         Ok(ZipFile {
+            file_name_raw: Cow::Borrowed(file_name_raw),
             reader: ZipFileReader::Raw(data.find_content(reader)?),
             data: Cow::Borrowed(data),
         })
@@ -551,18 +543,17 @@ impl<R: Read + Seek> ZipArchive<R> {
         file_number: usize,
         mut options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'_, R>> {
-        let (_, data) = self
+        let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
-
         if options.ignore_encryption_flag {
             // Always use no password when we're ignoring the encryption flag.
             options.password = None;
         } else {
             // Require and use the password only if the file is encrypted.
-            match (options.password, data.encrypted) {
+            match (options.password, data.is_encrypted()) {
                 (None, true) => {
                     return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
                 }
@@ -583,6 +574,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         };
 
         Ok(ZipFile {
+            file_name_raw: Cow::Borrowed(file_name_raw),
             data: Cow::Borrowed(data),
             reader: make_reader(
                 data.compression_method,

@@ -47,6 +47,7 @@ pub use crate::aes::AesInfo;
 /// If your logic depends on the buffer being completely populated, use [`Self::read_exact()`] instead. It will continue reading until the entire buffer is filled or an error occurs.
 #[derive(Debug)]
 pub struct ZipFile<'a, R: Read + ?Sized> {
+    pub(crate) file_name_raw: Cow<'a, [u8]>,
     pub(crate) data: Cow<'a, ZipFileData>,
     pub(crate) reader: ZipFileReader<'a, R>,
 }
@@ -78,7 +79,7 @@ pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), Zi
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    _existing_files: &IndexMap<Box<[u8]>, T>,
+    _existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     std::os::unix::fs::symlink(Path::new(&target_str), outpath)?;
     Ok(())
@@ -88,7 +89,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink_impl<T>(
     outpath: &Path,
     target_str: &str,
-    existing_files: &IndexMap<Box<[u8]>, T>,
+    existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
@@ -112,7 +113,7 @@ pub(crate) fn make_symlink_impl<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -124,7 +125,7 @@ pub(crate) fn make_symlink<T>(
 pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
-    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
+    #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Arc<[u8]>, T>,
 ) -> ZipResult<()> {
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -218,7 +219,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
+    ) -> ZipResult<IndexMap<Arc<[u8]>, ZipFileData>> {
         if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
@@ -420,7 +421,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 make_symlink(&outpath, &target, &self.shared.files)?;
                 continue;
             } else if file.is_dir() {
-                crate::read::make_writable_dir_all(&outpath)?;
+                make_writable_dir_all(&outpath)?;
                 continue;
             }
             let mut outfile = fs::File::create(&outpath)?;
@@ -455,13 +456,13 @@ impl<R: Read + Seek> ZipArchive<R> {
 pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     reader: &mut R,
     central_directory: &CentralDirectoryInfo,
-) -> ZipResult<ZipFileData> {
+) -> ZipResult<(ZipFileData, Arc<[u8]>)> {
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
     let block = ZipCentralEntryBlock::parse(reader)?;
 
-    let file = central_header_to_zip_file_inner(
+    let (file, file_name_raw) = central_header_to_zip_file_inner(
         reader,
         central_directory.archive_offset,
         central_header_start,
@@ -471,12 +472,12 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_end = reader.stream_position()?;
 
     reader.seek(SeekFrom::Start(central_header_end))?;
-    Ok(file)
+    Ok((file, file_name_raw))
 }
 
 #[inline]
-fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipResult<Box<[u8]>> {
-    let mut data = vec![0; len].into_boxed_slice();
+fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipResult<Vec<u8>> {
+    let mut data = vec![0; len];
     if let Err(e) = reader.read_exact(&mut data) {
         if e.kind() == io::ErrorKind::UnexpectedEof {
             return Err(invalid!(
@@ -494,7 +495,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     archive_offset: u64,
     central_header_start: u64,
     block: ZipCentralEntryBlock,
-) -> ZipResult<ZipFileData> {
+) -> ZipResult<(ZipFileData, Arc<[u8]>)> {
     let ZipCentralEntryBlock {
         // magic,
         version_made_by,
@@ -516,18 +517,12 @@ fn central_header_to_zip_file_inner<R: Read>(
         ..
     } = block;
 
-    let encrypted = ZipFlags::matching(flags, ZipFlags::Encrypted);
     let is_utf8 = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
-    let using_data_descriptor = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
 
-    let file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
+    let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
-    let file_name: Box<str> = if is_utf8 {
-        String::from_utf8_lossy(&file_name_raw).into()
-    } else {
-        file_name_raw.from_cp437()?.into()
-    };
+
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()
     } else {
@@ -539,18 +534,13 @@ fn central_header_to_zip_file_inner<R: Read>(
     let mut result = ZipFileData {
         system,
         version_made_by,
-        encrypted,
-        using_data_descriptor,
-        is_utf8,
         compression_method: CompressionMethod::parse_from_u16(compression_method),
-        compression_level: None,
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
         flags,
-        file_name,
-        file_name_raw,
+        file_name: Arc::from(""), // temporary
         extra_field: Some(Arc::from(extra_field)),
         central_extra_field: None,
         file_comment,
@@ -564,7 +554,25 @@ fn central_header_to_zip_file_inner<R: Read>(
         aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
-    parse_extra_field(&mut result)?;
+    parse_extra_field(&mut result, &mut file_name_raw)?;
+
+    let is_utf8 = ZipFlags::matching(result.flags, ZipFlags::LanguageEncoding);
+    let file_name_arc: Arc<str>;
+    let file_name_raw_arc: Arc<[u8]>;
+    if is_utf8 {
+        if let Ok(s) = std::str::from_utf8(&file_name_raw) {
+            file_name_arc = Arc::from(s);
+            file_name_raw_arc =
+                unsafe { Arc::from_raw(Arc::into_raw(file_name_arc.clone()) as *const [u8]) };
+        } else {
+            file_name_arc = String::from_utf8_lossy(&file_name_raw).into();
+            file_name_raw_arc = file_name_raw.into();
+        }
+    } else {
+        file_name_arc = file_name_raw.from_cp437()?.into();
+        file_name_raw_arc = file_name_raw.into();
+    }
+    result.file_name = file_name_arc;
 
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
@@ -577,10 +585,13 @@ fn central_header_to_zip_file_inner<R: Read>(
         .checked_add(archive_offset)
         .ok_or(invalid!("Archive header is too large"))?;
 
-    Ok(result)
+    Ok((result, file_name_raw_arc))
 }
 
-pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+pub(crate) fn parse_extra_field(
+    file: &mut ZipFileData,
+    file_name_raw: &mut Vec<u8>,
+) -> ZipResult<()> {
     let mut extra_field = file.extra_field.clone();
     let mut central_extra_field = file.central_extra_field.clone();
     for field_group in [&mut extra_field, &mut central_extra_field] {
@@ -595,7 +606,8 @@ pub(crate) fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         let mut position = reader.position();
         while position < len as u64 {
             let old_position = position;
-            let remove = parse_single_extra_field(file, &mut reader, position, false)?;
+            let remove =
+                parse_single_extra_field(file, &mut reader, position, false, file_name_raw)?;
             position = reader.position();
             if remove {
                 modified = true;
@@ -628,6 +640,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     reader: &mut R,
     bytes_already_read: u64,
     disallow_zip64: bool,
+    file_name_raw: &mut Vec<u8>,
 ) -> ZipResult<bool> {
     let kind = match reader.read_u16_le() {
         Ok(kind) => kind,
@@ -705,11 +718,10 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         Ok(UsedExtraField::UnicodePath) => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            file.file_name_raw = UnicodeExtraField::try_from_reader(reader, len)?
-                .unwrap_valid(&file.file_name_raw)?;
-            file.file_name =
-                String::from_utf8(file.file_name_raw.clone().into_vec())?.into_boxed_str();
-            file.is_utf8 = true;
+            let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
+            let file_name = unicode.unwrap_valid(file_name_raw)?;
+            *file_name_raw = file_name.into_vec();
+            file.flags |= ZipFlags::LanguageEncoding.as_u16();
         }
         _ => {
             if let Err(e) = reader.read_exact(&mut vec![0u8; len as usize]) {
@@ -806,18 +818,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     ///
     /// The encoding of this data is currently undefined.
     pub fn name_raw(&self) -> &[u8] {
-        &self.get_metadata().file_name_raw
-    }
-
-    /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
-    /// removes a leading '/' and removes '..' parts.
-    #[deprecated(
-        since = "0.5.7",
-        note = "by stripping `..`s from the path, the meaning of paths can change.
-                `mangled_name` can be used if this behaviour is desirable"
-    )]
-    pub fn sanitized_name(&self) -> PathBuf {
-        self.mangled_name()
+        &self.file_name_raw
     }
 
     /// Rewrite the path, ignoring any path components with special meaning.
@@ -912,7 +913,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
                     Ok(meta) => meta,
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {
                         if !is_last {
-                            crate::read::make_writable_dir_all(&outpath)?;
+                            make_writable_dir_all(&outpath)?;
                         }
                         break;
                     }
@@ -979,7 +980,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
     /// Get if the files is encrypted or not
     pub fn encrypted(&self) -> bool {
-        self.data.encrypted
+        self.data.is_encrypted()
     }
 
     /// Get the size of the file, in bytes, in the archive
@@ -1089,16 +1090,16 @@ impl<R: Read + ?Sized> Read for ZipFile<'_, R> {
         self.reader.read(buf)
     }
 
-    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.reader.read_exact(buf)
-    }
-
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
         self.reader.read_to_end(buf)
     }
 
     fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
         self.reader.read_to_string(buf)
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        self.reader.read_exact(buf)
     }
 }
 

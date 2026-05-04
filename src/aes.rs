@@ -64,7 +64,7 @@ impl AesModeOptions {
         }
     }
 
-    /// Used to create a the `aes_mode` of `ZipFileData`
+    /// Used to create the `aes_mode` of `ZipFileData`
     pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
         (
             self.mode,
@@ -114,7 +114,7 @@ impl AesSalt {
         )
     }
 
-    /// Creates a new `CustomSalt` with the given `mode` and `salt`.
+    /// Creates a new `AesSalt` with the given `mode` and `salt`.
     /// The length of `salt` must be at least the required salt length for the given `mode`, otherwise an error is returned.
     ///
     /// # Errors
@@ -205,7 +205,8 @@ impl<R: Read> AesReader<R> {
         // derive a key from the password and salt
         // the length depends on the aes key length
         let derived_key_len = 2 * key_length + PWD_VERIFY_LENGTH;
-        let mut derived_key: Box<[u8]> = vec![0; derived_key_len].into_boxed_slice();
+        let mut derived_key: Zeroizing<Box<[u8]>> =
+            Zeroizing::new(vec![0; derived_key_len].into_boxed_slice());
 
         // use PBKDF2 with HMAC-Sha1 to derive the key
         pbkdf2::pbkdf2::<SimpleHmacReset<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
@@ -221,11 +222,8 @@ impl<R: Read> AesReader<R> {
         }
 
         let cipher = Cipher::from_mode(self.aes_mode, decrypt_key)?;
-        let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key).map_err(|e| {
-            ZipError::Io(std::io::Error::other(format!(
-                "Cannot create hmac with key: {e}"
-            )))
-        })?;
+        let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key)
+            .map_err(|_e| ZipError::Io(std::io::Error::other("Failed to initialize HMAC")))?;
 
         Ok(AesReaderValid {
             reader: self.reader,

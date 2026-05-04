@@ -165,6 +165,7 @@ pub const DEFAULT_VERSION: u8 = 45;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,
@@ -172,16 +173,8 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// ZIP flags
     pub flags: u16,
-    /// True if the file is encrypted.
-    pub encrypted: bool,
-    /// True if `file_name` and `file_comment` are UTF8
-    pub is_utf8: bool,
-    /// True if the file uses a data-descriptor section
-    pub using_data_descriptor: bool,
     /// Compression method used to store the file
-    pub compression_method: crate::compression::CompressionMethod,
-    /// Compression level to store the file
-    pub compression_level: Option<i64>,
+    pub compression_method: CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: Option<DateTime>,
     /// CRC32 checksum
@@ -191,9 +184,7 @@ pub struct ZipFileData {
     /// Size of the file when extracted
     pub uncompressed_size: u64,
     /// Name of the file
-    pub file_name: Box<str>,
-    /// Raw file name. To be used when `file_name` was incorrectly decoded.
-    pub file_name_raw: Box<[u8]>,
+    pub file_name: Arc<str>,
     /// Extra field usually used for storage expansion
     pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
@@ -224,6 +215,16 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    /// Check if the encrypted flag is set
+    pub fn is_encrypted(&self) -> bool {
+        ZipFlags::matching(self.flags, ZipFlags::Encrypted)
+    }
+
+    /// Check if the data descriptor flag is set
+    pub fn is_using_data_descriptor(&self) -> bool {
+        ZipFlags::matching(self.flags, ZipFlags::UsingDataDescriptor)
+    }
+
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
@@ -366,7 +367,7 @@ impl ZipFileData {
         };
         let crypto_version: u16 = if self.aes_mode.is_some() {
             51
-        } else if self.encrypted {
+        } else if self.is_encrypted() {
             20
         } else {
             10
@@ -402,25 +403,20 @@ impl ZipFileData {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn initialize_local_block<S, T: FileOptionExtension>(
-        name: &S,
+    pub(crate) fn initialize_local_block<T: FileOptionExtension>(
+        file_name: Arc<str>,
         options: &FileOptions<'_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
-        compression_method: crate::compression::CompressionMethod,
+        compression_method: CompressionMethod,
         aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
         extra_field: &[u8],
-    ) -> Self
-    where
-        S: ToString,
-    {
+    ) -> Self {
         let permissions = options
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
-        let file_name: Box<str> = name.to_string().into_boxed_str();
-        let file_name_raw: Box<[u8]> = file_name.as_bytes().into();
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             System::Unix
@@ -445,24 +441,26 @@ impl ZipFileData {
                 external_attributes |= 0x01;
             }
         }
+        let mut flags = 0;
         let encrypted = options.encrypt_with.is_some();
         #[cfg(feature = "aes-crypto")]
         let encrypted = encrypted || options.aes_mode.is_some();
+        if encrypted {
+            flags |= ZipFlags::Encrypted.as_u16();
+        }
+        if !file_name.is_ascii() {
+            flags |= ZipFlags::LanguageEncoding.as_u16();
+        }
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
-            flags: 0,
-            encrypted,
-            using_data_descriptor: false,
-            is_utf8: !file_name.is_ascii(),
+            flags,
             compression_method,
-            compression_level: options.compression_level,
             last_modified_time: Some(options.last_modified_time),
             crc32: raw_values.crc32,
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
             file_name, // Never used for saving, but used as map key in insert_file_data()
-            file_name_raw,
             extra_field: Some(Arc::from(extra_field)),
             central_extra_field: options
                 .extended_options
@@ -486,7 +484,7 @@ impl ZipFileData {
     pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
         block: ZipLocalEntryBlock,
         reader: &mut R,
-    ) -> ZipResult<Self> {
+    ) -> ZipResult<(Self, Vec<u8>)> {
         let ZipLocalEntryBlock {
             version_made_by,
             flags,
@@ -517,7 +515,7 @@ impl ZipFileData {
         }
 
         let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
-        let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
+        let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
 
@@ -536,7 +534,7 @@ impl ZipFileData {
             return Err(e.into());
         }
 
-        let file_name: Box<str> = if is_utf8 {
+        let file_name: Arc<str> = if is_utf8 {
             String::from_utf8_lossy(&file_name_raw).into()
         } else {
             file_name_raw
@@ -546,21 +544,16 @@ impl ZipFileData {
         };
 
         let (version_made_by, system) = System::extract_bytes(version_made_by);
-        Ok(ZipFileData {
+        let data = ZipFileData {
             system,
             version_made_by,
             flags,
-            encrypted,
-            using_data_descriptor,
-            is_utf8,
             compression_method,
-            compression_level: None,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
             crc32,
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
             file_name,
-            file_name_raw: file_name_raw.into(),
             extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
@@ -578,31 +571,26 @@ impl ZipFileData {
             extra_fields: Vec::new(),
             extra_data_start: None,
             aes_extra_data_start: 0,
-        })
+        };
+        Ok((data, file_name_raw))
     }
 
-    fn is_utf8(&self) -> bool {
-        std::str::from_utf8(&self.file_name_raw).is_ok()
-    }
-
-    fn is_ascii(&self) -> bool {
-        self.file_name_raw.is_ascii() && self.file_comment.is_ascii()
-    }
-
-    fn flags(&self) -> u16 {
-        let utf8_bit: u16 = if self.is_utf8() && !self.is_ascii() {
+    fn flags(&self, file_name_raw: &[u8]) -> u16 {
+        let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
+        let is_ascii = file_name_raw.is_ascii() && self.file_comment.is_ascii();
+        let utf8_bit: u16 = if is_utf8 && !is_ascii {
             ZipFlags::LanguageEncoding.as_u16()
         } else {
             0
         };
 
-        let using_data_descriptor_bit = if self.using_data_descriptor {
+        let using_data_descriptor_bit = if self.is_using_data_descriptor() {
             ZipFlags::UsingDataDescriptor.as_u16()
         } else {
             0
         };
 
-        let encrypted_bit: u16 = if self.encrypted { 1u16 << 0 } else { 0 };
+        let encrypted_bit: u16 = if self.is_encrypted() { 1u16 << 0 } else { 0 };
 
         utf8_bit | using_data_descriptor_bit | encrypted_bit
     }
@@ -618,8 +606,8 @@ impl ZipFileData {
         }
     }
 
-    pub(crate) fn local_block(&self) -> ZipResult<ZipLocalEntryBlock> {
-        let (compressed_size, uncompressed_size) = if self.using_data_descriptor {
+    pub(crate) fn local_block(&self, file_name_raw: &[u8]) -> ZipResult<ZipLocalEntryBlock> {
+        let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
             (0, 0)
         } else {
             (
@@ -637,15 +625,14 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         Ok(ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length: self
-                .file_name_raw
+            file_name_length: file_name_raw
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
@@ -653,7 +640,7 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn block(&self) -> ZipResult<ZipCentralEntryBlock> {
+    pub(crate) fn block(&self, file_name_raw: &[u8]) -> ZipResult<ZipCentralEntryBlock> {
         let compressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
         } else {
@@ -691,15 +678,14 @@ impl ZipFileData {
         Ok(ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method: self.compression_method.serialize_to_u16(),
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length: self
-                .file_name_raw
+            file_name_length: file_name_raw
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
@@ -894,7 +880,7 @@ mod tests {
 
     #[test]
     fn sanitize() {
-        use super::{System, ZipFileData};
+        use super::{CompressionMethod, System, ZipFileData};
         use std::{path::PathBuf, sync::OnceLock};
 
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
@@ -902,17 +888,12 @@ mod tests {
             system: System::Dos,
             version_made_by: 0,
             flags: 0,
-            encrypted: false,
-            using_data_descriptor: false,
-            is_utf8: true,
-            compression_method: crate::compression::CompressionMethod::Stored,
-            compression_level: None,
+            compression_method: CompressionMethod::Stored,
             last_modified_time: None,
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.clone().into_boxed_str(),
-            file_name_raw: file_name.into_bytes().into_boxed_slice(),
+            file_name: file_name.into(),
             extra_field: None,
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
