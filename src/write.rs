@@ -1854,14 +1854,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         target: T,
         mut options: FileOptions<'_, E>,
     ) -> ZipResult<()> {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o777);
-        }
-        *options
-            .permissions
-            .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |=
-            ffi::S_IFLNK;
+        let permissions = options.permissions.get_or_insert(0o777);
+        *permissions |= ffi::S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
