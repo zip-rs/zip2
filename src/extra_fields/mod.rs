@@ -16,7 +16,7 @@ pub use extended_timestamp::ExtendedTimestamp;
 pub use ntfs::Ntfs;
 pub use zipinfo_utf8::UnicodeExtraField;
 
-/// marker trait to denote the place where this extra field has been stored
+/// Marker trait to denote the place where this extra field has been stored.
 pub trait ExtraFieldVersion {}
 
 /// Marker type for extra fields specified in a local file header.
@@ -30,7 +30,7 @@ pub struct CentralHeaderVersion;
 impl ExtraFieldVersion for LocalHeaderVersion {}
 impl ExtraFieldVersion for CentralHeaderVersion {}
 
-/// contains one extra field
+/// Contains one extra field.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum ExtraField {
@@ -41,7 +41,11 @@ pub enum ExtraField {
     ExtendedTimestamp(ExtendedTimestamp),
 }
 
-/// Extra field used in this crate
+/// Internal extra-field identifiers (`u16` tags) recognized by this crate.
+///
+/// This enum is crate-private and used for matching/dispatch on raw ZIP extra
+/// field IDs. It is distinct from [`ExtraField`], which represents parsed,
+/// public extra-field data structures.
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum UsedExtraField {

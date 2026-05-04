@@ -686,7 +686,7 @@ impl Zip64CentralDirectoryEnd {
             ..
         } = Zip64CDEBlock::parse(reader)?;
 
-        if record_size < 40 {
+        if record_size < (Self::MIN_SIZE - size_of::<Magic>()) as u64 {
             return Err(invalid!("Low EOCD64 record size"));
         } else if record_size.saturating_add(Self::RECORD_OVERHEAD) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
@@ -803,6 +803,8 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
     const CDFH_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
+    const EOCD_FIXED_SIZE: u64 = 22;
+
     // Instantiate the mandatory finder
     let mut eocd_finder = MagicFinder::<Backwards<'static>>::new(&EOCD_SIG_BYTES, 0, end_exclusive);
     let mut subfinder: Option<OptimisticMagicFinder<Forward<'static>>> = None;
@@ -824,7 +826,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 
         // ! Relaxed (inequality) due to garbage-after-comment Python files
         // Consistency check: the EOCD comment must terminate before the end of file
-        if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 > file_len {
+        if eocd.zip_file_comment.len() as u64 + eocd_offset + EOCD_FIXED_SIZE > file_len {
             parsing_error = Some(invalid!("Invalid EOCD comment length"));
             continue;
         }

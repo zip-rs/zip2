@@ -1164,14 +1164,17 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
+        // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, salt, .. }) => {
-                let aes_mode_options =
-                    crate::aes::AesModeOptions::new(mode, AesVendorVersion::Ae2, salt);
-                Some(aes_mode_options)
-            }
+            None if options.aes_mode.is_some() => options.aes_mode,
+            #[cfg(feature = "aes-crypto")]
+            Some(EncryptWith::Aes { mode, salt, .. }) => Some(crate::aes::AesModeOptions::new(
+                mode,
+                AesVendorVersion::Ae2,
+                salt,
+            )),
             _ => None,
         };
 
@@ -1236,7 +1239,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
         #[cfg(feature = "aes-crypto")]
-        let aes_mode = aes_mode_options.map(super::aes::AesModeOptions::to_tuple);
+        let aes_mode_options = aes_mode_options.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -1245,7 +1248,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             None,
             aes_extra_data_start,
             compression_method,
-            aes_mode,
+            aes_mode_options,
             &extra_data,
         );
         if let Some(comment) = options.extended_options.take_file_comment() {

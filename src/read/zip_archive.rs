@@ -288,7 +288,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// let file_names = (0..archive.len())
     ///     .into_par_iter()
     ///     .map_init({
-    ///         let metadata = archive.metadata().clone();
+    ///         let metadata = archive.metadata();
     ///         move || {
     ///             let file = fs::File::open(FILE_NAME).unwrap();
     ///             unsafe { zip::ZipArchive::unsafe_new_with_metadata(file, metadata.clone()) }
