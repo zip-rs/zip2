@@ -3,10 +3,7 @@
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
-use crate::extra_fields::AexEncryption;
-use crate::extra_fields::UnicodeExtraField;
-use crate::extra_fields::Zip64ExtendedInformation;
-use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
+use crate::extra_fields::ExtraField;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
@@ -15,7 +12,6 @@ use crate::spec::{
     ZipCentralEntryBlock, ZipFlags,
 };
 use crate::types::{SimpleFileOptions, System, ZipFileData, ffi};
-use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -642,95 +638,53 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     disallow_zip64: bool,
     file_name_raw: &mut Vec<u8>,
 ) -> ZipResult<bool> {
-    let kind = match reader.read_u16_le() {
-        Ok(kind) => kind,
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false),
-        Err(e) => return Err(e.into()),
+    let parsed_extra_field = ExtraField::parse(reader, file)?;
+    let Some(parsed_extra_field) = parsed_extra_field else {
+        return Ok(false);
     };
-    let decoded_extra_field = UsedExtraField::try_from(kind);
-    let len = match decoded_extra_field {
-        Ok(known_field) => match reader.read_u16_le() {
-            Ok(len) => len,
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                return Err(invalid!("Extra field {} header truncated", known_field));
-            }
-            Err(e) => return Err(e.into()),
-        },
-        Err(()) => {
-            match reader.read_u16_le() {
-                Ok(len) => len,
-                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false), // early return, most likely a padding
-                Err(_e) => {
-                    // Consume remaining bytes to avoid infinite loop in caller
-                    let mut buf = Vec::new();
-                    let _ = reader.read_to_end(&mut buf);
-                    return Ok(false);
-                }
-            }
-        }
-    };
-    match decoded_extra_field {
+    match parsed_extra_field {
         // Zip64 extended information extra field
-        Ok(UsedExtraField::Zip64ExtendedInfo) => {
+        ExtraField::Zip64ExtendedInformation { uncompressed_size, compressed_size, header_start } => {
             if disallow_zip64 {
                 return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
             }
             file.large_file = true;
-            Zip64ExtendedInformation::parse(
-                reader,
-                len,
-                &mut file.uncompressed_size,
-                &mut file.compressed_size,
-                &mut file.header_start,
-            )?;
+            file.uncompressed_size = uncompressed_size;
+            file.compressed_size = compressed_size;
+            file.header_start = header_start;
             return Ok(true);
         }
-        Ok(UsedExtraField::Ntfs) => {
+        ExtraField::Ntfs(ntfs) => {
             // NTFS extra field
             file.extra_fields
-                .push(ExtraField::Ntfs(Ntfs::try_from_reader(reader, len)?));
+                .push(ExtraField::Ntfs(ntfs));
         }
-        Ok(UsedExtraField::AeXEncryption) => {
-            // AES
-            AexEncryption::parse(
-                reader,
-                len,
-                &mut file.aes_mode,
-                &mut file.compression_method,
-            )?;
+        ExtraField::AeXEncryption { aes_mode, aes_vendor_version, compression_method } => {
+            file.aes_mode = Some((aes_mode, aes_vendor_version, compression_method));
+            file.compression_method = compression_method;
             file.aes_extra_data_start = bytes_already_read;
         }
-        Ok(UsedExtraField::ExtendedTimestamp) => {
-            file.extra_fields.push(ExtraField::ExtendedTimestamp(
-                ExtendedTimestamp::try_from_reader(reader, len)?,
-            ));
+        ExtraField::ExtendedTimestamp(extended_timestamp) => {
+            file.extra_fields.push(ExtraField::ExtendedTimestamp(extended_timestamp));
         }
-        Ok(UsedExtraField::UnicodeComment) => {
+        ExtraField::UnicodeComment(unicode_comment) => {
             // Info-ZIP Unicode Comment Extra Field
             // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
             file.file_comment = String::from_utf8(
-                UnicodeExtraField::try_from_reader(reader, len)?
+                unicode_comment
                     .unwrap_valid(file.file_comment.as_bytes())?
                     .into_vec(),
             )?
             .into();
         }
-        Ok(UsedExtraField::UnicodePath) => {
+        ExtraField::UnicodePath(unicode_path) => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
-            let file_name = unicode.unwrap_valid(file_name_raw)?;
+            let file_name = unicode_path.unwrap_valid(file_name_raw)?;
             *file_name_raw = file_name.into_vec();
             file.flags |= ZipFlags::LanguageEncoding.as_u16();
         }
-        _ => {
-            if let Err(e) = reader.read_exact(&mut vec![0u8; len as usize]) {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Err(invalid!("Extra field content truncated"));
-                }
-                return Err(e.into());
-            }
-            // Other fields are ignored
+        ExtraField::Unknown(_) => {
         }
     }
     Ok(false)

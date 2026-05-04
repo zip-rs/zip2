@@ -7,6 +7,7 @@ mod extended_timestamp;
 mod ntfs;
 mod zip64_extended_information;
 mod zipinfo_utf8;
+mod extra_field;
 
 pub(crate) use aex_encryption::AexEncryption;
 pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
@@ -15,9 +16,11 @@ pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 pub use extended_timestamp::ExtendedTimestamp;
 pub use ntfs::Ntfs;
 pub use zipinfo_utf8::UnicodeExtraField;
+pub use extra_field::ExtraField;
 
 /// marker trait to denote the place where this extra field has been stored
 pub trait ExtraFieldVersion {}
+
 
 /// Marker type for extra fields specified in a local file header.
 #[derive(Debug, Clone)]
@@ -29,17 +32,6 @@ pub struct CentralHeaderVersion;
 
 impl ExtraFieldVersion for LocalHeaderVersion {}
 impl ExtraFieldVersion for CentralHeaderVersion {}
-
-/// contains one extra field
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum ExtraField {
-    /// NTFS extra field
-    Ntfs(Ntfs),
-
-    /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
-    ExtendedTimestamp(ExtendedTimestamp),
-}
 
 /// Extra field used in this crate
 #[repr(u16)]
