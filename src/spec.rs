@@ -686,7 +686,7 @@ impl Zip64CentralDirectoryEnd {
             ..
         } = Zip64CDEBlock::parse(reader)?;
 
-        if record_size < 40 {
+        if record_size < (Self::MIN_SIZE - size_of::<Magic>()) as u64 {
             return Err(invalid!("Low EOCD64 record size"));
         } else if record_size.saturating_add(Self::RECORD_OVERHEAD) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
