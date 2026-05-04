@@ -438,8 +438,7 @@ impl ZipFileData {
             System::Unix
         };
         if system == System::Dos {
-            let cowed = Cow::Borrowed(file_name_raw);
-            if is_dir(&cowed) {
+            if is_dir(file_name_raw) {
                 // DOS directory bit
                 external_attributes |= 0x10;
             }
