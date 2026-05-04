@@ -1379,12 +1379,11 @@ impl<W: Write + Seek> ZipWriter<W> {
                 update_aes_extra_data(writer, file, self.stats.bytes_written)?;
             }
 
-            let crc_in_header = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2)));
-
-            file.crc32 = if crc_in_header {
-                self.stats.hasher.clone().finalize()
-            } else {
+            file.crc32 = if matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2))) {
+                // AE2 disables CRC32 in the local file header
                 0
+            } else {
+                self.stats.hasher.clone().finalize()
             };
 
             if file.is_using_data_descriptor() {
