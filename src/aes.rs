@@ -107,7 +107,8 @@ impl AesSalt {
     }
 
     /// Creates a new `AesSalt` with the given `mode` and `salt`.
-    /// The length of `salt` must be at least the required salt length for the given `mode`, otherwise an error is returned.
+    /// The length of `salt` must be exactly one-half the key length for the given `mode`, otherwise
+    /// an error is returned.
     ///
     /// # Errors
     /// Returns an error if the length of `salt` is too short for the given `mode`.
