@@ -297,10 +297,16 @@ impl<R: Read> Read for AesReaderValid<R> {
 
         // if there is no data left to read, check the integrity of the data
         if self.data_remaining == 0 {
-            assert!(
+            debug_assert!(
                 !self.finalized,
                 "Tried to use an already finalized HMAC. This is a bug!"
             );
+            if self.finalized {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Tried to use an already finalized HMAC",
+                ));
+            }
             self.finalized = true;
 
             // Zip uses HMAC-Sha1-80, which only uses the first half of the hash
