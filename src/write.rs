@@ -1472,13 +1472,25 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Create a file in the archive and start writing its' contents. The file must not have the
+    /// Create a file in the archive and start writing its contents. The file must not have the
     /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
     pub fn start_file<S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
+        options: FileOptions<'_, T>,
+    ) -> ZipResult<()> {
+        self.start_file_with_name_bytes(name.to_string().as_bytes(), options)
+    }
+
+    /// Create a file in the archive and start writing its contents. The file must not have the
+    /// same name as a file already in the archive. The name need not be UTF-8.
+    ///
+    /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
+    pub fn start_file_with_name_bytes<T: FileOptionExtension>(
+        &mut self,
+        name: &[u8],
         mut options: FileOptions<'_, T>,
     ) -> ZipResult<()> {
         options.normalize();
@@ -1488,8 +1500,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             options.zopfli_buffer_size,
         )?;
-        let file_name = name.to_string();
-        self.start_entry(file_name.as_bytes(), options, None)?;
+        self.start_entry(name, options, None)?;
         let result = self.inner.switch_to(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
@@ -2868,14 +2879,12 @@ mod tests {
 
         // GB18030
         // "中文" = [214, 208, 206, 196]
-        let filename = unsafe { String::from_utf8_unchecked(vec![214, 208, 206, 196]) };
-        writer.start_file(filename, options).unwrap();
+        writer.start_file_with_name_bytes(&[214, 208, 206, 196], options).unwrap();
         writer.write_all(b"encoding GB18030").unwrap();
 
         // SHIFT_JIS
         // "日文" = [147, 250, 149, 182]
-        let filename = unsafe { String::from_utf8_unchecked(vec![147, 250, 149, 182]) };
-        writer.start_file(filename, options).unwrap();
+        writer.start_file_with_name_bytes(&[147, 250, 149, 182], options).unwrap();
         writer.write_all(b"encoding SHIFT_JIS").unwrap();
         let result = writer.finish().unwrap();
 
