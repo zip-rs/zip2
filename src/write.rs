@@ -1174,21 +1174,18 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
-        let (compression_method, aes_mode) = match options.encrypt_with {
             // Preserve AES method for raw copies without needing a password
             #[cfg(feature = "aes-crypto")]
             None if options.aes_mode.is_some() => (CompressionMethod::Aes, options.aes_mode),
+        let compression_method = options.compression_method;
+        let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes { mode, salt, .. }) => {
-                let aes_mode = crate::aes::AesModeOptions::new(
-                    mode,
-                    AesVendorVersion::Ae2,
-                    options.compression_method,
-                    salt,
-                );
-                (CompressionMethod::Aes, Some(aes_mode))
+                let aes_mode_options =
+                    crate::aes::AesModeOptions::new(mode, AesVendorVersion::Ae2, salt);
+                Some(aes_mode_options)
             }
-            _ => (options.compression_method, None),
+            _ => None,
         };
 
         // Write AES encryption extra data.
@@ -1198,13 +1195,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         if let Some(crate::aes::AesModeOptions {
             mode,
             vendor_version,
-            actual_compression_method,
             ..
-        }) = aes_mode
+        }) = aes_mode_options
         {
             // For raw copies of AES entries, write the correct AES extra data immediately
-            let aex_extra_field =
-                AexEncryption::new(vendor_version, mode, actual_compression_method);
+            let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
             let buf = &aex_extra_field.as_bytes()[offset_of!(AexEncryption, version)..];
             aes_extra_data_start = extra_data.len() as u64;
             ExtendedFileOptions::add_extra_data_unchecked(
@@ -1254,7 +1249,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
         #[cfg(feature = "aes-crypto")]
-        let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
+        let aes_mode = aes_mode_options.map(super::aes::AesModeOptions::to_tuple);
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -1401,7 +1396,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 update_aes_extra_data(writer, file, self.stats.bytes_written)?;
             }
 
-            let crc = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2, _)));
+            let crc = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2)));
 
             file.crc32 = if crc {
                 self.stats.hasher.clone().finalize()
@@ -2361,7 +2356,8 @@ fn update_aes_extra_data<W: Write + Seek>(
     file: &mut ZipFileData,
     bytes_written: u64,
 ) -> ZipResult<()> {
-    let Some((aes_mode, version, compression_method)) = &mut file.aes_mode else {
+    let inner_compression_method = file.compression_method;
+    let Some((aes_mode, version)) = &mut file.aes_mode else {
         return Ok(());
     };
 
@@ -2387,7 +2383,7 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
+    let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
     let buf = aes_extra_field.as_bytes();
     writer.write_all(buf)?;
 
