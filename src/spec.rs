@@ -147,7 +147,7 @@ impl From<ZipFlags> for u16 {
 ///     zip.start_file("one.dat", options)?;
 ///     let zip = zip.finish_into_readable()?;
 ///     let names: Vec<_> = zip.file_names().collect();
-///     assert_eq!(&names, &["one.dat"]);
+///     assert_eq!(names[0].as_ref().unwrap(), "one.dat");
 /// }
 ///
 /// // Create a new zip output.
@@ -999,8 +999,8 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 }
 
 #[inline]
-pub(crate) fn is_dir(filename: &str) -> bool {
-    matches!(filename.as_bytes().last(), Some(b'/') | Some(b'\\'))
+pub(crate) fn is_dir(filename: &[u8]) -> bool {
+    matches!(filename.last(), Some(b'/') | Some(b'\\'))
 }
 
 #[cfg(test)]

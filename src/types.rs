@@ -16,6 +16,7 @@ use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::Debug;
 use core::fmt::Display;
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
@@ -183,8 +184,6 @@ pub struct ZipFileData {
     pub compressed_size: u64,
     /// Size of the file when extracted
     pub uncompressed_size: u64,
-    /// Name of the file
-    pub file_name: Arc<str>,
     /// Extra field usually used for storage expansion
     pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
@@ -215,6 +214,16 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
+        Ok(
+            if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {
+                file_name_utf8.into()
+            } else {
+                file_name_raw.from_cp437().map_err(std::io::Error::other)?
+            },
+        )
+    }
+
     /// Check if the encrypted flag is set
     pub fn is_encrypted(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::Encrypted)
@@ -288,33 +297,34 @@ impl ZipFileData {
         Ok(SeekableTake::new(reader, self.compressed_size)?)
     }
 
-    pub fn is_dir(&self) -> bool {
-        is_dir(&self.file_name)
+    pub fn is_dir(&self, file_name: &[u8]) -> bool {
+        is_dir(file_name)
     }
 
-    pub fn file_name_sanitized(&self) -> PathBuf {
-        let no_null_filename = match self.file_name.find('\0') {
-            Some(index) => &self.file_name[0..index],
-            None => &self.file_name,
+    pub(crate) fn file_name_sanitized(&self, file_name: &str) -> PathBuf {
+        let no_null_filename = match file_name.find('\0') {
+            Some(index) => &file_name[0..index],
+            None => file_name,
         };
 
         file_name_sanitized(no_null_filename)
     }
 
     /// Simplify the file name by removing the prefix and parent directories and only return normal components
-    pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
-        if self.file_name.contains('\0') {
+    pub(crate) fn simplified_components<'a>(&self, file_name: &'a str) -> Option<Vec<&'a OsStr>> {
+        if file_name.contains('\0') {
             return None;
         }
-        let input = Path::new(OsStr::new(&*self.file_name));
+        let input: &'a Path = Path::new(file_name);
         crate::path::simplified_components(input)
     }
 
-    pub(crate) fn enclosed_name(&self) -> Option<PathBuf> {
-        if self.file_name.contains('\0') {
+    pub(crate) fn enclosed_name(&self, file_name: &str) -> Option<PathBuf> {
+        if file_name.contains('\0') {
             return None;
         }
-        enclosed_name(&self.file_name)
+        let enclosed = enclosed_name(file_name)?;
+        Some(enclosed)
     }
 
     /// Get unix mode for the file
@@ -404,7 +414,7 @@ impl ZipFileData {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
-        file_name: Arc<str>,
+        file_name_raw: &[u8],
         options: &FileOptions<'_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
@@ -429,7 +439,7 @@ impl ZipFileData {
             System::Unix
         };
         if system == System::Dos {
-            if is_dir(&file_name) {
+            if is_dir(file_name_raw) {
                 // DOS directory bit
                 external_attributes |= 0x10;
             }
@@ -448,7 +458,7 @@ impl ZipFileData {
         if encrypted {
             flags |= ZipFlags::Encrypted.as_u16();
         }
-        if !file_name.is_ascii() {
+        if std::str::from_utf8(file_name_raw).is_ok() && !file_name_raw.is_ascii() {
             flags |= ZipFlags::LanguageEncoding.as_u16();
         }
         let mut local_block = ZipFileData {
@@ -460,7 +470,6 @@ impl ZipFileData {
             crc32: raw_values.crc32,
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
-            file_name, // Never used for saving, but used as map key in insert_file_data()
             extra_field: Some(Arc::from(extra_field)),
             central_extra_field: options
                 .extended_options
@@ -514,7 +523,6 @@ impl ZipFileData {
             ));
         }
 
-        let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -534,15 +542,6 @@ impl ZipFileData {
             return Err(e.into());
         }
 
-        let file_name: Arc<str> = if is_utf8 {
-            String::from_utf8_lossy(&file_name_raw).into()
-        } else {
-            file_name_raw
-                .from_cp437()
-                .map_err(std::io::Error::other)?
-                .into()
-        };
-
         let (version_made_by, system) = System::extract_bytes(version_made_by);
         let data = ZipFileData {
             system,
@@ -553,7 +552,6 @@ impl ZipFileData {
             crc32,
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
-            file_name,
             extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
@@ -893,7 +891,6 @@ mod tests {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.into(),
             extra_field: None,
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
@@ -907,6 +904,9 @@ mod tests {
             aes_extra_data_start: 0,
             extra_fields: Vec::new(),
         };
-        assert_eq!(data.file_name_sanitized(), PathBuf::from("path/etc/passwd"));
+        assert_eq!(
+            data.file_name_sanitized(&file_name),
+            PathBuf::from("path/etc/passwd")
+        );
     }
 }

@@ -44,7 +44,7 @@ fn test_absolute_paths() -> zip::result::ZipResult<()> {
         assert!(
             !enclosed_name.is_absolute(),
             "enclosed_name for '{}' should be relative, but was: {:?}",
-            file.name(),
+            file.name().unwrap(),
             enclosed_name
         );
     }
