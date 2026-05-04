@@ -149,11 +149,10 @@ fn test_extract_encrypted_file<R: io::Read + io::Seek>(
 
     {
         let mut content = String::new();
-        archive
-            .by_name_decrypt(file_name, correct_password.as_bytes())
-            .expect("couldn't read encrypted file")
-            .read_to_string(&mut content)
-            .expect("couldn't read encrypted file");
+        let mut file = archive.by_name_decrypt(file_name, correct_password.as_bytes())
+            .expect("couldn't retreive encrypted file");
+        file.read_to_string(&mut content)
+            .expect("couldn't read to string encrypted file");
         assert_eq!(SECRET_CONTENT, content);
     }
 }

@@ -224,7 +224,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     data: &ZipFileData,
     reader: io::Take<&'a mut R>,
     password: Option<&[u8]>,
-    aes_info: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    aes_info: Option<(AesMode, AesVendorVersion)>,
 ) -> ZipResult<CryptoReader<'a, R>> {
     #[allow(deprecated)]
     {
@@ -241,7 +241,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
             ));
         }
         #[cfg(feature = "aes-crypto")]
-        (Some(password), Some((aes_mode, vendor_version, _))) => CryptoReader::Aes {
+        (Some(password), Some((aes_mode, vendor_version))) => CryptoReader::Aes {
             reader: crate::aes::AesReader::new(reader, aes_mode, data.compressed_size)
                 .validate(password)?,
             vendor_version,
