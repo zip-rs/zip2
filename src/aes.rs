@@ -376,7 +376,7 @@ impl<W: Write> AesWriter<W> {
 
         let cipher = Cipher::from_mode(aes_mode, encryption_key)?;
         let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key)
-            .map_err(|e| std::io::Error::other(format!("Cannot create hmac with key: {e}")))?;
+            .map_err(|_| std::io::Error::other("Failed to initialize HMAC"))?;
 
         Ok(Self {
             writer,
