@@ -40,11 +40,12 @@ pub struct AesInfo {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AesModeOptions {
     pub(crate) mode: AesMode,
     pub(crate) vendor_version: AesVendorVersion,
     pub(crate) custom_salt: Option<AesSalt>,
+    pub(crate) password: Vec<u8>,
 }
 
 impl AesModeOptions {
@@ -52,11 +53,13 @@ impl AesModeOptions {
         mode: AesMode,
         vendor_version: AesVendorVersion,
         custom_salt: Option<AesSalt>,
+        password: Vec<u8>,
     ) -> Self {
         Self {
             mode,
             vendor_version,
             custom_salt,
+            password,
         }
     }
 

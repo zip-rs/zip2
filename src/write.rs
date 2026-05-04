@@ -1168,12 +1168,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         let compression_method = options.compression_method;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
-            None if options.aes_mode.is_some() => options.aes_mode,
-            #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, salt, .. }) => Some(crate::aes::AesModeOptions::new(
+            Some(EncryptWith::Aes { mode, salt, password, .. }) => Some(crate::aes::AesModeOptions::new(
                 mode,
                 AesVendorVersion::Ae2,
                 salt,
+                password.to_vec(),
             )),
             _ => None,
         };
