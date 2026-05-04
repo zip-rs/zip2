@@ -538,8 +538,6 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
-
         /* FIXME: these were previously incorrect: add testing! */
         let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
         if using_data_descriptor {
