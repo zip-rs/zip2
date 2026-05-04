@@ -143,6 +143,7 @@ pub(crate) enum EncryptWith<'k> {
     Aes {
         mode: crate::AesMode,
         vendor_version: AesVendorVersion,
+        // When the password is None, it means that we are reusing the previous encryption
         password: Option<&'k [u8]>,
         salt: Option<crate::aes::AesSalt>,
     },
