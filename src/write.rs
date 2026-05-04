@@ -1079,7 +1079,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Get ZIP archive comment.
-    pub fn get_comment(&mut self) -> Result<&str, Utf8Error> {
+    pub fn get_comment(&self) -> Result<&str, Utf8Error> {
         from_utf8(self.get_raw_comment())
     }
 
