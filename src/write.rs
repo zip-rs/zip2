@@ -461,8 +461,11 @@ impl ExtendedFileOptions {
 
 impl Debug for ExtendedFileOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-        f.write_fmt(format_args!("ExtendedFileOptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
-        self.extra_data, self.central_extra_data))
+        f.debug_struct("ExtendedFileOptions")
+            .field("extra_data", &self.extra_data)
+            .field("central_extra_data", &self.central_extra_data)
+            .field("file_comment", &self.file_comment)
+            .finish()
     }
 }
 
