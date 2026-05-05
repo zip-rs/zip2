@@ -271,7 +271,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
     // we cannot decrypt with this function right now
     // so technically not really useful
-    let vendor_version = data.aes_mode.map(|aes| aes.1);
+    let vendor_version = result.aes_mode.map(|aes| aes.1);
     Ok(Some(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(result),
