@@ -1,6 +1,5 @@
 //! Code related to reader
 
-use crate::AesMode;
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
@@ -74,7 +73,6 @@ pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
     #[cfg(feature = "aes-crypto")]
     Aes {
         reader: crate::aes::AesReaderValid<io::Take<&'a mut R>>,
-        vendor_version: AesVendorVersion,
     },
 }
 
@@ -84,12 +82,8 @@ impl<R: Read + ?Sized> core::fmt::Debug for CryptoReader<'_, R> {
             CryptoReader::Plaintext(_) => f.write_str("CryptoReader::Plaintext"),
             CryptoReader::ZipCrypto(_) => f.write_str("CryptoReader::ZipCrypto"),
             #[cfg(feature = "aes-crypto")]
-            CryptoReader::Aes { vendor_version, .. } => {
-                write!(
-                    f,
-                    "CryptoReader::Aes {{ vendor_version: {:?} }}",
-                    vendor_version
-                )
+            CryptoReader::Aes { .. } => {
+                write!(f, "CryptoReader::Aes",)
             }
         }
     }
@@ -133,24 +127,6 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
             #[cfg(feature = "aes-crypto")]
             CryptoReader::Aes { reader: r, .. } => r.into_inner(),
         }
-    }
-
-    /// Returns `true` if the data is encrypted using AE2.
-    #[cfg(feature = "aes-crypto")]
-    pub const fn is_ae2_encrypted(&self) -> bool {
-        matches!(
-            self,
-            CryptoReader::Aes {
-                vendor_version: AesVendorVersion::Ae2,
-                ..
-            }
-        )
-    }
-
-    /// `false` since the feature `aes-crypto` is not enabled
-    #[cfg(not(feature = "aes-crypto"))]
-    pub const fn is_ae2_encrypted(&self) -> bool {
-        false
     }
 }
 
@@ -224,7 +200,6 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     data: &ZipFileData,
     reader: io::Take<&'a mut R>,
     password: Option<&[u8]>,
-    aes_info: Option<(AesMode, AesVendorVersion)>,
 ) -> ZipResult<CryptoReader<'a, R>> {
     #[allow(deprecated)]
     {
@@ -233,7 +208,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
         }
     }
 
-    let reader = match (password, aes_info) {
+    let reader = match (password, data.aes_mode) {
         #[cfg(not(feature = "aes-crypto"))]
         (Some(_), Some(_)) => {
             return Err(ZipError::UnsupportedArchive(
@@ -241,10 +216,9 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
             ));
         }
         #[cfg(feature = "aes-crypto")]
-        (Some(password), Some((aes_mode, vendor_version))) => CryptoReader::Aes {
+        (Some(password), Some((aes_mode, _))) => CryptoReader::Aes {
             reader: crate::aes::AesReader::new(reader, aes_mode, data.compressed_size)
                 .validate(password)?,
-            vendor_version,
         },
         (Some(password), None) => {
             let validator = if data.is_using_data_descriptor() {
@@ -266,12 +240,17 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
     crc32: Option<u32>,
+    vendor_version: Option<AesVendorVersion>,
     reader: CryptoReader<'_, R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
 ) -> ZipResult<ZipFileReader<'_, R>> {
     // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
     let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
-        (reader.is_ae2_encrypted(), data_crc32)
+        if let Some(vendor_version) = vendor_version {
+            (vendor_version.is_ae2_encrypted(), data_crc32)
+        } else {
+            (false, data_crc32)
+        }
     } else {
         (true, 0)
     };

@@ -568,8 +568,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let limit_reader = data.find_content(&mut self.reader)?;
 
-        let crypto_reader =
-            make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
+        let crypto_reader = make_crypto_reader(data, limit_reader, options.password)?;
 
         let crc32 = if options.ignore_crc {
             None
@@ -584,6 +583,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.compression_method,
                 data.uncompressed_size,
                 crc32,
+                data.aes_mode.map(|aes| aes.1),
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,

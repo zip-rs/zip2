@@ -258,7 +258,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
     }
 
     let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
+    let crypto_reader = make_crypto_reader(&result, limit_reader, None)?;
     let ZipFileData {
         crc32,
         uncompressed_size,
@@ -275,6 +275,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
             compression_method,
             uncompressed_size,
             Some(crc32),
+            None,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
@@ -284,10 +285,10 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
 /// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
-    reader: &mut R,
+pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
+    reader: &'a mut R,
     compressed_size: u64,
-) -> ZipResult<Option<ZipFile<'_, R>>> {
+) -> ZipResult<Option<ZipFile<'a, R>>> {
     let mut magic_buf = [0; size_of::<u32>()];
     reader.read_exact(&mut magic_buf)?;
 
@@ -302,17 +303,16 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
 
     let block = block.from_le();
 
-    let (mut result, file_name_raw) = ZipFileData::from_local_block(block, reader)?;
+    let (mut result, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
     result.compressed_size = compressed_size;
 
-    if result.is_encrypted() {
-        return Err(ZipError::UnsupportedArchive(
-            "Encrypted files are not supported",
-        ));
+    match parse_extra_field(&mut result, &mut file_name_raw) {
+        Ok(..) | Err(ZipError::Io(..)) => {}
+        Err(e) => return Err(e),
     }
 
     let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None, None)?;
+    let crypto_reader = make_crypto_reader(&result, limit_reader, None)?;
     let ZipFileData {
         crc32,
         compression_method,
@@ -322,6 +322,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
         ..
     } = result;
 
+    let vendor_version = result.aes_mode.map(|aes| aes.1);
     Ok(Some(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(result),
@@ -329,6 +330,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
             compression_method,
             uncompressed_size,
             Some(crc32),
+            vendor_version,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,

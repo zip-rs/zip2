@@ -798,6 +798,18 @@ impl AesVendorVersion {
     pub const fn as_u16(self) -> u16 {
         self as u16
     }
+
+    /// Returns `true` if the data is encrypted using AE2.
+    #[cfg(feature = "aes-crypto")]
+    pub const fn is_ae2_encrypted(&self) -> bool {
+        matches!(self, AesVendorVersion::Ae2)
+    }
+
+    /// `false` since the feature `aes-crypto` is not enabled
+    #[cfg(not(feature = "aes-crypto"))]
+    pub const fn is_ae2_encrypted(&self) -> bool {
+        false
+    }
 }
 
 impl TryFrom<u16> for AesVendorVersion {
