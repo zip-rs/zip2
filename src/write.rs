@@ -1166,9 +1166,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         let central_extra_data = options.extended_options.central_extra_data();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            let mut new_extra_data = Vec::new();
+            let mut new_extra_data = Vec::with_capacity(zip64_block.full_size() + extra_data.len());
             zip64_block.write(&mut new_extra_data)?;
-            new_extra_data.append(&mut extra_data);
+            new_extra_data.extend_from_slice(&extra_data);
             extra_data = new_extra_data;
         }
 
