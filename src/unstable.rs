@@ -26,7 +26,10 @@ pub mod write {
             Self: Sized;
     }
     impl<'k, 'n, T: FileOptionExtension> FileOptionsExt<'k> for FileOptions<'k, 'n, T> {
-        fn with_deprecated_encryption(self, password: &'k [u8]) -> ZipResult<FileOptions<'k, 'n, T>> {
+        fn with_deprecated_encryption(
+            self,
+            password: &'k [u8],
+        ) -> ZipResult<FileOptions<'k, 'n, T>> {
             if password.is_empty() {
                 // Forbid empty passwords to avoid deriving a predictable key from key
                 // fixed, public value. Callers must ensure passwords are non-empty.
