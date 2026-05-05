@@ -550,11 +550,6 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
     parse_extra_field(&mut result, &mut file_name_raw)?;
 
-    let aes_enabled = result.compression_method == CompressionMethod::AES;
-    if aes_enabled && result.aes_mode.is_none() {
-        return Err(invalid!("AES encryption without AES extra data field"));
-    }
-
     // Account for shifted zip offsets.
     result.header_start = result
         .header_start
@@ -990,15 +985,16 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
         options.normalize();
         #[cfg(feature = "aes-crypto")]
-        if let Some((mode, vendor_version, compression_method)) = self.get_metadata().aes_mode {
+        if let Some((mode, vendor_version)) = self.get_metadata().aes_mode {
+            use crate::types::EncryptWith;
             // Preserve AES metadata in options for downstream writers.
             // This is metadata-only and does not trigger encryption.
-            options.aes_mode = Some(crate::aes::AesModeOptions::new(
+            options.encrypt_with = Some(EncryptWith::Aes {
                 mode,
                 vendor_version,
-                compression_method,
-                None,
-            ));
+                salt: None,
+                password: None,
+            });
         }
         options
     }

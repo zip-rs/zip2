@@ -57,7 +57,7 @@ impl AexEncryption {
     pub(crate) fn parse<R: Read>(
         reader: &mut R,
         len: u16,
-    ) -> ZipResult<(AesMode, AesVendorVersion, CompressionMethod)> {
+    ) -> ZipResult<((AesMode, AesVendorVersion), CompressionMethod)> {
         if len != 7 {
             return Err(ZipError::UnsupportedArchive(
                 "AES extra data field has an unsupported length",
@@ -77,8 +77,8 @@ impl AexEncryption {
         }
         let vendor_version = vendor_version.try_into().map_err(invalid_archive_const)?;
         let aes_mode = buff[0].try_into().map_err(invalid_archive_const)?;
-        let comp_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
-        Ok((aes_mode, vendor_version, comp_method))
+        let inner_comp_method = CompressionMethod::parse_from_u16(reader.read_u16_le()?);
+        Ok(((aes_mode, vendor_version), inner_comp_method))
     }
 }
 
@@ -150,19 +150,10 @@ mod tests {
         assert_eq!(len, 7);
         let mut cursor = Cursor::new(data);
 
-        let res = AexEncryption::parse(
-            &mut cursor,
-            len,
-        );
+        let res = AexEncryption::parse(&mut cursor, len);
         assert!(res.is_ok());
-        let new_aes_enc = res.unwrap();
-        assert_eq!(
-            new_aes_enc,
-            (
-                AesMode::Aes256,
-                AesVendorVersion::Ae2,
-                CompressionMethod::Stored
-            )
-        );
+        let (aes_mode_options, inner_compression_method) = res.unwrap();
+        assert_eq!(aes_mode_options, (AesMode::Aes256, AesVendorVersion::Ae2));
+        assert_eq!(inner_compression_method, CompressionMethod::Stored);
     }
 }

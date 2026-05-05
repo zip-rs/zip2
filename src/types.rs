@@ -13,9 +13,10 @@ use crate::spec::{
     ZipDataDescriptorBlock, ZipFlags, ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
-use crate::zipcrypto::EncryptWith;
+use crate::zipcrypto::ZipCryptoKeys;
 use core::fmt::Debug;
 use core::fmt::Display;
+use core::marker::PhantomData;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
@@ -136,10 +137,43 @@ impl From<System> for u8 {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EncryptWith<'k> {
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        mode: crate::AesMode,
+        vendor_version: AesVendorVersion,
+        // When the password is None, it means that we are reusing the previous encryption
+        password: Option<&'k [u8]>,
+        salt: Option<crate::aes::AesSalt>,
+    },
+    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
+}
+
+#[cfg(feature = "_arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        #[cfg(feature = "aes-crypto")]
+        if bool::arbitrary(u)? {
+            return Ok(EncryptWith::Aes {
+                mode: crate::AesMode::arbitrary(u)?,
+                password: Some(u.arbitrary::<&[u8]>()?),
+                vendor_version: AesVendorVersion::Ae2,
+                salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
+            });
+        }
+
+        Ok(EncryptWith::ZipCrypto(
+            ZipCryptoKeys::arbitrary(u)?,
+            PhantomData,
+        ))
+    }
+}
+
 /// Metadata for a file to be written
 #[non_exhaustive]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub struct FileOptions<'k, T: FileOptionExtension> {
+pub struct FileOptions<'k, 'n, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
     pub(crate) compression_level: Option<i64>,
     pub(crate) last_modified_time: DateTime,
@@ -150,14 +184,13 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) alignment: u16,
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
-    #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<crate::aes::AesModeOptions>,
     pub(crate) system: Option<System>,
+    pub(crate) name: Option<&'n [u8]>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
-pub type SimpleFileOptions = FileOptions<'static, ()>;
+pub type SimpleFileOptions = FileOptions<'static, 'static, ()>;
 
-impl FileOptions<'static, ()> {
+impl FileOptions<'static, 'static, ()> {
     const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
 }
 
@@ -174,7 +207,7 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// ZIP flags
     pub flags: u16,
-    /// Compression method used to store the file
+    /// Compression method used to store the file (get the inner compression method if encryption is used)
     pub compression_method: CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: Option<DateTime>,
@@ -204,8 +237,8 @@ pub struct ZipFileData {
     pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
-    /// AES mode if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    /// AES settings if applicable
+    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
     /// Specifies where in the extra data the AES metadata starts
     pub aes_extra_data_start: u64,
 
@@ -415,13 +448,13 @@ impl ZipFileData {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
         file_name_raw: &[u8],
-        options: &FileOptions<'_, T>,
+        options: &FileOptions<'_, '_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
         compression_method: CompressionMethod,
-        aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+        aes_settings: Option<(AesMode, AesVendorVersion)>,
         extra_field: &[u8],
     ) -> Self {
         let permissions = options
@@ -452,10 +485,8 @@ impl ZipFileData {
             }
         }
         let mut flags = 0;
-        let encrypted = options.encrypt_with.is_some();
-        #[cfg(feature = "aes-crypto")]
-        let encrypted = encrypted || options.aes_mode.is_some();
-        if encrypted {
+        if options.has_encryption() {
+            // encrypt_with is AES or ZipCrypto
             flags |= ZipFlags::Encrypted.as_u16();
         }
         if std::str::from_utf8(file_name_raw).is_ok() && !file_name_raw.is_ascii() {
@@ -481,7 +512,7 @@ impl ZipFileData {
             central_header_start: 0,
             external_attributes,
             large_file: options.large_file,
-            aes_mode,
+            aes_mode: aes_settings,
             extra_fields: Vec::new(),
             extra_data_start,
             aes_extra_data_start,
@@ -507,13 +538,6 @@ impl ZipFileData {
             extra_field_length,
             ..
         } = block;
-
-        let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
-        if encrypted {
-            return Err(ZipError::UnsupportedArchive(
-                "Encrypted files are not supported",
-            ));
-        }
 
         /* FIXME: these were previously incorrect: add testing! */
         let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
@@ -621,10 +645,15 @@ impl ZipFileData {
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
         Ok(ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),
-            compression_method: self.compression_method.serialize_to_u16(),
+            compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
@@ -673,11 +702,16 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
         Ok(ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
             flags: self.flags(file_name_raw),
-            compression_method: self.compression_method.serialize_to_u16(),
+            compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
@@ -756,6 +790,18 @@ impl AesVendorVersion {
     #[must_use]
     pub const fn as_u16(self) -> u16 {
         self as u16
+    }
+
+    /// Returns `true` if the data is encrypted using AE2.
+    #[cfg(feature = "aes-crypto")]
+    pub const fn is_ae2_encrypted(&self) -> bool {
+        matches!(self, AesVendorVersion::Ae2)
+    }
+
+    /// `false` since the feature `aes-crypto` is not enabled
+    #[cfg(not(feature = "aes-crypto"))]
+    pub const fn is_ae2_encrypted(&self) -> bool {
+        false
     }
 }
 

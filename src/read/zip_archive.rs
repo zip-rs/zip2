@@ -234,7 +234,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let limit_reader = data.find_content(&mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
-            Some((aes_mode, _, _)) => {
+            Some((aes_mode, _)) => {
                 let (verification_value, salt) =
                     crate::aes::AesReader::new(limit_reader, aes_mode, data.compressed_size)
                         .get_verification_value_and_salt()?;
@@ -288,7 +288,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// let file_names = (0..archive.len())
     ///     .into_par_iter()
     ///     .map_init({
-    ///         let metadata = archive.metadata().clone();
+    ///         let metadata = archive.metadata();
     ///         move || {
     ///             let file = fs::File::open(FILE_NAME).unwrap();
     ///             unsafe { zip::ZipArchive::unsafe_new_with_metadata(file, metadata.clone()) }
@@ -568,8 +568,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let limit_reader = data.find_content(&mut self.reader)?;
 
-        let crypto_reader =
-            make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
+        let crypto_reader = make_crypto_reader(data, limit_reader, options.password)?;
 
         let crc32 = if options.ignore_crc {
             None
@@ -584,6 +583,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.compression_method,
                 data.uncompressed_size,
                 crc32,
+                data.aes_mode.map(|aes| aes.1),
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,

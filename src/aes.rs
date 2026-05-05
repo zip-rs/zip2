@@ -4,10 +4,9 @@
 //! Note that using CRC with AES depends on the used encryption specification, AE-1 or AE-2.
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
-use crate::CompressionMethod;
 use crate::aes_ctr::AesCipher;
 use crate::result::ZipResult;
-use crate::types::{AesMode, AesVendorVersion};
+use crate::types::AesMode;
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{KeyInit, Mac, SimpleHmacReset};
@@ -38,40 +37,6 @@ pub struct AesInfo {
     pub verification_value: [u8; PWD_VERIFY_LENGTH],
     /// The salt
     pub salt: Vec<u8>,
-}
-
-#[non_exhaustive]
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub(crate) struct AesModeOptions {
-    pub(crate) mode: AesMode,
-    pub(crate) vendor_version: AesVendorVersion,
-    pub(crate) actual_compression_method: CompressionMethod,
-    pub(crate) custom_salt: Option<AesSalt>,
-}
-
-impl AesModeOptions {
-    pub(crate) fn new(
-        mode: AesMode,
-        vendor_version: AesVendorVersion,
-        actual_compression_method: CompressionMethod,
-        custom_salt: Option<AesSalt>,
-    ) -> Self {
-        Self {
-            mode,
-            vendor_version,
-            actual_compression_method,
-            custom_salt,
-        }
-    }
-
-    /// Used to create the `aes_mode` of `ZipFileData`
-    pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
-        (
-            self.mode,
-            self.vendor_version,
-            self.actual_compression_method,
-        )
-    }
 }
 
 /// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
@@ -115,7 +80,8 @@ impl AesSalt {
     }
 
     /// Creates a new `AesSalt` with the given `mode` and `salt`.
-    /// The length of `salt` must be at least the required salt length for the given `mode`, otherwise an error is returned.
+    /// The length of `salt` must be exactly one-half the key length for the given `mode`, otherwise
+    /// an error is returned.
     ///
     /// # Errors
     /// Returns an error if the length of `salt` is too short for the given `mode`.
