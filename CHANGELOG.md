@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [9.0.0](https://github.com/zip-rs/zip2/compare/v8.6.0...v9.0.0) - 2026-05-05
+## [9.0.0-pre1](https://github.com/zip-rs/zip2/compare/v8.6.0...v9.0.0-pre1) - 2026-05-05
 
 ### <!-- 0 -->🚀 Features
 
