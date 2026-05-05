@@ -468,7 +468,7 @@ impl Debug for ExtendedFileOptions {
 }
 
 #[cfg(feature = "_arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
+impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut options = FullFileOptions {
             compression_method: CompressionMethod::arbitrary(u)?,
@@ -501,6 +501,8 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
+        let a = Box::<[u8]>::arbitrary(u)?;
+        options.name = Some(&a);
         ZipWriter::new(Cursor::new(Vec::new()))
             .start_file("", options.clone())
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
