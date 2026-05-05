@@ -1188,8 +1188,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
                 let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
-                let mut buf = Vec::new();
-                aex_extra_field.write_data(&mut buf)?;
+                let mut buf = [0u8; AexEncryption::EXTRA_FIELD_SIZE as usize];
+                aex_extra_field.write_data(&mut buf.as_mut_slice())?;
 
                 aes_extra_data_start = extra_data.len() as u64;
                 ExtendedFileOptions::add_extra_data_unchecked(
