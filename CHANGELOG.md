@@ -27,9 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [**breaking**] remove deprecated method *_zip64_comment methods ([#812](https://github.com/zip-rs/zip2/pull/812))
 - [**breaking**] Remove deprecated elements ([#802](https://github.com/zip-rs/zip2/pull/802))
 - store the file_name_raw only as key (BREAKING) ([#789](https://github.com/zip-rs/zip2/pull/789))
-- Remove `ZipFileData` fields ([#790](https://github.com/zip-rs/zip2/pull/790))
-- Remove useless compressed level ([#791](https://github.com/zip-rs/zip2/pull/791))
-- add non exhaustive to extra fields ([#793](https://github.com/zip-rs/zip2/pull/793))
+- Remove fields from ZipFileData ([#790](https://github.com/zip-rs/zip2/pull/790))
+- Remove useless compression level ([#791](https://github.com/zip-rs/zip2/pull/791))
+- Add non-exhaustive to ExtraField enum ([#793](https://github.com/zip-rs/zip2/pull/793))
 - remove macro export ([#792](https://github.com/zip-rs/zip2/pull/792))
 
 ## [8.6.0](https://github.com/zip-rs/zip2/compare/v8.5.1...v8.6.0) - 2026-04-25
