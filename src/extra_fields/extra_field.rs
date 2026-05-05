@@ -107,14 +107,14 @@ impl ExtraField {
             }
             Ok(UsedExtraField::AeXEncryption) => {
                 // AES
-                let new_aes_enc = AexEncryption::parse(
+                let (new_aes_enc, inner_compression) = AexEncryption::parse(
                     reader,
                     len,
                 )?;
                 ExtraField::AeXEncryption {
                     aes_mode: new_aes_enc.0,
                     aes_vendor_version: new_aes_enc.1,
-                    compression_method: new_aes_enc.2,
+                    compression_method: inner_compression,
                 }
             }
             Ok(UsedExtraField::ExtendedTimestamp) => {

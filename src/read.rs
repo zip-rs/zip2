@@ -635,7 +635,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 .push(ExtraField::Ntfs(ntfs));
         }
         ExtraField::AeXEncryption { aes_mode, aes_vendor_version, compression_method } => {
-            file.aes_mode = Some((aes_mode, aes_vendor_version, compression_method));
+            file.aes_mode = Some((aes_mode, aes_vendor_version));
             file.compression_method = compression_method;
             file.aes_extra_data_start = bytes_already_read;
         }

@@ -33,18 +33,6 @@ pub struct CentralHeaderVersion;
 impl ExtraFieldVersion for LocalHeaderVersion {}
 impl ExtraFieldVersion for CentralHeaderVersion {}
 
-/// Extra field used in this crate
-/// Contains one extra field.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum ExtraField {
-    /// NTFS extra field
-    Ntfs(Ntfs),
-
-    /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
-    ExtendedTimestamp(ExtendedTimestamp),
-}
-
 /// Internal extra-field identifiers (`u16` tags) recognized by this crate.
 ///
 /// This enum is crate-private and used for matching/dispatch on raw ZIP extra
