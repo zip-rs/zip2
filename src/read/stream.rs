@@ -622,22 +622,18 @@ mod tests {
         }
     }
 
-    const PASSWORD: &[u8] = b"helloworld";
-
     #[test]
     #[cfg(feature = "aes-crypto")]
     #[cfg(feature = "deflate")]
     fn zip_read_streaming_compressed_and_aes() {
         use super::read_zipfile_from_stream_with_compressed_size_and_options;
         use crate::ZipReadOptions;
-        use crate::ZipWriter;
-        use crate::write::SimpleFileOptions;
-        use std::io::Write;
 
         let bytes = include_bytes!("../../tests/data/aes_archive.zip");
         let compressed_size = 46;
 
         let mut reader = Cursor::new(bytes);
+        const PASSWORD: &[u8] = b"helloworld";
         let options = ZipReadOptions::new().password(Some(PASSWORD));
         let result = read_zipfile_from_stream_with_compressed_size_and_options(
             &mut reader,
@@ -646,8 +642,6 @@ mod tests {
         );
         let optional_file = result.unwrap();
         let mut file = optional_file.unwrap();
-
-        dbg!(&file);
 
         let file_name = file.name().unwrap();
         assert_eq!(file_name, "secret_data_128");
