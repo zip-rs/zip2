@@ -8,7 +8,7 @@ use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::ZipFlags;
-use crate::spec::{self, FixedSizeBlock, Magic, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::spec::{self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::EncryptWith;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
@@ -1166,7 +1166,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         let central_extra_data = options.extended_options.central_extra_data();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            let mut new_extra_data = zip64_block.serialize().into_vec();
+            let mut new_extra_data = Vec::new();
+            zip64_block.write(&mut new_extra_data)?;
             new_extra_data.append(&mut extra_data);
             extra_data = new_extra_data;
         }
@@ -1187,12 +1188,14 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
                 let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
-                let buf = &aex_extra_field.as_bytes()[offset_of!(AexEncryption, version)..];
+                let mut buf = Vec::new();
+                aex_extra_field.write_data(&mut buf)?;
+
                 aes_extra_data_start = extra_data.len() as u64;
                 ExtendedFileOptions::add_extra_data_unchecked(
                     &mut extra_data,
                     UsedExtraField::AeXEncryption.as_u16(),
-                    buf,
+                    &buf,
                 )?;
                 Some((mode, vendor_version))
             }
@@ -2393,8 +2396,9 @@ fn update_aes_extra_data<W: Write + Seek>(
     ))?;
 
     let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
-    let buf = aes_extra_field.as_bytes();
-    writer.write_all(buf)?;
+    let mut buf = Vec::new();
+    aes_extra_field.write(&mut buf)?;
+    writer.write_all(&buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
     let Some(ref mut extra_field) = file.extra_field else {
@@ -2403,8 +2407,8 @@ fn update_aes_extra_data<W: Write + Seek>(
         ));
     };
     let mut vec = extra_field.to_vec();
-    vec[aes_extra_data_start..aes_extra_data_start + size_of::<AexEncryption>()]
-        .copy_from_slice(buf);
+    vec[aes_extra_data_start..aes_extra_data_start + AexEncryption::FULL_SIZE]
+        .copy_from_slice(&buf);
     *extra_field = Arc::from(vec.into_boxed_slice());
 
     Ok(())
@@ -2461,8 +2465,7 @@ impl ZipFileData {
             + file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
-        let zip64_block = zip64_block.serialize();
-        writer.write_all(&zip64_block)?;
+        zip64_block.write(writer)?;
         Ok(())
     }
 
@@ -2498,7 +2501,7 @@ impl ZipFileData {
         writer.write_all(file_name_raw)?;
         // extra field
         if let Some(zip64_extra_field) = zip64_extra_field_block {
-            writer.write_all(&zip64_extra_field.serialize())?;
+            zip64_extra_field.write(writer)?;
         }
         if !stripped_extra.is_empty() {
             writer.write_all(&stripped_extra)?;

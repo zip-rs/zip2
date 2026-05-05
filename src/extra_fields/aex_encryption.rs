@@ -1,39 +1,33 @@
 //! AE-x encryption structure extra field
 
-use std::io::{ErrorKind, Read};
+use std::io::{ErrorKind, Read, Write};
 
 use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
 use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
-use crate::spec::Pod;
 use crate::types::AesVendorVersion;
 use crate::unstable::LittleEndianReadExt;
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
 pub(crate) struct AexEncryption {
-    header_id: u16,
-    data_size: u16,
     pub(crate) version: u16,
-    vendor_id: u16,
     aes_mode: u8,
     compression_method: u16,
 }
 
-unsafe impl Pod for AexEncryption {}
-
 impl AexEncryption {
-    #[inline(always)]
-    pub(crate) fn to_le(mut self) -> Self {
-        self.header_id = u16::to_le(self.header_id);
-        self.data_size = u16::to_le(self.data_size);
-        self.version = u16::to_le(self.version);
-        self.vendor_id = u16::to_le(self.vendor_id);
-        self.aes_mode = u8::to_le(self.aes_mode);
-        self.compression_method = u16::to_le(self.compression_method);
-        self
-    }
+    /// Field Header ID
+    const EXTRA_FIELD_ID: u16 = UsedExtraField::AeXEncryption.as_u16();
+    /// Field size
+    const EXTRA_FIELD_SIZE: u16 =
+        (size_of::<u16>() + size_of::<u16>() + size_of::<u8>() + size_of::<u16>()) as u16;
+    /// 0x4541
+    const VENDOR_ID: u16 = u16::from_le_bytes(*b"AE");
+    /// Full size of the extra field
+    pub(crate) const FULL_SIZE: usize =
+        size_of::<u16>() + size_of::<u16>() + Self::EXTRA_FIELD_SIZE as usize;
 
     #[inline]
     pub(crate) fn new(
@@ -42,15 +36,25 @@ impl AexEncryption {
         compression_method: CompressionMethod,
     ) -> Self {
         Self {
-            header_id: UsedExtraField::AeXEncryption.as_u16(),
-            data_size: (size_of::<u16>() + size_of::<u16>() + size_of::<u8>() + size_of::<u16>())
-                as u16,
             version: version.as_u16(),
-            vendor_id: u16::from_le_bytes(*b"AE"),
             aes_mode: aes_mode.as_u8(),
             compression_method: compression_method.serialize_to_u16(),
         }
-        .to_le()
+    }
+
+    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        writer.write_all(&u16::to_le_bytes(Self::EXTRA_FIELD_ID))?;
+        writer.write_all(&u16::to_le_bytes(Self::EXTRA_FIELD_SIZE))?;
+        self.write_data(writer)?;
+        Ok(())
+    }
+
+    pub fn write_data<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        writer.write_all(&u16::to_le_bytes(self.version))?;
+        writer.write_all(&u16::to_le_bytes(Self::VENDOR_ID))?;
+        writer.write_all(&u8::to_le_bytes(self.aes_mode))?;
+        writer.write_all(&u16::to_le_bytes(self.compression_method))?;
+        Ok(())
     }
 
     #[inline]
@@ -72,7 +76,7 @@ impl AexEncryption {
             }
             return Err(e.into());
         }
-        if vendor_id != 0x4541 {
+        if vendor_id != Self::VENDOR_ID {
             return Err(invalid!("Invalid AES vendor"));
         }
         let vendor_version = vendor_version.try_into().map_err(invalid_archive_const)?;
@@ -89,7 +93,6 @@ mod tests {
         use super::AexEncryption;
         use crate::AesMode;
         use crate::CompressionMethod;
-        use crate::spec::Pod;
         use crate::types::AesVendorVersion;
 
         let aex_encryption = AexEncryption::new(
@@ -97,8 +100,9 @@ mod tests {
             AesMode::Aes256,
             CompressionMethod::Stored,
         );
+        let mut buf = Vec::new();
+        aex_encryption.write(&mut buf).unwrap();
 
-        let buf = aex_encryption.as_bytes();
         assert_eq!(buf.len(), 11);
         assert_eq!(buf[0..2], [1, 153]);
         assert_eq!(buf[2..4], [7, 0]);
@@ -106,9 +110,6 @@ mod tests {
         assert_eq!(buf[6..8], [65, 69]);
         assert_eq!(buf[8], 0x03);
         assert_eq!(buf[9..], [0, 0]);
-
-        // test length used in write.rs
-        assert_eq!(buf[std::mem::offset_of!(AexEncryption, version)..].len(), 7);
     }
 
     #[test]
@@ -129,7 +130,6 @@ mod tests {
         use super::AexEncryption;
         use crate::AesMode;
         use crate::CompressionMethod;
-        use crate::spec::Pod;
         use crate::types::AesVendorVersion;
         use std::io::Cursor;
 
@@ -139,7 +139,9 @@ mod tests {
             CompressionMethod::Stored,
         );
 
-        let data = aex_encryption.as_bytes();
+        let mut data = Vec::new();
+        aex_encryption.write(&mut data).unwrap();
+
         let len_data = u16::from_le_bytes([data[2], data[3]]);
         let data = &data[4..]; // remove the signature
         let len = data.len() as u16;
