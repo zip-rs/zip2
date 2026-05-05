@@ -327,7 +327,7 @@ mod sealed {
 }
 
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
-pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
+pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
@@ -469,7 +469,7 @@ impl Debug for ExtendedFileOptions {
 }
 
 #[cfg(feature = "_arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
+impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut options = FullFileOptions {
             compression_method: CompressionMethod::arbitrary(u)?,
@@ -502,6 +502,8 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
+        let len = u.arbitrary_len::<u8>()?;
+        options.name = Some(u.bytes(len)?);
         ZipWriter::new(Cursor::new(Vec::new()))
             .start_file("", options.clone())
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
@@ -512,7 +514,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
 const DEFAULT_FILE_PERMISSIONS: u32 = 0o644; // rw-r--r-- default for regular files
 const DEFAULT_DIR_PERMISSIONS: u32 = 0o755; // rwxr-xr-x default for directories
 
-impl<T: FileOptionExtension> FileOptions<'_, T> {
+impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
     pub(crate) fn normalize(&mut self) {
         if !self.last_modified_time.is_valid() {
             self.last_modified_time = FileOptions::<T>::default().last_modified_time;
@@ -598,7 +600,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         self
     }
 
-    pub(crate) fn with_deprecated_encryption(self, password: &[u8]) -> FileOptions<'static, T> {
+    pub(crate) fn with_deprecated_encryption(self, password: &'k [u8]) -> FileOptions<'k, 'n, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::ZipCrypto(
                 ZipCryptoKeys::derive(password),
@@ -615,9 +617,9 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption_and_salt(
         self,
-        password: &[u8],
+        password: &'k [u8],
         salt: crate::aes::AesSalt,
-    ) -> FileOptions<'_, T> {
+    ) -> FileOptions<'k, 'n, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: salt.mode(),
@@ -631,7 +633,11 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 
     /// Set the AES encryption parameters.
     #[cfg(feature = "aes-crypto")]
-    pub fn with_aes_encryption(self, mode: crate::AesMode, password: &str) -> FileOptions<'_, T> {
+    pub fn with_aes_encryption(
+        self,
+        mode: crate::AesMode,
+        password: &'k str,
+    ) -> FileOptions<'k, 'n, T> {
         self.with_aes_encryption_bytes(mode, password.as_bytes())
     }
 
@@ -640,8 +646,8 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     pub fn with_aes_encryption_bytes(
         self,
         mode: crate::AesMode,
-        password: &[u8],
-    ) -> FileOptions<'_, T> {
+        password: &'k [u8],
+    ) -> FileOptions<'k, 'n, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode,
@@ -675,7 +681,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         self
     }
 }
-impl FileOptions<'_, ExtendedFileOptions> {
+impl FileOptions<'_, '_, ExtendedFileOptions> {
     /// Set the file comment.
     #[must_use]
     pub fn with_file_comment<S: Into<Box<str>>>(mut self, comment: S) -> Self {
@@ -706,7 +712,7 @@ impl FileOptions<'_, ExtendedFileOptions> {
         self
     }
 }
-impl FileOptions<'static, ()> {
+impl FileOptions<'static, 'static, ()> {
     /// Constructs a const `FileOptions` object.
     ///
     /// Note: This value is different than the return value of [`FileOptions::default()`]:
@@ -724,13 +730,14 @@ impl FileOptions<'static, ()> {
         #[cfg(feature = "deflate-zopfli")]
         zopfli_buffer_size: Some(1 << 15),
         system: None,
+        name: None,
     };
 }
 
-impl<'k> FileOptions<'k, ()> {
+impl<'k, 'n> FileOptions<'k, 'n, ()> {
     /// Convert to `FullFileOptions`.
     #[must_use]
-    pub fn into_full_options(self) -> FullFileOptions<'k> {
+    pub fn into_full_options(self) -> FullFileOptions<'k, 'n> {
         FileOptions {
             compression_method: self.compression_method,
             compression_level: self.compression_level,
@@ -743,11 +750,12 @@ impl<'k> FileOptions<'k, ()> {
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: self.zopfli_buffer_size,
             system: self.system,
+            name: self.name,
         }
     }
 }
 
-impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
+impl<T: FileOptionExtension> Default for FileOptions<'_, '_, T> {
     /// Construct a new `FileOptions` object
     fn default() -> Self {
         Self {
@@ -762,6 +770,7 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: Some(1 << 15),
             system: None,
+            name: None,
         }
     }
 }
@@ -1139,7 +1148,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn start_entry<T: FileOptionExtension>(
         &mut self,
         file_name_raw: &[u8],
-        mut options: FileOptions<'_, T>,
+        mut options: FileOptions<'_, '_, T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()> {
         self.finish_file()?;
@@ -1454,15 +1463,34 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Create a file in the archive and start writing its' contents. The file must not have the
+    /// Create a file in the archive and start writing its contents. The file must not have the
     /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
-    pub fn start_file<S: ToString, T: FileOptionExtension>(
+    pub fn start_file<'k, 'n, S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
-        mut options: FileOptions<'_, T>,
+        options: FileOptions<'k, 'n, T>,
     ) -> ZipResult<()> {
+        let name = name.to_string();
+        let options = FileOptions {
+            name: Some(name.as_bytes()),
+            ..options
+        };
+        self.start_file_with_options(options)
+    }
+
+    /// Create a file in the archive and start writing its contents. The file must not have the
+    /// same name as a file already in the archive. The name need not be UTF-8.
+    ///
+    /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
+    pub fn start_file_with_options<T: FileOptionExtension>(
+        &mut self,
+        mut options: FileOptions<'_, '_, T>,
+    ) -> ZipResult<()> {
+        let Some(name) = options.name else {
+            return Err(invalid!("File name must be specified"));
+        };
         options.normalize();
         let make_new_self = self.inner.prepare_next_writer(
             options.compression_method,
@@ -1470,8 +1498,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             options.zopfli_buffer_size,
         )?;
-        let file_name = name.to_string();
-        self.start_entry(file_name.as_bytes(), options, None)?;
+        self.start_entry(name, options, None)?;
         let result = self.inner.switch_to(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
@@ -1550,7 +1577,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn start_file_from_path<E: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
         path: P,
-        options: FileOptions<'_, E>,
+        options: FileOptions<'_, '_, E>,
     ) -> ZipResult<()> {
         self.start_file(path_to_string(path)?, options)
     }
@@ -1598,7 +1625,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         &mut self,
         mut file: ZipFile<'_, R>,
         name: &[u8],
-        options: FileOptions<'_, T>,
+        options: FileOptions<'_, '_, T>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
@@ -1707,7 +1734,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn add_directory<S, T: FileOptionExtension>(
         &mut self,
         name: S,
-        mut options: FileOptions<'_, T>,
+        mut options: FileOptions<'_, '_, T>,
     ) -> ZipResult<()>
     where
         S: Into<String>,
@@ -1737,7 +1764,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn add_directory_from_path<T: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
         path: P,
-        options: FileOptions<'_, T>,
+        options: FileOptions<'_, '_, T>,
     ) -> ZipResult<()> {
         self.add_directory(path_to_string(path)?, options)
     }
@@ -1777,7 +1804,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         &mut self,
         name: N,
         target: T,
-        mut options: FileOptions<'_, E>,
+        mut options: FileOptions<'_, '_, E>,
     ) -> ZipResult<()> {
         let permissions = options.permissions.get_or_insert(0o777);
         *permissions |= ffi::S_IFLNK;
@@ -1805,7 +1832,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         &mut self,
         path: P,
         target: T,
-        options: FileOptions<'_, E>,
+        options: FileOptions<'_, '_, E>,
     ) -> ZipResult<()> {
         let path = path_to_string(path)?;
         let target = path_to_string(target)?;
@@ -2794,6 +2821,7 @@ mod tests {
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
             system: None,
+            name: None,
         };
         writer.start_file("mimetype", options).unwrap();
         writer
@@ -2830,7 +2858,7 @@ mod tests {
     #[test]
     fn write_non_utf8() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = FileOptions {
+        let mut options = FileOptions {
             compression_method: Stored,
             compression_level: None,
             last_modified_time: DateTime::default(),
@@ -2842,18 +2870,19 @@ mod tests {
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
             system: None,
+            name: None,
         };
 
         // GB18030
         // "中文" = [214, 208, 206, 196]
-        let filename = unsafe { String::from_utf8_unchecked(vec![214, 208, 206, 196]) };
-        writer.start_file(filename, options).unwrap();
+        options.name = Some(&[214, 208, 206, 196]);
+        writer.start_file_with_options(options).unwrap();
         writer.write_all(b"encoding GB18030").unwrap();
 
         // SHIFT_JIS
         // "日文" = [147, 250, 149, 182]
-        let filename = unsafe { String::from_utf8_unchecked(vec![147, 250, 149, 182]) };
-        writer.start_file(filename, options).unwrap();
+        options.name = Some(&[147, 250, 149, 182]);
+        writer.start_file_with_options(options).unwrap();
         writer.write_all(b"encoding SHIFT_JIS").unwrap();
         let result = writer.finish().unwrap();
 
@@ -2904,6 +2933,7 @@ mod tests {
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
             system: None,
+            name: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -2958,6 +2988,7 @@ mod tests {
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
             system: None,
+            name: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
