@@ -22,21 +22,21 @@ use zip::write::FullFileOptions;
 static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Arbitrary, Clone)]
-pub enum BasicFileOperation<'k> {
+pub enum BasicFileOperation<'k, 'n> {
     WriteNormalFile {
         contents: Box<[Box<[u8]>]>,
-        options: FullFileOptions<'k>,
+        options: FullFileOptions<'k, 'n>,
     },
-    WriteDirectory(FullFileOptions<'k>),
+    WriteDirectory(FullFileOptions<'k, 'n>),
     WriteSymlinkWithTarget {
         target: PathBuf,
-        options: FullFileOptions<'k>,
+        options: FullFileOptions<'k, 'n>,
     },
-    ShallowCopy(Box<FileOperation<'k>>),
-    DeepCopy(Box<FileOperation<'k>>),
+    ShallowCopy(Box<FileOperation<'k, 'n>>),
+    DeepCopy(Box<FileOperation<'k, 'n>>),
     MergeWithOtherFile {
         initial_junk: Box<[u8]>,
-        operations: Box<[(FileOperation<'k>, bool)]>,
+        operations: Box<[(FileOperation<'k, 'n>, bool)]>,
     },
     SetArchiveComment(Box<[u8]>),
 }
@@ -49,14 +49,14 @@ pub enum ReopenOption {
 }
 
 #[derive(Arbitrary, Clone)]
-pub struct FileOperation<'k> {
-    basic: BasicFileOperation<'k>,
+pub struct FileOperation<'k, 'n> {
+    basic: BasicFileOperation<'k, 'n>,
     path: PathBuf,
     reopen: ReopenOption,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
-impl FileOperation<'_> {
+impl FileOperation<'_, '_> {
     fn get_path(&self) -> Option<PathBuf> {
         match &self.basic {
             BasicFileOperation::SetArchiveComment(_) => None,
@@ -93,9 +93,9 @@ impl FileOperation<'_> {
 }
 
 #[derive(Arbitrary, Clone)]
-pub struct FuzzTestCase<'k> {
+pub struct FuzzTestCase<'k, 'n> {
     initial_junk: Box<[u8]>,
-    operations: Box<[(FileOperation<'k>, bool)]>,
+    operations: Box<[(FileOperation<'k, 'n>, bool)]>,
     flush_on_finish_file: bool,
 }
 
@@ -119,7 +119,7 @@ fn deduplicate_paths(
 
 fn do_operation(
     writer: &mut zip::ZipWriter<Cursor<Vec<u8>>>,
-    operation: FileOperation<'_>,
+    operation: FileOperation<'_, '_>,
     abort: bool,
     flush_on_finish_file: bool,
     files_added: &mut usize,
@@ -323,7 +323,7 @@ fn do_operation(
     Ok(())
 }
 
-impl FuzzTestCase<'_> {
+impl FuzzTestCase<'_, '_> {
     fn execute<W: Write>(
         self,
         mut stringifier: impl ops::DerefMut<Target = W>,
@@ -376,7 +376,7 @@ impl FuzzTestCase<'_> {
     }
 }
 
-impl Debug for FuzzTestCase<'_> {
+impl Debug for FuzzTestCase<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.initial_junk.is_empty() {
             writeln!(
