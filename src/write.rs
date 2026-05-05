@@ -2396,8 +2396,8 @@ fn update_aes_extra_data<W: Write + Seek>(
     ))?;
 
     let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
-    let mut buf = Vec::new();
-    aes_extra_field.write(&mut buf)?;
+    let mut buf = [0u8; AexEncryption::FULL_SIZE];
+    aes_extra_field.write(&mut buf.as_mut_slice())?;
     writer.write_all(&buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
