@@ -501,8 +501,8 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
-        let a = Box::<[u8]>::arbitrary(u)?;
-        options.name = Some(&a);
+        let len = u.arbitrary_len::<u8>()?;
+        options.name = Some(u.bytes(len)?);
         ZipWriter::new(Cursor::new(Vec::new()))
             .start_file("", options.clone())
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
@@ -651,8 +651,8 @@ impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
     pub fn with_aes_encryption_bytes(
         self,
         mode: crate::AesMode,
-        password: &'a [u8],
-    ) -> FileOptions<'a, 'b, T> {
+        password: &'k [u8],
+    ) -> FileOptions<'k, 'n, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode,

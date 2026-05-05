@@ -5,7 +5,7 @@ use std::io;
 use std::io::{Read, Write};
 use std::path::{Component, MAIN_SEPARATOR, Path};
 
-/// Provides high level API for reading from key stream.
+/// Provides high level API for reading from a stream.
 pub mod stream {
     pub use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
 }
@@ -31,7 +31,7 @@ pub mod write {
             password: &'k [u8],
         ) -> ZipResult<FileOptions<'k, 'n, T>> {
             if password.is_empty() {
-                // Forbid empty passwords to avoid deriving a predictable key from key
+                // Forbid empty passwords to avoid deriving a predictable key from a
                 // fixed, public value. Callers must ensure passwords are non-empty.
                 // This check isn't in with_deprecated_encryption itself because that would also
                 // affect reading.
@@ -87,7 +87,7 @@ pub trait LittleEndianReadExt: Read {
 
 impl<R: Read> LittleEndianReadExt for R {}
 
-/// Converts key path to the ZIP format (forward-slash-delimited and normalized).
+/// Converts a path to the ZIP format (forward-slash-delimited and normalized).
 pub fn path_to_string<T: AsRef<Path>>(path: T) -> Result<Box<str>, std::io::Error> {
     let mut maybe_original = None;
     if let Some(original) = path.as_ref().to_str() {
