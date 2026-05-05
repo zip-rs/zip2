@@ -139,7 +139,7 @@ impl From<System> for u8 {
 /// Metadata for a file to be written
 #[non_exhaustive]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub struct FileOptions<'k, T: FileOptionExtension> {
+pub struct FileOptions<'k, 'n, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
     pub(crate) compression_level: Option<i64>,
     pub(crate) last_modified_time: DateTime,
@@ -153,11 +153,12 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     #[cfg(feature = "aes-crypto")]
     pub(crate) aes_mode: Option<crate::aes::AesModeOptions>,
     pub(crate) system: Option<System>,
+    pub(crate) name: Option<&'n [u8]>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
-pub type SimpleFileOptions = FileOptions<'static, ()>;
+pub type SimpleFileOptions = FileOptions<'static, 'static, ()>;
 
-impl FileOptions<'static, ()> {
+impl FileOptions<'static, 'static, ()> {
     const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
 }
 
@@ -415,7 +416,7 @@ impl ZipFileData {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
         file_name_raw: &[u8],
-        options: &FileOptions<'_, T>,
+        options: &FileOptions<'_, '_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
