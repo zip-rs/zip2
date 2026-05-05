@@ -269,6 +269,9 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
         ..
     } = result;
 
+    // we cannot decrypt with this function right now
+    // so technically not really useful
+    let vendor_version = data.aes_mode.map(|aes| aes.1);
     Ok(Some(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(result),
@@ -276,7 +279,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
             compression_method,
             uncompressed_size,
             Some(crc32),
-            None,
+            vendor_version,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
@@ -624,7 +627,6 @@ mod tests {
 
     #[test]
     #[cfg(feature = "aes-crypto")]
-    #[cfg(feature = "deflate")]
     fn zip_read_streaming_compressed_and_aes() {
         use super::read_zipfile_from_stream_with_compressed_size_and_options;
         use crate::ZipReadOptions;
