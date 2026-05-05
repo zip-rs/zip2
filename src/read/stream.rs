@@ -289,8 +289,8 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
 /// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<R: io::Read>(
-    reader: &mut R,
+pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
+    reader: &'a mut R,
     compressed_size: u64,
 ) -> ZipResult<Option<ZipFile<'_, R>>> {
     read_zipfile_from_stream_with_compressed_size_and_options(
