@@ -189,7 +189,7 @@ impl Zip64ExtendedInformation {
             };
             consumed_len += mem::size_of::<u64>();
             new_uncompressed_size
-        }else {
+        } else {
             uncompressed_size
         };
 
@@ -203,7 +203,7 @@ impl Zip64ExtendedInformation {
             };
             consumed_len += mem::size_of::<u64>();
             new_compressed_size
-        }else{
+        } else {
             compressed_size
         };
 
@@ -217,7 +217,7 @@ impl Zip64ExtendedInformation {
             };
             consumed_len += mem::size_of::<u64>();
             new_header_start
-        }else{
+        } else {
             header_start
         };
 

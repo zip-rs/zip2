@@ -619,7 +619,11 @@ pub(crate) fn parse_single_extra_field<R: Read>(
     };
     match parsed_extra_field {
         // Zip64 extended information extra field
-        ExtraField::Zip64ExtendedInformation { uncompressed_size, compressed_size, header_start } => {
+        ExtraField::Zip64ExtendedInformation {
+            uncompressed_size,
+            compressed_size,
+            header_start,
+        } => {
             if disallow_zip64 {
                 return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
             }
@@ -631,16 +635,20 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         }
         ExtraField::Ntfs(ntfs) => {
             // NTFS extra field
-            file.extra_fields
-                .push(ExtraField::Ntfs(ntfs));
+            file.extra_fields.push(ExtraField::Ntfs(ntfs));
         }
-        ExtraField::AeXEncryption { aes_mode, aes_vendor_version, compression_method } => {
+        ExtraField::AeXEncryption {
+            aes_mode,
+            aes_vendor_version,
+            compression_method,
+        } => {
             file.aes_mode = Some((aes_mode, aes_vendor_version));
             file.compression_method = compression_method;
             file.aes_extra_data_start = bytes_already_read;
         }
         ExtraField::ExtendedTimestamp(extended_timestamp) => {
-            file.extra_fields.push(ExtraField::ExtendedTimestamp(extended_timestamp));
+            file.extra_fields
+                .push(ExtraField::ExtendedTimestamp(extended_timestamp));
         }
         ExtraField::UnicodeComment(unicode_comment) => {
             // Info-ZIP Unicode Comment Extra Field
@@ -659,8 +667,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             *file_name_raw = file_name.into_vec();
             file.flags |= ZipFlags::LanguageEncoding.as_u16();
         }
-        ExtraField::Unknown(_) => {
-        }
+        ExtraField::Unknown(_) => {}
     }
     Ok(false)
 }

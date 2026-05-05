@@ -1,20 +1,20 @@
 //! Code related to the `ExtraField` enum
 
-use std::io::ErrorKind;
-use crate::result::invalid;
-use crate::types::ZipFileData;
-use std::io::Read;
-use crate::unstable::LittleEndianReadExt;
-use crate::extra_fields::Ntfs;
-use crate::extra_fields::ExtendedTimestamp;
-use crate::extra_fields::Zip64ExtendedInformation;
-use crate::extra_fields::AexEncryption;
-use crate::extra_fields::UnicodeExtraField;
 use crate::AesMode;
 use crate::CompressionMethod;
-use crate::types::AesVendorVersion;
-use crate::result::ZipResult;
+use crate::extra_fields::AexEncryption;
+use crate::extra_fields::ExtendedTimestamp;
+use crate::extra_fields::Ntfs;
+use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
+use crate::extra_fields::Zip64ExtendedInformation;
+use crate::result::ZipResult;
+use crate::result::invalid;
+use crate::types::AesVendorVersion;
+use crate::types::ZipFileData;
+use crate::unstable::LittleEndianReadExt;
+use std::io::ErrorKind;
+use std::io::Read;
 
 /// contains one extra field
 #[derive(Debug, Clone)]
@@ -53,11 +53,7 @@ pub enum ExtraField {
 }
 
 impl ExtraField {
-    pub(crate) fn parse<R: Read>(
-        reader: &mut R,
-        file: &ZipFileData,
-
-    ) -> ZipResult<Option<Self>> {
+    pub(crate) fn parse<R: Read>(reader: &mut R, file: &ZipFileData) -> ZipResult<Option<Self>> {
         let kind = match reader.read_u16_le() {
             Ok(kind) => kind,
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
@@ -95,7 +91,7 @@ impl ExtraField {
                     file.compressed_size,
                     file.header_start,
                 )?;
-                ExtraField::Zip64ExtendedInformation { 
+                ExtraField::Zip64ExtendedInformation {
                     uncompressed_size: new_uncomp,
                     compressed_size: new_comp,
                     header_start: new_head,
@@ -107,10 +103,7 @@ impl ExtraField {
             }
             Ok(UsedExtraField::AeXEncryption) => {
                 // AES
-                let (new_aes_enc, inner_compression) = AexEncryption::parse(
-                    reader,
-                    len,
-                )?;
+                let (new_aes_enc, inner_compression) = AexEncryption::parse(reader, len)?;
                 ExtraField::AeXEncryption {
                     aes_mode: new_aes_enc.0,
                     aes_vendor_version: new_aes_enc.1,
@@ -118,9 +111,7 @@ impl ExtraField {
                 }
             }
             Ok(UsedExtraField::ExtendedTimestamp) => {
-                ExtraField::ExtendedTimestamp(
-                    ExtendedTimestamp::try_from_reader(reader, len)?,
-                )
+                ExtraField::ExtendedTimestamp(ExtendedTimestamp::try_from_reader(reader, len)?)
             }
             Ok(UsedExtraField::UnicodeComment) => {
                 // Info-ZIP Unicode Comment Extra Field
@@ -149,4 +140,3 @@ impl ExtraField {
         Ok(Some(parsed_extra_field))
     }
 }
-

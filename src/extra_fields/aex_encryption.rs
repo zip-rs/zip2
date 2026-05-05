@@ -3,9 +3,9 @@
 use std::io::{ErrorKind, Read};
 
 use crate::AesMode;
+use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
 use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
-use crate::CompressionMethod;
 use crate::spec::Pod;
 use crate::types::AesVendorVersion;
 use crate::unstable::LittleEndianReadExt;
@@ -120,10 +120,7 @@ mod tests {
         let len = data.len() as u16;
         let mut cursor = Cursor::new(data);
 
-        let res = AexEncryption::parse(
-            &mut cursor,
-            len,
-        );
+        let res = AexEncryption::parse(&mut cursor, len);
         assert!(res.is_err());
     }
 

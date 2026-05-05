@@ -4,23 +4,22 @@ use core::fmt::Display;
 
 mod aex_encryption;
 mod extended_timestamp;
+mod extra_field;
 mod ntfs;
 mod zip64_extended_information;
 mod zipinfo_utf8;
-mod extra_field;
 
 pub(crate) use aex_encryption::AexEncryption;
 pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export
 pub use extended_timestamp::ExtendedTimestamp;
+pub use extra_field::ExtraField;
 pub use ntfs::Ntfs;
 pub use zipinfo_utf8::UnicodeExtraField;
-pub use extra_field::ExtraField;
 
 /// Marker trait to denote the place where this extra field has been stored.
 pub trait ExtraFieldVersion {}
-
 
 /// Marker type for extra fields specified in a local file header.
 #[derive(Debug, Clone)]
