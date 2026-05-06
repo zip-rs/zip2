@@ -524,6 +524,7 @@ impl ZipFileData {
     pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
         block: ZipLocalEntryBlock,
         reader: &mut R,
+        known_compressed_size: Option<u64>,
     ) -> ZipResult<(Self, Vec<u8>)> {
         let ZipLocalEntryBlock {
             version_made_by,
@@ -542,9 +543,11 @@ impl ZipFileData {
         /* FIXME: these were previously incorrect: add testing! */
         let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
         if using_data_descriptor {
-            return Err(ZipError::UnsupportedArchive(
-                "The file length is not available in the local header",
-            ));
+            if known_compressed_size == None {
+                return Err(ZipError::UnsupportedArchive(
+                        "The file length is not available in the local header",
+                ));
+            }
         }
 
         let compression_method = CompressionMethod::parse_from_u16(compression_method);

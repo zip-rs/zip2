@@ -259,7 +259,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
 
     let block = block.from_le();
 
-    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
+    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader, None)?;
 
     match parse_extra_field(&mut data, &mut file_name_raw) {
         Ok(..) | Err(ZipError::Io(..)) => {}
@@ -340,7 +340,7 @@ pub fn read_zipfile_from_stream_with_compressed_size_and_options<'a, R: io::Read
 
     let block = block.from_le();
 
-    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
+    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader, Some(compressed_size))?;
     data.compressed_size = compressed_size;
 
     match parse_extra_field(&mut data, &mut file_name_raw) {
@@ -703,5 +703,36 @@ mod tests {
         file.read_to_string(&mut decrypted_content)
             .expect("couldn't read encrypted file");
         assert_eq!(SECRET_CONTENT, decrypted_content);
+    }
+
+    #[test]
+    fn zip_read_streaming_zipwriter() {
+        use crate::ZipWriter;
+        use crate::write::SimpleFileOptions;
+        use crate::read::read_zipfile_from_stream;
+        use crate::read::read_zipfile_from_stream_with_compressed_size;
+        use std::io::Write;
+
+        let mut buffer = Vec::new();
+        let mut archive = ZipWriter::new_stream(Cursor::new(&mut buffer));
+        archive.start_file(
+            "name",
+            SimpleFileOptions::default(),
+        ).unwrap();
+        archive.write_all(b"test").unwrap();
+        archive.finish().unwrap();
+
+        let mut reader = Cursor::new(buffer.clone());
+        let result = read_zipfile_from_stream(&mut reader);
+        assert!(result.is_err());
+
+        let mut reader = Cursor::new(buffer);
+        let result = read_zipfile_from_stream_with_compressed_size(&mut reader, 34);
+        let optional_file = result.unwrap();
+        let file = optional_file.unwrap();
+
+        let file_name = file.name().unwrap();
+        assert_eq!(file_name, "name");
+
     }
 }
