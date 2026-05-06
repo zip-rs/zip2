@@ -542,9 +542,9 @@ impl ZipFileData {
 
         let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
         if using_data_descriptor {
-            if known_compressed_size == None {
+            if known_compressed_size.is_none() {
                 return Err(ZipError::UnsupportedArchive(
-                        "The file length is not available in the local header",
+                    "The file length is not available in the local header",
                 ));
             }
         }
