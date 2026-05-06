@@ -539,14 +539,6 @@ impl ZipFileData {
             ..
         } = block;
 
-        /* FIXME: these were previously incorrect: add testing! */
-        let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
-        if using_data_descriptor {
-            return Err(ZipError::UnsupportedArchive(
-                "The file length is not available in the local header",
-            ));
-        }
-
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
