@@ -540,7 +540,6 @@ impl ZipFileData {
             ..
         } = block;
 
-        /* FIXME: these were previously incorrect: add testing! */
         let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
         if using_data_descriptor {
             if known_compressed_size == None {
