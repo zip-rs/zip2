@@ -7,6 +7,7 @@ use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
 use crate::result::ZipError;
+use crate::spec::ZipFlags;
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -238,74 +239,9 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 /// Same as `read_zipfile_from_stream` but with `ZipReadOptions`
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
-    mut options: ZipReadOptions<'a>,
+    options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
-    // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
-    // "magic" value (since the magic value will be from the central directory header if we've
-    // finished iterating over all the actual files).
-    /* TODO: smallvec? */
-
-    let mut magic_buf = [0; size_of::<u32>()];
-    reader.read_exact(&mut magic_buf)?;
-
-    match Magic::from_le_bytes(magic_buf) {
-        Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
-        _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
-    }
-
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
-
-    let block = block.from_le();
-
-    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader, None)?;
-
-    match parse_extra_field(&mut data, &mut file_name_raw) {
-        Ok(..) | Err(ZipError::Io(..)) => {}
-        Err(e) => return Err(e),
-    }
-
-    if options.ignore_encryption_flag {
-        // Always use no password when we're ignoring the encryption flag.
-        options.password = None;
-    } else {
-        // Require and use the password only if the file is encrypted.
-        match (options.password, data.is_encrypted()) {
-            (None, true) => {
-                return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
-            }
-            // Password supplied, but none needed! Discard.
-            (Some(_), false) => options.password = None,
-            _ => {}
-        }
-    }
-
-    let limit_reader = reader.take(data.compressed_size);
-    let crypto_reader = make_crypto_reader(&data, limit_reader, options.password)?;
-    let ZipFileData {
-        crc32,
-        uncompressed_size,
-        compression_method,
-        #[cfg(feature = "legacy-zip")]
-        flags,
-        ..
-    } = data;
-
-    let vendor_version = data.aes_mode.map(|aes| aes.1);
-    Ok(Some(ZipFile {
-        file_name_raw: Cow::Owned(file_name_raw),
-        data: Cow::Owned(data),
-        reader: make_reader(
-            compression_method,
-            uncompressed_size,
-            Some(crc32),
-            vendor_version,
-            crypto_reader,
-            #[cfg(feature = "legacy-zip")]
-            flags,
-        )?,
-    }))
+    read_zipfile_from_stream_inner(reader, None, options)
 }
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
@@ -320,12 +256,22 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
         ZipReadOptions::default(),
     )
 }
-
 pub fn read_zipfile_from_stream_with_compressed_size_and_options<'a, R: io::Read>(
     reader: &'a mut R,
     compressed_size: u64,
+    options: ZipReadOptions<'a>,
+) -> ZipResult<Option<ZipFile<'a, R>>> {
+    read_zipfile_from_stream_inner(reader, Some(compressed_size), options)
+}
+
+pub fn read_zipfile_from_stream_inner<'a, R: io::Read>(
+    reader: &'a mut R,
+    known_compressed_size: Option<u64>,
     mut options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
+    // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
+    // "magic" value (since the magic value will be from the central directory header if we've
+    // finished iterating over all the actual files).
     let mut magic_buf = [0; size_of::<u32>()];
     reader.read_exact(&mut magic_buf)?;
 
@@ -340,9 +286,17 @@ pub fn read_zipfile_from_stream_with_compressed_size_and_options<'a, R: io::Read
 
     let block = block.from_le();
 
-    let (mut data, mut file_name_raw) =
-        ZipFileData::from_local_block(block, reader, Some(compressed_size))?;
-    data.compressed_size = compressed_size;
+    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
+    let using_data_descriptor: bool = ZipFlags::matching(data.flags, ZipFlags::UsingDataDescriptor);
+    if using_data_descriptor {
+        if let Some(comp_size) = known_compressed_size {
+            data.compressed_size = comp_size;
+        } else {
+            return Err(ZipError::UnsupportedArchive(
+                "The file length is not available in the local header",
+            ));
+        }
+    }
 
     match parse_extra_field(&mut data, &mut file_name_raw) {
         Ok(..) | Err(ZipError::Io(..)) => {}
