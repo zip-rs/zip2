@@ -19,12 +19,12 @@ pub(crate) struct AexEncryption {
 
 impl AexEncryption {
     /// Field Header ID
-    const EXTRA_FIELD_ID: u16 = UsedExtraField::AeXEncryption.as_u16();
+    pub(crate) const EXTRA_FIELD_ID: u16 = UsedExtraField::AeXEncryption.as_u16();
     /// Field size
-    const EXTRA_FIELD_SIZE: u16 =
+    pub(crate) const EXTRA_FIELD_SIZE: u16 =
         (size_of::<u16>() + size_of::<u16>() + size_of::<u8>() + size_of::<u16>()) as u16;
     /// 0x4541
-    const VENDOR_ID: u16 = u16::from_le_bytes(*b"AE");
+    pub(crate) const VENDOR_ID: u16 = u16::from_le_bytes(*b"AE");
     /// Full size of the extra field
     pub(crate) const FULL_SIZE: usize =
         size_of::<u16>() + size_of::<u16>() + Self::EXTRA_FIELD_SIZE as usize;
