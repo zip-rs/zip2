@@ -2,9 +2,9 @@
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_is_symlink() -> std::io::Result<()> {
-    use zip::ZipArchive;
-    use tempfile::TempDir;
     use std::io::Cursor;
+    use tempfile::TempDir;
+    use zip::ZipArchive;
 
     let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/symlink.zip")))?;
     assert!(reader.by_index(0)?.is_symlink());
@@ -13,8 +13,6 @@ fn test_is_symlink() -> std::io::Result<()> {
     assert!(tempdir.path().join("bar").is_symlink());
     Ok(())
 }
-
-
 
 #[test]
 #[cfg(all(unix, feature = "deflate-flate2"))]
@@ -42,11 +40,11 @@ fn extract_should_respect_links() {
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_cannot_symlink_outside_destination() -> zip::result::ZipResult<()> {
+    use std::fs::create_dir;
+    use std::io::Cursor;
+    use tempfile::TempDir;
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
-    use std::fs::create_dir;
-    use tempfile::TempDir;
-    use std::io::Cursor;
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
@@ -61,4 +59,3 @@ fn test_cannot_symlink_outside_destination() -> zip::result::ZipResult<()> {
     assert!(!dest_sibling.join("dest-file").exists());
     Ok(())
 }
-

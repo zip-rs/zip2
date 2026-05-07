@@ -339,27 +339,39 @@ fn test_explicit_system_roundtrip() {
     );
 }
 
-/// Symlinks being extracted shouldn't be followed out of the destination directory.
-/// Only on little endian because we cannot use fs with miri CI
+/// Only on little endian because it runs too long with Miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
-fn test_cannot_symlink_outside_destination() -> zip::result::ZipResult<()> {
+fn test_64k_files() -> zip::result::ZipResult<()> {
+    use std::io::{Read, Write};
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
-    use std::fs::create_dir;
-    use tempfile::TempDir;
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
-    writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
-    let mut reader = writer.finish_into_readable()?;
-    let dest_parent = TempDir::with_prefix("read__test_cannot_symlink_outside_destination")?;
-    let dest_sibling = dest_parent.path().join("dest-sibling");
-    create_dir(&dest_sibling)?;
-    let dest = dest_parent.path().join("dest");
-    create_dir(&dest)?;
-    assert!(reader.extract(dest).is_err());
-    assert!(!dest_sibling.join("dest-file").exists());
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    for i in 0..=u16::MAX {
+        let file_name = format!("{i}.txt");
+        writer.start_file(&*file_name, options)?;
+        writer.write_all(i.to_string().as_bytes())?;
+    }
+
+    let mut reader = ZipArchive::new(writer.finish()?)?;
+    for i in 0..=u16::MAX {
+        let expected_name = format!("{i}.txt");
+        let expected_contents = i.to_string();
+        let expected_contents = expected_contents.as_bytes();
+        let mut file = reader.by_name(&expected_name)?;
+        let mut contents = Vec::with_capacity(expected_contents.len());
+        file.read_to_end(&mut contents)?;
+        assert_eq!(contents, expected_contents);
+        drop(file);
+        contents.clear();
+        let mut file = reader.by_index(i as usize)?;
+        file.read_to_end(&mut contents)?;
+        assert_eq!(contents, expected_contents);
+    }
     Ok(())
 }
 
@@ -367,14 +379,12 @@ fn test_cannot_symlink_outside_destination() -> zip::result::ZipResult<()> {
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_can_create_destination() -> zip::result::ZipResult<()> {
-    use zip::ZipArchive;
     use tempfile::TempDir;
+    use zip::ZipArchive;
 
-    let mut reader =
-        ZipArchive::new(Cursor::new(include_bytes!("../tests/data/mimetype.zip")))?;
+    let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/mimetype.zip")))?;
     let dest = TempDir::with_prefix("read__test_can_create_destination")?;
     reader.extract(&dest)?;
     assert!(dest.path().join("mimetype").exists());
     Ok(())
 }
-

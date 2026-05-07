@@ -1,8 +1,8 @@
 #[test]
 #[cfg(feature = "deflate-flate2")]
 fn test_utf8_extra_field() {
-    use zip::ZipArchive;
     use std::io::Cursor;
+    use zip::ZipArchive;
 
     let mut reader =
         ZipArchive::new(Cursor::new(include_bytes!("../tests/data/chinese.zip"))).unwrap();
@@ -11,8 +11,8 @@ fn test_utf8_extra_field() {
 
 #[test]
 fn test_utf8() {
-    use zip::ZipArchive;
     use std::io::Cursor;
+    use zip::ZipArchive;
 
     let mut reader =
         ZipArchive::new(Cursor::new(include_bytes!("../tests/data/linux-7z.zip"))).unwrap();
@@ -21,13 +21,12 @@ fn test_utf8() {
 
 #[test]
 fn test_utf8_2() {
-    use zip::ZipArchive;
     use std::io::Cursor;
+    use zip::ZipArchive;
 
     let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
-                "../tests/data/windows-7zip.zip"
+        "../tests/data/windows-7zip.zip"
     )))
-        .unwrap();
+    .unwrap();
     reader.by_name("你好.txt").unwrap();
 }
-
