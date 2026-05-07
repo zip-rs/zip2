@@ -4,6 +4,7 @@ use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraField;
+use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult, invalid};
@@ -12,7 +13,6 @@ use crate::spec::{
     self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock,
     ZipDataDescriptorBlock, ZipLocalEntryBlock,
 };
-use crate::format::flags::ZipFlags;
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::ZipCryptoKeys;
 use core::marker::PhantomData;
@@ -22,7 +22,7 @@ use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-pub(crate) use crate::format::aes::{AesVendorVersion, AesMode};
+pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
 pub(crate) use crate::format::flags::System;
 
 pub(crate) mod ffi {
@@ -36,7 +36,6 @@ pub(crate) struct ZipRawValues {
     pub(crate) compressed_size: u64,
     pub(crate) uncompressed_size: u64,
 }
-
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EncryptWith<'k> {
@@ -666,7 +665,6 @@ impl ZipFileData {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

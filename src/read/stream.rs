@@ -1,6 +1,7 @@
 //! Code related to stream reading
 
 use crate::ZipReadOptions;
+use crate::format::flags::ZipFlags;
 use crate::read::parse_extra_field;
 use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
