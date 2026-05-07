@@ -1,8 +1,7 @@
 #![cfg(feature = "aes-crypto")]
 
 use std::io::{self, Read, Write};
-#[cfg(feature = "deflate-flate2")]
-use zip::CompressionMethod::Deflated;
+use zip::CompressionMethod;
 use zip::write::ZipWriter;
 use zip::{AesMode, ZipArchive, result::ZipError, write::SimpleFileOptions};
 
@@ -101,6 +100,7 @@ fn aes128_stored_roundtrip() {
 #[test]
 #[cfg(feature = "deflate-flate2")]
 fn aes256_deflated_roundtrip() {
+    use zip::CompressionMethod::Deflated;
     let cursor = {
         let mut zip = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
 
@@ -320,4 +320,73 @@ fn aes_custom_salt_for_reproducible_zip() {
             "Expected identical zip contents for same salt"
         );
     }
+}
+
+#[test]
+fn test_update_aes_version_on_threshold() {
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .with_aes_encryption(AesMode::Aes256, "some password");
+
+    let mut data = Vec::new();
+    let mut zip = ZipWriter::new(io::Cursor::new(&mut data));
+    zip.start_file("test.txt", options).unwrap();
+    zip.write(b"HELLO").unwrap();
+    zip.finish().unwrap();
+
+    // checksum is empty because we use version 2
+    assert_eq!(data[14..18], [0, 0, 0, 0]); // checksum
+    assert_eq!(data[18..22], [0x21, 0, 0, 0]); // compressed size
+    assert_eq!(data[22..26], [5, 0, 0, 0]); // uncompressed size
+
+    assert_eq!(&data[38..40], [1, 0x99]); // Header ID
+    assert_eq!(&data[40..42], [7, 0]); // Size
+    assert_eq!(&data[42..44], [2, 0]); // Version
+    assert_eq!(&data[44..46], b"AE"); // Vendor ID
+    assert_eq!(data[46], 3); // AES Mode
+    assert_eq!(data[47..49], [0, 0]); // Compression Method
+
+    // checksum is empty because we use version 2
+    assert_eq!(data[98..102], [0, 0, 0, 0]); // checksum
+    assert_eq!(data[102..106], [0x21, 0, 0, 0]); // compressed size
+    assert_eq!(data[106..110], [5, 0, 0, 0]); // uncompressed size
+
+    assert_eq!(&data[136..138], [1, 0x99]); // Header ID
+    assert_eq!(&data[138..140], [7, 0]); // Size
+    assert_eq!(&data[140..142], [2, 0]); // Version
+    assert_eq!(&data[142..144], b"AE"); // Vendor ID
+    assert_eq!(data[144], 3); // AES Mode
+    assert_eq!(data[145..147], [0, 0]); // Compression Method
+
+    // Redo the same but with a file more than 20 bytes
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .with_aes_encryption(AesMode::Aes256, "some password");
+    let mut data = Vec::new();
+    let mut zip = ZipWriter::new(io::Cursor::new(&mut data));
+    zip.start_file("test.txt", options).unwrap();
+    zip.write(b"LONG FILE MORE THAN 20 BYTES").unwrap();
+    zip.finish().unwrap();
+
+    assert_eq!(data[14..18], [0xb7, 0x81, 0xef, 0xad]); // checksum
+    assert_eq!(data[18..22], [0x38, 0, 0, 0]); // compressed size
+    assert_eq!(data[22..26], [0x1c, 0, 0, 0]); // uncompressed size
+
+    assert_eq!(&data[38..40], [1, 0x99]); // Header ID
+    assert_eq!(&data[40..42], [7, 0]); // Size
+    assert_eq!(&data[42..44], [1, 0]); // Version
+    assert_eq!(&data[44..46], b"AE"); // Vendor ID
+    assert_eq!(data[46], 3); // AES Mode
+    assert_eq!(data[47..49], [0, 0]); // Compression Method
+
+    assert_eq!(data[121..125], [0xb7, 0x81, 0xef, 0xad]); // checksum
+    assert_eq!(data[125..129], [0x38, 0, 0, 0]); // compressed size
+    assert_eq!(data[129..133], [0x1c, 0, 0, 0]); // uncompressed size
+
+    assert_eq!(&data[159..161], [1, 0x99]); // Header ID
+    assert_eq!(&data[161..163], [7, 0]); // Size
+    assert_eq!(&data[163..165], [1, 0]); // Version
+    assert_eq!(&data[165..167], b"AE"); // Vendor ID
+    assert_eq!(data[167], 3); // AES Mode
+    assert_eq!(data[168..170], [0, 0]); // Compression Method
 }
