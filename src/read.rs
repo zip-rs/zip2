@@ -11,7 +11,6 @@ use crate::spec::{
     CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR, ZipCentralEntryBlock,
 };
 use crate::types::{SimpleFileOptions, ZipFileData, ffi};
-use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;
 use indexmap::IndexMap;
 use std::borrow::Cow;
