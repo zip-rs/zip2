@@ -60,6 +60,7 @@ pub trait LittleEndianWriteExt: Write {
     fn write_u16_le(&mut self, input: u16) -> io::Result<()> {
         self.write_all(&input.to_le_bytes())
     }
+
     /// Write a u32 as little endian
     fn write_u32_le(&mut self, input: u32) -> io::Result<()> {
         self.write_all(&input.to_le_bytes())
