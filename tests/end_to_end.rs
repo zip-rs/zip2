@@ -338,3 +338,43 @@ fn test_explicit_system_roundtrip() {
         system
     );
 }
+
+/// Symlinks being extracted shouldn't be followed out of the destination directory.
+/// Only on little endian because we cannot use fs with miri CI
+#[cfg(all(target_endian = "little", not(miri)))]
+#[test]
+fn test_cannot_symlink_outside_destination() -> zip::result::ZipResult<()> {
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+    use std::fs::create_dir;
+    use tempfile::TempDir;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
+    writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
+    let mut reader = writer.finish_into_readable()?;
+    let dest_parent = TempDir::with_prefix("read__test_cannot_symlink_outside_destination")?;
+    let dest_sibling = dest_parent.path().join("dest-sibling");
+    create_dir(&dest_sibling)?;
+    let dest = dest_parent.path().join("dest");
+    create_dir(&dest)?;
+    assert!(reader.extract(dest).is_err());
+    assert!(!dest_sibling.join("dest-file").exists());
+    Ok(())
+}
+
+/// Only on little endian because we cannot use fs with miri CI
+#[cfg(all(target_endian = "little", not(miri)))]
+#[test]
+fn test_can_create_destination() -> zip::result::ZipResult<()> {
+    use zip::ZipArchive;
+    use tempfile::TempDir;
+
+    let mut reader =
+        ZipArchive::new(Cursor::new(include_bytes!("../tests/data/mimetype.zip")))?;
+    let dest = TempDir::with_prefix("read__test_can_create_destination")?;
+    reader.extract(&dest)?;
+    assert!(dest.path().join("mimetype").exists());
+    Ok(())
+}
+
