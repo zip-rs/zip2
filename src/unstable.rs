@@ -1,4 +1,15 @@
-#![allow(missing_docs)]
+#![doc = "Unstable APIs\n\
+\
+All APIs accessible by importing this module are unstable; They may be changed in patch \
+releases. You MUST use an exact version specifier in `Cargo.toml`, to indicate the version of this \
+API you're using:\n\
+\
+```toml\n
+[dependencies]\n
+zip = \"="]
+#![doc=env!("CARGO_PKG_VERSION")]
+#![doc = "\"\n\
+```"]
 
 use std::borrow::Cow;
 use std::io;
@@ -45,18 +56,21 @@ pub mod write {
 
 /// Helper methods for writing unsigned integers in little-endian form.
 pub trait LittleEndianWriteExt: Write {
+    /// Write a u16 as little endian
     fn write_u16_le(&mut self, input: u16) -> io::Result<()> {
         self.write_all(&input.to_le_bytes())
     }
-
+    /// Write a u32 as little endian
     fn write_u32_le(&mut self, input: u32) -> io::Result<()> {
         self.write_all(&input.to_le_bytes())
     }
 
+    /// Write a u64 as little endian
     fn write_u64_le(&mut self, input: u64) -> io::Result<()> {
         self.write_all(&input.to_le_bytes())
     }
 
+    /// Write a u128 as little endian
     fn write_u128_le(&mut self, input: u128) -> io::Result<()> {
         self.write_all(&input.to_le_bytes())
     }
@@ -66,18 +80,21 @@ impl<W: Write + ?Sized> LittleEndianWriteExt for W {}
 
 /// Helper methods for reading unsigned integers in little-endian form.
 pub trait LittleEndianReadExt: Read {
+    /// Read a u16 as little endian
     fn read_u16_le(&mut self) -> io::Result<u16> {
         let mut out = [0u8; 2];
         self.read_exact(&mut out)?;
         Ok(u16::from_le_bytes(out))
     }
 
+    /// Read a u32 as little endian
     fn read_u32_le(&mut self) -> io::Result<u32> {
         let mut out = [0u8; 4];
         self.read_exact(&mut out)?;
         Ok(u32::from_le_bytes(out))
     }
 
+    /// Read a u64 as little endian
     fn read_u64_le(&mut self) -> io::Result<u64> {
         let mut out = [0u8; 8];
         self.read_exact(&mut out)?;
