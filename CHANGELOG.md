@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0-pre1](https://github.com/zip-rs/zip2/compare/v8.6.0...v9.0.0-pre1) - 2026-05-05
+
+### <!-- 0 -->🚀 Features
+
+- Allow FileOptions to specify filename that may be non-UTF8 ([#819](https://github.com/zip-rs/zip2/pull/819))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Zeroize derived_key when dropped, and suppress error details that may be sensitive ([#803](https://github.com/zip-rs/zip2/pull/803))
+
+### <!-- 2 -->🚜 Refactor
+
+- change vendor_version ([#817](https://github.com/zip-rs/zip2/pull/817))
+- rewrite aes settings ([#815](https://github.com/zip-rs/zip2/pull/815))
+- remove inner compression method from aes options ([#814](https://github.com/zip-rs/zip2/pull/814))
+- don't store converted filenames; convert on demand instead; and don't use Arc since it only deduplicates when copying to same path in another archive ([#807](https://github.com/zip-rs/zip2/pull/807))
+- Potential fixes for 5 code quality findings in src/aes.rs ([#808](https://github.com/zip-rs/zip2/pull/808))
+- [**breaking**] remove deprecated method *_zip64_comment methods ([#812](https://github.com/zip-rs/zip2/pull/812))
+- [**breaking**] Remove deprecated elements ([#802](https://github.com/zip-rs/zip2/pull/802))
+- store the file_name_raw only as key (BREAKING) ([#789](https://github.com/zip-rs/zip2/pull/789))
+- Remove fields from ZipFileData ([#790](https://github.com/zip-rs/zip2/pull/790))
+- Remove useless compression level ([#791](https://github.com/zip-rs/zip2/pull/791))
+- Add non-exhaustive to ExtraField enum ([#793](https://github.com/zip-rs/zip2/pull/793))
+- remove macro export ([#792](https://github.com/zip-rs/zip2/pull/792))
+
 ## [8.6.0](https://github.com/zip-rs/zip2/compare/v8.5.1...v8.6.0) - 2026-04-25
 
 ### <!-- 0 -->🚀 Features

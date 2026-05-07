@@ -1,11 +1,13 @@
 //! Code related to stream reading
 
+use crate::ZipReadOptions;
 use crate::read::parse_extra_field;
 use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
 use crate::result::ZipError;
+use crate::spec::ZipFlags;
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -231,56 +233,7 @@ impl ZipStreamFileMetadata {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
-    // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
-    // "magic" value (since the magic value will be from the central directory header if we've
-    // finished iterating over all the actual files).
-    /* TODO: smallvec? */
-
-    let mut magic_buf = [0; size_of::<u32>()];
-    reader.read_exact(&mut magic_buf)?;
-
-    match Magic::from_le_bytes(magic_buf) {
-        Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
-        _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
-    }
-
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
-
-    let block = block.from_le();
-
-    let (mut result, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
-
-    match parse_extra_field(&mut result, &mut file_name_raw) {
-        Ok(..) | Err(ZipError::Io(..)) => {}
-        Err(e) => return Err(e),
-    }
-
-    let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None)?;
-    let ZipFileData {
-        crc32,
-        uncompressed_size,
-        compression_method,
-        #[cfg(feature = "legacy-zip")]
-        flags,
-        ..
-    } = result;
-
-    Ok(Some(ZipFile {
-        file_name_raw: Cow::Owned(file_name_raw),
-        data: Cow::Owned(result),
-        reader: make_reader(
-            compression_method,
-            uncompressed_size,
-            Some(crc32),
-            None,
-            crypto_reader,
-            #[cfg(feature = "legacy-zip")]
-            flags,
-        )?,
-    }))
+    read_zipfile_from_stream_with_options(reader, ZipReadOptions::default())
 }
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
@@ -289,6 +242,19 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
     reader: &'a mut R,
     compressed_size: u64,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
+    let options = ZipReadOptions::default().override_compressed_size(compressed_size);
+    read_zipfile_from_stream_with_options(reader, options)
+}
+
+/// Same as `read_zipfile_from_stream` but with `ZipReadOptions`
+/// Since LZMA decoding requires the uncompressed length, you will need to override it
+pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
+    reader: &'a mut R,
+    mut options: ZipReadOptions<'a>,
+) -> ZipResult<Option<ZipFile<'a, R>>> {
+    // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
+    // "magic" value (since the magic value will be from the central directory header if we've
+    // finished iterating over all the actual files).
     let mut magic_buf = [0; size_of::<u32>()];
     reader.read_exact(&mut magic_buf)?;
 
@@ -303,33 +269,67 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
 
     let block = block.from_le();
 
-    let (mut result, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
-    result.compressed_size = compressed_size;
+    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
+    let using_data_descriptor: bool = ZipFlags::matching(data.flags, ZipFlags::UsingDataDescriptor);
+    if using_data_descriptor {
+        if let Some(comp_size) = options.force_compressed_size {
+            data.compressed_size = comp_size;
+        } else {
+            return Err(ZipError::UnsupportedArchive(
+                "The file length is not available in the local header",
+            ));
+        }
+    }
+    if let Some(uncomp_size) = options.force_uncompressed_size {
+        data.uncompressed_size = uncomp_size;
+    }
+    if let Some(crc) = options.force_crc {
+        data.crc32 = crc;
+    }
 
-    match parse_extra_field(&mut result, &mut file_name_raw) {
+    match parse_extra_field(&mut data, &mut file_name_raw) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
 
-    let limit_reader = reader.take(result.compressed_size);
-    let crypto_reader = make_crypto_reader(&result, limit_reader, None)?;
+    if options.ignore_encryption_flag {
+        // Always use no password when we're ignoring the encryption flag.
+        options.password = None;
+    } else {
+        // Require and use the password only if the file is encrypted.
+        match (options.password, data.is_encrypted()) {
+            (None, true) => {
+                return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
+            }
+            // Password supplied, but none needed! Discard.
+            (Some(_), false) => options.password = None,
+            _ => {}
+        }
+    }
+
+    let limit_reader = reader.take(data.compressed_size);
+    let crypto_reader = make_crypto_reader(&data, limit_reader, options.password)?;
     let ZipFileData {
-        crc32,
         compression_method,
         uncompressed_size,
         #[cfg(feature = "legacy-zip")]
         flags,
         ..
-    } = result;
+    } = data;
+    let checksum = if options.ignore_crc {
+        None
+    } else {
+        Some(data.crc32)
+    };
 
-    let vendor_version = result.aes_mode.map(|aes| aes.1);
+    let vendor_version = data.aes_mode.map(|aes| aes.1);
     Ok(Some(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
-        data: Cow::Owned(result),
+        data: Cow::Owned(data),
         reader: make_reader(
             compression_method,
             uncompressed_size,
-            Some(crc32),
+            checksum,
             vendor_version,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
@@ -591,6 +591,140 @@ mod tests {
             {
                 break;
             }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "aes-crypto")]
+    fn zip_read_streaming_compressed_and_aes() {
+        use super::read_zipfile_from_stream_with_options;
+        use crate::ZipReadOptions;
+
+        let bytes = include_bytes!("../../tests/data/aes_archive.zip");
+        let compressed_size = 46;
+
+        let mut reader = Cursor::new(bytes);
+        const PASSWORD: &[u8] = b"helloworld";
+        let options = ZipReadOptions::new()
+            .password(Some(PASSWORD))
+            .override_compressed_size(compressed_size);
+
+        // we simulate the fact that we need the compressed size like a streamed zip
+        let result = read_zipfile_from_stream_with_options(&mut reader, options);
+        let optional_file = result.unwrap();
+        let mut file = optional_file.unwrap();
+
+        let file_name = file.name().unwrap();
+        assert_eq!(file_name, "secret_data_128");
+
+        const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
+        let mut decrypted_content = String::new();
+        file.read_to_string(&mut decrypted_content)
+            .expect("couldn't read encrypted file");
+        assert_eq!(SECRET_CONTENT, decrypted_content);
+    }
+
+    #[test]
+    #[cfg(feature = "aes-crypto")]
+    fn zip_read_streaming_compressed_and_aes_without_size() {
+        use super::read_zipfile_from_stream_with_options;
+        use crate::ZipReadOptions;
+
+        let bytes = include_bytes!("../../tests/data/aes_archive.zip");
+
+        let mut reader = Cursor::new(bytes);
+        const PASSWORD: &[u8] = b"helloworld";
+        let options = ZipReadOptions::new().password(Some(PASSWORD));
+
+        // the zip already has the compressed size (it's not a streamed zip)
+        let result = read_zipfile_from_stream_with_options(&mut reader, options);
+        let optional_file = result.unwrap();
+        let mut file = optional_file.unwrap();
+
+        let file_name = file.name().unwrap();
+        assert_eq!(file_name, "secret_data_128");
+
+        const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
+        let mut decrypted_content = String::new();
+        file.read_to_string(&mut decrypted_content)
+            .expect("couldn't read encrypted file");
+        assert_eq!(SECRET_CONTENT, decrypted_content);
+    }
+
+    #[test]
+    fn zip_read_streaming_zipwriter() {
+        use crate::CompressionMethod;
+        use crate::ZipReadOptions;
+        use crate::ZipWriter;
+        use crate::read::read_zipfile_from_stream;
+        use crate::read::read_zipfile_from_stream_with_compressed_size;
+        use crate::read::read_zipfile_from_stream_with_options;
+        use crate::write::SimpleFileOptions;
+        use std::io::Write;
+
+        let mut buffer = Vec::new();
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let mut archive = ZipWriter::new_stream(Cursor::new(&mut buffer));
+        archive.start_file("name", options).unwrap();
+        archive.write_all(b"test").unwrap();
+        let compressed_size = b"test".len() as u64;
+        archive.finish().unwrap();
+        {
+            // reading will fail because it's a streamed zipfile and we don't know the size
+            let mut reader = Cursor::new(buffer.clone());
+            let result = read_zipfile_from_stream(&mut reader);
+            assert!(result.is_err());
+        }
+        {
+            // reading the file will fail because of the invalid checksum
+            let mut reader = Cursor::new(buffer.clone());
+            let result =
+                read_zipfile_from_stream_with_compressed_size(&mut reader, compressed_size);
+            let optional_file = result.unwrap();
+            let mut file = optional_file.unwrap();
+            let file_name = file.name().unwrap();
+            assert_eq!(file_name, "name");
+            // test reading
+            let mut content = Vec::new();
+            let read_result = file.read_to_end(&mut content);
+            assert!(read_result.is_err()); // invalid checksum
+
+            let error_str = read_result.unwrap_err().to_string();
+            // eprintln!("{error_str}");
+            assert!(error_str.contains("Invalid checksum"));
+        }
+        {
+            // reading the file will work because we override the checksum
+            let mut reader = Cursor::new(buffer.clone());
+            let read_options = ZipReadOptions::default()
+                .override_compressed_size(compressed_size)
+                .override_crc(3632233996);
+            let result = read_zipfile_from_stream_with_options(&mut reader, read_options);
+            let optional_file = result.unwrap();
+            let mut file = optional_file.unwrap();
+            let file_name = file.name().unwrap();
+            assert_eq!(file_name, "name");
+            // test reading
+            let mut content = Vec::new();
+            file.read_to_end(&mut content).unwrap();
+            assert_eq!(content, b"test");
+        }
+        {
+            // reading the file will work because we skip checksum
+            let mut reader = Cursor::new(buffer.clone());
+            let read_options = ZipReadOptions::default()
+                .override_compressed_size(compressed_size)
+                .ignore_crc32(true);
+            let result = read_zipfile_from_stream_with_options(&mut reader, read_options);
+            let optional_file = result.unwrap();
+            let mut file = optional_file.unwrap();
+            let file_name = file.name().unwrap();
+            assert_eq!(file_name, "name");
+            // test reading
+            let mut content = Vec::new();
+            let read_result = file.read_to_end(&mut content);
+            assert!(read_result.is_ok());
+            assert_eq!(content, b"test");
         }
     }
 }

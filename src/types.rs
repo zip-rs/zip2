@@ -58,7 +58,7 @@ pub enum System {
     /// Legacy `Mac OS`, pre `OS X`
     Macintosh = 7,
     /// `Z-System`
-    ZSystemO = 8,
+    ZSystem = 8,
     /// `CP/M`
     CPM = 9,
     /// Windows NTFS (with extra attributes; not used by default)
@@ -114,7 +114,7 @@ impl From<u8> for System {
             5 => System::AtariSt,
             6 => System::Os2,
             7 => System::Macintosh,
-            8 => System::ZSystemO,
+            8 => System::ZSystem,
             9 => System::CPM,
             10 => System::WindowsNTFS,
             11 => System::MVS,
@@ -538,21 +538,6 @@ impl ZipFileData {
             extra_field_length,
             ..
         } = block;
-
-        let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
-        if encrypted {
-            return Err(ZipError::UnsupportedArchive(
-                "Encrypted files are not supported",
-            ));
-        }
-
-        /* FIXME: these were previously incorrect: add testing! */
-        let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
-        if using_data_descriptor {
-            return Err(ZipError::UnsupportedArchive(
-                "The file length is not available in the local header",
-            ));
-        }
 
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();

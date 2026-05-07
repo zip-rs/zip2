@@ -28,7 +28,8 @@ impl<R> Crc32Reader<R> {
     }
 
     fn check_matches(&self) -> bool {
-        self.check == self.hasher.clone().finalize()
+        let computed_value = self.hasher.clone().finalize();
+        self.check == computed_value
     }
 
     pub fn into_inner(self) -> R {
