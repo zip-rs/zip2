@@ -1,6 +1,5 @@
 //! Flags of zip
 
-
 /// System inside `version made by` (upper byte)
 /// Reference: 4.4.2.2
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -159,4 +158,3 @@ impl From<ZipFlags> for u16 {
         value.as_u16()
     }
 }
-

@@ -4,13 +4,12 @@ use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraField;
+use crate::format::flags::{System, ZipFlags};
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
-    ZipCentralEntryBlock
+    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR, ZipCentralEntryBlock,
 };
-use crate::format::flags::{ZipFlags, System};
 use crate::types::{SimpleFileOptions, ZipFileData, ffi};
 use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;

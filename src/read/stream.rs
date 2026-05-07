@@ -1,13 +1,13 @@
 //! Code related to stream reading
 
 use crate::ZipReadOptions;
+use crate::format::flags::ZipFlags;
 use crate::read::parse_extra_field;
 use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
 use crate::result::ZipError;
-use crate::format::flags::ZipFlags;
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
