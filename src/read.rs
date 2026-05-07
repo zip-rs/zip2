@@ -7,13 +7,12 @@ use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
+use crate::format::flags::{System, ZipFlags};
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
-    ZipCentralEntryBlock
+    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR, ZipCentralEntryBlock,
 };
-use crate::format::flags::{ZipFlags, System};
 use crate::types::{SimpleFileOptions, ZipFileData, ffi};
 use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;

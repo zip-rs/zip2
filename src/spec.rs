@@ -53,7 +53,6 @@ impl Magic {
     pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x0807_4b50);
 }
 
-
 /// The file size at which a ZIP64 record becomes necessary.
 ///
 /// If a file larger than this threshold attempts to be written, compressed or uncompressed, and
