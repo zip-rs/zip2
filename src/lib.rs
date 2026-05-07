@@ -19,7 +19,8 @@ pub use crate::datetime::DateTime;
 pub use crate::read::HasZipMetadata;
 pub use crate::read::{ZipArchive, ZipReadOptions};
 pub use crate::spec::{ZIP64_BYTES_THR, ZIP64_ENTRY_THR};
-pub use crate::types::{AesMode, System};
+pub use crate::format::aes::{AesMode};
+pub use crate::format::flags::System;
 pub use crate::write::ZipWriter;
 
 #[cfg(feature = "aes-crypto")]
@@ -36,6 +37,7 @@ pub mod extra_fields;
 mod path;
 pub mod read;
 pub mod result;
+mod format;
 mod spec;
 mod types;
 pub mod write;
