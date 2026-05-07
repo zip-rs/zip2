@@ -8,9 +8,11 @@ use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
     CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZIP64_BYTES_THR,
-    ZipCentralEntryBlock, ZipFlags,
+    ZipCentralEntryBlock
 };
-use crate::types::{SimpleFileOptions, System, ZipFileData, ffi};
+use crate::format::flags::{ZipFlags, System};
+use crate::types::{SimpleFileOptions, ZipFileData, ffi};
+use crate::unstable::LittleEndianReadExt;
 use core::mem::replace;
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -304,7 +306,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// (a single top-level directory that contains the rest of the archive's
     /// entries) and extracts its contents directly.
     ///
-    /// For a sensible default `filter`, you can use [`root_dir_common_filter`].
+    /// For a sensible default `filter`, you can use [`crate::read::root_dir_common_filter`].
     /// For a custom `filter`, see [`RootDirFilter`].
     ///
     /// See [`ZipArchive::root_dir`] for more information on how the root

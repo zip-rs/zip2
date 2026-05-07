@@ -7,7 +7,7 @@ use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
 use crate::result::ZipError;
-use crate::spec::ZipFlags;
+use crate::format::flags::ZipFlags;
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;

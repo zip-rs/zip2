@@ -599,7 +599,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// extracting archives that contain a single top-level directory that
     /// you want to "unwrap" and extract directly.
     ///
-    /// For a sensible default filter, you can use [`root_dir_common_filter`].
+    /// For a sensible default filter, you can use [`crate::read::root_dir_common_filter`].
     /// For a custom filter, see [`RootDirFilter`].
     pub fn root_dir(&self, filter: impl RootDirFilter) -> ZipResult<Option<PathBuf>> {
         let mut root_dir: Option<PathBuf> = None;

@@ -11,7 +11,7 @@
 //!
 
 use core::mem;
-use std::io::{ErrorKind, Read, copy, sink};
+use std::io::{ErrorKind, Read, Write, copy, sink};
 
 use crate::unstable::LittleEndianReadExt;
 use crate::{
@@ -25,7 +25,6 @@ use crate::{
 pub(crate) struct Zip64ExtendedInformation {
     /// The local header does not contains any `header_start`
     is_local_header: bool,
-    magic: UsedExtraField,
     size: u16,
     uncompressed_size: Option<u64>,
     compressed_size: Option<u64>,
@@ -68,7 +67,6 @@ impl Zip64ExtendedInformation {
 
         Some(Self {
             is_local_header: true,
-            magic: Self::MAGIC,
             size,
             uncompressed_size,
             compressed_size,
@@ -111,7 +109,6 @@ impl Zip64ExtendedInformation {
 
         Some(Self {
             is_local_header: false,
-            magic: Self::MAGIC,
             size,
             uncompressed_size,
             compressed_size,
@@ -125,49 +122,31 @@ impl Zip64ExtendedInformation {
     }
 
     /// Serialize the block
-    pub fn serialize(self) -> Box<[u8]> {
-        let Self {
-            is_local_header,
-            magic,
-            size,
-            uncompressed_size,
-            compressed_size,
-            header_start,
-        } = self;
+    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+        writer.write_all(&Self::MAGIC.to_le_bytes())?;
+        writer.write_all(&self.size.to_le_bytes())?;
 
-        let full_size = self.full_size();
-        if is_local_header {
+        if self.is_local_header {
             // the local header does not contains the header start
             if let (Some(uncompressed_size), Some(compressed_size)) =
-                (uncompressed_size, compressed_size)
+                (self.uncompressed_size, self.compressed_size)
             {
-                let mut ret = Vec::with_capacity(full_size);
-                ret.extend(magic.to_le_bytes());
-                ret.extend(size.to_le_bytes());
-                ret.extend(u64::to_le_bytes(uncompressed_size));
-                ret.extend(u64::to_le_bytes(compressed_size));
-                return ret.into_boxed_slice();
+                writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
+                writer.write_all(&u64::to_le_bytes(compressed_size))?;
             }
-            // this should be unreachable
-            Box::new([])
+            // the else should be unreachable
         } else {
-            let mut ret = Vec::with_capacity(full_size);
-            ret.extend(magic.to_le_bytes());
-            ret.extend(u16::to_le_bytes(size));
-
-            if let Some(uncompressed_size) = uncompressed_size {
-                ret.extend(u64::to_le_bytes(uncompressed_size));
+            if let Some(uncompressed_size) = self.uncompressed_size {
+                writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
             }
-            if let Some(compressed_size) = compressed_size {
-                ret.extend(u64::to_le_bytes(compressed_size));
+            if let Some(compressed_size) = self.compressed_size {
+                writer.write_all(&u64::to_le_bytes(compressed_size))?;
             }
-            if let Some(header_start) = header_start {
-                ret.extend(u64::to_le_bytes(header_start));
+            if let Some(header_start) = self.header_start {
+                writer.write_all(&u64::to_le_bytes(header_start))?;
             }
-            debug_assert_eq!(ret.len(), full_size);
-
-            ret.into_boxed_slice()
         }
+        Ok(())
     }
 
     #[inline]
