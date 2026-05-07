@@ -1194,4 +1194,3 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
 
     true
 }
-
