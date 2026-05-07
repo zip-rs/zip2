@@ -309,7 +309,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// (a single top-level directory that contains the rest of the archive's
     /// entries) and extracts its contents directly.
     ///
-    /// For a sensible default `filter`, you can use [`root_dir_common_filter`].
+    /// For a sensible default `filter`, you can use [`crate::read::root_dir_common_filter`].
     /// For a custom `filter`, see [`RootDirFilter`].
     ///
     /// See [`ZipArchive::root_dir`] for more information on how the root
