@@ -24,7 +24,10 @@ pub use config::{ArchiveOffset, Config};
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
-pub use stream::{read_zipfile_from_stream, read_zipfile_from_stream_with_compressed_size};
+pub use stream::{
+    read_zipfile_from_stream, read_zipfile_from_stream_with_compressed_size,
+    read_zipfile_from_stream_with_options,
+};
 
 pub(crate) mod magic_finder;
 pub(crate) mod readers;
@@ -680,6 +683,7 @@ pub trait HasZipMetadata {
 
 /// Options for reading a file from an archive.
 #[derive(Default)]
+#[non_exhaustive]
 pub struct ZipReadOptions<'a> {
     /// The password to use when decrypting the file.  This is ignored if not required.
     password: Option<&'a [u8]>,
@@ -689,6 +693,12 @@ pub struct ZipReadOptions<'a> {
 
     /// Ignore the crc32 of the file
     ignore_crc: bool,
+    /// override the compressed_size for stream read
+    force_compressed_size: Option<u64>,
+    /// override the uncompressed_size for stream read
+    force_uncompressed_size: Option<u64>,
+    /// override the checksum for stream read
+    force_crc: Option<u32>,
 }
 
 impl<'a> ZipReadOptions<'a> {
@@ -716,6 +726,27 @@ impl<'a> ZipReadOptions<'a> {
     #[must_use]
     pub fn ignore_crc32(mut self, should_ignore: bool) -> Self {
         self.ignore_crc = should_ignore;
+        self
+    }
+
+    /// Override the compressed_size
+    #[must_use]
+    pub fn override_compressed_size(mut self, comp_size: u64) -> Self {
+        self.force_compressed_size = Some(comp_size);
+        self
+    }
+
+    /// Override the uncompressed_size
+    #[must_use]
+    pub fn override_uncompressed_size(mut self, uncomp_size: u64) -> Self {
+        self.force_uncompressed_size = Some(uncomp_size);
+        self
+    }
+
+    /// Override the checksum
+    #[must_use]
+    pub fn override_crc(mut self, crc: u32) -> Self {
+        self.force_crc = Some(crc);
         self
     }
 }
