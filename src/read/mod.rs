@@ -16,7 +16,7 @@ use crate::unstable::LittleEndianReadExt;
 use indexmap::IndexMap;
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 mod config;
@@ -174,13 +174,13 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 #[cfg(unix)]
 #[derive(Default, Debug)]
 struct UnixFileModes {
-    map: std::collections::BTreeMap<PathBuf, u32>,
+    map: std::collections::BTreeMap<std::path::PathBuf, u32>,
 }
 
 #[cfg(unix)]
 impl UnixFileModes {
     #[cfg_attr(not(debug_assertions), allow(unused))]
-    pub fn add_mode(&mut self, path: PathBuf, mode: u32) {
+    pub fn add_mode(&mut self, path: std::path::PathBuf, mode: u32) {
         // We don't print a warning or consider it remotely out of the ordinary to receive two
         // separate modes for the same path: just take the later one.
         let old_entry = self.map.insert(path, mode);
@@ -190,7 +190,7 @@ impl UnixFileModes {
     // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
     pub fn all_perms_with_children_first(
         self,
-    ) -> impl IntoIterator<Item = (PathBuf, std::fs::Permissions)> {
+    ) -> impl IntoIterator<Item = (std::path::PathBuf, std::fs::Permissions)> {
         use std::os::unix::fs::PermissionsExt;
         self.map
             .into_iter()
