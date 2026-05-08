@@ -9,8 +9,7 @@ use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock,
-    ZipCentralEntryBlock, ZipFlags,
+    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZipCentralEntryBlock, ZipFlags,
 };
 use crate::types::{System, ZipFileData};
 use crate::unstable::LittleEndianReadExt;
@@ -41,8 +40,6 @@ pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
 
 #[cfg(feature = "aes-crypto")]
 pub use crate::aes::AesInfo;
-
-
 
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
     use std::fs;

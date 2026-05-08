@@ -1,22 +1,22 @@
 //! Code related to zipfile
 
+use crate::CompressionMethod;
+use crate::DateTime;
+use crate::ExtraField;
+use crate::HasZipMetadata;
+use crate::ZIP64_BYTES_THR;
+use crate::read::RootDirFilter;
+use crate::read::make_writable_dir_all;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
+use crate::result::ZipResult;
+use crate::result::invalid;
+use crate::types::ZipFileData;
 use crate::types::{SimpleFileOptions, ffi};
 use core::mem::replace;
 use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::io::{self, Read, Seek, SeekFrom, copy, sink};
 use std::path::{Component, Path, PathBuf};
-use std::ffi::OsStr;
-use crate::result::invalid;
-use crate::types::ZipFileData;
-use crate::result::ZipResult;
-use crate::read::RootDirFilter;
-use crate::CompressionMethod;
-use crate::ZIP64_BYTES_THR;
-use crate::DateTime;
-use crate::HasZipMetadata;
-use crate::ExtraField;
-use crate::read::make_writable_dir_all;
 
 /// A struct for reading a zip file
 ///
@@ -389,4 +389,3 @@ impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {
         }
     }
 }
-
