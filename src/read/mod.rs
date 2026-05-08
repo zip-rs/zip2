@@ -621,8 +621,10 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false), // early return, most likely a padding
                 Err(_e) => {
                     // Consume remaining bytes to avoid infinite loop in caller
-                    let mut buf = Vec::new();
-                    let _ = reader.read_to_end(&mut buf);
+                    let mut buf = [0u8; 2048];
+                    while reader.read(&mut buf)? != 0 {
+                        // loop to read and consume
+                    }
                     return Ok(false);
                 }
             }
