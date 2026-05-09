@@ -270,8 +270,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
     let block = block.from_le();
 
     let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
-    let using_data_descriptor: bool = ZipFlags::matching(data.flags, ZipFlags::UsingDataDescriptor);
-    if using_data_descriptor {
+    if data.is_using_data_descriptor() {
         if let Some(comp_size) = options.force_compressed_size {
             data.compressed_size = comp_size;
         } else {

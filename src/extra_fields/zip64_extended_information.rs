@@ -25,7 +25,6 @@ use crate::{
 pub(crate) struct Zip64ExtendedInformation {
     /// The local header does not contains any `header_start`
     is_local_header: bool,
-    size: u16,
     uncompressed_size: Option<u64>,
     compressed_size: Option<u64>,
     header_start: Option<u64>,
@@ -58,7 +57,6 @@ impl Zip64ExtendedInformation {
         if !should_add_size {
             return None;
         }
-        let size = (mem::size_of::<u64>() + mem::size_of::<u64>()) as u16;
         let uncompressed_size = Some(uncompressed_size);
         let compressed_size = Some(compressed_size);
 
@@ -67,7 +65,6 @@ impl Zip64ExtendedInformation {
 
         Some(Self {
             is_local_header: true,
-            size,
             uncompressed_size,
             compressed_size,
             header_start: None,
@@ -109,7 +106,6 @@ impl Zip64ExtendedInformation {
 
         Some(Self {
             is_local_header: false,
-            size,
             uncompressed_size,
             compressed_size,
             header_start,
@@ -118,24 +114,41 @@ impl Zip64ExtendedInformation {
 
     /// Get the full size of the block
     pub(crate) fn full_size(&self) -> usize {
-        self.size as usize + mem::size_of::<UsedExtraField>() + mem::size_of::<u16>()
+        self.size() + mem::size_of::<UsedExtraField>() + mem::size_of::<u16>()
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        let mut size = 0;
+        if self.uncompressed_size.is_some() {
+            size += mem::size_of::<u64>();
+        }
+        if self.compressed_size.is_some() {
+            size += mem::size_of::<u64>();
+        }
+        if self.header_start.is_some() {
+            size += mem::size_of::<u64>();
+        }
+        size
     }
 
     /// Serialize the block
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         writer.write_all(&Self::MAGIC.to_le_bytes())?;
-        writer.write_all(&self.size.to_le_bytes())?;
 
         if self.is_local_header {
             // the local header does not contains the header start
             if let (Some(uncompressed_size), Some(compressed_size)) =
                 (self.uncompressed_size, self.compressed_size)
             {
+                let size = (mem::size_of::<u64>() + mem::size_of::<u64>()) as u16;
+                writer.write_all(&size.to_le_bytes())?;
                 writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
                 writer.write_all(&u64::to_le_bytes(compressed_size))?;
             }
             // the else should be unreachable
         } else {
+            let size = self.size() as u16;
+            writer.write_all(&size.to_le_bytes())?;
             if let Some(uncompressed_size) = self.uncompressed_size {
                 writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
             }
