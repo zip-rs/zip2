@@ -3,16 +3,11 @@
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
-use crate::extra_fields::AexEncryption;
-use crate::extra_fields::UnicodeExtraField;
-use crate::extra_fields::Zip64ExtendedInformation;
-use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
+use crate::extra_fields::ExtraField;
+use crate::format::flags::ZipFlags;
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{
-    CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZipCentralEntryBlock, ZipFlags,
-};
+use crate::spec::{CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZipCentralEntryBlock};
 use crate::types::{System, ZipFileData};
-use crate::unstable::LittleEndianReadExt;
 use indexmap::IndexMap;
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek, SeekFrom, Write};
