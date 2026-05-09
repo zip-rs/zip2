@@ -7,6 +7,7 @@ use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
+use crate::format::flags::ZipFlags;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZipCentralEntryBlock};
 use crate::types::{System, ZipFileData};
