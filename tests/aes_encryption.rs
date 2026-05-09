@@ -331,7 +331,7 @@ fn test_update_aes_version_on_threshold() {
     let mut data = Vec::new();
     let mut zip = ZipWriter::new(io::Cursor::new(&mut data));
     zip.start_file("test.txt", options).unwrap();
-    zip.write(b"HELLO").unwrap();
+    zip.write_all(b"HELLO").unwrap();
     zip.finish().unwrap();
 
     // checksum is empty because we use version 2
@@ -365,7 +365,7 @@ fn test_update_aes_version_on_threshold() {
     let mut data = Vec::new();
     let mut zip = ZipWriter::new(io::Cursor::new(&mut data));
     zip.start_file("test.txt", options).unwrap();
-    zip.write(b"LONG FILE MORE THAN 20 BYTES").unwrap();
+    zip.write_all(b"LONG FILE MORE THAN 20 BYTES").unwrap();
     zip.finish().unwrap();
 
     assert_eq!(data[14..18], [0xb7, 0x81, 0xef, 0xad]); // checksum
