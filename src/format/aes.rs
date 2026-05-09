@@ -48,7 +48,7 @@ impl TryFrom<u16> for AesVendorVersion {
 
 impl From<AesVendorVersion> for u16 {
     fn from(value: AesVendorVersion) -> Self {
-        value as u16
+        value.as_u16()
     }
 }
 
