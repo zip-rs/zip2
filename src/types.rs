@@ -693,8 +693,8 @@ mod tests {
 
     #[test]
     fn sanitize() {
-        use super::{CompressionMethod, System, ZipFileData};
         use super::ExtraFields;
+        use super::{CompressionMethod, System, ZipFileData};
         use std::{path::PathBuf, sync::OnceLock};
 
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();

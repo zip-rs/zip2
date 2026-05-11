@@ -2,9 +2,9 @@
 
 use crate::CompressionMethod;
 use crate::DateTime;
-use crate::read::ExtraField;
 use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
+use crate::read::ExtraField;
 use crate::read::RootDirFilter;
 use crate::read::make_writable_dir_all;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};

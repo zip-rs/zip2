@@ -8,15 +8,15 @@ use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
-use crate::format::flags::ZipFlags;
+use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::Read;
-use std::io::Cursor;
 
 /// contains one extra field
 #[derive(Debug, Clone)]
@@ -62,7 +62,11 @@ impl ExtraFields {
         Self(Vec::new())
     }
 
-    pub(crate) fn parse<R: Read>(buff: &[u8], file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) -> ZipResult<Self> {
+    pub(crate) fn parse<R: Read>(
+        buff: &[u8],
+        file: &mut ZipFileData,
+        file_name_raw: &mut Vec<u8>,
+    ) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
         while reader.position() < buff.len() {
@@ -201,11 +205,11 @@ impl ExtraField {
                 // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
                 file.file_comment = String::from_utf8(
                     unicode_comment
-                    .unwrap_valid(file.file_comment.as_bytes())?
-                    .into_vec(),
+                        .unwrap_valid(file.file_comment.as_bytes())?
+                        .into_vec(),
                 )?
-                    .into();
-                }
+                .into();
+            }
             ExtraField::UnicodePath(unicode_path) => {
                 // Info-ZIP Unicode Path Extra Field
                 // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
