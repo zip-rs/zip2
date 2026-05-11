@@ -1,12 +1,12 @@
 //! Writing a ZIP archive
 
+use crate::ExtraField;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
-use crate::ExtraField;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
@@ -425,12 +425,9 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            let extra_field = ExtraField::parse(
-                &mut data,
-                &mut ZipLocalBlock::default(),
-            )?;
+            let extra_field = ExtraField::parse(&mut data, &mut ZipLocalBlock::default())?;
             if disallow_zip64 {
-                    return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
+                return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
             }
             pos = data.position();
         }
@@ -1135,7 +1132,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         let central_extra_fields = options.extended_options.central_extra_fields();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            extra_fields.push(ExtraField::Zip64ExtendedInformation { });
+            extra_fields.push(ExtraField::Zip64ExtendedInformation {});
         }
 
         // Figure out the underlying compression_method and aes mode when using
@@ -2364,10 +2361,13 @@ fn update_aes_extra_field<W: Write + Seek>(
     writer.write_all(&buf)?;
 
     // edit the extra field
-    if let Some(ExtraField::AeXEncryption { aes_vendor_version, .. }) = file
-        .extra_fields.inner
-            .iter_mut()
-            .find(|f| matches!(f, ExtraField::AeXEncryption{..}))
+    if let Some(ExtraField::AeXEncryption {
+        aes_vendor_version, ..
+    }) = file
+        .extra_fields
+        .inner
+        .iter_mut()
+        .find(|f| matches!(f, ExtraField::AeXEncryption { .. }))
     {
         aes_vendor_version = version;
     }
@@ -2436,12 +2436,16 @@ impl ZipFileData {
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
         let mut block = self.central_block(file_name_raw)?;
-        block.write_full_block(writer, file_name_raw, &self.extra_fields, self.file_comment.as_bytes())?;
+        block.write_full_block(
+            writer,
+            file_name_raw,
+            &self.extra_fields,
+            self.file_comment.as_bytes(),
+        )?;
 
         Ok(())
     }
 }
-
 
 /// Wrapper around a [Write] implementation that implements the [Seek] trait, but where seeking
 /// returns an error unless it's a no-op.

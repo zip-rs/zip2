@@ -1,10 +1,10 @@
 //! Code linked with the specifications of the zip file
 
-use crate::read::ArchiveOffset;
+use crate::extra_fields::ExtraFields;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::read::ArchiveOffset;
 use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::extra_fields::ExtraFields;
 use core::any::type_name;
 use core::mem;
 use core::slice;
@@ -302,9 +302,14 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
 }
 
 impl ZipCentralEntryBlock {
-    pub(crate) fn write_full_block<W: Write>(&mut self, writer: &mut W, file_name_raw: &[u8], extra_fields: &ExtraFields, file_comment: &[u8]) -> ZipResult<()> {
-
-       let stripped_extra = if let Some(extra) = &self.extra_field {
+    pub(crate) fn write_full_block<W: Write>(
+        &mut self,
+        writer: &mut W,
+        file_name_raw: &[u8],
+        extra_fields: &ExtraFields,
+        file_comment: &[u8],
+    ) -> ZipResult<()> {
+        let stripped_extra = if let Some(extra) = &self.extra_field {
             strip_alignment_extra_field(extra, true)
         } else {
             Vec::new()
@@ -325,7 +330,6 @@ impl ZipCentralEntryBlock {
         self.extra_field_length = u16::try_from(total_extra_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
 
-
         self.write(writer)?;
         // file name
         writer.write_all(file_name_raw)?;
@@ -335,7 +339,6 @@ impl ZipCentralEntryBlock {
         writer.write_all(file_comment)?;
         Ok(())
     }
-
 }
 
 #[derive(Copy, Clone, Debug)]

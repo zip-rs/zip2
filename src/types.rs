@@ -539,7 +539,8 @@ impl ZipFileData {
             .extra_field_len()
             .try_into()
             .map_err(std::io::Error::other)?;
-        let central_extra_field_len: u16 = self.extra_fields
+        let central_extra_field_len: u16 = self
+            .extra_fields
             .central_extra_field_len()
             .try_into()
             .map_err(std::io::Error::other)?;

@@ -6,7 +6,7 @@ use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
-use crate::result::{invalid, ZipError};
+use crate::result::{ZipError, invalid};
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -291,7 +291,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
     let extra_fields = ExtraFields::parse(&extra_fields_raw, block, &mut file_name_raw);
     let extra_fields = match extra_fields {
         Ok(extra_fields) => extra_fields,
-        Err(ZipError::Io(..)) => { ExtraFields::new()}
+        Err(ZipError::Io(..)) => ExtraFields::new(),
         Err(e) => return Err(e),
     };
 
@@ -311,7 +311,6 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
     if let Some(crc) = options.force_crc {
         data.crc32 = crc;
     }
-
 
     if options.ignore_encryption_flag {
         // Always use no password when we're ignoring the encryption flag.

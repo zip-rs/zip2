@@ -8,10 +8,10 @@ use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
-use crate::spec::ZipLocalEntryBlock;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
+use crate::spec::ZipLocalEntryBlock;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
@@ -63,14 +63,12 @@ pub enum ExtraField {
 
 #[derive(Debug, Clone, Default)]
 pub struct ExtraFields {
-    pub(crate) inner: Vec<ExtraField>
+    pub(crate) inner: Vec<ExtraField>,
 }
 
 impl ExtraFields {
     pub(crate) fn new() -> Self {
-        Self {
-            inner: Vec::new()
-        }
+        Self { inner: Vec::new() }
     }
 
     pub(crate) fn strip_alignment_extra_field(&mut self, remove_zip64: bool) -> ExtraFields {
@@ -78,7 +76,11 @@ impl ExtraFields {
             if remove_zip64 {
                 matches!(extra, ExtraField::DataStreamAlignment(_))
             } else {
-                matches!(extra, ExtraField::DataStreamAlignment(_) | ExtraField::Zip64ExtendedInformation { ..})
+                matches!(
+                    extra,
+                    ExtraField::DataStreamAlignment(_)
+                        | ExtraField::Zip64ExtendedInformation { .. }
+                )
             }
         });
         self
@@ -97,7 +99,7 @@ impl ExtraFields {
             extra_fields.push(parsed_extra_field);
         }
         Ok(Self {
-            inner: extra_fields
+            inner: extra_fields,
         })
     }
 }
