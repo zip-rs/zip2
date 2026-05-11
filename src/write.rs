@@ -278,13 +278,15 @@ struct ZipWriterStats {
 
 mod sealed {
     use super::ExtendedFileOptions;
+    use crate::write::CustomExtraField;
+    use std::sync::Arc;
 
     pub trait Sealed {}
     /// File options Extensions
     #[doc(hidden)]
     pub trait FileOptionExtension: Default + Sealed {
         /// Extra Data
-        fn extra_fields(&self) -> Option<Vec<u8>>;
+        fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>>;
         /// Central Extra Data
         fn central_extra_fields(&self) -> Option<Vec<u8>>;
         /// File Comment
@@ -294,7 +296,7 @@ mod sealed {
     }
     impl Sealed for () {}
     impl FileOptionExtension for () {
-        fn extra_fields(&self) -> Option<Vec<u8>> {
+        fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
             None
         }
         fn central_extra_fields(&self) -> Option<Vec<u8>> {
@@ -310,13 +312,8 @@ mod sealed {
     impl Sealed for ExtendedFileOptions {}
 
     impl FileOptionExtension for ExtendedFileOptions {
-        fn extra_fields(&self) -> Option<Vec<u8>> {
-            Some(
-                self.extra_fields
-                    .iter()
-                    .flat_map(|x| x.serialize())
-                    .collect(),
-            )
+        fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
+            Some(&self.extra_fields)
         }
         fn central_extra_fields(&self) -> Option<Vec<u8>> {
             Some(
@@ -1167,11 +1164,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         let central_extra_fields = options.extended_options.central_extra_fields();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            let mut new_extra_fields =
-                Vec::with_capacity(zip64_block.full_size() + extra_fields.len());
-            zip64_block.write(&mut new_extra_fields)?;
-            new_extra_fields.extend_from_slice(&extra_fields);
-            extra_fields = new_extra_fields;
+            let mut serialized_zip64 = Vec::with_capacity(zip64_block.full_size());
+            zip64_block.write(&mut serialized_zip64)?;
+            let zip64_block = CustomExtraField::new(
+                false,
+                Zip64ExtendedInformation::MAGIC.as_u16(),
+                &serialized_zip64[4..],
+            );
+            extra_fields.insert(0, zip64_block);
         }
 
         // Figure out the underlying compression_method and aes mode when using
@@ -1193,12 +1193,11 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let mut buf = [0u8; AexEncryption::EXTRA_FIELD_SIZE as usize];
                 aex_extra_field.write_data(&mut buf.as_mut_slice())?;
 
-                aes_extra_field_start = extra_fields.len() as u64;
-                ExtendedFileOptions::add_extra_field_unchecked(
-                    &mut extra_fields,
-                    UsedExtraField::AeXEncryption.as_u16(),
-                    &buf,
-                )?;
+                let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+                aes_extra_field_start = extra_fields_len as u64;
+                let aex =
+                    CustomExtraField::new(false, UsedExtraField::AeXEncryption.as_u16(), &buf);
+                extra_fields.push(aex);
                 Some((mode, vendor_version))
             }
             _ => None,
@@ -1209,7 +1208,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             + file_name_raw.len() as u64;
 
         if options.alignment > 1 {
-            let extra_fields_end = header_end + extra_fields.len() as u64;
+            let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+            let extra_fields_end = header_end + extra_fields_len as u64;
             let align = u64::from(options.alignment);
             let unaligned_header_bytes = extra_fields_end % align;
             if unaligned_header_bytes != 0 {
@@ -1217,7 +1217,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 while pad_length < 6 {
                     pad_length += align as usize;
                 }
-                let new_len = extra_fields.len() + pad_length;
+                let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+                let new_len = extra_fields_len + pad_length;
                 if new_len > u16::MAX as usize {
                     // Alignment is impossible without exceeding extra field size limits.
                     // Skip alignment.
@@ -1226,16 +1227,18 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let mut pad_body = vec![0; pad_length - 4];
                     debug_assert!(pad_body.len() >= 2);
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    ExtendedFileOptions::add_extra_field_unchecked(
-                        &mut extra_fields,
+                    let alignment_extra_field = CustomExtraField::new(
+                        true,
                         UsedExtraField::DataStreamAlignment.as_u16(),
                         &pad_body,
-                    )?;
-                    debug_assert_eq!((extra_fields.len() as u64 + header_end) % align, 0);
+                    );
+                    extra_fields.push(alignment_extra_field);
+                    let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+                    debug_assert_eq!((extra_fields_len as u64 + header_end) % align, 0);
                 }
             }
         }
-        let extra_fields_len = extra_fields.len();
+        let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
         if let Some(data) = central_extra_fields {
             if extra_fields_len + data.len() > u16::MAX as usize {
                 return Err(invalid!(
@@ -1244,6 +1247,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             ExtendedFileOptions::validate_extra_fields(&data, true)?;
         }
+        let extra_fields: Vec<u8> = extra_fields.iter().flat_map(|x| x.serialize()).collect();
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
