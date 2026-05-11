@@ -6,6 +6,7 @@ use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::ExtraField;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};

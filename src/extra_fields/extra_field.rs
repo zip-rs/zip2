@@ -80,7 +80,8 @@ impl ExtraFields {
             } else {
                 matches!(extra, ExtraField::DataStreamAlignment(_) | ExtraField::Zip64ExtendedInformation { ..})
             }
-        })
+        });
+        self
     }
     pub(crate) fn parse<R: Read>(
         buff: &[u8],
