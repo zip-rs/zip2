@@ -338,7 +338,6 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
 
 #[cfg(test)]
 mod tests {
-
     use crate::read::ZipFile;
     use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
     use crate::result::ZipResult;

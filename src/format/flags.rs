@@ -104,7 +104,6 @@ impl From<System> for u8 {
 
 /// Zip flags
 /// Stored as Little endian
-#[allow(unused)]
 #[rustfmt::skip]
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -112,18 +111,23 @@ impl From<System> for u8 {
 pub(crate) enum ZipFlags {
     /// If set, indicates that the file is encrypted.
     Encrypted                   = 0b0000_0000_0000_0001,
+    #[allow(unused)]
     CompressionSetting          = 0b0000_0000_0000_0010,
+    #[allow(unused)]
     CompressionSetting2         = 0b0000_0000_0000_0100,
     /// If this bit is set, the fields crc-32, compressed size and uncompressed size are set to zero in the  local header.
     /// The correct values are put in the data descriptor immediately following the compressed data.
     UsingDataDescriptor         = 0b0000_0000_0000_1000,
     /// Reserved for use with method 8, for enhanced deflating.
+    #[allow(unused)]
     ReservedEnhancedDeflating   = 0b0000_0000_0001_0000,
     /// If this bit is set, this indicates that the file is compressed patched data.
+    #[allow(unused)]
     CompressedPatchedData       = 0b0000_0000_0010_0000,
     /// Strong encryption.
     /// If this bit is set, you MUST set the version needed to extract value to at least 50 and you MUST also set bit 0.
     /// If AES encryption is used, the version needed to extract value MUST be at least 51.
+    #[allow(unused)]
     StrongEncryption            = 0b0000_0000_0100_0000,
     // bit 7 Currently unused   = 0b0000_0000_1000_0000;
     // bit 8 Currently unused   = 0b0000_0001_0000_0000;
@@ -134,12 +138,16 @@ pub(crate) enum ZipFlags {
     /// If this bit is set, the filename and comment fields for this file MUST be encoded using UTF-8.
     LanguageEncoding            = 0b0000_1000_0000_0000,
     /// Reserved by PKWARE for enhanced compression.
+    #[allow(unused)]
     ReservedEnhancedCompression = 0b0001_0000_0000_0000,
     /// Set when encrypting the Central Directory to indicate selected data values in the Local Header are masked to hide their actual values.
+    #[allow(unused)]
     Masked                      = 0b0010_0000_0000_0000,
     /// Reserved by PKWARE for alternate streams.
+    #[allow(unused)]
     ReservedAlternateStream     = 0b0100_0000_0000_0000,
     /// Reserved by PKWARE.
+    #[allow(unused)]
     Reserved                    = 0b1000_0000_0000_0000,
 }
 
