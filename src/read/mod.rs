@@ -519,7 +519,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         uncompressed_size: uncompressed_size.into(),
         flags,
         extra_field: Some(Arc::from(extra_field)),
-        central_extra_field: None,
         file_comment,
         header_start: offset.into(),
         extra_data_start: None,
@@ -528,7 +527,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
-        aes_extra_data_start: 0,
         extra_fields: Vec::new(),
     };
     let extra = ExtraFields::parse(&mut extra_field, &mut result, &mut file_name_raw)?;

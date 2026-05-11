@@ -406,9 +406,8 @@ impl ZipFileData {
             external_attributes,
             large_file: options.large_file,
             aes_mode: aes_settings,
-            extra_fields: Vec::new(),
+            extra_fields: ExtraFields::new(),
             extra_data_start,
-            aes_extra_data_start,
         };
         local_block.version_made_by = local_block.version_needed() as u8;
         local_block
@@ -475,9 +474,8 @@ impl ZipFileData {
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
-            extra_fields: Vec::new(),
+            extra_fields: ExtraFields::new(),
             extra_data_start: None,
-            aes_extra_data_start: 0,
         };
         Ok((data, file_name_raw))
     }
@@ -696,6 +694,7 @@ mod tests {
     #[test]
     fn sanitize() {
         use super::{CompressionMethod, System, ZipFileData};
+        use super::ExtraFields;
         use std::{path::PathBuf, sync::OnceLock};
 
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
@@ -716,7 +715,6 @@ mod tests {
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
-            aes_extra_data_start: 0,
             extra_fields: ExtraFields::new(),
         };
         assert_eq!(

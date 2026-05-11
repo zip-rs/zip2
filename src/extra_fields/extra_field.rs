@@ -58,18 +58,22 @@ pub enum ExtraField {
 pub struct ExtraFields(Vec<ExtraField>);
 
 impl ExtraFields {
+    pub(crate) fn new() -> Self {
+        Self(Vec::new())
+    }
+
     pub(crate) fn parse<R: Read>(buff: &[u8], file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
         while reader.position() < buff.len() {
-            let parsed_extra_field = ExtraField::parse(reader, file)?;
+            let parsed_extra_field = ExtraField::parse(&mut reader, file)?;
             let Some(parsed_extra_field) = parsed_extra_field else {
                 return Ok(false);
             };
             parsed_extra_field.use_with(file, file_name_raw);
             extra_fields.push(parsed_extra_field);
         }
-        Ok(extra_fields)
+        Ok(Self(extra_fields))
     }
 }
 
@@ -162,7 +166,7 @@ impl ExtraField {
     }
 
     pub(crate) fn use_with(&self, file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) {
-        match self {
+        match *self {
             // Zip64 extended information extra field
             ExtraField::Zip64ExtendedInformation {
                 uncompressed_size,
@@ -188,7 +192,6 @@ impl ExtraField {
             } => {
                 file.aes_mode = Some((aes_mode, aes_vendor_version));
                 file.compression_method = compression_method;
-                file.aes_extra_data_start = bytes_already_read;
             }
             ExtraField::ExtendedTimestamp(extended_timestamp) => {
                 // nothing to do
