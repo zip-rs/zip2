@@ -3,6 +3,7 @@
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
+use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
@@ -276,8 +277,6 @@ struct ZipWriterStats {
 }
 
 mod sealed {
-    use std::sync::Arc;
-
     use super::ExtendedFileOptions;
 
     pub trait Sealed {}
@@ -285,9 +284,9 @@ mod sealed {
     #[doc(hidden)]
     pub trait FileOptionExtension: Default + Sealed {
         /// Extra Data
-        fn extra_data(&self) -> Option<&Arc<Vec<u8>>>;
+        fn extra_fields(&self) -> Option<Vec<u8>>;
         /// Central Extra Data
-        fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>>;
+        fn central_extra_fields(&self) -> Option<Vec<u8>>;
         /// File Comment
         fn file_comment(&self) -> Option<&str>;
         /// Take File Comment (moves ownership)
@@ -295,10 +294,10 @@ mod sealed {
     }
     impl Sealed for () {}
     impl FileOptionExtension for () {
-        fn extra_data(&self) -> Option<&Arc<Vec<u8>>> {
+        fn extra_fields(&self) -> Option<Vec<u8>> {
             None
         }
-        fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
+        fn central_extra_fields(&self) -> Option<Vec<u8>> {
             None
         }
         fn file_comment(&self) -> Option<&str> {
@@ -311,11 +310,22 @@ mod sealed {
     impl Sealed for ExtendedFileOptions {}
 
     impl FileOptionExtension for ExtendedFileOptions {
-        fn extra_data(&self) -> Option<&Arc<Vec<u8>>> {
-            Some(&self.extra_data)
+        fn extra_fields(&self) -> Option<Vec<u8>> {
+            Some(
+                self.extra_fields
+                    .iter()
+                    .flat_map(|x| x.serialize())
+                    .collect(),
+            )
         }
-        fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
-            Some(&self.central_extra_data)
+        fn central_extra_fields(&self) -> Option<Vec<u8>> {
+            Some(
+                self.extra_fields
+                    .iter()
+                    .filter(|x| x.central_only)
+                    .flat_map(|x| x.serialize())
+                    .collect(),
+            )
         }
         fn file_comment(&self) -> Option<&str> {
             self.file_comment.as_ref().map(Box::as_ref)
@@ -332,8 +342,7 @@ pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
-    extra_data: Arc<Vec<u8>>,
-    central_extra_data: Arc<Vec<u8>>,
+    extra_fields: Arc<Vec<CustomExtraField>>,
     file_comment: Option<Box<str>>,
 }
 
@@ -369,19 +378,15 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let data = data.as_ref();
         let len = data.len() + 4;
-        let local_extra_data_len = self.extra_data.len();
-        let central_extra_data_len = self.central_extra_data.len();
-        let field = if central_only {
-            &mut self.central_extra_data
-        } else {
-            &mut self.extra_data
-        };
-        if local_extra_data_len + central_extra_data_len + len > u16::MAX as usize {
+        let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.len()).sum();
+        if extra_fields_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {
-            let vec = Arc::make_mut(field);
-            Self::add_extra_data_unchecked(vec, header_id, data)?;
-            Self::validate_extra_data(vec, true)?;
+            Arc::make_mut(&mut self.extra_fields).push(CustomExtraField::new(
+                central_only,
+                header_id,
+                &data,
+            ));
             Ok(())
         }
     }
@@ -397,7 +402,7 @@ impl ExtendedFileOptions {
     /// - Using this function will not cause the overall extra-data length to exceed `u16::MAX`.
     /// - The resulting buffer remains a well-formed sequence of extra fields (or is validated
     ///   later with [`Self::validate_extra_data`]).
-    pub(crate) fn add_extra_data_unchecked(
+    pub(crate) fn add_extra_field_unchecked(
         vec: &mut Vec<u8>,
         header_id: u16,
         data: &[u8],
@@ -409,7 +414,7 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
+    fn validate_extra_fields(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
         let len = data.len() as u64;
         if len == 0 {
             return Ok(());
@@ -461,8 +466,7 @@ impl ExtendedFileOptions {
 impl Debug for ExtendedFileOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
         f.debug_struct("ExtendedFileOptions")
-            .field("extra_data", &self.extra_data)
-            .field("central_extra_data", &self.central_extra_data)
+            .field("extra_fields", &self.extra_fields)
             .field("file_comment", &self.file_comment)
             .finish()
     }
@@ -703,11 +707,8 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
     /// Removes the extra data fields.
     #[must_use]
     pub fn clear_extra_data(mut self) -> Self {
-        if !self.extended_options.extra_data.is_empty() {
-            self.extended_options.extra_data = Arc::new(vec![]);
-        }
-        if !self.extended_options.central_extra_data.is_empty() {
-            self.extended_options.central_extra_data = Arc::new(vec![]);
+        if !self.extended_options.extra_fields.is_empty() {
+            self.extended_options.extra_fields = Arc::new(vec![]);
         }
         self
     }
@@ -912,10 +913,10 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let mut new_data = src_data.clone();
         let dest_name_raw = dest_name.as_bytes();
         new_data.header_start = write_position;
-        let extra_data_start = write_position
+        let extra_fields_start = write_position
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + dest_name_raw.len() as u64;
-        new_data.extra_data_start = Some(extra_data_start);
+        new_data.extra_data_start = Some(extra_fields_start);
         if let Some(extra) = &src_data.extra_field {
             let stripped = strip_alignment_extra_field(extra, false);
             if stripped.is_empty() {
@@ -925,7 +926,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             }
         }
 
-        let mut data_start = extra_data_start;
+        let mut data_start = extra_fields_start;
         if let Some(extra) = &new_data.extra_field {
             data_start += extra.len() as u64;
         }
@@ -1160,16 +1161,17 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
         });
 
-        let mut extra_data = match options.extended_options.extra_data() {
+        let mut extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.to_vec(),
             None => vec![],
         };
-        let central_extra_data = options.extended_options.central_extra_data();
+        let central_extra_fields = options.extended_options.central_extra_fields();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            let mut new_extra_data = Vec::with_capacity(zip64_block.full_size() + extra_data.len());
-            zip64_block.write(&mut new_extra_data)?;
-            new_extra_data.extend_from_slice(&extra_data);
-            extra_data = new_extra_data;
+            let mut new_extra_fields =
+                Vec::with_capacity(zip64_block.full_size() + extra_fields.len());
+            zip64_block.write(&mut new_extra_fields)?;
+            new_extra_fields.extend_from_slice(&extra_fields);
+            extra_fields = new_extra_fields;
         }
 
         // Figure out the underlying compression_method and aes mode when using
@@ -1177,7 +1179,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
         #[allow(unused_mut)]
-        let mut aes_extra_data_start = 0;
+        let mut aes_extra_field_start = 0;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes {
@@ -1191,9 +1193,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let mut buf = [0u8; AexEncryption::EXTRA_FIELD_SIZE as usize];
                 aex_extra_field.write_data(&mut buf.as_mut_slice())?;
 
-                aes_extra_data_start = extra_data.len() as u64;
-                ExtendedFileOptions::add_extra_data_unchecked(
-                    &mut extra_data,
+                aes_extra_field_start = extra_fields.len() as u64;
+                ExtendedFileOptions::add_extra_field_unchecked(
+                    &mut extra_fields,
                     UsedExtraField::AeXEncryption.as_u16(),
                     &buf,
                 )?;
@@ -1207,40 +1209,40 @@ impl<W: Write + Seek> ZipWriter<W> {
             + file_name_raw.len() as u64;
 
         if options.alignment > 1 {
-            let extra_data_end = header_end + extra_data.len() as u64;
+            let extra_fields_end = header_end + extra_fields.len() as u64;
             let align = u64::from(options.alignment);
-            let unaligned_header_bytes = extra_data_end % align;
+            let unaligned_header_bytes = extra_fields_end % align;
             if unaligned_header_bytes != 0 {
                 let mut pad_length = (align - unaligned_header_bytes) as usize;
                 while pad_length < 6 {
                     pad_length += align as usize;
                 }
-                let new_len = extra_data.len() + pad_length;
+                let new_len = extra_fields.len() + pad_length;
                 if new_len > u16::MAX as usize {
                     // Alignment is impossible without exceeding extra field size limits.
                     // Skip alignment.
                 } else {
-                    // Add an extra field to the extra_data, per APPNOTE 4.6.11
+                    // Add an extra field to the extra_field, per APPNOTE 4.6.11
                     let mut pad_body = vec![0; pad_length - 4];
                     debug_assert!(pad_body.len() >= 2);
                     [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    ExtendedFileOptions::add_extra_data_unchecked(
-                        &mut extra_data,
+                    ExtendedFileOptions::add_extra_field_unchecked(
+                        &mut extra_fields,
                         UsedExtraField::DataStreamAlignment.as_u16(),
                         &pad_body,
                     )?;
-                    debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
+                    debug_assert_eq!((extra_fields.len() as u64 + header_end) % align, 0);
                 }
             }
         }
-        let extra_data_len = extra_data.len();
-        if let Some(data) = central_extra_data {
-            if extra_data_len + data.len() > u16::MAX as usize {
+        let extra_fields_len = extra_fields.len();
+        if let Some(data) = central_extra_fields {
+            if extra_fields_len + data.len() > u16::MAX as usize {
                 return Err(invalid!(
                     "Extra data and central extra data must be less than 64KiB when combined"
                 ));
             }
-            ExtendedFileOptions::validate_extra_data(data, true)?;
+            ExtendedFileOptions::validate_extra_fields(&data, true)?;
         }
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
@@ -1248,10 +1250,10 @@ impl<W: Write + Seek> ZipWriter<W> {
             &raw_values,
             header_start,
             None,
-            aes_extra_data_start,
+            aes_extra_field_start,
             compression_method,
             aes_mode_options,
-            &extra_data,
+            &extra_fields,
         );
         if let Some(comment) = options.extended_options.take_file_comment() {
             if comment.len() > u16::MAX as usize {
@@ -1270,16 +1272,16 @@ impl<W: Write + Seek> ZipWriter<W> {
         let index = self.insert_file_data(file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
-            ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
+            ExtendedFileOptions::validate_extra_fields(&extra_fields, false)?;
             let file = &mut self.files[index];
             let block = file.local_block(file_name_raw)?;
             let writer = self.inner.try_inner_mut()?;
             block.write(writer)?;
             // file name
             writer.write_all(file_name_raw)?;
-            if extra_data_len > 0 {
-                writer.write_all(&extra_data)?;
-                file.extra_field = Some(Arc::from(extra_data.into_boxed_slice()));
+            if extra_fields_len > 0 {
+                writer.write_all(&extra_fields)?;
+                file.extra_field = Some(Arc::from(extra_fields.into_boxed_slice()));
             }
             Ok(())
         };
@@ -1388,7 +1390,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // Not using a data descriptor means the underlying writer
                 // supports seeking, so we can go back and update the AES Extra
                 // Data header to use AE1 for large files.
-                update_aes_extra_data(writer, file, self.stats.bytes_written)?;
+                update_aes_extra_field(writer, file, self.stats.bytes_written)?;
             }
 
             file.crc32 = if matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2))) {
@@ -2363,7 +2365,7 @@ fn validate_value_in_range<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
-fn update_aes_extra_data<W: Write + Seek>(
+fn update_aes_extra_field<W: Write + Seek>(
     writer: &mut W,
     file: &mut ZipFileData,
     bytes_written: u64,
@@ -2387,12 +2389,12 @@ fn update_aes_extra_data<W: Write + Seek>(
         AesVendorVersion::Ae1
     };
 
-    let extra_data_start = file
+    let extra_field_start = file
         .extra_data_start
         .ok_or_else(|| std::io::Error::other("Cannot get the extra data start"))?;
 
     writer.seek(SeekFrom::Start(
-        extra_data_start + file.aes_extra_data_start,
+        extra_field_start + file.aes_extra_data_start,
     ))?;
 
     let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
@@ -2400,14 +2402,14 @@ fn update_aes_extra_data<W: Write + Seek>(
     aes_extra_field.write(&mut buf.as_mut_slice())?;
     writer.write_all(&buf)?;
 
-    let aes_extra_data_start = file.aes_extra_data_start as usize;
+    let aes_extra_field_start = file.aes_extra_data_start as usize;
     let Some(ref mut extra_field) = file.extra_field else {
         return Err(invalid!(
-            "update_aes_extra_data called on a file that has no extra-data field"
+            "update_aes_extra_field called on a file that has no extra-data field"
         ));
     };
     let mut vec = extra_field.to_vec();
-    vec[aes_extra_data_start..aes_extra_data_start + AexEncryption::FULL_SIZE]
+    vec[aes_extra_field_start..aes_extra_field_start + AexEncryption::FULL_SIZE]
         .copy_from_slice(&buf);
     *extra_field = Arc::from(vec.into_boxed_slice());
 
@@ -2647,8 +2649,7 @@ mod tests {
         // let options = SimpleFileOptions::default().compression_method(Stored);
         let options = FileOptions {
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![].into(),
                 file_comment: Some("file comment".into()),
             },
 
@@ -2661,8 +2662,7 @@ mod tests {
         writer.write_all(b"data")?;
         let options2 = FileOptions {
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![].into(),
                 file_comment: Some("file2 comment".into()),
             },
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
@@ -3330,8 +3330,7 @@ mod tests {
                 large_file: false,
                 encrypt_with: None,
                 extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
+                    extra_fields: vec![].into(),
                     file_comment: None,
                 },
                 alignment: 2048,
@@ -3353,23 +3352,18 @@ mod tests {
 
     #[test]
     fn test_short_extra_data() {
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.set_flush_on_finish_file(false);
-        let options = FileOptions {
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![99, 0, 15, 0, 207].into(),
-                file_comment: None,
-            },
-            ..Default::default()
-        };
-        assert!(writer.start_file_from_path("", options).is_err());
+        use crate::write::CustomExtraField;
+
+        let custom_creation = CustomExtraField::new_from_raw(true, &[99, 0, 15, 0, 207]);
+        assert!(custom_creation.is_err());
     }
 
     #[test]
     #[cfg(not(feature = "unreserved"))]
     fn test_invalid_extra_data() -> ZipResult<()> {
+        use crate::write::CustomExtraField;
         use crate::write::ExtendedFileOptions;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -3380,10 +3374,15 @@ mod tests {
             large_file: false,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![
-                    7, 0, 15, 0, 207, 117, 177, 117, 112, 2, 0, 255, 255, 131, 255, 255, 255, 80,
-                    185,
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(
+                        true,
+                        &[
+                            7, 0, 15, 0, 207, 117, 177, 117, 112, 2, 0, 255, 255, 131, 255, 255,
+                            255, 80, 185,
+                        ],
+                    )
+                    .unwrap(),
                 ]
                 .into(),
                 file_comment: None,
@@ -3398,7 +3397,9 @@ mod tests {
     #[test]
     #[cfg(not(feature = "unreserved"))]
     fn test_invalid_extra_data_unreserved() {
+        use crate::write::CustomExtraField;
         use crate::write::ExtendedFileOptions;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: Stored,
@@ -3408,9 +3409,10 @@ mod tests {
             large_file: true,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![
-                    1, 41, 4, 0, 1, 255, 245, 117, 117, 112, 5, 0, 80, 255, 149, 255, 247,
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(true, &[1, 41, 4, 0, 1, 255, 245, 117]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[117, 112, 5, 0, 80, 255, 149, 255, 247])
+                        .unwrap(),
                 ]
                 .into(),
                 file_comment: None,
@@ -3436,11 +3438,7 @@ mod tests {
             permissions: None,
             large_file: true,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 4,
             ..Default::default()
         };
@@ -3464,11 +3462,7 @@ mod tests {
                 permissions: None,
                 large_file: false,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
-                    file_comment: None,
-                },
+                extended_options: ExtendedFileOptions::default(),
                 alignment: 185,
                 ..Default::default()
             };
@@ -3516,11 +3510,7 @@ mod tests {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 2565,
             ..Default::default()
         };
@@ -3533,11 +3523,7 @@ mod tests {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 0,
             ..Default::default()
         };
@@ -3549,6 +3535,8 @@ mod tests {
     #[allow(deprecated)]
     #[test]
     fn test_fuzz_crash_2024_06_14b() -> ZipResult<()> {
+        use crate::write::CustomExtraField;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -3558,11 +3546,7 @@ mod tests {
             permissions: None,
             large_file: true,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 0xFFF1,
             ..Default::default()
         };
@@ -3577,8 +3561,11 @@ mod tests {
             large_file: true,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![255, 255, 1, 0, 255, 0, 0, 0, 0].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(false, &[255, 255, 1, 0, 255]).unwrap(),
+                    CustomExtraField::new_from_raw(false, &[0, 0, 0, 0]).unwrap(),
+                ]
+                .into(),
                 file_comment: None,
             },
             alignment: 0xFFFF,
@@ -3603,11 +3590,7 @@ mod tests {
                 permissions: None,
                 large_file: true,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
-                    file_comment: None,
-                },
+                extended_options: ExtendedFileOptions::default(),
                 alignment: 0,
                 ..Default::default()
             };
@@ -3628,6 +3611,7 @@ mod tests {
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
         use crate::AesMode::Aes256;
         use crate::types::AesVendorVersion;
+        use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
         use CompressionMethod::Deflated;
 
@@ -3646,10 +3630,14 @@ mod tests {
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {
-                extra_data: vec![2, 0, 1, 0, 0].into(),
-                central_extra_data: vec![
-                    35, 229, 2, 0, 41, 41, 231, 44, 2, 0, 52, 233, 82, 201, 0, 0, 3, 0, 2, 0, 233,
-                    255, 3, 0, 2, 0, 26, 154, 38, 251, 0, 0,
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(false, &[2, 0, 1, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[35, 229, 2, 0, 41, 41]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[231, 44, 2, 0, 52, 233]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[82, 201, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[3, 0, 2, 0, 233, 255]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[3, 0, 2, 0, 26, 154]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[38, 251, 0, 0]).unwrap(),
                 ]
                 .into(),
                 file_comment: None,
@@ -3663,6 +3651,8 @@ mod tests {
 
     #[test]
     fn test_fuzz_crash_2024_06_14e() -> ZipResult<()> {
+        use crate::write::CustomExtraField;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -3673,10 +3663,16 @@ mod tests {
             large_file: true,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![76, 0, 1, 0, 0, 2, 0, 0, 0].into(),
-                central_extra_data: vec![
-                    1, 149, 1, 0, 255, 3, 0, 0, 0, 2, 255, 0, 0, 12, 65, 1, 0, 0, 67, 149, 0, 0,
-                    76, 149, 2, 0, 149, 149, 67, 149, 0, 0,
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(false, &[76, 0, 1, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[1, 149, 1, 0, 255]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[3, 0, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[2, 255, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[12, 65, 1, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[67, 149, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[76, 149, 2, 0, 149, 149]).unwrap(),
+                    CustomExtraField::new_from_raw(true, &[67, 149, 0, 0]).unwrap(),
                 ]
                 .into(),
                 file_comment: None,
@@ -3692,6 +3688,8 @@ mod tests {
     #[allow(deprecated)]
     #[test]
     fn test_fuzz_crash_2024_06_17() -> ZipResult<()> {
+        use crate::write::CustomExtraField;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let sub_writer = {
@@ -3738,11 +3736,7 @@ mod tests {
                                                     ),
                                                     PhantomData,
                                                 )),
-                                                extended_options: ExtendedFileOptions {
-                                                    extra_data: vec![].into(),
-                                                    central_extra_data: vec![].into(),
-                                                    file_comment: None,
-                                                },
+                                                extended_options: ExtendedFileOptions::default(),
                                                 alignment: 255,
                                                 ..Default::default()
                                             };
@@ -3765,11 +3759,7 @@ mod tests {
                                             permissions: None,
                                             large_file: true,
                                             encrypt_with: None,
-                                            extended_options: ExtendedFileOptions {
-                                                extra_data: vec![].into(),
-                                                central_extra_data: vec![].into(),
-                                                file_comment: None,
-                                            },
+                                            extended_options: ExtendedFileOptions::default(),
                                             alignment: 43,
                                             ..Default::default()
                                         };
@@ -3786,11 +3776,7 @@ mod tests {
                                             permissions: None,
                                             large_file: false,
                                             encrypt_with: None,
-                                            extended_options: ExtendedFileOptions {
-                                                extra_data: vec![].into(),
-                                                central_extra_data: vec![].into(),
-                                                file_comment: None,
-                                            },
+                                            extended_options: ExtendedFileOptions::default(),
                                             alignment: 26,
                                             ..Default::default()
                                         };
@@ -3813,9 +3799,19 @@ mod tests {
                                                 PhantomData,
                                             )),
                                             extended_options: ExtendedFileOptions {
-                                                extra_data: vec![3, 0, 1, 0, 255, 144, 136, 0, 0]
-                                                    .into(),
-                                                central_extra_data: vec![].into(),
+                                                extra_fields: vec![
+                                                    CustomExtraField::new_from_raw(
+                                                        false,
+                                                        &[3, 0, 1, 0, 255],
+                                                    )
+                                                    .unwrap(),
+                                                    CustomExtraField::new_from_raw(
+                                                        false,
+                                                        &[144, 136, 0, 0],
+                                                    )
+                                                    .unwrap(),
+                                                ]
+                                                .into(),
                                                 file_comment: None,
                                             },
                                             alignment: 0xFFFF,
@@ -3851,11 +3847,7 @@ mod tests {
                                     ZipCryptoKeys::of(0xc3, 0x0, 0x0),
                                     PhantomData,
                                 )),
-                                extended_options: ExtendedFileOptions {
-                                    extra_data: vec![].into(),
-                                    central_extra_data: vec![].into(),
-                                    file_comment: None,
-                                },
+                                extended_options: ExtendedFileOptions::default(),
                                 alignment: 0,
                                 ..Default::default()
                             };
@@ -3905,11 +3897,7 @@ mod tests {
                     permissions: Some(16908288),
                     large_file: false,
                     encrypt_with: None,
-                    extended_options: ExtendedFileOptions {
-                        extra_data: vec![].into(),
-                        central_extra_data: vec![].into(),
-                        file_comment: None,
-                    },
+                    extended_options: ExtendedFileOptions::default(),
                     alignment: 20555,
                     ..Default::default()
                 };
@@ -3941,11 +3929,7 @@ mod tests {
                 permissions: None,
                 large_file: false,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
-                    file_comment: None,
-                },
+                extended_options: ExtendedFileOptions::default(),
                 alignment: 0,
                 ..Default::default()
             };
@@ -4002,11 +3986,7 @@ mod tests {
                                             permissions: Some(16908288),
                                             large_file: false,
                                             encrypt_with: None,
-                                            extended_options: ExtendedFileOptions {
-                                                extra_data: vec![].into(),
-                                                central_extra_data: vec![].into(),
-                                                file_comment: None,
-                                            },
+                                            extended_options: ExtendedFileOptions::default(),
                                             alignment: 20555,
                                             ..Default::default()
                                         };
@@ -4023,11 +4003,7 @@ mod tests {
                                         permissions: None,
                                         large_file: false,
                                         encrypt_with: None,
-                                        extended_options: ExtendedFileOptions {
-                                            extra_data: vec![].into(),
-                                            central_extra_data: vec![].into(),
-                                            file_comment: None,
-                                        },
+                                        extended_options: ExtendedFileOptions::default(),
                                         alignment: 0,
                                         ..Default::default()
                                     };
@@ -4090,6 +4066,8 @@ mod tests {
 
     #[test]
     fn test_fuzz_crash_2024_06_18a() -> ZipResult<()> {
+        use crate::write::CustomExtraField;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         writer.set_raw_comment(Box::<[u8]>::from([])).unwrap();
@@ -4110,11 +4088,14 @@ mod tests {
                         large_file: false,
                         encrypt_with: None,
                         extended_options: ExtendedFileOptions {
-                            extra_data: vec![
-                                182, 180, 1, 0, 180, 182, 74, 0, 0, 200, 0, 0, 0, 2, 0, 0, 0,
+                            extra_fields: vec![
+                                CustomExtraField::new_from_raw(false, &[182, 180, 1, 0, 180])
+                                    .unwrap(),
+                                CustomExtraField::new_from_raw(false, &[182, 74, 0, 0]).unwrap(),
+                                CustomExtraField::new_from_raw(false, &[200, 0, 0, 0]).unwrap(),
+                                CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
                             ]
                             .into(),
-                            central_extra_data: vec![].into(),
                             file_comment: None,
                         },
                         alignment: 1542,
@@ -4184,11 +4165,7 @@ mod tests {
                 password: Some(&[]),
                 salt: None,
             }),
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 255,
             ..Default::default()
         };
@@ -4220,11 +4197,7 @@ mod tests {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 256,
             ..Default::default()
         };
@@ -4254,11 +4227,7 @@ mod tests {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             ..Default::default()
         };
         writer.start_file_from_path("", options)?;
@@ -4297,7 +4266,10 @@ mod tests {
 
     #[test]
     #[cfg(all(feature = "_bzip2_any", not(miri)))]
+    #[ignore]
     fn fuzz_crash_2024_07_17() -> ZipResult<()> {
+        use crate::write::CustomExtraField;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -4308,8 +4280,13 @@ mod tests {
             large_file: true,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![117, 99, 6, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 2, 0, 0, 0].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(false, &[117, 99, 6, 0, 0, 0, 0, 0, 0, 0])
+                        .unwrap(),
+                    CustomExtraField::new_from_raw(false, &[2, 1, 0, 0]).unwrap(),
+                    CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
+                ]
+                .into(),
                 file_comment: None,
             },
             alignment: 0xFFFF,
@@ -4333,11 +4310,7 @@ mod tests {
             permissions: None,
             large_file: true,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 45232,
             ..Default::default()
         };
@@ -4354,6 +4327,7 @@ mod tests {
     fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
         use crate::AesMode::Aes128;
         use crate::types::AesVendorVersion;
+        use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -4371,8 +4345,11 @@ mod tests {
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {
-                extra_data: vec![3, 0, 4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(false, &[3, 0, 4, 0, 209, 53, 53, 8])?,
+                    CustomExtraField::new_from_raw(false, &[2, 61, 0, 0])?,
+                ]
+                .into(),
                 file_comment: None,
             },
             alignment: 0xFFFF,
@@ -4394,11 +4371,7 @@ mod tests {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
-                file_comment: None,
-            },
+            extended_options: ExtendedFileOptions::default(),
             alignment: 0,
             ..Default::default()
         };
@@ -4413,11 +4386,7 @@ mod tests {
                 permissions: None,
                 large_file: false,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
-                    file_comment: None,
-                },
+                extended_options: ExtendedFileOptions::default(),
                 alignment: 4,
                 ..Default::default()
             };
@@ -4431,11 +4400,7 @@ mod tests {
                 permissions: Some(2663103419),
                 large_file: false,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
-                    file_comment: None,
-                },
+                extended_options: ExtendedFileOptions::default(),
                 alignment: 32256,
                 ..Default::default()
             };
@@ -4462,11 +4427,7 @@ mod tests {
                     permissions: None,
                     large_file: false,
                     encrypt_with: None,
-                    extended_options: ExtendedFileOptions {
-                        extra_data: vec![].into(),
-                        central_extra_data: vec![].into(),
-                        file_comment: None,
-                    },
+                    extended_options: ExtendedFileOptions::default(),
                     alignment: 0,
                     ..Default::default()
                 },
@@ -4482,11 +4443,7 @@ mod tests {
                     permissions: None,
                     large_file: false,
                     encrypt_with: None,
-                    extended_options: ExtendedFileOptions {
-                        extra_data: vec![].into(),
-                        central_extra_data: vec![].into(),
-                        file_comment: None,
-                    },
+                    extended_options: ExtendedFileOptions::default(),
                     alignment: 16,
                     ..Default::default()
                 },

@@ -1,5 +1,7 @@
 //! Types for extra fields
 
+use crate::result::ZipResult;
+use crate::result::invalid;
 use core::fmt::Display;
 
 mod aex_encryption;
@@ -180,3 +182,60 @@ pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
     0xe57a, // Korean ZIP code page info
     0xfd4a, // SMS/QDOS
 ];
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) struct CustomExtraField {
+    pub(crate) central_only: bool,
+    header_id: u16,
+    data: Box<[u8]>,
+}
+
+impl CustomExtraField {
+    pub(crate) fn new(central_only: bool, header_id: u16, data: &[u8]) -> Self {
+        Self {
+            central_only,
+            header_id,
+            data: data.into(),
+        }
+    }
+
+    #[allow(unused)] // used for tests
+    pub(crate) fn new_from_raw(central_only: bool, data: &[u8]) -> ZipResult<Self> {
+        if data.len() < 2 {
+            return Err(invalid!("Cannot build a CustomExtraField: no header_id"));
+        }
+        let header_id = u16::from_le_bytes([data[0], data[1]]);
+        if data.len() < 4 {
+            return Err(invalid!("Cannot build a CustomExtraField: no size"));
+        }
+        let size = u16::from_le_bytes([data[2], data[3]]) as usize;
+        if size > u16::MAX as usize {
+            return Err(invalid!("Cannot build a CustomExtraField: size too big"));
+        }
+        let data_rest = &data[4..];
+        if size != data_rest.len() {
+            return Err(invalid!("Cannot build a CustomExtraField: incorrect size"));
+        }
+        Ok(Self {
+            central_only,
+            header_id,
+            data: data[2..].to_vec().into_boxed_slice(),
+        })
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        let size = self.data.len();
+        2 + 2 + size
+    }
+
+    pub(crate) fn serialize(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(4 + self.data.len());
+
+        out.extend_from_slice(&self.header_id.to_le_bytes());
+        let size = self.data.len() as u16;
+        out.extend_from_slice(&size.to_le_bytes());
+        out.extend_from_slice(&self.data);
+
+        out
+    }
+}
