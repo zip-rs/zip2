@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0-pre1.1](https://github.com/zip-rs/zip2/compare/v9.0.0-pre1...v9.0.0-pre1.1) - 2026-05-11
+
+### <!-- 2 -->🚜 Refactor
+
+- move types to zip format folder ([#827](https://github.com/zip-rs/zip2/pull/827))
+- split `read.rs` file to read folder ([#832](https://github.com/zip-rs/zip2/pull/832))
+- move tests outside of read.rs ([#829](https://github.com/zip-rs/zip2/pull/829))
+- add doc and remove useless variables ([#828](https://github.com/zip-rs/zip2/pull/828))
+- update some extra field ([#821](https://github.com/zip-rs/zip2/pull/821))
+- Allow zip file with data descriptor using `ZipReadOptions` ([#823](https://github.com/zip-rs/zip2/pull/823))
+- allow AES in zip file stream ([#820](https://github.com/zip-rs/zip2/pull/820))
+
 ## [9.0.0-pre1](https://github.com/zip-rs/zip2/compare/v8.6.0...v9.0.0-pre1) - 2026-05-05
 
 ### <!-- 0 -->🚀 Features
