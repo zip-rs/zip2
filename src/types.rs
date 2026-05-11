@@ -442,14 +442,14 @@ impl ZipFileData {
             }
             return Err(e.into());
         }
-        let mut extra_field = vec![0u8; extra_field_length];
+        let mut extra_fields_raw = vec![0u8; extra_field_length];
         if let Err(e) = reader.read_exact(&mut extra_field) {
             if e.kind() == std::io::ErrorKind::UnexpectedEof {
                 return Err(invalid!("Extra field extends beyond file boundary"));
             }
             return Err(e.into());
         }
-
+        let extra_fields = ExtraFields::parse(&extra_fields_raw, block, &mut file_name_raw);
         let (version_made_by, system) = System::extract_bytes(version_made_by);
         let data = ZipFileData {
             system,
@@ -460,8 +460,6 @@ impl ZipFileData {
             crc32,
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
-            extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
-            central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
             // header_start and data start are not available, but also don't matter, since seeking is
             // not available.
@@ -474,7 +472,7 @@ impl ZipFileData {
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
-            extra_fields: ExtraFields::new(),
+            extra_fields,
             extra_data_start: None,
         };
         Ok((data, file_name_raw))

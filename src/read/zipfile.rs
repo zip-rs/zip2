@@ -327,7 +327,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 impl<R: Read> ZipFile<'_, R> {
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
-        self.data.extra_fields.0.iter()
+        self.data.extra_fields.inner.iter()
     }
 }
 

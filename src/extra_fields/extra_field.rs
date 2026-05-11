@@ -55,11 +55,15 @@ pub enum ExtraField {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ExtraFields(Vec<ExtraField>);
+pub struct ExtraFields {
+    pub(crate) inner: Vec<ExtraField>
+}
 
 impl ExtraFields {
     pub(crate) fn new() -> Self {
-        Self(Vec::new())
+        Self {
+            inner: Vec::new()
+        }
     }
 
     pub(crate) fn parse<R: Read>(
@@ -71,18 +75,17 @@ impl ExtraFields {
         let mut extra_fields = Vec::new();
         while reader.position() < buff.len() {
             let parsed_extra_field = ExtraField::parse(&mut reader, file)?;
-            let Some(parsed_extra_field) = parsed_extra_field else {
-                return Ok(false);
-            };
             parsed_extra_field.use_with(file, file_name_raw);
             extra_fields.push(parsed_extra_field);
         }
-        Ok(Self(extra_fields))
+        Ok(Self {
+            inner: extra_fields
+        })
     }
 }
 
 impl ExtraField {
-    pub(crate) fn parse<R: Read>(reader: &mut R, file: &ZipFileData) -> ZipResult<Option<Self>> {
+    pub(crate) fn parse<R: Read>(reader: &mut R, file: &ZipFileData) -> ZipResult<Self> {
         let kind = match reader.read_u16_le() {
             Ok(kind) => kind,
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
@@ -166,7 +169,7 @@ impl ExtraField {
                 // Other fields are ignored
             }
         };
-        Ok(Some(parsed_extra_field))
+        Ok(parsed_extra_field)
     }
 
     pub(crate) fn use_with(&self, file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) {

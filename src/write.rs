@@ -3,7 +3,7 @@
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
-use crate::extra_fields::UsedExtraField;
+use crate::extra_fields::{UsedExtraField, ExtraField, ExtraFields};
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
@@ -2400,16 +2400,14 @@ fn update_aes_extra_data<W: Write + Seek>(
     aes_extra_field.write(&mut buf.as_mut_slice())?;
     writer.write_all(&buf)?;
 
-    let aes_extra_data_start = file.aes_extra_data_start as usize;
-    let Some(ref mut extra_field) = file.extra_field else {
-        return Err(invalid!(
-            "update_aes_extra_data called on a file that has no extra-data field"
-        ));
-    };
-    let mut vec = extra_field.to_vec();
-    vec[aes_extra_data_start..aes_extra_data_start + AexEncryption::FULL_SIZE]
-        .copy_from_slice(&buf);
-    *extra_field = Arc::from(vec.into_boxed_slice());
+    // edit the extra field
+    if let Some(ExtraField::AeXEncryption { aes_vendor_version, ..}) = file
+        .extra_fields.inner
+            .iter_mut()
+            .find(|f| matches!(f, ExtraField::AeXEncryption{..}))
+    {
+        aes_vendor_version = version;
+    }
 
     Ok(())
 }

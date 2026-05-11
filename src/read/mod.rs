@@ -527,7 +527,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
-        extra_fields: Vec::new(),
+        extra_fields: ExtraFields::new(),
     };
     let extra = ExtraFields::parse(&mut extra_field, &mut result, &mut file_name_raw)?;
     result.extra_fields = extra;
