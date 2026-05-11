@@ -219,7 +219,7 @@ impl CustomExtraField {
         Ok(Self {
             central_only,
             header_id,
-            data: data[2..].to_vec().into_boxed_slice(),
+            data: data_rest.to_vec().into_boxed_slice(),
         })
     }
 
