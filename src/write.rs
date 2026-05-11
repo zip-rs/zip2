@@ -4266,7 +4266,6 @@ mod tests {
 
     #[test]
     #[cfg(all(feature = "_bzip2_any", not(miri)))]
-    #[ignore]
     fn fuzz_crash_2024_07_17() -> ZipResult<()> {
         use crate::write::CustomExtraField;
 
