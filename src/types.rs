@@ -3,7 +3,7 @@
 use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
-use crate::extra_fields::ExtraField;
+use crate::extra_fields::ExtraFields;
 use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
@@ -117,10 +117,6 @@ pub struct ZipFileData {
     pub compressed_size: u64,
     /// Size of the file when extracted
     pub uncompressed_size: u64,
-    /// Extra field usually used for storage expansion
-    pub extra_field: Option<Arc<[u8]>>,
-    /// Extra field only written to central directory
-    pub central_extra_field: Option<Arc<[u8]>>,
     /// File comment
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
@@ -139,11 +135,8 @@ pub struct ZipFileData {
     pub large_file: bool,
     /// AES settings if applicable
     pub aes_mode: Option<(AesMode, AesVendorVersion)>,
-    /// Specifies where in the extra data the AES metadata starts
-    pub aes_extra_data_start: u64,
-
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
-    pub extra_fields: Vec<ExtraField>,
+    pub extra_fields: ExtraFields,
 }
 
 impl ZipFileData {
@@ -715,8 +708,6 @@ mod tests {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            extra_field: None,
-            central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
             extra_data_start: None,
@@ -726,7 +717,7 @@ mod tests {
             large_file: false,
             aes_mode: None,
             aes_extra_data_start: 0,
-            extra_fields: Vec::new(),
+            extra_fields: ExtraFields::new(),
         };
         assert_eq!(
             data.file_name_sanitized(&file_name),

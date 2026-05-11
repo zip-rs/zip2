@@ -13,8 +13,10 @@ use crate::result::invalid;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
+use crate::format::flags::ZipFlags;
 use std::io::ErrorKind;
 use std::io::Read;
+use std::io::Cursor;
 
 /// contains one extra field
 #[derive(Debug, Clone)]
@@ -50,6 +52,25 @@ pub enum ExtraField {
     UnicodePath(UnicodeExtraField),
     /// Unknown
     Unknown(Vec<u8>),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExtraFields(Vec<ExtraField>);
+
+impl ExtraFields {
+    pub(crate) fn parse<R: Read>(buff: &[u8], file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) -> ZipResult<Self> {
+        let mut reader = Cursor::new(buff);
+        let mut extra_fields = Vec::new();
+        while reader.position() < buff.len() {
+            let parsed_extra_field = ExtraField::parse(reader, file)?;
+            let Some(parsed_extra_field) = parsed_extra_field else {
+                return Ok(false);
+            };
+            parsed_extra_field.use_with(file, file_name_raw);
+            extra_fields.push(parsed_extra_field);
+        }
+        Ok(extra_fields)
+    }
 }
 
 impl ExtraField {
@@ -138,5 +159,58 @@ impl ExtraField {
             }
         };
         Ok(Some(parsed_extra_field))
+    }
+
+    pub(crate) fn use_with(&self, file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) {
+        match self {
+            // Zip64 extended information extra field
+            ExtraField::Zip64ExtendedInformation {
+                uncompressed_size,
+                compressed_size,
+                header_start,
+            } => {
+                if disallow_zip64 {
+                    return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
+                }
+                file.large_file = true;
+                file.uncompressed_size = uncompressed_size;
+                file.compressed_size = compressed_size;
+                file.header_start = header_start;
+                return Ok(true);
+            }
+            ExtraField::Ntfs(ntfs) => {
+                // NTFS extra field
+            }
+            ExtraField::AeXEncryption {
+                aes_mode,
+                aes_vendor_version,
+                compression_method,
+            } => {
+                file.aes_mode = Some((aes_mode, aes_vendor_version));
+                file.compression_method = compression_method;
+                file.aes_extra_data_start = bytes_already_read;
+            }
+            ExtraField::ExtendedTimestamp(extended_timestamp) => {
+                // nothing to do
+            }
+            ExtraField::UnicodeComment(unicode_comment) => {
+                // Info-ZIP Unicode Comment Extra Field
+                // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
+                file.file_comment = String::from_utf8(
+                    unicode_comment
+                    .unwrap_valid(file.file_comment.as_bytes())?
+                    .into_vec(),
+                )?
+                    .into();
+                }
+            ExtraField::UnicodePath(unicode_path) => {
+                // Info-ZIP Unicode Path Extra Field
+                // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
+                let file_name = unicode_path.unwrap_valid(file_name_raw)?;
+                *file_name_raw = file_name.into_vec();
+                file.flags |= ZipFlags::LanguageEncoding.as_u16();
+            }
+            ExtraField::Unknown(_) => {}
+        }
     }
 }

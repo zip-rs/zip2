@@ -2,7 +2,7 @@
 
 use crate::CompressionMethod;
 use crate::DateTime;
-use crate::ExtraField;
+use crate::read::ExtraField;
 use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
 use crate::read::RootDirFilter;
