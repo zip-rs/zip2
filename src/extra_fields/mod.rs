@@ -209,7 +209,7 @@ impl CustomExtraField {
             return Err(invalid!("Cannot build a CustomExtraField: no size"));
         }
         let size = u16::from_le_bytes([data[2], data[3]]) as usize;
-        if size > u16::MAX as usize {
+        if size > (u16::MAX - 4) as usize {
             return Err(invalid!("Cannot build a CustomExtraField: size too big"));
         }
         let data_rest = &data[4..];
