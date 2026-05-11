@@ -8,6 +8,7 @@ use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::spec::ZipLocalEntryBlock;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
@@ -50,6 +51,7 @@ pub enum ExtraField {
     UnicodeComment(UnicodeExtraField),
     /// UnicodePath
     UnicodePath(UnicodeExtraField),
+    DataStreamAlignment(u64),
     /// Unknown
     Unknown(Vec<u8>),
 }
@@ -66,15 +68,25 @@ impl ExtraFields {
         }
     }
 
+    pub(crate) fn strip_alignment_extra_field(&mut self, remove_zip64: bool) -> ExtraFields {
+        self.inner.retain(|extra| {
+            if remove_zip64 {
+                matches!(extra, ExtraField::DataStreamAlignment(_))
+            } else {
+                matches!(extra, ExtraField::DataStreamAlignment(_) | ExtraField::Zip64ExtendedInformation { ..})
+            }
+        })
+    }
     pub(crate) fn parse<R: Read>(
         buff: &[u8],
+        block: &ZipLocalEntryBlock,
         file: &mut ZipFileData,
         file_name_raw: &mut Vec<u8>,
     ) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
         while reader.position() < buff.len() {
-            let parsed_extra_field = ExtraField::parse(&mut reader, file)?;
+            let parsed_extra_field = ExtraField::parse(&mut reader, block)?;
             parsed_extra_field.use_with(file, file_name_raw);
             extra_fields.push(parsed_extra_field);
         }
@@ -85,7 +97,7 @@ impl ExtraFields {
 }
 
 impl ExtraField {
-    pub(crate) fn parse<R: Read>(reader: &mut R, file: &ZipFileData) -> ZipResult<Self> {
+    pub(crate) fn parse<R: Read>(reader: &mut R, file: &ZipLocalEntryBlock) -> ZipResult<Self> {
         let kind = match reader.read_u16_le() {
             Ok(kind) => kind,
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
@@ -180,9 +192,6 @@ impl ExtraField {
                 compressed_size,
                 header_start,
             } => {
-                if disallow_zip64 {
-                    return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
-                }
                 file.large_file = true;
                 file.uncompressed_size = uncompressed_size;
                 file.compressed_size = compressed_size;

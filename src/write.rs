@@ -6,7 +6,7 @@ use crate::extra_fields::AexEncryption;
 use crate::extra_fields::{UsedExtraField, ExtraField, ExtraFields};
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
-use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
+use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipLocalEntryBlock};
 use crate::types::EncryptWith;
@@ -284,10 +284,6 @@ mod sealed {
     /// File options Extensions
     #[doc(hidden)]
     pub trait FileOptionExtension: Default + Sealed {
-        /// Extra Data
-        fn extra_data(&self) -> Option<&Arc<Vec<u8>>>;
-        /// Central Extra Data
-        fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>>;
         /// File Comment
         fn file_comment(&self) -> Option<&str>;
         /// Take File Comment (moves ownership)
@@ -295,12 +291,6 @@ mod sealed {
     }
     impl Sealed for () {}
     impl FileOptionExtension for () {
-        fn extra_data(&self) -> Option<&Arc<Vec<u8>>> {
-            None
-        }
-        fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
-            None
-        }
         fn file_comment(&self) -> Option<&str> {
             None
         }
@@ -332,8 +322,7 @@ pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
-    extra_data: Arc<Vec<u8>>,
-    central_extra_data: Arc<Vec<u8>>,
+    extra_data: ExtraFields,
     file_comment: Option<Box<str>>,
 }
 
@@ -445,13 +434,13 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(
-                &mut ZipFileData::default(),
+            let extra_field = ExtraField::parse(
                 &mut data,
-                pos,
-                disallow_zip64,
-                &mut Vec::new(),
+                &mut ZipLocalBlock::default(),
             )?;
+            if disallow_zip64 {
+                    return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
+            }
             pos = data.position();
         }
         Ok(())
@@ -916,14 +905,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + dest_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
-        if let Some(extra) = &src_data.extra_field {
-            let stripped = strip_alignment_extra_field(extra, false);
-            if stripped.is_empty() {
-                new_data.extra_field = None;
-            } else {
-                new_data.extra_field = Some(Arc::from(stripped.into_boxed_slice()));
-            }
-        }
+        strip_alignment_extra_field(&mut extra, false);
 
         let mut data_start = extra_data_start;
         if let Some(extra) = &new_data.extra_field {
@@ -1160,16 +1142,13 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
         });
 
-        let mut extra_data = match options.extended_options.extra_data() {
+        let mut extra_fields = match options.extended_options.extra_data() {
             Some(data) => data.to_vec(),
             None => vec![],
         };
         let central_extra_data = options.extended_options.central_extra_data();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            let mut new_extra_data = Vec::with_capacity(zip64_block.full_size() + extra_data.len());
-            zip64_block.write(&mut new_extra_data)?;
-            new_extra_data.extend_from_slice(&extra_data);
-            extra_data = new_extra_data;
+            extra_fields.push(ExtraField::Zip64ExtendedInformation { });
         }
 
         // Figure out the underlying compression_method and aes mode when using
@@ -1187,16 +1166,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             }) => {
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
-                let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
-                let mut buf = [0u8; AexEncryption::EXTRA_FIELD_SIZE as usize];
-                aex_extra_field.write_data(&mut buf.as_mut_slice())?;
-
-                aes_extra_data_start = extra_data.len() as u64;
-                ExtendedFileOptions::add_extra_data_unchecked(
-                    &mut extra_data,
-                    UsedExtraField::AeXEncryption.as_u16(),
-                    &buf,
-                )?;
+                extra_fields.push(ExtraField::AeXEncryption {
+                    mode,
+                    aes_vendor_version: vendor_version,
+                    compression_method,
+                });
                 Some((mode, vendor_version))
             }
             _ => None,
@@ -1233,15 +1207,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
             }
         }
-        let extra_data_len = extra_data.len();
-        if let Some(data) = central_extra_data {
-            if extra_data_len + data.len() > u16::MAX as usize {
-                return Err(invalid!(
-                    "Extra data and central extra data must be less than 64KiB when combined"
-                ));
-            }
-            ExtendedFileOptions::validate_extra_data(data, true)?;
-        }
+        return Err(invalid!(
+                "Extra data and central extra data must be less than 64KiB when combined"
+        ));
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -1251,7 +1219,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             aes_extra_data_start,
             compression_method,
             aes_mode_options,
-            &extra_data,
+            &extra_fields,
         );
         if let Some(comment) = options.extended_options.take_file_comment() {
             if comment.len() > u16::MAX as usize {
@@ -1277,10 +1245,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             block.write(writer)?;
             // file name
             writer.write_all(file_name_raw)?;
-            if extra_data_len > 0 {
-                writer.write_all(&extra_data)?;
-                file.extra_field = Some(Arc::from(extra_data.into_boxed_slice()));
-            }
+            file.extra_fields.write_local_fields(writer);
             Ok(())
         };
         self.ok_or_abort_file(result)?;
@@ -2401,7 +2366,7 @@ fn update_aes_extra_data<W: Write + Seek>(
     writer.write_all(&buf)?;
 
     // edit the extra field
-    if let Some(ExtraField::AeXEncryption { aes_vendor_version, ..}) = file
+    if let Some(ExtraField::AeXEncryption { aes_vendor_version, .. }) = file
         .extra_fields.inner
             .iter_mut()
             .find(|f| matches!(f, ExtraField::AeXEncryption{..}))
@@ -2472,71 +2437,13 @@ impl ZipFileData {
         writer: &mut T,
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
-        let mut block = self.block(file_name_raw)?;
-        let stripped_extra = if let Some(extra) = &self.extra_field {
-            strip_alignment_extra_field(extra, true)
-        } else {
-            Vec::new()
-        };
-        let central_len = self.central_extra_field_len();
-        let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
-            self.large_file,
-            self.uncompressed_size,
-            self.compressed_size,
-            self.header_start,
-        );
-        let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
-            zip64.full_size()
-        } else {
-            0
-        };
-        let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
-        block.extra_field_length = u16::try_from(total_extra_len)
-            .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
-
-        block.write(writer)?;
-        // file name
-        writer.write_all(file_name_raw)?;
-        // extra field
-        if let Some(zip64_extra_field) = zip64_extra_field_block {
-            zip64_extra_field.write(writer)?;
-        }
-        if !stripped_extra.is_empty() {
-            writer.write_all(&stripped_extra)?;
-        }
-        if let Some(central_extra_field) = &self.central_extra_field {
-            writer.write_all(central_extra_field)?;
-        }
-        // file comment
-        writer.write_all(self.file_comment.as_bytes())?;
+        let mut block = self.central_block(file_name_raw)?;
+        block.write_full_block(writer, file_name_raw, &self.extra_fields, self.file_comment.as_bytes())?;
 
         Ok(())
     }
 }
 
-pub(crate) fn strip_alignment_extra_field(extra_field: &[u8], remove_zip64: bool) -> Vec<u8> {
-    let mut new_extra = Vec::with_capacity(extra_field.len());
-    let mut cursor = 0;
-    while cursor + 4 <= extra_field.len() {
-        let tag = u16::from_le_bytes([extra_field[cursor], extra_field[cursor + 1]]);
-        let len = u16::from_le_bytes([extra_field[cursor + 2], extra_field[cursor + 3]]) as usize;
-        if cursor + 4 + len > extra_field.len() {
-            new_extra.extend_from_slice(&extra_field[cursor..]);
-            break;
-        }
-
-        if tag != UsedExtraField::DataStreamAlignment.as_u16()
-            && !(tag == UsedExtraField::Zip64ExtendedInfo.as_u16() && remove_zip64)
-        {
-            new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
-        }
-        cursor += 4 + len;
-    }
-    if cursor < extra_field.len() {
-        new_extra.extend_from_slice(&extra_field[cursor..]);
-    }
-    new_extra
-}
 
 /// Wrapper around a [Write] implementation that implements the [Seek] trait, but where seeking
 /// returns an error unless it's a no-op.

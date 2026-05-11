@@ -508,6 +508,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
+    let extra_fields = ExtraFields::parse(&mut extra_field, &block, &mut result, &mut file_name_raw)?;
     // Construct the result
     let mut result = ZipFileData {
         system,
@@ -518,7 +519,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
         flags,
-        extra_field: Some(Arc::from(extra_field)),
         file_comment,
         header_start: offset.into(),
         extra_data_start: None,
@@ -527,10 +527,8 @@ fn central_header_to_zip_file_inner<R: Read>(
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
-        extra_fields: ExtraFields::new(),
+        extra_fields,
     };
-    let extra = ExtraFields::parse(&mut extra_field, &mut result, &mut file_name_raw)?;
-    result.extra_fields = extra;
 
     // Account for shifted zip offsets.
     result.header_start = result

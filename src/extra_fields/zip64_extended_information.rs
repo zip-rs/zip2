@@ -166,8 +166,8 @@ impl Zip64ExtendedInformation {
     pub(crate) fn parse<R: Read>(
         reader: &mut R,
         len: u16,
-        uncompressed_size: u64,
-        compressed_size: u64,
+        uncompressed_size: u32,
+        compressed_size: u32,
         header_start: u64,
     ) -> ZipResult<(u64, u64, u64)> {
         let mut consumed_len = 0;

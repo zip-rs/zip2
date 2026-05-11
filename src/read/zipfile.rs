@@ -274,11 +274,6 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         self.get_metadata().crc32
     }
 
-    /// Get the extra data of the zip header for this file
-    pub fn extra_data(&self) -> Option<&[u8]> {
-        self.get_metadata().extra_field.as_deref()
-    }
-
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> Option<u64> {
         self.data.data_start.get().copied()

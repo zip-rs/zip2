@@ -323,20 +323,6 @@ impl ZipFileData {
             .max(crypto_version)
             .max(misc_feature_version)
     }
-    #[inline(always)]
-    pub(crate) fn extra_field_len(&self) -> usize {
-        self.extra_field
-            .as_ref()
-            .map(|v| v.len())
-            .unwrap_or_default()
-    }
-    #[inline(always)]
-    pub(crate) fn central_extra_field_len(&self) -> usize {
-        self.central_extra_field
-            .as_ref()
-            .map(|v| v.len())
-            .unwrap_or_default()
-    }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
@@ -348,7 +334,7 @@ impl ZipFileData {
         aes_extra_data_start: u64,
         compression_method: CompressionMethod,
         aes_settings: Option<(AesMode, AesVendorVersion)>,
-        extra_field: &[u8],
+        extra_fields: ExtraFields,
     ) -> Self {
         let permissions = options
             .permissions
@@ -394,7 +380,6 @@ impl ZipFileData {
             crc32: raw_values.crc32,
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
-            extra_field: Some(Arc::from(extra_field)),
             central_extra_field: options
                 .extended_options
                 .central_extra_data()
@@ -406,7 +391,7 @@ impl ZipFileData {
             external_attributes,
             large_file: options.large_file,
             aes_mode: aes_settings,
-            extra_fields: ExtraFields::new(),
+            extra_fields,
             extra_data_start,
         };
         local_block.version_made_by = local_block.version_needed() as u8;
@@ -415,8 +400,8 @@ impl ZipFileData {
 
     pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
         block: ZipLocalEntryBlock,
-        reader: &mut R,
-    ) -> ZipResult<(Self, Vec<u8>)> {
+        extra_fields: ExtraFields,
+    ) -> ZipResult<Self> {
         let ZipLocalEntryBlock {
             version_made_by,
             flags,
@@ -426,30 +411,10 @@ impl ZipFileData {
             crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length,
-            extra_field_length,
             ..
         } = block;
 
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
-        let file_name_length: usize = file_name_length.into();
-        let extra_field_length: usize = extra_field_length.into();
-
-        let mut file_name_raw = vec![0u8; file_name_length];
-        if let Err(e) = reader.read_exact(&mut file_name_raw) {
-            if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Err(invalid!("File name extends beyond file boundary"));
-            }
-            return Err(e.into());
-        }
-        let mut extra_fields_raw = vec![0u8; extra_field_length];
-        if let Err(e) = reader.read_exact(&mut extra_field) {
-            if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Err(invalid!("Extra field extends beyond file boundary"));
-            }
-            return Err(e.into());
-        }
-        let extra_fields = ExtraFields::parse(&extra_fields_raw, block, &mut file_name_raw);
         let (version_made_by, system) = System::extract_bytes(version_made_by);
         let data = ZipFileData {
             system,
@@ -475,7 +440,7 @@ impl ZipFileData {
             extra_fields,
             extra_data_start: None,
         };
-        Ok((data, file_name_raw))
+        Ok(data)
     }
 
     fn flags(&self, file_name_raw: &[u8]) -> u16 {
@@ -548,7 +513,7 @@ impl ZipFileData {
         })
     }
 
-    pub(crate) fn block(&self, file_name_raw: &[u8]) -> ZipResult<ZipCentralEntryBlock> {
+    pub(crate) fn central_block(&self, file_name_raw: &[u8]) -> ZipResult<ZipCentralEntryBlock> {
         let compressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
         } else {
@@ -574,7 +539,7 @@ impl ZipFileData {
             .extra_field_len()
             .try_into()
             .map_err(std::io::Error::other)?;
-        let central_extra_field_len: u16 = self
+        let central_extra_field_len: u16 = self.extra_fields
             .central_extra_field_len()
             .try_into()
             .map_err(std::io::Error::other)?;
