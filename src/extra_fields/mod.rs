@@ -239,3 +239,14 @@ impl CustomExtraField {
         out
     }
 }
+
+#[cfg(feature = "_arbitrary")]
+impl arbitrary::Arbitrary<'_> for CustomExtraField {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(CustomExtraField {
+            central_only: u.arbitrary()?,
+            header_id: u.arbitrary()?,
+            data: u.arbitrary()?,
+        })
+    }
+}

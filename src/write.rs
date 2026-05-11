@@ -385,7 +385,7 @@ impl ExtendedFileOptions {
             Arc::make_mut(&mut self.extra_fields).push(CustomExtraField::new(
                 central_only,
                 header_id,
-                &data,
+                data,
             ));
             Ok(())
         }
