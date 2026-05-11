@@ -183,10 +183,14 @@ pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
     0xfd4a, // SMS/QDOS
 ];
 
+/// A Custom Extra Field
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct CustomExtraField {
+pub struct CustomExtraField {
+    /// Is this extra field central
     pub(crate) central_only: bool,
+    /// Header ID of the extra field
     header_id: u16,
+    /// Data of the extra field
     data: Box<[u8]>,
 }
 
