@@ -302,10 +302,7 @@ mod sealed {
 
     impl FileOptionExtension for ExtendedFileOptions {
         fn extra_data(&self) -> Option<&Arc<Vec<u8>>> {
-            Some(&self.extra_data)
-        }
-        fn central_extra_data(&self) -> Option<&Arc<Vec<u8>>> {
-            Some(&self.central_extra_data)
+            Some(&self.extra_fields)
         }
         fn file_comment(&self) -> Option<&str> {
             self.file_comment.as_ref().map(Box::as_ref)
@@ -322,7 +319,7 @@ pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
-    extra_data: ExtraFields,
+    extra_fields: ExtraFields,
     file_comment: Option<Box<str>>,
 }
 
@@ -350,7 +347,7 @@ impl ExtendedFileOptions {
     /// `u16::MAX`. If adding this field would exceed that limit or produce an
     /// invalid extra data structure, an error is returned and no data is
     /// added.
-    pub fn add_extra_data<D: AsRef<[u8]>>(
+    pub fn add_extra_fields<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
         data: D,
@@ -368,9 +365,13 @@ impl ExtendedFileOptions {
         if local_extra_data_len + central_extra_data_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {
-            let vec = Arc::make_mut(field);
-            Self::add_extra_data_unchecked(vec, header_id, data)?;
-            Self::validate_extra_data(vec, true)?;
+            self.extra_fields.push(
+                ExtraField::Custom {
+                    central_only,
+                    header_id,
+                    data,
+                }
+            );
             Ok(())
         }
     }
@@ -4160,8 +4161,7 @@ mod tests {
             large_file: false,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![],
                 file_comment: None,
             },
             ..Default::default()
@@ -4213,8 +4213,11 @@ mod tests {
             large_file: true,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![117, 99, 6, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 2, 0, 0, 0].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![ExtraField::Custom {
+                    central_only: false,
+                    header_id: [117, 99,],
+                    data: [6, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 2, 0, 0, 0].into(),
+                }],
                 file_comment: None,
             },
             alignment: 0xFFFF,
@@ -4239,8 +4242,7 @@ mod tests {
             large_file: true,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![],
                 file_comment: None,
             },
             alignment: 45232,
@@ -4276,8 +4278,12 @@ mod tests {
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {
-                extra_data: vec![3, 0, 4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),
-                central_extra_data: vec![].into(),
+                extra_fields: vec![ExtraField::Custom {
+                    central_only: false,
+                    header_id: [3,0],
+                        data:
+                            [4, 0, 209, 53, 53, 8, 2, 61, 0, 0].into(),
+                }],
                 file_comment: None,
             },
             alignment: 0xFFFF,
@@ -4300,8 +4306,7 @@ mod tests {
             large_file: false,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![].into(),
+                extra_fields vec![],
                 file_comment: None,
             },
             alignment: 0,
@@ -4319,8 +4324,7 @@ mod tests {
                 large_file: false,
                 encrypt_with: None,
                 extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
+                    extra_fields: vec![],
                     file_comment: None,
                 },
                 alignment: 4,
@@ -4337,8 +4341,7 @@ mod tests {
                 large_file: false,
                 encrypt_with: None,
                 extended_options: ExtendedFileOptions {
-                    extra_data: vec![].into(),
-                    central_extra_data: vec![].into(),
+                    extra_fields: vec![],
                     file_comment: None,
                 },
                 alignment: 32256,
@@ -4368,8 +4371,7 @@ mod tests {
                     large_file: false,
                     encrypt_with: None,
                     extended_options: ExtendedFileOptions {
-                        extra_data: vec![].into(),
-                        central_extra_data: vec![].into(),
+                        extra_fields: vec![],
                         file_comment: None,
                     },
                     alignment: 0,
@@ -4388,8 +4390,7 @@ mod tests {
                     large_file: false,
                     encrypt_with: None,
                     extended_options: ExtendedFileOptions {
-                        extra_data: vec![].into(),
-                        central_extra_data: vec![].into(),
+                        extra_fields: vec![],
                         file_comment: None,
                     },
                     alignment: 16,

@@ -52,6 +52,11 @@ pub enum ExtraField {
     /// UnicodePath
     UnicodePath(UnicodeExtraField),
     DataStreamAlignment(u64),
+    CustomExtraField {
+        local: bool,
+        header_id: u16,
+        data: Vec<u8>,
+    },
     /// Unknown
     Unknown(Vec<u8>),
 }
