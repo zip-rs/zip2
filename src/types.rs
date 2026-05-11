@@ -382,8 +382,8 @@ impl ZipFileData {
             uncompressed_size: raw_values.uncompressed_size,
             central_extra_field: options
                 .extended_options
-                .central_extra_data()
-                .map(|v| Arc::from(v.as_ref().as_slice())),
+                .central_extra_fields()
+                .map(Arc::<[u8]>::from),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,
             data_start: OnceLock::new(),
