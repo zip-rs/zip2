@@ -8,10 +8,12 @@ use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::extra_fields::CustomExtraField;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
 use crate::spec::ZipLocalEntryBlock;
+use crate::spec::BlockGetter;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
@@ -52,11 +54,7 @@ pub enum ExtraField {
     /// UnicodePath
     UnicodePath(UnicodeExtraField),
     DataStreamAlignment(u64),
-    CustomExtraField {
-        local: bool,
-        header_id: u16,
-        data: Vec<u8>,
-    },
+    Custom(CustomExtraField),
     /// Unknown
     Unknown(Vec<u8>),
 }
@@ -71,7 +69,7 @@ impl ExtraFields {
         Self { inner: Vec::new() }
     }
 
-    pub(crate) fn strip_alignment_extra_field(&mut self, remove_zip64: bool) -> ExtraFields {
+    pub(crate) fn strip_alignment_extra_field(&mut self, remove_zip64: bool) {
         self.inner.retain(|extra| {
             if remove_zip64 {
                 matches!(extra, ExtraField::DataStreamAlignment(_))
@@ -83,19 +81,20 @@ impl ExtraFields {
                 )
             }
         });
-        self
     }
-    pub(crate) fn parse<R: Read>(
+    pub(crate) fn parse<B: BlockGetter>(
         buff: &[u8],
-        block: &ZipLocalEntryBlock,
-        file: &mut ZipFileData,
+        block: &B,
         file_name_raw: &mut Vec<u8>,
+        is_local_header: bool,
     ) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
-        while reader.position() < buff.len() {
-            let parsed_extra_field = ExtraField::parse(&mut reader, block)?;
-            parsed_extra_field.use_with(file, file_name_raw);
+        while (reader.position() as usize) < buff.len() {
+            let parsed_extra_field = ExtraField::parse(&mut reader, block, is_local_header)?;
+            let Some(parsed_extra_field) = parsed_extra_field else {
+                break;
+            };
             extra_fields.push(parsed_extra_field);
         }
         Ok(Self {
@@ -105,7 +104,7 @@ impl ExtraFields {
 }
 
 impl ExtraField {
-    pub(crate) fn parse<R: Read>(reader: &mut R, file: &ZipLocalEntryBlock) -> ZipResult<Self> {
+    pub(crate) fn parse<R: Read, B: BlockGetter>(reader: &mut R, file: &B, is_local_header: bool) -> ZipResult<Option<Self>> {
         let kind = match reader.read_u16_le() {
             Ok(kind) => kind,
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
@@ -139,9 +138,9 @@ impl ExtraField {
                 let (new_uncomp, new_comp, new_head) = Zip64ExtendedInformation::parse(
                     reader,
                     len,
-                    file.uncompressed_size,
-                    file.compressed_size,
-                    file.header_start,
+                    file.get_uncompressed_size(),
+                    file.get_compressed_size(),
+                    file.get_header_start(),
                 )?;
                 ExtraField::Zip64ExtendedInformation {
                     uncompressed_size: new_uncomp,
@@ -189,10 +188,10 @@ impl ExtraField {
                 // Other fields are ignored
             }
         };
-        Ok(parsed_extra_field)
+        Ok(Some(parsed_extra_field))
     }
 
-    pub(crate) fn use_with(&self, file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) {
+    pub(crate) fn use_with(&self, file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
         match *self {
             // Zip64 extended information extra field
             ExtraField::Zip64ExtendedInformation {
@@ -204,7 +203,6 @@ impl ExtraField {
                 file.uncompressed_size = uncompressed_size;
                 file.compressed_size = compressed_size;
                 file.header_start = header_start;
-                return Ok(true);
             }
             ExtraField::Ntfs(ntfs) => {
                 // NTFS extra field
@@ -239,5 +237,6 @@ impl ExtraField {
             }
             ExtraField::Unknown(_) => {}
         }
+        Ok(())
     }
 }

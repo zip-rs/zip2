@@ -380,10 +380,6 @@ impl ZipFileData {
             crc32: raw_values.crc32,
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
-            central_extra_field: options
-                .extended_options
-                .central_extra_fields()
-                .map(Arc::<[u8]>::from),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,
             data_start: OnceLock::new(),
@@ -398,7 +394,7 @@ impl ZipFileData {
         local_block
     }
 
-    pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
+    pub(crate) fn from_local_block(
         block: ZipLocalEntryBlock,
         extra_fields: ExtraFields,
     ) -> ZipResult<Self> {
@@ -539,11 +535,7 @@ impl ZipFileData {
             .extra_field_len()
             .try_into()
             .map_err(std::io::Error::other)?;
-        let central_extra_field_len: u16 = self
-            .extra_fields
-            .central_extra_field_len()
-            .try_into()
-            .map_err(std::io::Error::other)?;
+        let central_extra_field_len: u16 = 0;
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);

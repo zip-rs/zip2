@@ -276,6 +276,18 @@ pub(crate) struct ZipCentralEntryBlock {
 
 unsafe impl Pod for ZipCentralEntryBlock {}
 
+impl BlockGetter for ZipCentralEntryBlock {
+    fn get_uncompressed_size(&self) -> u32 {
+        self.uncompressed_size
+    }
+    fn get_compressed_size(&self) -> u32 {
+        self.compressed_size
+    }
+    fn get_header_start(&self) -> Option<u32> {
+        Some(self.offset)
+    }
+}
+
 impl FixedSizeBlock for ZipCentralEntryBlock {
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
@@ -301,44 +313,10 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
     ];
 }
 
-impl ZipCentralEntryBlock {
-    pub(crate) fn write_full_block<W: Write>(
-        &mut self,
-        writer: &mut W,
-        file_name_raw: &[u8],
-        extra_fields: &ExtraFields,
-        file_comment: &[u8],
-    ) -> ZipResult<()> {
-        let stripped_extra = if let Some(extra) = &self.extra_field {
-            strip_alignment_extra_field(extra, true)
-        } else {
-            Vec::new()
-        };
-        let central_len = self.central_extra_field_len();
-        let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
-            self.large_file,
-            self.uncompressed_size,
-            self.compressed_size,
-            self.header_start,
-        );
-        let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
-            zip64.full_size()
-        } else {
-            0
-        };
-        let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
-        self.extra_field_length = u16::try_from(total_extra_len)
-            .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
-
-        self.write(writer)?;
-        // file name
-        writer.write_all(file_name_raw)?;
-        // extra field
-        extra_fields.write_central_fields(writer);
-        // file comment
-        writer.write_all(file_comment)?;
-        Ok(())
-    }
+pub(crate) trait BlockGetter {
+    fn get_uncompressed_size(&self) -> u32;
+    fn get_compressed_size(&self) -> u32;
+    fn get_header_start(&self) -> Option<u32>;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -357,6 +335,18 @@ pub(crate) struct ZipLocalEntryBlock {
 }
 
 unsafe impl Pod for ZipLocalEntryBlock {}
+
+impl BlockGetter for ZipLocalEntryBlock {
+    fn get_uncompressed_size(&self) -> u32 {
+        self.uncompressed_size
+    }
+    fn get_compressed_size(&self) -> u32 {
+        self.compressed_size
+    }
+    fn get_header_start(&self) -> Option<u32> {
+        None
+    }
+}
 
 impl FixedSizeBlock for ZipLocalEntryBlock {
     const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;

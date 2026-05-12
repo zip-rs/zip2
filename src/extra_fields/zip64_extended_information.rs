@@ -168,10 +168,10 @@ impl Zip64ExtendedInformation {
         len: u16,
         uncompressed_size: u32,
         compressed_size: u32,
-        header_start: u64,
+        header_start: Option<u32>,
     ) -> ZipResult<(u64, u64, u64)> {
         let mut consumed_len = 0;
-        let new_uncompressed_size = if len >= 24 || uncompressed_size == ZIP64_BYTES_THR {
+        let new_uncompressed_size = if len >= 24 || u64::from(uncompressed_size) == ZIP64_BYTES_THR {
             let new_uncompressed_size = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -182,10 +182,10 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
             new_uncompressed_size
         } else {
-            uncompressed_size
+            uncompressed_size.into()
         };
 
-        let new_compressed_size = if len >= 24 || compressed_size == ZIP64_BYTES_THR {
+        let new_compressed_size = if len >= 24 || u64::from(compressed_size) == ZIP64_BYTES_THR {
             let new_compressed_size = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -196,10 +196,10 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
             new_compressed_size
         } else {
-            compressed_size
+            compressed_size.into()
         };
 
-        let new_header_start = if len >= 24 || header_start == ZIP64_BYTES_THR {
+        let new_header_start = if len >= 24 {
             let new_header_start = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -210,7 +210,23 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
             new_header_start
         } else {
-            header_start
+            if let Some(header_start) = header_start {
+                if u64::from(header_start) == ZIP64_BYTES_THR {
+                    let new_header_start = match reader.read_u64_le() {
+                        Ok(v) => v,
+                        Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                            return Err(invalid!("ZIP64 extra field truncated"));
+                        }
+                        Err(e) => return Err(e.into()),
+                    };
+                    consumed_len += mem::size_of::<u64>();
+                    new_header_start
+                } else {
+                    header_start.into()
+                }
+            } else {
+                0
+            }
         };
 
         let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {

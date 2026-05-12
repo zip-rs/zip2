@@ -499,7 +499,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     let is_utf8 = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
 
     let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
-    let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
+    let extra_fields_raw = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()
@@ -509,7 +509,7 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
     let extra_fields =
-        ExtraFields::parse(&mut extra_field, &block, &mut result, &mut file_name_raw)?;
+        ExtraFields::parse(&extra_fields_raw, &block, &mut file_name_raw, false)?;
     // Construct the result
     let mut result = ZipFileData {
         system,

@@ -10,7 +10,7 @@ use crate::result::{ZipError, invalid};
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::io::{self, Read};
+use std::io::{self, Read, Cursor};
 use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.
@@ -286,9 +286,8 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
         }
         return Err(e.into());
     }
-
     // parse extra fields
-    let extra_fields = ExtraFields::parse(&extra_fields_raw, block, &mut file_name_raw);
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, &mut file_name_raw, true);
     let extra_fields = match extra_fields {
         Ok(extra_fields) => extra_fields,
         Err(ZipError::Io(..)) => ExtraFields::new(),
