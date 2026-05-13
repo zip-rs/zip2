@@ -409,52 +409,6 @@ impl ExtendedFileOptions {
             Ok(())
         }
     }
-
-    fn validate_extra_fields(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
-        let len = data.len() as u64;
-        if len == 0 {
-            return Ok(());
-        }
-        if len > u64::from(u16::MAX) {
-            return Err(ZipError::Io(io::Error::other(
-                "Extra-data field can't exceed u16::MAX bytes",
-            )));
-        }
-        let mut data = Cursor::new(data);
-        let mut pos = data.position();
-        while pos < len {
-            if len - data.position() < 4 {
-                return Err(ZipError::Io(io::Error::other(
-                    "Extra-data field doesn't have room for ID and length",
-                )));
-            }
-            #[cfg(not(feature = "unreserved"))]
-            {
-                use crate::{
-                    extra_fields::{EXTRA_FIELD_MAPPING, UsedExtraField},
-                    unstable::LittleEndianReadExt,
-                };
-                let header_id = data.read_u16_le()?;
-                // Some extra fields are authorized
-                if let Err(()) = UsedExtraField::try_from(header_id)
-                    && EXTRA_FIELD_MAPPING.contains(&header_id)
-                {
-                    return Err(ZipError::Io(io::Error::other(format!(
-                        "Extra data header ID {header_id:#06} (0x{header_id:x}) \
-                            requires crate feature \"unreserved\"",
-                    ))));
-                }
-                data.seek(SeekFrom::Current(-2))?;
-            }
-            let extra_field =
-                ExtraField::parse(&mut data, &mut ZipLocalEntryBlock::default(), true)?;
-            if disallow_zip64 {
-                return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
-            }
-            pos = data.position();
-        }
-        Ok(())
-    }
 }
 
 impl Debug for ExtendedFileOptions {
@@ -709,9 +663,16 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
             .add_extra_fields(header_id, data, central_only)
     }
 
-    /// Removes the extra data fields.
+    /// Removes the extra fields.
     #[must_use]
+    #[deprecated = "use clear_extra_data"]
     pub fn clear_extra_data(mut self) -> Self {
+        self.clear_extra_fields()
+    }
+
+    /// Removes the extra fields.
+    #[must_use]
+    pub fn clear_extra_fields(mut self) -> Self {
         if !self.extended_options.extra_fields.is_empty() {
             self.extended_options.extra_fields = Arc::new(vec![]);
         }
@@ -1155,7 +1116,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         });
 
         let mut extra_fields = match options.extended_options.extra_fields() {
-            Some(data) => data.into_iter().map(|x| ExtraField::Custom(x)).collect(),
+            Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
         };
         /*
@@ -1193,15 +1154,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             + file_name_raw.len() as u64;
 
         /*
-        let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
-        if let Some(data) = central_extra_fields {
-            if extra_fields_len + data.len() > u16::MAX as usize {
                 return Err(invalid!(
                     "Extra data and central extra data must be less than 64KiB when combined"
                 ));
             }
-            ExtendedFileOptions::validate_extra_fields(&data, true)?;
-        }*/
+        */
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -1232,7 +1189,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         let index = self.insert_file_data(file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
-            ExtendedFileOptions::validate_extra_fields(&extra_fields, false)?;
             let file = &mut self.files[index];
             let writer = self.inner.try_inner_mut()?;
             file.write_local_header(writer, file_name_raw, Some(options.alignment))?;
@@ -2474,8 +2430,7 @@ impl ZipFileData {
         } else {
             0
         };
-        let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
-        let extra_field_len = u16::try_from(total_extra_len)
+        let extra_field_length = u16::try_from(extra_field_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
         let block = ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
@@ -2491,7 +2446,7 @@ impl ZipFileData {
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
-            extra_field_length: extra_field_len.try_into().map_err(std::io::Error::other)?,
+            extra_field_length: extra_field_len,
             file_comment_length: self
                 .file_comment
                 .len()
@@ -2529,7 +2484,7 @@ impl ZipFileData {
                 self.clamp_size_field(self.uncompressed_size)?,
             )
         };
-        let local_extra_fields = self.extra_fields.local_extra_fields();
+        let mut local_extra_fields = self.extra_fields.local_extra_fields();
         let mut extra_field_len: usize = local_extra_fields.iter().map(|x| x.size(true)).sum();
         let last_modified_time = self
             .last_modified_time
@@ -2539,7 +2494,10 @@ impl ZipFileData {
         } else {
             self.compression_method.serialize_to_u16()
         };
-        if let Some(alignment) = alignment_opt
+        let header_end = self.header_start
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+            + file_name_raw.len() as u64;
+        let extra_field_to_add = if let Some(alignment) = alignment_opt
             && alignment > 1
         {
             let extra_field_end = header_end + extra_field_len as u64;
@@ -2555,6 +2513,7 @@ impl ZipFileData {
                 if new_len > u16::MAX as usize {
                     // Alignment is impossible without exceeding extra field size limits.
                     // Skip alignment.
+                    ExtraField::NoOp
                 } else {
                     // Add an extra field to the extra_field, per APPNOTE 4.6.11
                     let mut pad_body = vec![0; pad_length - 4];
@@ -2565,12 +2524,18 @@ impl ZipFileData {
                         UsedExtraField::DataStreamAlignment.as_u16(),
                         &pad_body,
                     );
-                    local_extra_fields.push(&ExtraField::Custom(alignment_extra_field));
-                    extra_field_len = local_extra_fields.iter().map(|x| x.size(true)).sum();
+                    let alignment_extra_field = ExtraField::Custom(alignment_extra_field);
+                    extra_field_len = local_extra_fields.iter().map(|x| x.size(true)).sum::<usize>() + alignment_extra_field.size(true);
                     debug_assert_eq!((extra_field_len as u64 + header_end) % align, 0);
+                    alignment_extra_field
                 }
+            } else {
+                ExtraField::NoOp
             }
-        }
+        } else {
+            ExtraField::NoOp
+        };
+        local_extra_fields.push(&extra_field_to_add);
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),

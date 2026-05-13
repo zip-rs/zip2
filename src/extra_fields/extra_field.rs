@@ -57,6 +57,7 @@ pub enum ExtraField {
     Custom(CustomExtraField),
     /// Unknown
     Unknown(Vec<u8>),
+    NoOp,
 }
 
 #[derive(Debug, Clone, Default)]
