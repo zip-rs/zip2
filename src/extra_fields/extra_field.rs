@@ -108,12 +108,16 @@ impl ExtraFields {
         })
     }
 
-    pub(crate) fn local_extra_fields(&self) -> Vec<&mut ExtraField> {
-        Vec::new()
+    pub(crate) fn local_extra_fields_mut(&mut self) -> std::slice::IterMut<'_, ExtraField> {
+        self.inner.iter_mut()
     }
 
-    pub(crate) fn central_extra_fields(&self) -> Vec<&ExtraField> {
-        Vec::new()
+    pub(crate) fn local_extra_fields(&self) -> std::slice::Iter<'_, ExtraField> {
+        self.inner.iter()
+    }
+
+    pub(crate) fn central_extra_fields(&self) -> std::slice::Iter<'_, ExtraField> {
+        self.inner.iter()
     }
 }
 

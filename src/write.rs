@@ -886,7 +886,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let local_extra_fields_len = new_data
             .extra_fields
             .local_extra_fields()
-            .iter()
             .map(|x| x.size(true))
             .sum::<usize>() as u64;
         let data_start = extra_fields_start + local_extra_fields_len;
@@ -894,7 +893,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
         let index = self.insert_file_data(dest_name_raw, new_data)?;
-        let new_data = &self.files[index];
+        let new_data = &mut self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
             new_data.write_local_header(plain_writer, dest_name_raw, None)?;
@@ -2387,7 +2386,11 @@ impl ZipFileData {
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
         let central_extra_fields = self.extra_fields.central_extra_fields();
-        let extra_field_len: usize = central_extra_fields.iter().map(|x| x.size(false)).sum();
+        let extra_field_len: usize = self
+            .extra_fields
+            .central_extra_fields()
+            .map(|x| x.size(false))
+            .sum();
         let compressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
         } else {
@@ -2471,7 +2474,7 @@ impl ZipFileData {
     }
 
     pub(crate) fn write_local_header<T: Write>(
-        &self,
+        &mut self,
         writer: &mut T,
         file_name_raw: &[u8],
         alignment_opt: Option<u16>,
@@ -2484,8 +2487,11 @@ impl ZipFileData {
                 self.clamp_size_field(self.uncompressed_size)?,
             )
         };
-        let mut local_extra_fields = self.extra_fields.local_extra_fields();
-        let mut extra_field_len: usize = local_extra_fields.iter().map(|x| x.size(true)).sum();
+        let mut extra_field_len: usize = self
+            .extra_fields
+            .local_extra_fields()
+            .map(|x| x.size(true))
+            .sum();
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
@@ -2497,7 +2503,7 @@ impl ZipFileData {
         let header_end = self.header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + file_name_raw.len() as u64;
-        let mut extra_field_to_add = if let Some(alignment) = alignment_opt
+        let opt_alignment_field = if let Some(alignment) = alignment_opt
             && alignment > 1
         {
             let extra_field_end = header_end + extra_field_len as u64;
@@ -2508,12 +2514,16 @@ impl ZipFileData {
                 while pad_length < 6 {
                     pad_length += align as usize;
                 }
-                extra_field_len = local_extra_fields.iter().map(|x| x.size(true)).sum();
+                extra_field_len = self
+                    .extra_fields
+                    .local_extra_fields()
+                    .map(|x| x.size(true))
+                    .sum();
                 let new_len = extra_field_len + pad_length;
                 if new_len > u16::MAX as usize {
                     // Alignment is impossible without exceeding extra field size limits.
                     // Skip alignment.
-                    ExtraField::NoOp
+                    None
                 } else {
                     // Add an extra field to the extra_field, per APPNOTE 4.6.11
                     let mut pad_body = vec![0; pad_length - 4];
@@ -2525,21 +2535,21 @@ impl ZipFileData {
                         &pad_body,
                     );
                     let alignment_extra_field = ExtraField::Custom(alignment_extra_field);
-                    extra_field_len = local_extra_fields
-                        .iter()
+                    extra_field_len = self
+                        .extra_fields
+                        .local_extra_fields()
                         .map(|x| x.size(true))
                         .sum::<usize>()
                         + alignment_extra_field.size(true);
                     debug_assert_eq!((extra_field_len as u64 + header_end) % align, 0);
-                    alignment_extra_field
+                    Some(alignment_extra_field)
                 }
             } else {
-                ExtraField::NoOp
+                None
             }
         } else {
-            ExtraField::NoOp
+            None
         };
-        local_extra_fields.push(&mut extra_field_to_add);
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),
@@ -2559,6 +2569,7 @@ impl ZipFileData {
         };
         block.write(writer)?;
         writer.write_all(file_name_raw)?;
+        let local_extra_fields = self.extra_fields.local_extra_fields_mut();
         for one_extra_field in local_extra_fields {
             one_extra_field.write(writer, true)?;
             match one_extra_field {
@@ -2570,6 +2581,9 @@ impl ZipFileData {
                 }
                 _ => {}
             }
+        }
+        if let Some(alignment_extra_field) = opt_alignment_field {
+            alignment_extra_field.write(writer, true)?;
         }
         Ok(())
     }
