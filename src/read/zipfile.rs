@@ -15,7 +15,7 @@ use crate::types::{SimpleFileOptions, ffi};
 use core::mem::replace;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::io::{self, Read, Seek, SeekFrom, copy, sink};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, copy, sink};
 use std::path::{Component, Path, PathBuf};
 
 /// A struct for reading a zip file
@@ -272,6 +272,17 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// Get the CRC32 hash of the original file
     pub fn crc32(&self) -> u32 {
         self.get_metadata().crc32
+    }
+
+    /// Get the extra data of the zip header for this file
+    pub fn extra_data(&self) -> Option<Vec<u8>> {
+        let out_buffer = Vec::new();
+        let mut cursor = Cursor::new(out_buffer);
+        let extra_fields = self.data.extra_fields.local_extra_fields();
+        for one_extra_field in extra_fields {
+            one_extra_field.write(&mut cursor, true).ok()?;
+        }
+        Some(cursor.into_inner())
     }
 
     /// Get the starting offset of the data of the compressed file

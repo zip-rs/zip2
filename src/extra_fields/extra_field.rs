@@ -39,6 +39,8 @@ pub enum ExtraField {
         aes_vendor_version: AesVendorVersion,
         /// compression method
         compression_method: CompressionMethod,
+        /// aes extra field start in local header
+        aes_extra_field_start: Option<usize>,
     },
     /// Zip64 Information
     Zip64ExtendedInformation {
@@ -53,13 +55,17 @@ pub enum ExtraField {
     UnicodeComment(UnicodeExtraField),
     /// UnicodePath
     UnicodePath(UnicodeExtraField),
+    /// Data Stream Alignment
     DataStreamAlignment(u64),
+    /// Custom extra field
     Custom(CustomExtraField),
     /// Unknown
     Unknown(Vec<u8>),
+    /// No Op extra field
     NoOp,
 }
 
+/// Extra fields list
 #[derive(Debug, Clone, Default)]
 pub struct ExtraFields {
     pub(crate) inner: Vec<ExtraField>,
@@ -69,20 +75,21 @@ impl ExtraFields {
     pub(crate) fn new() -> Self {
         Self { inner: Vec::new() }
     }
-
-    pub(crate) fn strip_alignment_extra_field(&mut self, remove_zip64: bool) {
-        self.inner.retain(|extra| {
-            if remove_zip64 {
-                matches!(extra, ExtraField::DataStreamAlignment(_))
-            } else {
-                matches!(
-                    extra,
-                    ExtraField::DataStreamAlignment(_)
-                        | ExtraField::Zip64ExtendedInformation { .. }
-                )
-            }
-        });
-    }
+    /*
+        pub(crate) fn strip_alignment_extra_field(&mut self, remove_zip64: bool) {
+            self.inner.retain(|extra| {
+                if remove_zip64 {
+                    matches!(extra, ExtraField::DataStreamAlignment(_))
+                } else {
+                    matches!(
+                        extra,
+                        ExtraField::DataStreamAlignment(_)
+                            | ExtraField::Zip64ExtendedInformation { .. }
+                    )
+                }
+            });
+        }
+    */
     pub(crate) fn parse<B: BlockGetter>(
         buff: &[u8],
         block: &B,
@@ -103,7 +110,7 @@ impl ExtraFields {
         })
     }
 
-    pub(crate) fn local_extra_fields(&self) -> Vec<&ExtraField> {
+    pub(crate) fn local_extra_fields(&self) -> Vec<&mut ExtraField> {
         Vec::new()
     }
 
@@ -172,6 +179,7 @@ impl ExtraField {
                     aes_mode: new_aes_enc.0,
                     aes_vendor_version: new_aes_enc.1,
                     compression_method: inner_compression,
+                    aes_extra_field_start: None,
                 }
             }
             Ok(UsedExtraField::ExtendedTimestamp) => {
@@ -231,6 +239,7 @@ impl ExtraField {
                 aes_mode,
                 aes_vendor_version,
                 compression_method,
+                ..
             } => {
                 file.aes_mode = Some((*aes_mode, *aes_vendor_version));
                 file.compression_method = *compression_method;
@@ -283,11 +292,7 @@ impl ExtraField {
                 // NTFS extra field
                 0
             }
-            ExtraField::AeXEncryption {
-                aes_mode,
-                aes_vendor_version,
-                compression_method,
-            } => AexEncryption::FULL_SIZE,
+            ExtraField::AeXEncryption { .. } => AexEncryption::FULL_SIZE,
             ExtraField::ExtendedTimestamp(extended_timestamp) => {
                 // nothing to do
                 0
@@ -313,6 +318,7 @@ impl ExtraField {
                 aes_mode,
                 aes_vendor_version,
                 compression_method,
+                aes_extra_field_start,
             } => {
                 let aex = AexEncryption::new(*aes_vendor_version, *aes_mode, *compression_method);
                 aex.write(writer)?;

@@ -174,14 +174,11 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
     // Check an archive file for extra data field contents.
     {
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
-        let mut extra_data = Vec::new();
-        extra_data.write_u16_le(0xbeef)?;
-        extra_data.write_u16_le(EXTRA_DATA.len() as u16)?;
-        extra_data.write_all(EXTRA_DATA)?;
-        assert_eq!(
-            file_with_extra_data.extra_data(),
-            Some(extra_data.as_slice())
-        );
+        let mut extra_field = Vec::new();
+        extra_field.write_u16_le(0xbeef)?;
+        extra_field.write_u16_le(EXTRA_DATA.len() as u16)?;
+        extra_field.write_all(EXTRA_DATA)?;
+        assert_eq!(file_with_extra_data.extra_data(), Some(extra_field));
     }
 
     Ok(archive)

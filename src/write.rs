@@ -666,7 +666,7 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
     /// Removes the extra fields.
     #[must_use]
     #[deprecated = "use clear_extra_data"]
-    pub fn clear_extra_data(mut self) -> Self {
+    pub fn clear_extra_data(self) -> Self {
         self.clear_extra_fields()
     }
 
@@ -883,12 +883,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + dest_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_fields_start);
-        new_data.extra_fields.strip_alignment_extra_field(false);
-
-        let mut data_start = extra_fields_start;
-        if let Some(extra) = &new_data.extra_field {
-            data_start += extra.len() as u64;
-        }
+        let local_extra_fields_len = new_data
+            .extra_fields
+            .local_extra_fields()
+            .iter()
+            .map(|x| x.size(true))
+            .sum::<usize>() as u64;
+        let mut data_start = extra_fields_start + local_extra_fields_len;
         new_data.data_start.take();
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
@@ -1143,6 +1144,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     aes_mode: mode,
                     aes_vendor_version: vendor_version,
                     compression_method,
+                    aes_extra_field_start: None,
                 });
                 Some((mode, vendor_version))
             }
@@ -2292,35 +2294,39 @@ fn update_aes_extra_field<W: Write + Seek>(
     // seek operations, so we gate this behind using_data_descriptor.
     //
     // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
-    *version = if bytes_written < 20 {
+    let new_version = if bytes_written < 20 {
         AesVendorVersion::Ae2
     } else {
         AesVendorVersion::Ae1
     };
-
-    let extra_field_start = file
-        .extra_data_start
-        .ok_or_else(|| std::io::Error::other("Cannot get the extra data start"))?;
-
-    writer.seek(SeekFrom::Start(
-        extra_field_start + file.aes_extra_data_start,
-    ))?;
-
-    let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
-    let mut buf = [0u8; AexEncryption::FULL_SIZE];
-    aes_extra_field.write(&mut buf.as_mut_slice())?;
-    writer.write_all(&buf)?;
+    *version = new_version;
 
     // edit the extra field
     if let Some(ExtraField::AeXEncryption {
-        aes_vendor_version, ..
-    }) = file
+        aes_vendor_version,
+        aes_extra_field_start,
+        ..
+    }) = &mut file
         .extra_fields
         .inner
         .iter_mut()
         .find(|f| matches!(f, ExtraField::AeXEncryption { .. }))
     {
-        aes_vendor_version = version;
+        *aes_vendor_version = new_version;
+        let extra_field_start = file
+            .extra_data_start
+            .ok_or_else(|| std::io::Error::other("Cannot get the extra data start"))?;
+
+        if let Some(aes_start) = aes_extra_field_start {
+            writer.seek(SeekFrom::Start(extra_field_start + *aes_start as u64))?;
+        } else {
+            return Err(invalid!("The AES extra field should have a known start"));
+        }
+
+        let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
+        let mut buf = [0u8; AexEncryption::FULL_SIZE];
+        aes_extra_field.write(&mut buf.as_mut_slice())?;
+        writer.write_all(&buf)?;
     }
 
     Ok(())
@@ -2446,7 +2452,7 @@ impl ZipFileData {
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
-            extra_field_length: extra_field_len,
+            extra_field_length,
             file_comment_length: self
                 .file_comment
                 .len()
@@ -2497,7 +2503,7 @@ impl ZipFileData {
         let header_end = self.header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + file_name_raw.len() as u64;
-        let extra_field_to_add = if let Some(alignment) = alignment_opt
+        let mut extra_field_to_add = if let Some(alignment) = alignment_opt
             && alignment > 1
         {
             let extra_field_end = header_end + extra_field_len as u64;
@@ -2525,7 +2531,11 @@ impl ZipFileData {
                         &pad_body,
                     );
                     let alignment_extra_field = ExtraField::Custom(alignment_extra_field);
-                    extra_field_len = local_extra_fields.iter().map(|x| x.size(true)).sum::<usize>() + alignment_extra_field.size(true);
+                    extra_field_len = local_extra_fields
+                        .iter()
+                        .map(|x| x.size(true))
+                        .sum::<usize>()
+                        + alignment_extra_field.size(true);
                     debug_assert_eq!((extra_field_len as u64 + header_end) % align, 0);
                     alignment_extra_field
                 }
@@ -2535,7 +2545,7 @@ impl ZipFileData {
         } else {
             ExtraField::NoOp
         };
-        local_extra_fields.push(&extra_field_to_add);
+        local_extra_fields.push(&mut extra_field_to_add);
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),
@@ -2557,6 +2567,15 @@ impl ZipFileData {
         writer.write_all(file_name_raw)?;
         for one_extra_field in local_extra_fields {
             one_extra_field.write(writer, true)?;
+            match one_extra_field {
+                ExtraField::AeXEncryption {
+                    aes_extra_field_start,
+                    ..
+                } => {
+                    *aes_extra_field_start = Some(0);
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
