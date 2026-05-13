@@ -171,7 +171,8 @@ impl Zip64ExtendedInformation {
         header_start: Option<u32>,
     ) -> ZipResult<(u64, u64, u64)> {
         let mut consumed_len = 0;
-        let new_uncompressed_size = if len >= 24 || u64::from(uncompressed_size) == ZIP64_BYTES_THR {
+        let new_uncompressed_size = if len >= 24 || u64::from(uncompressed_size) == ZIP64_BYTES_THR
+        {
             let new_uncompressed_size = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {

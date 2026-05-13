@@ -3,20 +3,21 @@
 use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::AexEncryption;
+use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::ExtendedTimestamp;
 use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
-use crate::extra_fields::CustomExtraField;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
-use crate::spec::ZipLocalEntryBlock;
 use crate::spec::BlockGetter;
+use crate::spec::ZipLocalEntryBlock;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
+use core::mem;
 use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::Read;
@@ -43,11 +44,11 @@ pub enum ExtraField {
     /// Zip64 Information
     Zip64ExtendedInformation {
         /// uncompressed size
-        uncompressed_size: u64,
+        uncompressed_size: Option<u64>,
         /// compressed size
-        compressed_size: u64,
+        compressed_size: Option<u64>,
         /// header start
-        header_start: u64,
+        header_start: Option<u64>,
     },
     /// Unicode Comment
     UnicodeComment(UnicodeExtraField),
@@ -104,7 +105,11 @@ impl ExtraFields {
 }
 
 impl ExtraField {
-    pub(crate) fn parse<R: Read, B: BlockGetter>(reader: &mut R, file: &B, is_local_header: bool) -> ZipResult<Option<Self>> {
+    pub(crate) fn parse<R: Read, B: BlockGetter>(
+        reader: &mut R,
+        file: &B,
+        is_local_header: bool,
+    ) -> ZipResult<Option<Self>> {
         let kind = match reader.read_u16_le() {
             Ok(kind) => kind,
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
@@ -143,9 +148,9 @@ impl ExtraField {
                     file.get_header_start(),
                 )?;
                 ExtraField::Zip64ExtendedInformation {
-                    uncompressed_size: new_uncomp,
-                    compressed_size: new_comp,
-                    header_start: new_head,
+                    uncompressed_size: Some(new_uncomp),
+                    compressed_size: Some(new_comp),
+                    header_start: Some(new_head),
                 }
             }
             Ok(UsedExtraField::Ntfs) => {
@@ -191,8 +196,12 @@ impl ExtraField {
         Ok(Some(parsed_extra_field))
     }
 
-    pub(crate) fn use_with(&self, file: &mut ZipFileData, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
-        match *self {
+    pub(crate) fn use_with(
+        &self,
+        file: &mut ZipFileData,
+        file_name_raw: &mut Vec<u8>,
+    ) -> ZipResult<()> {
+        match self {
             // Zip64 extended information extra field
             ExtraField::Zip64ExtendedInformation {
                 uncompressed_size,
@@ -200,23 +209,23 @@ impl ExtraField {
                 header_start,
             } => {
                 file.large_file = true;
-                file.uncompressed_size = uncompressed_size;
-                file.compressed_size = compressed_size;
-                file.header_start = header_start;
-            }
-            ExtraField::Ntfs(ntfs) => {
-                // NTFS extra field
+                if let Some(uncomp_size) = *uncompressed_size {
+                    file.uncompressed_size = uncomp_size;
+                }
+                if let Some(comp_size) = *compressed_size {
+                    file.compressed_size = comp_size;
+                }
+                if let Some(head_start) = *header_start {
+                    file.header_start = head_start;
+                }
             }
             ExtraField::AeXEncryption {
                 aes_mode,
                 aes_vendor_version,
                 compression_method,
             } => {
-                file.aes_mode = Some((aes_mode, aes_vendor_version));
-                file.compression_method = compression_method;
-            }
-            ExtraField::ExtendedTimestamp(extended_timestamp) => {
-                // nothing to do
+                file.aes_mode = Some((*aes_mode, *aes_vendor_version));
+                file.compression_method = *compression_method;
             }
             ExtraField::UnicodeComment(unicode_comment) => {
                 // Info-ZIP Unicode Comment Extra Field
@@ -235,8 +244,50 @@ impl ExtraField {
                 *file_name_raw = file_name.into_vec();
                 file.flags |= ZipFlags::LanguageEncoding.as_u16();
             }
-            ExtraField::Unknown(_) => {}
+            _ => {
+                // nothing to do
+            }
         }
         Ok(())
+    }
+
+    pub(crate) fn size(&self, is_local_header: bool) -> usize {
+        match self {
+            // Zip64 extended information extra field
+            ExtraField::Zip64ExtendedInformation {
+                uncompressed_size,
+                compressed_size,
+                header_start,
+            } => {
+                let mut size = 0;
+                if uncompressed_size.is_some() {
+                    size += mem::size_of::<u64>();
+                }
+                if compressed_size.is_some() {
+                    size += mem::size_of::<u64>();
+                }
+                if !is_local_header && header_start.is_some() {
+                    size += mem::size_of::<u64>();
+                }
+                size + mem::size_of::<UsedExtraField>() + mem::size_of::<u16>()
+            }
+            ExtraField::Ntfs(ntfs) => {
+                // NTFS extra field
+                0
+            }
+            ExtraField::AeXEncryption {
+                aes_mode,
+                aes_vendor_version,
+                compression_method,
+            } => AexEncryption::FULL_SIZE,
+            ExtraField::ExtendedTimestamp(extended_timestamp) => {
+                // nothing to do
+                0
+            }
+            ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
+            ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
+            ExtraField::Custom(custom) => custom.len(),
+            _ => 0,
+        }
     }
 }

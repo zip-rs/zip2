@@ -439,7 +439,7 @@ impl ZipFileData {
         Ok(data)
     }
 
-    fn flags(&self, file_name_raw: &[u8]) -> u16 {
+    pub(crate) fn flags(&self, file_name_raw: &[u8]) -> u16 {
         let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
         let is_ascii = file_name_raw.is_ascii() && self.file_comment.is_ascii();
         let utf8_bit: u16 = if is_utf8 && !is_ascii {
@@ -458,7 +458,8 @@ impl ZipFileData {
 
         utf8_bit | using_data_descriptor_bit | encrypted_bit
     }
-    fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
+
+    pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
             Ok(spec::ZIP64_BYTES_THR as u32)
         } else {
@@ -468,111 +469,6 @@ impl ZipFileData {
                 ))
             })
         }
-    }
-
-    pub(crate) fn local_block(&self, file_name_raw: &[u8]) -> ZipResult<ZipLocalEntryBlock> {
-        let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
-            (0, 0)
-        } else {
-            (
-                self.clamp_size_field(self.compressed_size)?,
-                self.clamp_size_field(self.uncompressed_size)?,
-            )
-        };
-        let extra_field_length: u16 = self
-            .extra_field_len()
-            .try_into()
-            .map_err(|_| invalid!("Extra data field is too large"))?;
-
-        let last_modified_time = self
-            .last_modified_time
-            .unwrap_or_else(DateTime::default_for_write);
-        let compression_method = if self.aes_mode.is_some() {
-            CompressionMethod::AES.serialize_to_u16()
-        } else {
-            self.compression_method.serialize_to_u16()
-        };
-        Ok(ZipLocalEntryBlock {
-            version_made_by: self.version_needed(),
-            flags: self.flags(file_name_raw),
-            compression_method,
-            last_mod_time: last_modified_time.timepart(),
-            last_mod_date: last_modified_time.datepart(),
-            crc32: self.crc32,
-            compressed_size,
-            uncompressed_size,
-            file_name_length: file_name_raw
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            extra_field_length,
-        })
-    }
-
-    pub(crate) fn central_block(&self, file_name_raw: &[u8]) -> ZipResult<ZipCentralEntryBlock> {
-        let compressed_size = if self.large_file {
-            spec::ZIP64_BYTES_THR as u32
-        } else {
-            self.compressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?
-        };
-        let uncompressed_size = if self.large_file {
-            spec::ZIP64_BYTES_THR as u32
-        } else {
-            self.uncompressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?
-        };
-        let offset = self
-            .header_start
-            .min(spec::ZIP64_BYTES_THR)
-            .try_into()
-            .map_err(std::io::Error::other)?;
-        let extra_field_len: u16 = self
-            .extra_field_len()
-            .try_into()
-            .map_err(std::io::Error::other)?;
-        let central_extra_field_len: u16 = 0;
-        let last_modified_time = self
-            .last_modified_time
-            .unwrap_or_else(DateTime::default_for_write);
-        let version_to_extract = self.version_needed();
-        let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
-        let compression_method = if self.aes_mode.is_some() {
-            CompressionMethod::AES.serialize_to_u16()
-        } else {
-            self.compression_method.serialize_to_u16()
-        };
-        Ok(ZipCentralEntryBlock {
-            version_made_by: ((self.system as u16) << 8) | version_made_by,
-            version_to_extract,
-            flags: self.flags(file_name_raw),
-            compression_method,
-            last_mod_time: last_modified_time.timepart(),
-            last_mod_date: last_modified_time.datepart(),
-            crc32: self.crc32,
-            compressed_size,
-            uncompressed_size,
-            file_name_length: file_name_raw
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            extra_field_length: extra_field_len.checked_add(central_extra_field_len).ok_or(
-                invalid!("Extra field length in central directory exceeds 64KiB"),
-            )?,
-            file_comment_length: self
-                .file_comment
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            disk_number: 0,
-            internal_file_attributes: 0,
-            external_file_attributes: self.external_attributes,
-            offset,
-        })
     }
 
     pub(crate) fn write_data_descriptor<W: std::io::Write>(

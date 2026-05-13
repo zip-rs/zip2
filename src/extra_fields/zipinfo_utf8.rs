@@ -1,6 +1,6 @@
 use crate::result::{ZipResult, invalid};
 use crate::unstable::LittleEndianReadExt;
-use core::mem::size_of;
+use core::mem;
 use std::io::Read;
 
 /// Info-ZIP Unicode Path Extra Field (0x7075) or Unicode Comment Extra Field (0x6375), as
@@ -18,7 +18,7 @@ impl UnicodeExtraField {
     ///
     /// Returns an error when the crc32 from the extra field does not match the crc32 of the
     /// `ascii_field`.
-    pub fn unwrap_valid(self, ascii_field: &[u8]) -> ZipResult<Box<[u8]>> {
+    pub fn unwrap_valid(&self, ascii_field: &[u8]) -> ZipResult<Box<[u8]>> {
         let computed_crc32 = crc32fast::hash(ascii_field);
         if self.crc32 != computed_crc32 {
             return Err(invalid!(
@@ -27,22 +27,28 @@ impl UnicodeExtraField {
                 computed_crc32
             ));
         }
-        Ok(self.content)
+        Ok(self.content.clone())
     }
-}
 
-impl UnicodeExtraField {
     pub(crate) fn try_from_reader<R: Read>(reader: &mut R, len: u16) -> ZipResult<Self> {
         // Read and discard version byte
         reader.read_exact(&mut [0u8])?;
 
         let crc32 = reader.read_u32_le()?;
         let content_len = (len as usize)
-            .checked_sub(size_of::<u8>() + size_of::<u32>())
+            .checked_sub(mem::size_of::<u8>() + mem::size_of::<u32>())
             .ok_or(invalid!("Unicode extra field is too small"))?;
         let mut content = vec![0u8; content_len].into_boxed_slice();
         reader.read_exact(&mut content)?;
         Ok(Self { crc32, content })
+    }
+
+    pub(crate) fn full_size(&self) -> usize {
+        mem::size_of::<u16>()
+            + mem::size_of::<u16>()
+            + mem::size_of::<u8>()
+            + mem::size_of::<u32>()
+            + self.content.len()
     }
 }
 

@@ -10,7 +10,7 @@ use crate::result::{ZipError, invalid};
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::io::{self, Read, Cursor};
+use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.

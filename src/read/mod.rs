@@ -508,8 +508,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
-    let extra_fields =
-        ExtraFields::parse(&extra_fields_raw, &block, &mut file_name_raw, false)?;
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, &mut file_name_raw, false)?;
     // Construct the result
     let mut result = ZipFileData {
         system,
