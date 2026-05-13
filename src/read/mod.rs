@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 mod config;
 pub use config::{ArchiveOffset, Config};
@@ -508,7 +508,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
-    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, &mut file_name_raw, false)?;
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, &mut file_name_raw)?;
     // Construct the result
     let mut result = ZipFileData {
         system,

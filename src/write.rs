@@ -357,14 +357,14 @@ impl ExtendedFileOptions {
     /// `u16::MAX`. If adding this field would exceed that limit or produce an
     /// invalid extra data structure, an error is returned and no data is
     /// added.
-    #[deprecated = "use add_extra_fields"]
+    #[deprecated = "use add_extra_field()"]
     pub fn add_extra_data<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
         data: D,
         central_only: bool,
     ) -> ZipResult<()> {
-        self.add_extra_fields(header_id, data, central_only)
+        self.add_extra_field(header_id, data, central_only)
     }
     /// Adds an extra data field, unless we detect that it's invalid.
     ///
@@ -389,7 +389,7 @@ impl ExtendedFileOptions {
     /// `u16::MAX`. If adding this field would exceed that limit or produce an
     /// invalid extra data structure, an error is returned and no data is
     /// added.
-    pub fn add_extra_fields<D: AsRef<[u8]>>(
+    pub fn add_extra_field<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
         data: D,
@@ -642,25 +642,25 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
     }
 
     /// Adds an extra data field.
-    #[deprecated = "use add_extra_fields"]
+    #[deprecated = "use add_extra_field()"]
     pub fn add_extra_data<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
         data: D,
         central_only: bool,
     ) -> ZipResult<()> {
-        self.add_extra_fields(header_id, data, central_only)
+        self.add_extra_field(header_id, data, central_only)
     }
 
     /// Adds an extra field.
-    pub fn add_extra_fields<D: AsRef<[u8]>>(
+    pub fn add_extra_field<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
         data: D,
         central_only: bool,
     ) -> ZipResult<()> {
         self.extended_options
-            .add_extra_fields(header_id, data, central_only)
+            .add_extra_field(header_id, data, central_only)
     }
 
     /// Removes the extra fields.
@@ -889,7 +889,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .iter()
             .map(|x| x.size(true))
             .sum::<usize>() as u64;
-        let mut data_start = extra_fields_start + local_extra_fields_len;
+        let data_start = extra_fields_start + local_extra_fields_len;
         new_data.data_start.take();
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
@@ -1120,17 +1120,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
         };
-        /*
-        if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            extra_fields.push(ExtraField::Zip64ExtendedInformation {});
-        }*/
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
         // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
         #[allow(unused_mut)]
-        let mut aes_extra_field_start = 0;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes {
@@ -1167,7 +1162,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             &raw_values,
             header_start,
             None,
-            aes_extra_field_start,
             compression_method,
             aes_mode_options,
             ExtraFields {

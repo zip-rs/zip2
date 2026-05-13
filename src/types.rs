@@ -10,8 +10,8 @@ use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
-    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock,
-    ZipDataDescriptorBlock, ZipLocalEntryBlock,
+    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipDataDescriptorBlock,
+    ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::ZipCryptoKeys;
@@ -331,7 +331,6 @@ impl ZipFileData {
         raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
-        aes_extra_data_start: u64,
         compression_method: CompressionMethod,
         aes_settings: Option<(AesMode, AesVendorVersion)>,
         extra_fields: ExtraFields,

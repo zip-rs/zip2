@@ -139,7 +139,7 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
     zip.write_all(b"Hello, World!\n").unwrap();
 
     options
-        .add_extra_data(0xbeef, EXTRA_DATA.to_owned().into_boxed_slice(), false)
+        .add_extra_field(0xbeef, EXTRA_DATA.to_owned().into_boxed_slice(), false)
         .unwrap();
 
     zip.start_file("test_with_extra_data/🐢.txt", options)

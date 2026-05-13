@@ -1,7 +1,5 @@
 //! Code linked with the specifications of the zip file
 
-use crate::extra_fields::ExtraFields;
-use crate::extra_fields::Zip64ExtendedInformation;
 use crate::read::ArchiveOffset;
 use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::result::{ZipError, ZipResult, invalid};

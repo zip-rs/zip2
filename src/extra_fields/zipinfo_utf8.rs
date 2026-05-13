@@ -50,6 +50,17 @@ impl UnicodeExtraField {
             + mem::size_of::<u32>()
             + self.content.len()
     }
+
+    /// Write the Unicode extra field. Magic header should already be written
+    pub(crate) fn write<W: Write>(&self, writer: &mut W) -> ZipResult<()> {
+        let size = self.full_size() as u16;
+        writer.write_all(&size.to_le_bytes())?;
+        let version = 1u8;
+        writer.write_all(&version.to_le_bytes())?;
+        writer.write_all(&self.crc32.to_le_bytes())?;
+        writer.write_all(&self.content)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

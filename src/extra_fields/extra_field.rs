@@ -13,7 +13,6 @@ use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
 use crate::spec::BlockGetter;
-use crate::spec::ZipLocalEntryBlock;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
@@ -94,12 +93,11 @@ impl ExtraFields {
         buff: &[u8],
         block: &B,
         file_name_raw: &mut Vec<u8>,
-        is_local_header: bool,
     ) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
         while (reader.position() as usize) < buff.len() {
-            let parsed_extra_field = ExtraField::parse(&mut reader, block, is_local_header)?;
+            let parsed_extra_field = ExtraField::parse(&mut reader, block)?;
             let Some(parsed_extra_field) = parsed_extra_field else {
                 break;
             };
@@ -123,7 +121,6 @@ impl ExtraField {
     pub(crate) fn parse<R: Read, B: BlockGetter>(
         reader: &mut R,
         file: &B,
-        is_local_header: bool,
     ) -> ZipResult<Option<Self>> {
         let kind = match reader.read_u16_le() {
             Ok(kind) => kind,
@@ -313,18 +310,29 @@ impl ExtraField {
                 header_start,
             } => {
                 // TODO
+                if is_local_header {}
             }
             ExtraField::AeXEncryption {
                 aes_mode,
                 aes_vendor_version,
                 compression_method,
-                aes_extra_field_start,
+                ..
             } => {
                 let aex = AexEncryption::new(*aes_vendor_version, *aes_mode, *compression_method);
                 aex.write(writer)?;
             }
             ExtraField::Custom(custom) => {
                 custom.write(writer)?;
+            }
+            ExtraField::UnicodeComment(unicode_comment) => {
+                let magic = UsedExtraField::UnicodeComment.as_u16();
+                writer.write_all(&magic.to_le_bytes())?;
+                unicode_comment.write(writer)?;
+            }
+            ExtraField::UnicodePath(unicode_path) => {
+                let magic = UsedExtraField::UnicodePath.as_u16();
+                writer.write_all(&magic.to_le_bytes())?;
+                unicode_path.write(writer)?;
             }
             _ => {
                 // nothing to do

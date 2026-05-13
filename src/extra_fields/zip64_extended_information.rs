@@ -35,14 +35,6 @@ pub(crate) struct Zip64ExtendedInformation {
 impl Zip64ExtendedInformation {
     pub(crate) const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
 
-    pub(crate) fn new_local(is_large_file: bool) -> Option<Self> {
-        if is_large_file {
-            Self::local_header(true, u64::MAX, u64::MAX)
-        } else {
-            None
-        }
-    }
-
     /// This entry in the Local header MUST include BOTH original and compressed file size fields
     /// If the user is using `is_large_file` when the file is not large we force the zip64 extra field
     pub(crate) fn local_header(
