@@ -1,5 +1,6 @@
 //! Code related to stream reading
 
+use crate::ExtraField;
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::read::readers::{make_crypto_reader, make_reader};
@@ -10,7 +11,7 @@ use crate::result::{ZipError, invalid};
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::io::{self, Read};
+use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.
@@ -287,14 +288,27 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
         return Err(e.into());
     }
     // parse extra fields
-    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, &mut file_name_raw);
-    let extra_fields = match extra_fields {
-        Ok(extra_fields) => extra_fields,
-        Err(ZipError::Io(..)) => ExtraFields::new(),
-        Err(e) => return Err(e),
+    let mut cursor = Cursor::new(&extra_fields_raw);
+    let mut extra_fields = Vec::new();
+    while (cursor.position() as usize) < extra_fields_raw.len() {
+        match ExtraField::parse(&mut cursor, &block) {
+            Ok(parsed_extra_field) => {
+                let Some(parsed_extra_field) = parsed_extra_field else {
+                    break;
+                };
+                extra_fields.push(parsed_extra_field);
+            }
+            Err(ZipError::Io(..)) => continue,
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    }
+    let extra_fields = ExtraFields {
+        inner: extra_fields,
     };
-
     let mut data = ZipFileData::from_local_block(block, extra_fields)?;
+    data.apply_extra_fields(&mut file_name_raw)?;
     if data.is_using_data_descriptor() {
         if let Some(comp_size) = options.force_compressed_size {
             data.compressed_size = comp_size;

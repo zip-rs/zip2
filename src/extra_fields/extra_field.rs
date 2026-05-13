@@ -58,8 +58,6 @@ pub enum ExtraField {
     DataStreamAlignment(u64),
     /// Custom extra field
     Custom(CustomExtraField),
-    /// Unknown
-    Unknown(Vec<u8>),
     /// No Op extra field
     NoOp,
 }
@@ -89,11 +87,7 @@ impl ExtraFields {
             });
         }
     */
-    pub(crate) fn parse<B: BlockGetter>(
-        buff: &[u8],
-        block: &B,
-        file_name_raw: &mut Vec<u8>,
-    ) -> ZipResult<Self> {
+    pub(crate) fn parse<B: BlockGetter>(buff: &[u8], block: &B) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
         while (reader.position() as usize) < buff.len() {
@@ -126,12 +120,12 @@ impl ExtraField {
         reader: &mut R,
         file: &B,
     ) -> ZipResult<Option<Self>> {
-        let kind = match reader.read_u16_le() {
-            Ok(kind) => kind,
+        let extra_field_header_id = match reader.read_u16_le() {
+            Ok(value) => value,
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
             Err(e) => return Err(e.into()),
         };
-        let decoded_extra_field = UsedExtraField::try_from(kind);
+        let decoded_extra_field = UsedExtraField::try_from(extra_field_header_id);
         let len = match decoded_extra_field {
             Ok(known_field) => match reader.read_u16_le() {
                 Ok(len) => len,
@@ -206,67 +200,11 @@ impl ExtraField {
                     }
                     return Err(e.into());
                 }
-                ExtraField::Unknown(buf)
+                ExtraField::Custom(CustomExtraField::new(false, extra_field_header_id, &buf))
                 // Other fields are ignored
             }
         };
         Ok(Some(parsed_extra_field))
-    }
-
-    pub(crate) fn use_with(
-        &self,
-        file: &mut ZipFileData,
-        file_name_raw: &mut Vec<u8>,
-    ) -> ZipResult<()> {
-        match self {
-            // Zip64 extended information extra field
-            ExtraField::Zip64ExtendedInformation {
-                uncompressed_size,
-                compressed_size,
-                header_start,
-            } => {
-                file.large_file = true;
-                if let Some(uncomp_size) = *uncompressed_size {
-                    file.uncompressed_size = uncomp_size;
-                }
-                if let Some(comp_size) = *compressed_size {
-                    file.compressed_size = comp_size;
-                }
-                if let Some(head_start) = *header_start {
-                    file.header_start = head_start;
-                }
-            }
-            ExtraField::AeXEncryption {
-                aes_mode,
-                aes_vendor_version,
-                compression_method,
-                ..
-            } => {
-                file.aes_mode = Some((*aes_mode, *aes_vendor_version));
-                file.compression_method = *compression_method;
-            }
-            ExtraField::UnicodeComment(unicode_comment) => {
-                // Info-ZIP Unicode Comment Extra Field
-                // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
-                file.file_comment = String::from_utf8(
-                    unicode_comment
-                        .unwrap_valid(file.file_comment.as_bytes())?
-                        .into_vec(),
-                )?
-                .into();
-            }
-            ExtraField::UnicodePath(unicode_path) => {
-                // Info-ZIP Unicode Path Extra Field
-                // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-                let file_name = unicode_path.unwrap_valid(file_name_raw)?;
-                *file_name_raw = file_name.into_vec();
-                file.flags |= ZipFlags::LanguageEncoding.as_u16();
-            }
-            _ => {
-                // nothing to do
-            }
-        }
-        Ok(())
     }
 
     pub(crate) fn size(&self, is_local_header: bool) -> usize {
@@ -340,6 +278,62 @@ impl ExtraField {
             }
             _ => {
                 // nothing to do
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ZipFileData {
+    pub(crate) fn apply_extra_fields(&mut self, mut file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
+        for one_extra_field in &self.extra_fields.inner {
+            match one_extra_field {
+                // Zip64 extended information extra field
+                ExtraField::Zip64ExtendedInformation {
+                    uncompressed_size,
+                    compressed_size,
+                    header_start,
+                } => {
+                    self.large_file = true;
+                    if let Some(uncomp_size) = *uncompressed_size {
+                        self.uncompressed_size = uncomp_size;
+                    }
+                    if let Some(comp_size) = *compressed_size {
+                        self.compressed_size = comp_size;
+                    }
+                    if let Some(head_start) = *header_start {
+                        self.header_start = head_start;
+                    }
+                }
+                ExtraField::AeXEncryption {
+                    aes_mode,
+                    aes_vendor_version,
+                    compression_method,
+                    ..
+                } => {
+                    self.aes_mode = Some((*aes_mode, *aes_vendor_version));
+                    self.compression_method = *compression_method;
+                }
+                ExtraField::UnicodeComment(unicode_comment) => {
+                    // Info-ZIP Unicode Comment Extra Field
+                    // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
+                    self.file_comment = String::from_utf8(
+                        unicode_comment
+                            .unwrap_valid(self.file_comment.as_bytes())?
+                            .into_vec(),
+                    )?
+                    .into();
+                }
+                ExtraField::UnicodePath(unicode_path) => {
+                    // Info-ZIP Unicode Path Extra Field
+                    // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
+                    let file_name = unicode_path.unwrap_valid(file_name_raw)?;
+                    *file_name_raw = file_name.into_vec();
+                    self.flags |= ZipFlags::LanguageEncoding.as_u16();
+                }
+                _ => {
+                    // nothing to do
+                }
             }
         }
         Ok(())
