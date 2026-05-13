@@ -18,9 +18,8 @@ use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
 use core::mem;
-use std::io::Cursor;
 use std::io::ErrorKind;
-use std::io::Read;
+use std::io::{Cursor, Read, Write};
 
 /// contains one extra field
 #[derive(Debug, Clone)]
@@ -101,6 +100,14 @@ impl ExtraFields {
         Ok(Self {
             inner: extra_fields,
         })
+    }
+
+    pub(crate) fn local_extra_fields(&self) -> Vec<&ExtraField> {
+        Vec::new()
+    }
+
+    pub(crate) fn central_extra_fields(&self) -> Vec<&ExtraField> {
+        Vec::new()
     }
 }
 
@@ -289,5 +296,33 @@ impl ExtraField {
             ExtraField::Custom(custom) => custom.len(),
             _ => 0,
         }
+    }
+
+    pub(crate) fn write<W: Write>(&self, writer: &mut W, is_local_header: bool) -> ZipResult<()> {
+        match self {
+            // Zip64 extended information extra field
+            ExtraField::Zip64ExtendedInformation {
+                uncompressed_size,
+                compressed_size,
+                header_start,
+            } => {
+                // TODO
+            }
+            ExtraField::AeXEncryption {
+                aes_mode,
+                aes_vendor_version,
+                compression_method,
+            } => {
+                let aex = AexEncryption::new(*aes_vendor_version, *aes_mode, *compression_method);
+                aex.write(writer)?;
+            }
+            ExtraField::Custom(custom) => {
+                custom.write(writer)?;
+            }
+            _ => {
+                // nothing to do
+            }
+        }
+        Ok(())
     }
 }

@@ -11,7 +11,9 @@ use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::spec::{
+    self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipCentralEntryBlock, ZipLocalEntryBlock,
+};
 use crate::types::EncryptWith;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
@@ -2428,7 +2430,7 @@ impl ZipFileData {
         writer: &mut T,
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
-        let central_extra_fields = Vec::new();
+        let central_extra_fields = self.extra_fields.central_extra_fields();
         let extra_field_len: usize = central_extra_fields.iter().map(|x| x.size(false)).sum();
         let compressed_size = if self.large_file {
             spec::ZIP64_BYTES_THR as u32
@@ -2449,10 +2451,6 @@ impl ZipFileData {
         let offset = self
             .header_start
             .min(spec::ZIP64_BYTES_THR)
-            .try_into()
-            .map_err(std::io::Error::other)?;
-        let extra_field_len: u16 = self
-            .extra_field_len()
             .try_into()
             .map_err(std::io::Error::other)?;
         let last_modified_time = self
@@ -2477,7 +2475,7 @@ impl ZipFileData {
             0
         };
         let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
-        self.extra_field_length = u16::try_from(total_extra_len)
+        let extra_field_len = u16::try_from(total_extra_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
         let block = ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
@@ -2493,9 +2491,7 @@ impl ZipFileData {
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
-            extra_field_length: extra_field_len.checked_add(central_extra_field_len).ok_or(
-                invalid!("Extra field length in central directory exceeds 64KiB"),
-            )?,
+            extra_field_length: extra_field_len.try_into().map_err(std::io::Error::other)?,
             file_comment_length: self
                 .file_comment
                 .len()
@@ -2511,7 +2507,9 @@ impl ZipFileData {
         // file name
         writer.write_all(file_name_raw)?;
         // extra field
-        central_extra_fields.write(writer);
+        for one_extra_field in central_extra_fields {
+            one_extra_field.write(writer, false)?;
+        }
         // file comment
         writer.write_all(self.file_comment.as_bytes())?;
         Ok(())
@@ -2531,7 +2529,7 @@ impl ZipFileData {
                 self.clamp_size_field(self.uncompressed_size)?,
             )
         };
-        let local_extra_fields = Vec::new();
+        let local_extra_fields = self.extra_fields.local_extra_fields();
         let mut extra_field_len: usize = local_extra_fields.iter().map(|x| x.size(true)).sum();
         let last_modified_time = self
             .last_modified_time
@@ -2567,7 +2565,7 @@ impl ZipFileData {
                         UsedExtraField::DataStreamAlignment.as_u16(),
                         &pad_body,
                     );
-                    local_extra_fields.push(ExtraField::Custom(alignment_extra_field));
+                    local_extra_fields.push(&ExtraField::Custom(alignment_extra_field));
                     extra_field_len = local_extra_fields.iter().map(|x| x.size(true)).sum();
                     debug_assert_eq!((extra_field_len as u64 + header_end) % align, 0);
                 }
@@ -2592,8 +2590,9 @@ impl ZipFileData {
         };
         block.write(writer)?;
         writer.write_all(file_name_raw)?;
-
-        local_extra_fields.write(writer)?;
+        for one_extra_field in local_extra_fields {
+            one_extra_field.write(writer, true)?;
+        }
         Ok(())
     }
 }

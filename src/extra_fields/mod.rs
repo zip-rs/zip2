@@ -3,6 +3,7 @@
 use crate::result::ZipResult;
 use crate::result::invalid;
 use core::fmt::Display;
+use std::io::Write;
 
 mod aex_encryption;
 mod extended_timestamp;
@@ -223,15 +224,12 @@ impl CustomExtraField {
         2 + 2 + size
     }
 
-    pub(crate) fn serialize(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(4 + self.data.len());
-
-        out.extend_from_slice(&self.header_id.to_le_bytes());
+    pub(crate) fn write<W: Write>(&self, write: &mut W) -> ZipResult<()> {
+        write.write_all(&self.header_id.to_le_bytes())?;
         let size = self.data.len() as u16;
-        out.extend_from_slice(&size.to_le_bytes());
-        out.extend_from_slice(&self.data);
-
-        out
+        write.write_all(&size.to_le_bytes())?;
+        write.write_all(&self.data)?;
+        Ok(())
     }
 }
 
