@@ -1249,6 +1249,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => {}
         }
         let file = &mut self.files[index];
+        eprintln!(
+            "{:?} should be EQUAL {}",
+            file.data_start.get(),
+            self.stats.start
+        );
         //debug_assert!(file.data_start.get().is_none());
         file.data_start.get_or_init(|| self.stats.start);
         self.stats.bytes_written = 0;
@@ -1291,6 +1296,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let file_end = writer.stream_position()?;
             debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
+            eprintln!("FINISH {} {}", file.uncompressed_size, file.compressed_size);
 
             if !file.is_using_data_descriptor() {
                 // Not using a data descriptor means the underlying writer
@@ -2406,7 +2412,36 @@ impl ZipFileData {
             }
         }
         if !is_zip64 {
-            // check if needed and crash
+            // check if needed and crash if needed
+            if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
+                self.large_file,
+                self.uncompressed_size,
+                self.compressed_size,
+                self.header_start,
+            ) {
+                if zip64_block.uncompressed_size.is_some() || zip64_block.compressed_size.is_some()
+                {
+                    eprintln!("{:?}", zip64_block);
+                    self.extra_fields.inner.insert(
+                        0,
+                        ExtraField::Zip64ExtendedInformation {
+                            compressed_size: zip64_block.compressed_size,
+                            uncompressed_size: zip64_block.uncompressed_size,
+                            header_start: zip64_block.header_start,
+                        },
+                    );
+                    //return Err(invalid!("Should have used large file"));
+                } else {
+                    self.extra_fields.inner.insert(
+                        0,
+                        ExtraField::Zip64ExtendedInformation {
+                            compressed_size: None,
+                            uncompressed_size: None,
+                            header_start: zip64_block.header_start,
+                        },
+                    );
+                }
+            }
         }
         let central_extra_fields = self.extra_fields.central_extra_fields();
         let extra_field_len: usize = self
@@ -2430,6 +2465,7 @@ impl ZipFileData {
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
+        eprintln!("CENTRAL {} {}", compressed_size, uncompressed_size);
         let offset = self
             .header_start
             .min(spec::ZIP64_BYTES_THR)
@@ -2585,6 +2621,7 @@ impl ZipFileData {
         self.data_start.take();
         self.data_start.get_or_init(|| data_start);
         eprintln!("self data_start {:?}", self.data_start.get());
+        eprintln!("LOCAL HEADER {} {}", compressed_size, uncompressed_size);
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),

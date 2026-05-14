@@ -33,7 +33,7 @@ fn test_append_near_4gb() {
         writer.start_file_from_path("close_to_4gb", opts).unwrap();
 
         // Write a file that's just under 4GB (4GB - 1 byte)
-        let size = u32::MAX;
+        let size = u32::MAX; // - 1;
         write_data(&mut writer, size as usize);
 
         // Add a small file
