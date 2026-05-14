@@ -25,8 +25,8 @@ use crate::{
 pub(crate) struct Zip64ExtendedInformation {
     /// The local header does not contains any `header_start`
     is_local_header: bool,
-    uncompressed_size: Option<u64>,
-    compressed_size: Option<u64>,
+    pub(crate) uncompressed_size: Option<u64>,
+    pub(crate) compressed_size: Option<u64>,
     header_start: Option<u64>,
     // Not used field
     // disk_start: Option<u32>

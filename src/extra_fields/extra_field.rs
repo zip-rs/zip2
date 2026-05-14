@@ -4,16 +4,16 @@ use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
+use crate::extra_fields::EXTRA_FIELD_MAPPING;
 use crate::extra_fields::ExtendedTimestamp;
 use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
-use crate::extra_fields::EXTRA_FIELD_MAPPING;
 use crate::format::flags::ZipFlags;
+use crate::result::ZipError;
 use crate::result::ZipResult;
 use crate::result::invalid;
-use crate::result::ZipError;
 use crate::spec::BlockGetter;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
@@ -98,13 +98,12 @@ impl ExtraFields {
                         && EXTRA_FIELD_MAPPING.contains(&header_id)
                     {
                         return Err(ZipError::Io(io::Error::other(format!(
-                                        "Extra data header ID {header_id:#06} (0x{header_id:x}) \
+                            "Extra data header ID {header_id:#06} (0x{header_id:x}) \
                             requires crate feature \"unreserved\"",
                         ))));
                     }
                 }
-                _ => {
-                }
+                _ => {}
             }
         }
         Ok(())
