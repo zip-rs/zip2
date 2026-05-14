@@ -5,10 +5,11 @@ use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::ZipFlags;
-use crate::spec::{self, FixedSizeBlock, Magic, Pod, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::spec::{self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipLocalEntryBlock};
+use crate::types::EncryptWith;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
@@ -17,7 +18,6 @@ use core::mem::{self, offset_of, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
-use std::borrow::ToOwned;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
 use std::io::{Cursor, ErrorKind};
@@ -146,7 +146,6 @@ pub(crate) mod zip_writer {
     use core::fmt::{Debug, Formatter};
     use indexmap::IndexMap;
     use std::io::{Seek, Write};
-    use std::sync::Arc;
 
     /// ZIP archive generator
     ///
@@ -183,7 +182,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: IndexMap<Arc<[u8]>, ZipFileData>,
+        pub(super) files: IndexMap<Box<[u8]>, ZipFileData>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -266,7 +265,7 @@ use crate::CompressionMethod::Stored;
 use crate::result::ZipError::UnsupportedArchive;
 use crate::unstable::LittleEndianWriteExt;
 use crate::unstable::path_to_string;
-use crate::zipcrypto::{CHUNK_SIZE, EncryptWith, ZipCryptoKeys};
+use crate::zipcrypto::{CHUNK_SIZE, ZipCryptoKeys};
 pub use zip_writer::ZipWriter;
 
 #[derive(Default, Debug)]
@@ -328,7 +327,7 @@ mod sealed {
 }
 
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
-pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
+pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 /// The Extension for Extra Data and Central Extra Data
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
@@ -461,13 +460,16 @@ impl ExtendedFileOptions {
 
 impl Debug for ExtendedFileOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-        f.write_fmt(format_args!("ExtendedFileOptions {{extra_data: vec!{:?}.into(), central_extra_data: vec!{:?}.into()}}",
-        self.extra_data, self.central_extra_data))
+        f.debug_struct("ExtendedFileOptions")
+            .field("extra_data", &self.extra_data)
+            .field("central_extra_data", &self.central_extra_data)
+            .field("file_comment", &self.file_comment)
+            .finish()
     }
 }
 
 #[cfg(feature = "_arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
+impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut options = FullFileOptions {
             compression_method: CompressionMethod::arbitrary(u)?,
@@ -500,6 +502,8 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
+        let len = u.arbitrary_len::<u8>()?;
+        options.name = Some(u.bytes(len)?);
         ZipWriter::new(Cursor::new(Vec::new()))
             .start_file("", options.clone())
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
@@ -510,7 +514,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FileOptions<'a, ExtendedFileOptions> {
 const DEFAULT_FILE_PERMISSIONS: u32 = 0o644; // rw-r--r-- default for regular files
 const DEFAULT_DIR_PERMISSIONS: u32 = 0o755; // rwxr-xr-x default for directories
 
-impl<T: FileOptionExtension> FileOptions<'_, T> {
+impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
     pub(crate) fn normalize(&mut self) {
         if !self.last_modified_time.is_valid() {
             self.last_modified_time = FileOptions::<T>::default().last_modified_time;
@@ -521,14 +525,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 
     /// Indicates whether this file will be encrypted (whether with AES or `ZipCrypto`).
     pub const fn has_encryption(&self) -> bool {
-        #[cfg(feature = "aes-crypto")]
-        {
-            self.encrypt_with.is_some() || self.aes_mode.is_some()
-        }
-        #[cfg(not(feature = "aes-crypto"))]
-        {
-            self.encrypt_with.is_some()
-        }
+        self.encrypt_with.is_some()
     }
 
     /// Set the compression method for the new file
@@ -603,7 +600,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         self
     }
 
-    pub(crate) fn with_deprecated_encryption(self, password: &[u8]) -> FileOptions<'static, T> {
+    pub(crate) fn with_deprecated_encryption(self, password: &'k [u8]) -> FileOptions<'k, 'n, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::ZipCrypto(
                 ZipCryptoKeys::derive(password),
@@ -620,13 +617,14 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption_and_salt(
         self,
-        password: &[u8],
+        password: &'k [u8],
         salt: crate::aes::AesSalt,
-    ) -> FileOptions<'_, T> {
+    ) -> FileOptions<'k, 'n, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: salt.mode(),
-                password,
+                password: Some(password),
+                vendor_version: AesVendorVersion::Ae2,
                 salt: Some(salt),
             }),
             ..self
@@ -635,7 +633,11 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
 
     /// Set the AES encryption parameters.
     #[cfg(feature = "aes-crypto")]
-    pub fn with_aes_encryption(self, mode: crate::AesMode, password: &str) -> FileOptions<'_, T> {
+    pub fn with_aes_encryption(
+        self,
+        mode: crate::AesMode,
+        password: &'k str,
+    ) -> FileOptions<'k, 'n, T> {
         self.with_aes_encryption_bytes(mode, password.as_bytes())
     }
 
@@ -644,12 +646,13 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
     pub fn with_aes_encryption_bytes(
         self,
         mode: crate::AesMode,
-        password: &[u8],
-    ) -> FileOptions<'_, T> {
+        password: &'k [u8],
+    ) -> FileOptions<'k, 'n, T> {
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode,
-                password,
+                password: Some(password),
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
             ..self
@@ -678,7 +681,7 @@ impl<T: FileOptionExtension> FileOptions<'_, T> {
         self
     }
 }
-impl FileOptions<'_, ExtendedFileOptions> {
+impl FileOptions<'_, '_, ExtendedFileOptions> {
     /// Set the file comment.
     #[must_use]
     pub fn with_file_comment<S: Into<Box<str>>>(mut self, comment: S) -> Self {
@@ -709,7 +712,7 @@ impl FileOptions<'_, ExtendedFileOptions> {
         self
     }
 }
-impl FileOptions<'static, ()> {
+impl FileOptions<'static, 'static, ()> {
     /// Constructs a const `FileOptions` object.
     ///
     /// Note: This value is different than the return value of [`FileOptions::default()`]:
@@ -726,16 +729,15 @@ impl FileOptions<'static, ()> {
         alignment: 1,
         #[cfg(feature = "deflate-zopfli")]
         zopfli_buffer_size: Some(1 << 15),
-        #[cfg(feature = "aes-crypto")]
-        aes_mode: None,
         system: None,
+        name: None,
     };
 }
 
-impl<'k> FileOptions<'k, ()> {
+impl<'k, 'n> FileOptions<'k, 'n, ()> {
     /// Convert to `FullFileOptions`.
     #[must_use]
-    pub fn into_full_options(self) -> FullFileOptions<'k> {
+    pub fn into_full_options(self) -> FullFileOptions<'k, 'n> {
         FileOptions {
             compression_method: self.compression_method,
             compression_level: self.compression_level,
@@ -747,14 +749,13 @@ impl<'k> FileOptions<'k, ()> {
             alignment: self.alignment,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: self.zopfli_buffer_size,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: self.aes_mode,
             system: self.system,
+            name: self.name,
         }
     }
 }
 
-impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
+impl<T: FileOptionExtension> Default for FileOptions<'_, '_, T> {
     /// Construct a new `FileOptions` object
     fn default() -> Self {
         Self {
@@ -768,9 +769,8 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, T> {
             alignment: 1,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: Some(1 << 15),
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
+            name: None,
         }
     }
 }
@@ -910,12 +910,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .try_inner_mut()?
             .seek(SeekFrom::Start(write_position))?;
         let mut new_data = src_data.clone();
-        let dest_name_string = dest_name.to_string();
-        let dest_name_arc: Arc<str> = dest_name_string.into();
-        let dest_name_raw_arc: Arc<[u8]> =
-            unsafe { Arc::from_raw(Arc::into_raw(dest_name_arc.clone()) as *const [u8]) };
-        let dest_name_raw = dest_name_raw_arc.as_ref();
-        new_data.file_name = dest_name_arc;
+        let dest_name_raw = dest_name.as_bytes();
         new_data.header_start = write_position;
         let extra_data_start = write_position
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
@@ -938,7 +933,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
         let block = new_data.local_block(dest_name_raw)?;
-        let index = self.insert_file_data(dest_name_raw_arc.clone(), new_data)?;
+        let index = self.insert_file_data(dest_name_raw, new_data)?;
         let new_data = &self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
@@ -1079,7 +1074,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Get ZIP archive comment.
-    pub fn get_comment(&mut self) -> Result<&str, Utf8Error> {
+    pub fn get_comment(&self) -> Result<&str, Utf8Error> {
         from_utf8(self.get_raw_comment())
     }
 
@@ -1091,47 +1086,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         &self.comment
     }
 
-    /// Set ZIP64 archive comment.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn set_zip64_comment<S>(&mut self, comment: Option<S>) -> ZipResult<()>
-    where
-        S: Into<Box<str>>,
-    {
-        if let Some(com) = comment {
-            self.set_comment(com)?;
-        }
-        Ok(())
-    }
-
-    /// Set raw ZIP64 archive comment.
-    ///
-    /// This sets the raw bytes of the comment. The comment
-    /// is typically expected to be encoded in UTF-8.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn set_raw_zip64_comment(&mut self, comment: Option<Box<[u8]>>) -> ZipResult<()> {
-        if let Some(com) = comment {
-            self.set_raw_comment(com)?;
-        }
-        Ok(())
-    }
-
     /// Get the zip64 extensible data. Use at your own risk
     /// See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
     pub fn set_raw_zip64_extensible_data_sector(&mut self, extensible_data: Box<[u8]>) {
         self.zip64_extensible_data_sector = Some(extensible_data);
-    }
-
-    /// Get ZIP64 archive comment.
-    #[deprecated(
-        note = "Zip64 comment is not part of the zip specification - see https://github.com/zip-rs/zip2/pull/747"
-    )]
-    pub fn get_zip64_comment(&mut self) -> Option<Result<&str, Utf8Error>> {
-        // no-op since deprecated
-        None
     }
 
     /// Get raw ZIP64 archive comment.
@@ -1187,10 +1145,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S: ToString, T: FileOptionExtension>(
+    fn start_entry<T: FileOptionExtension>(
         &mut self,
-        name: &S,
-        mut options: FileOptions<'_, T>,
+        file_name_raw: &[u8],
+        mut options: FileOptions<'_, '_, T>,
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()> {
         self.finish_file()?;
@@ -1208,55 +1166,45 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         let central_extra_data = options.extended_options.central_extra_data();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            let mut new_extra_data = zip64_block.serialize().into_vec();
-            new_extra_data.append(&mut extra_data);
+            let mut new_extra_data = Vec::with_capacity(zip64_block.full_size() + extra_data.len());
+            zip64_block.write(&mut new_extra_data)?;
+            new_extra_data.extend_from_slice(&extra_data);
             extra_data = new_extra_data;
         }
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
-        let (compression_method, aes_mode) = match options.encrypt_with {
-            // Preserve AES method for raw copies without needing a password
-            #[cfg(feature = "aes-crypto")]
-            None if options.aes_mode.is_some() => (CompressionMethod::Aes, options.aes_mode),
-            #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes { mode, salt, .. }) => {
-                let aes_mode = crate::aes::AesModeOptions::new(
-                    mode,
-                    AesVendorVersion::Ae2,
-                    options.compression_method,
-                    salt,
-                );
-                (CompressionMethod::Aes, Some(aes_mode))
-            }
-            _ => (options.compression_method, None),
-        };
-
-        // Write AES encryption extra data.
+        // Preserve AES method for raw copies without needing a password
+        let compression_method = options.compression_method;
         #[allow(unused_mut)]
         let mut aes_extra_data_start = 0;
-        #[cfg(feature = "aes-crypto")]
-        if let Some(crate::aes::AesModeOptions {
-            mode,
-            vendor_version,
-            actual_compression_method,
-            ..
-        }) = aes_mode
-        {
-            // For raw copies of AES entries, write the correct AES extra data immediately
-            let aex_extra_field =
-                AexEncryption::new(vendor_version, mode, actual_compression_method);
-            let buf = &aex_extra_field.as_bytes()[offset_of!(AexEncryption, version)..];
-            aes_extra_data_start = extra_data.len() as u64;
-            ExtendedFileOptions::add_extra_data_unchecked(
-                &mut extra_data,
-                UsedExtraField::AeXEncryption.as_u16(),
-                buf,
-            )?;
-        }
+        let aes_mode_options = match options.encrypt_with {
+            #[cfg(feature = "aes-crypto")]
+            Some(EncryptWith::Aes {
+                mode,
+                vendor_version,
+                ..
+            }) => {
+                // Write AES encryption extra data.
+                // For raw copies of AES entries, write the correct AES extra data immediately
+                let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
+                let mut buf = [0u8; AexEncryption::EXTRA_FIELD_SIZE as usize];
+                aex_extra_field.write_data(&mut buf.as_mut_slice())?;
+
+                aes_extra_data_start = extra_data.len() as u64;
+                ExtendedFileOptions::add_extra_data_unchecked(
+                    &mut extra_data,
+                    UsedExtraField::AeXEncryption.as_u16(),
+                    &buf,
+                )?;
+                Some((mode, vendor_version))
+            }
+            _ => None,
+        };
+
         let header_end = header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + name.to_string().len() as u64;
+            + file_name_raw.len() as u64;
 
         if options.alignment > 1 {
             let extra_data_end = header_end + extra_data.len() as u64;
@@ -1294,21 +1242,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             ExtendedFileOptions::validate_extra_data(data, true)?;
         }
-        #[cfg(feature = "aes-crypto")]
-        let aes_mode = aes_mode.map(super::aes::AesModeOptions::to_tuple);
-        let file_name: Arc<str> = name.to_string().into();
-        let file_name_raw_arc: Arc<[u8]> =
-            unsafe { Arc::from_raw(Arc::into_raw(file_name.clone()) as *const [u8]) };
-        let file_name_raw = file_name_raw_arc.as_ref();
         let mut file = ZipFileData::initialize_local_block(
-            file_name,
+            file_name_raw,
             &options,
             &raw_values,
             header_start,
             None,
             aes_extra_data_start,
             compression_method,
-            aes_mode,
+            aes_mode_options,
             &extra_data,
         );
         if let Some(comment) = options.extended_options.take_file_comment() {
@@ -1325,7 +1267,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         file.extra_data_start = Some(header_end);
-        let index = self.insert_file_data(file_name_raw_arc.clone(), file)?;
+        let index = self.insert_file_data(file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
             ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
@@ -1347,8 +1289,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes {
                 mode,
-                password,
+                // If the password is None (when we use the `options()` method)
+                // we re-use the same encryption
+                password: Some(password),
                 salt,
+                ..
             }) => {
                 let writer = self.close_writer()?;
                 let aeswriter =
@@ -1393,7 +1338,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.ok_or_abort_file(result)?;
                 self.inner = GenericZipWriter::Storer(MaybeEncrypted::ZipCrypto(zipwriter));
             }
-            None => {}
+            _ => {}
         }
         let file = &mut self.files[index];
         debug_assert!(file.data_start.get().is_none());
@@ -1403,15 +1348,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn insert_file_data(
-        &mut self,
-        file_name_raw: Arc<[u8]>,
-        file: ZipFileData,
-    ) -> ZipResult<usize> {
-        if self.files.contains_key(file_name_raw.as_ref()) {
-            return Err(invalid!("Duplicate filename: {}", file.file_name));
+    fn insert_file_data(&mut self, file_name_raw: &[u8], file: ZipFileData) -> ZipResult<usize> {
+        if self.files.contains_key(file_name_raw) {
+            return Err(invalid!(
+                "Duplicate filename: {:?}",
+                file_name_raw.escape_ascii()
+            ));
         }
-        let (index, _) = self.files.insert_full(file_name_raw, file);
+        let (index, _) = self.files.insert_full(file_name_raw.into(), file);
         Ok(index)
     }
 
@@ -1447,12 +1391,11 @@ impl<W: Write + Seek> ZipWriter<W> {
                 update_aes_extra_data(writer, file, self.stats.bytes_written)?;
             }
 
-            let crc = !matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2, _)));
-
-            file.crc32 = if crc {
-                self.stats.hasher.clone().finalize()
-            } else {
+            file.crc32 = if matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2))) {
+                // AE2 disables CRC32 in the local file header
                 0
+            } else {
+                self.stats.hasher.clone().finalize()
             };
 
             if file.is_using_data_descriptor() {
@@ -1523,15 +1466,34 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Create a file in the archive and start writing its' contents. The file must not have the
+    /// Create a file in the archive and start writing its contents. The file must not have the
     /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
-    pub fn start_file<S: ToString, T: FileOptionExtension>(
+    pub fn start_file<'k, 'n, S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
-        mut options: FileOptions<'_, T>,
+        options: FileOptions<'k, 'n, T>,
     ) -> ZipResult<()> {
+        let name = name.to_string();
+        let options = FileOptions {
+            name: Some(name.as_bytes()),
+            ..options
+        };
+        self.start_file_with_options(options)
+    }
+
+    /// Create a file in the archive and start writing its contents. The file must not have the
+    /// same name as a file already in the archive. The name need not be UTF-8.
+    ///
+    /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
+    pub fn start_file_with_options<T: FileOptionExtension>(
+        &mut self,
+        mut options: FileOptions<'_, '_, T>,
+    ) -> ZipResult<()> {
+        let Some(name) = options.name else {
+            return Err(invalid!("File name must be specified"));
+        };
         options.normalize();
         let make_new_self = self.inner.prepare_next_writer(
             options.compression_method,
@@ -1539,7 +1501,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             options.zopfli_buffer_size,
         )?;
-        self.start_entry(&name, options, None)?;
+        self.start_entry(name, options, None)?;
         let result = self.inner.switch_to(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
@@ -1618,7 +1580,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn start_file_from_path<E: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
         path: P,
-        options: FileOptions<'_, E>,
+        options: FileOptions<'_, '_, E>,
     ) -> ZipResult<()> {
         self.start_file(path_to_string(path)?, options)
     }
@@ -1658,14 +1620,15 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
-        self.raw_copy_file_rename_internal(file, &name, options)
+        let file_name = name.to_string();
+        self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options)
     }
 
-    fn raw_copy_file_rename_internal<R: Read, S: ToString, T: FileOptionExtension>(
+    fn raw_copy_file_rename_internal<R: Read, T: FileOptionExtension>(
         &mut self,
         mut file: ZipFile<'_, R>,
-        name: &S,
-        options: FileOptions<'_, T>,
+        name: &[u8],
+        options: FileOptions<'_, '_, T>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
@@ -1718,8 +1681,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// }
     /// ```
     pub fn raw_copy_file<R: Read>(&mut self, file: ZipFile<'_, R>) -> ZipResult<()> {
-        let name = file.name().to_owned();
-        self.raw_copy_file_rename(file, name)
+        let file_name = file.name()?.into_owned();
+        self.raw_copy_file_rename(file, file_name)
     }
 
     /// Add a new file using the already compressed data from a ZIP file being read and set the last
@@ -1751,8 +1714,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         last_modified_time: DateTime,
         unix_mode: Option<u32>,
     ) -> ZipResult<()> {
-        let name = file.name().to_owned();
-
         let mut options = file.options().into_full_options();
 
         options = options.last_modified_time(last_modified_time);
@@ -1766,8 +1727,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         options.normalize();
-
-        self.raw_copy_file_rename_internal(file, &name, options)
+        let file_name_raw = file.name_raw().to_owned();
+        self.raw_copy_file_rename_internal(file, &file_name_raw, options)
     }
 
     /// Add a directory entry.
@@ -1776,18 +1737,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn add_directory<S, T: FileOptionExtension>(
         &mut self,
         name: S,
-        mut options: FileOptions<'_, T>,
+        mut options: FileOptions<'_, '_, T>,
     ) -> ZipResult<()>
     where
         S: Into<String>,
     {
-        if options.permissions.is_none() {
-            options.permissions = Some(DEFAULT_DIR_PERMISSIONS);
-        }
-        *options
-            .permissions
-            .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |= 0o40000;
+        *options.permissions.get_or_insert(DEFAULT_DIR_PERMISSIONS) |= 0o40000;
         options.compression_method = Stored;
         options.encrypt_with = None;
 
@@ -1798,7 +1753,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(&name_with_slash, options, None)?;
+        self.start_entry(name_with_slash.as_bytes(), options, None)?;
         self.writing_to_file = false;
         self.switch_to_non_encrypting_writer()?;
         Ok(())
@@ -1812,7 +1767,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn add_directory_from_path<T: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
         path: P,
-        options: FileOptions<'_, T>,
+        options: FileOptions<'_, '_, T>,
     ) -> ZipResult<()> {
         self.add_directory(path_to_string(path)?, options)
     }
@@ -1852,21 +1807,16 @@ impl<W: Write + Seek> ZipWriter<W> {
         &mut self,
         name: N,
         target: T,
-        mut options: FileOptions<'_, E>,
+        mut options: FileOptions<'_, '_, E>,
     ) -> ZipResult<()> {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o777);
-        }
-        *options
-            .permissions
-            .as_mut()
-            .ok_or_else(|| std::io::Error::other("Cannot get permissions as mutable"))? |=
-            ffi::S_IFLNK;
+        let permissions = options.permissions.get_or_insert(0o777);
+        *permissions |= ffi::S_IFLNK;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
 
-        self.start_entry(&name, options, None)?;
+        let file_name = name.to_string();
+        self.start_entry(file_name.as_bytes(), options, None)?;
         self.writing_to_file = true;
         let result = self.write_all(target.to_string().as_bytes());
         self.ok_or_abort_file(result)?;
@@ -1885,7 +1835,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         &mut self,
         path: P,
         target: T,
-        options: FileOptions<'_, E>,
+        options: FileOptions<'_, '_, E>,
     ) -> ZipResult<()> {
         let path = path_to_string(path)?;
         let target = path_to_string(target)?;
@@ -2004,14 +1954,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let src_index = self.index_by_name(src_name.as_bytes())?;
         let mut dest_data = self.files[src_index].clone();
-        let dest_name_string = dest_name.to_string();
-        let dest_name_arc: Arc<str> = dest_name_string.into();
-        let dest_name_raw_arc: Arc<[u8]> =
-            unsafe { Arc::from_raw(Arc::into_raw(dest_name_arc.clone()) as *const [u8]) };
-        dest_data.file_name = dest_name_arc;
+        let file_name_raw = dest_name.as_bytes();
         dest_data.central_header_start = 0;
-        self.insert_file_data(dest_name_raw_arc, dest_data)?;
-
+        self.insert_file_data(file_name_raw, dest_data)?;
         Ok(())
     }
 
@@ -2423,7 +2368,8 @@ fn update_aes_extra_data<W: Write + Seek>(
     file: &mut ZipFileData,
     bytes_written: u64,
 ) -> ZipResult<()> {
-    let Some((aes_mode, version, compression_method)) = &mut file.aes_mode else {
+    let inner_compression_method = file.compression_method;
+    let Some((aes_mode, version)) = &mut file.aes_mode else {
         return Ok(());
     };
 
@@ -2449,9 +2395,10 @@ fn update_aes_extra_data<W: Write + Seek>(
         extra_data_start + file.aes_extra_data_start,
     ))?;
 
-    let aes_extra_field = AexEncryption::new(*version, *aes_mode, *compression_method);
-    let buf = aes_extra_field.as_bytes();
-    writer.write_all(buf)?;
+    let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
+    let mut buf = [0u8; AexEncryption::FULL_SIZE];
+    aes_extra_field.write(&mut buf.as_mut_slice())?;
+    writer.write_all(&buf)?;
 
     let aes_extra_data_start = file.aes_extra_data_start as usize;
     let Some(ref mut extra_field) = file.extra_field else {
@@ -2460,8 +2407,8 @@ fn update_aes_extra_data<W: Write + Seek>(
         ));
     };
     let mut vec = extra_field.to_vec();
-    vec[aes_extra_data_start..aes_extra_data_start + size_of::<AexEncryption>()]
-        .copy_from_slice(buf);
+    vec[aes_extra_data_start..aes_extra_data_start + AexEncryption::FULL_SIZE]
+        .copy_from_slice(&buf);
     *extra_field = Arc::from(vec.into_boxed_slice());
 
     Ok(())
@@ -2518,8 +2465,7 @@ impl ZipFileData {
             + file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
-        let zip64_block = zip64_block.serialize();
-        writer.write_all(&zip64_block)?;
+        zip64_block.write(writer)?;
         Ok(())
     }
 
@@ -2555,7 +2501,7 @@ impl ZipFileData {
         writer.write_all(file_name_raw)?;
         // extra field
         if let Some(zip64_extra_field) = zip64_extra_field_block {
-            writer.write_all(&zip64_extra_field.serialize())?;
+            zip64_extra_field.write(writer)?;
         }
         if !stripped_extra.is_empty() {
             writer.write_all(&stripped_extra)?;
@@ -2822,7 +2768,10 @@ mod tests {
             .start_file_from_path(path, SimpleFileOptions::default())
             .unwrap();
         let archive = writer.finish_into_readable().unwrap();
-        assert_eq!(Some("foo/example.txt"), archive.name_for_index(0));
+        assert_eq!(
+            "foo/example.txt",
+            archive.name_for_index(0).unwrap().unwrap()
+        );
     }
 
     #[test]
@@ -2874,9 +2823,8 @@ mod tests {
             alignment: 1,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
+            name: None,
         };
         writer.start_file("mimetype", options).unwrap();
         writer
@@ -2913,7 +2861,7 @@ mod tests {
     #[test]
     fn write_non_utf8() {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = FileOptions {
+        let mut options = FileOptions {
             compression_method: Stored,
             compression_level: None,
             last_modified_time: DateTime::default(),
@@ -2924,21 +2872,20 @@ mod tests {
             alignment: 1,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
+            name: None,
         };
 
         // GB18030
         // "中文" = [214, 208, 206, 196]
-        let filename = unsafe { String::from_utf8_unchecked(vec![214, 208, 206, 196]) };
-        writer.start_file(filename, options).unwrap();
+        options.name = Some(&[214, 208, 206, 196]);
+        writer.start_file_with_options(options).unwrap();
         writer.write_all(b"encoding GB18030").unwrap();
 
         // SHIFT_JIS
         // "日文" = [147, 250, 149, 182]
-        let filename = unsafe { String::from_utf8_unchecked(vec![147, 250, 149, 182]) };
-        writer.start_file(filename, options).unwrap();
+        options.name = Some(&[147, 250, 149, 182]);
+        writer.start_file_with_options(options).unwrap();
         writer.write_all(b"encoding SHIFT_JIS").unwrap();
         let result = writer.finish().unwrap();
 
@@ -2974,6 +2921,8 @@ mod tests {
     #[test]
     #[cfg(feature = "deflate-flate2")]
     fn test_shallow_copy() {
+        use std::borrow::Cow;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: CompressionMethod::default(),
@@ -2986,9 +2935,8 @@ mod tests {
             alignment: 0,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
+            name: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -3004,7 +2952,7 @@ mod tests {
             .shallow_copy_file(SECOND_FILENAME, SECOND_FILENAME)
             .expect_err("Duplicate filename");
         let mut reader = writer.finish_into_readable().unwrap();
-        let mut file_names: Vec<&str> = reader.file_names().collect();
+        let mut file_names: Vec<Cow<'_, str>> = reader.file_names().map(|f| f.unwrap()).collect();
         file_names.sort();
         let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME];
         expected_file_names.sort();
@@ -3028,6 +2976,8 @@ mod tests {
     #[test]
     #[cfg(feature = "deflate-flate2")]
     fn test_deep_copy() {
+        use std::borrow::Cow;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: CompressionMethod::default(),
@@ -3040,9 +2990,8 @@ mod tests {
             alignment: 0,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
-            #[cfg(feature = "aes-crypto")]
-            aes_mode: None,
             system: None,
+            name: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -3058,7 +3007,7 @@ mod tests {
             .unwrap();
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
-        let mut file_names: Vec<&str> = reader.file_names().collect();
+        let mut file_names: Vec<Cow<'_, str>> = reader.file_names().map(|f| f.unwrap()).collect();
         file_names.sort();
         let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME, THIRD_FILENAME];
         expected_file_names.sort();
@@ -3288,7 +3237,7 @@ mod tests {
         let _count = zip.write(&contents[..]).unwrap();
         let mut zip = zip.finish_into_readable().unwrap();
         let file = zip.by_index(0).unwrap();
-        assert_eq!(file.name(), "sleep");
+        assert_eq!(file.name().unwrap(), "sleep");
         let data_start = file.data_start().unwrap();
         assert_eq!(data_start, u64::from(page_size));
     }
@@ -3310,7 +3259,7 @@ mod tests {
         {
             let mut zip = ZipArchive::new(Cursor::new(&mut data)).unwrap();
             let file = zip.by_index(0).unwrap();
-            assert_eq!(file.name(), "sleep");
+            assert_eq!(file.name().unwrap(), "sleep");
             let data_start = file.data_start().unwrap();
             assert_eq!(data_start, u64::from(page_size));
         }
@@ -3678,8 +3627,10 @@ mod tests {
     #[test]
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
         use crate::AesMode::Aes256;
-        use crate::write::EncryptWith::Aes;
+        use crate::types::AesVendorVersion;
+        use crate::write::EncryptWith;
         use CompressionMethod::Deflated;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -3688,9 +3639,10 @@ mod tests {
             last_modified_time: DateTime::from_date_and_time(2107, 4, 8, 15, 54, 19)?,
             permissions: None,
             large_file: true,
-            encrypt_with: Some(Aes {
+            encrypt_with: Some(EncryptWith::Aes {
                 mode: Aes256,
-                password: &[],
+                password: Some(&[]),
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {
@@ -4212,6 +4164,9 @@ mod tests {
     #[cfg(all(feature = "_bzip2_any", feature = "aes-crypto", not(miri)))]
     #[test]
     fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
+        use crate::types::AesVendorVersion;
+        use crate::types::EncryptWith;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(true);
         writer.set_raw_comment([0].into())?;
@@ -4223,9 +4178,10 @@ mod tests {
             last_modified_time: DateTime::from_date_and_time(2009, 6, 3, 13, 37, 39)?,
             permissions: Some(2644352413),
             large_file: true,
-            encrypt_with: Some(crate::write::EncryptWith::Aes {
+            encrypt_with: Some(EncryptWith::Aes {
                 mode: crate::AesMode::Aes256,
-                password: &[],
+                vendor_version: AesVendorVersion::Ae2,
+                password: Some(&[]),
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {
@@ -4397,7 +4353,9 @@ mod tests {
     #[cfg(feature = "aes-crypto")]
     fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
         use crate::AesMode::Aes128;
-        use crate::write::EncryptWith::Aes;
+        use crate::types::AesVendorVersion;
+        use crate::write::EncryptWith;
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
         let options = FileOptions {
@@ -4406,9 +4364,10 @@ mod tests {
             last_modified_time: DateTime::from_date_and_time(2107, 6, 5, 13, 0, 21)?,
             permissions: None,
             large_file: true,
-            encrypt_with: Some(Aes {
+            encrypt_with: Some(EncryptWith::Aes {
                 mode: Aes128,
-                password: &[],
+                password: Some(&[]),
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None,
             }),
             extended_options: ExtendedFileOptions {

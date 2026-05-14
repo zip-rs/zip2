@@ -4,22 +4,26 @@ use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraField;
+use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::is_dir;
 use crate::spec::{
     self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock,
-    ZipDataDescriptorBlock, ZipFlags, ZipLocalEntryBlock,
+    ZipDataDescriptorBlock, ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
-use crate::zipcrypto::EncryptWith;
-use core::fmt::Debug;
-use core::fmt::Display;
+use crate::zipcrypto::ZipCryptoKeys;
+use core::marker::PhantomData;
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+
+pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
+pub(crate) use crate::format::flags::System;
 
 pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0_040_000;
@@ -33,112 +37,43 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
-/// System inside `version made by` (upper byte)
-/// Reference: 4.4.2.2
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[allow(clippy::upper_case_acronyms)]
-#[repr(u8)]
-pub enum System {
-    /// `MS-DOS` and `OS/2` (`FAT` / `VFAT` / `FAT32` file systems; default on Windows)
-    Dos = 0,
-    /// `Amiga`
-    Amiga = 1,
-    /// `OpenVMS`
-    OpenVMS = 2,
-    /// Default on Unix; default for symlinks on all platforms
-    Unix = 3,
-    /// `VM/CMS`
-    VmCms = 4,
-    /// `Atari ST`
-    AtariSt = 5,
-    /// `OS/2 H.P.F.S.`
-    Os2 = 6,
-    /// Legacy `Mac OS`, pre `OS X`
-    Macintosh = 7,
-    /// `Z-System`
-    ZSystemO = 8,
-    /// `CP/M`
-    CPM = 9,
-    /// Windows NTFS (with extra attributes; not used by default)
-    WindowsNTFS = 10,
-    /// `MVS (OS/390 - Z/OS)`
-    MVS = 11,
-    /// `VSE`
-    VSE = 12,
-    /// `Acorn Risc`
-    AcornRisc = 13,
-    /// `VFAT`
-    VFAT = 14,
-    /// alternate MVS
-    AlternateMVS = 15,
-    /// `BeOS`
-    BeOS = 16,
-    /// `Tandem`
-    Tandem = 17,
-    /// `OS/400`
-    Os400 = 18,
-    /// `OS X` (Darwin) (with extra attributes; not used by default)
-    OsDarwin = 19,
-    /// unused
-    #[default]
-    Unknown = 255,
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum EncryptWith<'k> {
+    #[cfg(feature = "aes-crypto")]
+    Aes {
+        mode: crate::AesMode,
+        vendor_version: AesVendorVersion,
+        // When the password is None, it means that we are reusing the previous encryption
+        password: Option<&'k [u8]>,
+        salt: Option<crate::aes::AesSalt>,
+    },
+    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
 }
 
-impl System {
-    /// Parse `version_made_by` block in local entry block.
-    #[must_use]
-    pub fn from_version_made_by(version_made_by: u16) -> Self {
-        // Extract upper byte from little-endian representation
-        let upper_byte = version_made_by.to_le_bytes()[1];
-        System::from(upper_byte) // from u8
-    }
-
-    /// Extract the system and version from a `version_made_by` field.
-    /// The first byte (lower) is the version, and the second byte (upper) is the system.
-    pub(crate) fn extract_bytes(version_made_by: u16) -> (u8, Self) {
-        let bytes = version_made_by.to_le_bytes();
-        (bytes[0], Self::from(bytes[1]))
-    }
-}
-
-impl From<u8> for System {
-    fn from(system: u8) -> Self {
-        match system {
-            0 => System::Dos,
-            1 => System::Amiga,
-            2 => System::OpenVMS,
-            3 => System::Unix,
-            4 => System::VmCms,
-            5 => System::AtariSt,
-            6 => System::Os2,
-            7 => System::Macintosh,
-            8 => System::ZSystemO,
-            9 => System::CPM,
-            10 => System::WindowsNTFS,
-            11 => System::MVS,
-            12 => System::VSE,
-            13 => System::AcornRisc,
-            14 => System::VFAT,
-            15 => System::AlternateMVS,
-            16 => System::BeOS,
-            17 => System::Tandem,
-            18 => System::Os400,
-            19 => System::OsDarwin,
-            _ => System::Unknown,
+#[cfg(feature = "_arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        #[cfg(feature = "aes-crypto")]
+        if bool::arbitrary(u)? {
+            return Ok(EncryptWith::Aes {
+                mode: crate::AesMode::arbitrary(u)?,
+                password: Some(u.arbitrary::<&[u8]>()?),
+                vendor_version: AesVendorVersion::Ae2,
+                salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
+            });
         }
-    }
-}
 
-impl From<System> for u8 {
-    fn from(system: System) -> Self {
-        system as u8
+        Ok(EncryptWith::ZipCrypto(
+            ZipCryptoKeys::arbitrary(u)?,
+            PhantomData,
+        ))
     }
 }
 
 /// Metadata for a file to be written
 #[non_exhaustive]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub struct FileOptions<'k, T: FileOptionExtension> {
+pub struct FileOptions<'k, 'n, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
     pub(crate) compression_level: Option<i64>,
     pub(crate) last_modified_time: DateTime,
@@ -149,14 +84,13 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
     pub(crate) alignment: u16,
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
-    #[cfg(feature = "aes-crypto")]
-    pub(crate) aes_mode: Option<crate::aes::AesModeOptions>,
     pub(crate) system: Option<System>,
+    pub(crate) name: Option<&'n [u8]>,
 }
 /// Simple File Options. Can be copied and good for simple writing zip files
-pub type SimpleFileOptions = FileOptions<'static, ()>;
+pub type SimpleFileOptions = FileOptions<'static, 'static, ()>;
 
-impl FileOptions<'static, ()> {
+impl FileOptions<'static, 'static, ()> {
     const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
 }
 
@@ -173,7 +107,7 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// ZIP flags
     pub flags: u16,
-    /// Compression method used to store the file
+    /// Compression method used to store the file (get the inner compression method if encryption is used)
     pub compression_method: CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: Option<DateTime>,
@@ -183,8 +117,6 @@ pub struct ZipFileData {
     pub compressed_size: u64,
     /// Size of the file when extracted
     pub uncompressed_size: u64,
-    /// Name of the file
-    pub file_name: Arc<str>,
     /// Extra field usually used for storage expansion
     pub extra_field: Option<Arc<[u8]>>,
     /// Extra field only written to central directory
@@ -205,8 +137,8 @@ pub struct ZipFileData {
     pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
-    /// AES mode if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+    /// AES settings if applicable
+    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
     /// Specifies where in the extra data the AES metadata starts
     pub aes_extra_data_start: u64,
 
@@ -215,6 +147,16 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
+        Ok(
+            if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {
+                file_name_utf8.into()
+            } else {
+                file_name_raw.from_cp437().map_err(std::io::Error::other)?
+            },
+        )
+    }
+
     /// Check if the encrypted flag is set
     pub fn is_encrypted(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::Encrypted)
@@ -288,33 +230,34 @@ impl ZipFileData {
         Ok(SeekableTake::new(reader, self.compressed_size)?)
     }
 
-    pub fn is_dir(&self) -> bool {
-        is_dir(&self.file_name)
+    pub fn is_dir(&self, file_name: &[u8]) -> bool {
+        is_dir(file_name)
     }
 
-    pub fn file_name_sanitized(&self) -> PathBuf {
-        let no_null_filename = match self.file_name.find('\0') {
-            Some(index) => &self.file_name[0..index],
-            None => &self.file_name,
+    pub(crate) fn file_name_sanitized(&self, file_name: &str) -> PathBuf {
+        let no_null_filename = match file_name.find('\0') {
+            Some(index) => &file_name[0..index],
+            None => file_name,
         };
 
         file_name_sanitized(no_null_filename)
     }
 
     /// Simplify the file name by removing the prefix and parent directories and only return normal components
-    pub(crate) fn simplified_components(&self) -> Option<Vec<&OsStr>> {
-        if self.file_name.contains('\0') {
+    pub(crate) fn simplified_components<'a>(&self, file_name: &'a str) -> Option<Vec<&'a OsStr>> {
+        if file_name.contains('\0') {
             return None;
         }
-        let input = Path::new(OsStr::new(&*self.file_name));
+        let input: &'a Path = Path::new(file_name);
         crate::path::simplified_components(input)
     }
 
-    pub(crate) fn enclosed_name(&self) -> Option<PathBuf> {
-        if self.file_name.contains('\0') {
+    pub(crate) fn enclosed_name(&self, file_name: &str) -> Option<PathBuf> {
+        if file_name.contains('\0') {
             return None;
         }
-        enclosed_name(&self.file_name)
+        let enclosed = enclosed_name(file_name)?;
+        Some(enclosed)
     }
 
     /// Get unix mode for the file
@@ -404,14 +347,14 @@ impl ZipFileData {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
-        file_name: Arc<str>,
-        options: &FileOptions<'_, T>,
+        file_name_raw: &[u8],
+        options: &FileOptions<'_, '_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
         aes_extra_data_start: u64,
         compression_method: CompressionMethod,
-        aes_mode: Option<(AesMode, AesVendorVersion, CompressionMethod)>,
+        aes_settings: Option<(AesMode, AesVendorVersion)>,
         extra_field: &[u8],
     ) -> Self {
         let permissions = options
@@ -429,7 +372,7 @@ impl ZipFileData {
             System::Unix
         };
         if system == System::Dos {
-            if is_dir(&file_name) {
+            if is_dir(file_name_raw) {
                 // DOS directory bit
                 external_attributes |= 0x10;
             }
@@ -442,13 +385,11 @@ impl ZipFileData {
             }
         }
         let mut flags = 0;
-        let encrypted = options.encrypt_with.is_some();
-        #[cfg(feature = "aes-crypto")]
-        let encrypted = encrypted || options.aes_mode.is_some();
-        if encrypted {
+        if options.has_encryption() {
+            // encrypt_with is AES or ZipCrypto
             flags |= ZipFlags::Encrypted.as_u16();
         }
-        if !file_name.is_ascii() {
+        if std::str::from_utf8(file_name_raw).is_ok() && !file_name_raw.is_ascii() {
             flags |= ZipFlags::LanguageEncoding.as_u16();
         }
         let mut local_block = ZipFileData {
@@ -460,7 +401,6 @@ impl ZipFileData {
             crc32: raw_values.crc32,
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
-            file_name, // Never used for saving, but used as map key in insert_file_data()
             extra_field: Some(Arc::from(extra_field)),
             central_extra_field: options
                 .extended_options
@@ -472,7 +412,7 @@ impl ZipFileData {
             central_header_start: 0,
             external_attributes,
             large_file: options.large_file,
-            aes_mode,
+            aes_mode: aes_settings,
             extra_fields: Vec::new(),
             extra_data_start,
             aes_extra_data_start,
@@ -499,22 +439,6 @@ impl ZipFileData {
             ..
         } = block;
 
-        let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
-        if encrypted {
-            return Err(ZipError::UnsupportedArchive(
-                "Encrypted files are not supported",
-            ));
-        }
-
-        /* FIXME: these were previously incorrect: add testing! */
-        let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
-        if using_data_descriptor {
-            return Err(ZipError::UnsupportedArchive(
-                "The file length is not available in the local header",
-            ));
-        }
-
-        let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let file_name_length: usize = file_name_length.into();
         let extra_field_length: usize = extra_field_length.into();
@@ -534,15 +458,6 @@ impl ZipFileData {
             return Err(e.into());
         }
 
-        let file_name: Arc<str> = if is_utf8 {
-            String::from_utf8_lossy(&file_name_raw).into()
-        } else {
-            file_name_raw
-                .from_cp437()
-                .map_err(std::io::Error::other)?
-                .into()
-        };
-
         let (version_made_by, system) = System::extract_bytes(version_made_by);
         let data = ZipFileData {
             system,
@@ -553,7 +468,6 @@ impl ZipFileData {
             crc32,
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
-            file_name,
             extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
@@ -623,10 +537,15 @@ impl ZipFileData {
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
         Ok(ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),
-            compression_method: self.compression_method.serialize_to_u16(),
+            compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
@@ -675,11 +594,16 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
         Ok(ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
             flags: self.flags(file_name_raw),
-            compression_method: self.compression_method.serialize_to_u16(),
+            compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
             crc32: self.crc32,
@@ -742,108 +666,6 @@ impl ZipFileData {
     }
 }
 
-/// The encryption specification used to encrypt a file with AES.
-///
-/// According to the [specification](https://www.winzip.com/win/en/aes_info.html#winzip11) AE-2
-/// does not make use of the CRC check.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum AesVendorVersion {
-    Ae1 = 0x0001,
-    Ae2 = 0x0002,
-}
-
-impl AesVendorVersion {
-    /// As u16
-    #[must_use]
-    pub const fn as_u16(self) -> u16 {
-        self as u16
-    }
-}
-
-impl TryFrom<u16> for AesVendorVersion {
-    type Error = &'static str;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        let aes_vendor_version = match value {
-            0x0001 => AesVendorVersion::Ae1,
-            0x0002 => AesVendorVersion::Ae2,
-            _ => return Err("Invalid AES vendor version"),
-        };
-        Ok(aes_vendor_version)
-    }
-}
-
-impl From<AesVendorVersion> for u16 {
-    fn from(value: AesVendorVersion) -> Self {
-        value as u16
-    }
-}
-
-/// AES variant used.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
-#[repr(u8)]
-pub enum AesMode {
-    /// 128-bit AES encryption.
-    Aes128 = 0x01,
-    /// 192-bit AES encryption.
-    Aes192 = 0x02,
-    /// 256-bit AES encryption.
-    Aes256 = 0x03,
-}
-
-impl AesMode {
-    /// As u8
-    #[must_use]
-    pub const fn as_u8(self) -> u8 {
-        self as u8
-    }
-}
-
-impl Display for AesMode {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Aes128 => write!(f, "AES-128"),
-            Self::Aes192 => write!(f, "AES-192"),
-            Self::Aes256 => write!(f, "AES-256"),
-        }
-    }
-}
-
-impl TryFrom<u8> for AesMode {
-    type Error = &'static str;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        let mode = match value {
-            0x01 => AesMode::Aes128,
-            0x02 => AesMode::Aes192,
-            0x03 => AesMode::Aes256,
-            _ => return Err("Invalid AES encryption strength"),
-        };
-        Ok(mode)
-    }
-}
-
-#[cfg(feature = "aes-crypto")]
-impl AesMode {
-    /// Length of the salt for the given AES mode.
-    #[must_use]
-    pub const fn salt_length(&self) -> usize {
-        self.key_length() / 2
-    }
-
-    /// Length of the key for the given AES mode.
-    #[must_use]
-    pub const fn key_length(&self) -> usize {
-        match self {
-            Self::Aes128 => 16,
-            Self::Aes192 => 24,
-            Self::Aes256 => 32,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -893,7 +715,6 @@ mod tests {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.into(),
             extra_field: None,
             central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
@@ -907,6 +728,9 @@ mod tests {
             aes_extra_data_start: 0,
             extra_fields: Vec::new(),
         };
-        assert_eq!(data.file_name_sanitized(), PathBuf::from("path/etc/passwd"));
+        assert_eq!(
+            data.file_name_sanitized(&file_name),
+            PathBuf::from("path/etc/passwd")
+        );
     }
 }

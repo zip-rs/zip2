@@ -20,7 +20,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Arc<[u8]>, ZipFileData>,
+    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -32,7 +32,7 @@ pub struct ZipArchiveMetadata {
 
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
-    pub(crate) files: Vec<(Arc<[u8]>, ZipFileData)>,
+    pub(crate) files: Vec<(Box<[u8]>, ZipFileData)>,
     pub(super) offset: u64,
     pub(super) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -74,7 +74,8 @@ impl SharedBuilder {
 ///
 ///     for i in 0..zip.len() {
 ///         let mut file = zip.by_index(i)?;
-///         println!("Filename: {}", file.name());
+///         let name = file.name()?;
+///         println!("Filename: {}", name);
 ///         std::io::copy(&mut file, &mut std::io::stdout())?;
 ///     }
 ///
@@ -89,7 +90,7 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: IndexMap<Arc<[u8]>, ZipFileData>,
+        files: IndexMap<Box<[u8]>, ZipFileData>,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
@@ -233,7 +234,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let limit_reader = data.find_content(&mut self.reader)?;
         match data.aes_mode {
             None => Ok(None),
-            Some((aes_mode, _, _)) => {
+            Some((aes_mode, _)) => {
                 let (verification_value, salt) =
                     crate::aes::AesReader::new(limit_reader, aes_mode, data.compressed_size)
                         .get_verification_value_and_salt()?;
@@ -287,7 +288,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// let file_names = (0..archive.len())
     ///     .into_par_iter()
     ///     .map_init({
-    ///         let metadata = archive.metadata().clone();
+    ///         let metadata = archive.metadata();
     ///         move || {
     ///             let file = fs::File::open(FILE_NAME).unwrap();
     ///             unsafe { zip::ZipArchive::unsafe_new_with_metadata(file, metadata.clone()) }
@@ -353,8 +354,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Returns an iterator over all the file and directory names in this archive.
-    pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.shared.files.values().map(|f| f.file_name.as_ref())
+    pub fn file_names(&self) -> impl Iterator<Item = ZipResult<Cow<'_, str>>> {
+        self.shared
+            .files
+            .iter()
+            .map(|(file_name_raw, data)| data.name(file_name_raw))
     }
 
     /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
@@ -448,11 +452,11 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the name of a file entry, if it's present.
     #[inline(always)]
-    pub fn name_for_index(&self, index: usize) -> Option<&str> {
+    pub fn name_for_index(&self, index: usize) -> Option<ZipResult<Cow<'_, str>>> {
         self.shared
             .files
             .get_index(index)
-            .map(|(_, file)| file.file_name.as_ref())
+            .map(|(file_name_raw, zip_file_data)| zip_file_data.name(file_name_raw))
     }
 
     /// Search for a file entry by name and return a seekable object.
@@ -564,8 +568,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let limit_reader = data.find_content(&mut self.reader)?;
 
-        let crypto_reader =
-            make_crypto_reader(data, limit_reader, options.password, data.aes_mode)?;
+        let crypto_reader = make_crypto_reader(data, limit_reader, options.password)?;
 
         let crc32 = if options.ignore_crc {
             None
@@ -580,6 +583,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.compression_method,
                 data.uncompressed_size,
                 crc32,
+                data.aes_mode.map(|aes| aes.1),
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,
@@ -595,19 +599,22 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// extracting archives that contain a single top-level directory that
     /// you want to "unwrap" and extract directly.
     ///
-    /// For a sensible default filter, you can use [`root_dir_common_filter`].
+    /// For a sensible default filter, you can use [`crate::read::root_dir_common_filter`].
     /// For a custom filter, see [`RootDirFilter`].
     pub fn root_dir(&self, filter: impl RootDirFilter) -> ZipResult<Option<PathBuf>> {
         let mut root_dir: Option<PathBuf> = None;
 
         for i in 0..self.len() {
-            let (_, file) = self
+            let (file_name_raw, file) = self
                 .shared
                 .files
                 .get_index(i)
                 .ok_or(ZipError::FileNotFound)?;
-
-            let path = match file.enclosed_name() {
+            let file_name = match file.name(file_name_raw) {
+                Ok(file_name) => file_name,
+                Err(_) => continue,
+            };
+            let path = match file.enclosed_name(&file_name) {
                 Some(path) => path,
                 None => return Ok(None),
             };
@@ -638,7 +645,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             // If this entry is located at the root of the archive...
             if path.components().count() == 1 {
-                if file.is_dir() {
+                if file.is_dir(file_name_raw.as_ref()) {
                     // If it's a directory, it could be the root directory.
                     replace_root_dir!(path);
                 }
@@ -885,11 +892,12 @@ mod tests {
             // Attempt to read a small portion or all of each file to ensure it's accessible
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer).unwrap();
+            let file_name = file.name().unwrap();
             assert_eq!(
                 buffer.len(),
                 file.size() as usize,
                 "File size mismatch for {}",
-                file.name()
+                file_name
             );
         }
     }
@@ -911,7 +919,7 @@ mod tests {
             .by_index_with_options(0, ZipReadOptions::new().ignore_encryption_flag(true))
             .unwrap();
         let mut contents = String::new();
-        assert_eq!(file.name(), "plaintext.txt");
+        assert_eq!(file.name().unwrap(), "plaintext.txt");
 
         // The file claims it is encrypted, but it is not.
         assert!(file.encrypted());

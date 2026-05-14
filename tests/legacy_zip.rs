@@ -12,7 +12,8 @@ fn decompress_shrink() {
     let mut file = archive
         .by_name("FIRST.TXT")
         .expect("couldn't find file in archive");
-    assert_eq!("FIRST.TXT", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("FIRST.TXT", file_name);
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)
@@ -29,7 +30,8 @@ fn decompress_reduce() {
     let mut file = archive
         .by_name("first.txt")
         .expect("couldn't find file in archive");
-    assert_eq!("first.txt", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("first.txt", file_name);
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)
@@ -46,7 +48,8 @@ fn decompress_implode() {
     let mut file = archive
         .by_name("first.txt")
         .expect("couldn't find file in archive");
-    assert_eq!("first.txt", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("first.txt", file_name);
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)

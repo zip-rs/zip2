@@ -53,63 +53,6 @@ impl Magic {
     pub const DATA_DESCRIPTOR_SIGNATURE: Self = Self::literal(0x0807_4b50);
 }
 
-/// Zip flags
-/// Stored as Little endian
-#[allow(unused)]
-#[rustfmt::skip]
-#[repr(u16)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub(crate) enum ZipFlags {
-    /// If set, indicates that the file is encrypted.
-    Encrypted                   = 0b0000_0000_0000_0001,
-    CompressionSetting          = 0b0000_0000_0000_0010,
-    CompressionSetting2         = 0b0000_0000_0000_0100,
-    /// If this bit is set, the fields crc-32, compressed size and uncompressed size are set to zero in the  local header.
-    /// The correct values are put in the data descriptor immediately following the compressed data.
-    UsingDataDescriptor         = 0b0000_0000_0000_1000,
-    /// Reserved for use with method 8, for enhanced deflating.
-    ReservedEnhancedDeflating   = 0b0000_0000_0001_0000,
-    /// If this bit is set, this indicates that the file is compressed patched data.
-    CompressedPatchedData       = 0b0000_0000_0010_0000,
-    /// Strong encryption.
-    /// If this bit is set, you MUST set the version needed to extract value to at least 50 and you MUST also set bit 0.
-    /// If AES encryption is used, the version needed to extract value MUST be at least 51.
-    StrongEncryption            = 0b0000_0000_0100_0000,
-    // bit 7 Currently unused   = 0b0000_0000_1000_0000;
-    // bit 8 Currently unused   = 0b0000_0001_0000_0000;
-    // bit 9 Currently unused   = 0b0000_0010_0000_0000;
-    // bit 10 Currently unused  = 0b0000_0100_0000_0000;
-
-    /// Language encoding flag (EFS).
-    /// If this bit is set, the filename and comment fields for this file MUST be encoded using UTF-8.
-    LanguageEncoding            = 0b0000_1000_0000_0000,
-    /// Reserved by PKWARE for enhanced compression.
-    ReservedEnhancedCompression = 0b0001_0000_0000_0000,
-    /// Set when encrypting the Central Directory to indicate selected data values in the Local Header are masked to hide their actual values.
-    Masked                      = 0b0010_0000_0000_0000,
-    /// Reserved by PKWARE for alternate streams.
-    ReservedAlternateStream     = 0b0100_0000_0000_0000,
-    /// Reserved by PKWARE.
-    Reserved                    = 0b1000_0000_0000_0000,
-}
-
-impl ZipFlags {
-    pub(crate) fn matching(flags: u16, matching_flag: Self) -> bool {
-        flags & u16::from(matching_flag) != 0
-    }
-
-    pub(crate) const fn as_u16(self) -> u16 {
-        self as u16
-    }
-}
-
-impl From<ZipFlags> for u16 {
-    fn from(value: ZipFlags) -> u16 {
-        value.as_u16()
-    }
-}
-
 /// The file size at which a ZIP64 record becomes necessary.
 ///
 /// If a file larger than this threshold attempts to be written, compressed or uncompressed, and
@@ -147,7 +90,7 @@ impl From<ZipFlags> for u16 {
 ///     zip.start_file("one.dat", options)?;
 ///     let zip = zip.finish_into_readable()?;
 ///     let names: Vec<_> = zip.file_names().collect();
-///     assert_eq!(&names, &["one.dat"]);
+///     assert_eq!(names[0].as_ref().unwrap(), "one.dat");
 /// }
 ///
 /// // Create a new zip output.
@@ -686,7 +629,7 @@ impl Zip64CentralDirectoryEnd {
             ..
         } = Zip64CDEBlock::parse(reader)?;
 
-        if record_size < 40 {
+        if record_size < (Self::MIN_SIZE - size_of::<Magic>()) as u64 {
             return Err(invalid!("Low EOCD64 record size"));
         } else if record_size.saturating_add(Self::RECORD_OVERHEAD) > max_size {
             return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
@@ -803,6 +746,8 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
     const CDFH_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
+    const EOCD_FIXED_SIZE: u64 = 22;
+
     // Instantiate the mandatory finder
     let mut eocd_finder = MagicFinder::<Backwards<'static>>::new(&EOCD_SIG_BYTES, 0, end_exclusive);
     let mut subfinder: Option<OptimisticMagicFinder<Forward<'static>>> = None;
@@ -824,7 +769,7 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 
         // ! Relaxed (inequality) due to garbage-after-comment Python files
         // Consistency check: the EOCD comment must terminate before the end of file
-        if eocd.zip_file_comment.len() as u64 + eocd_offset + 22 > file_len {
+        if eocd.zip_file_comment.len() as u64 + eocd_offset + EOCD_FIXED_SIZE > file_len {
             parsing_error = Some(invalid!("Invalid EOCD comment length"));
             continue;
         }
@@ -999,8 +944,8 @@ pub(crate) fn find_central_directory<R: Read + Seek + ?Sized>(
 }
 
 #[inline]
-pub(crate) fn is_dir(filename: &str) -> bool {
-    matches!(filename.as_bytes().last(), Some(b'/') | Some(b'\\'))
+pub(crate) fn is_dir(filename: &[u8]) -> bool {
+    matches!(filename.last(), Some(b'/') | Some(b'\\'))
 }
 
 #[cfg(test)]
