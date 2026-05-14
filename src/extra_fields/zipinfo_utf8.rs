@@ -44,15 +44,16 @@ impl UnicodeExtraField {
     }
 
     pub(crate) fn full_size(&self) -> usize {
-        mem::size_of::<u16>()
-            + mem::size_of::<u16>()
-            + mem::size_of::<u8>()
-            + mem::size_of::<u32>()
-            + self.content.len()
+        mem::size_of::<u16>() // magic
+            + mem::size_of::<u16>() // length
+            + mem::size_of::<u8>() // version
+            + mem::size_of::<u32>() // crc32
+            + self.content.len() // content
     }
 
     /// Write the Unicode extra field. Magic header should already be written
     pub(crate) fn write<W: Write>(&self, writer: &mut W) -> ZipResult<()> {
+        // Magic header should already be written
         let size = self.full_size() as u16;
         writer.write_all(&size.to_le_bytes())?;
         let version = 1u8;

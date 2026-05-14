@@ -544,7 +544,6 @@ mod tests {
 
     #[test]
     fn sanitize() {
-        use super::ExtraFields;
         use super::{CompressionMethod, System, ZipFileData};
         use std::{path::PathBuf, sync::OnceLock};
 
@@ -566,7 +565,7 @@ mod tests {
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
-            extra_fields: ExtraFields::new(),
+            ..ZipFileData::default()
         };
         assert_eq!(
             data.file_name_sanitized(&file_name),

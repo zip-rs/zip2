@@ -881,25 +881,17 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let mut new_data = src_data.clone();
         let dest_name_raw = dest_name.as_bytes();
         new_data.header_start = write_position;
-        let extra_fields_start = write_position
-            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + dest_name_raw.len() as u64;
-        new_data.extra_data_start = Some(extra_fields_start);
-        let local_extra_fields_len = new_data
-            .extra_fields
-            .local_extra_fields()
-            .map(|x| x.size(true))
-            .sum::<usize>() as u64;
-        let data_start = extra_fields_start + local_extra_fields_len;
-        new_data.data_start.take();
-        new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
         let index = self.insert_file_data(dest_name_raw, new_data)?;
         let new_data = &mut self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
-            new_data.write_local_header(plain_writer, dest_name_raw, None)?;
-            debug_assert_eq!(data_start, plain_writer.stream_position()?);
+            eprintln!("wrr {}", plain_writer.stream_position()?);
+            new_data.write_local_header(write_position, plain_writer, dest_name_raw, None)?;
+            debug_assert_eq!(
+                new_data.data_start.get(),
+                Some(&plain_writer.stream_position()?)
+            );
             self.writing_to_file = true;
             plain_writer.write_all(&copy)?;
             if self.flush_on_finish_file {
@@ -1151,21 +1143,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             }) => {
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
-                extra_fields.push(ExtraField::AeXEncryption {
-                    aes_mode: mode,
-                    aes_vendor_version: vendor_version,
+                extra_fields.push(ExtraField::AeXEncryption(AexEncryption::new(
+                    vendor_version,
+                    mode,
                     compression_method,
-                    aes_extra_field_start: None,
-                });
+                )));
                 Some((mode, vendor_version))
             }
             _ => None,
         };
-
-        let header_end = header_start
-            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + file_name_raw.len() as u64;
-
         /*
                 return Err(invalid!(
                     "Extra data and central extra data must be less than 64KiB when combined"
@@ -1197,13 +1183,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             file.flags |= ZipFlags::UsingDataDescriptor.as_u16();
         }
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
-        file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
             let file = &mut self.files[index];
             let writer = self.inner.try_inner_mut()?;
-            file.write_local_header(writer, file_name_raw, Some(options.alignment))?;
+            file.write_local_header(header_start, writer, file_name_raw, Some(options.alignment))?;
             Ok(())
         };
         self.ok_or_abort_file(result)?;
@@ -1264,7 +1249,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => {}
         }
         let file = &mut self.files[index];
-        debug_assert!(file.data_start.get().is_none());
+        //debug_assert!(file.data_start.get().is_none());
         file.data_start.get_or_init(|| self.stats.start);
         self.stats.bytes_written = 0;
         self.stats.hasher = Hasher::new();
@@ -2312,11 +2297,11 @@ fn update_aes_extra_field<W: Write + Seek>(
     *version = new_version;
 
     // edit the extra field
-    if let Some(ExtraField::AeXEncryption {
+    if let Some(ExtraField::AeXEncryption(AexEncryption {
         aes_vendor_version,
         aes_extra_field_start,
         ..
-    }) = &mut file
+    })) = &mut file
         .extra_fields
         .inner
         .iter_mut()
@@ -2502,10 +2487,15 @@ impl ZipFileData {
 
     pub(crate) fn write_local_header<T: Write>(
         &mut self,
+        header_start: u64,
         writer: &mut T,
         file_name_raw: &[u8],
         alignment_opt: Option<u16>,
     ) -> ZipResult<()> {
+        println!("header _start, {}", header_start);
+        self.extra_fields
+            .inner
+            .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation { .. }));
         if self.large_file {
             // add a zip64 extra field which is going to be edited when we know the size
             // the update function need the extra field to be at index 0
@@ -2539,7 +2529,7 @@ impl ZipFileData {
         } else {
             self.compression_method.serialize_to_u16()
         };
-        let header_end = self.header_start
+        let header_end = header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + file_name_raw.len() as u64;
         let opt_alignment_field = if let Some(alignment) = alignment_opt
@@ -2589,6 +2579,12 @@ impl ZipFileData {
         } else {
             None
         };
+        eprintln!("ef l after align {extra_field_len}");
+        self.extra_data_start = Some(header_end);
+        let data_start = header_end + extra_field_len as u64;
+        self.data_start.take();
+        self.data_start.get_or_init(|| data_start);
+        eprintln!("self data_start {:?}", self.data_start.get());
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),
@@ -2606,24 +2602,40 @@ impl ZipFileData {
                 .try_into()
                 .map_err(|_| invalid!("Extra data field is too large"))?,
         };
-        block.write(writer)?;
-        writer.write_all(file_name_raw)?;
+        let mut buf = Vec::new();
+        let mut cursor = Cursor::new(buf);
+        block.write(&mut cursor)?;
+        //eprintln!("cursor {:?}", cursor);
+        cursor.write_all(file_name_raw)?;
         let local_extra_fields = self.extra_fields.local_extra_fields_mut();
+        //eprintln!("{:?}", local_extra_fields);
+        //eprintln!("cursor {:?}", cursor);
+        let mut bytes_written = 0;
         for one_extra_field in local_extra_fields {
-            one_extra_field.write(writer, true)?;
+            one_extra_field.write(&mut cursor, true)?;
             match one_extra_field {
-                ExtraField::AeXEncryption {
+                ExtraField::AeXEncryption(AexEncryption {
                     aes_extra_field_start,
                     ..
-                } => {
-                    *aes_extra_field_start = Some(0);
+                }) => {
+                    *aes_extra_field_start = Some(bytes_written);
                 }
                 _ => {}
             }
+            bytes_written += one_extra_field.size(true);
+            //eprintln!("bytes_wi {}", bytes_written);
+            //eprintln!("cursor {:?}", cursor);
         }
+        //eprintln!("cursor {:?}", cursor);
         if let Some(alignment_extra_field) = opt_alignment_field {
-            alignment_extra_field.write(writer, true)?;
+            alignment_extra_field.write(&mut cursor, true)?;
+            //eprintln!("cursor {:?}", cursor);
         }
+        //eprintln!("cursor {:?}", cursor);
+        let buf = cursor.into_inner();
+        writer.write_all(&buf)?;
+        println!("total = {}", header_start);
+        println!("total = {}", header_end);
         Ok(())
     }
 }
@@ -3371,29 +3383,29 @@ mod tests {
 
     #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
     #[test]
-    fn test_fuzz_failure_2024_05_08() -> ZipResult<()> {
+    fn test_fuzz_failure_2024_05_08() {
         let mut first_writer = ZipWriter::new(Cursor::new(Vec::new()));
         let mut second_writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default()
             .compression_method(Stored)
             .with_alignment(46036);
-        second_writer.add_symlink("\0", "", options)?;
-        let second_archive = second_writer.finish_into_readable()?.into_inner();
-        let mut second_writer = ZipWriter::new_append(second_archive)?;
+        second_writer.add_symlink("\0", "", options).unwrap();
+        let second_archive = second_writer.finish_into_readable().unwrap().into_inner();
+        let mut second_writer = ZipWriter::new_append(second_archive).unwrap();
         let options = SimpleFileOptions::default()
             .compression_method(CompressionMethod::Deflated)
             .large_file(true)
             .with_alignment(46036)
             .with_aes_encryption(crate::AesMode::Aes128, "\0\0");
-        second_writer.add_symlink("", "", options)?;
-        let second_archive = second_writer.finish_into_readable()?.into_inner();
-        let mut second_writer = ZipWriter::new_append(second_archive)?;
+        eprintln!("BEFORE ADD SYMLINKS");
+        second_writer.add_symlink("", "", options).unwrap();
+        let second_archive = second_writer.finish_into_readable().unwrap().into_inner();
+        let mut second_writer = ZipWriter::new_append(second_archive).unwrap();
         let options = SimpleFileOptions::default().compression_method(Stored);
-        second_writer.start_file(" ", options)?;
-        let second_archive = second_writer.finish_into_readable()?;
-        first_writer.merge_archive(second_archive)?;
-        let _ = ZipArchive::new(first_writer.finish()?)?;
-        Ok(())
+        second_writer.start_file(" ", options).unwrap();
+        let second_archive = second_writer.finish_into_readable().unwrap();
+        first_writer.merge_archive(second_archive).unwrap();
+        let _ = ZipArchive::new(first_writer.finish().unwrap()).unwrap();
     }
 
     #[cfg(all(feature = "_bzip2_any", not(miri)))]

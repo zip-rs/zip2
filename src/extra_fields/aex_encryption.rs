@@ -9,12 +9,12 @@ use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
 use crate::types::AesVendorVersion;
 use crate::unstable::LittleEndianReadExt;
 
-#[derive(Copy, Clone)]
-#[repr(packed, C)]
-pub(crate) struct AexEncryption {
-    pub(crate) version: u16,
-    aes_mode: u8,
-    compression_method: u16,
+#[derive(Copy, Clone, Debug)]
+pub struct AexEncryption {
+    pub(crate) aes_vendor_version: AesVendorVersion,
+    pub(crate) aes_mode: AesMode,
+    pub(crate) compression_method: CompressionMethod,
+    pub(crate) aes_extra_field_start: Option<usize>,
 }
 
 impl AexEncryption {
@@ -31,14 +31,15 @@ impl AexEncryption {
 
     #[inline]
     pub(crate) fn new(
-        version: AesVendorVersion,
+        aes_vendor_version: AesVendorVersion,
         aes_mode: AesMode,
         compression_method: CompressionMethod,
     ) -> Self {
         Self {
-            version: version.as_u16(),
-            aes_mode: aes_mode.as_u8(),
-            compression_method: compression_method.serialize_to_u16(),
+            aes_vendor_version,
+            aes_mode,
+            compression_method,
+            aes_extra_field_start: None,
         }
     }
 
@@ -50,10 +51,10 @@ impl AexEncryption {
     }
 
     pub fn write_data<T: Write>(self, writer: &mut T) -> ZipResult<()> {
-        writer.write_all(&u16::to_le_bytes(self.version))?;
+        writer.write_all(&self.aes_vendor_version.as_u16().to_le_bytes())?;
         writer.write_all(&u16::to_le_bytes(Self::VENDOR_ID))?;
-        writer.write_all(&u8::to_le_bytes(self.aes_mode))?;
-        writer.write_all(&u16::to_le_bytes(self.compression_method))?;
+        writer.write_all(&self.aes_mode.as_u8().to_le_bytes())?;
+        writer.write_all(&self.compression_method.serialize_to_u16().to_le_bytes())?;
         Ok(())
     }
 

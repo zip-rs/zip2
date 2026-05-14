@@ -33,16 +33,7 @@ pub enum ExtraField {
     ExtendedTimestamp(ExtendedTimestamp),
 
     /// AeX Encryption
-    AeXEncryption {
-        /// AES mode
-        aes_mode: AesMode,
-        /// AES vendor version
-        aes_vendor_version: AesVendorVersion,
-        /// compression method
-        compression_method: CompressionMethod,
-        /// aes extra field start in local header
-        aes_extra_field_start: Option<usize>,
-    },
+    AeXEncryption(AexEncryption),
     /// Zip64 Information
     Zip64ExtendedInformation {
         /// uncompressed size
@@ -71,9 +62,6 @@ pub struct ExtraFields {
 }
 
 impl ExtraFields {
-    pub(crate) fn new() -> Self {
-        Self { inner: Vec::new() }
-    }
     pub(crate) fn parse<B: BlockGetter>(buff: &[u8], block: &B) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
@@ -134,6 +122,7 @@ impl ExtraField {
                 }
             }
         };
+        eprintln!("EXTRA_field {:?}", decoded_extra_field);
         let parsed_extra_field = match decoded_extra_field {
             // Zip64 extended information extra field
             Ok(UsedExtraField::Zip64ExtendedInfo) => {
@@ -157,12 +146,11 @@ impl ExtraField {
             Ok(UsedExtraField::AeXEncryption) => {
                 // AES
                 let (new_aes_enc, inner_compression) = AexEncryption::parse(reader, len)?;
-                ExtraField::AeXEncryption {
-                    aes_mode: new_aes_enc.0,
-                    aes_vendor_version: new_aes_enc.1,
-                    compression_method: inner_compression,
-                    aes_extra_field_start: None,
-                }
+                ExtraField::AeXEncryption(AexEncryption::new(
+                    new_aes_enc.1,
+                    new_aes_enc.0,
+                    inner_compression,
+                ))
             }
             Ok(UsedExtraField::ExtendedTimestamp) => {
                 ExtraField::ExtendedTimestamp(ExtendedTimestamp::try_from_reader(reader, len)?)
@@ -180,6 +168,7 @@ impl ExtraField {
                 ExtraField::UnicodePath(unicode)
             }
             _ => {
+                eprintln!("EXTRA FIELD LEN {}", len);
                 let mut buf = vec![0u8; len as usize];
                 if let Err(e) = reader.read_exact(&mut buf) {
                     if e.kind() == ErrorKind::UnexpectedEof {
@@ -241,6 +230,8 @@ impl ExtraField {
                 let magic = UsedExtraField::Zip64ExtendedInfo.as_u16();
                 writer.write_all(&magic.to_le_bytes())?;
                 let size = self.size(is_local_header);
+                let size = size - mem::size_of::<u16>() - mem::size_of::<u16>();
+                let size = size as u16;
                 writer.write_all(&size.to_le_bytes())?;
                 if let Some(comp_size) = compressed_size {
                     writer.write_all(&comp_size.to_le_bytes())?;
@@ -254,13 +245,7 @@ impl ExtraField {
                     }
                 }
             }
-            ExtraField::AeXEncryption {
-                aes_mode,
-                aes_vendor_version,
-                compression_method,
-                ..
-            } => {
-                let aex = AexEncryption::new(*aes_vendor_version, *aes_mode, *compression_method);
+            ExtraField::AeXEncryption(aex) => {
                 aex.write(writer)?;
             }
             ExtraField::Custom(custom) => {
@@ -305,12 +290,12 @@ impl ZipFileData {
                         self.header_start = head_start;
                     }
                 }
-                ExtraField::AeXEncryption {
+                ExtraField::AeXEncryption(AexEncryption {
                     aes_mode,
                     aes_vendor_version,
                     compression_method,
                     ..
-                } => {
+                }) => {
                     self.aes_mode = Some((*aes_mode, *aes_vendor_version));
                     self.compression_method = *compression_method;
                 }
