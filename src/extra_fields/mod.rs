@@ -181,7 +181,7 @@ pub struct CustomExtraField {
     /// Is this extra field central
     pub(crate) central_only: bool,
     /// Header ID of the extra field
-    header_id: u16,
+    pub(crate) header_id: u16,
     /// Data of the extra field
     data: Box<[u8]>,
 }

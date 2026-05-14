@@ -8,6 +8,7 @@ use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::extra_fields::EXTRA_FIELD_MAPPING;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
@@ -366,7 +367,7 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         self.add_extra_field(header_id, data, central_only)
     }
-    /// Adds an extra data field, unless we detect that it's invalid.
+    /// Adds an extra field, unless we detect that it's invalid.
     ///
     /// # Parameters
     ///
@@ -409,6 +410,17 @@ impl ExtendedFileOptions {
             Ok(())
         }
     }
+
+    #[cfg(not(feature = "unreserved"))]
+    pub(crate) fn validate_extra_fields(&self) -> ZipResult<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "unreserved")]
+    pub(crate) fn validate_extra_fields(&self) -> ZipResult<()> {
+        Ok(())
+    }
+
 }
 
 impl Debug for ExtendedFileOptions {
@@ -1114,7 +1126,22 @@ impl<W: Write + Seek> ZipWriter<W> {
             compressed_size: 0,
             uncompressed_size: 0,
         });
-
+        #[cfg(not(feature = "unreserved"))]
+        {
+            if let Some(extra_fields) = options.extended_options.extra_fields() {
+                for x in extra_fields.iter() {
+                    let header_id = x.header_id;
+                    if let Err(()) = UsedExtraField::try_from(header_id)
+                        && EXTRA_FIELD_MAPPING.contains(&header_id)
+                    {
+                        return Err(ZipError::Io(io::Error::other(format!(
+                                        "Extra data header ID {header_id:#06} (0x{header_id:x}) \
+                            requires crate feature \"unreserved\"",
+                        ))));
+                    }
+                }
+            }
+        }
         let mut extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],

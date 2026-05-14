@@ -9,16 +9,18 @@ use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::extra_fields::EXTRA_FIELD_MAPPING;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
+use crate::result::ZipError;
 use crate::spec::BlockGetter;
 use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
 use core::mem;
 use std::io::ErrorKind;
-use std::io::{Cursor, Read, Write};
+use std::io::{self, Cursor, Read, Write};
 
 /// contains one extra field
 #[derive(Debug, Clone)]
@@ -87,6 +89,32 @@ impl ExtraFields {
             });
         }
     */
+    #[cfg(not(feature = "unreserved"))]
+    pub(crate) fn validate_extra_fields(&self) -> ZipResult<()> {
+        for x in &self.inner {
+            match x {
+                ExtraField::Custom(CustomExtraField { header_id, .. }) => {
+                    if let Err(()) = UsedExtraField::try_from(*header_id)
+                        && EXTRA_FIELD_MAPPING.contains(&header_id)
+                    {
+                        return Err(ZipError::Io(io::Error::other(format!(
+                                        "Extra data header ID {header_id:#06} (0x{header_id:x}) \
+                            requires crate feature \"unreserved\"",
+                        ))));
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "unreserved")]
+    pub(crate) fn validate_extra_fields(&self) -> ZipResult<()> {
+        Ok(())
+    }
+
     pub(crate) fn parse<B: BlockGetter>(buff: &[u8], block: &B) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
