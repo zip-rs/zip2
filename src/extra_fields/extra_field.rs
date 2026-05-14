@@ -234,12 +234,25 @@ impl ExtraField {
         match self {
             // Zip64 extended information extra field
             ExtraField::Zip64ExtendedInformation {
-                uncompressed_size,
                 compressed_size,
+                uncompressed_size,
                 header_start,
             } => {
-                // TODO
-                if is_local_header {}
+                let magic = UsedExtraField::Zip64ExtendedInfo.as_u16();
+                writer.write_all(&magic.to_le_bytes())?;
+                let size = self.size(is_local_header);
+                writer.write_all(&size.to_le_bytes())?;
+                if let Some(comp_size) = compressed_size {
+                    writer.write_all(&comp_size.to_le_bytes())?;
+                }
+                if let Some(uncomp_size) = uncompressed_size {
+                    writer.write_all(&uncomp_size.to_le_bytes())?;
+                }
+                if !is_local_header {
+                    if let Some(head_start) = header_start {
+                        writer.write_all(&head_start.to_le_bytes())?;
+                    }
+                }
             }
             ExtraField::AeXEncryption {
                 aes_mode,

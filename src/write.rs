@@ -1,6 +1,7 @@
 //! Writing a ZIP archive
 
 use crate::ExtraField;
+use crate::ZIP64_BYTES_THR;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
@@ -2411,7 +2412,9 @@ impl ZipFileData {
                 } => {
                     *compressed_size = Some(self.compressed_size);
                     *uncompressed_size = Some(self.uncompressed_size);
-                    *header_start = Some(self.header_start);
+                    if self.header_start >= ZIP64_BYTES_THR {
+                        *header_start = Some(self.header_start);
+                    }
                     is_zip64 = true;
                 }
                 _ => {}
