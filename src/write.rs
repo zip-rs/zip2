@@ -1799,7 +1799,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
-        for (filename_raw, file) in &self.files {
+        for (filename_raw, file) in &mut self.files {
             file.write_central_directory_header(writer, filename_raw)?;
             version_needed = version_needed.max(file.version_needed());
         }
@@ -2397,10 +2397,29 @@ impl ZipFileData {
     }
 
     pub(crate) fn write_central_directory_header<T: Write>(
-        &self,
+        &mut self,
         writer: &mut T,
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
+        let mut is_zip64 = false;
+        for one_extra_field in self.extra_fields.inner.iter_mut() {
+            match one_extra_field {
+                ExtraField::Zip64ExtendedInformation {
+                    compressed_size,
+                    uncompressed_size,
+                    header_start,
+                } => {
+                    *compressed_size = Some(self.compressed_size);
+                    *uncompressed_size = Some(self.uncompressed_size);
+                    *header_start = Some(self.header_start);
+                    is_zip64 = true;
+                }
+                _ => {}
+            }
+        }
+        if !is_zip64 {
+            // check if needed and crash
+        }
         let central_extra_fields = self.extra_fields.central_extra_fields();
         let extra_field_len: usize = self
             .extra_fields
@@ -2437,17 +2456,6 @@ impl ZipFileData {
             CompressionMethod::AES.serialize_to_u16()
         } else {
             self.compression_method.serialize_to_u16()
-        };
-        let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
-            self.large_file,
-            self.uncompressed_size,
-            self.compressed_size,
-            self.header_start,
-        );
-        let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
-            zip64.full_size()
-        } else {
-            0
         };
         let extra_field_length = u16::try_from(extra_field_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
@@ -2495,16 +2503,17 @@ impl ZipFileData {
         file_name_raw: &[u8],
         alignment_opt: Option<u16>,
     ) -> ZipResult<()> {
-        if let Some(zip64_block) =
-            Zip64ExtendedInformation::local_header(self.large_file, u64::MAX, u64::MAX)
-        {
-            self.extra_fields
-                .inner
-                .push(ExtraField::Zip64ExtendedInformation {
-                    compressed_size: zip64_block.compressed_size,
-                    uncompressed_size: zip64_block.uncompressed_size,
+        if self.large_file {
+            // add a zip64 extra field which is going to be edited when we know the size
+            // the update function need the extra field to be at index 0
+            self.extra_fields.inner.insert(
+                0,
+                ExtraField::Zip64ExtendedInformation {
+                    compressed_size: Some(u64::MAX),
+                    uncompressed_size: Some(u64::MAX),
                     header_start: None,
-                });
+                },
+            );
         }
         let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
             (0, 0)

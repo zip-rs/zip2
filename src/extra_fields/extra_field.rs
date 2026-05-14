@@ -74,46 +74,6 @@ impl ExtraFields {
     pub(crate) fn new() -> Self {
         Self { inner: Vec::new() }
     }
-    /*
-        pub(crate) fn strip_alignment_extra_field(&mut self, remove_zip64: bool) {
-            self.inner.retain(|extra| {
-                if remove_zip64 {
-                    matches!(extra, ExtraField::DataStreamAlignment(_))
-                } else {
-                    matches!(
-                        extra,
-                        ExtraField::DataStreamAlignment(_)
-                            | ExtraField::Zip64ExtendedInformation { .. }
-                    )
-                }
-            });
-        }
-    */
-    #[cfg(not(feature = "unreserved"))]
-    pub(crate) fn validate_extra_fields(&self) -> ZipResult<()> {
-        for x in &self.inner {
-            match x {
-                ExtraField::Custom(CustomExtraField { header_id, .. }) => {
-                    if let Err(()) = UsedExtraField::try_from(*header_id)
-                        && EXTRA_FIELD_MAPPING.contains(&header_id)
-                    {
-                        return Err(ZipError::Io(io::Error::other(format!(
-                            "Extra data header ID {header_id:#06} (0x{header_id:x}) \
-                            requires crate feature \"unreserved\"",
-                        ))));
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "unreserved")]
-    pub(crate) fn validate_extra_fields(&self) -> ZipResult<()> {
-        Ok(())
-    }
-
     pub(crate) fn parse<B: BlockGetter>(buff: &[u8], block: &B) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
@@ -242,7 +202,7 @@ impl ExtraField {
                 compressed_size,
                 header_start,
             } => {
-                let mut size = 0;
+                let mut size = mem::size_of::<UsedExtraField>() + mem::size_of::<u16>();
                 if uncompressed_size.is_some() {
                     size += mem::size_of::<u64>();
                 }
@@ -252,7 +212,7 @@ impl ExtraField {
                 if !is_local_header && header_start.is_some() {
                     size += mem::size_of::<u64>();
                 }
-                size + mem::size_of::<UsedExtraField>() + mem::size_of::<u16>()
+                size
             }
             ExtraField::Ntfs(ntfs) => {
                 // NTFS extra field
