@@ -51,8 +51,6 @@ pub enum ExtraField {
     DataStreamAlignment(u64),
     /// Custom extra field
     Custom(CustomExtraField),
-    /// No Op extra field
-    NoOp,
 }
 
 /// Extra fields list
