@@ -886,7 +886,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let new_data = &mut self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
-            eprintln!("wrr {}", plain_writer.stream_position()?);
             new_data.write_local_header(write_position, plain_writer, dest_name_raw, None)?;
             debug_assert_eq!(
                 new_data.data_start.get(),
@@ -1249,11 +1248,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => {}
         }
         let file = &mut self.files[index];
-        eprintln!(
-            "{:?} should be EQUAL {}",
-            file.data_start.get(),
-            self.stats.start
-        );
         //debug_assert!(file.data_start.get().is_none());
         file.data_start.get_or_init(|| self.stats.start);
         self.stats.bytes_written = 0;
@@ -1296,7 +1290,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             let file_end = writer.stream_position()?;
             debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
-            eprintln!("FINISH {} {}", file.uncompressed_size, file.compressed_size);
 
             if !file.is_using_data_descriptor() {
                 // Not using a data descriptor means the underlying writer
@@ -2421,7 +2414,6 @@ impl ZipFileData {
             ) {
                 if zip64_block.uncompressed_size.is_some() || zip64_block.compressed_size.is_some()
                 {
-                    eprintln!("{:?}", zip64_block);
                     self.extra_fields.inner.insert(
                         0,
                         ExtraField::Zip64ExtendedInformation {
@@ -2465,7 +2457,6 @@ impl ZipFileData {
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
-        eprintln!("CENTRAL {} {}", compressed_size, uncompressed_size);
         let offset = self
             .header_start
             .min(spec::ZIP64_BYTES_THR)
@@ -2528,7 +2519,6 @@ impl ZipFileData {
         file_name_raw: &[u8],
         alignment_opt: Option<u16>,
     ) -> ZipResult<()> {
-        println!("header _start, {}", header_start);
         self.extra_fields
             .inner
             .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation { .. }));
@@ -2615,13 +2605,10 @@ impl ZipFileData {
         } else {
             None
         };
-        eprintln!("ef l after align {extra_field_len}");
         self.extra_data_start = Some(header_end);
         let data_start = header_end + extra_field_len as u64;
         self.data_start.take();
         self.data_start.get_or_init(|| data_start);
-        eprintln!("self data_start {:?}", self.data_start.get());
-        eprintln!("LOCAL HEADER {} {}", compressed_size, uncompressed_size);
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
             flags: self.flags(file_name_raw),
@@ -2639,14 +2626,9 @@ impl ZipFileData {
                 .try_into()
                 .map_err(|_| invalid!("Extra data field is too large"))?,
         };
-        let mut buf = Vec::new();
-        let mut cursor = Cursor::new(buf);
-        block.write(&mut cursor)?;
-        //eprintln!("cursor {:?}", cursor);
+        block.write(writer)?;
         cursor.write_all(file_name_raw)?;
         let local_extra_fields = self.extra_fields.local_extra_fields_mut();
-        //eprintln!("{:?}", local_extra_fields);
-        //eprintln!("cursor {:?}", cursor);
         let mut bytes_written = 0;
         for one_extra_field in local_extra_fields {
             one_extra_field.write(&mut cursor, true)?;
@@ -2660,19 +2642,10 @@ impl ZipFileData {
                 _ => {}
             }
             bytes_written += one_extra_field.size(true);
-            //eprintln!("bytes_wi {}", bytes_written);
-            //eprintln!("cursor {:?}", cursor);
         }
-        //eprintln!("cursor {:?}", cursor);
         if let Some(alignment_extra_field) = opt_alignment_field {
-            alignment_extra_field.write(&mut cursor, true)?;
-            //eprintln!("cursor {:?}", cursor);
+            alignment_extra_field.write(writer, true)?;
         }
-        //eprintln!("cursor {:?}", cursor);
-        let buf = cursor.into_inner();
-        writer.write_all(&buf)?;
-        println!("total = {}", header_start);
-        println!("total = {}", header_end);
         Ok(())
     }
 }
@@ -3434,7 +3407,6 @@ mod tests {
             .large_file(true)
             .with_alignment(46036)
             .with_aes_encryption(crate::AesMode::Aes128, "\0\0");
-        eprintln!("BEFORE ADD SYMLINKS");
         second_writer.add_symlink("", "", options).unwrap();
         let second_archive = second_writer.finish_into_readable().unwrap().into_inner();
         let mut second_writer = ZipWriter::new_append(second_archive).unwrap();

@@ -500,7 +500,6 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_fields_raw = read_variable_length_byte_field(reader, extra_field_length as usize)?;
-    eprintln!("EXTRA FIELDS RAW LEN: {}", extra_fields_raw.len());
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()

@@ -120,7 +120,6 @@ impl ExtraField {
                 }
             }
         };
-        eprintln!("EXTRA_field {:?}", decoded_extra_field);
         let parsed_extra_field = match decoded_extra_field {
             // Zip64 extended information extra field
             Ok(UsedExtraField::Zip64ExtendedInfo) => {
@@ -166,7 +165,6 @@ impl ExtraField {
                 ExtraField::UnicodePath(unicode)
             }
             _ => {
-                eprintln!("EXTRA FIELD LEN {}", len);
                 let mut buf = vec![0u8; len as usize];
                 if let Err(e) = reader.read_exact(&mut buf) {
                     if e.kind() == ErrorKind::UnexpectedEof {
@@ -231,11 +229,11 @@ impl ExtraField {
                 let size = size - mem::size_of::<u16>() - mem::size_of::<u16>();
                 let size = size as u16;
                 writer.write_all(&size.to_le_bytes())?;
-                if let Some(comp_size) = compressed_size {
-                    writer.write_all(&comp_size.to_le_bytes())?;
-                }
                 if let Some(uncomp_size) = uncompressed_size {
                     writer.write_all(&uncomp_size.to_le_bytes())?;
+                }
+                if let Some(comp_size) = compressed_size {
+                    writer.write_all(&comp_size.to_le_bytes())?;
                 }
                 if !is_local_header {
                     if let Some(head_start) = header_start {

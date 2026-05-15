@@ -70,11 +70,6 @@ impl Zip64ExtendedInformation {
         header_start: u64,
     ) -> Option<Self> {
         let mut size: u16 = 0;
-        eprintln!(
-            "{}, {}, {}, {}",
-            is_large_file, uncompressed_size, compressed_size, header_start
-        );
-        eprintln!("MAX is {}", ZIP64_BYTES_THR);
         let uncompressed_size = if is_large_file || uncompressed_size >= ZIP64_BYTES_THR {
             size += mem::size_of::<u64>() as u16;
             Some(uncompressed_size)
@@ -162,7 +157,6 @@ impl Zip64ExtendedInformation {
         compressed_size: u32,
         header_start: Option<u32>,
     ) -> ZipResult<(u64, u64, u64)> {
-        eprintln!("ZIP64 PARSE LEN = {}", len);
         let mut consumed_len = 0;
         let new_uncompressed_size = if len >= 24 || u64::from(uncompressed_size) == ZIP64_BYTES_THR
         {
