@@ -10,6 +10,31 @@ fn write_data(w: &mut dyn std::io::Write, size: usize) {
         written += to_write;
     }
 }
+#[test]
+fn test_append_4gb_without_large_file() {
+    use std::fs::File;
+    use tempfile::tempdir;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("debug_large_without_large_file_options.zip");
+    //let path = std::path::PathBuf::from("debug_large_without_large_file_options.zip");
+
+    let file = File::create(&path).unwrap();
+    let mut writer = ZipWriter::new(file);
+
+    let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+    writer.start_file_from_path("close_to_4gb", opts).unwrap();
+
+    // Write a file that's 4GB
+    let size = u32::MAX;
+    write_data(&mut writer, size as usize);
+
+    // Add a small file
+    assert!(writer.finish().is_err());
+}
 
 /// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
@@ -33,7 +58,7 @@ fn test_append_near_4gb() {
         writer.start_file_from_path("close_to_4gb", opts).unwrap();
 
         // Write a file that's just under 4GB (4GB - 1 byte)
-        let size = u32::MAX;
+        let size = u32::MAX - 1;
         write_data(&mut writer, size as usize);
 
         // Add a small file

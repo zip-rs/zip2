@@ -1401,8 +1401,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.is_using_data_descriptor() {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
-                file.update_local_file_header(writer, file_name_raw)?;
+                let res = file.update_local_file_header(writer, file_name_raw);
                 writer.seek(SeekFrom::Start(file_end))?;
+                if res.is_err() {
+                    self.writing_to_file = false;
+                    res?;
+                }
             }
         }
         if self.flush_on_finish_file {
@@ -2434,7 +2438,7 @@ impl ZipFileData {
             // self.uncompressed_size = spec::ZIP64_BYTES_THR;
         } else {
             // check compressed size as well as it can also be slightly larger than uncompressed size
-            if self.compressed_size > spec::ZIP64_BYTES_THR {
+            if self.compressed_size >= spec::ZIP64_BYTES_THR {
                 return Err(ZipError::Io(std::io::Error::other(
                     "large_file(true) option has not been set",
                 )));
