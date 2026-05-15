@@ -1,7 +1,9 @@
 //! Tests related to big zip file
 
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+// Only on little endian because we cannot use fs with miri CI
+#![cfg(all(target_endian = "little", not(miri)))]
+
+
 fn write_data(w: &mut dyn std::io::Write, size: usize) -> Result<(), std::io::Error> {
     let chunks = 1 << 20; // 1MB chunks
     let mut written = 0;
@@ -14,8 +16,6 @@ fn write_data(w: &mut dyn std::io::Write, size: usize) -> Result<(), std::io::Er
     Ok(())
 }
 
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_append_4gb_without_large_file() {
     use std::fs::File;
@@ -43,8 +43,8 @@ fn test_append_4gb_without_large_file() {
     assert!(write_result.is_err());
 }
 
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+///  We cannot run this test because on wasm32 we cannot fit the u32:MAX in the usize
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_append_4gb_with_large_file() {
     use std::fs::File;
@@ -112,8 +112,6 @@ fn test_append_4gb_with_large_file() {
     );
 }
 
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_append_near_4gb() {
     use std::fs::File;
@@ -183,8 +181,6 @@ fn test_append_near_4gb() {
     }
 }
 
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_append_near_4gb_with_1gb_files() {
     use std::fs::File;
@@ -274,8 +270,6 @@ fn test_append_near_4gb_with_1gb_files() {
 }
 
 // A smaller test that doesn't create a 4GB file but still tests the logic
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
 #[test]
 fn test_append_with_large_file_flag() {
     use std::fs::File;
