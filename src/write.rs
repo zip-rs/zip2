@@ -194,7 +194,6 @@ pub(crate) mod zip_writer {
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
-        pub(crate) internal_error: bool,
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
@@ -867,7 +866,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
-            internal_error: false,
         })
     }
 
@@ -1036,7 +1034,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
-            internal_error: false,
         }
     }
 
@@ -1407,12 +1404,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.is_using_data_descriptor() {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
             } else {
-                let res = file.update_local_file_header(writer, file_name_raw);
+                file.update_local_file_header(writer, file_name_raw)?;
                 writer.seek(SeekFrom::Start(file_end))?;
-                if res.is_err() {
-                    self.internal_error = false;
-                    res?;
-                }
             }
         }
         if self.flush_on_finish_file {
@@ -2027,16 +2020,12 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             flush_on_finish_file: false,
             seek_possible: false,
             auto_large_file: false,
-            internal_error: false,
         }
     }
 }
 
 impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
-        if self.internal_error {
-            return;
-        }
         if !self.inner.is_closed()
             && let Err(e) = self.finalize()
         {
