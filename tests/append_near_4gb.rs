@@ -1,5 +1,3 @@
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
 fn write_data(w: &mut dyn std::io::Write, size: usize) {
     let chunks = 1 << 20; // 1MB chunks
     let mut written = 0;
@@ -18,7 +16,9 @@ fn test_append_4gb_without_large_file() {
     use zip::write::SimpleFileOptions;
 
     let dir = tempdir().unwrap();
-    let path = dir.path().join("debug_large_without_large_file_options.zip");
+    let path = dir
+        .path()
+        .join("debug_large_without_large_file_options.zip");
     //let path = std::path::PathBuf::from("debug_large_without_large_file_options.zip");
 
     let file = File::create(&path).unwrap();
