@@ -297,7 +297,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// a new zip archive.
     pub fn options(&self) -> SimpleFileOptions {
         let mut options = SimpleFileOptions::default()
-            .large_file(self.compressed_size().max(self.size()) > ZIP64_BYTES_THR)
+            .large_file(self.compressed_size().max(self.size()) >= ZIP64_BYTES_THR)
             .compression_method(self.compression())
             .unix_permissions(self.unix_mode().unwrap_or(0o644) | ffi::S_IFREG)
             .last_modified_time(

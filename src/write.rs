@@ -191,6 +191,7 @@ pub(crate) mod zip_writer {
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
+        pub(crate) internal_error: bool,
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
@@ -789,7 +790,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[..count]);
                     // Only perform the expensive large-file check when we first cross the threshold.
-                    if self.stats.bytes_written > spec::ZIP64_BYTES_THR {
+                    if self.stats.bytes_written >= spec::ZIP64_BYTES_THR {
                         let is_large_file = self
                             .files
                             .last()
@@ -798,6 +799,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                             .large_file;
                         if !is_large_file {
                             return Err(if let Err(e) = self.abort_file() {
+                                self.internal_error = true;
                                 let abort_io_err: io::Error = e.into();
                                 io::Error::new(
                                     abort_io_err.kind(),
@@ -806,6 +808,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                                     ),
                                 )
                             } else {
+                                self.internal_error = true;
                                 io::Error::other("Large file option has not been set")
                             });
                         }
@@ -863,6 +866,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
+            internal_error: false,
         })
     }
 
@@ -1031,6 +1035,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
+            internal_error: false,
         }
     }
 
@@ -1404,7 +1409,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let res = file.update_local_file_header(writer, file_name_raw);
                 writer.seek(SeekFrom::Start(file_end))?;
                 if res.is_err() {
-                    self.writing_to_file = false;
+                    self.internal_error = false;
                     res?;
                 }
             }
@@ -1922,7 +1927,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         let central_directory_size = if is64 {
-            spec::ZIP64_BYTES_THR as u32
+            spec::ZIP64_BYTES_THR_U32
         } else {
             central_size.min(spec::ZIP64_BYTES_THR) as u32
         };
@@ -1996,12 +2001,16 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             flush_on_finish_file: false,
             seek_possible: false,
             auto_large_file: false,
+            internal_error: false,
         }
     }
 }
 
 impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
+        if self.internal_error {
+            return;
+        }
         if !self.inner.is_closed()
             && let Err(e) = self.finalize()
         {
@@ -2429,13 +2438,10 @@ impl ZipFileData {
         ))?;
         writer.write_u32_le(self.crc32)?;
         if self.large_file {
-            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
+            writer.write_u32_le(spec::ZIP64_BYTES_THR_U32)?;
+            writer.write_u32_le(spec::ZIP64_BYTES_THR_U32)?;
 
             self.update_local_zip64_extra_field(writer, file_name_raw)?;
-
-            // self.compressed_size = spec::ZIP64_BYTES_THR;
-            // self.uncompressed_size = spec::ZIP64_BYTES_THR;
         } else {
             // check compressed size as well as it can also be slightly larger than uncompressed size
             if self.compressed_size >= spec::ZIP64_BYTES_THR {

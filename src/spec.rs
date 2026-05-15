@@ -107,6 +107,7 @@ impl Magic {
 /// # }
 ///```
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
+pub const ZIP64_BYTES_THR_U32: u32 = u32::MAX;
 /// The number of entries within a single zip necessary to allocate a zip64 central
 /// directory record.
 ///

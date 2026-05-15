@@ -2,15 +2,16 @@
 
 /// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
-fn write_data(w: &mut dyn std::io::Write, size: usize) {
+fn write_data(w: &mut dyn std::io::Write, size: usize) -> Result<(), std::io::Error> {
     let chunks = 1 << 20; // 1MB chunks
     let mut written = 0;
     let buf = vec![0x21; chunks];
     while written < size {
         let to_write = (size - written).min(chunks);
-        w.write_all(&buf[..to_write]).unwrap();
+        w.write_all(&buf[..to_write])?;
         written += to_write;
     }
+    Ok(())
 }
 
 /// Only on little endian because we cannot use fs with miri CI
@@ -37,10 +38,9 @@ fn test_append_4gb_without_large_file() {
 
     // Write a file that's 4GB
     let size = u32::MAX;
-    write_data(&mut writer, size as usize);
+    let write_result = write_data(&mut writer, size as usize); // check is error
 
-    // Add a small file
-    assert!(writer.finish().is_err());
+    assert!(write_result.is_err());
 }
 
 /// Only on little endian because we cannot use fs with miri CI
@@ -66,11 +66,11 @@ fn test_append_near_4gb() {
 
         // Write a file that's just under 4GB (4GB - 1 byte)
         let size = u32::MAX - 1;
-        write_data(&mut writer, size as usize);
+        write_data(&mut writer, size as usize).unwrap();
 
         // Add a small file
         writer.start_file_from_path("small_file", opts).unwrap();
-        write_data(&mut writer, 1024);
+        write_data(&mut writer, 1024).unwrap();
 
         writer.finish().unwrap();
     }
@@ -84,7 +84,7 @@ fn test_append_near_4gb() {
 
         // Add another small file
         writer.start_file_from_path("appended_file", opts).unwrap();
-        write_data(&mut writer, 1024);
+        write_data(&mut writer, 1024).unwrap();
 
         writer.finish().unwrap();
     }
@@ -140,12 +140,12 @@ fn test_append_near_4gb_with_1gb_files() {
 
             // Write a file that's 1 GB
             let size = 1u64 << 30;
-            write_data(&mut writer, size as usize);
+            write_data(&mut writer, size as usize).unwrap();
         }
 
         // Add a small file
         writer.start_file_from_path("small_file", opts).unwrap();
-        write_data(&mut writer, 1024);
+        write_data(&mut writer, 1024).unwrap();
 
         writer.finish().unwrap();
     }
@@ -159,7 +159,7 @@ fn test_append_near_4gb_with_1gb_files() {
 
         // Add another small file
         writer.start_file_from_path("appended_file", opts).unwrap();
-        write_data(&mut writer, 1024);
+        write_data(&mut writer, 1024).unwrap();
 
         writer.finish().unwrap();
     }
@@ -227,7 +227,7 @@ fn test_append_with_large_file_flag() {
             .large_file(true); // Force ZIP64 format
 
         writer.start_file_from_path("file1", opts).unwrap();
-        write_data(&mut writer, 1024);
+        write_data(&mut writer, 1024).unwrap();
 
         writer.finish().unwrap();
     }
@@ -241,7 +241,7 @@ fn test_append_with_large_file_flag() {
 
         // Add another file
         writer.start_file_from_path("file2", opts).unwrap();
-        write_data(&mut writer, 1024);
+        write_data(&mut writer, 1024).unwrap();
 
         writer.finish().unwrap();
     }
