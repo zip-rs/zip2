@@ -517,7 +517,7 @@ impl ZipFileData {
                     "File size {field} exceeds maximum size for non-ZIP64 files"
                 ))
             })?;
-            Ok(size.min(spec::ZIP64_BYTES_THR_U32))
+            Ok(size.min(spec::ZIP64_BYTES_THR_U32 - 1))
         }
     }
 
