@@ -2476,6 +2476,11 @@ impl ZipFileData {
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
         zip64_block.write(writer)?;
+        if let Some(extra_field) = &mut self.extra_field {
+            let slice = Arc::make_mut(extra_field);
+            let mut cursor = Cursor::new(&mut slice[0..20]);
+            zip64_block.write(&mut cursor)?;
+        }
         Ok(())
     }
 

@@ -34,13 +34,82 @@ fn test_append_4gb_without_large_file() {
 
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
-    writer.start_file_from_path("close_to_4gb", opts).unwrap();
+    writer.start_file_from_path("4gb_file", opts).unwrap();
 
     // Write a file that's 4GB
     let size = u32::MAX;
     let write_result = write_data(&mut writer, size as usize); // check is error
 
     assert!(write_result.is_err());
+}
+
+/// Only on little endian because we cannot use fs with miri CI
+#[cfg(all(target_endian = "little", not(miri)))]
+#[test]
+fn test_append_4gb_with_large_file() {
+    use std::fs::File;
+    use std::io::Read;
+    use tempfile::tempdir;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("debug_large_with_large_file_options.zip");
+    //let path = std::path::PathBuf::from("debug_large_with_large_file_options.zip");
+
+    let zipfile = File::create(&path).unwrap();
+    let mut writer = ZipWriter::new(zipfile);
+
+    let opts = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true);
+
+    writer.start_file_from_path("4gb_file", opts).unwrap();
+
+    // Write a file that's 4GB
+    let size = u32::MAX;
+    let write_result = write_data(&mut writer, size as usize); // check is error
+
+    assert!(write_result.is_ok());
+    let mut zip = writer.finish_into_readable().unwrap();
+    let file_res = zip.by_name("4gb_file");
+    assert!(file_res.is_ok());
+    let file = file_res.unwrap();
+    eprintln!("{file:?}");
+
+    let mut file = File::open(&path).unwrap();
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
+
+    // local header
+    assert_eq!(buffer[18..22], [0xFF, 0xFF, 0xFF, 0xFF]);
+    assert_eq!(buffer[22..26], [0xFF, 0xFF, 0xFF, 0xFF]);
+
+    // extra field of local header
+    let extra_field_start = 38;
+    assert_eq!(buffer[extra_field_start..40], [0x01, 0x00]);
+    assert_eq!(buffer[40..42], [16, 0x00]);
+    assert_eq!(
+        buffer[42..50],
+        [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        buffer[50..58],
+        [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
+    );
+
+    // extra fields of central header
+    let start = extra_field_start + 20 + u32::MAX as usize + 54;
+    assert_eq!(buffer[start..(start + 2)], [0x01, 0x00]);
+    assert_eq!(buffer[(start + 2)..(start + 4)], [16, 0x00]);
+    assert_eq!(
+        buffer[(start + 4)..(start + 12)],
+        [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
+    );
+    assert_eq!(
+        buffer[(start + 12)..(start + 20)],
+        [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
+    );
 }
 
 /// Only on little endian because we cannot use fs with miri CI
