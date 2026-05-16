@@ -1904,7 +1904,6 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
-        eprintln!("{central_start} CENTRALLL");
         for (filename_raw, file) in &self.files {
             file.write_central_directory_header(writer, filename_raw)?;
             version_needed = version_needed.max(file.version_needed());
