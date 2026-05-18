@@ -229,7 +229,7 @@ impl CustomExtraField {
 
     pub(crate) fn len(&self) -> usize {
         let size = self.data.len();
-        2 + 2 + size
+        size_of::<u16>() + size_of::<u16>() + size
     }
 
     pub(crate) fn serialize(&self) -> Vec<u8> {
