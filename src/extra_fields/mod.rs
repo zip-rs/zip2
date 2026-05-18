@@ -186,7 +186,7 @@ pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
 /// A Custom Extra Field
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CustomExtraField {
-    /// Is this extra field central
+    /// If true, this field will be included in the central directory entry but not the local file header.
     pub(crate) central_only: bool,
     /// Header ID of the extra field
     header_id: u16,
