@@ -636,13 +636,16 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
             }
             file.large_file = true;
-            Zip64ExtendedInformation::parse(
+            let (uncomp_size, comp_size, header_start) = Zip64ExtendedInformation::parse(
                 reader,
                 len,
-                &mut file.uncompressed_size,
-                &mut file.compressed_size,
-                &mut file.header_start,
+                file.uncompressed_size,
+                file.compressed_size,
+                file.header_start,
             )?;
+            file.uncompressed_size = uncomp_size;
+            file.compressed_size = comp_size;
+            file.header_start = header_start;
             return Ok(true);
         }
         Ok(UsedExtraField::Ntfs) => {
