@@ -404,7 +404,7 @@ impl ZipFileData {
             extra_field: Some(Arc::from(extra_field)),
             central_extra_field: options
                 .extended_options
-                .central_extra_fields()
+                .central_only_extra_fields()
                 .map(Arc::<[u8]>::from),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,

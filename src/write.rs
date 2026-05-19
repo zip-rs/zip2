@@ -288,7 +288,7 @@ mod sealed {
         /// Extra Data
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>>;
         /// Central Extra Data
-        fn central_extra_fields(&self) -> Option<Vec<u8>>;
+        fn central_only_extra_fields(&self) -> Option<Vec<u8>>;
         /// File Comment
         fn file_comment(&self) -> Option<&str>;
         /// Take File Comment (moves ownership)
@@ -299,7 +299,7 @@ mod sealed {
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
             None
         }
-        fn central_extra_fields(&self) -> Option<Vec<u8>> {
+        fn central_only_extra_fields(&self) -> Option<Vec<u8>> {
             None
         }
         fn file_comment(&self) -> Option<&str> {
@@ -315,7 +315,7 @@ mod sealed {
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
             Some(&self.extra_fields)
         }
-        fn central_extra_fields(&self) -> Option<Vec<u8>> {
+        fn central_only_extra_fields(&self) -> Option<Vec<u8>> {
             Some(
                 self.extra_fields
                     .iter()
@@ -375,7 +375,7 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let data = data.as_ref();
         let len = data.len() + 4;
-        let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.len()).sum();
+        let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.len_with_header()).sum();
         if extra_fields_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {
@@ -1139,7 +1139,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             Some(data) => data.to_vec(),
             None => vec![],
         };
-        let central_extra_fields = options.extended_options.central_extra_fields();
+        let central_extra_fields = options.extended_options.central_only_extra_fields();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
             let mut serialized_zip64 = Vec::with_capacity(zip64_block.full_size());
             zip64_block.write(&mut serialized_zip64)?;
@@ -1170,7 +1170,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let mut buf = [0u8; AexEncryption::EXTRA_FIELD_SIZE as usize];
                 aex_extra_field.write_data(&mut buf.as_mut_slice())?;
 
-                let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+                let extra_fields_len: usize =
+                    extra_fields.iter().map(|x| x.len_with_header()).sum();
                 aes_extra_field_start = extra_fields_len as u64;
                 let aex =
                     CustomExtraField::new(false, UsedExtraField::AeXEncryption.as_u16(), &buf);
@@ -1185,7 +1186,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             + file_name_raw.len() as u64;
 
         if options.alignment > 1 {
-            let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+            let extra_fields_len: usize = extra_fields.iter().map(|x| x.len_with_header()).sum();
             let extra_fields_end = header_end + extra_fields_len as u64;
             let align = u64::from(options.alignment);
             let unaligned_header_bytes = extra_fields_end % align;
@@ -1194,7 +1195,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 while pad_length < 6 {
                     pad_length += align as usize;
                 }
-                let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+                let extra_fields_len: usize =
+                    extra_fields.iter().map(|x| x.len_with_header()).sum();
                 let new_len = extra_fields_len + pad_length;
                 if new_len > u16::MAX as usize {
                     // Alignment is impossible without exceeding extra field size limits.
@@ -1210,12 +1212,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                         &pad_body,
                     );
                     extra_fields.push(alignment_extra_field);
-                    let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+                    let extra_fields_len: usize =
+                        extra_fields.iter().map(|x| x.len_with_header()).sum();
                     debug_assert_eq!((extra_fields_len as u64 + header_end) % align, 0);
                 }
             }
         }
-        let extra_fields_len: usize = extra_fields.iter().map(|x| x.len()).sum();
+        let extra_fields_len: usize = extra_fields.iter().map(|x| x.len_with_header()).sum();
         if let Some(data) = central_extra_fields {
             if extra_fields_len + data.len() > u16::MAX as usize {
                 return Err(invalid!(
