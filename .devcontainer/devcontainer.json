@@ -2,6 +2,9 @@
   "name": "Rust",
   "image": "mcr.microsoft.com/devcontainers/rust:1",
   "customizations": {
+    "codespaces": {
+      "openFiles": ["CONTRIBUTING.md", ".github/pull_request_template.md"]
+    },
     "vscode": {
       "extensions": [
         "rust-lang.rust-analyzer"
