@@ -1,6 +1,15 @@
 {
-  "name": "Rust",
-  "image": "mcr.microsoft.com/devcontainers/rust:1",
+  "name": "zip2",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "..",
+    "args": {
+      "USER_UID": "1000",
+      "USER_GID": "1000"
+    }
+  },
+  "postCreateCommand": "rustup component add rustfmt clippy",
   "customizations": {
     "codespaces": {
       "openFiles": ["CONTRIBUTING.md", ".github/pull_request_template.md"]
@@ -11,5 +20,6 @@
       ]
     }
   },
-  "remoteUser": "vscode"
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": false
 }
