@@ -26,9 +26,6 @@ pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
 pub(crate) use crate::format::flags::System;
 
 pub(crate) mod ffi {
-    /// Mask
-    pub const S_IFMT: u32 = 0b1111_0000_0000_0000;
-
     /// Regular
     pub const S_IFREG: u32 = 0b1000_0000_0000_0000; // 0o0_100_000
     /// Directory
@@ -280,8 +277,6 @@ impl ZipFileData {
                 // Interpret MS-DOS directory bit
                 let mut mode = if 0x10 == (directory_attributes & 0x10) {
                     ffi::S_IFDIR | 0o0775
-                } else if (unix_mode & ffi::S_IFMT) == ffi::S_IFLNK {
-                    ffi::S_IFLNK | 0o0777
                 } else {
                     ffi::S_IFREG | 0o0664
                 };
@@ -703,7 +698,7 @@ mod tests {
             external_attributes: (ffi::S_IFLNK | 0o777) << 16,
             ..ZipFileData::default()
         };
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
+        assert_eq!(data.unix_mode(), Some(ffi::S_IFREG | 0o664));
 
         data.system = System::Unknown;
         assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
