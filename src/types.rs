@@ -26,8 +26,14 @@ pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
 pub(crate) use crate::format::flags::System;
 
 pub(crate) mod ffi {
+    /// Mask
+    pub const S_IFMT: u32 = 0o170000;
+
+    /// Directory
     pub const S_IFDIR: u32 = 0o0_040_000;
+    /// Regular
     pub const S_IFREG: u32 = 0o0_100_000;
+    /// Symbolic link
     pub const S_IFLNK: u32 = 0o0_120_000;
 }
 
@@ -266,28 +272,35 @@ impl ZipFileData {
             return None;
         }
         let unix_mode = self.external_attributes >> 16;
-        if unix_mode != 0 {
-            // If the high 16 bits are non-zero, they probably contain Unix permissions.
-            // This happens for archives created on Windows by this crate or other tools,
-            // and is the only way to identify symlinks in such archives.
-            return Some(unix_mode);
-        }
         match self.system {
             System::Unix => Some(unix_mode),
             System::Dos => {
+                // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
+                let directory_attributes = self.external_attributes & 0xFFFF;
                 // Interpret MS-DOS directory bit
-                let mut mode = if 0x10 == (self.external_attributes & 0x10) {
+                let mut mode = if 0x10 == (directory_attributes & 0x10) {
                     ffi::S_IFDIR | 0o0775
+                } else if (unix_mode & ffi::S_IFMT) == ffi::S_IFLNK {
+                    ffi::S_IFLNK | 0o0777
                 } else {
                     ffi::S_IFREG | 0o0664
                 };
-                if 0x01 == (self.external_attributes & 0x01) {
-                    // Read-only bit; strip write permissions
+                // Interpret MS-DOS read-only bit
+                if 0x01 == (directory_attributes & 0x01) {
+                    // strip write permissions for read-only
                     mode &= !0o222;
                 }
                 Some(mode)
             }
-            _ => None,
+            _ => {
+                if unix_mode != 0 {
+                // If the high 16 bits are non-zero, they probably contain Unix permissions.
+                // This happens for archives created on Windows by this crate or other tools,
+                // and is the only way to identify symlinks in such archives.
+                    return Some(unix_mode);
+                }
+                None
+            },
         }
     }
 
