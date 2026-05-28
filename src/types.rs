@@ -26,9 +26,12 @@ pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
 pub(crate) use crate::format::flags::System;
 
 pub(crate) mod ffi {
-    pub const S_IFDIR: u32 = 0o0_040_000;
-    pub const S_IFREG: u32 = 0o0_100_000;
-    pub const S_IFLNK: u32 = 0o0_120_000;
+    /// Regular
+    pub const S_IFREG: u32 = 0b1000_0000_0000_0000; // 0o0_100_000
+    /// Directory
+    pub const S_IFDIR: u32 = 0b0100_0000_0000_0000; // 0o0_040_000
+    /// Symbolic link
+    pub const S_IFLNK: u32 = 0b1010_0000_0000_0000; // 0o0_120_000
 }
 
 pub(crate) struct ZipRawValues {
@@ -266,28 +269,33 @@ impl ZipFileData {
             return None;
         }
         let unix_mode = self.external_attributes >> 16;
-        if unix_mode != 0 {
-            // If the high 16 bits are non-zero, they probably contain Unix permissions.
-            // This happens for archives created on Windows by this crate or other tools,
-            // and is the only way to identify symlinks in such archives.
-            return Some(unix_mode);
-        }
         match self.system {
             System::Unix => Some(unix_mode),
             System::Dos => {
+                // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
+                let directory_attributes = self.external_attributes & 0xFFFF;
                 // Interpret MS-DOS directory bit
-                let mut mode = if 0x10 == (self.external_attributes & 0x10) {
+                let mut mode = if 0x10 == (directory_attributes & 0x10) {
                     ffi::S_IFDIR | 0o0775
                 } else {
                     ffi::S_IFREG | 0o0664
                 };
-                if 0x01 == (self.external_attributes & 0x01) {
-                    // Read-only bit; strip write permissions
+                // Interpret MS-DOS read-only bit
+                if 0x01 == (directory_attributes & 0x01) {
+                    // strip write permissions for read-only
                     mode &= !0o222;
                 }
                 Some(mode)
             }
-            _ => None,
+            _ => {
+                if unix_mode != 0 {
+                    // If the high 16 bits are non-zero, they probably contain Unix permissions.
+                    // This happens for archives created on Windows by this crate or other tools,
+                    // and is the only way to identify symlinks in such archives.
+                    return Some(unix_mode);
+                }
+                None
+            }
         }
     }
 
@@ -690,7 +698,7 @@ mod tests {
             external_attributes: (ffi::S_IFLNK | 0o777) << 16,
             ..ZipFileData::default()
         };
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
+        assert_eq!(data.unix_mode(), Some(ffi::S_IFREG | 0o664));
 
         data.system = System::Unknown;
         assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
