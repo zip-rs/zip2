@@ -27,14 +27,14 @@ pub(crate) use crate::format::flags::System;
 
 pub(crate) mod ffi {
     /// Mask
-    pub const S_IFMT: u32 = 0o170000;
+    pub const S_IFMT: u32 = 0b1111_0000_0000_0000;
 
-    /// Directory
-    pub const S_IFDIR: u32 = 0o0_040_000;
     /// Regular
-    pub const S_IFREG: u32 = 0o0_100_000;
+    pub const S_IFREG: u32 = 0b1000_0000_0000_0000; // 0o0_100_000
+    /// Directory
+    pub const S_IFDIR: u32 = 0b0100_0000_0000_0000; // 0o0_040_000
     /// Symbolic link
-    pub const S_IFLNK: u32 = 0o0_120_000;
+    pub const S_IFLNK: u32 = 0b1010_0000_0000_0000; // 0o0_120_000
 }
 
 pub(crate) struct ZipRawValues {
