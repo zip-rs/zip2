@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0-pre2.1](https://github.com/zip-rs/zip2/compare/v9.0.0-pre2...v9.0.0-pre2.1) - 2026-05-28
+
+### <!-- 2 -->🚜 Refactor
+
+- change zip64 parsing ([#834](https://github.com/zip-rs/zip2/pull/834))
+
 ## [9.0.0-pre2](https://github.com/zip-rs/zip2/compare/v9.0.0-pre1...v9.0.0-pre1.1) - 2026-05-11
 
 ### <!-- 2 -->🚜 Refactor
