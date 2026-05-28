@@ -294,13 +294,13 @@ impl ZipFileData {
             }
             _ => {
                 if unix_mode != 0 {
-                // If the high 16 bits are non-zero, they probably contain Unix permissions.
-                // This happens for archives created on Windows by this crate or other tools,
-                // and is the only way to identify symlinks in such archives.
+                    // If the high 16 bits are non-zero, they probably contain Unix permissions.
+                    // This happens for archives created on Windows by this crate or other tools,
+                    // and is the only way to identify symlinks in such archives.
                     return Some(unix_mode);
                 }
                 None
-            },
+            }
         }
     }
 
