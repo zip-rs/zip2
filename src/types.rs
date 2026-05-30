@@ -510,13 +510,14 @@ impl ZipFileData {
     }
     fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
-            Ok(spec::ZIP64_BYTES_THR as u32)
+            Ok(spec::ZIP64_BYTES_THR_U32)
         } else {
-            field.min(spec::ZIP64_BYTES_THR).try_into().map_err(|_| {
+            let size: u32 = field.try_into().map_err(|_| {
                 std::io::Error::other(format!(
                     "File size {field} exceeds maximum size for non-ZIP64 files"
                 ))
-            })
+            })?;
+            Ok(size.min(spec::ZIP64_BYTES_THR_U32 - 1))
         }
     }
 
@@ -560,22 +561,8 @@ impl ZipFileData {
     }
 
     pub(crate) fn block(&self, file_name_raw: &[u8]) -> ZipResult<ZipCentralEntryBlock> {
-        let compressed_size = if self.large_file {
-            spec::ZIP64_BYTES_THR as u32
-        } else {
-            self.compressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?
-        };
-        let uncompressed_size = if self.large_file {
-            spec::ZIP64_BYTES_THR as u32
-        } else {
-            self.uncompressed_size
-                .min(spec::ZIP64_BYTES_THR)
-                .try_into()
-                .map_err(std::io::Error::other)?
-        };
+        let compressed_size = self.clamp_size_field(self.compressed_size)?;
+        let uncompressed_size = self.clamp_size_field(self.uncompressed_size)?;
         let offset = self
             .header_start
             .min(spec::ZIP64_BYTES_THR)
@@ -636,8 +623,8 @@ impl ZipFileData {
         if self.large_file {
             return self.zip64_data_descriptor_block().write(writer);
         }
-        if self.compressed_size > spec::ZIP64_BYTES_THR
-            || self.uncompressed_size > spec::ZIP64_BYTES_THR
+        if self.compressed_size >= spec::ZIP64_BYTES_THR
+            || self.uncompressed_size >= spec::ZIP64_BYTES_THR
         {
             if auto_large_file {
                 return self.zip64_data_descriptor_block().write(writer);
