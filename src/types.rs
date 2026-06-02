@@ -79,6 +79,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
 pub struct FileOptions<'k, 'n, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
     pub(crate) compression_level: Option<i64>,
+    pub(crate) external_attributes: Option<u32>,
     pub(crate) last_modified_time: DateTime,
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
@@ -379,19 +380,24 @@ impl ZipFileData {
         } else {
             System::Unix
         };
-        if system == System::Dos {
-            if is_dir(file_name_raw) {
-                // DOS directory bit
-                external_attributes |= 0x10;
+        let external_attributes = if let Some(external_attr) = options.external_attributes {
+            external_attr
+        } else {
+            if system == System::Dos {
+                if is_dir(file_name_raw) {
+                    // DOS directory bit
+                    external_attributes |= 0x10;
+                }
+                if options
+                    .permissions
+                        .is_some_and(|permissions| permissions & 0o444 == 0)
+                {
+                    // DOS read-only bit
+                    external_attributes |= 0x01;
+                }
             }
-            if options
-                .permissions
-                .is_some_and(|permissions| permissions & 0o444 == 0)
-            {
-                // DOS read-only bit
-                external_attributes |= 0x01;
-            }
-        }
+            external_attributes
+        };
         let mut flags = 0;
         if options.has_encryption() {
             // encrypt_with is AES or ZipCrypto
