@@ -741,7 +741,7 @@ impl FileOptions<'static, 'static, ()> {
         zopfli_buffer_size: Some(1 << 15),
         system: None,
         name: None,
-        external_attributes: None
+        external_attributes: None,
     };
 }
 

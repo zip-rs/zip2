@@ -390,7 +390,7 @@ impl ZipFileData {
                 }
                 if options
                     .permissions
-                        .is_some_and(|permissions| permissions & 0o444 == 0)
+                    .is_some_and(|permissions| permissions & 0o444 == 0)
                 {
                     // DOS read-only bit
                     external_attributes |= 0x01;
