@@ -278,7 +278,7 @@ impl ZipFileData {
                 // Interpret MS-DOS directory bit
                 let mut mode = if unix_mode != 0 {
                     unix_mode
-                }else {
+                } else {
                     if 0x10 == (directory_attributes & 0x10) {
                         ffi::S_IFDIR | 0o0775
                     } else {
