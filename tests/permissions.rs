@@ -35,7 +35,7 @@ fn test_write_symlink() {
         // test the normal file
         let file = reader.by_name(&filename).unwrap();
         #[cfg(windows)]
-        let system = Sytem::Dos;
+        let system = System::Dos;
         #[cfg(not(windows))]
         let system = System::Unix;
         // The system of this file depends on the plateform
