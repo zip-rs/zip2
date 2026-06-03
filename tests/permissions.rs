@@ -30,7 +30,7 @@ fn unix_mode_dos() {
         let file = archive.by_index(i).unwrap();
         assert_eq!(
             file.unix_mode(),
-            Some(0o4032),
+            Some(0o100664),
             "file {:?} has unix_mode {:?}",
             file.name(),
             file.unix_mode()

@@ -276,14 +276,10 @@ impl ZipFileData {
                 // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
                 let directory_attributes = self.external_attributes & 0xFFFF;
                 // Interpret MS-DOS directory bit
-                let mut mode = if unix_mode != 0 {
-                    unix_mode
+                let mut mode = if 0x10 == (directory_attributes & 0x10) {
+                    ffi::S_IFDIR | 0o0775
                 } else {
-                    if 0x10 == (directory_attributes & 0x10) {
-                        ffi::S_IFDIR | 0o0775
-                    } else {
-                        ffi::S_IFREG | 0o0664
-                    }
+                    ffi::S_IFREG | 0o0664
                 };
                 // Interpret MS-DOS read-only bit
                 if 0x01 == (directory_attributes & 0x01) {
@@ -708,7 +704,9 @@ mod tests {
             external_attributes: (ffi::S_IFLNK | 0o777) << 16,
             ..ZipFileData::default()
         };
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
+
+        // DOS/FAT filesystems have no concept of symlinks
+        assert_eq!(data.unix_mode(), Some(ffi::S_IFREG | 0o664));
 
         data.system = System::Unknown;
         assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
