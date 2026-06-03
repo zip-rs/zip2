@@ -274,15 +274,15 @@ impl ZipFileData {
             System::Unix => Some(unix_mode),
             System::Dos => {
                 // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
-                let directory_attributes = self.external_attributes & 0xFFFF;
+                let dos_attributes = (self.external_attributes & 0xFF) as u8;
                 // Interpret MS-DOS directory bit
-                let mut mode = if 0x10 == (directory_attributes & 0x10) {
+                let mut mode = if (dos_attributes & 0x10) != 0 {
                     ffi::S_IFDIR | 0o0775
                 } else {
                     ffi::S_IFREG | 0o0664
                 };
                 // Interpret MS-DOS read-only bit
-                if 0x01 == (directory_attributes & 0x01) {
+                if (dos_attributes & 0x01) != 0 {
                     // strip write permissions for read-only
                     mode &= !0o222;
                 }
