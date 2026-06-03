@@ -22,16 +22,39 @@ fn test_write_symlink() {
     writer.start_file(&filename, options).unwrap();
     writer.write_all(b"content").unwrap();
 
+    let symlink_name = format!("test_{perms}_symlink.txt");
+    writer
+        .add_symlink(&symlink_name, &filename, options)
+        .unwrap();
+
     // Write and read back
     let bytes = writer.finish().unwrap().into_inner();
     let mut reader = ZipArchive::new(Cursor::new(bytes)).unwrap();
 
-    let file = reader.by_index(0).unwrap();
-    assert_eq!(file.get_metadata().system, System::Unix);
+    {
+        // test the normal file
+        let file = reader.by_name(&filename).unwrap();
+        #[cfg(windows)]
+        let system = Sytem::Dos;
+        #[cfg(not(windows))]
+        let system = System::Unix;
+        // The system of this file depends on the plateform
+        assert_eq!(file.get_metadata().system, system);
 
-    // Not Windows: Permissions are correctly saved as unix perms
+        // Windows: `unix_mode()` gives the default mode
+        #[cfg(windows)]
+        assert_eq!(file.unix_mode().unwrap(), 0o100000 | 0o664);
+
+        // Not Windows: Permissions are correctly saved as unix perms
+        #[cfg(not(windows))]
+        assert_eq!(file.unix_mode().unwrap(), 0o100000 | perms);
+    }
+
+    let symlink_file = reader.by_name(&symlink_name).unwrap();
+    assert_eq!(symlink_file.get_metadata().system, System::Unix);
     // Windows: The ZipFile is forced to Unix so the permissions are also correctly saved
-    assert_eq!(file.unix_mode().unwrap(), 0o100000 | perms);
+    // Not Windows: Permissions are correctly saved as unix perms
+    assert_eq!(symlink_file.unix_mode().unwrap(), 0o120000 | perms);
 }
 
 #[test]
