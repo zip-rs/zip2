@@ -252,7 +252,7 @@ const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
 const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";
 
 #[cfg(windows)]
-const EXPECTED_FILE_PERMISSIONS: u32 = 0o100644;
+const EXPECTED_FILE_PERMISSIONS: u32 = 0o100664;
 #[cfg(not(windows))]
 const EXPECTED_FILE_PERMISSIONS: u32 = 0o100755;
 
