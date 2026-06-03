@@ -371,6 +371,8 @@ impl ZipFileData {
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
+            // DOS/FAT filesystems have no concept of symlinks
+            // We force to System::Unix
             System::Unix
         } else if let Some(system_option) = options.system {
             // user provided
@@ -706,6 +708,9 @@ mod tests {
         };
 
         // DOS/FAT filesystems have no concept of symlinks
+        //
+        // Also, if we use the `unix_permissions()` in the `FileOptions`
+        // The ZipFileData will be forced to be System::Unix
         assert_eq!(data.unix_mode(), Some(ffi::S_IFREG | 0o664));
 
         data.system = System::Unknown;

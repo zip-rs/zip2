@@ -1,6 +1,40 @@
 //! Test related to permissions
 
 #[test]
+fn test_write_symlink() {
+    // if we specify a symlink, the zip_file should be forced to Unix
+    use std::io::Cursor;
+    use std::io::Write;
+    use zip::CompressionMethod::Stored;
+    use zip::HasZipMetadata; // We use the trait here
+    use zip::System;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+    let perms: u32 = 0o755;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default()
+        .compression_method(Stored)
+        .unix_permissions(perms);
+
+    let filename = format!("test_{perms}.txt");
+    writer.start_file(&filename, options).unwrap();
+    writer.write_all(b"content").unwrap();
+
+    // Write and read back
+    let bytes = writer.finish().unwrap().into_inner();
+    let mut reader = ZipArchive::new(Cursor::new(bytes)).unwrap();
+
+    let file = reader.by_index(0).unwrap();
+    assert_eq!(file.get_metadata().system, System::Unix);
+
+    // Not Windows: Permissions are correctly saved as unix perms
+    // Windows: The ZipFile is forced to Unix so the permissions are also correctly saved
+    assert_eq!(file.unix_mode().unwrap(), 0o100000 | perms);
+}
+
+#[test]
 fn unix_mode_dos() {
     use std::io::Cursor;
     use zip::ZipArchive;
