@@ -230,7 +230,7 @@ impl ZipFileData {
         Ok(SeekableTake::new(reader, self.compressed_size)?)
     }
 
-    /// Check if the `ZipFile` is a dir based on the `file_name`
+    /// Check if the file is a directory based on the file name.
     pub fn is_dir(&self, file_name: &[u8]) -> bool {
         is_dir(file_name)
     }
