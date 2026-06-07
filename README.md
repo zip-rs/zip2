@@ -53,11 +53,12 @@ By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time`
 ## Library usage
 
 Reading:
-- [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html)
+- [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html#method.new)
 - [`read_zipfile_from_stream_*`](https://docs.rs/zip/latest/zip/read/)
 
 Writing:
-- [`ZipWriter::new()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html) - to create a new archive
+- [`ZipWriter::new()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new) - to create a new archive
+- [`ZipWriter::new_append()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new_append) - to read and append to an existing zip file
 - [`ZipWriter::new_stream()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new_stream) - to write in stream mode
 
 ## Examples
