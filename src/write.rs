@@ -399,7 +399,7 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let data = data.as_ref();
         let len = data.len() + 4;
-        let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.len()).sum();
+        let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.len_with_header()).sum();
         if extra_fields_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {

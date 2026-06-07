@@ -178,7 +178,7 @@ pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
 /// A Custom Extra Field
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CustomExtraField {
-    /// Is this extra field central
+    /// If true, this field will be included in the central directory entry but not the local file header.
     pub(crate) central_only: bool,
     /// Header ID of the extra field
     pub(crate) header_id: u16,
@@ -200,10 +200,10 @@ impl CustomExtraField {
         if data.len() < 2 {
             return Err(invalid!("Cannot build a CustomExtraField: no header_id"));
         }
-        let header_id = u16::from_le_bytes([data[0], data[1]]);
         if data.len() < 4 {
             return Err(invalid!("Cannot build a CustomExtraField: no size"));
         }
+        let header_id = u16::from_le_bytes([data[0], data[1]]);
         let size = u16::from_le_bytes([data[2], data[3]]) as usize;
         if size > (u16::MAX - 4) as usize {
             return Err(invalid!("Cannot build a CustomExtraField: size too big"));
@@ -219,9 +219,9 @@ impl CustomExtraField {
         })
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub(crate) fn len_with_header(&self) -> usize {
         let size = self.data.len();
-        2 + 2 + size
+        size_of::<u16>() + size_of::<u16>() + size
     }
 
     pub(crate) fn write<W: Write>(&self, write: &mut W) -> ZipResult<()> {
