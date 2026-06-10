@@ -589,6 +589,16 @@ impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
         self
     }
 
+    /// Set the external attributes for the file.
+    ///
+    /// If you use both [`unix_permissions`] and [`external_attributes`], only external
+    /// attributes are going to be used
+    #[must_use]
+    pub const fn external_attributes(mut self, external_perms: u32) -> Self {
+        self.external_attributes = Some(external_perms);
+        self
+    }
+
     /// Set whether the new file's compressed and uncompressed size is less than 4 GiB.
     ///
     /// If set to `false` and the file exceeds the limit, an I/O error is thrown and the file is
@@ -731,6 +741,7 @@ impl FileOptions<'static, 'static, ()> {
         zopfli_buffer_size: Some(1 << 15),
         system: None,
         name: None,
+        external_attributes: None,
     };
 }
 
@@ -751,6 +762,7 @@ impl<'k, 'n> FileOptions<'k, 'n, ()> {
             zopfli_buffer_size: self.zopfli_buffer_size,
             system: self.system,
             name: self.name,
+            external_attributes: self.external_attributes,
         }
     }
 }
@@ -771,6 +783,7 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, '_, T> {
             zopfli_buffer_size: Some(1 << 15),
             system: None,
             name: None,
+            external_attributes: None,
         }
     }
 }
@@ -2821,10 +2834,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 1,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
         writer.start_file("mimetype", options).unwrap();
         writer
@@ -2870,10 +2880,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 1,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
 
         // GB18030
@@ -2933,10 +2940,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 0,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -2988,10 +2992,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 0,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
