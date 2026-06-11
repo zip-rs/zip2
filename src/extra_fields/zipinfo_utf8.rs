@@ -32,10 +32,7 @@ impl UnicodeExtraField {
 
     pub(crate) fn is_crc32_valid(&self, ascii_field: &[u8]) -> bool {
         let computed_crc32 = crc32fast::hash(ascii_field);
-        if self.crc32 != computed_crc32 {
-            return false;
-        }
-        true
+        self.crc32 == computed_crc32
     }
 }
 
