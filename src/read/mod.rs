@@ -668,20 +668,21 @@ pub(crate) fn parse_single_extra_field<R: Read>(
         Ok(UsedExtraField::UnicodeComment) => {
             // Info-ZIP Unicode Comment Extra Field
             // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
-            file.file_comment = String::from_utf8(
-                UnicodeExtraField::try_from_reader(reader, len)?
-                    .unwrap_valid(file.file_comment.as_bytes())?
-                    .into_vec(),
-            )?
-            .into();
+            let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
+            if unicode.is_crc32_valid(file.file_comment.as_bytes()) {
+                file.file_comment = String::from_utf8(unicode.content.to_vec())?.into();
+            }
         }
         Ok(UsedExtraField::UnicodePath) => {
             // Info-ZIP Unicode Path Extra Field
             // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
             let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
-            let file_name = unicode.unwrap_valid(file_name_raw)?;
-            *file_name_raw = file_name.into_vec();
-            file.flags |= ZipFlags::LanguageEncoding.as_u16();
+            // If the CRC check fails, this UTF-8 Path Extra Field SHOULD be ignored and
+            // the File Name field in the header SHOULD be used instead.
+            if unicode.is_crc32_valid(file_name_raw) {
+                *file_name_raw = unicode.content.to_vec();
+                file.flags |= ZipFlags::LanguageEncoding.as_u16();
+            }
         }
         _ => {
             if let Err(e) = reader.read_exact(&mut vec![0u8; len as usize]) {
@@ -701,7 +702,6 @@ pub trait HasZipMetadata {
     /// Get the file metadata
     fn get_metadata(&self) -> &ZipFileData;
 }
-
 /// Options for reading a file from an archive.
 #[derive(Default)]
 #[non_exhaustive]

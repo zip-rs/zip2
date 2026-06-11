@@ -8,7 +8,7 @@ use std::io::Read;
 #[derive(Clone, Debug)]
 pub struct UnicodeExtraField {
     crc32: u32,
-    content: Box<[u8]>,
+    pub(crate) content: Box<[u8]>,
 }
 
 impl UnicodeExtraField {
@@ -28,6 +28,14 @@ impl UnicodeExtraField {
             ));
         }
         Ok(self.content)
+    }
+
+    pub(crate) fn is_crc32_valid(&self, ascii_field: &[u8]) -> bool {
+        let computed_crc32 = crc32fast::hash(ascii_field);
+        if self.crc32 != computed_crc32 {
+            return false;
+        }
+        return true;
     }
 }
 
