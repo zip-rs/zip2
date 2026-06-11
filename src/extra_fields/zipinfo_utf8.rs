@@ -35,7 +35,7 @@ impl UnicodeExtraField {
         if self.crc32 != computed_crc32 {
             return false;
         }
-        return true;
+        true
     }
 }
 
