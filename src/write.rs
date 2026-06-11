@@ -3404,10 +3404,7 @@ mod tests {
             compression_method: Stored,
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
-                central_extra_data: vec![
-                    1, 41, 4, 0, 1, 255, 245, 117
-                ]
-                .into(),
+                central_extra_data: vec![1, 41, 4, 0, 1, 255, 245, 117].into(),
                 file_comment: None,
             },
             alignment: 4103,
@@ -3424,10 +3421,7 @@ mod tests {
             compression_method: Stored,
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
-                central_extra_data: vec![
-                    1, 41, 4, 0, 1, 255, 245, 117
-                ]
-                .into(),
+                central_extra_data: vec![1, 41, 4, 0, 1, 255, 245, 117].into(),
                 file_comment: None,
             },
             alignment: 4103,
@@ -3435,7 +3429,6 @@ mod tests {
         };
         assert!(writer.start_file_from_path("", options).is_err());
     }
-
 
     #[cfg(feature = "deflate64")]
     #[test]
