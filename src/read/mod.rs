@@ -669,6 +669,8 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             // Info-ZIP Unicode Comment Extra Field
             // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
             let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
+            // If the CRC check fails, this Unicode Comment extra field SHOULD be ignored and
+            // the File Comment field in the header SHOULD be used instead.
             if unicode.is_crc32_valid(file.file_comment.as_bytes()) {
                 file.file_comment = String::from_utf8(unicode.content.into_vec())?.into();
             }
