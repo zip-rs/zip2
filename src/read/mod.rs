@@ -702,6 +702,7 @@ pub trait HasZipMetadata {
     /// Get the file metadata
     fn get_metadata(&self) -> &ZipFileData;
 }
+
 /// Options for reading a file from an archive.
 #[derive(Default)]
 #[non_exhaustive]
