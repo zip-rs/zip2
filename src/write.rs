@@ -3413,6 +3413,7 @@ mod tests {
         assert!(writer.start_file_from_path("", options).is_ok());
     }
 
+    #[test]
     #[cfg(feature = "unreserved")]
     fn test_invalid_extra_data_with_feature_unreserved() {
         use crate::write::ExtendedFileOptions;
