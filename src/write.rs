@@ -3397,20 +3397,35 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "unreserved"))]
-    fn test_invalid_extra_data_unreserved() {
+    fn test_invalid_extra_data_without_feature_unreserved() {
         use crate::write::ExtendedFileOptions;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: Stored,
-            compression_level: None,
-            last_modified_time: DateTime::from_date_and_time(2021, 8, 8, 1, 0, 29).unwrap(),
-            permissions: None,
-            large_file: true,
-            encrypt_with: None,
             extended_options: ExtendedFileOptions {
                 extra_data: vec![].into(),
                 central_extra_data: vec![
-                    1, 41, 4, 0, 1, 255, 245, 117, 117, 112, 5, 0, 80, 255, 149, 255, 247,
+                    1, 41, 4, 0, 1, 255, 245, 117
+                ]
+                .into(),
+                file_comment: None,
+            },
+            alignment: 4103,
+            ..Default::default()
+        };
+        assert!(writer.start_file_from_path("", options).is_ok());
+    }
+
+    #[cfg(feature = "unreserved")]
+    fn test_invalid_extra_data_with_feature_unreserved() {
+        use crate::write::ExtendedFileOptions;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = FileOptions {
+            compression_method: Stored,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![
+                    1, 41, 4, 0, 1, 255, 245, 117
                 ]
                 .into(),
                 file_comment: None,
@@ -3420,6 +3435,7 @@ mod tests {
         };
         assert!(writer.start_file_from_path("", options).is_err());
     }
+
 
     #[cfg(feature = "deflate64")]
     #[test]
