@@ -3380,18 +3380,13 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "unreserved"))]
-    fn test_invalid_extra_data_unreserved() {
+    fn test_invalid_extra_data_without_feature_unreserved() {
         use crate::write::CustomExtraField;
         use crate::write::ExtendedFileOptions;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: Stored,
-            compression_level: None,
-            last_modified_time: DateTime::from_date_and_time(2021, 8, 8, 1, 0, 29).unwrap(),
-            permissions: None,
-            large_file: true,
-            encrypt_with: None,
             extended_options: ExtendedFileOptions {
                 extra_fields: vec![
                     CustomExtraField::new_from_raw(true, &[1, 41, 4, 0, 1, 255, 245, 117]).unwrap(),
@@ -3404,7 +3399,9 @@ mod tests {
             alignment: 4103,
             ..Default::default()
         };
-        assert!(writer.start_file_from_path("", options).is_err());
+
+        // [1, 41] which is 0x2901 is an unknown extra field
+        assert!(writer.start_file_from_path("", options).is_ok());
     }
 
     #[cfg(feature = "deflate64")]
@@ -4494,5 +4491,55 @@ mod tests {
         assert_eq!(file.get_metadata().system, expected_system);
 
         Ok(())
+    }
+
+    #[test]
+    #[cfg(not(feature = "unreserved"))]
+    fn test_invalid_extra_data_known_extra_field_without_feature_unreserved() {
+        use crate::CompressionMethod::Stored;
+        use crate::ZipWriter;
+        use crate::write::ExtendedFileOptions;
+        use crate::write::FileOptions;
+        use std::io::Cursor;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = FileOptions {
+            compression_method: Stored,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![0x0d, 0x00, 4, 0, 1, 255, 245, 117].into(),
+                file_comment: None,
+            },
+            alignment: 4103,
+            ..Default::default()
+        };
+        // 0x000d is a known extra field
+        // we don't have the feature "unreserved" so the parsing will fail
+        assert!(writer.start_file_from_path("", options).is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "unreserved")]
+    fn test_invalid_extra_data_known_extra_field_with_feature_unreserved() {
+        use crate::CompressionMethod::Stored;
+        use crate::ZipWriter;
+        use crate::write::ExtendedFileOptions;
+        use crate::write::FileOptions;
+        use std::io::Cursor;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = FileOptions {
+            compression_method: Stored,
+            extended_options: ExtendedFileOptions {
+                extra_data: vec![].into(),
+                central_extra_data: vec![0x0d, 0x00, 4, 0, 1, 255, 245, 117].into(),
+                file_comment: None,
+            },
+            alignment: 4103,
+            ..Default::default()
+        };
+        // 0x000d is a known extra field
+        // we have the feature "unreserved" so the parsing will succeed
+        assert!(writer.start_file_from_path("", options).is_ok());
     }
 }
