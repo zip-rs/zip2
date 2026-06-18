@@ -4498,6 +4498,7 @@ mod tests {
     fn test_invalid_extra_data_known_extra_field_without_feature_unreserved() {
         use crate::CompressionMethod::Stored;
         use crate::ZipWriter;
+        use crate::write::CustomExtraField;
         use crate::write::ExtendedFileOptions;
         use crate::write::FileOptions;
         use std::io::Cursor;
@@ -4506,8 +4507,11 @@ mod tests {
         let options = FileOptions {
             compression_method: Stored,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![0x0d, 0x00, 4, 0, 1, 255, 245, 117].into(),
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(false, &[0x0d, 0x00, 4, 0, 1, 255, 245, 117])
+                        .unwrap(),
+                ]
+                .into(),
                 file_comment: None,
             },
             alignment: 4103,
@@ -4523,6 +4527,7 @@ mod tests {
     fn test_invalid_extra_data_known_extra_field_with_feature_unreserved() {
         use crate::CompressionMethod::Stored;
         use crate::ZipWriter;
+        use crate::write::CustomExtraField;
         use crate::write::ExtendedFileOptions;
         use crate::write::FileOptions;
         use std::io::Cursor;
@@ -4531,8 +4536,11 @@ mod tests {
         let options = FileOptions {
             compression_method: Stored,
             extended_options: ExtendedFileOptions {
-                extra_data: vec![].into(),
-                central_extra_data: vec![0x0d, 0x00, 4, 0, 1, 255, 245, 117].into(),
+                extra_fields: vec![
+                    CustomExtraField::new_from_raw(false, &[0x0d, 0x00, 4, 0, 1, 255, 245, 117])
+                        .unwrap(),
+                ]
+                .into(),
                 file_comment: None,
             },
             alignment: 4103,
