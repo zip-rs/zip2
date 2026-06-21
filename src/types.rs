@@ -7,7 +7,7 @@ use crate::extra_fields::ExtraFields;
 use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
-use crate::result::{ZipError, ZipResult, invalid};
+use crate::result::{ZipError, ZipResult};
 use crate::spec::is_dir;
 use crate::spec::{
     self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipDataDescriptorBlock,
@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
 pub(crate) use crate::format::flags::System;

@@ -1,26 +1,21 @@
 //! Code related to the `ExtraField` enum
 
-use crate::AesMode;
-use crate::CompressionMethod;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
-use crate::extra_fields::EXTRA_FIELD_MAPPING;
 use crate::extra_fields::ExtendedTimestamp;
 use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
-use crate::result::ZipError;
 use crate::result::ZipResult;
 use crate::result::invalid;
 use crate::spec::BlockGetter;
-use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
 use core::mem;
 use std::io::ErrorKind;
-use std::io::{self, Cursor, Read, Write};
+use std::io::{Cursor, Read, Write};
 
 /// contains one extra field
 #[derive(Debug, Clone)]
@@ -199,18 +194,18 @@ impl ExtraField {
                 }
                 size
             }
-            ExtraField::Ntfs(ntfs) => {
+            ExtraField::Ntfs(_ntfs) => {
                 // NTFS extra field
                 0
             }
             ExtraField::AeXEncryption { .. } => AexEncryption::FULL_SIZE,
-            ExtraField::ExtendedTimestamp(extended_timestamp) => {
+            ExtraField::ExtendedTimestamp(_extended_timestamp) => {
                 // nothing to do
                 0
             }
             ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
             ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
-            ExtraField::Custom(custom) => custom.len(),
+            ExtraField::Custom(custom) => custom.len_with_header(),
             _ => 0,
         }
     }
@@ -235,10 +230,8 @@ impl ExtraField {
                 if let Some(comp_size) = compressed_size {
                     writer.write_all(&comp_size.to_le_bytes())?;
                 }
-                if !is_local_header {
-                    if let Some(head_start) = header_start {
-                        writer.write_all(&head_start.to_le_bytes())?;
-                    }
+                if !is_local_header && let Some(head_start) = header_start {
+                    writer.write_all(&head_start.to_le_bytes())?;
                 }
             }
             ExtraField::AeXEncryption(aex) => {
@@ -266,7 +259,7 @@ impl ExtraField {
 }
 
 impl ZipFileData {
-    pub(crate) fn apply_extra_fields(&mut self, mut file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
+    pub(crate) fn apply_extra_fields(&mut self, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
         for one_extra_field in &self.extra_fields.inner {
             match one_extra_field {
                 // Zip64 extended information extra field
@@ -295,23 +288,23 @@ impl ZipFileData {
                     self.aes_mode = Some((*aes_mode, *aes_vendor_version));
                     self.compression_method = *compression_method;
                 }
-                ExtraField::UnicodeComment(unicode_comment) => {
+                ExtraField::UnicodeComment(unicode)
                     // Info-ZIP Unicode Comment Extra Field
                     // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
-                    self.file_comment = String::from_utf8(
-                        unicode_comment
-                            .unwrap_valid(self.file_comment.as_bytes())?
-                            .into_vec(),
-                    )?
-                    .into();
-                }
-                ExtraField::UnicodePath(unicode_path) => {
+                    // If the CRC check fails, this Unicode Comment extra field SHOULD be ignored and
+                    // the File Comment field in the header SHOULD be used instead.
+                    if unicode.is_crc32_valid(self.file_comment.as_bytes()) => {
+                        self.file_comment = String::from_utf8(unicode.content.to_vec())?.into();
+                    }
+                ExtraField::UnicodePath(unicode)
                     // Info-ZIP Unicode Path Extra Field
                     // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-                    let file_name = unicode_path.unwrap_valid(file_name_raw)?;
-                    *file_name_raw = file_name.into_vec();
-                    self.flags |= ZipFlags::LanguageEncoding.as_u16();
-                }
+                    // If the CRC check fails, this UTF-8 Path Extra Field SHOULD be ignored and
+                    // the File Name field in the header SHOULD be used instead.
+                    if unicode.is_crc32_valid(file_name_raw) => {
+                        *file_name_raw = unicode.content.to_vec();
+                        self.flags |= ZipFlags::LanguageEncoding.as_u16();
+                    }
                 _ => {
                     // nothing to do
                 }

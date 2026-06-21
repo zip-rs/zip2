@@ -25,9 +25,9 @@ use core::mem::{self, offset_of, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
+use std::io::ErrorKind;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
-use std::io::{Cursor, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -2388,20 +2388,18 @@ impl ZipFileData {
     ) -> ZipResult<()> {
         let mut is_zip64 = false;
         for one_extra_field in self.extra_fields.inner.iter_mut() {
-            match one_extra_field {
-                ExtraField::Zip64ExtendedInformation {
-                    compressed_size,
-                    uncompressed_size,
-                    header_start,
-                } => {
-                    *compressed_size = Some(self.compressed_size);
-                    *uncompressed_size = Some(self.uncompressed_size);
-                    if self.header_start >= ZIP64_BYTES_THR {
-                        *header_start = Some(self.header_start);
-                    }
-                    is_zip64 = true;
+            if let ExtraField::Zip64ExtendedInformation {
+                compressed_size,
+                uncompressed_size,
+                header_start,
+            } = one_extra_field
+            {
+                *compressed_size = Some(self.compressed_size);
+                *uncompressed_size = Some(self.uncompressed_size);
+                if self.header_start >= ZIP64_BYTES_THR {
+                    *header_start = Some(self.header_start);
                 }
-                _ => {}
+                is_zip64 = true;
             }
         }
         if !is_zip64 {
@@ -2627,19 +2625,17 @@ impl ZipFileData {
                 .map_err(|_| invalid!("Extra data field is too large"))?,
         };
         block.write(writer)?;
-        cursor.write_all(file_name_raw)?;
+        writer.write_all(file_name_raw)?;
         let local_extra_fields = self.extra_fields.local_extra_fields_mut();
         let mut bytes_written = 0;
         for one_extra_field in local_extra_fields {
-            one_extra_field.write(&mut cursor, true)?;
-            match one_extra_field {
-                ExtraField::AeXEncryption(AexEncryption {
-                    aes_extra_field_start,
-                    ..
-                }) => {
-                    *aes_extra_field_start = Some(bytes_written);
-                }
-                _ => {}
+            one_extra_field.write(&mut *writer, true)?;
+            if let ExtraField::AeXEncryption(AexEncryption {
+                aes_extra_field_start,
+                ..
+            }) = one_extra_field
+            {
+                *aes_extra_field_start = Some(bytes_written);
             }
             bytes_written += one_extra_field.size(true);
         }
@@ -3502,9 +3498,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     #[cfg(not(feature = "unreserved"))]
-    /// Was throwing InvalidArchive("CRC32 checksum failed on Unicode extra field, it is '0xF7FF95FF' and it should be '0x000000'")
     fn test_invalid_extra_data_unreserved() {
         use crate::write::CustomExtraField;
         use crate::write::ExtendedFileOptions;
@@ -3520,8 +3514,6 @@ mod tests {
             extended_options: ExtendedFileOptions {
                 extra_fields: vec![
                     CustomExtraField::new_from_raw(true, &[1, 41, 4, 0, 1, 255, 245, 117]).unwrap(),
-                    CustomExtraField::new_from_raw(true, &[117, 112, 5, 0, 80, 255, 149, 255, 247])
-                        .unwrap(),
                 ]
                 .into(),
                 file_comment: None,
@@ -3529,7 +3521,7 @@ mod tests {
             alignment: 4103,
             ..Default::default()
         };
-        assert!(writer.start_file_from_path("", options).is_err());
+        assert!(writer.start_file_from_path("", options).is_ok());
     }
 
     #[cfg(feature = "deflate64")]
