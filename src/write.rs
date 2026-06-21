@@ -3709,7 +3709,7 @@ mod tests {
 
     #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
     #[test]
-    #[ignore]
+    /// https://github.com/zip-rs/zip2/commit/2a035f520104b7df343b02726c35ebd53ac2e15a
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
         use crate::AesMode::Aes256;
         use crate::types::AesVendorVersion;
@@ -3752,7 +3752,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    // https://github.com/zip-rs/zip2/commit/e23f676c40ffef9ac62ad8a82cf4bcdd43b7a4e7
     fn test_fuzz_crash_2024_06_14e() -> ZipResult<()> {
         use crate::write::CustomExtraField;
 
@@ -3783,7 +3783,8 @@ mod tests {
             alignment: 0xFFFF,
             ..Default::default()
         };
-        assert!(writer.add_directory_from_path("", options).is_err());
+        writer.add_directory_from_path("", options).unwrap_err();
+        //        assert!(writer.add_directory_from_path("", options).is_err());
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
