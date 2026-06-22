@@ -36,6 +36,12 @@ impl UnicodeExtraField {
         self.crc32 == computed_crc32
     }
 
+    pub(crate) fn is_crc32_valid(&self, ascii_field: &[u8]) -> bool {
+        let computed_crc32 = crc32fast::hash(ascii_field);
+        self.crc32 == computed_crc32
+    }
+}
+
     pub(crate) fn try_from_reader<R: Read>(reader: &mut R, len: u16) -> ZipResult<Self> {
         // Read and discard version byte
         reader.read_exact(&mut [0u8])?;
