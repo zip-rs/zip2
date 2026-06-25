@@ -1139,7 +1139,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             Some(data) => data.to_vec(),
             None => vec![],
         };
-        let central_extra_fields = options.extended_options.central_only_extra_fields();
         if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
             let mut serialized_zip64 = Vec::with_capacity(zip64_block.full_size());
             zip64_block.write(&mut serialized_zip64)?;
@@ -1219,6 +1218,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
         }
         let extra_fields_len: usize = extra_fields.iter().map(|x| x.len_with_header()).sum();
+        let central_extra_fields = options.extended_options.central_only_extra_fields();
         if let Some(data) = central_extra_fields {
             if extra_fields_len + data.len() > u16::MAX as usize {
                 return Err(invalid!(
