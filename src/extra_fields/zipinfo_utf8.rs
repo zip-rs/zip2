@@ -52,7 +52,11 @@ impl UnicodeExtraField {
     pub(crate) fn full_size(&self) -> usize {
         mem::size_of::<u16>() // magic
             + mem::size_of::<u16>() // length
-            + mem::size_of::<u8>() // version
+        + self.size()
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        mem::size_of::<u8>() // version
             + mem::size_of::<u32>() // crc32
             + self.content.len() // content
     }
@@ -60,7 +64,7 @@ impl UnicodeExtraField {
     /// Write the Unicode extra field. Magic header should already be written
     pub(crate) fn write<W: Write>(&self, writer: &mut W) -> ZipResult<()> {
         // Magic header should already be written
-        let size = self.full_size() as u16;
+        let size = self.size() as u16;
         writer.write_all(&size.to_le_bytes())?;
         let version = 1u8;
         writer.write_all(&version.to_le_bytes())?;
@@ -91,5 +95,19 @@ mod tests {
             UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
         let res = extra.unwrap_valid(b"abcdef");
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn unicode_extra_field_write_test() {
+        let data = [0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8'];
+        assert_eq!(data.len(), 10); // 0x0A
+        let extra =
+            UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
+        let mut data = Vec::new();
+        extra.write(&mut data).unwrap();
+
+        // The magic is NOT writter
+        // Size is 10
+        assert_eq!(data, [0x0A, 0x00, 0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8']);
     }
 }
