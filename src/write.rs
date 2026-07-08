@@ -3729,7 +3729,12 @@ mod tests {
 
     #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
     #[test]
+    /// Created on
     /// https://github.com/zip-rs/zip2/commit/2a035f520104b7df343b02726c35ebd53ac2e15a
+    /// Then changed in
+    /// https://github.com/zip-rs/zip2/commit/16aa9bcddf58887849aaa36caf6e377eae3636dd
+    /// Because of
+    /// https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
         use crate::AesMode::Aes256;
         use crate::types::AesVendorVersion;
@@ -3767,12 +3772,15 @@ mod tests {
             alignment: 0xFFFF,
             ..Default::default()
         };
-        assert!(writer.add_directory_from_path("", options).is_err());
+        assert!(writer.add_directory_from_path("", options).is_ok());
         Ok(())
     }
 
-    #[test]
+    // Created on
     // https://github.com/zip-rs/zip2/commit/e23f676c40ffef9ac62ad8a82cf4bcdd43b7a4e7
+    // Then changed
+    // https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
+    #[test]
     fn test_fuzz_crash_2024_06_14e() -> ZipResult<()> {
         use crate::write::CustomExtraField;
 
@@ -3803,8 +3811,7 @@ mod tests {
             alignment: 0xFFFF,
             ..Default::default()
         };
-        writer.add_directory_from_path("", options).unwrap_err();
-        //        assert!(writer.add_directory_from_path("", options).is_err());
+        assert!(writer.add_directory_from_path("", options).is_ok());
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
