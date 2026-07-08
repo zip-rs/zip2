@@ -6,7 +6,6 @@ use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
-use crate::extra_fields::EXTRA_FIELD_MAPPING;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
@@ -449,7 +448,7 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
         }
         u.arbitrary_loop(Some(0), Some(10), |u| {
             options
-                .add_extra_data(
+                .add_extra_field(
                     u.int_in_range(2..=u16::MAX)?,
                     Box::<[u8]>::arbitrary(u)?,
                     bool::arbitrary(u)?,
@@ -459,7 +458,7 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
         })?;
         let len = u.arbitrary_len::<u8>()?;
         options.name = Some(u.bytes(len)?);
-        ZipWriter::new(Cursor::new(Vec::new()))
+        ZipWriter::new(std::io::Cursor::new(Vec::new()))
             .start_file("", options.clone())
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
         Ok(options)
@@ -1123,6 +1122,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         });
         #[cfg(not(feature = "unreserved"))]
         {
+            use crate::extra_fields::EXTRA_FIELD_MAPPING;
             if let Some(extra_fields) = options.extended_options.extra_fields() {
                 for x in extra_fields.iter() {
                     let header_id = x.header_id;
