@@ -170,9 +170,13 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
             .collect();
         assert_eq!(file_names, expected_file_names);
     }
-
-    // Check an archive file for extra data field contents.
     {
+        // Check an archive file for extra data field contents.
+        let file_without_extra_data = archive.by_name("test/☃.txt")?;
+        assert_eq!(file_without_extra_data.extra_data(), None);
+    }
+    {
+        // Check an archive file for extra data field contents.
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
         let mut extra_field = Vec::new();
         extra_field.write_u16_le(0xbeef)?;

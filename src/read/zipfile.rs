@@ -276,6 +276,9 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
     /// Get the extra data of the zip header for this file
     pub fn extra_data(&self) -> Option<Vec<u8>> {
+        if self.data.extra_fields.local_extra_fields().len() == 0 {
+            return None
+        }
         let out_buffer = Vec::new();
         let mut cursor = Cursor::new(out_buffer);
         let extra_fields = self.data.extra_fields.local_extra_fields();
