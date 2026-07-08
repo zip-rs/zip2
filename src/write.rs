@@ -1137,7 +1137,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
             }
         }
-        #[cfg_attr(feature = "aes-crypto", allow(unused_mut))]
+        #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))]
         let mut extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
