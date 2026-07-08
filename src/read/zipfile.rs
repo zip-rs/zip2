@@ -276,16 +276,18 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
     /// Get the extra data of the zip header for this file
     pub fn extra_data(&self) -> Option<Vec<u8>> {
-        if self.data.extra_fields.local_extra_fields().len() == 0 {
-            return None;
-        }
         let out_buffer = Vec::new();
         let mut cursor = Cursor::new(out_buffer);
         let extra_fields = self.data.extra_fields.local_extra_fields();
         for one_extra_field in extra_fields {
             one_extra_field.write(&mut cursor, true).ok()?;
         }
-        Some(cursor.into_inner())
+        let extra_fields_data = cursor.into_inner();
+        if extra_fields_data.is_empty() {
+            None
+        } else {
+            Some(extra_fields_data)
+        }
     }
 
     /// Get the starting offset of the data of the compressed file
