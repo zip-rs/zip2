@@ -543,6 +543,16 @@ impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
         self
     }
 
+    /// Set the external attributes for the file.
+    ///
+    /// If you use both [`unix_permissions`] and [`external_attributes`], only external
+    /// attributes are going to be used
+    #[must_use]
+    pub const fn external_attributes(mut self, external_perms: u32) -> Self {
+        self.external_attributes = Some(external_perms);
+        self
+    }
+
     /// Set whether the new file's compressed and uncompressed size is less than 4 GiB.
     ///
     /// If set to `false` and the file exceeds the limit, an I/O error is thrown and the file is
@@ -700,6 +710,7 @@ impl FileOptions<'static, 'static, ()> {
         zopfli_buffer_size: Some(1 << 15),
         system: None,
         name: None,
+        external_attributes: None,
     };
 }
 
@@ -720,6 +731,7 @@ impl<'k, 'n> FileOptions<'k, 'n, ()> {
             zopfli_buffer_size: self.zopfli_buffer_size,
             system: self.system,
             name: self.name,
+            external_attributes: self.external_attributes,
         }
     }
 }
@@ -740,6 +752,7 @@ impl<T: FileOptionExtension> Default for FileOptions<'_, '_, T> {
             zopfli_buffer_size: Some(1 << 15),
             system: None,
             name: None,
+            external_attributes: None,
         }
     }
 }
@@ -758,7 +771,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[..count]);
                     // Only perform the expensive large-file check when we first cross the threshold.
-                    if self.stats.bytes_written > spec::ZIP64_BYTES_THR {
+                    if self.stats.bytes_written >= spec::ZIP64_BYTES_THR {
                         let is_large_file = self
                             .files
                             .last()
@@ -1752,7 +1765,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn finalize(&mut self) -> ZipResult<u64> {
         self.finish_file()?;
 
-        let mut central_start = self.write_central_and_footer()?;
+        let (central_start, is_zip64) = self.write_central_and_footer()?;
         let writer = self.inner.try_inner_mut()?;
         let footer_end = writer.stream_position()?;
         let archive_end = writer.seek(SeekFrom::End(0))?;
@@ -1762,24 +1775,48 @@ impl<W: Write + Seek> ZipWriter<W> {
             // Overwrite the magic so the footer is no longer valid.
             writer.seek(SeekFrom::Start(central_start))?;
             writer.write_u32_le(0)?;
-            writer.seek(SeekFrom::Start(
-                footer_end
-                    - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
-                    - self.comment.len() as u64,
-            ))?;
+            let start_zip32_cde = footer_end
+                - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
+                - self.comment.len() as u64;
+            writer.seek(SeekFrom::Start(start_zip32_cde))?;
             writer.write_u32_le(0)?;
+            let zip64_extensible_len = self
+                .zip64_extensible_data_sector
+                .as_ref()
+                .map(|e| e.len() as u64)
+                .unwrap_or(0);
+            if is_zip64 {
+                let start_zip64_locator = start_zip32_cde
+                    - (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>()) as u64;
+                writer.seek(SeekFrom::Start(start_zip64_locator))?;
+                writer.write_u32_le(0)?;
+                let start_zip64_cde = start_zip64_locator
+                    - (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE) as u64
+                    - zip64_extensible_len;
+                writer.seek(SeekFrom::Start(start_zip64_cde))?;
+                writer.write_u32_le(0)?;
+            }
 
             // Rewrite the footer at the actual end.
             let central_and_footer_size = footer_end - central_start;
             writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
-            central_start = self.write_central_and_footer()?;
-            debug_assert!(self.inner.try_inner_mut()?.stream_position()? == archive_end);
+            let (_, new_is_zip64) = self.write_central_and_footer()?;
+            if new_is_zip64 && new_is_zip64 != is_zip64 {
+                let new_size = (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
+                    as u64
+                    + zip64_extensible_len
+                    + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>()) as u64;
+                let new_archive_end = archive_end + new_size;
+                debug_assert!(self.inner.try_inner_mut()?.stream_position()? == new_archive_end);
+            } else {
+                debug_assert!(self.inner.try_inner_mut()?.stream_position()? == archive_end);
+            }
         }
 
         Ok(central_start)
     }
 
-    fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
+    fn write_central_and_footer(&mut self) -> Result<(u64, bool), ZipError> {
         let writer = self.inner.try_inner_mut()?;
 
         let mut version_needed = u16::from(MIN_VERSION);
@@ -1825,7 +1862,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         let central_directory_size = if is64 {
-            spec::ZIP64_BYTES_THR as u32
+            spec::ZIP64_BYTES_THR_U32
         } else {
             central_size.min(spec::ZIP64_BYTES_THR) as u32
         };
@@ -1842,7 +1879,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
 
         footer.write(writer)?;
-        Ok(central_start)
+        Ok((central_start, is64))
     }
 
     fn index_by_name(&self, name: &[u8]) -> ZipResult<usize> {
@@ -2337,16 +2374,13 @@ impl ZipFileData {
         ))?;
         writer.write_u32_le(self.crc32)?;
         if self.large_file {
-            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
-            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
+            writer.write_u32_le(spec::ZIP64_BYTES_THR_U32)?;
+            writer.write_u32_le(spec::ZIP64_BYTES_THR_U32)?;
 
             self.update_local_zip64_extra_field(writer, file_name_raw)?;
-
-            // self.compressed_size = spec::ZIP64_BYTES_THR;
-            // self.uncompressed_size = spec::ZIP64_BYTES_THR;
         } else {
             // check compressed size as well as it can also be slightly larger than uncompressed size
-            if self.compressed_size > spec::ZIP64_BYTES_THR {
+            if self.compressed_size >= spec::ZIP64_BYTES_THR {
                 return Err(ZipError::Io(std::io::Error::other(
                     "large_file(true) option has not been set",
                 )));
@@ -2378,6 +2412,11 @@ impl ZipFileData {
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
         zip64_block.write(writer)?;
+        if let Some(extra_field) = &mut self.extra_field {
+            let slice = Arc::make_mut(extra_field);
+            let mut cursor = Cursor::new(&mut slice[0..20]);
+            zip64_block.write(&mut cursor)?;
+        }
         Ok(())
     }
 
@@ -2925,10 +2964,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 1,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
         writer.start_file("mimetype", options).unwrap();
         writer
@@ -2974,10 +3010,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 1,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
 
         // GB18030
@@ -3037,10 +3070,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 0,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -3092,10 +3122,7 @@ mod tests {
             encrypt_with: None,
             extended_options: (),
             alignment: 0,
-            #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: None,
-            system: None,
-            name: None,
+            ..FileOptions::default()
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();

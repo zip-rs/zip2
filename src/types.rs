@@ -26,9 +26,12 @@ pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
 pub(crate) use crate::format::flags::System;
 
 pub(crate) mod ffi {
-    pub const S_IFDIR: u32 = 0o0_040_000;
-    pub const S_IFREG: u32 = 0o0_100_000;
-    pub const S_IFLNK: u32 = 0o0_120_000;
+    /// Regular
+    pub const S_IFREG: u32 = 0b1000_0000_0000_0000; // 0o0_100_000
+    /// Directory
+    pub const S_IFDIR: u32 = 0b0100_0000_0000_0000; // 0o0_040_000
+    /// Symbolic link
+    pub const S_IFLNK: u32 = 0b1010_0000_0000_0000; // 0o0_120_000
 }
 
 pub(crate) struct ZipRawValues {
@@ -76,6 +79,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
 pub struct FileOptions<'k, 'n, T: FileOptionExtension> {
     pub(crate) compression_method: CompressionMethod,
     pub(crate) compression_level: Option<i64>,
+    pub(crate) external_attributes: Option<u32>,
     pub(crate) last_modified_time: DateTime,
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
@@ -260,28 +264,33 @@ impl ZipFileData {
             return None;
         }
         let unix_mode = self.external_attributes >> 16;
-        if unix_mode != 0 {
-            // If the high 16 bits are non-zero, they probably contain Unix permissions.
-            // This happens for archives created on Windows by this crate or other tools,
-            // and is the only way to identify symlinks in such archives.
-            return Some(unix_mode);
-        }
         match self.system {
             System::Unix => Some(unix_mode),
             System::Dos => {
+                // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
+                let dos_attributes = (self.external_attributes & 0xFF) as u8;
                 // Interpret MS-DOS directory bit
-                let mut mode = if 0x10 == (self.external_attributes & 0x10) {
+                let mut mode = if (dos_attributes & 0x10) != 0 {
                     ffi::S_IFDIR | 0o0775
                 } else {
                     ffi::S_IFREG | 0o0664
                 };
-                if 0x01 == (self.external_attributes & 0x01) {
-                    // Read-only bit; strip write permissions
+                // Interpret MS-DOS read-only bit
+                if (dos_attributes & 0x01) != 0 {
+                    // strip write permissions for read-only
                     mode &= !0o222;
                 }
                 Some(mode)
             }
-            _ => None,
+            _ => {
+                if unix_mode != 0 {
+                    // If the high 16 bits are non-zero, they probably contain Unix permissions.
+                    // This happens for archives created on Windows by this crate or other tools,
+                    // and is the only way to identify symlinks in such archives.
+                    return Some(unix_mode);
+                }
+                None
+            }
         }
     }
 
@@ -341,6 +350,8 @@ impl ZipFileData {
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
         let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
+            // DOS/FAT filesystems have no concept of symlinks
+            // We force to System::Unix
             System::Unix
         } else if let Some(system_option) = options.system {
             // user provided
@@ -350,19 +361,24 @@ impl ZipFileData {
         } else {
             System::Unix
         };
-        if system == System::Dos {
-            if is_dir(file_name_raw) {
-                // DOS directory bit
-                external_attributes |= 0x10;
+        let external_attributes = if let Some(external_attr) = options.external_attributes {
+            external_attr
+        } else {
+            if system == System::Dos {
+                if is_dir(file_name_raw) {
+                    // DOS directory bit
+                    external_attributes |= 0x10;
+                }
+                if options
+                    .permissions
+                    .is_some_and(|permissions| permissions & 0o444 == 0)
+                {
+                    // DOS read-only bit
+                    external_attributes |= 0x01;
+                }
             }
-            if options
-                .permissions
-                .is_some_and(|permissions| permissions & 0o444 == 0)
-            {
-                // DOS read-only bit
-                external_attributes |= 0x01;
-            }
-        }
+            external_attributes
+        };
         let mut flags = 0;
         if options.has_encryption() {
             // encrypt_with is AES or ZipCrypto
@@ -461,13 +477,14 @@ impl ZipFileData {
 
     pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
-            Ok(spec::ZIP64_BYTES_THR as u32)
+            Ok(spec::ZIP64_BYTES_THR_U32)
         } else {
-            field.min(spec::ZIP64_BYTES_THR).try_into().map_err(|_| {
+            let size: u32 = field.try_into().map_err(|_| {
                 std::io::Error::other(format!(
                     "File size {field} exceeds maximum size for non-ZIP64 files"
                 ))
-            })
+            })?;
+            Ok(size.min(spec::ZIP64_BYTES_THR_U32 - 1))
         }
     }
 
@@ -479,8 +496,8 @@ impl ZipFileData {
         if self.large_file {
             return self.zip64_data_descriptor_block().write(writer);
         }
-        if self.compressed_size > spec::ZIP64_BYTES_THR
-            || self.uncompressed_size > spec::ZIP64_BYTES_THR
+        if self.compressed_size >= spec::ZIP64_BYTES_THR
+            || self.uncompressed_size >= spec::ZIP64_BYTES_THR
         {
             if auto_large_file {
                 return self.zip64_data_descriptor_block().write(writer);
@@ -533,7 +550,12 @@ mod tests {
             external_attributes: (ffi::S_IFLNK | 0o777) << 16,
             ..ZipFileData::default()
         };
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
+
+        // DOS/FAT filesystems have no concept of symlinks
+        //
+        // Also, if we use the `unix_permissions()` in the `FileOptions`
+        // The ZipFileData will be forced to be System::Unix
+        assert_eq!(data.unix_mode(), Some(ffi::S_IFREG | 0o664));
 
         data.system = System::Unknown;
         assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
