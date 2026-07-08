@@ -1126,7 +1126,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             if let Some(extra_fields) = options.extended_options.extra_fields() {
                 for x in extra_fields.iter() {
                     let header_id = x.header_id;
-                    if let Err(()) = UsedExtraField::try_from(header_id)
+                    if UsedExtraField::try_from(header_id).is_err()
                         && EXTRA_FIELD_MAPPING.contains(&header_id)
                     {
                         return Err(ZipError::Io(io::Error::other(format!(
