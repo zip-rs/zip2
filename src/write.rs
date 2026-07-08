@@ -1137,6 +1137,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
             }
         }
+        #[cfg_attr(feature = "aes-crypto", allow(unused_mut))]
         let mut extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
@@ -1146,7 +1147,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         // AES encryption.
         // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
-        #[allow(unused_mut)]
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes {
