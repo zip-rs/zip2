@@ -10,7 +10,7 @@ use crate::spec::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock
 use crate::types::{System, ZipFileData};
 use indexmap::IndexMap;
 use std::ffi::OsStr;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 use std::sync::OnceLock;
 

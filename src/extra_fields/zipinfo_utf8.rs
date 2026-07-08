@@ -18,7 +18,7 @@ impl UnicodeExtraField {
     ///
     /// Returns an error when the crc32 from the extra field does not match the crc32 of the
     /// `ascii_field`.
-    pub fn unwrap_valid(&self, ascii_field: &[u8]) -> ZipResult<Box<[u8]>> {
+    pub fn unwrap_valid(self, ascii_field: &[u8]) -> ZipResult<Box<[u8]>> {
         let computed_crc32 = crc32fast::hash(ascii_field);
         if self.crc32 != computed_crc32 {
             return Err(invalid!(
@@ -27,7 +27,7 @@ impl UnicodeExtraField {
                 computed_crc32
             ));
         }
-        Ok(self.content.clone())
+        Ok(self.content)
     }
 
     /// Check if the crc32 is valid
@@ -106,8 +106,13 @@ mod tests {
         let mut data = Vec::new();
         extra.write(&mut data).unwrap();
 
-        // The magic is NOT writter
+        // The magic is NOT written
         // Size is 10
-        assert_eq!(data, [0x0A, 0x00, 0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8']);
+        assert_eq!(
+            data,
+            [
+                0x0A, 0x00, 0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8'
+            ]
+        );
     }
 }

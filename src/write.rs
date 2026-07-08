@@ -14,7 +14,8 @@ use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    self, FixedSizeBlock, Magic, Zip32CDEBlock, ZipCentralEntryBlock, ZipLocalEntryBlock,
+    self, FixedSizeBlock, Magic, Zip32CDEBlock, Zip64CentralDirectoryEnd,
+    Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::types::EncryptWith;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
@@ -677,7 +678,7 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
 
     /// Removes the extra fields.
     #[must_use]
-    #[deprecated = "use clear_extra_data"]
+    #[deprecated = "use clear_extra_fields"]
     pub fn clear_extra_data(self) -> Self {
         self.clear_extra_fields()
     }
@@ -2412,11 +2413,6 @@ impl ZipFileData {
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
         zip64_block.write(writer)?;
-        if let Some(extra_field) = &mut self.extra_field {
-            let slice = Arc::make_mut(extra_field);
-            let mut cursor = Cursor::new(&mut slice[0..20]);
-            zip64_block.write(&mut cursor)?;
-        }
         Ok(())
     }
 
