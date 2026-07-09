@@ -108,8 +108,7 @@ impl ExtraField {
                     Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None), // early return, most likely a padding
                     Err(_e) => {
                         // Consume remaining bytes to avoid infinite loop in caller
-                        let mut buf = Vec::new();
-                        let _ = reader.read_to_end(&mut buf);
+                        let _ = std::io::copy(reader, &mut std::io::sink());
                         return Ok(None);
                     }
                 }
@@ -288,23 +287,31 @@ impl ZipFileData {
                     self.aes_mode = Some((*aes_mode, *aes_vendor_version));
                     self.compression_method = *compression_method;
                 }
-                ExtraField::UnicodeComment(unicode)
+                ExtraField::UnicodeComment(unicode) => {
                     // Info-ZIP Unicode Comment Extra Field
                     // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
                     // If the CRC check fails, this Unicode Comment extra field SHOULD be ignored and
                     // the File Comment field in the header SHOULD be used instead.
-                    if unicode.is_crc32_valid(self.file_comment.as_bytes()) => {
-                        self.file_comment = String::from_utf8(unicode.content.to_vec())?.into();
+                    // Check if the comment is UTF-8
+                    if unicode.is_crc32_valid(self.file_comment.as_bytes())
+                        && let Ok(comment) = String::from_utf8(unicode.content.to_vec())
+                    {
+                        self.file_comment = comment.into_boxed_str();
                     }
-                ExtraField::UnicodePath(unicode)
+                }
+                #[allow(clippy::collapsible_match)]
+                ExtraField::UnicodePath(unicode) => {
                     // Info-ZIP Unicode Path Extra Field
                     // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
                     // If the CRC check fails, this UTF-8 Path Extra Field SHOULD be ignored and
                     // the File Name field in the header SHOULD be used instead.
-                    if unicode.is_crc32_valid(file_name_raw) => {
+                    if unicode.is_crc32_valid(file_name_raw)
+                        && std::str::from_utf8(&unicode.content).is_ok()
+                    {
                         *file_name_raw = unicode.content.to_vec();
                         self.flags |= ZipFlags::LanguageEncoding.as_u16();
                     }
+                }
                 _ => {
                     // nothing to do
                 }

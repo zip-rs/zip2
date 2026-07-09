@@ -298,7 +298,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
                 };
                 extra_fields.push(parsed_extra_field);
             }
-            Err(ZipError::Io(..)) => continue,
+            Err(ZipError::Io(..)) => break,
             Err(e) => {
                 return Err(e);
             }
