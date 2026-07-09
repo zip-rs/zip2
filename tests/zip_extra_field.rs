@@ -156,7 +156,7 @@ fn test_extra_field_too_long() {
     let tests = [
         // should NOT fail since value is less than u16::MAX
         (vec![1; 65535 - 4 - 4 - 26 - 1 - 1], false),
-        // should fail since value is exaclty u16::MAX
+        // should fail since value is exactly u16::MAX
         (vec![1; 65535 - 4 - 4 - 26 - 1], true),
         // should fail since value is more than u16::MAX
         (vec![1; 65535 - 4 - 4 - 26], true),
