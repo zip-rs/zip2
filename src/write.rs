@@ -1142,6 +1142,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
         };
+        let entry_len: usize = mem::size_of::<Magic>()
+            + mem::size_of::<ZipLocalEntryBlock>()
+            + file_name_raw.len()
+            + extra_fields.iter().map(|x| x.size(false)).sum::<usize>();
+        if entry_len >= (u16::MAX as usize) {
+            return Err(invalid!(
+                "ZipLocalBlock + filename + extra fields must be less than 64KiB when combined"
+            ));
+        }
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
@@ -1165,12 +1174,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             _ => None,
         };
-        /*
-                return Err(invalid!(
-                    "Extra data and central extra data must be less than 64KiB when combined"
-                ));
-            }
-        */
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -4699,5 +4702,13 @@ mod tests {
         // 0x000d is a known extra field
         // we have the feature "unreserved" so the parsing will succeed
         assert!(writer.start_file_from_path("", options).is_ok());
+    }
+
+    #[test]
+    fn test_max_len_extra_field() {
+        use crate::spec::Magic;
+        use crate::spec::ZipLocalEntryBlock;
+        assert_eq!(std::mem::size_of::<Magic>(), 4);
+        assert_eq!(std::mem::size_of::<ZipLocalEntryBlock>(), 26);
     }
 }
