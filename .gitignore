@@ -4,3 +4,4 @@ target
 \.idea/
 /fuzz_read/out/
 /fuzz_write/out/
+zipdetails
