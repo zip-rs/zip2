@@ -4,7 +4,7 @@
 //!   cargo run --release --example memory_allocation
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Seek, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zip::ZipWriter;
@@ -88,33 +88,50 @@ fn check_memory<T, R>(
     res
 }
 
+trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let zip_data = Cursor::new(Vec::with_capacity(2048));
-    let zip_writer = check_memory("ZipWriter::new()", zip_data, |data| {
-        let zip_writer = ZipWriter::new(data);
-        Ok(zip_writer)
-    })?;
+    let args: Vec<_> = std::env::args().collect();
+    let zip_data: Box<dyn ReadSeek> = if args.len() < 2 {
+        let zip_data = Cursor::new(Vec::with_capacity(2048));
+        let zip_writer = check_memory("ZipWriter::new()", zip_data, |data| {
+            let zip_writer = ZipWriter::new(data);
+            Ok(zip_writer)
+        })?;
 
-    let zip_writer = check_memory("start_file()", zip_writer, |mut zip_file| {
-        zip_file.start_file(
-            "tests.txt",
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
-        )?;
-        Ok(zip_file)
-    })?;
+        let zip_writer = check_memory("start_file()", zip_writer, |mut zip_file| {
+            zip_file.start_file(
+                "tests.txt",
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+            )?;
+            Ok(zip_file)
+        })?;
 
-    let zip_writer = check_memory("write()", zip_writer, |mut zip_file| {
-        zip_file.write_all(b"testing")?;
-        Ok(zip_file)
-    })?;
+        let zip_writer = check_memory("write()", zip_writer, |mut zip_file| {
+            zip_file.write_all(b"testing")?;
+            Ok(zip_file)
+        })?;
 
-    let zip_data = check_memory("finish()", zip_writer, |mut zip_file| {
-        zip_file.write_all(b"testing")?;
-        let data = zip_file.finish()?;
-        Ok(data)
-    })?;
+        let zip_data = check_memory("finish()", zip_writer, |mut zip_file| {
+            zip_file.write_all(b"testing")?;
+            let data = zip_file.finish()?;
+            Ok(data)
+        })?;
 
-    println!("\n--------------");
+        println!("\n--------------");
+        Box::new(zip_data)
+    } else {
+        let path = &args[1];
+
+        let file_size = std::fs::metadata(path)?.len();
+        println!("File: {path}");
+        println!("File size: {}", fmt_bytes(file_size as usize));
+
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        Box::new(reader)
+    };
 
     let zip_archive = check_memory("ZipArchive::new()", None, |_: Option<bool>| {
         Ok(zip::ZipArchive::new(zip_data)?)
@@ -132,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for i in 0..num_entries {
             let _file = archive.by_index_raw(i)?;
         }
-        Ok(archive)
+        Ok(archive.into_inner())
     })?;
 
     Ok(())
