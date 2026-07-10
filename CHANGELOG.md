@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0-pre2.1](https://github.com/zip-rs/zip2/compare/v9.0.0-pre2...v9.0.0-pre2.1) - 2026-07-10
+
+### <!-- 0 -->🚀 Features
+
+- add example for memory allocation ([#881](https://github.com/zip-rs/zip2/pull/881))
+- add method to README ([#857](https://github.com/zip-rs/zip2/pull/857))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- zip64 creation of exactly 4GB without large file should crash ([#839](https://github.com/zip-rs/zip2/pull/839))
+- remove seek call and inline ([#858](https://github.com/zip-rs/zip2/pull/858))
+- change directory attributes detection and set `external attributes` ([#851](https://github.com/zip-rs/zip2/pull/851))
+- ignore zip info extra field on failure ([#868](https://github.com/zip-rs/zip2/pull/868))
+
+### <!-- 2 -->🚜 Refactor
+
+- change extra_data to extra_fields ([#833](https://github.com/zip-rs/zip2/pull/833))
+- change zip64 parsing ([#834](https://github.com/zip-rs/zip2/pull/834))
+
 ## [9.0.0-pre2](https://github.com/zip-rs/zip2/compare/v9.0.0-pre1...v9.0.0-pre1.1) - 2026-05-11
 
 ### <!-- 2 -->🚜 Refactor
