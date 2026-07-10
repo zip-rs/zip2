@@ -1,7 +1,7 @@
 //! Count heap allocations of a file.
 //!
 //! Usage:
-//!   cargo run --release --example memory_allocation
+//!   cargo run --release --example memory_allocation -- ./tests/data/files_and_dirs.zip
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{Cursor, Read, Seek, Write};
