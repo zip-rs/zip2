@@ -21,4 +21,6 @@ jobs:
           l_label: 'size/l'
           l_max_size: '1000'
           xl_label: 'size/xl'
-          files_to_ignore: 'tests/data/*'
+          files_to_ignore: |
+            'tests/data/*'
+            'CHANGELOG.md'
