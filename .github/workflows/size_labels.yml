@@ -1,0 +1,27 @@
+name: "Pull request size labels"
+
+on: [pull_request]
+
+jobs:
+  labeler:
+    permissions:
+      pull-requests: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Size Labeler
+        uses: codelytv/pr-size-labeler@095a41fca88b8764fd9e008ad269bcdb82bb38b9
+        with:
+          xs_label: 'size: tiny'
+          xs_max_size: '25'
+          s_label: 'size: small'
+          s_max_size: '150'
+          m_label: 'size: medium'
+          m_max_size: '500'
+          l_label: 'size: large'
+          l_max_size: '1000'
+          xl_label: 'size: huge'
+          files_to_ignore: |
+            'tests/data/*'
+            'tests/data/*'
+            'CHANGELOG.md'
