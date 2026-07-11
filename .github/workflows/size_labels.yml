@@ -23,4 +23,5 @@ jobs:
           xl_label: 'size/xl'
           files_to_ignore: |
             'tests/data/*'
+            'tests/data/*'
             'CHANGELOG.md'
