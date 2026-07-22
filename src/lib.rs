@@ -19,6 +19,7 @@ pub use crate::datetime::DateTime;
 pub use crate::format::aes::AesMode;
 pub use crate::format::flags::System;
 pub use crate::read::HasZipMetadata;
+pub use crate::types::ZipFileData;
 pub use crate::read::{ZipArchive, ZipReadOptions};
 pub use crate::spec::{ZIP64_BYTES_THR, ZIP64_ENTRY_THR};
 pub use crate::write::ZipWriter;
