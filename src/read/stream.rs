@@ -1,6 +1,5 @@
 //! Code related to stream reading
 
-use crate::ExtraField;
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::read::readers::{make_crypto_reader, make_reader};
@@ -9,9 +8,10 @@ use crate::read::{
 };
 use crate::result::{ZipError, invalid};
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
+
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::io::{self, Cursor, Read};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.
@@ -238,7 +238,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
 /// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
+pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
     reader: &'a mut R,
     compressed_size: u64,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
@@ -248,7 +248,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
 
 /// Same as `read_zipfile_from_stream` but with `ZipReadOptions`
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
-pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
+pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
     mut options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
@@ -288,25 +288,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
         return Err(e.into());
     }
     // parse extra fields
-    let mut cursor = Cursor::new(&extra_fields_raw);
-    let mut extra_fields = Vec::new();
-    while (cursor.position() as usize) < extra_fields_raw.len() {
-        match ExtraField::parse(&mut cursor, &block) {
-            Ok(parsed_extra_field) => {
-                let Some(parsed_extra_field) = parsed_extra_field else {
-                    break;
-                };
-                extra_fields.push(parsed_extra_field);
-            }
-            Err(ZipError::Io(..)) => break,
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
-    let extra_fields = ExtraFields {
-        inner: extra_fields,
-    };
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block)?;
     let mut data = ZipFileData::from_local_block(block, extra_fields)?;
     data.apply_extra_fields(&mut file_name_raw)?;
     if data.is_using_data_descriptor() {
