@@ -82,7 +82,7 @@ impl ExtraFields {
     }
 
     pub(crate) fn central_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
-        // data alignement is local only
+        // data alignment is local only
         self.inner
             .iter()
             .filter(|ef| !matches!(ef, ExtraField::DataStreamAlignment(_)))
