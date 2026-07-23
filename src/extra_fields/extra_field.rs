@@ -70,16 +70,22 @@ impl ExtraFields {
         })
     }
 
-    pub(crate) fn local_extra_fields_mut(&mut self) -> std::slice::IterMut<'_, ExtraField> {
+    pub(crate) fn local_extra_fields_mut(&mut self) -> impl Iterator<Item = &mut ExtraField> {
         self.inner.iter_mut()
     }
 
-    pub(crate) fn local_extra_fields(&self) -> std::slice::Iter<'_, ExtraField> {
-        self.inner.iter()
+    pub(crate) fn local_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
+        self.inner.iter().filter(|ef| match ef {
+            ExtraField::Custom(cef) => !cef.central_only,
+            _ => true,
+        })
     }
 
-    pub(crate) fn central_extra_fields(&self) -> std::slice::Iter<'_, ExtraField> {
-        self.inner.iter()
+    pub(crate) fn central_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
+        // data alignement is local only
+        self.inner
+            .iter()
+            .filter(|ef| !matches!(ef, ExtraField::DataStreamAlignment(_)))
     }
 }
 
