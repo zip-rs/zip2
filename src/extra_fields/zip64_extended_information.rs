@@ -25,23 +25,15 @@ use crate::{
 pub(crate) struct Zip64ExtendedInformation {
     /// The local header does not contains any `header_start`
     is_local_header: bool,
-    uncompressed_size: Option<u64>,
-    compressed_size: Option<u64>,
-    header_start: Option<u64>,
+    pub(crate) uncompressed_size: Option<u64>,
+    pub(crate) compressed_size: Option<u64>,
+    pub(crate) header_start: Option<u64>,
     // Not used field
     // disk_start: Option<u32>
 }
 
 impl Zip64ExtendedInformation {
     pub(crate) const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
-
-    pub(crate) fn new_local(is_large_file: bool) -> Option<Self> {
-        if is_large_file {
-            Self::local_header(true, u64::MAX, u64::MAX)
-        } else {
-            None
-        }
-    }
 
     /// This entry in the Local header MUST include BOTH original and compressed file size fields
     /// If the user is using `is_large_file` when the file is not large we force the zip64 extra field
@@ -112,11 +104,6 @@ impl Zip64ExtendedInformation {
         })
     }
 
-    /// Get the full size of the block
-    pub(crate) fn full_size(&self) -> usize {
-        self.size() + mem::size_of::<UsedExtraField>() + mem::size_of::<u16>()
-    }
-
     pub(crate) fn size(&self) -> usize {
         let mut size = 0;
         if self.uncompressed_size.is_some() {
@@ -166,12 +153,13 @@ impl Zip64ExtendedInformation {
     pub(crate) fn parse<R: Read>(
         reader: &mut R,
         len: u16,
-        uncompressed_size: u64,
-        compressed_size: u64,
-        header_start: u64,
+        uncompressed_size: u32,
+        compressed_size: u32,
+        header_start: Option<u32>,
     ) -> ZipResult<(u64, u64, u64)> {
         let mut consumed_len = 0;
-        let new_uncompressed_size = if len >= 24 || uncompressed_size == ZIP64_BYTES_THR {
+        let new_uncompressed_size = if len >= 24 || u64::from(uncompressed_size) == ZIP64_BYTES_THR
+        {
             let new_uncompressed_size = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -182,10 +170,10 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
             new_uncompressed_size
         } else {
-            uncompressed_size
+            uncompressed_size.into()
         };
 
-        let new_compressed_size = if len >= 24 || compressed_size == ZIP64_BYTES_THR {
+        let new_compressed_size = if len >= 24 || u64::from(compressed_size) == ZIP64_BYTES_THR {
             let new_compressed_size = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -196,10 +184,10 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
             new_compressed_size
         } else {
-            compressed_size
+            compressed_size.into()
         };
 
-        let new_header_start = if len >= 24 || header_start == ZIP64_BYTES_THR {
+        let new_header_start = if len >= 24 {
             let new_header_start = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -210,7 +198,23 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
             new_header_start
         } else {
-            header_start
+            if let Some(header_start) = header_start {
+                if u64::from(header_start) == ZIP64_BYTES_THR {
+                    let new_header_start = match reader.read_u64_le() {
+                        Ok(v) => v,
+                        Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                            return Err(invalid!("ZIP64 extra field truncated"));
+                        }
+                        Err(e) => return Err(e.into()),
+                    };
+                    consumed_len += mem::size_of::<u64>();
+                    new_header_start
+                } else {
+                    header_start.into()
+                }
+            } else {
+                0
+            }
         };
 
         let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {

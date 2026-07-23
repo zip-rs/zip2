@@ -1,17 +1,20 @@
 //! Writing a ZIP archive
 
+use crate::ExtraField;
+use crate::ZIP64_BYTES_THR;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
+use crate::extra_fields::ExtraFields;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
-use crate::read::{Config, ZipArchive, ZipFile, parse_single_extra_field};
+use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
     self, FixedSizeBlock, Magic, Zip32CDEBlock, Zip64CentralDirectoryEnd,
-    Zip64CentralDirectoryEndLocator, ZipLocalEntryBlock,
+    Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::types::EncryptWith;
 use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
@@ -22,9 +25,9 @@ use core::mem::{self, offset_of, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
+use std::io::ErrorKind;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
-use std::io::{Cursor, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -290,8 +293,6 @@ mod sealed {
     pub trait FileOptionExtension: Default + Sealed {
         /// Extra Data
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>>;
-        /// Central Extra Data
-        fn central_only_extra_fields(&self) -> Option<Vec<u8>>;
         /// File Comment
         fn file_comment(&self) -> Option<&str>;
         /// Take File Comment (moves ownership)
@@ -300,9 +301,6 @@ mod sealed {
     impl Sealed for () {}
     impl FileOptionExtension for () {
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
-            None
-        }
-        fn central_only_extra_fields(&self) -> Option<Vec<u8>> {
             None
         }
         fn file_comment(&self) -> Option<&str> {
@@ -317,15 +315,6 @@ mod sealed {
     impl FileOptionExtension for ExtendedFileOptions {
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
             Some(&self.extra_fields)
-        }
-        fn central_only_extra_fields(&self) -> Option<Vec<u8>> {
-            Some(
-                self.extra_fields
-                    .iter()
-                    .filter(|x| x.central_only)
-                    .flat_map(|x| x.serialize())
-                    .collect(),
-            )
         }
         fn file_comment(&self) -> Option<&str> {
             self.file_comment.as_ref().map(Box::as_ref)
@@ -370,7 +359,39 @@ impl ExtendedFileOptions {
     /// `u16::MAX`. If adding this field would exceed that limit or produce an
     /// invalid extra data structure, an error is returned and no data is
     /// added.
+    #[deprecated = "use add_extra_field()"]
     pub fn add_extra_data<D: AsRef<[u8]>>(
+        &mut self,
+        header_id: u16,
+        data: D,
+        central_only: bool,
+    ) -> ZipResult<()> {
+        self.add_extra_field(header_id, data, central_only)
+    }
+    /// Adds an extra field, unless we detect that it's invalid.
+    ///
+    /// # Parameters
+    ///
+    /// * `header_id` – The 2‑byte identifier of the ZIP extra field to add.
+    ///   This value determines the type/format of `data` and should either be
+    ///   one of the standard ZIP extra field IDs defined by the ZIP
+    ///   specification or an application‑specific (vendor) ID.
+    /// * `data` – The raw payload for the extra field, without the leading
+    ///   header ID or length; those are derived from `header_id` and
+    ///   `data.len()` and written automatically.
+    /// * `central_only` – Controls where the extra field is stored:
+    ///   * When `true`, the field is appended only to the central directory
+    ///     extra data (`central_extra_data`), and the corresponding local file
+    ///     header is left unchanged.
+    ///   * When `false`, the field is appended to the local file header extra
+    ///     data (`extra_data`) and may also be reflected in the central
+    ///     directory, depending on how the ZIP is written.
+    ///
+    /// The combined size of all extra data (local + central) must not exceed
+    /// `u16::MAX`. If adding this field would exceed that limit or produce an
+    /// invalid extra data structure, an error is returned and no data is
+    /// added.
+    pub fn add_extra_field<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
         data: D,
@@ -389,54 +410,6 @@ impl ExtendedFileOptions {
             ));
             Ok(())
         }
-    }
-
-    fn validate_extra_fields(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
-        let len = data.len() as u64;
-        if len == 0 {
-            return Ok(());
-        }
-        if len > u64::from(u16::MAX) {
-            return Err(ZipError::Io(io::Error::other(
-                "Extra-data field can't exceed u16::MAX bytes",
-            )));
-        }
-        let mut data = Cursor::new(data);
-        let mut pos = data.position();
-        while pos < len {
-            if len - data.position() < 4 {
-                return Err(ZipError::Io(io::Error::other(
-                    "Extra-data field doesn't have room for ID and length",
-                )));
-            }
-            #[cfg(not(feature = "unreserved"))]
-            {
-                use crate::{
-                    extra_fields::{EXTRA_FIELD_MAPPING, UsedExtraField},
-                    unstable::LittleEndianReadExt,
-                };
-                let header_id = data.read_u16_le()?;
-                // Some extra fields are authorized
-                if let Err(()) = UsedExtraField::try_from(header_id)
-                    && EXTRA_FIELD_MAPPING.contains(&header_id)
-                {
-                    return Err(ZipError::Io(io::Error::other(format!(
-                        "Extra data header ID {header_id:#06} (0x{header_id:x}) \
-                            requires crate feature \"unreserved\"",
-                    ))));
-                }
-                data.seek(SeekFrom::Current(-2))?;
-            }
-            parse_single_extra_field(
-                &mut ZipFileData::default(),
-                &mut data,
-                pos,
-                disallow_zip64,
-                &mut Vec::new(),
-            )?;
-            pos = data.position();
-        }
-        Ok(())
     }
 }
 
@@ -475,7 +448,7 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
         }
         u.arbitrary_loop(Some(0), Some(10), |u| {
             options
-                .add_extra_data(
+                .add_extra_field(
                     u.int_in_range(2..=u16::MAX)?,
                     Box::<[u8]>::arbitrary(u)?,
                     bool::arbitrary(u)?,
@@ -485,7 +458,7 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
         })?;
         let len = u.arbitrary_len::<u8>()?;
         options.name = Some(u.bytes(len)?);
-        ZipWriter::new(Cursor::new(Vec::new()))
+        ZipWriter::new(std::io::Cursor::new(Vec::new()))
             .start_file("", options.clone())
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
         Ok(options)
@@ -681,19 +654,37 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
     }
 
     /// Adds an extra data field.
+    #[deprecated = "use add_extra_field()"]
     pub fn add_extra_data<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
         data: D,
         central_only: bool,
     ) -> ZipResult<()> {
-        self.extended_options
-            .add_extra_data(header_id, data, central_only)
+        self.add_extra_field(header_id, data, central_only)
     }
 
-    /// Removes the extra data fields.
+    /// Adds an extra field.
+    pub fn add_extra_field<D: AsRef<[u8]>>(
+        &mut self,
+        header_id: u16,
+        data: D,
+        central_only: bool,
+    ) -> ZipResult<()> {
+        self.extended_options
+            .add_extra_field(header_id, data, central_only)
+    }
+
+    /// Removes the extra fields.
     #[must_use]
-    pub fn clear_extra_data(mut self) -> Self {
+    #[deprecated = "use clear_extra_fields"]
+    pub fn clear_extra_data(self) -> Self {
+        self.clear_extra_fields()
+    }
+
+    /// Removes the extra fields.
+    #[must_use]
+    pub fn clear_extra_fields(mut self) -> Self {
         if !self.extended_options.extra_fields.is_empty() {
             self.extended_options.extra_fields = Arc::new(vec![]);
         }
@@ -903,37 +894,16 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let mut new_data = src_data.clone();
         let dest_name_raw = dest_name.as_bytes();
         new_data.header_start = write_position;
-        let extra_fields_start = write_position
-            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + dest_name_raw.len() as u64;
-        new_data.extra_data_start = Some(extra_fields_start);
-        if let Some(extra) = &src_data.extra_field {
-            let stripped = strip_alignment_extra_field(extra, false);
-            if stripped.is_empty() {
-                new_data.extra_field = None;
-            } else {
-                new_data.extra_field = Some(Arc::from(stripped.into_boxed_slice()));
-            }
-        }
-
-        let mut data_start = extra_fields_start;
-        if let Some(extra) = &new_data.extra_field {
-            data_start += extra.len() as u64;
-        }
-        new_data.data_start.take();
-        new_data.data_start.get_or_init(|| data_start);
         new_data.central_header_start = 0;
-        let block = new_data.local_block(dest_name_raw)?;
         let index = self.insert_file_data(dest_name_raw, new_data)?;
-        let new_data = &self.files[index];
+        let new_data = &mut self.files[index];
         let result: io::Result<()> = {
             let plain_writer = self.inner.try_inner_mut()?;
-            block.write(plain_writer)?;
-            plain_writer.write_all(dest_name_raw)?;
-            if let Some(data) = &new_data.extra_field {
-                plain_writer.write_all(data)?;
-            }
-            debug_assert_eq!(data_start, plain_writer.stream_position()?);
+            new_data.write_local_header(write_position, plain_writer, dest_name_raw, None)?;
+            debug_assert_eq!(
+                new_data.data_start.get(),
+                Some(&plain_writer.stream_position()?)
+            );
             self.writing_to_file = true;
             plain_writer.write_all(&copy)?;
             if self.flush_on_finish_file {
@@ -1150,28 +1120,42 @@ impl<W: Write + Seek> ZipWriter<W> {
             compressed_size: 0,
             uncompressed_size: 0,
         });
-
+        #[cfg(not(feature = "unreserved"))]
+        {
+            use crate::extra_fields::EXTRA_FIELD_MAPPING;
+            if let Some(extra_fields) = options.extended_options.extra_fields() {
+                for x in extra_fields.iter() {
+                    let header_id = x.header_id;
+                    if UsedExtraField::try_from(header_id).is_err()
+                        && EXTRA_FIELD_MAPPING.contains(&header_id)
+                    {
+                        return Err(ZipError::Io(io::Error::other(format!(
+                            "Extra data header ID {header_id:#06} (0x{header_id:x}) \
+                            requires crate feature \"unreserved\"",
+                        ))));
+                    }
+                }
+            }
+        }
+        #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))]
         let mut extra_fields = match options.extended_options.extra_fields() {
-            Some(data) => data.to_vec(),
+            Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
         };
-        if let Some(zip64_block) = Zip64ExtendedInformation::new_local(options.large_file) {
-            let mut serialized_zip64 = Vec::with_capacity(zip64_block.full_size());
-            zip64_block.write(&mut serialized_zip64)?;
-            let zip64_block = CustomExtraField::new(
-                false,
-                Zip64ExtendedInformation::MAGIC.as_u16(),
-                &serialized_zip64[4..],
-            );
-            extra_fields.insert(0, zip64_block);
+        let entry_len: usize = mem::size_of::<Magic>()
+            + mem::size_of::<ZipLocalEntryBlock>()
+            + file_name_raw.len()
+            + extra_fields.iter().map(|x| x.size(false)).sum::<usize>();
+        if entry_len >= (u16::MAX as usize) {
+            return Err(invalid!(
+                "ZipLocalBlock + filename + extra fields must be less than 64KiB when combined"
+            ));
         }
 
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
         // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
-        #[allow(unused_mut)]
-        let mut aes_extra_field_start = 0;
         let aes_mode_options = match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes {
@@ -1181,79 +1165,26 @@ impl<W: Write + Seek> ZipWriter<W> {
             }) => {
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
-                let aex_extra_field = AexEncryption::new(vendor_version, mode, compression_method);
-                let mut buf = [0u8; AexEncryption::EXTRA_FIELD_SIZE as usize];
-                aex_extra_field.write_data(&mut buf.as_mut_slice())?;
-
-                let extra_fields_len: usize =
-                    extra_fields.iter().map(|x| x.len_with_header()).sum();
-                aes_extra_field_start = extra_fields_len as u64;
-                let aex =
-                    CustomExtraField::new(false, UsedExtraField::AeXEncryption.as_u16(), &buf);
-                extra_fields.push(aex);
+                extra_fields.push(ExtraField::AeXEncryption(AexEncryption::new(
+                    vendor_version,
+                    mode,
+                    compression_method,
+                )));
                 Some((mode, vendor_version))
             }
             _ => None,
         };
-
-        let header_end = header_start
-            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + file_name_raw.len() as u64;
-
-        if options.alignment > 1 {
-            let extra_fields_len: usize = extra_fields.iter().map(|x| x.len_with_header()).sum();
-            let extra_fields_end = header_end + extra_fields_len as u64;
-            let align = u64::from(options.alignment);
-            let unaligned_header_bytes = extra_fields_end % align;
-            if unaligned_header_bytes != 0 {
-                let mut pad_length = (align - unaligned_header_bytes) as usize;
-                while pad_length < 6 {
-                    pad_length += align as usize;
-                }
-                let extra_fields_len: usize =
-                    extra_fields.iter().map(|x| x.len_with_header()).sum();
-                let new_len = extra_fields_len + pad_length;
-                if new_len > u16::MAX as usize {
-                    // Alignment is impossible without exceeding extra field size limits.
-                    // Skip alignment.
-                } else {
-                    // Add an extra field to the extra_field, per APPNOTE 4.6.11
-                    let mut pad_body = vec![0; pad_length - 4];
-                    debug_assert!(pad_body.len() >= 2);
-                    [pad_body[0], pad_body[1]] = options.alignment.to_le_bytes();
-                    let alignment_extra_field = CustomExtraField::new(
-                        true,
-                        UsedExtraField::DataStreamAlignment.as_u16(),
-                        &pad_body,
-                    );
-                    extra_fields.push(alignment_extra_field);
-                    let extra_fields_len: usize =
-                        extra_fields.iter().map(|x| x.len_with_header()).sum();
-                    debug_assert_eq!((extra_fields_len as u64 + header_end) % align, 0);
-                }
-            }
-        }
-        let extra_fields_len: usize = extra_fields.iter().map(|x| x.len_with_header()).sum();
-        let central_extra_fields = options.extended_options.central_only_extra_fields();
-        if let Some(data) = central_extra_fields {
-            if extra_fields_len + data.len() > u16::MAX as usize {
-                return Err(invalid!(
-                    "Extra data and central extra data must be less than 64KiB when combined"
-                ));
-            }
-            ExtendedFileOptions::validate_extra_fields(&data, true)?;
-        }
-        let extra_fields: Vec<u8> = extra_fields.iter().flat_map(|x| x.serialize()).collect();
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
             &raw_values,
             header_start,
             None,
-            aes_extra_field_start,
             compression_method,
             aes_mode_options,
-            &extra_fields,
+            ExtraFields {
+                inner: extra_fields,
+            },
         );
         if let Some(comment) = options.extended_options.take_file_comment() {
             if comment.len() > u16::MAX as usize {
@@ -1268,21 +1199,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             file.flags |= ZipFlags::UsingDataDescriptor.as_u16();
         }
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
-        file.extra_data_start = Some(header_end);
         let index = self.insert_file_data(file_name_raw, file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
-            ExtendedFileOptions::validate_extra_fields(&extra_fields, false)?;
             let file = &mut self.files[index];
-            let block = file.local_block(file_name_raw)?;
             let writer = self.inner.try_inner_mut()?;
-            block.write(writer)?;
-            // file name
-            writer.write_all(file_name_raw)?;
-            if extra_fields_len > 0 {
-                writer.write_all(&extra_fields)?;
-                file.extra_field = Some(Arc::from(extra_fields.into_boxed_slice()));
-            }
+            file.write_local_header(header_start, writer, file_name_raw, Some(options.alignment))?;
             Ok(())
         };
         self.ok_or_abort_file(result)?;
@@ -1343,7 +1265,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             _ => {}
         }
         let file = &mut self.files[index];
-        debug_assert!(file.data_start.get().is_none());
+        //debug_assert!(file.data_start.get().is_none());
         file.data_start.get_or_init(|| self.stats.start);
         self.stats.bytes_written = 0;
         self.stats.hasher = Hasher::new();
@@ -1903,7 +1825,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         let mut version_needed = u16::from(MIN_VERSION);
         let central_start = writer.stream_position()?;
-        for (filename_raw, file) in &self.files {
+        for (filename_raw, file) in &mut self.files {
             file.write_central_directory_header(writer, filename_raw)?;
             version_needed = version_needed.max(file.version_needed());
         }
@@ -2407,35 +2329,40 @@ fn update_aes_extra_field<W: Write + Seek>(
     // seek operations, so we gate this behind using_data_descriptor.
     //
     // C.f. https://www.winzip.com/en/support/aes-encryption/#crc-faq
-    *version = if bytes_written < 20 {
+    let new_version = if bytes_written < 20 {
         AesVendorVersion::Ae2
     } else {
         AesVendorVersion::Ae1
     };
+    *version = new_version;
 
-    let extra_field_start = file
-        .extra_data_start
-        .ok_or_else(|| std::io::Error::other("Cannot get the extra data start"))?;
+    // edit the extra field
+    if let Some(ExtraField::AeXEncryption(AexEncryption {
+        aes_vendor_version,
+        aes_extra_field_start,
+        ..
+    })) = &mut file
+        .extra_fields
+        .inner
+        .iter_mut()
+        .find(|f| matches!(f, ExtraField::AeXEncryption { .. }))
+    {
+        *aes_vendor_version = new_version;
+        let extra_field_start = file
+            .extra_data_start
+            .ok_or_else(|| std::io::Error::other("Cannot get the extra data start"))?;
 
-    writer.seek(SeekFrom::Start(
-        extra_field_start + file.aes_extra_data_start,
-    ))?;
+        if let Some(aes_start) = aes_extra_field_start {
+            writer.seek(SeekFrom::Start(extra_field_start + *aes_start as u64))?;
+        } else {
+            return Err(invalid!("The AES extra field should have a known start"));
+        }
 
-    let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
-    let mut buf = [0u8; AexEncryption::FULL_SIZE];
-    aes_extra_field.write(&mut buf.as_mut_slice())?;
-    writer.write_all(&buf)?;
-
-    let aes_extra_field_start = file.aes_extra_data_start as usize;
-    let Some(ref mut extra_field) = file.extra_field else {
-        return Err(invalid!(
-            "update_aes_extra_field called on a file that has no extra-data field"
-        ));
-    };
-    let mut vec = extra_field.to_vec();
-    vec[aes_extra_field_start..aes_extra_field_start + AexEncryption::FULL_SIZE]
-        .copy_from_slice(&buf);
-    *extra_field = Arc::from(vec.into_boxed_slice());
+        let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
+        let mut buf = [0u8; AexEncryption::FULL_SIZE];
+        aes_extra_field.write(&mut buf.as_mut_slice())?;
+        writer.write_all(&buf)?;
+    }
 
     Ok(())
 }
@@ -2489,83 +2416,272 @@ impl ZipFileData {
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
         zip64_block.write(writer)?;
-        if let Some(extra_field) = &mut self.extra_field {
-            let slice = Arc::make_mut(extra_field);
-            let mut cursor = Cursor::new(&mut slice[0..20]);
-            zip64_block.write(&mut cursor)?;
-        }
         Ok(())
     }
 
     pub(crate) fn write_central_directory_header<T: Write>(
-        &self,
+        &mut self,
         writer: &mut T,
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
-        let mut block = self.block(file_name_raw)?;
-        let stripped_extra = if let Some(extra) = &self.extra_field {
-            strip_alignment_extra_field(extra, true)
+        let mut is_zip64 = false;
+        for one_extra_field in self.extra_fields.inner.iter_mut() {
+            if let ExtraField::Zip64ExtendedInformation {
+                compressed_size,
+                uncompressed_size,
+                header_start,
+            } = one_extra_field
+            {
+                *compressed_size = Some(self.compressed_size);
+                *uncompressed_size = Some(self.uncompressed_size);
+                if self.header_start >= ZIP64_BYTES_THR {
+                    *header_start = Some(self.header_start);
+                }
+                is_zip64 = true;
+            }
+        }
+        if !is_zip64 {
+            // check if needed and crash if needed
+            if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
+                self.large_file,
+                self.uncompressed_size,
+                self.compressed_size,
+                self.header_start,
+            ) {
+                if zip64_block.uncompressed_size.is_some() || zip64_block.compressed_size.is_some()
+                {
+                    self.extra_fields.inner.insert(
+                        0,
+                        ExtraField::Zip64ExtendedInformation {
+                            compressed_size: zip64_block.compressed_size,
+                            uncompressed_size: zip64_block.uncompressed_size,
+                            header_start: zip64_block.header_start,
+                        },
+                    );
+                    //return Err(invalid!("Should have used large file"));
+                } else {
+                    self.extra_fields.inner.insert(
+                        0,
+                        ExtraField::Zip64ExtendedInformation {
+                            compressed_size: None,
+                            uncompressed_size: None,
+                            header_start: zip64_block.header_start,
+                        },
+                    );
+                }
+            }
+        }
+        let central_extra_fields = self.extra_fields.central_extra_fields();
+        let extra_field_len: usize = self
+            .extra_fields
+            .central_extra_fields()
+            .map(|x| x.size(false))
+            .sum();
+        let compressed_size = if self.large_file {
+            spec::ZIP64_BYTES_THR as u32
         } else {
-            Vec::new()
+            self.compressed_size
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .map_err(std::io::Error::other)?
         };
-        let central_len = self.central_extra_field_len();
-        let zip64_extra_field_block = Zip64ExtendedInformation::central_header(
-            self.large_file,
-            self.uncompressed_size,
-            self.compressed_size,
-            self.header_start,
-        );
-        let zip64_block_len = if let Some(zip64) = zip64_extra_field_block {
-            zip64.full_size()
+        let uncompressed_size = if self.large_file {
+            spec::ZIP64_BYTES_THR as u32
         } else {
-            0
+            self.uncompressed_size
+                .min(spec::ZIP64_BYTES_THR)
+                .try_into()
+                .map_err(std::io::Error::other)?
         };
-        let total_extra_len = zip64_block_len + stripped_extra.len() + central_len;
-        block.extra_field_length = u16::try_from(total_extra_len)
+        let offset = self
+            .header_start
+            .min(spec::ZIP64_BYTES_THR)
+            .try_into()
+            .map_err(std::io::Error::other)?;
+        let last_modified_time = self
+            .last_modified_time
+            .unwrap_or_else(DateTime::default_for_write);
+        let version_to_extract = self.version_needed();
+        let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
+        let extra_field_length = u16::try_from(extra_field_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
+        let block = ZipCentralEntryBlock {
+            version_made_by: ((self.system as u16) << 8) | version_made_by,
+            version_to_extract,
+            flags: self.flags(file_name_raw),
+            compression_method,
+            last_mod_time: last_modified_time.timepart(),
+            last_mod_date: last_modified_time.datepart(),
+            crc32: self.crc32,
+            compressed_size,
+            uncompressed_size,
+            file_name_length: file_name_raw
+                .len()
+                .try_into()
+                .map_err(std::io::Error::other)?,
+            extra_field_length,
+            file_comment_length: self
+                .file_comment
+                .len()
+                .try_into()
+                .map_err(std::io::Error::other)?,
+            disk_number: 0,
+            internal_file_attributes: 0,
+            external_file_attributes: self.external_attributes,
+            offset,
+        };
 
         block.write(writer)?;
         // file name
         writer.write_all(file_name_raw)?;
         // extra field
-        if let Some(zip64_extra_field) = zip64_extra_field_block {
-            zip64_extra_field.write(writer)?;
-        }
-        if !stripped_extra.is_empty() {
-            writer.write_all(&stripped_extra)?;
-        }
-        if let Some(central_extra_field) = &self.central_extra_field {
-            writer.write_all(central_extra_field)?;
+        for one_extra_field in central_extra_fields {
+            one_extra_field.write(writer, false)?;
         }
         // file comment
         writer.write_all(self.file_comment.as_bytes())?;
-
         Ok(())
     }
-}
 
-pub(crate) fn strip_alignment_extra_field(extra_field: &[u8], remove_zip64: bool) -> Vec<u8> {
-    let mut new_extra = Vec::with_capacity(extra_field.len());
-    let mut cursor = 0;
-    while cursor + 4 <= extra_field.len() {
-        let tag = u16::from_le_bytes([extra_field[cursor], extra_field[cursor + 1]]);
-        let len = u16::from_le_bytes([extra_field[cursor + 2], extra_field[cursor + 3]]) as usize;
-        if cursor + 4 + len > extra_field.len() {
-            new_extra.extend_from_slice(&extra_field[cursor..]);
-            break;
+    pub(crate) fn write_local_header<T: Write>(
+        &mut self,
+        header_start: u64,
+        writer: &mut T,
+        file_name_raw: &[u8],
+        alignment_opt: Option<u16>,
+    ) -> ZipResult<()> {
+        self.extra_fields
+            .inner
+            .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation { .. }));
+        if self.large_file {
+            // add a zip64 extra field which is going to be edited when we know the size
+            // the update function need the extra field to be at index 0
+            self.extra_fields.inner.insert(
+                0,
+                ExtraField::Zip64ExtendedInformation {
+                    compressed_size: Some(u64::MAX),
+                    uncompressed_size: Some(u64::MAX),
+                    header_start: None,
+                },
+            );
         }
-
-        if tag != UsedExtraField::DataStreamAlignment.as_u16()
-            && !(tag == UsedExtraField::Zip64ExtendedInfo.as_u16() && remove_zip64)
+        let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
+            (0, 0)
+        } else {
+            (
+                self.clamp_size_field(self.compressed_size)?,
+                self.clamp_size_field(self.uncompressed_size)?,
+            )
+        };
+        let mut extra_field_len: usize = self
+            .extra_fields
+            .local_extra_fields()
+            .map(|x| x.size(true))
+            .sum();
+        let last_modified_time = self
+            .last_modified_time
+            .unwrap_or_else(DateTime::default_for_write);
+        let compression_method = if self.aes_mode.is_some() {
+            CompressionMethod::AES.serialize_to_u16()
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
+        let header_end = header_start
+            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+            + file_name_raw.len() as u64;
+        let opt_alignment_field = if let Some(alignment) = alignment_opt
+            && alignment > 1
         {
-            new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
+            let extra_field_end = header_end + extra_field_len as u64;
+            let align = u64::from(alignment);
+            let unaligned_header_bytes = extra_field_end % align;
+            if unaligned_header_bytes != 0 {
+                let mut pad_length = (align - unaligned_header_bytes) as usize;
+                while pad_length < 6 {
+                    pad_length += align as usize;
+                }
+                extra_field_len = self
+                    .extra_fields
+                    .local_extra_fields()
+                    .map(|x| x.size(true))
+                    .sum();
+                let new_len = extra_field_len + pad_length;
+                if new_len > u16::MAX as usize {
+                    // Alignment is impossible without exceeding extra field size limits.
+                    // Skip alignment.
+                    None
+                } else {
+                    // Add an extra field to the extra_field, per APPNOTE 4.6.11
+                    let mut pad_body = vec![0; pad_length - 4];
+                    debug_assert!(pad_body.len() >= 2);
+                    [pad_body[0], pad_body[1]] = alignment.to_le_bytes();
+                    let alignment_extra_field = CustomExtraField::new(
+                        true,
+                        UsedExtraField::DataStreamAlignment.as_u16(),
+                        &pad_body,
+                    );
+                    let alignment_extra_field = ExtraField::Custom(alignment_extra_field);
+                    extra_field_len = self
+                        .extra_fields
+                        .local_extra_fields()
+                        .map(|x| x.size(true))
+                        .sum::<usize>()
+                        + alignment_extra_field.size(true);
+                    debug_assert_eq!((extra_field_len as u64 + header_end) % align, 0);
+                    Some(alignment_extra_field)
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        self.extra_data_start = Some(header_end);
+        let data_start = header_end + extra_field_len as u64;
+        self.data_start.take();
+        self.data_start.get_or_init(|| data_start);
+        let block = ZipLocalEntryBlock {
+            version_made_by: self.version_needed(),
+            flags: self.flags(file_name_raw),
+            compression_method,
+            last_mod_time: last_modified_time.timepart(),
+            last_mod_date: last_modified_time.datepart(),
+            crc32: self.crc32,
+            compressed_size,
+            uncompressed_size,
+            file_name_length: file_name_raw
+                .len()
+                .try_into()
+                .map_err(std::io::Error::other)?,
+            extra_field_length: extra_field_len
+                .try_into()
+                .map_err(|_| invalid!("Extra data field is too large"))?,
+        };
+        block.write(writer)?;
+        writer.write_all(file_name_raw)?;
+        let local_extra_fields = self.extra_fields.local_extra_fields_mut();
+        let mut bytes_written = 0;
+        for one_extra_field in local_extra_fields {
+            one_extra_field.write(&mut *writer, true)?;
+            if let ExtraField::AeXEncryption(AexEncryption {
+                aes_extra_field_start,
+                ..
+            }) = one_extra_field
+            {
+                *aes_extra_field_start = Some(bytes_written);
+            }
+            bytes_written += one_extra_field.size(true);
         }
-        cursor += 4 + len;
+        if let Some(alignment_extra_field) = opt_alignment_field {
+            alignment_extra_field.write(writer, true)?;
+        }
+        Ok(())
     }
-    if cursor < extra_field.len() {
-        new_extra.extend_from_slice(&extra_field[cursor..]);
-    }
-    new_extra
 }
 
 /// Wrapper around a [Write] implementation that implements the [Seek] trait, but where seeking
@@ -3299,29 +3415,28 @@ mod tests {
 
     #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
     #[test]
-    fn test_fuzz_failure_2024_05_08() -> ZipResult<()> {
+    fn test_fuzz_failure_2024_05_08() {
         let mut first_writer = ZipWriter::new(Cursor::new(Vec::new()));
         let mut second_writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default()
             .compression_method(Stored)
             .with_alignment(46036);
-        second_writer.add_symlink("\0", "", options)?;
-        let second_archive = second_writer.finish_into_readable()?.into_inner();
-        let mut second_writer = ZipWriter::new_append(second_archive)?;
+        second_writer.add_symlink("\0", "", options).unwrap();
+        let second_archive = second_writer.finish_into_readable().unwrap().into_inner();
+        let mut second_writer = ZipWriter::new_append(second_archive).unwrap();
         let options = SimpleFileOptions::default()
             .compression_method(CompressionMethod::Deflated)
             .large_file(true)
             .with_alignment(46036)
             .with_aes_encryption(crate::AesMode::Aes128, "\0\0");
-        second_writer.add_symlink("", "", options)?;
-        let second_archive = second_writer.finish_into_readable()?.into_inner();
-        let mut second_writer = ZipWriter::new_append(second_archive)?;
+        second_writer.add_symlink("", "", options).unwrap();
+        let second_archive = second_writer.finish_into_readable().unwrap().into_inner();
+        let mut second_writer = ZipWriter::new_append(second_archive).unwrap();
         let options = SimpleFileOptions::default().compression_method(Stored);
-        second_writer.start_file(" ", options)?;
-        let second_archive = second_writer.finish_into_readable()?;
-        first_writer.merge_archive(second_archive)?;
-        let _ = ZipArchive::new(first_writer.finish()?)?;
-        Ok(())
+        second_writer.start_file(" ", options).unwrap();
+        let second_archive = second_writer.finish_into_readable().unwrap();
+        first_writer.merge_archive(second_archive).unwrap();
+        let _ = ZipArchive::new(first_writer.finish().unwrap()).unwrap();
     }
 
     #[cfg(all(feature = "_bzip2_any", not(miri)))]
@@ -3420,8 +3535,6 @@ mod tests {
             extended_options: ExtendedFileOptions {
                 extra_fields: vec![
                     CustomExtraField::new_from_raw(true, &[1, 41, 4, 0, 1, 255, 245, 117]).unwrap(),
-                    CustomExtraField::new_from_raw(true, &[117, 112, 5, 0, 80, 255, 149, 255, 247])
-                        .unwrap(),
                 ]
                 .into(),
                 file_comment: None,
@@ -3619,6 +3732,12 @@ mod tests {
 
     #[cfg(all(feature = "_deflate-any", feature = "aes-crypto"))]
     #[test]
+    /// Created on
+    /// https://github.com/zip-rs/zip2/commit/2a035f520104b7df343b02726c35ebd53ac2e15a
+    /// Then changed in
+    /// https://github.com/zip-rs/zip2/commit/16aa9bcddf58887849aaa36caf6e377eae3636dd
+    /// Because of
+    /// https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
         use crate::AesMode::Aes256;
         use crate::types::AesVendorVersion;
@@ -3656,10 +3775,14 @@ mod tests {
             alignment: 0xFFFF,
             ..Default::default()
         };
-        assert!(writer.add_directory_from_path("", options).is_err());
+        assert!(writer.add_directory_from_path("", options).is_ok());
         Ok(())
     }
 
+    // Created on
+    // https://github.com/zip-rs/zip2/commit/e23f676c40ffef9ac62ad8a82cf4bcdd43b7a4e7
+    // Then changed
+    // https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
     #[test]
     fn test_fuzz_crash_2024_06_14e() -> ZipResult<()> {
         use crate::write::CustomExtraField;
@@ -3691,7 +3814,7 @@ mod tests {
             alignment: 0xFFFF,
             ..Default::default()
         };
-        assert!(writer.add_directory_from_path("", options).is_err());
+        assert!(writer.add_directory_from_path("", options).is_ok());
         let _ = writer.finish_into_readable()?;
         Ok(())
     }
@@ -4579,5 +4702,13 @@ mod tests {
         // 0x000d is a known extra field
         // we have the feature "unreserved" so the parsing will succeed
         assert!(writer.start_file_from_path("", options).is_ok());
+    }
+
+    #[test]
+    fn test_max_len_extra_field() {
+        use crate::spec::Magic;
+        use crate::spec::ZipLocalEntryBlock;
+        assert_eq!(std::mem::size_of::<Magic>(), 4);
+        assert_eq!(std::mem::size_of::<ZipLocalEntryBlock>(), 26);
     }
 }

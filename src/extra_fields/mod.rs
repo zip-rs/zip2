@@ -3,9 +3,11 @@
 use crate::result::ZipResult;
 use crate::result::invalid;
 use core::fmt::Display;
+use std::io::Write;
 
 mod aex_encryption;
 mod extended_timestamp;
+mod extra_field;
 mod ntfs;
 mod zip64_extended_information;
 mod zipinfo_utf8;
@@ -15,6 +17,7 @@ pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export
 pub use extended_timestamp::ExtendedTimestamp;
+pub use extra_field::{ExtraField, ExtraFields};
 pub use ntfs::Ntfs;
 pub use zipinfo_utf8::UnicodeExtraField;
 
@@ -31,17 +34,6 @@ pub struct CentralHeaderVersion;
 
 impl ExtraFieldVersion for LocalHeaderVersion {}
 impl ExtraFieldVersion for CentralHeaderVersion {}
-
-/// Contains one extra field.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum ExtraField {
-    /// NTFS extra field
-    Ntfs(Ntfs),
-
-    /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
-    ExtendedTimestamp(ExtendedTimestamp),
-}
 
 /// Internal extra-field identifiers (`u16` tags) recognized by this crate.
 ///
@@ -189,7 +181,7 @@ pub struct CustomExtraField {
     /// If true, this field will be included in the central directory entry but not the local file header.
     pub(crate) central_only: bool,
     /// Header ID of the extra field
-    header_id: u16,
+    pub(crate) header_id: u16,
     /// Data of the extra field
     data: Box<[u8]>,
 }
@@ -232,15 +224,12 @@ impl CustomExtraField {
         size_of::<u16>() + size_of::<u16>() + size
     }
 
-    pub(crate) fn serialize(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(4 + self.data.len());
-
-        out.extend_from_slice(&self.header_id.to_le_bytes());
+    pub(crate) fn write<W: Write>(&self, write: &mut W) -> ZipResult<()> {
+        write.write_all(&self.header_id.to_le_bytes())?;
         let size = self.data.len() as u16;
-        out.extend_from_slice(&size.to_le_bytes());
-        out.extend_from_slice(&self.data);
-
-        out
+        write.write_all(&size.to_le_bytes())?;
+        write.write_all(&self.data)?;
+        Ok(())
     }
 }
 

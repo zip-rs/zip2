@@ -2,9 +2,9 @@
 
 use crate::CompressionMethod;
 use crate::DateTime;
-use crate::ExtraField;
 use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
+use crate::read::ExtraField;
 use crate::read::RootDirFilter;
 use crate::read::make_writable_dir_all;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
@@ -15,7 +15,7 @@ use crate::types::{SimpleFileOptions, ffi};
 use core::mem::replace;
 use std::borrow::Cow;
 use std::ffi::OsStr;
-use std::io::{self, Read, Seek, SeekFrom, copy, sink};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, copy, sink};
 use std::path::{Component, Path, PathBuf};
 
 /// A struct for reading a zip file
@@ -275,8 +275,19 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     }
 
     /// Get the extra data of the zip header for this file
-    pub fn extra_data(&self) -> Option<&[u8]> {
-        self.get_metadata().extra_field.as_deref()
+    pub fn extra_data(&self) -> Option<Vec<u8>> {
+        let out_buffer = Vec::new();
+        let mut cursor = Cursor::new(out_buffer);
+        let extra_fields = self.data.extra_fields.local_extra_fields();
+        for one_extra_field in extra_fields {
+            one_extra_field.write(&mut cursor, true).ok()?;
+        }
+        let extra_fields_data = cursor.into_inner();
+        if extra_fields_data.is_empty() {
+            None
+        } else {
+            Some(extra_fields_data)
+        }
     }
 
     /// Get the starting offset of the data of the compressed file
@@ -327,7 +338,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 impl<R: Read> ZipFile<'_, R> {
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
-        self.data.extra_fields.iter()
+        self.data.extra_fields.inner.iter()
     }
 }
 

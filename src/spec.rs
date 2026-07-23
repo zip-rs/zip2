@@ -275,6 +275,18 @@ pub(crate) struct ZipCentralEntryBlock {
 
 unsafe impl Pod for ZipCentralEntryBlock {}
 
+impl ZipEntryBlock for ZipCentralEntryBlock {
+    fn get_uncompressed_size(&self) -> u32 {
+        self.uncompressed_size
+    }
+    fn get_compressed_size(&self) -> u32 {
+        self.compressed_size
+    }
+    fn get_header_start(&self) -> Option<u32> {
+        Some(self.offset)
+    }
+}
+
 impl FixedSizeBlock for ZipCentralEntryBlock {
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE;
 
@@ -300,6 +312,12 @@ impl FixedSizeBlock for ZipCentralEntryBlock {
     ];
 }
 
+pub(crate) trait ZipEntryBlock {
+    fn get_uncompressed_size(&self) -> u32;
+    fn get_compressed_size(&self) -> u32;
+    fn get_header_start(&self) -> Option<u32>;
+}
+
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 pub(crate) struct ZipLocalEntryBlock {
@@ -316,6 +334,18 @@ pub(crate) struct ZipLocalEntryBlock {
 }
 
 unsafe impl Pod for ZipLocalEntryBlock {}
+
+impl ZipEntryBlock for ZipLocalEntryBlock {
+    fn get_uncompressed_size(&self) -> u32 {
+        self.uncompressed_size
+    }
+    fn get_compressed_size(&self) -> u32 {
+        self.compressed_size
+    }
+    fn get_header_start(&self) -> Option<u32> {
+        None
+    }
+}
 
 impl FixedSizeBlock for ZipLocalEntryBlock {
     const MAGIC: Magic = Magic::LOCAL_FILE_HEADER_SIGNATURE;
