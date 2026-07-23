@@ -10,7 +10,7 @@ use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
-use crate::spec::BlockGetter;
+use crate::spec::ZipEntryBlock;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
 use core::mem;
@@ -55,7 +55,7 @@ pub struct ExtraFields {
 }
 
 impl ExtraFields {
-    pub(crate) fn parse<B: BlockGetter>(buff: &[u8], block: &B) -> ZipResult<Self> {
+    pub(crate) fn parse<B: ZipEntryBlock>(buff: &[u8], block: &B) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
         while (reader.position() as usize) < buff.len() {
@@ -90,7 +90,7 @@ impl ExtraFields {
 }
 
 impl ExtraField {
-    pub(crate) fn parse<R: Read, B: BlockGetter>(
+    pub(crate) fn parse<R: Read, B: ZipEntryBlock>(
         reader: &mut R,
         file: &B,
     ) -> ZipResult<Option<Self>> {
