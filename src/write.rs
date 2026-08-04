@@ -1394,10 +1394,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
-    pub fn start_file<'k, 'n, S: ToString, T: FileOptionExtension>(
+    pub fn start_file<S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
-        options: FileOptions<'k, 'n, T>,
+        options: FileOptions<T>,
     ) -> ZipResult<()> {
         let name = name.to_string();
         let options = FileOptions {
