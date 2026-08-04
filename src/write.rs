@@ -1397,7 +1397,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn start_file<S: ToString, T: FileOptionExtension>(
         &mut self,
         name: S,
-        options: FileOptions<T>,
+        options: FileOptions<'_, '_, T>,
     ) -> ZipResult<()> {
         let name = name.to_string();
         let options = FileOptions {
