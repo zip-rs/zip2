@@ -2,6 +2,9 @@ name: "Pull request size labels"
 
 on: [pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   labeler:
     permissions:
@@ -9,6 +12,11 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
       - name: Size Labeler
         uses: codelytv/pr-size-labeler@095a41fca88b8764fd9e008ad269bcdb82bb38b9
         with:
