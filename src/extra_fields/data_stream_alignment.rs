@@ -1,14 +1,14 @@
-//! Data stream aligment extra field
+//! Data stream alignment extra field
 
 use core::mem;
 use std::io::Write;
 
 use crate::extra_fields::UsedExtraField;
 
-/// Data stream alignement
+/// Data stream alignment
 #[derive(Debug, Clone)]
 pub struct DataStreamAlignment {
-    /// padding lenght
+    /// padding length
     pad_len: u16,
 }
 
