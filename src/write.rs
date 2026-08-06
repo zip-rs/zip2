@@ -8,7 +8,6 @@ use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
-use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
@@ -1124,6 +1123,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         #[cfg(not(feature = "unreserved"))]
         {
             use crate::extra_fields::EXTRA_FIELD_MAPPING;
+            use crate::extra_fields::UsedExtraField;
+
             if let Some(extra_fields) = options.extended_options.extra_fields() {
                 for x in extra_fields.iter() {
                     let header_id = x.header_id;
