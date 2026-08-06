@@ -2,6 +2,7 @@
 
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
+use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtendedTimestamp;
 use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
@@ -43,7 +44,7 @@ pub enum ExtraField {
     /// UnicodePath
     UnicodePath(UnicodeExtraField),
     /// Data Stream Alignment
-    DataStreamAlignment(u64),
+    DataStreamAlignment(DataStreamAlignment),
     /// Custom extra field
     Custom(CustomExtraField),
 }
@@ -211,7 +212,9 @@ impl ExtraField {
             ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
             ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
             ExtraField::Custom(custom) => custom.len_with_header(),
-            _ => 0,
+            ExtraField::DataStreamAlignment(data_stream_alignment) => {
+                data_stream_alignment.full_size(is_local_header)
+            }
         }
     }
 
@@ -254,6 +257,9 @@ impl ExtraField {
                 let magic = UsedExtraField::UnicodePath.as_u16();
                 writer.write_all(&magic.to_le_bytes())?;
                 unicode_path.write(writer)?;
+            }
+            ExtraField::DataStreamAlignment(data_stream_alignment) => {
+                data_stream_alignment.write(writer, is_local_header)?
             }
             _ => {
                 // nothing to do

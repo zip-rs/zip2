@@ -6,6 +6,7 @@ use core::fmt::Display;
 use std::io::Write;
 
 mod aex_encryption;
+mod data_stream_alignment;
 mod extended_timestamp;
 mod extra_field;
 mod ntfs;
@@ -16,6 +17,7 @@ pub(crate) use aex_encryption::AexEncryption;
 pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
 
 // re-export
+pub use data_stream_alignment::DataStreamAlignment;
 pub use extended_timestamp::ExtendedTimestamp;
 pub use extra_field::{ExtraField, ExtraFields};
 pub use ntfs::Ntfs;

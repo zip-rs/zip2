@@ -6,6 +6,7 @@ use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
+use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
@@ -2616,24 +2617,24 @@ impl ZipFileData {
                     // Skip alignment.
                     None
                 } else {
-                    // Add an extra field to the extra_field, per APPNOTE 4.6.11
-                    let mut pad_body = vec![0; pad_length - 4];
-                    debug_assert!(pad_body.len() >= 2);
-                    [pad_body[0], pad_body[1]] = alignment.to_le_bytes();
-                    let alignment_extra_field = CustomExtraField::new(
-                        true,
-                        UsedExtraField::DataStreamAlignment.as_u16(),
-                        &pad_body,
-                    );
-                    let alignment_extra_field = ExtraField::Custom(alignment_extra_field);
-                    extra_field_len = self
-                        .extra_fields
-                        .local_extra_fields()
-                        .map(|x| x.size(true))
-                        .sum::<usize>()
-                        + alignment_extra_field.size(true);
-                    debug_assert_eq!((extra_field_len as u64 + header_end) % align, 0);
-                    Some(alignment_extra_field)
+                    let pad_length_u16: Result<u16, core::num::TryFromIntError> =
+                        pad_length.try_into();
+                    if let Ok(pad_length) = pad_length_u16
+                        && let Some(alignment_extra_field) = DataStreamAlignment::new(pad_length)
+                    {
+                        // Add an extra field to the extra_field, per APPNOTE 4.6.11
+                        extra_field_len = self
+                            .extra_fields
+                            .local_extra_fields()
+                            .map(|x| x.size(true))
+                            .sum::<usize>()
+                            + alignment_extra_field.full_size(true);
+                        debug_assert_eq!((extra_field_len as u64 + header_end) % align, 0);
+                        Some(alignment_extra_field)
+                    } else {
+                        // Alignment is impossible with this length
+                        None
+                    }
                 }
             } else {
                 None
