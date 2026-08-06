@@ -2426,7 +2426,7 @@ impl ZipFileData {
         writer: &mut T,
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
-        let mut is_zip64 = false;
+        let mut zip64_field_is_present = false;
         for one_extra_field in self.extra_fields.inner.iter_mut() {
             if let ExtraField::Zip64ExtendedInformation {
                 compressed_size,
@@ -2439,11 +2439,11 @@ impl ZipFileData {
                 if self.header_start >= ZIP64_BYTES_THR {
                     *header_start = Some(self.header_start);
                 }
-                is_zip64 = true;
+                zip64_field_is_present = true;
             }
         }
-        if !is_zip64 {
-            // check if needed and crash if needed
+        if !zip64_field_is_present {
+            // check if needed and add it
             if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
                 self.large_file,
                 self.uncompressed_size,
@@ -2460,7 +2460,6 @@ impl ZipFileData {
                             header_start: zip64_block.header_start,
                         },
                     );
-                    //return Err(invalid!("Should have used large file"));
                 } else {
                     self.extra_fields.inner.insert(
                         0,
