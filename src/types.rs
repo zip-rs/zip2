@@ -3,15 +3,15 @@
 use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
-use crate::extra_fields::ExtraField;
+use crate::extra_fields::ExtraFields;
 use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
-use crate::result::{ZipError, ZipResult, invalid};
+use crate::result::{ZipError, ZipResult};
 use crate::spec::is_dir;
 use crate::spec::{
-    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipCentralEntryBlock,
-    ZipDataDescriptorBlock, ZipLocalEntryBlock,
+    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipDataDescriptorBlock,
+    ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::ZipCryptoKeys;
@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
 pub(crate) use crate::format::flags::System;
@@ -121,10 +121,6 @@ pub struct ZipFileData {
     pub compressed_size: u64,
     /// Size of the file when extracted
     pub uncompressed_size: u64,
-    /// Extra field usually used for storage expansion
-    pub extra_field: Option<Arc<[u8]>>,
-    /// Extra field only written to central directory
-    pub central_extra_field: Option<Arc<[u8]>>,
     /// File comment
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
@@ -143,11 +139,8 @@ pub struct ZipFileData {
     pub large_file: bool,
     /// AES settings if applicable
     pub aes_mode: Option<(AesMode, AesVendorVersion)>,
-    /// Specifies where in the extra data the AES metadata starts
-    pub aes_extra_data_start: u64,
-
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
-    pub extra_fields: Vec<ExtraField>,
+    pub extra_fields: ExtraFields,
 }
 
 impl ZipFileData {
@@ -340,20 +333,6 @@ impl ZipFileData {
             .max(crypto_version)
             .max(misc_feature_version)
     }
-    #[inline(always)]
-    pub(crate) fn extra_field_len(&self) -> usize {
-        self.extra_field
-            .as_ref()
-            .map(|v| v.len())
-            .unwrap_or_default()
-    }
-    #[inline(always)]
-    pub(crate) fn central_extra_field_len(&self) -> usize {
-        self.central_extra_field
-            .as_ref()
-            .map(|v| v.len())
-            .unwrap_or_default()
-    }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
@@ -362,10 +341,9 @@ impl ZipFileData {
         raw_values: &ZipRawValues,
         header_start: u64,
         extra_data_start: Option<u64>,
-        aes_extra_data_start: u64,
         compression_method: CompressionMethod,
         aes_settings: Option<(AesMode, AesVendorVersion)>,
-        extra_field: &[u8],
+        extra_fields: ExtraFields,
     ) -> Self {
         let permissions = options
             .permissions
@@ -418,11 +396,6 @@ impl ZipFileData {
             crc32: raw_values.crc32,
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
-            extra_field: Some(Arc::from(extra_field)),
-            central_extra_field: options
-                .extended_options
-                .central_only_extra_fields()
-                .map(Arc::<[u8]>::from),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start,
             data_start: OnceLock::new(),
@@ -430,18 +403,17 @@ impl ZipFileData {
             external_attributes,
             large_file: options.large_file,
             aes_mode: aes_settings,
-            extra_fields: Vec::new(),
+            extra_fields,
             extra_data_start,
-            aes_extra_data_start,
         };
         local_block.version_made_by = local_block.version_needed() as u8;
         local_block
     }
 
-    pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
+    pub(crate) fn from_local_block(
         block: ZipLocalEntryBlock,
-        reader: &mut R,
-    ) -> ZipResult<(Self, Vec<u8>)> {
+        extra_fields: ExtraFields,
+    ) -> ZipResult<Self> {
         let ZipLocalEntryBlock {
             version_made_by,
             flags,
@@ -451,30 +423,10 @@ impl ZipFileData {
             crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length,
-            extra_field_length,
             ..
         } = block;
 
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
-        let file_name_length: usize = file_name_length.into();
-        let extra_field_length: usize = extra_field_length.into();
-
-        let mut file_name_raw = vec![0u8; file_name_length];
-        if let Err(e) = reader.read_exact(&mut file_name_raw) {
-            if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Err(invalid!("File name extends beyond file boundary"));
-            }
-            return Err(e.into());
-        }
-        let mut extra_field = vec![0u8; extra_field_length];
-        if let Err(e) = reader.read_exact(&mut extra_field) {
-            if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Err(invalid!("Extra field extends beyond file boundary"));
-            }
-            return Err(e.into());
-        }
-
         let (version_made_by, system) = System::extract_bytes(version_made_by);
         let data = ZipFileData {
             system,
@@ -485,8 +437,6 @@ impl ZipFileData {
             crc32,
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
-            extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
-            central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
             // header_start and data start are not available, but also don't matter, since seeking is
             // not available.
@@ -499,14 +449,13 @@ impl ZipFileData {
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
-            extra_fields: Vec::new(),
+            extra_fields,
             extra_data_start: None,
-            aes_extra_data_start: 0,
         };
-        Ok((data, file_name_raw))
+        Ok(data)
     }
 
-    fn flags(&self, file_name_raw: &[u8]) -> u16 {
+    pub(crate) fn flags(&self, file_name_raw: &[u8]) -> u16 {
         let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
         let is_ascii = file_name_raw.is_ascii() && self.file_comment.is_ascii();
         let utf8_bit: u16 = if is_utf8 && !is_ascii {
@@ -525,7 +474,8 @@ impl ZipFileData {
 
         utf8_bit | using_data_descriptor_bit | encrypted_bit
     }
-    fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
+
+    pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
             Ok(spec::ZIP64_BYTES_THR_U32)
         } else {
@@ -536,100 +486,6 @@ impl ZipFileData {
             })?;
             Ok(size.min(spec::ZIP64_BYTES_THR_U32 - 1))
         }
-    }
-
-    pub(crate) fn local_block(&self, file_name_raw: &[u8]) -> ZipResult<ZipLocalEntryBlock> {
-        let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
-            (0, 0)
-        } else {
-            (
-                self.clamp_size_field(self.compressed_size)?,
-                self.clamp_size_field(self.uncompressed_size)?,
-            )
-        };
-        let extra_field_length: u16 = self
-            .extra_field_len()
-            .try_into()
-            .map_err(|_| invalid!("Extra data field is too large"))?;
-
-        let last_modified_time = self
-            .last_modified_time
-            .unwrap_or_else(DateTime::default_for_write);
-        let compression_method = if self.aes_mode.is_some() {
-            CompressionMethod::AES.serialize_to_u16()
-        } else {
-            self.compression_method.serialize_to_u16()
-        };
-        Ok(ZipLocalEntryBlock {
-            version_made_by: self.version_needed(),
-            flags: self.flags(file_name_raw),
-            compression_method,
-            last_mod_time: last_modified_time.timepart(),
-            last_mod_date: last_modified_time.datepart(),
-            crc32: self.crc32,
-            compressed_size,
-            uncompressed_size,
-            file_name_length: file_name_raw
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            extra_field_length,
-        })
-    }
-
-    pub(crate) fn block(&self, file_name_raw: &[u8]) -> ZipResult<ZipCentralEntryBlock> {
-        let compressed_size = self.clamp_size_field(self.compressed_size)?;
-        let uncompressed_size = self.clamp_size_field(self.uncompressed_size)?;
-        let offset = self
-            .header_start
-            .min(spec::ZIP64_BYTES_THR)
-            .try_into()
-            .map_err(std::io::Error::other)?;
-        let extra_field_len: u16 = self
-            .extra_field_len()
-            .try_into()
-            .map_err(std::io::Error::other)?;
-        let central_extra_field_len: u16 = self
-            .central_extra_field_len()
-            .try_into()
-            .map_err(std::io::Error::other)?;
-        let last_modified_time = self
-            .last_modified_time
-            .unwrap_or_else(DateTime::default_for_write);
-        let version_to_extract = self.version_needed();
-        let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
-        let compression_method = if self.aes_mode.is_some() {
-            CompressionMethod::AES.serialize_to_u16()
-        } else {
-            self.compression_method.serialize_to_u16()
-        };
-        Ok(ZipCentralEntryBlock {
-            version_made_by: ((self.system as u16) << 8) | version_made_by,
-            version_to_extract,
-            flags: self.flags(file_name_raw),
-            compression_method,
-            last_mod_time: last_modified_time.timepart(),
-            last_mod_date: last_modified_time.datepart(),
-            crc32: self.crc32,
-            compressed_size,
-            uncompressed_size,
-            file_name_length: file_name_raw
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            extra_field_length: extra_field_len.checked_add(central_extra_field_len).ok_or(
-                invalid!("Extra field length in central directory exceeds 64KiB"),
-            )?,
-            file_comment_length: self
-                .file_comment
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
-            disk_number: 0,
-            internal_file_attributes: 0,
-            external_file_attributes: self.external_attributes,
-            offset,
-        })
     }
 
     pub(crate) fn write_data_descriptor<W: std::io::Write>(
@@ -724,8 +580,6 @@ mod tests {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            extra_field: None,
-            central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
             extra_data_start: None,
@@ -734,8 +588,7 @@ mod tests {
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
-            aes_extra_data_start: 0,
-            extra_fields: Vec::new(),
+            ..ZipFileData::default()
         };
         assert_eq!(
             data.file_name_sanitized(&file_name),

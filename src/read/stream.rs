@@ -1,13 +1,14 @@
 //! Code related to stream reading
 
 use crate::ZipReadOptions;
-use crate::read::parse_extra_field;
+use crate::extra_fields::ExtraFields;
 use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
-use crate::result::ZipError;
+use crate::result::{ZipError, invalid};
 use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
+
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
@@ -237,7 +238,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
 /// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
+pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
     reader: &'a mut R,
     compressed_size: u64,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
@@ -247,7 +248,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: io::Read>(
 
 /// Same as `read_zipfile_from_stream` but with `ZipReadOptions`
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
-pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
+pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
     mut options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
@@ -267,8 +268,29 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
     reader.read_exact(block.as_bytes_mut())?;
 
     let block = block.from_le();
+    // parse file_name_raw
+    let file_name_length: usize = block.file_name_length.into();
+    let mut file_name_raw = vec![0u8; file_name_length];
+    if let Err(e) = reader.read_exact(&mut file_name_raw) {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            return Err(invalid!("File name extends beyond file boundary"));
+        }
+        return Err(e.into());
+    }
 
-    let (mut data, mut file_name_raw) = ZipFileData::from_local_block(block, reader)?;
+    // parse extra fields raw
+    let extra_field_length: usize = block.extra_field_length.into();
+    let mut extra_fields_raw = vec![0u8; extra_field_length];
+    if let Err(e) = reader.read_exact(&mut extra_fields_raw) {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            return Err(invalid!("Extra field extends beyond file boundary"));
+        }
+        return Err(e.into());
+    }
+    // parse extra fields
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block)?;
+    let mut data = ZipFileData::from_local_block(block, extra_fields)?;
+    data.apply_extra_fields(&mut file_name_raw)?;
     if data.is_using_data_descriptor() {
         if let Some(comp_size) = options.force_compressed_size {
             data.compressed_size = comp_size;
@@ -283,11 +305,6 @@ pub fn read_zipfile_from_stream_with_options<'a, R: io::Read>(
     }
     if let Some(crc) = options.force_crc {
         data.crc32 = crc;
-    }
-
-    match parse_extra_field(&mut data, &mut file_name_raw) {
-        Ok(..) | Err(ZipError::Io(..)) => {}
-        Err(e) => return Err(e),
     }
 
     if options.ignore_encryption_flag {
