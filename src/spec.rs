@@ -107,6 +107,7 @@ impl Magic {
 /// # }
 ///```
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
+pub const ZIP64_BYTES_THR_U32: u32 = u32::MAX;
 /// The number of entries within a single zip necessary to allocate a zip64 central
 /// directory record.
 ///
@@ -609,6 +610,8 @@ impl Zip64CentralDirectoryEnd {
     /// Minimum size of the block
     /// Block - record_size - extensible_data
     const MIN_SIZE: usize = 2 * size_of::<u16>() + 2 * size_of::<u32>() + 4 * size_of::<u64>();
+    pub(crate) const MIN_FULL_SIZE: usize =
+        2 * size_of::<u16>() + 2 * size_of::<u32>() + 5 * size_of::<u64>();
     /// Size of ZIP64 EOCD signature + record_size field.
     const RECORD_OVERHEAD: u64 = (size_of::<Magic>() + size_of::<u64>()) as u64;
 
@@ -990,5 +993,6 @@ mod tests {
     fn test_size_zip64_central_directory_end() {
         use super::Zip64CentralDirectoryEnd;
         assert_eq!(Zip64CentralDirectoryEnd::MIN_SIZE, 44);
+        assert_eq!(Zip64CentralDirectoryEnd::MIN_FULL_SIZE, 52);
     }
 }

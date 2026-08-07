@@ -5,10 +5,11 @@ use crate::read::config::Config;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader, make_crypto_reader, make_reader};
 use crate::read::{
     ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek, ZipReadOptions,
-    central_header_to_zip_file,
+    central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
+use crate::spec::{FixedSizeBlock, ZipCentralEntryBlock};
 use crate::types::ZipFileData;
 use crate::unstable::path_to_string;
 use core::ops::Range;
@@ -201,8 +202,18 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files = Vec::with_capacity(file_capacity);
         reader.seek(SeekFrom::Start(dir_info.directory_start))?;
         for _ in 0..dir_info.number_of_files {
-            let (file, file_name_raw) = central_header_to_zip_file(reader, dir_info)?;
-            files.push((file_name_raw, file));
+            let central_header_start = reader.stream_position()?;
+
+            // Parse central header
+            let block = ZipCentralEntryBlock::parse(reader)?;
+
+            let (file, file_name_raw) = central_header_to_zip_file_inner(
+                reader,
+                dir_info.archive_offset,
+                central_header_start,
+                block,
+            )?;
+            files.push((file_name_raw.into(), file));
         }
 
         Ok(SharedBuilder {

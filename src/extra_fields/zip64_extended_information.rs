@@ -33,7 +33,7 @@ pub(crate) struct Zip64ExtendedInformation {
 }
 
 impl Zip64ExtendedInformation {
-    const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
+    pub(crate) const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
 
     pub(crate) fn new_local(is_large_file: bool) -> Option<Self> {
         if is_large_file {
