@@ -25,6 +25,5 @@
       }
     }
   },
-  "remoteUser": "vscode",
-  "updateRemoteUserUID": false
+  "remoteUser": "vscode"
 }
