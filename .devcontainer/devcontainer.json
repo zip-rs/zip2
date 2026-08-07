@@ -16,8 +16,13 @@
     },
     "vscode": {
       "extensions": [
-        "rust-lang.rust-analyzer"
-      ]
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.cargo.allFeatures": true
+      }
     }
   },
   "remoteUser": "vscode",
