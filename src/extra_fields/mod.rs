@@ -14,13 +14,14 @@ mod zip64_extended_information;
 mod zipinfo_utf8;
 
 pub(crate) use aex_encryption::AexEncryption;
-pub(crate) use zip64_extended_information::Zip64ExtendedInformation;
+pub use zip64_extended_information::Zip64Sizes;
 
 // re-export
 pub use data_stream_alignment::DataStreamAlignment;
 pub use extended_timestamp::ExtendedTimestamp;
 pub use extra_field::{ExtraField, ExtraFields};
 pub use ntfs::Ntfs;
+pub use zip64_extended_information::Zip64ExtendedInformation;
 pub use zipinfo_utf8::UnicodeExtraField;
 
 /// Marker trait to denote the place where this extra field has been stored.
