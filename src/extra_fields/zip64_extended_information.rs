@@ -20,13 +20,19 @@ use crate::{
     result::{ZipResult, invalid},
 };
 
+/// Zip64 Sizes
+/// This entry in the Local header MUST include BOTH original
+/// and compressed file size fields.
+#[derive(Copy, Clone, Debug)]
+pub struct Zip64Sizes {
+    pub(crate) uncompressed_size: u64,
+    pub(crate) compressed_size: u64,
+}
+
 /// Zip64 extended information extra field
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct Zip64ExtendedInformation {
-    /// The local header does not contains any `header_start`
-    is_local_header: bool,
-    pub(crate) uncompressed_size: Option<u64>,
-    pub(crate) compressed_size: Option<u64>,
+pub struct Zip64ExtendedInformation {
+    pub(crate) sizes: Option<Zip64Sizes>,
     pub(crate) header_start: Option<u64>,
     // Not used field
     // disk_start: Option<u32>
@@ -49,16 +55,16 @@ impl Zip64ExtendedInformation {
         if !should_add_size {
             return None;
         }
-        let uncompressed_size = Some(uncompressed_size);
-        let compressed_size = Some(compressed_size);
+        let sizes = Some(Zip64Sizes {
+            uncompressed_size,
+            compressed_size,
+        });
 
         // TODO: (unsupported for now)
         // Disk Start Number  4 bytes    Number of the disk on which this file starts
 
         Some(Self {
-            is_local_header: true,
-            uncompressed_size,
-            compressed_size,
+            sizes,
             header_start: None,
         })
     }
@@ -70,15 +76,15 @@ impl Zip64ExtendedInformation {
         header_start: u64,
     ) -> Option<Self> {
         let mut size: u16 = 0;
-        let uncompressed_size = if is_large_file || uncompressed_size >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(uncompressed_size)
-        } else {
-            None
-        };
-        let compressed_size = if is_large_file || compressed_size >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(compressed_size)
+        let sizes = if is_large_file
+            || uncompressed_size >= ZIP64_BYTES_THR
+            || compressed_size > ZIP64_BYTES_THR
+        {
+            size += mem::size_of::<u64>() as u16 + mem::size_of::<u64>() as u16;
+            Some(Zip64Sizes {
+                uncompressed_size,
+                compressed_size,
+            })
         } else {
             None
         };
@@ -97,35 +103,36 @@ impl Zip64ExtendedInformation {
         }
 
         Some(Self {
-            is_local_header: false,
-            uncompressed_size,
-            compressed_size,
+            sizes,
             header_start,
         })
     }
 
-    pub(crate) fn size(&self) -> usize {
+    pub(crate) fn full_size(&self, is_local_header: bool) -> usize {
+        mem::size_of::<UsedExtraField>() + mem::size_of::<u16>() + self.size(is_local_header)
+    }
+
+    pub(crate) fn size(&self, is_local_header: bool) -> usize {
         let mut size = 0;
-        if self.uncompressed_size.is_some() {
-            size += mem::size_of::<u64>();
+        if self.sizes.is_some() {
+            size += mem::size_of::<u64>() + mem::size_of::<u64>();
         }
-        if self.compressed_size.is_some() {
-            size += mem::size_of::<u64>();
-        }
-        if self.header_start.is_some() {
+        if !is_local_header && self.header_start.is_some() {
             size += mem::size_of::<u64>();
         }
         size
     }
 
     /// Serialize the block
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    pub fn write<T: Write>(self, writer: &mut T, is_local_header: bool) -> ZipResult<()> {
         writer.write_all(&Self::MAGIC.to_le_bytes())?;
 
-        if self.is_local_header {
+        if is_local_header {
             // the local header does not contains the header start
-            if let (Some(uncompressed_size), Some(compressed_size)) =
-                (self.uncompressed_size, self.compressed_size)
+            if let Some(Zip64Sizes {
+                uncompressed_size,
+                compressed_size,
+            }) = self.sizes
             {
                 let size = (mem::size_of::<u64>() + mem::size_of::<u64>()) as u16;
                 writer.write_all(&size.to_le_bytes())?;
@@ -134,12 +141,14 @@ impl Zip64ExtendedInformation {
             }
             // the else should be unreachable
         } else {
-            let size = self.size() as u16;
+            let size = self.size(is_local_header) as u16;
             writer.write_all(&size.to_le_bytes())?;
-            if let Some(uncompressed_size) = self.uncompressed_size {
+            if let Some(Zip64Sizes {
+                uncompressed_size,
+                compressed_size,
+            }) = self.sizes
+            {
                 writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
-            }
-            if let Some(compressed_size) = self.compressed_size {
                 writer.write_all(&u64::to_le_bytes(compressed_size))?;
             }
             if let Some(header_start) = self.header_start {
