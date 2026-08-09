@@ -126,34 +126,20 @@ impl Zip64ExtendedInformation {
     /// Serialize the block
     pub fn write<T: Write>(self, writer: &mut T, is_local_header: bool) -> ZipResult<()> {
         writer.write_all(&Self::MAGIC.to_le_bytes())?;
+        let size = self.size(is_local_header) as u16;
+        writer.write_all(&size.to_le_bytes())?;
+        if let Some(Zip64Sizes {
+            uncompressed_size,
+            compressed_size,
+        }) = self.sizes
+        {
+            writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
+            writer.write_all(&u64::to_le_bytes(compressed_size))?;
+        }
 
-        if is_local_header {
-            // the local header does not contains the header start
-            if let Some(Zip64Sizes {
-                uncompressed_size,
-                compressed_size,
-            }) = self.sizes
-            {
-                let size = (mem::size_of::<u64>() + mem::size_of::<u64>()) as u16;
-                writer.write_all(&size.to_le_bytes())?;
-                writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
-                writer.write_all(&u64::to_le_bytes(compressed_size))?;
-            }
-            // the else should be unreachable
-        } else {
-            let size = self.size(is_local_header) as u16;
-            writer.write_all(&size.to_le_bytes())?;
-            if let Some(Zip64Sizes {
-                uncompressed_size,
-                compressed_size,
-            }) = self.sizes
-            {
-                writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
-                writer.write_all(&u64::to_le_bytes(compressed_size))?;
-            }
-            if let Some(header_start) = self.header_start {
-                writer.write_all(&u64::to_le_bytes(header_start))?;
-            }
+        // the local header does not contains the header start
+        if !is_local_header && let Some(header_start) = self.header_start {
+            writer.write_all(&u64::to_le_bytes(header_start))?;
         }
         Ok(())
     }
