@@ -34,7 +34,8 @@ pub struct Zip64Sizes {
 pub struct Zip64ExtendedInformation {
     pub(crate) sizes: Option<Zip64Sizes>,
     pub(crate) header_start: Option<u64>,
-    // Not used field
+    // TODO: (unsupported for now)
+    // Disk Start Number  4 bytes    Number of the disk on which this file starts
     // disk_start: Option<u32>
 }
 
@@ -55,16 +56,11 @@ impl Zip64ExtendedInformation {
         if !should_add_size {
             return None;
         }
-        let sizes = Some(Zip64Sizes {
-            uncompressed_size,
-            compressed_size,
-        });
-
-        // TODO: (unsupported for now)
-        // Disk Start Number  4 bytes    Number of the disk on which this file starts
-
         Some(Self {
-            sizes,
+            sizes: Some(Zip64Sizes {
+                uncompressed_size,
+                compressed_size,
+            }),
             header_start: None,
         })
     }
