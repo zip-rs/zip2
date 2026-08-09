@@ -1,5 +1,5 @@
 use std::io;
-use zip::ZipArchive;
+use zip::{ZipArchive, write::FileOptions};
 
 fn generate_file_with_padding(padding_local_header: u16, padding_central_header: u16) -> Vec<u8> {
     let local_header = [
@@ -142,4 +142,39 @@ fn test_crc32_extra_field_comment() {
     let archive = ZipArchive::new(Cursor::new(bytes));
     assert!(archive.is_ok());
     archive.unwrap();
+}
+
+#[test]
+fn test_extra_field_too_long() {
+    use std::io::Cursor;
+    use zip::ZipWriter;
+    // u16::MAX = 65535
+    // Size of extra field header and length = 4
+    // Magic = 4
+    // ZipLocalHeader = 26
+    // filename = 1
+    let tests = [
+        // should NOT fail since value is less than u16::MAX
+        (vec![1; 65535 - 4 - 4 - 26 - 1 - 1], false),
+        // should fail since value is exactly u16::MAX
+        (vec![1; 65535 - 4 - 4 - 26 - 1], true),
+        // should fail since value is more than u16::MAX
+        (vec![1; 65535 - 4 - 4 - 26], true),
+    ];
+    for (extra_field, should_fail) in tests {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_flush_on_finish_file(false);
+        let mut options = FileOptions::default();
+        eprintln!(
+            "Extra_field_len = {}, total = {}",
+            extra_field.len(),
+            extra_field.len() + 4 + 4 + 26 + 1
+        );
+        options.add_extra_field(0x1e51, extra_field, true).unwrap();
+        if should_fail {
+            writer.start_file("a", options).unwrap_err();
+        } else {
+            writer.start_file("a", options).unwrap();
+        }
+    }
 }
