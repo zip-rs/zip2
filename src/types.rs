@@ -22,8 +22,7 @@ use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-pub(crate) use crate::format::aes::{AesMode, AesVendorVersion};
-pub(crate) use crate::format::flags::System;
+use crate::format::flags::System;
 
 pub(crate) mod ffi {
     /// Regular
@@ -44,8 +43,8 @@ pub(crate) struct ZipRawValues {
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
-        mode: crate::AesMode,
-        vendor_version: AesVendorVersion,
+        mode: crate::format::aes::AesMode,
+        vendor_version: crate::format::aes::AesVendorVersion,
         // When the password is None, it means that we are reusing the previous encryption
         password: Option<&'k [u8]>,
         salt: Option<crate::aes::AesSalt>,
@@ -137,8 +136,6 @@ pub struct ZipFileData {
     pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
-    /// AES settings if applicable
-    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
     pub extra_fields: ExtraFields,
 }
@@ -152,6 +149,22 @@ impl ZipFileData {
                 file_name_raw.from_cp437().map_err(std::io::Error::other)?
             },
         )
+    }
+
+    #[cfg(feature = "aes-crypto")]
+    pub fn aes_mode(
+        &self,
+    ) -> Option<(
+        crate::format::aes::AesMode,
+        crate::format::aes::AesVendorVersion,
+    )> {
+        use crate::ExtraField;
+        for one_extra in &self.extra_fields.inner {
+            if let ExtraField::AeXEncryption(aes) = one_extra {
+                return Some((aes.aes_mode, aes.aes_vendor_version));
+            }
+        }
+        None
     }
 
     /// Check if the encrypted flag is set
@@ -311,13 +324,17 @@ impl ZipFileData {
             // APPNOTE doesn't specify a version for Zstandard
             _ => u16::from(DEFAULT_VERSION),
         };
-        let crypto_version: u16 = if self.aes_mode.is_some() {
+
+        #[cfg(feature = "aes-crypto")]
+        let crypto_version: u16 = if self.aes_mode().is_some() {
             51
         } else if self.is_encrypted() {
             20
         } else {
             10
         };
+        #[cfg(not(feature = "aes-crypto"))]
+        let crypto_version = if self.is_encrypted() { 20 } else { 10 };
         let misc_feature_version: u16 = if self.large_file {
             45
         } else if self
@@ -342,7 +359,6 @@ impl ZipFileData {
         header_start: u64,
         extra_data_start: Option<u64>,
         compression_method: CompressionMethod,
-        aes_settings: Option<(AesMode, AesVendorVersion)>,
         extra_fields: ExtraFields,
     ) -> Self {
         let permissions = options
@@ -402,7 +418,6 @@ impl ZipFileData {
             central_header_start: 0,
             external_attributes,
             large_file: options.large_file,
-            aes_mode: aes_settings,
             extra_fields,
             extra_data_start,
         };
@@ -448,7 +463,6 @@ impl ZipFileData {
             // from standard input, this field is set to zero.'
             external_attributes: 0,
             large_file: false,
-            aes_mode: None,
             extra_fields,
             extra_data_start: None,
         };
@@ -587,7 +601,6 @@ mod tests {
             central_header_start: 0,
             external_attributes: 0,
             large_file: false,
-            aes_mode: None,
             ..ZipFileData::default()
         };
         assert_eq!(

@@ -252,12 +252,8 @@ impl ZipFileData {
                     }
                 }
                 ExtraField::AeXEncryption(AexEncryption {
-                    aes_mode,
-                    aes_vendor_version,
-                    compression_method,
-                    ..
+                    compression_method, ..
                 }) => {
-                    self.aes_mode = Some((*aes_mode, *aes_vendor_version));
                     self.compression_method = *compression_method;
                 }
                 ExtraField::UnicodeComment(unicode) => {

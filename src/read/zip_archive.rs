@@ -243,7 +243,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .ok_or(ZipError::FileNotFound)?;
 
         let limit_reader = data.find_content(&mut self.reader)?;
-        match data.aes_mode {
+        match data.aes_mode() {
             None => Ok(None),
             Some((aes_mode, _)) => {
                 let (verification_value, salt) =
@@ -587,6 +587,10 @@ impl<R: Read + Seek> ZipArchive<R> {
             Some(data.crc32)
         };
 
+        #[cfg(feature = "aes-crypto")]
+        let aes_vendor = data.aes_mode().map(|aes| aes.1);
+        #[cfg(not(feature = "aes-crypto"))]
+        let aes_vendor = None;
         Ok(ZipFile {
             file_name_raw: Cow::Borrowed(file_name_raw),
             data: Cow::Borrowed(data),
@@ -594,7 +598,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.compression_method,
                 data.uncompressed_size,
                 crc32,
-                data.aes_mode.map(|aes| aes.1),
+                aes_vendor,
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,

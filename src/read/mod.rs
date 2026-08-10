@@ -4,10 +4,10 @@ use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::{ExtraField, ExtraFields};
-use crate::format::flags::ZipFlags;
+use crate::format::flags::{System, ZipFlags};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock};
-use crate::types::{System, ZipFileData};
+use crate::types::ZipFileData;
 use indexmap::IndexMap;
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek, Write};
@@ -503,7 +503,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
         large_file: false,
-        aes_mode: None,
         extra_fields,
     };
     result.apply_extra_fields(&mut file_name_raw)?;

@@ -2,11 +2,10 @@
 
 use std::io::{ErrorKind, Read, Write};
 
-use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
+use crate::format::aes::{AesMode, AesVendorVersion};
 use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
-use crate::types::AesVendorVersion;
 use crate::unstable::LittleEndianReadExt;
 
 #[derive(Copy, Clone, Debug)]
@@ -92,9 +91,8 @@ mod tests {
     #[test]
     fn test_create_aex() {
         use super::AexEncryption;
-        use crate::AesMode;
         use crate::CompressionMethod;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::{AesMode, AesVendorVersion};
 
         let aex_encryption = AexEncryption::new(
             AesVendorVersion::Ae2,
@@ -129,9 +127,8 @@ mod tests {
     #[test]
     fn test_serialize_parse() {
         use super::AexEncryption;
-        use crate::AesMode;
         use crate::CompressionMethod;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::{AesMode, AesVendorVersion};
         use std::io::Cursor;
 
         let aex_encryption = AexEncryption::new(

@@ -9,6 +9,7 @@ use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
+use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
@@ -17,7 +18,7 @@ use crate::spec::{
     Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::types::EncryptWith;
-use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
+use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
@@ -584,6 +585,8 @@ impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
         password: &'k [u8],
         salt: crate::aes::AesSalt,
     ) -> FileOptions<'k, 'n, T> {
+        use crate::format::aes::AesVendorVersion;
+
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: salt.mode(),
@@ -612,6 +615,8 @@ impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
         mode: crate::AesMode,
         password: &'k [u8],
     ) -> FileOptions<'k, 'n, T> {
+        use crate::format::aes::AesVendorVersion;
+
         FileOptions {
             encrypt_with: Some(EncryptWith::Aes {
                 mode,
@@ -1158,7 +1163,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // AES encryption.
         // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
-        let aes_mode_options = match options.encrypt_with {
+        match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]
             Some(EncryptWith::Aes {
                 mode,
@@ -1172,10 +1177,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                     mode,
                     compression_method,
                 )));
-                Some((mode, vendor_version))
             }
-            _ => None,
-        };
+            _ => {}
+        }
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
@@ -1183,7 +1187,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             header_start,
             None,
             compression_method,
-            aes_mode_options,
             ExtraFields {
                 inner: extra_fields,
             },
@@ -1314,15 +1317,24 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // Not using a data descriptor means the underlying writer
                 // supports seeking, so we can go back and update the AES Extra
                 // Data header to use AE1 for large files.
+                #[cfg(feature = "aes-crypto")]
                 update_aes_extra_field(writer, file, self.stats.bytes_written)?;
             }
 
-            file.crc32 = if matches!(file.aes_mode, Some((_, AesVendorVersion::Ae2))) {
-                // AE2 disables CRC32 in the local file header
-                0
-            } else {
-                self.stats.hasher.clone().finalize()
-            };
+            #[cfg(feature = "aes-crypto")]
+            {
+                use crate::format::aes::AesVendorVersion;
+                file.crc32 = if matches!(file.aes_mode(), Some((_, AesVendorVersion::Ae2))) {
+                    // AE2 disables CRC32 in the local file header
+                    0
+                } else {
+                    self.stats.hasher.clone().finalize()
+                };
+            }
+            #[cfg(not(feature = "aes-crypto"))]
+            {
+                file.crc32 = self.stats.hasher.clone().finalize();
+            }
 
             if file.is_using_data_descriptor() {
                 file.write_data_descriptor(writer, self.auto_large_file)?;
@@ -2313,15 +2325,15 @@ fn validate_value_in_range<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     }
 }
 
+#[cfg(feature = "aes-crypto")]
 fn update_aes_extra_field<W: Write + Seek>(
     writer: &mut W,
     file: &mut ZipFileData,
     bytes_written: u64,
 ) -> ZipResult<()> {
+    use crate::format::aes::AesVendorVersion;
+
     let inner_compression_method = file.compression_method;
-    let Some((aes_mode, version)) = &mut file.aes_mode else {
-        return Ok(());
-    };
 
     // We prefer using AE-1 which provides an extra CRC check, but for small files we
     // switch to AE-2 to prevent being able to use the CRC value to to reconstruct the
@@ -2336,10 +2348,10 @@ fn update_aes_extra_field<W: Write + Seek>(
     } else {
         AesVendorVersion::Ae1
     };
-    *version = new_version;
 
     // edit the extra field
     if let Some(ExtraField::AeXEncryption(AexEncryption {
+        aes_mode,
         aes_vendor_version,
         aes_extra_field_start,
         ..
@@ -2360,7 +2372,8 @@ fn update_aes_extra_field<W: Write + Seek>(
             return Err(invalid!("The AES extra field should have a known start"));
         }
 
-        let aes_extra_field = AexEncryption::new(*version, *aes_mode, inner_compression_method);
+        let aes_extra_field =
+            AexEncryption::new(*aes_vendor_version, *aes_mode, inner_compression_method);
         let mut buf = [0u8; AexEncryption::FULL_SIZE];
         aes_extra_field.write(&mut buf.as_mut_slice())?;
         writer.write_all(&buf)?;
@@ -2484,11 +2497,14 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
-        let compression_method = if self.aes_mode.is_some() {
+        #[cfg(feature = "aes-crypto")]
+        let compression_method = if self.aes_mode().is_some() {
             CompressionMethod::AES.serialize_to_u16()
         } else {
             self.compression_method.serialize_to_u16()
         };
+        #[cfg(not(feature = "aes-crypto"))]
+        let compression_method = self.compression_method.serialize_to_u16();
         let extra_field_length = u16::try_from(extra_field_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
         let block = ZipCentralEntryBlock {
@@ -2569,11 +2585,14 @@ impl ZipFileData {
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
-        let compression_method = if self.aes_mode.is_some() {
+        #[cfg(feature = "aes-crypto")]
+        let compression_method = if self.aes_mode().is_some() {
             CompressionMethod::AES.serialize_to_u16()
         } else {
             self.compression_method.serialize_to_u16()
         };
+        #[cfg(not(feature = "aes-crypto"))]
+        let compression_method = self.compression_method.serialize_to_u16();
         let header_end = header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + file_name_raw.len() as u64;
@@ -2737,8 +2756,8 @@ mod tests {
     use crate::ZipArchive;
     use crate::compression::CompressionMethod;
     use crate::datetime::DateTime;
+    use crate::format::flags::System;
     use crate::result::ZipResult;
-    use crate::types::System;
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
@@ -3723,7 +3742,7 @@ mod tests {
     /// https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
         use crate::AesMode::Aes256;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::AesVendorVersion;
         use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
         use CompressionMethod::Deflated;
@@ -4262,7 +4281,7 @@ mod tests {
     #[cfg(all(feature = "_bzip2_any", feature = "aes-crypto", not(miri)))]
     #[test]
     fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::AesVendorVersion;
         use crate::types::EncryptWith;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -4442,7 +4461,7 @@ mod tests {
     #[cfg(feature = "aes-crypto")]
     fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
         use crate::AesMode::Aes128;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::AesVendorVersion;
         use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
 
