@@ -2353,7 +2353,7 @@ fn update_aes_extra_field<W: Write + Seek>(
         .extra_fields
         .inner
         .iter_mut()
-        .find(|f| matches!(f, ExtraField::AeXEncryption { .. }))
+        .find(|f| matches!(f, ExtraField::AeXEncryption(_)))
     {
         *aes_vendor_version = new_version;
         let extra_field_start = file

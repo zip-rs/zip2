@@ -246,11 +246,10 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
 ) -> ZipResult<ZipFileReader<'_, R>> {
     // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
     let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
-        if let Some(vendor_version) = vendor_version {
-            (vendor_version.is_ae2_encrypted(), data_crc32)
-        } else {
-            (false, data_crc32)
-        }
+        (
+            vendor_version.is_some_and(|v| v.is_ae2_encrypted()),
+            data_crc32,
+        )
     } else {
         (true, 0)
     };
