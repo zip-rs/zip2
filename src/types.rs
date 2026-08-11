@@ -4,6 +4,8 @@ use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
+use crate::format::aes::{AesMode, AesVendorVersion};
+use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
@@ -21,8 +23,6 @@ use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-
-use crate::format::flags::System;
 
 pub(crate) mod ffi {
     /// Regular
