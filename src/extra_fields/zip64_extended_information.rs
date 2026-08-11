@@ -120,7 +120,7 @@ impl Zip64ExtendedInformation {
     }
 
     /// Serialize the block
-    pub fn write<T: Write>(self, writer: &mut T, is_local_header: bool) -> ZipResult<()> {
+    pub fn write<T: Write>(&self, writer: &mut T, is_local_header: bool) -> ZipResult<()> {
         writer.write_all(&Self::MAGIC.to_le_bytes())?;
         let size = self.size(is_local_header) as u16;
         writer.write_all(&size.to_le_bytes())?;
