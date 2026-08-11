@@ -5,6 +5,7 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum System {
     /// `MS-DOS` and `OS/2` (`FAT` / `VFAT` / `FAT32` file systems; default on Windows)
     Dos = 0,
