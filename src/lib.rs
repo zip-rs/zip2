@@ -16,6 +16,7 @@
 #![allow(clippy::multiple_crate_versions)] // https://github.com/rust-lang/rust-clippy/issues/16440
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::datetime::DateTime;
+#[cfg(feature = "aes-crypto")]
 pub use crate::format::aes::AesMode;
 pub use crate::format::flags::System;
 pub use crate::read::HasZipMetadata;
