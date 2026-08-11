@@ -23,14 +23,14 @@ use crate::{
 /// Zip64 Sizes
 /// This entry in the Local header MUST include BOTH original
 /// and compressed file size fields.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Zip64Sizes {
     pub(crate) uncompressed_size: u64,
     pub(crate) compressed_size: u64,
 }
 
 /// Zip64 extended information extra field
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Zip64ExtendedInformation {
     pub(crate) sizes: Option<Zip64Sizes>,
     pub(crate) header_start: Option<u64>,

@@ -4,7 +4,6 @@ use crate::ExtraField;
 use crate::ZIP64_BYTES_THR;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
-use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
@@ -1174,6 +1173,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 vendor_version,
                 ..
             }) => {
+                use crate::extra_fields::AexEncryption;
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
                 extra_fields.push(ExtraField::AeXEncryption(AexEncryption::new(
@@ -2335,6 +2335,7 @@ fn update_aes_extra_field<W: Write + Seek>(
     file: &mut ZipFileData,
     bytes_written: u64,
 ) -> ZipResult<()> {
+    use crate::extra_fields::AexEncryption;
     use crate::format::aes::AesVendorVersion;
 
     let inner_compression_method = file.compression_method;
@@ -2363,7 +2364,7 @@ fn update_aes_extra_field<W: Write + Seek>(
         .extra_fields
         .inner
         .iter_mut()
-        .find(|f| matches!(f, ExtraField::AeXEncryption { .. }))
+        .find(|f| matches!(f, ExtraField::AeXEncryption(_)))
     {
         *aes_vendor_version = new_version;
         let extra_field_start = file
@@ -2670,18 +2671,25 @@ impl ZipFileData {
         };
         block.write(writer)?;
         writer.write_all(file_name_raw)?;
+
         let local_extra_fields = self.extra_fields.local_extra_fields_mut();
+        #[cfg(feature = "aes-crypto")]
         let mut bytes_written = 0;
         for one_extra_field in local_extra_fields {
             one_extra_field.write(&mut *writer, true)?;
-            if let ExtraField::AeXEncryption(AexEncryption {
-                aes_extra_field_start,
-                ..
-            }) = one_extra_field
+            #[cfg(feature = "aes-crypto")]
             {
-                *aes_extra_field_start = Some(bytes_written);
+                use crate::extra_fields::AexEncryption;
+
+                if let ExtraField::AeXEncryption(AexEncryption {
+                    aes_extra_field_start,
+                    ..
+                }) = one_extra_field
+                {
+                    *aes_extra_field_start = Some(bytes_written);
+                }
+                bytes_written += one_extra_field.size(true);
             }
-            bytes_written += one_extra_field.size(true);
         }
         if let Some(alignment_extra_field) = opt_alignment_field {
             alignment_extra_field.write(writer, true)?;

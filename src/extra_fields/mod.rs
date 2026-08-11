@@ -14,6 +14,7 @@ mod zip64_extended_information;
 mod zipinfo_utf8;
 
 // re-export
+#[cfg(feature = "aes-crypto")]
 pub use aex_encryption::AexEncryption;
 pub use data_stream_alignment::DataStreamAlignment;
 pub use extended_timestamp::ExtendedTimestamp;

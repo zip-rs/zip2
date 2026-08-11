@@ -1,5 +1,7 @@
 //! AE-x encryption structure extra field
 
+#![cfg(feature = "aes-crypto")]
+
 use std::io::{ErrorKind, Read, Write};
 
 use crate::CompressionMethod;
@@ -9,7 +11,7 @@ use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
 use crate::unstable::LittleEndianReadExt;
 
 /// AeX Encryption extra field
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AexEncryption {
     /// aes vendor
     pub(crate) aes_vendor_version: AesVendorVersion,
