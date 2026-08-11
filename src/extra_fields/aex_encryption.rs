@@ -2,18 +2,22 @@
 
 use std::io::{ErrorKind, Read, Write};
 
-use crate::AesMode;
 use crate::CompressionMethod;
 use crate::extra_fields::UsedExtraField;
+use crate::format::aes::{AesMode, AesVendorVersion};
 use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
-use crate::types::AesVendorVersion;
 use crate::unstable::LittleEndianReadExt;
 
+/// AeX Encryption extra field
 #[derive(Copy, Clone, Debug)]
 pub struct AexEncryption {
+    /// aes vendor
     pub(crate) aes_vendor_version: AesVendorVersion,
+    /// aes mode
     pub(crate) aes_mode: AesMode,
+    /// inner compression
     pub(crate) compression_method: CompressionMethod,
+    /// aes extra field start index
     pub(crate) aes_extra_field_start: Option<usize>,
 }
 
@@ -43,14 +47,22 @@ impl AexEncryption {
         }
     }
 
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    /// Full size of the extra field
+    #[must_use]
+    pub fn full_size(&self) -> usize {
+        Self::FULL_SIZE
+    }
+
+    /// Write the extra field
+    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
         writer.write_all(&u16::to_le_bytes(Self::EXTRA_FIELD_ID))?;
         writer.write_all(&u16::to_le_bytes(Self::EXTRA_FIELD_SIZE))?;
         self.write_data(writer)?;
         Ok(())
     }
 
-    pub fn write_data<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    /// Write the data of the extra field
+    pub(crate) fn write_data<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
         writer.write_all(&self.aes_vendor_version.as_u16().to_le_bytes())?;
         writer.write_all(&u16::to_le_bytes(Self::VENDOR_ID))?;
         writer.write_all(&self.aes_mode.as_u8().to_le_bytes())?;
@@ -92,9 +104,8 @@ mod tests {
     #[test]
     fn test_create_aex() {
         use super::AexEncryption;
-        use crate::AesMode;
         use crate::CompressionMethod;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::{AesMode, AesVendorVersion};
 
         let aex_encryption = AexEncryption::new(
             AesVendorVersion::Ae2,
@@ -129,9 +140,8 @@ mod tests {
     #[test]
     fn test_serialize_parse() {
         use super::AexEncryption;
-        use crate::AesMode;
         use crate::CompressionMethod;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::{AesMode, AesVendorVersion};
         use std::io::Cursor;
 
         let aex_encryption = AexEncryption::new(

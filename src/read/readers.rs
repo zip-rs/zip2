@@ -2,8 +2,8 @@
 
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::crc32::Crc32Reader;
+use crate::format::aes::AesVendorVersion;
 use crate::result::{ZipError, ZipResult};
-use crate::types::AesVendorVersion;
 use crate::types::ZipFileData;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use std::io::{self, Read, Seek, SeekFrom};
