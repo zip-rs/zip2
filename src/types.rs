@@ -4,7 +4,6 @@ use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
-use crate::format::aes::{AesMode, AesVendorVersion};
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
