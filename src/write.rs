@@ -9,6 +9,8 @@ use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
+use crate::format::aes::AesVendorVersion;
+use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
@@ -17,7 +19,7 @@ use crate::spec::{
     Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::types::EncryptWith;
-use crate::types::{AesVendorVersion, MIN_VERSION, System, ZipFileData, ZipRawValues, ffi};
+use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues, ffi};
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
@@ -399,7 +401,11 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let data = data.as_ref();
         let len = data.len() + 4;
-        let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.len_with_header()).sum();
+        let extra_fields_len: usize = self
+            .extra_fields
+            .iter()
+            .map(|x| x.len_with_header(false))
+            .sum();
         if extra_fields_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else {
@@ -2347,7 +2353,7 @@ fn update_aes_extra_field<W: Write + Seek>(
         .extra_fields
         .inner
         .iter_mut()
-        .find(|f| matches!(f, ExtraField::AeXEncryption { .. }))
+        .find(|f| matches!(f, ExtraField::AeXEncryption(_)))
     {
         *aes_vendor_version = new_version;
         let extra_field_start = file
@@ -2737,8 +2743,8 @@ mod tests {
     use crate::ZipArchive;
     use crate::compression::CompressionMethod;
     use crate::datetime::DateTime;
+    use crate::format::flags::System;
     use crate::result::ZipResult;
-    use crate::types::System;
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
@@ -3722,8 +3728,7 @@ mod tests {
     /// Because of
     /// https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
-        use crate::AesMode::Aes256;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::{AesMode, AesVendorVersion};
         use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
         use CompressionMethod::Deflated;
@@ -3737,7 +3742,7 @@ mod tests {
             permissions: None,
             large_file: true,
             encrypt_with: Some(EncryptWith::Aes {
-                mode: Aes256,
+                mode: AesMode::Aes256,
                 password: Some(&[]),
                 vendor_version: AesVendorVersion::Ae2,
                 salt: None,
@@ -4262,7 +4267,7 @@ mod tests {
     #[cfg(all(feature = "_bzip2_any", feature = "aes-crypto", not(miri)))]
     #[test]
     fn test_fuzz_crash_2024_06_18b() -> ZipResult<()> {
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::{AesMode, AesVendorVersion};
         use crate::types::EncryptWith;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -4277,7 +4282,7 @@ mod tests {
             permissions: Some(2644352413),
             large_file: true,
             encrypt_with: Some(EncryptWith::Aes {
-                mode: crate::AesMode::Aes256,
+                mode: AesMode::Aes256,
                 vendor_version: AesVendorVersion::Ae2,
                 password: Some(&[]),
                 salt: None,
@@ -4441,8 +4446,7 @@ mod tests {
     #[test]
     #[cfg(feature = "aes-crypto")]
     fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
-        use crate::AesMode::Aes128;
-        use crate::types::AesVendorVersion;
+        use crate::format::aes::{AesMode, AesVendorVersion};
         use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
 
@@ -4455,7 +4459,7 @@ mod tests {
             permissions: None,
             large_file: true,
             encrypt_with: Some(EncryptWith::Aes {
-                mode: Aes128,
+                mode: AesMode::Aes128,
                 password: Some(&[]),
                 vendor_version: AesVendorVersion::Ae2,
                 salt: None,

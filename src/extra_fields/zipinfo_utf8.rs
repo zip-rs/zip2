@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 
 /// Info-ZIP Unicode Path Extra Field (0x7075) or Unicode Comment Extra Field (0x6375), as
 /// specified in APPNOTE 4.6.8 and 4.6.9
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UnicodeExtraField {
     crc32: u32,
     pub(crate) content: Box<[u8]>,
