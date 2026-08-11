@@ -1796,7 +1796,13 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         // start_entry leaves the inner writer as a bare Storer (a compression encoder is only
         // installed by start_file*), so the already-compressed bytes pass through unchanged.
-        let result = self.write_all(&data);
+        // Write directly to the inner writer rather than through ZipWriter::write, whose stats
+        // bookkeeping (CRC-32 hashing and the large-file size check) is redundant here: the CRC
+        // and sizes are already known, and large_file was set from them in finish().
+        let result = self
+            .inner
+            .try_inner_mut()
+            .and_then(|writer| writer.write_all(&data));
         self.ok_or_abort_file(result)?;
 
         // The local file header was written from the raw values, but for large files it contains
