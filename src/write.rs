@@ -2448,7 +2448,7 @@ impl ZipFileBuilder {
                 "Compressor was in an unexpected state",
             )));
         };
-        let data = cursor.into_inner();
+        let data = cursor.into_inner().into_boxed_slice();
         let compressed_size = data.len() as u64;
         let mut options = self.options;
         if compressed_size >= spec::ZIP64_BYTES_THR
@@ -2503,7 +2503,7 @@ pub struct PreparedZipFile {
     crc32: u32,
     uncompressed_size: u64,
     compressed_size: u64,
-    data: Vec<u8>,
+    data: Box<[u8]>,
 }
 
 impl Debug for PreparedZipFile {
@@ -5062,5 +5062,50 @@ mod tests {
             .compression_method(Stored)
             .with_deprecated_encryption(b"password");
         assert!(ZipFileBuilder::new("secret.txt", options).is_err());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_prepared_files_on_threads() {
+        use super::ZipFileBuilder;
+        use std::io::Read;
+
+        let entries: Vec<(String, Vec<u8>)> = (0..8)
+            .map(|i| (format!("file{i}.bin"), vec![i as u8; 10_000]))
+            .collect();
+
+        let prepared: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = entries
+                .iter()
+                .map(|(name, data)| {
+                    scope.spawn(move || -> ZipResult<_> {
+                        let mut builder = ZipFileBuilder::new(name, SimpleFileOptions::default())?;
+                        builder.write_all(data)?;
+                        builder.finish()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<ZipResult<Vec<_>>>()
+        })
+        .unwrap();
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        for file in prepared {
+            writer.add_prepared_file(file).unwrap();
+        }
+        let mut archive = writer.finish_into_readable().unwrap();
+        let mut contents = Vec::new();
+        for (name, data) in &entries {
+            contents.clear();
+            archive
+                .by_name(name)
+                .unwrap()
+                .read_to_end(&mut contents)
+                .unwrap();
+            assert_eq!(&contents, data);
+        }
     }
 }
