@@ -19,15 +19,13 @@ use std::io::ErrorKind;
 use std::io::{Cursor, Read, Write};
 
 /// contains one extra field
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ExtraField {
     /// NTFS extra field
     Ntfs(Ntfs),
-
     /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
     ExtendedTimestamp(ExtendedTimestamp),
-
     /// AeX Encryption
     AeXEncryption(AexEncryption),
     /// Zip64 Information
