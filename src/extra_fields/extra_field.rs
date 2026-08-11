@@ -8,13 +8,13 @@ use crate::extra_fields::Ntfs;
 use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
+use crate::extra_fields::zip64_extended_information::Zip64Sizes;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
 use crate::spec::ZipEntryBlock;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
-use core::mem;
 use std::io::ErrorKind;
 use std::io::{Cursor, Read, Write};
 
@@ -31,14 +31,7 @@ pub enum ExtraField {
     /// AeX Encryption
     AeXEncryption(AexEncryption),
     /// Zip64 Information
-    Zip64ExtendedInformation {
-        /// uncompressed size
-        uncompressed_size: Option<u64>,
-        /// compressed size
-        compressed_size: Option<u64>,
-        /// header start
-        header_start: Option<u64>,
-    },
+    Zip64ExtendedInformation(Zip64ExtendedInformation),
     /// Unicode Comment
     UnicodeComment(UnicodeExtraField),
     /// UnicodePath
@@ -131,11 +124,13 @@ impl ExtraField {
                     file.get_compressed_size(),
                     file.get_header_start(),
                 )?;
-                ExtraField::Zip64ExtendedInformation {
-                    uncompressed_size: Some(new_uncomp),
-                    compressed_size: Some(new_comp),
+                ExtraField::Zip64ExtendedInformation(Zip64ExtendedInformation {
+                    sizes: Some(Zip64Sizes {
+                        uncompressed_size: new_uncomp,
+                        compressed_size: new_comp,
+                    }),
                     header_start: Some(new_head),
-                }
+                })
             }
             Ok(UsedExtraField::Ntfs) => {
                 // NTFS extra field
@@ -183,22 +178,8 @@ impl ExtraField {
     pub(crate) fn size(&self, is_local_header: bool) -> usize {
         match self {
             // Zip64 extended information extra field
-            ExtraField::Zip64ExtendedInformation {
-                uncompressed_size,
-                compressed_size,
-                header_start,
-            } => {
-                let mut size = mem::size_of::<UsedExtraField>() + mem::size_of::<u16>();
-                if uncompressed_size.is_some() {
-                    size += mem::size_of::<u64>();
-                }
-                if compressed_size.is_some() {
-                    size += mem::size_of::<u64>();
-                }
-                if !is_local_header && header_start.is_some() {
-                    size += mem::size_of::<u64>();
-                }
-                size
+            ExtraField::Zip64ExtendedInformation(zip64_extra) => {
+                zip64_extra.full_size(is_local_header)
             }
             ExtraField::Ntfs(_ntfs) => {
                 // NTFS extra field
@@ -221,26 +202,8 @@ impl ExtraField {
     pub(crate) fn write<W: Write>(&self, writer: &mut W, is_local_header: bool) -> ZipResult<()> {
         match self {
             // Zip64 extended information extra field
-            ExtraField::Zip64ExtendedInformation {
-                compressed_size,
-                uncompressed_size,
-                header_start,
-            } => {
-                let magic = UsedExtraField::Zip64ExtendedInfo.as_u16();
-                writer.write_all(&magic.to_le_bytes())?;
-                let size = self.size(is_local_header);
-                let size = size - mem::size_of::<u16>() - mem::size_of::<u16>();
-                let size = size as u16;
-                writer.write_all(&size.to_le_bytes())?;
-                if let Some(uncomp_size) = uncompressed_size {
-                    writer.write_all(&uncomp_size.to_le_bytes())?;
-                }
-                if let Some(comp_size) = compressed_size {
-                    writer.write_all(&comp_size.to_le_bytes())?;
-                }
-                if !is_local_header && let Some(head_start) = header_start {
-                    writer.write_all(&head_start.to_le_bytes())?;
-                }
+            ExtraField::Zip64ExtendedInformation(zip64_extra) => {
+                zip64_extra.write(writer, is_local_header)?;
             }
             ExtraField::AeXEncryption(aex) => {
                 aex.write(writer)?;
@@ -274,19 +237,17 @@ impl ZipFileData {
         for one_extra_field in &self.extra_fields.inner {
             match one_extra_field {
                 // Zip64 extended information extra field
-                ExtraField::Zip64ExtendedInformation {
-                    uncompressed_size,
-                    compressed_size,
-                    header_start,
-                } => {
+                ExtraField::Zip64ExtendedInformation(zip64_block) => {
                     self.large_file = true;
-                    if let Some(uncomp_size) = *uncompressed_size {
-                        self.uncompressed_size = uncomp_size;
+                    if let Some(Zip64Sizes {
+                        uncompressed_size,
+                        compressed_size,
+                    }) = zip64_block.sizes
+                    {
+                        self.uncompressed_size = uncompressed_size;
+                        self.compressed_size = compressed_size;
                     }
-                    if let Some(comp_size) = *compressed_size {
-                        self.compressed_size = comp_size;
-                    }
-                    if let Some(head_start) = *header_start {
+                    if let Some(head_start) = zip64_block.header_start {
                         self.header_start = head_start;
                     }
                 }

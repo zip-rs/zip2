@@ -8,9 +8,9 @@ use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
-use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::aes::AesVendorVersion;
 use crate::format::flags::System;
+use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
@@ -2423,7 +2423,7 @@ impl ZipFileData {
             + file_name_raw.len() as u64;
 
         writer.seek(SeekFrom::Start(zip64_extra_field_start))?;
-        zip64_block.write(writer)?;
+        zip64_block.write(writer, true)?;
         Ok(())
     }
 
@@ -2434,16 +2434,13 @@ impl ZipFileData {
     ) -> ZipResult<()> {
         let mut zip64_field_is_present = false;
         for one_extra_field in self.extra_fields.inner.iter_mut() {
-            if let ExtraField::Zip64ExtendedInformation {
-                compressed_size,
-                uncompressed_size,
-                header_start,
-            } = one_extra_field
-            {
-                *compressed_size = Some(self.compressed_size);
-                *uncompressed_size = Some(self.uncompressed_size);
+            if let ExtraField::Zip64ExtendedInformation(zip64_block) = one_extra_field {
+                zip64_block.sizes = Some(Zip64Sizes {
+                    uncompressed_size: self.uncompressed_size,
+                    compressed_size: self.compressed_size,
+                });
                 if self.header_start >= ZIP64_BYTES_THR {
-                    *header_start = Some(self.header_start);
+                    zip64_block.header_start = Some(self.header_start);
                 }
                 zip64_field_is_present = true;
             }
@@ -2456,26 +2453,9 @@ impl ZipFileData {
                 self.compressed_size,
                 self.header_start,
             ) {
-                if zip64_block.uncompressed_size.is_some() || zip64_block.compressed_size.is_some()
-                {
-                    self.extra_fields.inner.insert(
-                        0,
-                        ExtraField::Zip64ExtendedInformation {
-                            compressed_size: zip64_block.compressed_size,
-                            uncompressed_size: zip64_block.uncompressed_size,
-                            header_start: zip64_block.header_start,
-                        },
-                    );
-                } else {
-                    self.extra_fields.inner.insert(
-                        0,
-                        ExtraField::Zip64ExtendedInformation {
-                            compressed_size: None,
-                            uncompressed_size: None,
-                            header_start: zip64_block.header_start,
-                        },
-                    );
-                }
+                self.extra_fields
+                    .inner
+                    .insert(0, ExtraField::Zip64ExtendedInformation(zip64_block));
             }
         }
         let central_extra_fields = self.extra_fields.central_extra_fields();
@@ -2570,11 +2550,13 @@ impl ZipFileData {
             // the update function need the extra field to be at index 0
             self.extra_fields.inner.insert(
                 0,
-                ExtraField::Zip64ExtendedInformation {
-                    compressed_size: Some(u64::MAX),
-                    uncompressed_size: Some(u64::MAX),
+                ExtraField::Zip64ExtendedInformation(Zip64ExtendedInformation {
+                    sizes: Some(Zip64Sizes {
+                        compressed_size: u64::MAX,
+                        uncompressed_size: u64::MAX,
+                    }),
                     header_start: None,
-                },
+                }),
             );
         }
         let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
