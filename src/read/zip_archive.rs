@@ -588,7 +588,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         };
 
         #[cfg(feature = "aes-crypto")]
-        let aes_vendor = data.aes_mode().map(|aes| aes.1);
+        let aes_vendor_version = data.aes_mode().map(|aes| aes.1);
+        #[cfg(not(feature = "aes-crypto"))]
+        let aes_vendor_version = None;
         Ok(ZipFile {
             file_name_raw: Cow::Borrowed(file_name_raw),
             data: Cow::Borrowed(data),
@@ -596,8 +598,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.compression_method,
                 data.uncompressed_size,
                 crc32,
-                #[cfg(feature = "aes-crypto")]
-                aes_vendor,
+                aes_vendor_version,
                 crypto_reader,
                 #[cfg(feature = "legacy-zip")]
                 data.flags,

@@ -1,7 +1,5 @@
 //! AES related specifications
 
-#![cfg(feature = "aes-crypto")]
-
 use core::fmt::Display;
 
 /// The encryption specification used to encrypt a file with AES.

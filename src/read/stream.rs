@@ -338,7 +338,9 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     };
 
     #[cfg(feature = "aes-crypto")]
-    let vendor_version = data.aes_mode().map(|aes| aes.1);
+    let aes_vendor_version = data.aes_mode().map(|aes| aes.1);
+    #[cfg(not(feature = "aes-crypto"))]
+    let aes_vendor_version = None;
     Ok(Some(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(data),
@@ -346,8 +348,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
             compression_method,
             uncompressed_size,
             checksum,
-            #[cfg(feature = "aes-crypto")]
-            vendor_version,
+            aes_vendor_version,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
             flags,
