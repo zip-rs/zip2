@@ -151,15 +151,21 @@ impl ZipFileData {
         )
     }
 
-    #[cfg(feature = "aes-crypto")]
     pub fn aes_mode(&self) -> Option<(AesMode, AesVendorVersion)> {
-        use crate::ExtraField;
-        for one_extra in &self.extra_fields.inner {
-            if let ExtraField::AeXEncryption(aes) = one_extra {
-                return Some((aes.aes_mode, aes.aes_vendor_version));
+        #[cfg(feature = "aes-crypto")]
+        {
+            use crate::ExtraField;
+            for one_extra in &self.extra_fields.inner {
+                if let ExtraField::AeXEncryption(aes) = one_extra {
+                    return Some((aes.aes_mode, aes.aes_vendor_version));
+                }
             }
+            None
         }
-        None
+        #[cfg(not(feature = "aes-crypto"))]
+        {
+            None
+        }
     }
 
     /// Check if the encrypted flag is set
@@ -320,7 +326,6 @@ impl ZipFileData {
             _ => u16::from(DEFAULT_VERSION),
         };
 
-        #[cfg(feature = "aes-crypto")]
         let crypto_version: u16 = if self.aes_mode().is_some() {
             51
         } else if self.is_encrypted() {
@@ -328,8 +333,6 @@ impl ZipFileData {
         } else {
             10
         };
-        #[cfg(not(feature = "aes-crypto"))]
-        let crypto_version = if self.is_encrypted() { 20 } else { 10 };
         let misc_feature_version: u16 = if self.large_file {
             45
         } else if self
