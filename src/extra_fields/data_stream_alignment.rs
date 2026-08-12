@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::extra_fields::UsedExtraField;
 
 /// Data stream alignment
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DataStreamAlignment {
     /// padding length
     pad_len: u16,

@@ -13,9 +13,8 @@ mod ntfs;
 mod zip64_extended_information;
 mod zipinfo_utf8;
 
-pub(crate) use aex_encryption::AexEncryption;
-
 // re-export
+pub use aex_encryption::AexEncryption;
 pub use data_stream_alignment::DataStreamAlignment;
 pub use extended_timestamp::ExtendedTimestamp;
 pub use extra_field::{ExtraField, ExtraFields};
@@ -221,12 +220,18 @@ impl CustomExtraField {
         })
     }
 
-    pub(crate) fn len_with_header(&self) -> usize {
+    pub(crate) fn len_with_header(&self, is_local_header: bool) -> usize {
+        if self.central_only && is_local_header {
+            return 0;
+        }
         let size = self.data.len();
         size_of::<u16>() + size_of::<u16>() + size
     }
 
-    pub(crate) fn write<W: Write>(&self, write: &mut W) -> ZipResult<()> {
+    pub(crate) fn write<W: Write>(&self, write: &mut W, is_local_header: bool) -> ZipResult<()> {
+        if self.central_only && is_local_header {
+            return Ok(());
+        }
         write.write_all(&self.header_id.to_le_bytes())?;
         let size = self.data.len() as u16;
         write.write_all(&size.to_le_bytes())?;
