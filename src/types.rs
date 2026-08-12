@@ -57,9 +57,9 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         #[cfg(feature = "aes-crypto")]
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
-                mode: crate::AesMode::arbitrary(u)?,
+                mode: crate::format::aes::AesMode::arbitrary(u)?,
                 password: Some(u.arbitrary::<&[u8]>()?),
-                vendor_version: AesVendorVersion::Ae2,
+                vendor_version: crate::format::aes::AesVendorVersion::Ae2,
                 salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
             });
         }
