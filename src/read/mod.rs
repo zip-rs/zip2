@@ -504,7 +504,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
         large_file: false,
-        aes_mode: None,
         extra_fields,
     };
     result.apply_extra_fields(&mut file_name_raw)?;

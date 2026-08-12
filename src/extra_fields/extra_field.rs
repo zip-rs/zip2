@@ -1,5 +1,6 @@
 //! Code related to the `ExtraField` enum
 
+#[cfg(feature = "aes-crypto")]
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
@@ -27,6 +28,7 @@ pub enum ExtraField {
     /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
     ExtendedTimestamp(ExtendedTimestamp),
     /// AeX Encryption
+    #[cfg(feature = "aes-crypto")]
     AeXEncryption(AexEncryption),
     /// Zip64 Information
     Zip64ExtendedInformation(Zip64ExtendedInformation),
@@ -134,6 +136,7 @@ impl ExtraField {
                 // NTFS extra field
                 ExtraField::Ntfs(Ntfs::try_from_reader(reader, len)?)
             }
+            #[cfg(feature = "aes-crypto")]
             Ok(UsedExtraField::AeXEncryption) => {
                 // AES
                 let (new_aes_enc, inner_compression) = AexEncryption::parse(reader, len)?;
@@ -183,6 +186,7 @@ impl ExtraField {
                 // NTFS extra field
                 0
             }
+            #[cfg(feature = "aes-crypto")]
             ExtraField::AeXEncryption(aes) => aes.full_size(),
             ExtraField::ExtendedTimestamp(_extended_timestamp) => {
                 // nothing to do
@@ -203,6 +207,7 @@ impl ExtraField {
             ExtraField::Zip64ExtendedInformation(zip64_extra) => {
                 zip64_extra.write(writer, is_local_header)?;
             }
+            #[cfg(feature = "aes-crypto")]
             ExtraField::AeXEncryption(aex) => {
                 aex.write(writer)?;
             }
@@ -249,13 +254,10 @@ impl ZipFileData {
                         self.header_start = head_start;
                     }
                 }
+                #[cfg(feature = "aes-crypto")]
                 ExtraField::AeXEncryption(AexEncryption {
-                    aes_mode,
-                    aes_vendor_version,
-                    compression_method,
-                    ..
+                    compression_method, ..
                 }) => {
-                    self.aes_mode = Some((*aes_mode, *aes_vendor_version));
                     self.compression_method = *compression_method;
                 }
                 ExtraField::UnicodeComment(unicode) => {
@@ -289,5 +291,55 @@ impl ZipFileData {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::extra_fields::ExtraField;
+    use crate::extra_fields::ExtraFields;
+    use crate::spec::ZipEntryBlock;
+
+    struct PlaceHolderBlock;
+
+    impl ZipEntryBlock for PlaceHolderBlock {
+        fn get_uncompressed_size(&self) -> u32 {
+            0
+        }
+        fn get_compressed_size(&self) -> u32 {
+            0
+        }
+        fn get_header_start(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "aes-crypto")]
+    fn aex_extra_field_with_feature() {
+        let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
+
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock).unwrap();
+        assert!(matches!(
+            extra_fields.inner[0],
+            ExtraField::AeXEncryption(..)
+        ));
+    }
+
+    #[test]
+    #[cfg(not(feature = "aes-crypto"))]
+    fn aex_extra_field_without_feature() {
+        use crate::extra_fields::CustomExtraField;
+        use crate::extra_fields::UsedExtraField;
+
+        let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
+
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock).unwrap();
+        let extra = CustomExtraField::new(
+            false,
+            UsedExtraField::AeXEncryption.as_u16(),
+            &[1, 0, b'A', b'E', 3, 0, 0][..],
+        );
+        assert_eq!(extra_fields.inner[0], ExtraField::Custom(extra));
     }
 }

@@ -1,5 +1,7 @@
 //! AE-x encryption structure extra field
 
+#![cfg(feature = "aes-crypto")]
+
 use std::io::{ErrorKind, Read, Write};
 
 use crate::CompressionMethod;
