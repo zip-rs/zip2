@@ -1185,7 +1185,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             &options,
             &raw_values,
             header_start,
-            None,
             compression_method,
             ExtraFields {
                 inner: extra_fields,
