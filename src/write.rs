@@ -8,7 +8,6 @@ use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
-use crate::format::aes::AesVendorVersion;
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::read::{Config, ZipArchive, ZipFile};
@@ -593,7 +592,7 @@ impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
             encrypt_with: Some(EncryptWith::Aes {
                 mode: salt.mode(),
                 password: Some(password),
-                vendor_version: AesVendorVersion::Ae2,
+                vendor_version: crate::format::aes::AesVendorVersion::Ae2,
                 salt: Some(salt),
             }),
             ..self
@@ -621,7 +620,7 @@ impl<'k, 'n, T: FileOptionExtension> FileOptions<'k, 'n, T> {
             encrypt_with: Some(EncryptWith::Aes {
                 mode,
                 password: Some(password),
-                vendor_version: AesVendorVersion::Ae2,
+                vendor_version: crate::format::aes::AesVendorVersion::Ae2,
                 salt: None,
             }),
             ..self
@@ -2328,6 +2327,7 @@ fn update_aes_extra_field<W: Write + Seek>(
     bytes_written: u64,
 ) -> ZipResult<()> {
     use crate::extra_fields::AexEncryption;
+    use crate::format::aes::AesVendorVersion;
 
     let inner_compression_method = file.compression_method;
 
