@@ -178,3 +178,58 @@ fn test_extra_field_too_long() {
         }
     }
 }
+
+#[test]
+fn test_alignment_extra_field_local_only() {
+    use std::io::{Cursor, Write};
+    use zip::write::{SimpleFileOptions, ZipWriter};
+    use zip::ZipArchive;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().with_alignment(16);
+    writer.start_file("test.txt", options).unwrap();
+    writer.write_all(b"hello world").unwrap();
+    let zip_bytes = writer.finish().unwrap().into_inner();
+
+    // Verify 0xa11e alignment tag is present in the local header bytes
+    let tag = (0xa11e_u16).to_le_bytes();
+    assert_eq!(zip_bytes.windows(2).filter(|w| *w == tag).count(), 1, "Local header must contain alignment extra field tag 0xa11e");
+
+    // Central directory should not contain DataStreamAlignment
+    let mut archive = ZipArchive::new(Cursor::new(&zip_bytes)).unwrap();
+    let file = archive.by_name("test.txt").unwrap();
+    let has_alignment_central = file
+        .extra_data_fields()
+        .any(|ef| matches!(ef, zip::extra_fields::ExtraField::DataStreamAlignment { .. }));
+    assert!(
+        !has_alignment_central,
+        "Central directory header must NOT contain DataStreamAlignment"
+    );
+}
+
+#[test]
+fn test_custom_central_only_extra_field() {
+    use std::io::{Cursor, Write};
+    use zip::extra_fields::ExtraField;
+    use zip::write::{FileOptions, ZipWriter};
+    use zip::ZipArchive;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let mut options = FileOptions::default();
+    options.add_extra_field(0x1234, vec![0xAB, 0xCD], true).unwrap(); // central_only = true
+
+    writer.start_file("central_only.txt", options).unwrap();
+    writer.write_all(b"content").unwrap();
+    let bytes = writer.finish().unwrap().into_inner();
+
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let file = archive.by_name("central_only.txt").unwrap();
+
+    // Central directory should have this field
+    let has_custom_central = file.extra_data_fields().any(|ef| match ef {
+        ExtraField::Custom(cef) => cef.header_id == 0x1234 && *cef.data == [0xAB, 0xCD],
+        _ => false,
+    });
+    assert!(has_custom_central, "Central directory header must contain central_only custom field");
+}
+
