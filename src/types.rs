@@ -4,6 +4,7 @@ use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
+use crate::format::aes::{AesMode, AesVendorVersion};
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::path::{enclosed_name, file_name_sanitized};
@@ -42,8 +43,8 @@ pub(crate) struct ZipRawValues {
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
-        mode: crate::format::aes::AesMode,
-        vendor_version: crate::format::aes::AesVendorVersion,
+        mode: AesMode,
+        vendor_version: AesVendorVersion,
         // When the password is None, it means that we are reusing the previous encryption
         password: Option<&'k [u8]>,
         salt: Option<crate::aes::AesSalt>,
@@ -57,9 +58,9 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         #[cfg(feature = "aes-crypto")]
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
-                mode: crate::format::aes::AesMode::arbitrary(u)?,
+                mode: AesMode::arbitrary(u)?,
                 password: Some(u.arbitrary::<&[u8]>()?),
-                vendor_version: crate::format::aes::AesVendorVersion::Ae2,
+                vendor_version: AesVendorVersion::Ae2,
                 salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
             });
         }
@@ -151,12 +152,7 @@ impl ZipFileData {
     }
 
     #[cfg(feature = "aes-crypto")]
-    pub fn aes_mode(
-        &self,
-    ) -> Option<(
-        crate::format::aes::AesMode,
-        crate::format::aes::AesVendorVersion,
-    )> {
+    pub fn aes_mode(&self) -> Option<(AesMode, AesVendorVersion)> {
         use crate::ExtraField;
         for one_extra in &self.extra_fields.inner {
             if let ExtraField::AeXEncryption(aes) = one_extra {
