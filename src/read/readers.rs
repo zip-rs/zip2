@@ -2,6 +2,7 @@
 
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::crc32::Crc32Reader;
+use crate::format::aes::AesVendorVersion;
 use crate::result::{ZipError, ZipResult};
 use crate::types::ZipFileData;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
@@ -242,17 +243,12 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
     crc32: Option<u32>,
-    #[cfg(feature = "aes-crypto")] vendor_version: Option<crate::format::aes::AesVendorVersion>,
+    vendor_version: Option<crate::format::aes::AesVendorVersion>,
     reader: CryptoReader<'_, R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
 ) -> ZipResult<ZipFileReader<'_, R>> {
     // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
     let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
-        #[cfg(not(feature = "aes-crypto"))]
-        {
-            (false, data_crc32)
-        }
-        #[cfg(feature = "aes-crypto")]
         (
             vendor_version.is_some_and(|v| v.is_ae2_encrypted()),
             data_crc32,
