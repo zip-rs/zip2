@@ -151,7 +151,7 @@ impl ZipFileData {
         )
     }
 
-    pub fn aes_mode(&self) -> Option<(AesMode, AesVendorVersion)> {
+    pub fn aes_settings(&self) -> Option<(AesMode, AesVendorVersion)> {
         #[cfg(feature = "aes-crypto")]
         {
             use crate::ExtraField;
@@ -325,7 +325,7 @@ impl ZipFileData {
             // APPNOTE doesn't specify a version for Zstandard
             _ => u16::from(DEFAULT_VERSION),
         };
-        let crypto_version: u16 = if self.aes_mode().is_some() {
+        let crypto_version: u16 = if self.aes_settings().is_some() {
             51
         } else if self.is_encrypted() {
             20

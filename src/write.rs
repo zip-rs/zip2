@@ -1322,7 +1322,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
 
             file.crc32 = if file
-                .aes_mode()
+                .aes_settings()
                 .is_some_and(|(_, vendor_version)| vendor_version.is_ae2_encrypted())
             {
                 // AE2 disables CRC32 in the local file header
@@ -2493,7 +2493,7 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
-        let compression_method = if self.aes_mode().is_some() {
+        let compression_method = if self.aes_settings().is_some() {
             CompressionMethod::AES.serialize_to_u16()
         } else {
             self.compression_method.serialize_to_u16()
@@ -2578,7 +2578,7 @@ impl ZipFileData {
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
-        let compression_method = if self.aes_mode().is_some() {
+        let compression_method = if self.aes_settings().is_some() {
             CompressionMethod::AES.serialize_to_u16()
         } else {
             self.compression_method.serialize_to_u16()
