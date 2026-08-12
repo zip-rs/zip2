@@ -124,8 +124,6 @@ pub struct ZipFileData {
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
-    /// Specifies where the extra data of the file starts
-    pub extra_data_start: Option<u64>,
     /// Specifies where the central header of the file starts
     ///
     /// Note that when this is not known, it is set to 0
@@ -354,7 +352,6 @@ impl ZipFileData {
         options: &FileOptions<'_, '_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
-        extra_data_start: Option<u64>,
         compression_method: CompressionMethod,
         extra_fields: ExtraFields,
     ) -> Self {
@@ -416,7 +413,6 @@ impl ZipFileData {
             external_attributes,
             large_file: options.large_file,
             extra_fields,
-            extra_data_start,
         };
         local_block.version_made_by = local_block.version_needed() as u8;
         local_block
@@ -461,7 +457,6 @@ impl ZipFileData {
             external_attributes: 0,
             large_file: false,
             extra_fields,
-            extra_data_start: None,
         };
         Ok(data)
     }
@@ -593,7 +588,6 @@ mod tests {
             uncompressed_size: 0,
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
-            extra_data_start: None,
             data_start: OnceLock::new(),
             central_header_start: 0,
             external_attributes: 0,

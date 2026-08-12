@@ -2358,12 +2358,9 @@ fn update_aes_extra_field<W: Write + Seek>(
         .find(|f| matches!(f, ExtraField::AeXEncryption(_)))
     {
         *aes_vendor_version = new_version;
-        let extra_field_start = file
-            .extra_data_start
-            .ok_or_else(|| std::io::Error::other("Cannot get the extra data start"))?;
 
         if let Some(aes_start) = aes_extra_field_start {
-            writer.seek(SeekFrom::Start(extra_field_start + *aes_start as u64))?;
+            writer.seek(SeekFrom::Start(*aes_start as u64))?;
         } else {
             return Err(invalid!("The AES extra field should have a known start"));
         }
@@ -2633,7 +2630,6 @@ impl ZipFileData {
         } else {
             None
         };
-        self.extra_data_start = Some(header_end);
         let data_start = header_end + extra_field_len as u64;
         self.data_start.take();
         self.data_start.get_or_init(|| data_start);
@@ -2670,7 +2666,7 @@ impl ZipFileData {
                     ..
                 }) = one_extra_field
                 {
-                    *aes_extra_field_start = Some(bytes_written);
+                    *aes_extra_field_start = Some(header_end as usize + bytes_written);
                 }
                 bytes_written += one_extra_field.size(true);
             }
