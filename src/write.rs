@@ -1327,8 +1327,10 @@ impl<W: Write + Seek> ZipWriter<W> {
 
             #[cfg(feature = "aes-crypto")]
             {
-                use crate::format::aes::AesVendorVersion;
-                file.crc32 = if matches!(file.aes_mode(), Some((_, AesVendorVersion::Ae2))) {
+                file.crc32 = if file
+                    .aes_mode()
+                    .is_some_and(|(_, vendor_version)| vendor_version.is_ae2_encrypted())
+                {
                     // AE2 disables CRC32 in the local file header
                     0
                 } else {
