@@ -318,6 +318,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
             );
 
         options.normalize();
+        #[cfg(feature = "aes-crypto")]
         if let Some((mode, vendor_version)) = self.get_metadata().aes_mode() {
             use crate::types::EncryptWith;
             // Preserve AES metadata in options for downstream writers.
