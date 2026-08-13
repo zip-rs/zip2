@@ -346,7 +346,6 @@ impl ZipFileData {
             .max(misc_feature_version)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
         file_name_raw: &[u8],
         options: &FileOptions<'_, '_, T>,
