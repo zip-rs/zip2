@@ -183,9 +183,9 @@ pub struct CustomExtraField {
     /// If true, this field will be included in the central directory entry but not the local file header.
     pub(crate) central_only: bool,
     /// Header ID of the extra field
-    pub(crate) header_id: u16,
+    pub header_id: u16,
     /// Data of the extra field
-    data: Box<[u8]>,
+    pub data: Box<[u8]>,
 }
 
 impl CustomExtraField {
