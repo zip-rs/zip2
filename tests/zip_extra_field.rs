@@ -182,11 +182,14 @@ fn test_extra_field_too_long() {
 #[test]
 fn test_alignment_extra_field_local_only() {
     use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
     use zip::ZipArchive;
     use zip::write::{SimpleFileOptions, ZipWriter};
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = SimpleFileOptions::default().with_alignment(16);
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .with_alignment(16);
     writer.start_file("test.txt", options).unwrap();
     writer.write_all(b"hello world").unwrap();
     let zip_bytes = writer.finish().unwrap().into_inner();
@@ -217,12 +220,14 @@ fn test_alignment_extra_field_local_only() {
 #[test]
 fn test_custom_central_only_extra_field() {
     use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
     use zip::ZipArchive;
     use zip::extra_fields::ExtraField;
     use zip::write::{FileOptions, ZipWriter};
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let mut options = FileOptions::default();
+    let mut options = FileOptions::default()
+        .compression_method(CompressionMethod::Stored);
     options
         .add_extra_field(0x1234, vec![0xAB, 0xCD], true)
         .unwrap(); // central_only = true
