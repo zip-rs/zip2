@@ -226,8 +226,7 @@ fn test_custom_central_only_extra_field() {
     use zip::write::{FileOptions, ZipWriter};
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let mut options = FileOptions::default()
-        .compression_method(CompressionMethod::Stored);
+    let mut options = FileOptions::default().compression_method(CompressionMethod::Stored);
     options
         .add_extra_field(0x1234, vec![0xAB, 0xCD], true)
         .unwrap(); // central_only = true
