@@ -4,7 +4,6 @@ use crate::ExtraField;
 use crate::ZIP64_BYTES_THR;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
-use crate::extra_fields::CustomExtraField;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
@@ -18,7 +17,6 @@ use crate::spec::{
     ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues};
-use crate::write::options::DEFAULT_DIR_PERMISSIONS;
 use crate::write::options::EncryptWith;
 
 use core::default::Default;
@@ -38,6 +36,9 @@ pub(crate) mod options;
 pub use crate::write::options::{
     ExtendedFileOptions, FileOptions, FullFileOptions, SimpleFileOptions,
 };
+
+pub(crate) const DEFAULT_FILE_PERMISSIONS: u32 = 0o644; // rw-r--r-- default for regular files
+pub(crate) const DEFAULT_DIR_PERMISSIONS: u32 = 0o755; // rwxr-xr-x default for directories
 
 #[allow(clippy::large_enum_variant)]
 enum MaybeEncrypted<W> {
@@ -3005,7 +3006,7 @@ mod tests {
 
     #[test]
     fn test_short_extra_data() {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
 
         let custom_creation = CustomExtraField::new_from_raw(true, &[99, 0, 15, 0, 207]);
         assert!(custom_creation.is_err());
@@ -3014,7 +3015,7 @@ mod tests {
     #[test]
     #[cfg(not(feature = "unreserved"))]
     fn test_invalid_extra_data() -> ZipResult<()> {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
         use crate::write::ExtendedFileOptions;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -3050,7 +3051,7 @@ mod tests {
     #[test]
     #[cfg(not(feature = "unreserved"))]
     fn test_invalid_extra_data_without_feature_unreserved() {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
         use crate::write::ExtendedFileOptions;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -3183,7 +3184,7 @@ mod tests {
     #[allow(deprecated)]
     #[test]
     fn test_fuzz_crash_2024_06_14b() -> ZipResult<()> {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3263,8 +3264,8 @@ mod tests {
     /// Because of
     /// https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
     fn test_fuzz_crash_2024_06_14d() -> ZipResult<()> {
+        use crate::extra_fields::CustomExtraField;
         use crate::format::aes::{AesMode, AesVendorVersion};
-        use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
         use CompressionMethod::Deflated;
 
@@ -3308,7 +3309,7 @@ mod tests {
     // https://github.com/zip-rs/zip2/commit/e3ccaf6e005a855e87d2244a5ccdff9c18279b0c
     #[test]
     fn test_fuzz_crash_2024_06_14e() -> ZipResult<()> {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3345,7 +3346,7 @@ mod tests {
     #[allow(deprecated)]
     #[test]
     fn test_fuzz_crash_2024_06_17() -> ZipResult<()> {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3723,7 +3724,7 @@ mod tests {
 
     #[test]
     fn test_fuzz_crash_2024_06_18a() -> ZipResult<()> {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3924,7 +3925,7 @@ mod tests {
     #[test]
     #[cfg(all(feature = "_bzip2_any", not(miri)))]
     fn fuzz_crash_2024_07_17() -> ZipResult<()> {
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
@@ -3981,8 +3982,8 @@ mod tests {
     #[test]
     #[cfg(feature = "aes-crypto")]
     fn fuzz_crash_2024_07_19a() -> ZipResult<()> {
+        use crate::extra_fields::CustomExtraField;
         use crate::format::aes::{AesMode, AesVendorVersion};
-        use crate::write::CustomExtraField;
         use crate::write::EncryptWith;
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -4173,7 +4174,7 @@ mod tests {
     fn test_invalid_extra_data_known_extra_field_without_feature_unreserved() {
         use crate::CompressionMethod::Stored;
         use crate::ZipWriter;
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
         use crate::write::ExtendedFileOptions;
         use crate::write::FileOptions;
         use std::io::Cursor;
@@ -4202,7 +4203,7 @@ mod tests {
     fn test_invalid_extra_data_known_extra_field_with_feature_unreserved() {
         use crate::CompressionMethod::Stored;
         use crate::ZipWriter;
-        use crate::write::CustomExtraField;
+        use crate::extra_fields::CustomExtraField;
         use crate::write::ExtendedFileOptions;
         use crate::write::FileOptions;
         use std::io::Cursor;

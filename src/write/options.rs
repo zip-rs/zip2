@@ -7,21 +7,18 @@ use std::sync::Arc;
 use crate::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::CustomExtraField;
-use crate::format::aes::{AesMode, AesVendorVersion};
 use crate::format::ffi;
 use crate::format::flags::System;
 use crate::result::{ZipResult, invalid};
+use crate::write::DEFAULT_FILE_PERMISSIONS;
 use crate::zipcrypto::ZipCryptoKeys;
-
-pub(crate) const DEFAULT_FILE_PERMISSIONS: u32 = 0o644; // rw-r--r-- default for regular files
-pub(crate) const DEFAULT_DIR_PERMISSIONS: u32 = 0o755; // rwxr-xr-x default for directories
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EncryptWith<'k> {
     #[cfg(feature = "aes-crypto")]
     Aes {
-        mode: AesMode,
-        vendor_version: AesVendorVersion,
+        mode: crate::format::aes::AesMode,
+        vendor_version: crate::format::aes::AesVendorVersion,
         // When the password is None, it means that we are reusing the previous encryption
         password: Option<&'k [u8]>,
         salt: Option<crate::aes::AesSalt>,
@@ -35,9 +32,9 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
         #[cfg(feature = "aes-crypto")]
         if bool::arbitrary(u)? {
             return Ok(EncryptWith::Aes {
-                mode: AesMode::arbitrary(u)?,
+                mode: crate::format::aes::AesMode::arbitrary(u)?,
                 password: Some(u.arbitrary::<&[u8]>()?),
-                vendor_version: AesVendorVersion::Ae2,
+                vendor_version: crate::format::aes::AesVendorVersion::Ae2,
                 salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
             });
         }
@@ -76,7 +73,7 @@ impl FileOptions<'static, 'static, ()> {
 
 pub(crate) mod sealed {
     use super::ExtendedFileOptions;
-    use crate::write::CustomExtraField;
+    use crate::extra_fields::CustomExtraField;
     use std::sync::Arc;
 
     pub trait Sealed {}
