@@ -712,7 +712,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             &options,
             &raw_values,
             header_start,
-            None,
             compression_method,
             ExtraFields {
                 inner: extra_fields,
@@ -1885,12 +1884,9 @@ fn update_aes_extra_field<W: Write + Seek>(
         .find(|f| matches!(f, ExtraField::AeXEncryption(_)))
     {
         *aes_vendor_version = new_version;
-        let extra_field_start = file
-            .extra_data_start
-            .ok_or_else(|| std::io::Error::other("Cannot get the extra data start"))?;
 
         if let Some(aes_start) = aes_extra_field_start {
-            writer.seek(SeekFrom::Start(extra_field_start + *aes_start as u64))?;
+            writer.seek(SeekFrom::Start(*aes_start as u64))?;
         } else {
             return Err(invalid!("The AES extra field should have a known start"));
         }
@@ -2138,7 +2134,8 @@ impl ZipFileData {
                     let pad_length_u16: Result<u16, core::num::TryFromIntError> =
                         pad_length.try_into();
                     if let Ok(pad_length) = pad_length_u16
-                        && let Some(alignment_extra_field) = DataStreamAlignment::new(pad_length)
+                        && let Some(alignment_extra_field) =
+                            DataStreamAlignment::new(pad_length, alignment)
                     {
                         // Add an extra field to the extra_field, per APPNOTE 4.6.11
                         extra_field_len = self
@@ -2160,7 +2157,6 @@ impl ZipFileData {
         } else {
             None
         };
-        self.extra_data_start = Some(header_end);
         let data_start = header_end + extra_field_len as u64;
         self.data_start.take();
         self.data_start.get_or_init(|| data_start);
@@ -2197,7 +2193,7 @@ impl ZipFileData {
                     ..
                 }) = one_extra_field
                 {
-                    *aes_extra_field_start = Some(bytes_written);
+                    *aes_extra_field_start = Some(header_end as usize + bytes_written);
                 }
                 bytes_written += one_extra_field.size(true);
             }

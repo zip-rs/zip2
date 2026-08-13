@@ -499,7 +499,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         flags,
         file_comment,
         header_start: offset.into(),
-        extra_data_start: None,
         central_header_start,
         data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
