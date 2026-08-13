@@ -10,11 +10,12 @@ use crate::extra_fields::ExtraFields;
 use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
+use crate::format::magic::Magic;
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec::{
-    self, FixedSizeBlock, Magic, Zip32CDEBlock, Zip64CentralDirectoryEnd,
-    Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
+    self, FixedSizeBlock, Zip32CDEBlock, Zip64CentralDirectoryEnd, Zip64CentralDirectoryEndLocator,
+    ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::types::EncryptWith;
 use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues, ffi};
@@ -4702,7 +4703,7 @@ mod tests {
 
     #[test]
     fn test_max_len_extra_field() {
-        use crate::spec::Magic;
+        use crate::format::magic::Magic;
         use crate::spec::ZipLocalEntryBlock;
         assert_eq!(std::mem::size_of::<Magic>(), 4);
         assert_eq!(std::mem::size_of::<ZipLocalEntryBlock>(), 26);
