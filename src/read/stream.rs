@@ -2,12 +2,13 @@
 
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
+use crate::format::magic::Magic;
 use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
 use crate::result::{ZipError, invalid};
-use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
+use crate::spec::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 
 use indexmap::IndexMap;
 use std::borrow::Cow;

@@ -7,13 +7,13 @@ use crate::extra_fields::ExtraFields;
 use crate::format::aes::{AesMode, AesVendorVersion};
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
+use crate::format::magic::Magic;
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult};
 use crate::spec::is_dir;
 use crate::spec::{
-    self, FixedSizeBlock, Magic, Zip64DataDescriptorBlock, ZipDataDescriptorBlock,
-    ZipLocalEntryBlock,
+    self, FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
 };
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::ZipCryptoKeys;
