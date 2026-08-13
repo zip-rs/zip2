@@ -218,6 +218,8 @@ impl Debug for ExtendedFileOptions {
 #[cfg(feature = "_arbitrary")]
 impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        use crate::write::ZipWriter;
+
         let mut options = FullFileOptions {
             compression_method: CompressionMethod::arbitrary(u)?,
             compression_level: if bool::arbitrary(u)? {
