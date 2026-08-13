@@ -338,7 +338,7 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
 
     /// Set the external attributes for the file.
     ///
-    /// If you use both [`unix_permissions`] and [`external_attributes`], only external
+    /// If you use both [`Self::unix_permissions`] and [`Self::external_attributes`], only external
     /// attributes are going to be used
     #[must_use]
     pub const fn external_attributes(mut self, external_perms: u32) -> Self {
