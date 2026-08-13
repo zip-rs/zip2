@@ -2607,7 +2607,8 @@ impl ZipFileData {
                     let pad_length_u16: Result<u16, core::num::TryFromIntError> =
                         pad_length.try_into();
                     if let Ok(pad_length) = pad_length_u16
-                        && let Some(alignment_extra_field) = DataStreamAlignment::new(pad_length)
+                        && let Some(alignment_extra_field) =
+                            DataStreamAlignment::new(pad_length, alignment)
                     {
                         // Add an extra field to the extra_field, per APPNOTE 4.6.11
                         extra_field_len = self
