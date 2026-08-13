@@ -8,6 +8,8 @@ use crate::extra_fields::UsedExtraField;
 /// Data stream alignment
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataStreamAlignment {
+    /// alignment
+    alignment: u16,
     /// padding length
     pad_len: u16,
 }
@@ -15,10 +17,11 @@ pub struct DataStreamAlignment {
 impl DataStreamAlignment {
     /// create the alignment field using the full alignment len needed
     #[must_use]
-    pub fn new(alignment_len: u16) -> Option<Self> {
-        if alignment_len >= 6 {
+    pub fn new(padding_len: u16, alignment: u16) -> Option<Self> {
+        if padding_len >= 6 {
             Some(Self {
-                pad_len: alignment_len.saturating_sub(4),
+                alignment,
+                pad_len: padding_len.saturating_sub(4),
             })
         } else {
             None
@@ -46,8 +49,8 @@ impl DataStreamAlignment {
         let magic = UsedExtraField::DataStreamAlignment.as_u16();
         writer.write_all(&magic.to_le_bytes())?;
         writer.write_all(&self.pad_len.to_le_bytes())?;
+        writer.write_all(&self.alignment.to_le_bytes())?;
         let pad_len = self.pad_len.saturating_sub(2);
-        writer.write_all(&pad_len.to_le_bytes())?;
         let zeros = [0u8; 1024];
         let mut remaining = pad_len as usize;
         while remaining > 0 {
