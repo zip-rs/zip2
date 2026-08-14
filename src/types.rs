@@ -5,17 +5,18 @@ use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
 use crate::format::aes::{AesMode, AesVendorVersion};
+use crate::format::blocks::{
+    FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
+};
 use crate::format::ffi;
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
+use crate::format::functions::is_dir;
 use crate::format::magic::Magic;
+use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult};
-use crate::spec::is_dir;
-use crate::spec::{
-    self, FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
-};
 use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
 use std::borrow::Cow;
@@ -415,14 +416,14 @@ impl ZipFileData {
 
     pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
-            Ok(spec::ZIP64_BYTES_THR_U32)
+            Ok(ZIP64_BYTES_THR_U32)
         } else {
             let size: u32 = field.try_into().map_err(|_| {
                 std::io::Error::other(format!(
                     "File size {field} exceeds maximum size for non-ZIP64 files"
                 ))
             })?;
-            Ok(size.min(spec::ZIP64_BYTES_THR_U32 - 1))
+            Ok(size.min(ZIP64_BYTES_THR_U32 - 1))
         }
     }
 
@@ -434,9 +435,7 @@ impl ZipFileData {
         if self.large_file {
             return self.zip64_data_descriptor_block().write(writer);
         }
-        if self.compressed_size >= spec::ZIP64_BYTES_THR
-            || self.uncompressed_size >= spec::ZIP64_BYTES_THR
-        {
+        if self.compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
             if auto_large_file {
                 return self.zip64_data_descriptor_block().write(writer);
             }

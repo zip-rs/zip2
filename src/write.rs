@@ -1,21 +1,22 @@
 //! Writing a ZIP archive
 
 use crate::ExtraField;
-use crate::ZIP64_BYTES_THR;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
 use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
+use crate::format::blocks::{
+    FixedSizeBlock, Zip32CDEBlock, Zip32CentralDirectoryEnd, Zip64CentralDirectoryEnd,
+    Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
+};
 use crate::format::ffi;
+use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::format::magic::Magic;
+use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32, ZIP64_ENTRY_THR};
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{
-    self, FixedSizeBlock, Zip32CDEBlock, Zip64CentralDirectoryEnd, Zip64CentralDirectoryEndLocator,
-    ZipCentralEntryBlock, ZipLocalEntryBlock,
-};
 use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues};
 use crate::write::options::EncryptWith;
 
@@ -302,7 +303,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[..count]);
                     // Only perform the expensive large-file check when we first cross the threshold.
-                    if self.stats.bytes_written >= spec::ZIP64_BYTES_THR {
+                    if self.stats.bytes_written >= ZIP64_BYTES_THR {
                         let is_large_file = self
                             .files
                             .last()
@@ -1365,8 +1366,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
-        let is64 = self.files.len() > spec::ZIP64_ENTRY_THR
-            || central_size.max(central_start) > spec::ZIP64_BYTES_THR
+        let is64 = self.files.len() > ZIP64_ENTRY_THR
+            || central_size.max(central_start) > ZIP64_BYTES_THR
             || self.zip64_extensible_data_sector.is_some();
 
         if is64 {
@@ -1376,7 +1377,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 .map(|e| e.len() as u64)
                 .unwrap_or(0);
 
-            let zip64_footer = spec::Zip64CentralDirectoryEnd {
+            let zip64_footer = Zip64CentralDirectoryEnd {
                 record_size: extensible_len + 44,
                 version_made_by: version_needed,
                 version_needed_to_extract: version_needed,
@@ -1391,7 +1392,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
             zip64_footer.write(writer)?;
 
-            let zip64_footer = spec::Zip64CentralDirectoryEndLocator {
+            let zip64_footer = Zip64CentralDirectoryEndLocator {
                 disk_with_central_directory: 0,
                 end_of_central_directory_offset: central_start + central_size,
                 number_of_disks: 1,
@@ -1401,20 +1402,20 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         let central_directory_size = if is64 {
-            spec::ZIP64_BYTES_THR_U32
+            ZIP64_BYTES_THR_U32
         } else {
-            central_size.min(spec::ZIP64_BYTES_THR) as u32
+            central_size.min(ZIP64_BYTES_THR) as u32
         };
 
-        let number_of_files = self.files.len().min(spec::ZIP64_ENTRY_THR) as u16;
-        let footer = spec::Zip32CentralDirectoryEnd {
+        let number_of_files = self.files.len().min(ZIP64_ENTRY_THR) as u16;
+        let footer = Zip32CentralDirectoryEnd {
             disk_number: 0,
             disk_with_central_directory: 0,
             zip_file_comment: self.comment.clone(),
             number_of_files_on_this_disk: number_of_files,
             number_of_files,
             central_directory_size,
-            central_directory_offset: central_start.min(spec::ZIP64_BYTES_THR) as u32,
+            central_directory_offset: central_start.min(ZIP64_BYTES_THR) as u32,
         };
 
         footer.write(writer)?;
@@ -1912,13 +1913,13 @@ impl ZipFileData {
         ))?;
         writer.write_u32_le(self.crc32)?;
         if self.large_file {
-            writer.write_u32_le(spec::ZIP64_BYTES_THR_U32)?;
-            writer.write_u32_le(spec::ZIP64_BYTES_THR_U32)?;
+            writer.write_u32_le(ZIP64_BYTES_THR_U32)?;
+            writer.write_u32_le(ZIP64_BYTES_THR_U32)?;
 
             self.update_local_zip64_extra_field(writer, file_name_raw)?;
         } else {
             // check compressed size as well as it can also be slightly larger than uncompressed size
-            if self.compressed_size >= spec::ZIP64_BYTES_THR {
+            if self.compressed_size >= ZIP64_BYTES_THR {
                 return Err(ZipError::Io(std::io::Error::other(
                     "large_file(true) option has not been set",
                 )));
@@ -1991,24 +1992,24 @@ impl ZipFileData {
             .map(|x| x.size(false))
             .sum();
         let compressed_size = if self.large_file {
-            spec::ZIP64_BYTES_THR as u32
+            ZIP64_BYTES_THR as u32
         } else {
             self.compressed_size
-                .min(spec::ZIP64_BYTES_THR)
+                .min(ZIP64_BYTES_THR)
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
         let uncompressed_size = if self.large_file {
-            spec::ZIP64_BYTES_THR as u32
+            ZIP64_BYTES_THR as u32
         } else {
             self.uncompressed_size
-                .min(spec::ZIP64_BYTES_THR)
+                .min(ZIP64_BYTES_THR)
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
         let offset = self
             .header_start
-            .min(spec::ZIP64_BYTES_THR)
+            .min(ZIP64_BYTES_THR)
             .try_into()
             .map_err(std::io::Error::other)?;
         let last_modified_time = self
@@ -4225,8 +4226,8 @@ mod tests {
 
     #[test]
     fn test_max_len_extra_field() {
+        use crate::format::blocks::ZipLocalEntryBlock;
         use crate::format::magic::Magic;
-        use crate::spec::ZipLocalEntryBlock;
         assert_eq!(std::mem::size_of::<Magic>(), 4);
         assert_eq!(std::mem::size_of::<ZipLocalEntryBlock>(), 26);
     }
