@@ -18,8 +18,7 @@ use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult};
 use crate::write::FileOptionExtension;
-use crate::zipcrypto::ZipCryptoKeys;
-use core::marker::PhantomData;
+use crate::write::FileOptions;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
@@ -30,64 +29,6 @@ pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
     pub(crate) compressed_size: u64,
     pub(crate) uncompressed_size: u64,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum EncryptWith<'k> {
-    #[cfg(feature = "aes-crypto")]
-    Aes {
-        mode: AesMode,
-        vendor_version: AesVendorVersion,
-        // When the password is None, it means that we are reusing the previous encryption
-        password: Option<&'k [u8]>,
-        salt: Option<crate::aes::AesSalt>,
-    },
-    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
-}
-
-#[cfg(feature = "_arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        #[cfg(feature = "aes-crypto")]
-        if bool::arbitrary(u)? {
-            return Ok(EncryptWith::Aes {
-                mode: AesMode::arbitrary(u)?,
-                password: Some(u.arbitrary::<&[u8]>()?),
-                vendor_version: AesVendorVersion::Ae2,
-                salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
-            });
-        }
-
-        Ok(EncryptWith::ZipCrypto(
-            ZipCryptoKeys::arbitrary(u)?,
-            PhantomData,
-        ))
-    }
-}
-
-/// Metadata for a file to be written
-#[non_exhaustive]
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub struct FileOptions<'k, 'n, T: FileOptionExtension> {
-    pub(crate) compression_method: CompressionMethod,
-    pub(crate) compression_level: Option<i64>,
-    pub(crate) external_attributes: Option<u32>,
-    pub(crate) last_modified_time: DateTime,
-    pub(crate) permissions: Option<u32>,
-    pub(crate) large_file: bool,
-    pub(crate) encrypt_with: Option<EncryptWith<'k>>,
-    pub(crate) extended_options: T,
-    pub(crate) alignment: u16,
-    #[cfg(feature = "deflate-zopfli")]
-    pub(super) zopfli_buffer_size: Option<usize>,
-    pub(crate) system: Option<System>,
-    pub(crate) name: Option<&'n [u8]>,
-}
-/// Simple File Options. Can be copied and good for simple writing zip files
-pub type SimpleFileOptions = FileOptions<'static, 'static, ()>;
-
-impl FileOptions<'static, 'static, ()> {
-    const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
 }
 
 pub const MIN_VERSION: u8 = 10;
@@ -527,7 +468,7 @@ mod tests {
     #[test]
     fn unix_mode_robustness() {
         use super::{System, ZipFileData};
-        use crate::types::ffi;
+        use crate::format::ffi;
         let mut data = ZipFileData {
             system: System::Dos,
             external_attributes: (ffi::S_IFLNK | 0o777) << 16,

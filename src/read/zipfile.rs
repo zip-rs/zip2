@@ -11,8 +11,9 @@ use crate::read::make_writable_dir_all;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::ZipResult;
 use crate::result::invalid;
-use crate::types::SimpleFileOptions;
 use crate::types::ZipFileData;
+use crate::write::options::SimpleFileOptions;
+
 use core::mem::replace;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -321,7 +322,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         options.normalize();
         #[cfg(feature = "aes-crypto")]
         if let Some((mode, vendor_version)) = self.get_metadata().aes_settings() {
-            use crate::types::EncryptWith;
+            use crate::write::options::EncryptWith;
             // Preserve AES metadata in options for downstream writers.
             // This is metadata-only and does not trigger encryption.
             options.encrypt_with = Some(EncryptWith::Aes {
