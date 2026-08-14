@@ -11,7 +11,6 @@ use crate::format::blocks::{
     Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::format::ffi;
-use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
 use crate::format::magic::Magic;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32, ZIP64_ENTRY_THR};
