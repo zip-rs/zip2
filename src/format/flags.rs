@@ -167,3 +167,19 @@ impl From<ZipFlags> for u16 {
         value.as_u16()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn system() {
+        use super::System;
+        assert_eq!(u8::from(System::Dos), 0u8);
+        assert_eq!(System::Dos as u8, 0u8);
+        assert_eq!(System::Unix as u8, 3u8);
+        assert_eq!(u8::from(System::Unix), 3u8);
+        assert_eq!(System::from(0), System::Dos);
+        assert_eq!(System::from(3), System::Unix);
+        assert_eq!(u8::from(System::Unknown), 255u8);
+        assert_eq!(System::Unknown as u8, 255u8);
+    }
+}

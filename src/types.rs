@@ -5,16 +5,18 @@ use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
 use crate::format::aes::{AesMode, AesVendorVersion};
+use crate::format::blocks::{
+    FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
+};
+use crate::format::ffi;
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
+use crate::format::functions::is_dir;
 use crate::format::magic::Magic;
+use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::SeekableTake;
 use crate::result::{ZipError, ZipResult};
-use crate::spec::is_dir;
-use crate::spec::{
-    self, FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
-};
 use crate::write::FileOptionExtension;
 use crate::zipcrypto::ZipCryptoKeys;
 use core::marker::PhantomData;
@@ -23,15 +25,6 @@ use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-
-pub(crate) mod ffi {
-    /// Regular
-    pub const S_IFREG: u32 = 0b1000_0000_0000_0000; // 0o0_100_000
-    /// Directory
-    pub const S_IFDIR: u32 = 0b0100_0000_0000_0000; // 0o0_040_000
-    /// Symbolic link
-    pub const S_IFLNK: u32 = 0b1010_0000_0000_0000; // 0o0_120_000
-}
 
 pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
@@ -482,14 +475,14 @@ impl ZipFileData {
 
     pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
         if self.large_file {
-            Ok(spec::ZIP64_BYTES_THR_U32)
+            Ok(ZIP64_BYTES_THR_U32)
         } else {
             let size: u32 = field.try_into().map_err(|_| {
                 std::io::Error::other(format!(
                     "File size {field} exceeds maximum size for non-ZIP64 files"
                 ))
             })?;
-            Ok(size.min(spec::ZIP64_BYTES_THR_U32 - 1))
+            Ok(size.min(ZIP64_BYTES_THR_U32 - 1))
         }
     }
 
@@ -501,9 +494,7 @@ impl ZipFileData {
         if self.large_file {
             return self.zip64_data_descriptor_block().write(writer);
         }
-        if self.compressed_size >= spec::ZIP64_BYTES_THR
-            || self.uncompressed_size >= spec::ZIP64_BYTES_THR
-        {
+        if self.compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
             if auto_large_file {
                 return self.zip64_data_descriptor_block().write(writer);
             }
@@ -533,19 +524,6 @@ impl ZipFileData {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn system() {
-        use super::System;
-        assert_eq!(u8::from(System::Dos), 0u8);
-        assert_eq!(System::Dos as u8, 0u8);
-        assert_eq!(System::Unix as u8, 3u8);
-        assert_eq!(u8::from(System::Unix), 3u8);
-        assert_eq!(System::from(0), System::Dos);
-        assert_eq!(System::from(3), System::Unix);
-        assert_eq!(u8::from(System::Unknown), 255u8);
-        assert_eq!(System::Unknown as u8, 255u8);
-    }
-
     #[test]
     fn unix_mode_robustness() {
         use super::{System, ZipFileData};

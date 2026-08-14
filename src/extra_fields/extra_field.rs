@@ -10,10 +10,10 @@ use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::zip64_extended_information::Zip64Sizes;
+use crate::format::blocks::ZipEntryBlock;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
 use crate::result::invalid;
-use crate::spec::ZipEntryBlock;
 use crate::types::ZipFileData;
 use crate::unstable::LittleEndianReadExt;
 use std::io::ErrorKind;
@@ -298,7 +298,7 @@ impl ZipFileData {
 mod tests {
     use crate::extra_fields::ExtraField;
     use crate::extra_fields::ExtraFields;
-    use crate::spec::ZipEntryBlock;
+    use crate::format::blocks::ZipEntryBlock;
 
     struct PlaceHolderBlock;
 
