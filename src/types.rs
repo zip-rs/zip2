@@ -287,6 +287,9 @@ impl ZipFileData {
         header_start: u64,
         #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))] mut extra_fields: ExtraFields,
     ) -> Self {
+        // Figure out the underlying compression_method and aes mode when using
+        // AES encryption.
+        // Preserve AES method for raw copies without needing a password
         let compression_method = options.compression_method;
         match options.encrypt_with {
             #[cfg(feature = "aes-crypto")]

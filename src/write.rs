@@ -684,9 +684,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             ));
         }
 
-        // Figure out the underlying compression_method and aes mode when using
-        // AES encryption.
-        // Preserve AES method for raw copies without needing a password
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
