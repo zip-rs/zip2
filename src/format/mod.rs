@@ -19,7 +19,7 @@ pub(crate) mod ffi {
 ///
 /// If a file larger than this threshold attempts to be written, compressed or uncompressed, and
 /// [`FileOptions::large_file()`](crate::write::FileOptions::large_file) was not true, then [`crate::ZipWriter`] will
-/// raise an [`io::Error`] with [`io::ErrorKind::Other`].
+/// raise an [`std::io::Error`] with [`std::io::ErrorKind::Other`].
 ///
 /// If the zip file itself is larger than this value, then a zip64 central directory record will be
 /// written to the end of the file.
