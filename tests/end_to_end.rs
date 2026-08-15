@@ -392,3 +392,37 @@ fn test_can_create_destination() -> zip::result::ZipResult<()> {
     assert!(dest.path().join("mimetype").exists());
     Ok(())
 }
+
+#[test]
+fn test_zip_file_entry() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::read::ZipFileEntry;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let zip_archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
+
+    let file_number = zip_archive.index_for_name("my_file.txt").unwrap();
+    let file = zip_archive.by_index_data(file_number).unwrap();
+    assert_eq!(file.compression(), CompressionMethod::Stored);
+
+    // imagine with when to use it in a callback
+    let verify_file = |file: &ZipFileEntry| -> bool { file.size() > 2 };
+    let is_correct_size = verify_file(&file);
+    assert!(is_correct_size);
+
+    // imagine with when to use it in a function
+    fn verify_file_2(file: &ZipFileEntry) -> bool {
+        file.name().unwrap() == "my_file.txt"
+    }
+
+    let is_correct_file_name = verify_file_2(&file);
+    assert!(is_correct_file_name);
+}
