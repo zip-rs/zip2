@@ -413,12 +413,12 @@ fn test_zip_file_entry() {
     let file = zip_archive.by_index_data(file_number).unwrap();
     assert_eq!(file.compression(), CompressionMethod::Stored);
 
-    // imagine with when to use it in a callback
+    // we can use it in a callback
     let verify_file = |file: &ZipFileEntry| -> bool { file.size() > 2 };
     let is_correct_size = verify_file(&file);
     assert!(is_correct_size);
 
-    // imagine with when to use it in a function
+    // we can use it in a function
     fn verify_file_2(file: &ZipFileEntry) -> bool {
         file.name().unwrap() == "my_file.txt"
     }
