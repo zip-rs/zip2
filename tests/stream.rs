@@ -1,10 +1,10 @@
 //! Zip stream tests
 
+use std::io::{Cursor, Read};
 use zip::read::ZipFile;
 use zip::read::ZipFileEntry;
-use zip::unstable::stream::{ZipStreamReader, ZipStreamVisitor};
 use zip::result::ZipResult;
-use std::io::{Cursor, Read};
+use zip::unstable::stream::{ZipStreamReader, ZipStreamVisitor};
 
 struct DummyVisitor;
 impl ZipStreamVisitor for DummyVisitor {
@@ -35,17 +35,37 @@ impl ZipStreamVisitor for CounterVisitor {
 
 #[test]
 fn invalid_offset() {
+    ZipStreamReader::new(Cursor::new(include_bytes!("data/invalid_offset.zip")))
+        .visit(&mut DummyVisitor)
+        .unwrap_err();
+}
+
+#[test]
+fn invalid_offset2() {
+    ZipStreamReader::new(Cursor::new(include_bytes!("data/invalid_offset2.zip")))
+        .visit(&mut DummyVisitor)
+        .unwrap_err();
+}
+
+/// test case to ensure we don't preemptively over allocate based on the
+/// declared number of files in the CDE of an invalid zip when the number of
+/// files declared is more than the alleged offset in the CDE
+#[test]
+fn invalid_cde_number_of_files_allocation_smaller_offset() {
     ZipStreamReader::new(Cursor::new(include_bytes!(
-        "data/invalid_offset.zip"
+        "data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
     )))
     .visit(&mut DummyVisitor)
     .unwrap_err();
 }
 
+/// test case to ensure we don't preemptively over allocate based on the
+/// declared number of files in the CDE of an invalid zip when the number of
+/// files declared is less than the alleged offset in the CDE
 #[test]
-fn invalid_offset2() {
+fn invalid_cde_number_of_files_allocation_greater_offset() {
     ZipStreamReader::new(Cursor::new(include_bytes!(
-        "data/invalid_offset2.zip"
+        "data/invalid_cde_number_of_files_allocation_greater_offset.zip"
     )))
     .visit(&mut DummyVisitor)
     .unwrap_err();

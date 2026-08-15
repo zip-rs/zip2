@@ -280,7 +280,6 @@ mod tests {
     use std::collections::BTreeSet;
     use std::io::{Cursor, Read};
 
-
     #[test]
     fn zip_read_streaming_visitor() {
         let reader =
@@ -363,30 +362,6 @@ mod tests {
         }
 
         reader.visit(&mut V::default()).unwrap();
-    }
-
-    /// test case to ensure we don't preemptively over allocate based on the
-    /// declared number of files in the CDE of an invalid zip when the number of
-    /// files declared is more than the alleged offset in the CDE
-    #[test]
-    fn invalid_cde_number_of_files_allocation_smaller_offset() {
-        ZipStreamReader::new(Cursor::new(include_bytes!(
-            "../../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
-        )))
-        .visit(&mut DummyVisitor)
-        .unwrap_err();
-    }
-
-    /// test case to ensure we don't preemptively over allocate based on the
-    /// declared number of files in the CDE of an invalid zip when the number of
-    /// files declared is less than the alleged offset in the CDE
-    #[test]
-    fn invalid_cde_number_of_files_allocation_greater_offset() {
-        ZipStreamReader::new(Cursor::new(include_bytes!(
-            "../../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
-        )))
-        .visit(&mut DummyVisitor)
-        .unwrap_err();
     }
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
