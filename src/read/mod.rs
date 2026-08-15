@@ -527,13 +527,11 @@ pub trait HasZipMetadata {
 #[non_exhaustive]
 pub struct ZipReadOptions<'a> {
     /// The password to use when decrypting the file.  This is ignored if not required.
-    password: Option<&'a [u8]>,
-
+    pub(crate) password: Option<&'a [u8]>,
     /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
-    ignore_encryption_flag: bool,
-
+    pub(crate) ignore_encryption_flag: bool,
     /// Ignore the crc32 of the file
-    ignore_crc: bool,
+    pub(crate) ignore_crc: bool,
     /// override the compressed_size for stream read
     force_compressed_size: Option<u64>,
     /// override the uncompressed_size for stream read

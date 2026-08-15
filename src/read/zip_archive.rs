@@ -4,7 +4,7 @@ use crate::compression::CompressionMethod;
 use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
 use crate::format::functions::find_central_directory;
 use crate::read::config::Config;
-use crate::read::readers::{ZipFileReader, ZipFileSeekReader, make_crypto_reader, make_reader};
+use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::ZipFileEntry;
 use crate::read::{
     ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek, ZipReadOptions,
@@ -571,50 +571,19 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn by_index_with_options(
         &mut self,
         file_number: usize,
-        mut options: ZipReadOptions<'_>,
+        options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'_, R>> {
         let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
-        if options.ignore_encryption_flag {
-            // Always use no password when we're ignoring the encryption flag.
-            options.password = None;
-        } else {
-            // Require and use the password only if the file is encrypted.
-            match (options.password, data.is_encrypted()) {
-                (None, true) => {
-                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
-                }
-                // Password supplied, but none needed! Discard.
-                (Some(_), false) => options.password = None,
-                _ => {}
-            }
-        }
         let limit_reader = data.find_content(&mut self.reader)?;
-
-        let crypto_reader = make_crypto_reader(data, limit_reader, options.password)?;
-
-        let crc32 = if options.ignore_crc {
-            None
-        } else {
-            Some(data.crc32)
-        };
-
-        let aes_vendor_version = data.aes_settings().map(|aes| aes.1);
+        let reader = data.make_reader(limit_reader, options)?;
         Ok(ZipFile {
             file_name_raw: Cow::Borrowed(file_name_raw),
             data: Cow::Borrowed(data),
-            reader: make_reader(
-                data.compression_method,
-                data.uncompressed_size,
-                crc32,
-                aes_vendor_version,
-                crypto_reader,
-                #[cfg(feature = "legacy-zip")]
-                data.flags,
-            )?,
+            reader,
         })
     }
 

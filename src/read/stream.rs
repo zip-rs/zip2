@@ -4,7 +4,6 @@ use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::magic::Magic;
-use crate::read::readers::{make_crypto_reader, make_reader};
 use crate::read::{
     ZipFile, ZipFileData, ZipFileEntry, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
@@ -168,7 +167,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
-    mut options: ZipReadOptions<'a>,
+    options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
     // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
@@ -225,49 +224,12 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
         data.crc32 = crc;
     }
 
-    if options.ignore_encryption_flag {
-        // Always use no password when we're ignoring the encryption flag.
-        options.password = None;
-    } else {
-        // Require and use the password only if the file is encrypted.
-        match (options.password, data.is_encrypted()) {
-            (None, true) => {
-                return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
-            }
-            // Password supplied, but none needed! Discard.
-            (Some(_), false) => options.password = None,
-            _ => {}
-        }
-    }
-
     let limit_reader = reader.take(data.compressed_size);
-    let crypto_reader = make_crypto_reader(&data, limit_reader, options.password)?;
-    let ZipFileData {
-        compression_method,
-        uncompressed_size,
-        #[cfg(feature = "legacy-zip")]
-        flags,
-        ..
-    } = data;
-    let checksum = if options.ignore_crc {
-        None
-    } else {
-        Some(data.crc32)
-    };
-
-    let aes_vendor_version = data.aes_settings().map(|aes| aes.1);
+    let reader = data.make_reader(limit_reader, options)?;
     Ok(Some(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(data),
-        reader: make_reader(
-            compression_method,
-            uncompressed_size,
-            checksum,
-            aes_vendor_version,
-            crypto_reader,
-            #[cfg(feature = "legacy-zip")]
-            flags,
-        )?,
+        reader,
     }))
 }
 

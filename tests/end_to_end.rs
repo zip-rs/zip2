@@ -426,3 +426,38 @@ fn test_zip_file_entry() {
     let is_correct_file_name = verify_file_2(&file);
     assert!(is_correct_file_name);
 }
+
+#[test]
+fn test_zip_file_entry_to_reader() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipReadOptions;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let zip_raw = writer.finish().unwrap().into_inner().into_boxed_slice();
+
+    let reader_zip = Cursor::new(&zip_raw);
+
+    let zip_archive = ZipArchive::new(reader_zip).unwrap();
+
+    let file_number = zip_archive.index_for_name("my_file.txt").unwrap();
+    let file = zip_archive.by_index_data(file_number).unwrap();
+    assert_eq!(file.compression(), CompressionMethod::Stored);
+
+    let mut reader_zipfile = Cursor::new(&zip_raw);
+
+    let mut file_with_reader = file
+        .with_reader(&mut reader_zipfile, ZipReadOptions::new())
+        .unwrap();
+
+    let mut content = Vec::new();
+    file_with_reader.read_to_end(&mut content).unwrap();
+    assert_eq!(content, b"data");
+}
