@@ -271,3 +271,20 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
         should_disable,
     ))))
 }
+
+#[test]
+fn test_size_reader_enum() {
+    use std::io::Cursor;
+    use std::mem::size_of;
+
+    type R = Cursor<Vec<u8>>;
+    let enum_size = size_of::<ZipFileReader<'_, R>>();
+    eprintln!("{enum_size}");
+    eprintln!("{}", size_of::<io::Take<R>>());
+    eprintln!("{}", size_of::<Crc32Reader<CryptoReader<'_, R>>>());
+    eprintln!(
+        "{}",
+        size_of::<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'_, R>>>>>()
+    );
+    assert!(enum_size <= 32);
+}
