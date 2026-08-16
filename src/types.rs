@@ -10,7 +10,7 @@ use crate::format::blocks::{
 use crate::format::ffi;
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
-use crate::format::functions::is_dir;
+use crate::format::functions::{get_unix_mode, get_version_needed, is_dir};
 use crate::format::magic::Magic;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
@@ -31,8 +31,7 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
-pub const MIN_VERSION: u8 = 10;
-pub const DEFAULT_VERSION: u8 = 45;
+pub use crate::format::{DEFAULT_VERSION, MIN_VERSION};
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
@@ -140,12 +139,12 @@ impl ZipFileData {
     }
 
     /// Check if the encrypted flag is set
-    pub fn is_encrypted(&self) -> bool {
+    pub(crate) fn is_encrypted(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::Encrypted)
     }
 
     /// Check if the data descriptor flag is set
-    pub fn is_using_data_descriptor(&self) -> bool {
+    pub(crate) fn is_using_data_descriptor(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::UsingDataDescriptor)
     }
 
@@ -213,7 +212,7 @@ impl ZipFileData {
     }
 
     /// Check if the file is a directory based on the file name.
-    pub fn is_dir(&self, file_name: &[u8]) -> bool {
+    pub(crate) fn is_dir(&self, file_name: &[u8]) -> bool {
         is_dir(file_name)
     }
 
@@ -243,80 +242,20 @@ impl ZipFileData {
         Some(enclosed)
     }
 
-    /// Get unix mode for the file
+    // /// Get unix mode for the file
     pub(crate) const fn unix_mode(&self) -> Option<u32> {
-        if self.external_attributes == 0 {
-            return None;
-        }
-        let unix_mode = self.external_attributes >> 16;
-        match self.system {
-            System::Unix => Some(unix_mode),
-            System::Dos => {
-                // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
-                let dos_attributes = (self.external_attributes & 0xFF) as u8;
-                // Interpret MS-DOS directory bit
-                let mut mode = if (dos_attributes & 0x10) != 0 {
-                    ffi::S_IFDIR | 0o0775
-                } else {
-                    ffi::S_IFREG | 0o0664
-                };
-                // Interpret MS-DOS read-only bit
-                if (dos_attributes & 0x01) != 0 {
-                    // strip write permissions for read-only
-                    mode &= !0o222;
-                }
-                Some(mode)
-            }
-            _ => {
-                if unix_mode != 0 {
-                    // If the high 16 bits are non-zero, they probably contain Unix permissions.
-                    // This happens for archives created on Windows by this crate or other tools,
-                    // and is the only way to identify symlinks in such archives.
-                    return Some(unix_mode);
-                }
-                None
-            }
-        }
+        get_unix_mode(self.system, self.external_attributes)
     }
 
     /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
     pub fn version_needed(&self) -> u16 {
-        let compression_version: u16 = match self.compression_method {
-            CompressionMethod::Stored => MIN_VERSION.into(),
-            #[cfg(feature = "_deflate-any")]
-            CompressionMethod::Deflated => 20,
-            #[cfg(feature = "_bzip2_any")]
-            CompressionMethod::Bzip2 => 46,
-            #[cfg(feature = "deflate64")]
-            CompressionMethod::Deflate64 => 21,
-            #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => 63,
-            #[cfg(feature = "xz")]
-            CompressionMethod::Xz => 63,
-            // APPNOTE doesn't specify a version for Zstandard
-            _ => u16::from(DEFAULT_VERSION),
-        };
-        let crypto_version: u16 = if self.aes_settings().is_some() {
-            51
-        } else if self.is_encrypted() {
-            20
-        } else {
-            10
-        };
-        let misc_feature_version: u16 = if self.large_file {
-            45
-        } else if self
-            .unix_mode()
-            .is_some_and(|mode| mode & ffi::S_IFDIR == ffi::S_IFDIR)
-        {
-            // file is directory
-            20
-        } else {
-            10
-        };
-        compression_version
-            .max(crypto_version)
-            .max(misc_feature_version)
+        get_version_needed(
+            self.compression_method,
+            self.aes_settings(),
+            self.is_encrypted(),
+            self.large_file,
+            self.unix_mode(),
+        )
     }
 
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(

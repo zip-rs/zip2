@@ -76,3 +76,8 @@ pub const ZIP64_BYTES_THR_U32: u32 = u32::MAX;
 /// If more than this number of entries is written to a [`crate::ZipWriter`], then [`crate::ZipWriter::finish()`]
 /// will write out extra zip64 data to the end of the zip file.
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
+
+/// Minial version needed
+pub const MIN_VERSION: u8 = 10;
+/// Default version needed
+pub const DEFAULT_VERSION: u8 = 45;
