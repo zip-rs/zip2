@@ -4,6 +4,7 @@ pub(crate) mod aes;
 pub(crate) mod blocks;
 pub(crate) mod flags;
 pub(crate) mod functions;
+pub(crate) mod extra_fields;
 pub(crate) mod magic;
 
 pub(crate) mod ffi {
