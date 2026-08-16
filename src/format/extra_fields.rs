@@ -3,6 +3,7 @@
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(unused)]
+#[non_exhaustive]
 pub enum ExtraFieldId {
     Zip64ExtendedInfo = 0x0001,
     AvInfo = 0x0007,                           // AV Info

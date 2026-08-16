@@ -47,6 +47,7 @@ impl ExtraFieldVersion for CentralHeaderVersion {}
 /// public extra-field data structures.
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub(crate) enum UsedExtraField {
     /// ZIP64 extended information extra field
     Zip64ExtendedInfo = ExtraFieldId::Zip64ExtendedInfo.as_u16(),
