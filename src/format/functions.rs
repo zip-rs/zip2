@@ -1,16 +1,18 @@
 //! Zip utils functions
 
-use crate::format::aes::AesVendorVersion;
+use crate::CompressionMethod;
+use crate::format::aes::{AesMode, AesVendorVersion};
 use crate::format::blocks::{
     CentralDirectoryEndInfo, Zip32CentralDirectoryEnd, Zip64CDELocatorBlock,
     Zip64CentralDirectoryEnd, Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock,
 };
+use crate::format::flags::System;
 use crate::format::magic::Magic;
 use crate::format::{DEFAULT_VERSION, MIN_VERSION, ffi};
 use crate::read::ArchiveOffset;
 use crate::read::magic_finder::{Backwards, Forward, MagicFinder, OptimisticMagicFinder};
 use crate::result::{ZipResult, invalid};
-use crate::{AesMode, CompressionMethod, System};
+
 use core::mem;
 use std::io::{self, Read, Seek};
 
@@ -235,6 +237,7 @@ pub(crate) fn is_dir(filename: &[u8]) -> bool {
     matches!(filename.last(), Some(b'/') | Some(b'\\'))
 }
 
+#[inline]
 pub(crate) const fn get_unix_mode(system: System, external_attributes: u32) -> Option<u32> {
     if external_attributes == 0 {
         return None;
@@ -270,6 +273,7 @@ pub(crate) const fn get_unix_mode(system: System, external_attributes: u32) -> O
     }
 }
 
+#[inline]
 pub(crate) fn get_version_needed(
     compression_method: CompressionMethod,
     aes_settings: Option<(AesMode, AesVendorVersion)>,
