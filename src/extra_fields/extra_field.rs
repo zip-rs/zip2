@@ -342,7 +342,7 @@ mod tests {
         let extra = CustomExtraField::new(
             false,
             UsedExtraField::AeXEncryption.as_u16(),
-            &[1, 0, b'A', b'E', 3, 0, 0][..],
+            [1, 0, b'A', b'E', 3, 0, 0].to_vec().into_boxed_slice(),
         );
         assert_eq!(extra_fields.inner[0], ExtraField::Custom(extra));
     }
