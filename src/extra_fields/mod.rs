@@ -189,11 +189,11 @@ pub struct CustomExtraField {
 }
 
 impl CustomExtraField {
-    pub(crate) fn new(central_only: bool, header_id: u16, data: &[u8]) -> Self {
+    pub(crate) fn new(central_only: bool, header_id: u16, data: Box<[u8]>) -> Self {
         Self {
             central_only,
             header_id,
-            data: data.into(),
+            data,
         }
     }
 
