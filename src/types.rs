@@ -1,6 +1,5 @@
 //! Types that specify what is contained in a ZIP.
 
-use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
 use crate::format::aes::{AesMode, AesVendorVersion};
@@ -111,7 +110,9 @@ impl ZipFileData {
         )
     }
 
+    #[inline]
     pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
+        use crate::cp437::FromCp437;
         Ok(
             if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {
                 file_name_utf8.into()
@@ -139,11 +140,13 @@ impl ZipFileData {
     }
 
     /// Check if the encrypted flag is set
+    #[inline]
     pub(crate) fn is_encrypted(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::Encrypted)
     }
 
     /// Check if the data descriptor flag is set
+    #[inline]
     pub(crate) fn is_using_data_descriptor(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::UsingDataDescriptor)
     }
@@ -152,40 +155,35 @@ impl ZipFileData {
     pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
             Some(data_start) => Ok(*data_start),
-            None => Ok(self.find_data_start(reader)?),
-        }
-    }
+            None => {
+                // Go to start of data.
+                reader.seek(SeekFrom::Start(self.header_start))?;
 
-    pub(crate) fn find_data_start(
-        &self,
-        reader: &mut (impl Read + Seek + ?Sized),
-    ) -> Result<u64, ZipError> {
-        // Go to start of data.
-        reader.seek(SeekFrom::Start(self.header_start))?;
+                // Parse static-sized fields and check the magic value.
+                let block = ZipLocalEntryBlock::parse(reader)?;
 
-        // Parse static-sized fields and check the magic value.
-        let block = ZipLocalEntryBlock::parse(reader)?;
+                // Each of these fields must be converted to u64 before adding, as the result may
+                // easily overflow a u16.
+                let variable_fields_len =
+                    u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+                // Calculate the end of the local header from the fields we just parsed.
+                let data_start = self.header_start
+                    + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+                    + variable_fields_len;
 
-        // Calculate the end of the local header from the fields we just parsed.
-        let variable_fields_len =
-        // Each of these fields must be converted to u64 before adding, as the result may
-        // easily overflow a u16.
-        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-        let data_start = self.header_start
-            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + variable_fields_len;
+                // Set the value so we don't have to read it again.
+                match self.data_start.set(data_start) {
+                    Ok(()) => (),
+                    // If the value was already set in the meantime, ensure it matches (this is probably
+                    // unnecessary).
+                    Err(existing_value) => {
+                        debug_assert_eq!(existing_value, data_start);
+                    }
+                }
 
-        // Set the value so we don't have to read it again.
-        match self.data_start.set(data_start) {
-            Ok(()) => (),
-            // If the value was already set in the meantime, ensure it matches (this is probably
-            // unnecessary).
-            Err(existing_value) => {
-                debug_assert_eq!(existing_value, data_start);
+                Ok(data_start)
             }
         }
-
-        Ok(data_start)
     }
 
     pub(crate) fn find_content<'a, R: Read + Seek + ?Sized>(
