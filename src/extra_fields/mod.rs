@@ -24,6 +24,7 @@ pub use zipinfo_utf8::UnicodeExtraField;
 
 // re-export
 pub use crate::format::extra_fields::EXTRA_FIELD_MAPPING;
+use crate::format::extra_fields::ExtraFieldId;
 
 /// Marker trait to denote the place where this extra field has been stored.
 pub trait ExtraFieldVersion {}
@@ -48,20 +49,20 @@ impl ExtraFieldVersion for CentralHeaderVersion {}
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum UsedExtraField {
     /// ZIP64 extended information extra field
-    Zip64ExtendedInfo = 0x0001,
+    Zip64ExtendedInfo = ExtraFieldId::Zip64ExtendedInfo.as_u16(),
     /// NTFS
-    Ntfs = 0x000a,
+    Ntfs = ExtraFieldId::Ntfs.as_u16(),
     /// extended timestamp
     /// from <https://libzip.org/specifications/extrafld.txt>
-    ExtendedTimestamp = 0x5455,
+    ExtendedTimestamp = ExtraFieldId::ExtendedTimestamp.as_u16(),
     /// Info-ZIP Unicode Comment Extra Field
-    UnicodeComment = 0x6375,
+    UnicodeComment = ExtraFieldId::UnicodeComment.as_u16(),
     /// Info-ZIP Unicode Path Extra Field
-    UnicodePath = 0x7075,
+    UnicodePath = ExtraFieldId::UnicodePath.as_u16(),
     /// AE-x encryption structure
-    AeXEncryption = 0x9901,
+    AeXEncryption = ExtraFieldId::AeXEncryption.as_u16(),
     /// Data Stream Alignment (Apache Commons-Compress)
-    DataStreamAlignment = 0xa11e,
+    DataStreamAlignment = ExtraFieldId::DataStreamAlignment.as_u16(),
 }
 
 impl UsedExtraField {
