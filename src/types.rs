@@ -263,9 +263,30 @@ impl ZipFileData {
         options: &FileOptions<'_, '_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
-        compression_method: CompressionMethod,
-        extra_fields: ExtraFields,
+        #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))] mut extra_fields: ExtraFields,
     ) -> Self {
+        // Figure out the underlying compression_method and aes mode when using
+        // AES encryption.
+        // Preserve AES method for raw copies without needing a password
+        let compression_method = options.compression_method;
+        match options.encrypt_with {
+            #[cfg(feature = "aes-crypto")]
+            Some(crate::write::options::EncryptWith::Aes {
+                mode,
+                vendor_version,
+                ..
+            }) => {
+                use crate::extra_fields::AexEncryption;
+                // Write AES encryption extra data.
+                // For raw copies of AES entries, write the correct AES extra data immediately
+                extra_fields
+                    .inner
+                    .push(crate::extra_fields::ExtraField::AeXEncryption(
+                        AexEncryption::new(vendor_version, mode, compression_method),
+                    ));
+            }
+            _ => {}
+        }
         let permissions = options
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
