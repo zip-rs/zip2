@@ -277,13 +277,13 @@ mod tests {
 
     #[test]
     fn test_size_reader_enum() {
-        use super::ZipFileReader;
         use super::Crc32Reader;
-        use std::io::BufReader;
         use super::CryptoReader;
+        use super::Decompressor;
+        use super::ZipFileReader;
+        use std::io::BufReader;
         use std::io::Cursor;
         use std::io::Take;
-        use super::Decompressor;
         use std::mem::size_of;
 
         type R = Cursor<Vec<u8>>;
