@@ -1,5 +1,7 @@
 //! Extra fields
 
+use crate::extra_fields::UsedExtraField;
+
 /// Known Extra fields (PKWARE and Third party) mappings, sorted
 pub const EXTRA_FIELD_MAPPING: [u16; 59] = [
     UsedExtraField::Zip64ExtendedInfo.as_u16(),

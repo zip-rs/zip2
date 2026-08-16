@@ -3,24 +3,24 @@
 use core::fmt::Display;
 
 mod aex_encryption;
+mod custom_extra_field;
 mod data_stream_alignment;
 mod extended_timestamp;
 mod extra_field;
 mod ntfs;
 mod zip64_extended_information;
-mod custom_extra_field;
 mod zipinfo_utf8;
 
 // re-export extra fields
 #[cfg(feature = "aes-crypto")]
 pub use aex_encryption::AexEncryption;
+pub use custom_extra_field::CustomExtraField;
 pub use data_stream_alignment::DataStreamAlignment;
 pub use extended_timestamp::ExtendedTimestamp;
 pub use extra_field::{ExtraField, ExtraFields};
 pub use ntfs::Ntfs;
 pub use zip64_extended_information::{Zip64ExtendedInformation, Zip64Sizes};
 pub use zipinfo_utf8::UnicodeExtraField;
-pub use custom_extra_field::CustomExtraField;
 
 // re-export
 pub use crate::format::extra_fields::EXTRA_FIELD_MAPPING;

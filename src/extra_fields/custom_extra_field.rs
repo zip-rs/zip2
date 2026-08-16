@@ -78,4 +78,3 @@ impl arbitrary::Arbitrary<'_> for CustomExtraField {
         })
     }
 }
-
