@@ -315,3 +315,33 @@ pub(crate) fn get_version_needed(
         .max(crypto_version)
         .max(misc_feature_version)
 }
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn unix_mode_robustness() {
+        use crate::format::ffi;
+        use crate::format::flags::System;
+        use crate::format::functions::get_unix_mode;
+        // Also, if we use the `unix_permissions()` in the `FileOptions`
+        // The ZipFileData will be forced to be System::Unix if we use a symlink
+
+        // DOS/FAT filesystems have no concept of symlinks
+        // In our case, we handle that by defaulting to Unix
+        let system = System::Dos;
+        let external_attributes = (ffi::S_IFLNK | 0o777) << 16;
+        let unix_mode = get_unix_mode(system, external_attributes);
+        assert_eq!(unix_mode, Some(ffi::S_IFREG | 0o664));
+
+        let system = System::Unknown;
+        let external_attributes = (ffi::S_IFLNK | 0o777) << 16;
+        let unix_mode = get_unix_mode(system, external_attributes);
+        assert_eq!(unix_mode, Some(ffi::S_IFLNK | 0o777));
+
+        let system = System::Dos;
+        let external_attributes = 0x10; // DOS directory bit
+        let unix_mode = get_unix_mode(system, external_attributes);
+        assert_eq!(unix_mode.unwrap() & 0o170000, ffi::S_IFDIR);
+    }
+}

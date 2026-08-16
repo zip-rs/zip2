@@ -465,30 +465,6 @@ impl ZipFileData {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn unix_mode_robustness() {
-        use super::{System, ZipFileData};
-        use crate::format::ffi;
-        let mut data = ZipFileData {
-            system: System::Dos,
-            external_attributes: (ffi::S_IFLNK | 0o777) << 16,
-            ..ZipFileData::default()
-        };
-
-        // DOS/FAT filesystems have no concept of symlinks
-        //
-        // Also, if we use the `unix_permissions()` in the `FileOptions`
-        // The ZipFileData will be forced to be System::Unix
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFREG | 0o664));
-
-        data.system = System::Unknown;
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
-
-        data.external_attributes = 0x10; // DOS directory bit
-        data.system = System::Dos;
-        assert_eq!(data.unix_mode().unwrap() & 0o170000, ffi::S_IFDIR);
-    }
-
-    #[test]
     fn sanitize() {
         use super::{CompressionMethod, System, ZipFileData};
         use std::{path::PathBuf, sync::OnceLock};
