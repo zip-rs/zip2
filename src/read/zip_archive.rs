@@ -5,6 +5,7 @@ use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
 use crate::format::functions::find_central_directory;
 use crate::read::config::Config;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader, make_crypto_reader, make_reader};
+use crate::read::zipfile::ZipFileEntry;
 use crate::read::{
     ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek, ZipReadOptions,
     central_header_to_zip_file_inner,
@@ -482,7 +483,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .files
             .get_index(index)
             .ok_or(ZipError::FileNotFound)
-            .and_then(move |(_, data)| {
+            .and_then(move |(file_name_raw, data)| {
                 let seek_reader = match data.compression_method {
                     CompressionMethod::Stored => {
                         ZipFileSeekReader::Raw(data.find_content_seek(reader)?)
@@ -494,6 +495,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     }
                 };
                 Ok(ZipFileSeek {
+                    file_name_raw: Cow::Borrowed(file_name_raw),
                     reader: seek_reader,
                     data: Cow::Borrowed(data),
                 })
@@ -535,6 +537,19 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get a contained file by index
     pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
         self.by_index_with_options(file_number, ZipReadOptions::new())
+    }
+
+    /// Get a contained file by index
+    pub fn by_index_data(&self, file_number: usize) -> ZipResult<ZipFileEntry<'_>> {
+        let (file_name_raw, data) = self
+            .shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        Ok(ZipFileEntry {
+            file_name_raw: Cow::Borrowed(file_name_raw),
+            data: Cow::Borrowed(data),
+        })
     }
 
     /// Get a contained file by index without decompressing it
