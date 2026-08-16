@@ -670,8 +670,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
             }
         }
-        #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))]
-        let mut extra_fields = match options.extended_options.extra_fields() {
+        let extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
         };
@@ -685,34 +684,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             ));
         }
 
-        // Figure out the underlying compression_method and aes mode when using
-        // AES encryption.
-        // Preserve AES method for raw copies without needing a password
-        let compression_method = options.compression_method;
-        match options.encrypt_with {
-            #[cfg(feature = "aes-crypto")]
-            Some(EncryptWith::Aes {
-                mode,
-                vendor_version,
-                ..
-            }) => {
-                use crate::extra_fields::AexEncryption;
-                // Write AES encryption extra data.
-                // For raw copies of AES entries, write the correct AES extra data immediately
-                extra_fields.push(ExtraField::AeXEncryption(AexEncryption::new(
-                    vendor_version,
-                    mode,
-                    compression_method,
-                )));
-            }
-            _ => {}
-        }
         let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
             &raw_values,
             header_start,
-            compression_method,
             ExtraFields {
                 inner: extra_fields,
             },
