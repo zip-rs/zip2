@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 1 -->🐛 Bug Fixes
 
 - lazy allocation on error case ([#937](https://github.com/zip-rs/zip2/pull/937))
-- fix: the alignment value should be inside the data alignement ([#929](https://github.com/zip-rs/zip2/pull/929))
+- fix: the alignment value should be inside the data alignment ([#929](https://github.com/zip-rs/zip2/pull/929))
 
 ### <!-- 2 -->🚜 Refactor
 
