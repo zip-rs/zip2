@@ -328,7 +328,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         Ok(ZipArchive {
             reader,
-            shared: shared.into(),
+            shared: Arc::new(shared),
         })
     }
 
