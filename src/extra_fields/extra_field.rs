@@ -169,7 +169,11 @@ impl ExtraField {
                     }
                     return Err(e.into());
                 }
-                ExtraField::Custom(CustomExtraField::new(false, extra_field_header_id, &buf))
+                ExtraField::Custom(CustomExtraField::new(
+                    false,
+                    extra_field_header_id,
+                    buf.into_boxed_slice(),
+                ))
                 // Other fields are ignored
             }
         };
