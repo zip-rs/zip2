@@ -1,6 +1,5 @@
 //! Types that specify what is contained in a ZIP.
 
-use crate::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
@@ -15,10 +14,11 @@ use crate::format::functions::is_dir;
 use crate::format::magic::Magic;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
-use crate::read::readers::SeekableTake;
+use crate::read::readers::{SeekableTake, ZipFileReader, make_crypto_reader, make_reader};
 use crate::result::{ZipError, ZipResult};
 use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
+use crate::{CompressionMethod, ZipReadOptions};
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
@@ -73,6 +73,45 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    pub(crate) fn make_reader<'a, R: Read>(
+        &self,
+        limit_reader: Take<&'a mut R>,
+        mut options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFileReader<'a, R>> {
+        if options.ignore_encryption_flag {
+            // Always use no password when we're ignoring the encryption flag.
+            options.password = None;
+        } else {
+            // Require and use the password only if the file is encrypted.
+            match (options.password, self.is_encrypted()) {
+                (None, true) => {
+                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
+                }
+                // Password supplied, but none needed! Discard.
+                (Some(_), false) => options.password = None,
+                _ => {}
+            }
+        }
+        let compression_method = self.compression_method;
+        let uncompressed_size = self.uncompressed_size;
+        let crc32 = if options.ignore_crc {
+            None
+        } else {
+            Some(self.crc32)
+        };
+        let crypto_reader = make_crypto_reader(self, limit_reader, options.password)?;
+        let aes_vendor_version = self.aes_settings().map(|aes| aes.1);
+        make_reader(
+            compression_method,
+            uncompressed_size,
+            crc32,
+            aes_vendor_version,
+            crypto_reader,
+            #[cfg(feature = "legacy-zip")]
+            self.flags,
+        )
+    }
+
     pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
         Ok(
             if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {

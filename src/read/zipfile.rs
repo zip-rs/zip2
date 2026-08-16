@@ -4,6 +4,7 @@ use crate::CompressionMethod;
 use crate::DateTime;
 use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
+use crate::ZipReadOptions;
 use crate::format::ffi;
 use crate::read::ExtraField;
 use crate::read::RootDirFilter;
@@ -179,6 +180,22 @@ macro_rules! zip_file_methods {
 
 impl<'a> ZipFileEntry<'a> {
     zip_file_methods!();
+
+    /// Create a readable
+    pub fn with_reader<R: Read + Seek>(
+        self,
+        reader: &'a mut R,
+        options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFile<'a, R>> {
+        let limit_reader = self.data.find_content(reader)?;
+
+        let reader = self.data.make_reader(limit_reader, options)?;
+        Ok(ZipFile {
+            file_name_raw: self.file_name_raw,
+            data: self.data,
+            reader,
+        })
+    }
 }
 
 impl HasZipMetadata for ZipFileEntry<'_> {
