@@ -271,3 +271,40 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
         should_disable,
     ))))
 }
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_size_reader_enum() {
+        use super::Crc32Reader;
+        use super::CryptoReader;
+        use super::Decompressor;
+        use super::ZipFileReader;
+        use std::io::BufReader;
+        use std::io::Cursor;
+        use std::io::Take;
+        use std::mem::size_of;
+
+        type R = Cursor<Vec<u8>>;
+        let enum_size = size_of::<ZipFileReader<'_, R>>();
+        // Ensure the enum stays small to optimize memory usage, particularly for archives
+        // with many files where many instances may exist simultaneously
+        assert!(enum_size <= 32);
+
+        let raw_reader_size = size_of::<Take<&R>>();
+        let stored_reader_size = size_of::<Crc32Reader<CryptoReader<'_, R>>>();
+        let compressed_reader_size =
+            size_of::<Crc32Reader<Decompressor<BufReader<CryptoReader<'_, R>>>>>();
+        let box_size = size_of::<Box<R>>();
+        // eprintln!("enum {enum_size}");
+        // eprintln!("raw: {raw_reader_size}");
+        // eprintln!("stored: {stored_reader_size}");
+        // eprintln!("compressed_reader_size: {compressed_reader_size}");
+        // eprintln!("box: {box_size}");
+        assert!(box_size < enum_size);
+        assert!(raw_reader_size < enum_size);
+        assert!(stored_reader_size > enum_size); // That's why we wrap in a box
+        assert!(compressed_reader_size > enum_size); // That's why we wrap in a box
+    }
+}
