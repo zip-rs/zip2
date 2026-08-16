@@ -118,20 +118,21 @@ impl ExtendedTimestamp {
                 None
             };
 
-        let created = if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Created)
-            && bytes_to_read >= mem::size_of::<u32>())
-            || len == Self::MAX_LENGTH
-        {
-            bytes_to_read = bytes_to_read
+        let created =
+            if (ExtendedTimestampFlags::matching(flags, ExtendedTimestampFlags::Created)
+                && bytes_to_read >= mem::size_of::<u32>())
+                || len == Self::MAX_LENGTH
+            {
+                bytes_to_read = bytes_to_read
                 .checked_sub(mem::size_of::<u32>())
                 .ok_or_else(|| invalid!(
                     "Extended timestamp field too short for cr_time len={} flags={flags:08b}",
                     len
                 ))?;
-            Some(reader.read_u32_le()?)
-        } else {
-            None
-        };
+                Some(reader.read_u32_le()?)
+            } else {
+                None
+            };
 
         if bytes_to_read > 0 {
             // ignore undocumented bytes
