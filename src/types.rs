@@ -30,6 +30,7 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
+/// re-export
 pub use crate::format::{DEFAULT_VERSION, MIN_VERSION};
 
 /// Structure representing a ZIP file.
@@ -240,7 +241,7 @@ impl ZipFileData {
         Some(enclosed)
     }
 
-    // /// Get unix mode for the file
+    /// Get unix mode for the file
     pub(crate) const fn unix_mode(&self) -> Option<u32> {
         get_unix_mode(self.system, self.external_attributes)
     }
