@@ -9,7 +9,7 @@ use crate::format::blocks::{
 use crate::format::ffi;
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
-use crate::format::functions::{get_unix_mode, get_version_needed, is_dir};
+use crate::format::functions::{get_flags, get_unix_mode, get_version_needed, is_dir};
 use crate::format::magic::Magic;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
@@ -410,23 +410,7 @@ impl ZipFileData {
     }
 
     pub(crate) fn flags(&self, file_name_raw: &[u8]) -> u16 {
-        let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
-        let is_ascii = file_name_raw.is_ascii() && self.file_comment.is_ascii();
-        let utf8_bit: u16 = if is_utf8 && !is_ascii {
-            ZipFlags::LanguageEncoding.as_u16()
-        } else {
-            0
-        };
-
-        let using_data_descriptor_bit = if self.is_using_data_descriptor() {
-            ZipFlags::UsingDataDescriptor.as_u16()
-        } else {
-            0
-        };
-
-        let encrypted_bit: u16 = if self.is_encrypted() { 1u16 << 0 } else { 0 };
-
-        utf8_bit | using_data_descriptor_bit | encrypted_bit
+        get_flags(self.flags, file_name_raw, self.file_comment.as_ref())
     }
 
     pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {

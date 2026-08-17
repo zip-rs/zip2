@@ -6,7 +6,7 @@ use crate::format::blocks::{
     CentralDirectoryEndInfo, Zip32CentralDirectoryEnd, Zip64CDELocatorBlock,
     Zip64CentralDirectoryEnd, Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock,
 };
-use crate::format::flags::System;
+use crate::format::flags::{System, ZipFlags};
 use crate::format::magic::Magic;
 use crate::format::{DEFAULT_VERSION, MIN_VERSION, ffi};
 use crate::read::ArchiveOffset;
@@ -314,6 +314,30 @@ pub(crate) fn get_version_needed(
     compression_version
         .max(crypto_version)
         .max(misc_feature_version)
+}
+
+pub(crate) fn get_flags(flags: u16, file_name_raw: &[u8], file_comment: &str) -> u16 {
+    let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
+    let is_ascii = file_name_raw.is_ascii() && file_comment.is_ascii();
+    let utf8_bit: u16 = if is_utf8 && !is_ascii {
+        ZipFlags::LanguageEncoding.as_u16()
+    } else {
+        0
+    };
+
+    let using_data_descriptor_bit = if ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor) {
+        ZipFlags::UsingDataDescriptor.as_u16()
+    } else {
+        0
+    };
+
+    let encrypted_bit: u16 = if ZipFlags::matching(flags, ZipFlags::Encrypted) {
+        1u16 << 0
+    } else {
+        0
+    };
+
+    utf8_bit | using_data_descriptor_bit | encrypted_bit
 }
 
 #[cfg(test)]
