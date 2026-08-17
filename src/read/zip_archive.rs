@@ -2,7 +2,7 @@
 
 use crate::compression::CompressionMethod;
 use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
-use crate::format::functions::find_central_directory;
+use crate::format::find_central_directory_end;
 use crate::read::config::Config;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::ZipFileEntry;
@@ -140,7 +140,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         loop {
             // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
-            let cde = match find_central_directory(
+            let cde = match find_central_directory_end(
                 reader,
                 config.archive_offset,
                 end_exclusive,

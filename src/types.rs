@@ -1,6 +1,5 @@
 //! Types that specify what is contained in a ZIP.
 
-use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
 use crate::format::aes::{AesMode, AesVendorVersion};
@@ -10,7 +9,7 @@ use crate::format::blocks::{
 use crate::format::ffi;
 use crate::format::flags::System;
 use crate::format::flags::ZipFlags;
-use crate::format::functions::is_dir;
+use crate::format::functions::{get_flags, get_unix_mode, get_version_needed, is_dir};
 use crate::format::magic::Magic;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
@@ -19,6 +18,7 @@ use crate::result::{ZipError, ZipResult};
 use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
 use crate::{CompressionMethod, ZipReadOptions};
+
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
@@ -31,8 +31,8 @@ pub(crate) struct ZipRawValues {
     pub(crate) uncompressed_size: u64,
 }
 
-pub const MIN_VERSION: u8 = 10;
-pub const DEFAULT_VERSION: u8 = 45;
+/// re-export
+pub use crate::format::{DEFAULT_VERSION, MIN_VERSION};
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
@@ -112,7 +112,9 @@ impl ZipFileData {
         )
     }
 
+    #[inline]
     pub(crate) fn name<'a>(&self, file_name_raw: &'a [u8]) -> ZipResult<Cow<'a, str>> {
+        use crate::cp437::FromCp437;
         Ok(
             if let Ok(file_name_utf8) = std::str::from_utf8(file_name_raw) {
                 file_name_utf8.into()
@@ -140,12 +142,14 @@ impl ZipFileData {
     }
 
     /// Check if the encrypted flag is set
-    pub fn is_encrypted(&self) -> bool {
+    #[inline]
+    pub(crate) fn is_encrypted(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::Encrypted)
     }
 
     /// Check if the data descriptor flag is set
-    pub fn is_using_data_descriptor(&self) -> bool {
+    #[inline]
+    pub(crate) fn is_using_data_descriptor(&self) -> bool {
         ZipFlags::matching(self.flags, ZipFlags::UsingDataDescriptor)
     }
 
@@ -153,40 +157,35 @@ impl ZipFileData {
     pub fn data_start(&self, reader: &mut (impl Read + Seek + ?Sized)) -> ZipResult<u64> {
         match self.data_start.get() {
             Some(data_start) => Ok(*data_start),
-            None => Ok(self.find_data_start(reader)?),
-        }
-    }
+            None => {
+                // Go to start of data.
+                reader.seek(SeekFrom::Start(self.header_start))?;
 
-    pub(crate) fn find_data_start(
-        &self,
-        reader: &mut (impl Read + Seek + ?Sized),
-    ) -> Result<u64, ZipError> {
-        // Go to start of data.
-        reader.seek(SeekFrom::Start(self.header_start))?;
+                // Parse static-sized fields and check the magic value.
+                let block = ZipLocalEntryBlock::parse(reader)?;
 
-        // Parse static-sized fields and check the magic value.
-        let block = ZipLocalEntryBlock::parse(reader)?;
+                // Each of these fields must be converted to u64 before adding, as the result may
+                // easily overflow a u16.
+                let variable_fields_len =
+                    u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+                // Calculate the end of the local header from the fields we just parsed.
+                let data_start = self.header_start
+                    + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
+                    + variable_fields_len;
 
-        // Calculate the end of the local header from the fields we just parsed.
-        let variable_fields_len =
-        // Each of these fields must be converted to u64 before adding, as the result may
-        // easily overflow a u16.
-        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-        let data_start = self.header_start
-            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + variable_fields_len;
+                // Set the value so we don't have to read it again.
+                match self.data_start.set(data_start) {
+                    Ok(()) => (),
+                    // If the value was already set in the meantime, ensure it matches (this is probably
+                    // unnecessary).
+                    Err(existing_value) => {
+                        debug_assert_eq!(existing_value, data_start);
+                    }
+                }
 
-        // Set the value so we don't have to read it again.
-        match self.data_start.set(data_start) {
-            Ok(()) => (),
-            // If the value was already set in the meantime, ensure it matches (this is probably
-            // unnecessary).
-            Err(existing_value) => {
-                debug_assert_eq!(existing_value, data_start);
+                Ok(data_start)
             }
         }
-
-        Ok(data_start)
     }
 
     pub(crate) fn find_content<'a, R: Read + Seek + ?Sized>(
@@ -213,7 +212,7 @@ impl ZipFileData {
     }
 
     /// Check if the file is a directory based on the file name.
-    pub fn is_dir(&self, file_name: &[u8]) -> bool {
+    pub(crate) fn is_dir(&self, file_name: &[u8]) -> bool {
         is_dir(file_name)
     }
 
@@ -243,80 +242,37 @@ impl ZipFileData {
         Some(enclosed)
     }
 
+    /// Returns the extern compression - if AES is used, returns AES
+    pub(crate) fn extern_compression(&self) -> u16 {
+        #[cfg(feature = "aes-crypto")]
+        {
+            // without feature, aes_settings() returns None
+            if self.aes_settings().is_some() {
+                CompressionMethod::AES.serialize_to_u16()
+            } else {
+                self.compression_method.serialize_to_u16()
+            }
+        }
+        #[cfg(not(feature = "aes-crypto"))]
+        {
+            self.compression_method.serialize_to_u16()
+        }
+    }
+
     /// Get unix mode for the file
     pub(crate) const fn unix_mode(&self) -> Option<u32> {
-        if self.external_attributes == 0 {
-            return None;
-        }
-        let unix_mode = self.external_attributes >> 16;
-        match self.system {
-            System::Unix => Some(unix_mode),
-            System::Dos => {
-                // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
-                let dos_attributes = (self.external_attributes & 0xFF) as u8;
-                // Interpret MS-DOS directory bit
-                let mut mode = if (dos_attributes & 0x10) != 0 {
-                    ffi::S_IFDIR | 0o0775
-                } else {
-                    ffi::S_IFREG | 0o0664
-                };
-                // Interpret MS-DOS read-only bit
-                if (dos_attributes & 0x01) != 0 {
-                    // strip write permissions for read-only
-                    mode &= !0o222;
-                }
-                Some(mode)
-            }
-            _ => {
-                if unix_mode != 0 {
-                    // If the high 16 bits are non-zero, they probably contain Unix permissions.
-                    // This happens for archives created on Windows by this crate or other tools,
-                    // and is the only way to identify symlinks in such archives.
-                    return Some(unix_mode);
-                }
-                None
-            }
-        }
+        get_unix_mode(self.system, self.external_attributes)
     }
 
     /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
     pub fn version_needed(&self) -> u16 {
-        let compression_version: u16 = match self.compression_method {
-            CompressionMethod::Stored => MIN_VERSION.into(),
-            #[cfg(feature = "_deflate-any")]
-            CompressionMethod::Deflated => 20,
-            #[cfg(feature = "_bzip2_any")]
-            CompressionMethod::Bzip2 => 46,
-            #[cfg(feature = "deflate64")]
-            CompressionMethod::Deflate64 => 21,
-            #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => 63,
-            #[cfg(feature = "xz")]
-            CompressionMethod::Xz => 63,
-            // APPNOTE doesn't specify a version for Zstandard
-            _ => u16::from(DEFAULT_VERSION),
-        };
-        let crypto_version: u16 = if self.aes_settings().is_some() {
-            51
-        } else if self.is_encrypted() {
-            20
-        } else {
-            10
-        };
-        let misc_feature_version: u16 = if self.large_file {
-            45
-        } else if self
-            .unix_mode()
-            .is_some_and(|mode| mode & ffi::S_IFDIR == ffi::S_IFDIR)
-        {
-            // file is directory
-            20
-        } else {
-            10
-        };
-        compression_version
-            .max(crypto_version)
-            .max(misc_feature_version)
+        get_version_needed(
+            self.compression_method,
+            self.aes_settings(),
+            self.is_encrypted(),
+            self.large_file,
+            self.unix_mode(),
+        )
     }
 
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
@@ -455,23 +411,7 @@ impl ZipFileData {
     }
 
     pub(crate) fn flags(&self, file_name_raw: &[u8]) -> u16 {
-        let is_utf8 = std::str::from_utf8(file_name_raw).is_ok();
-        let is_ascii = file_name_raw.is_ascii() && self.file_comment.is_ascii();
-        let utf8_bit: u16 = if is_utf8 && !is_ascii {
-            ZipFlags::LanguageEncoding.as_u16()
-        } else {
-            0
-        };
-
-        let using_data_descriptor_bit = if self.is_using_data_descriptor() {
-            ZipFlags::UsingDataDescriptor.as_u16()
-        } else {
-            0
-        };
-
-        let encrypted_bit: u16 = if self.is_encrypted() { 1u16 << 0 } else { 0 };
-
-        utf8_bit | using_data_descriptor_bit | encrypted_bit
+        get_flags(self.flags, file_name_raw, self.file_comment.as_ref())
     }
 
     pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {
@@ -525,30 +465,6 @@ impl ZipFileData {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn unix_mode_robustness() {
-        use super::{System, ZipFileData};
-        use crate::format::ffi;
-        let mut data = ZipFileData {
-            system: System::Dos,
-            external_attributes: (ffi::S_IFLNK | 0o777) << 16,
-            ..ZipFileData::default()
-        };
-
-        // DOS/FAT filesystems have no concept of symlinks
-        //
-        // Also, if we use the `unix_permissions()` in the `FileOptions`
-        // The ZipFileData will be forced to be System::Unix
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFREG | 0o664));
-
-        data.system = System::Unknown;
-        assert_eq!(data.unix_mode(), Some(ffi::S_IFLNK | 0o777));
-
-        data.external_attributes = 0x10; // DOS directory bit
-        data.system = System::Dos;
-        assert_eq!(data.unix_mode().unwrap() & 0o170000, ffi::S_IFDIR);
-    }
-
     #[test]
     fn sanitize() {
         use super::{CompressionMethod, System, ZipFileData};

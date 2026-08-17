@@ -3,6 +3,7 @@
 pub(crate) mod aes;
 pub(crate) mod blocks;
 pub(crate) mod extra_fields;
+pub(crate) mod find_central_directory;
 pub(crate) mod flags;
 pub(crate) mod functions;
 pub(crate) mod magic;
@@ -15,6 +16,9 @@ pub(crate) mod ffi {
     /// Symbolic link
     pub const S_IFLNK: u32 = 0b1010_0000_0000_0000; // 0o0_120_000
 }
+
+// re-export
+pub(crate) use find_central_directory::find_central_directory_end;
 
 /// The file size at which a ZIP64 record becomes necessary.
 ///
@@ -77,3 +81,8 @@ pub const ZIP64_BYTES_THR_U32: u32 = u32::MAX;
 /// If more than this number of entries is written to a [`crate::ZipWriter`], then [`crate::ZipWriter::finish()`]
 /// will write out extra zip64 data to the end of the zip file.
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
+
+/// Minimal version needed
+pub const MIN_VERSION: u8 = 10;
+/// Default version needed
+pub const DEFAULT_VERSION: u8 = 45;

@@ -6,6 +6,7 @@ use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
 use crate::ZipReadOptions;
 use crate::format::ffi;
+use crate::format::flags::System;
 use crate::read::ExtraField;
 use crate::read::RootDirFilter;
 use crate::read::make_writable_dir_all;
@@ -121,9 +122,19 @@ macro_rules! zip_file_methods {
             )
         }
 
+        /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
+        pub fn version_needed(&self) -> u16 {
+            self.get_metadata().version_needed()
+        }
+
         /// Get the comment of the file
         pub fn comment(&self) -> &str {
             &self.get_metadata().file_comment
+        }
+
+        /// Get the system of the file
+        pub fn system(&self) -> &System {
+            &self.get_metadata().system
         }
 
         /// Get the compression method used to store the file
