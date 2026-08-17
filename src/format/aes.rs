@@ -9,7 +9,9 @@ use core::fmt::Display;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u16)]
 pub enum AesVendorVersion {
+    /// Ae1 version
     Ae1 = 0x0001,
+    /// Ae2 version
     Ae2 = 0x0002,
 }
 

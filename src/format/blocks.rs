@@ -147,7 +147,8 @@ macro_rules! to_and_from_le {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
-pub(crate) struct ZipCentralEntryBlock {
+#[allow(missing_docs)]
+pub struct ZipCentralEntryBlock {
     pub version_made_by: u16,
     pub version_to_extract: u16,
     pub flags: u16,
@@ -213,7 +214,8 @@ pub(crate) trait ZipEntryBlock {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
-pub(crate) struct ZipLocalEntryBlock {
+#[allow(missing_docs)]
+pub struct ZipLocalEntryBlock {
     pub version_made_by: u16,
     pub flags: u16,
     pub compression_method: u16,
@@ -261,7 +263,8 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
-pub(crate) struct ZipDataDescriptorBlock {
+#[allow(missing_docs)]
+pub struct ZipDataDescriptorBlock {
     pub crc32: u32,
     pub compressed_size: u32,
     pub uncompressed_size: u32,
@@ -283,7 +286,8 @@ impl FixedSizeBlock for ZipDataDescriptorBlock {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
-pub(crate) struct Zip64DataDescriptorBlock {
+#[allow(missing_docs)]
+pub struct Zip64DataDescriptorBlock {
     pub crc32: u32,
     pub compressed_size: u64,
     pub uncompressed_size: u64,
@@ -305,7 +309,8 @@ impl FixedSizeBlock for Zip64DataDescriptorBlock {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
-pub(crate) struct Zip32CDEBlock {
+#[allow(missing_docs)]
+pub struct Zip32CDEBlock {
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
     pub number_of_files_on_this_disk: u16,
@@ -334,7 +339,8 @@ impl FixedSizeBlock for Zip32CDEBlock {
 }
 
 #[derive(Debug)]
-pub(crate) struct Zip32CentralDirectoryEnd {
+#[allow(missing_docs)]
+pub struct Zip32CentralDirectoryEnd {
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
     pub number_of_files_on_this_disk: u16,
@@ -368,6 +374,7 @@ impl Zip32CentralDirectoryEnd {
         (block, zip_file_comment)
     }
 
+    /// Parse the block
     pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip32CentralDirectoryEnd> {
         let Zip32CDEBlock {
             disk_number,
@@ -399,7 +406,8 @@ impl Zip32CentralDirectoryEnd {
             zip_file_comment,
         })
     }
-
+    
+    /// Write the block
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         let (block, comment) = self.into_block_and_comment();
 
@@ -412,6 +420,8 @@ impl Zip32CentralDirectoryEnd {
         Ok(())
     }
 
+    /// Check if the zip file could be a zip64
+    #[must_use]
     pub fn may_be_zip64(&self) -> bool {
         self.number_of_files == u16::MAX
             || self.central_directory_size == u32::MAX
@@ -421,7 +431,8 @@ impl Zip32CentralDirectoryEnd {
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
-pub(crate) struct Zip64CDELocatorBlock {
+#[allow(missing_docs)]
+pub struct Zip64CDELocatorBlock {
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
@@ -442,13 +453,15 @@ impl FixedSizeBlock for Zip64CDELocatorBlock {
     ];
 }
 
-pub(crate) struct Zip64CentralDirectoryEndLocator {
+#[allow(missing_docs)]
+pub struct Zip64CentralDirectoryEndLocator {
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
 }
 
 impl Zip64CentralDirectoryEndLocator {
+    /// Parse
     pub fn parse<T: Read + ?Sized>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator> {
         let Zip64CDELocatorBlock {
             disk_with_central_directory,
@@ -464,6 +477,8 @@ impl Zip64CentralDirectoryEndLocator {
         })
     }
 
+    /// Get the block
+    #[must_use]
     pub fn block(self) -> Zip64CDELocatorBlock {
         let Self {
             disk_with_central_directory,
@@ -477,6 +492,7 @@ impl Zip64CentralDirectoryEndLocator {
         }
     }
 
+    /// Write the block
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         self.block().write(writer)
     }
@@ -484,7 +500,8 @@ impl Zip64CentralDirectoryEndLocator {
 
 #[derive(Copy, Clone)]
 #[repr(packed, C)]
-pub(crate) struct Zip64CDEBlock {
+#[allow(missing_docs)]
+pub struct Zip64CDEBlock {
     pub record_size: u64,
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
@@ -516,7 +533,8 @@ impl FixedSizeBlock for Zip64CDEBlock {
     ];
 }
 
-pub(crate) struct Zip64CentralDirectoryEnd {
+#[allow(missing_docs)]
+pub struct Zip64CentralDirectoryEnd {
     pub record_size: u64,
     pub version_made_by: u16,
     pub version_needed_to_extract: u16,
