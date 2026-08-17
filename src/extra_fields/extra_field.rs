@@ -198,7 +198,7 @@ impl ExtraField {
             }
             ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
             ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
-            ExtraField::Custom(custom) => custom.len_with_header(is_local_header),
+            ExtraField::Custom(custom) => custom.full_size(is_local_header),
             ExtraField::DataStreamAlignment(data_stream_alignment) => {
                 data_stream_alignment.full_size(is_local_header)
             }
