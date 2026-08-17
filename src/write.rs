@@ -1992,11 +1992,7 @@ impl ZipFileData {
             .unwrap_or_else(DateTime::default_for_write);
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
-        let compression_method = if self.aes_settings().is_some() {
-            CompressionMethod::AES.serialize_to_u16()
-        } else {
-            self.compression_method.serialize_to_u16()
-        };
+        let compression_method = self.extern_compression();
         let extra_field_length = u16::try_from(extra_field_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
         let block = ZipCentralEntryBlock {
@@ -2077,11 +2073,7 @@ impl ZipFileData {
         let last_modified_time = self
             .last_modified_time
             .unwrap_or_else(DateTime::default_for_write);
-        let compression_method = if self.aes_settings().is_some() {
-            CompressionMethod::AES.serialize_to_u16()
-        } else {
-            self.compression_method.serialize_to_u16()
-        };
+        let compression_method = self.extern_compression();
         let header_end = header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + file_name_raw.len() as u64;

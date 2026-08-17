@@ -241,6 +241,23 @@ impl ZipFileData {
         Some(enclosed)
     }
 
+    /// Give the extern compression - if AES is used, returns AES
+    pub(crate) fn extern_compression(&self) -> u16 {
+        #[cfg(feature = "aes-crypto")]
+        {
+            // without feature, aes_settings() returns None
+            if self.aes_settings().is_some() {
+                CompressionMethod::AES.serialize_to_u16()
+            } else {
+                self.compression_method.serialize_to_u16()
+            }
+        }
+        #[cfg(not(feature = "aes-crypto"))]
+        {
+            self.compression_method.serialize_to_u16()
+        }
+    }
+
     /// Get unix mode for the file
     pub(crate) const fn unix_mode(&self) -> Option<u32> {
         get_unix_mode(self.system, self.external_attributes)
