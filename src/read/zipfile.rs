@@ -134,7 +134,7 @@ macro_rules! zip_file_methods {
 
         /// Get the system of the file
         pub fn system(&self) -> System {
-            &self.get_metadata().system
+            self.get_metadata().system
         }
 
         /// Get the compression method used to store the file

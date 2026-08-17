@@ -406,7 +406,7 @@ impl Zip32CentralDirectoryEnd {
             zip_file_comment,
         })
     }
-    
+
     /// Write the block
     pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
         let (block, comment) = self.into_block_and_comment();

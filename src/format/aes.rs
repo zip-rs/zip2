@@ -24,12 +24,14 @@ impl AesVendorVersion {
 
     /// Returns `true` if the data is encrypted using AE2.
     #[cfg(feature = "aes-crypto")]
+    #[must_use]
     pub const fn is_ae2_encrypted(&self) -> bool {
         matches!(self, AesVendorVersion::Ae2)
     }
 
     /// `false` since the feature `aes-crypto` is not enabled
     #[cfg(not(feature = "aes-crypto"))]
+    #[must_use]
     pub const fn is_ae2_encrypted(&self) -> bool {
         false
     }
