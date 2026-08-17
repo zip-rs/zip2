@@ -20,6 +20,11 @@ use std::path::{Component, MAIN_SEPARATOR, Path};
 pub mod stream {
     pub use crate::read::stream::{ZipStreamReader, ZipStreamVisitor};
 }
+
+/// Zip format
+pub mod format {
+    pub use crate::format::*;
+}
 /// Types for creating ZIP archives.
 pub mod write {
     use crate::result::{ZipError, ZipResult};

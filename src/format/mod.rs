@@ -1,14 +1,15 @@
 //! Zip format
 
-pub(crate) mod aes;
-pub(crate) mod blocks;
-pub(crate) mod extra_fields;
+pub mod aes;
+pub mod blocks;
+pub mod extra_fields;
 pub(crate) mod find_central_directory;
-pub(crate) mod flags;
+pub mod flags;
 pub(crate) mod functions;
-pub(crate) mod magic;
+pub mod magic;
 
-pub(crate) mod ffi {
+/// ffi for Windows
+pub mod ffi {
     /// Regular
     pub const S_IFREG: u32 = 0b1000_0000_0000_0000; // 0o0_100_000
     /// Directory
@@ -74,7 +75,10 @@ pub(crate) use find_central_directory::find_central_directory_end;
 /// # }
 ///```
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
+
+/// Same as `ZIP64_BYTES_THR` but as `u32`
 pub const ZIP64_BYTES_THR_U32: u32 = u32::MAX;
+
 /// The number of entries within a single zip necessary to allocate a zip64 central
 /// directory record.
 ///

@@ -1,73 +1,135 @@
 //! Extra fields
 
+/// Known Extra Field Id from PKWARE specifications
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(unused)]
 #[non_exhaustive]
 pub enum ExtraFieldId {
+    /// Zip64 Extended information
     Zip64ExtendedInfo = 0x0001,
-    AvInfo = 0x0007,                           // AV Info
-    ReservedExtendedLanguageEncoding = 0x0008, // Reserved for extended language encoding data (PFS)
-    Os2 = 0x0009,                              // OS/2
+    /// AV Info
+    AvInfo = 0x0007,
+    /// Reserved for extended language encoding data (PFS)
+    ReservedExtendedLanguageEncoding = 0x0008,
+    /// OS/2
+    Os2 = 0x0009,
+    /// Ntfs
     Ntfs = 0x000a,
-    OpenVms = 0x000c,                                  // OpenVMS
-    Unix = 0x000d,                                     // UNIX
-    ReservedFileStreamAndForkDescriptors = 0x000e, // Reserved for file stream and fork descriptors
-    PatchDescriptor = 0x000f,                      // Patch Descriptor
-    Pkcs7StoreForX509Certificates = 0x0014,        // PKCS#7 Store for X.509 Certificates
-    X509CertificateIdAndSignature = 0x0015, // X.509 Certificate ID and Signature for individual file
-    X509CertificateIdCentralDirectory = 0x0016, // X.509 Certificate ID for Central Directory
-    StrongEncryptionHeader = 0x0017,        // Strong Encryption Header
-    RecordManagementControls = 0x0018,      // Record Management Controls
-    Pkcs7EncryptionRecipientCertificateList = 0x0019, // PKCS#7 Encryption Recipient Certificate List
-    ReservedTimestampRecord = 0x0020,                 // Reserved for Timestamp record
-    PolicyDecryptionKeyRecord = 0x0021,               // Policy Decryption Key Record
-    SmartcryptKeyProviderRecord = 0x0022,             // Smartcrypt Key Provider Record
-    SmartcryptPolicyKeyDataRecord = 0x0023,           // Smartcrypt Policy Key Data Record
-    IbmS390As400Attributes = 0x0065, // IBM S/390 (Z390), AS/400 (I400) attributes - uncompressed
-    ReservedIbmS390As400AttributesCompressed = 0x0066, // Reserved for IBM S/390 (Z390), AS/400 (I400) attributes - compressed
+    /// OpenVMS
+    OpenVms = 0x000c,
+    /// UNIX
+    Unix = 0x000d,
+    /// Reserved for file stream and fork descriptors
+    ReservedFileStreamAndForkDescriptors = 0x000e,
+    /// Patch Descriptor
+    PatchDescriptor = 0x000f,
+    /// PKCS#7 Store for X.509 Certificates
+    Pkcs7StoreForX509Certificates = 0x0014,
+    /// X.509 Certificate ID and Signature for individual file
+    X509CertificateIdAndSignature = 0x0015,
+    /// X.509 Certificate ID for Central Directory
+    X509CertificateIdCentralDirectory = 0x0016,
+    /// Strong Encryption Header
+    StrongEncryptionHeader = 0x0017,
+    /// Record Management Controls
+    RecordManagementControls = 0x0018,
+    /// PKCS#7 Encryption Recipient Certificate List
+    Pkcs7EncryptionRecipientCertificateList = 0x0019,
+    /// Reserved for Timestamp record
+    ReservedTimestampRecord = 0x0020,
+    /// Policy Decryption Key Record
+    PolicyDecryptionKeyRecord = 0x0021,
+    /// Smartcrypt Key Provider Record
+    SmartcryptKeyProviderRecord = 0x0022,
+    /// Smartcrypt Policy Key Data Record
+    SmartcryptPolicyKeyDataRecord = 0x0023,
+    /// IBM S/390 (Z390), AS/400 (I400) attributes - uncompressed
+    IbmS390As400Attributes = 0x0065,
+    /// Reserved for IBM S/390 (Z390), AS/400 (I400) attributes - compressed
+    ReservedIbmS390As400AttributesCompressed = 0x0066,
     // Third party mappings commonly used
-    Macintosh = 0x07c8,                   // Macintosh
-    PixarUsdHeader = 0x1986,              // Pixar USD header ID
-    ZipItMacintosh = 0x2605,              // ZipIt Macintosh
-    ZipItMacintosh135Plus = 0x2705,       // ZipIt Macintosh 1.3.5+
-    ZipItMacintosh135PlusAlt = 0x2805,    // ZipIt Macintosh 1.3.5+
-    InfoZipMacintosh = 0x334d,            // Info-ZIP Macintosh
-    Tandem = 0x4154,                      // Tandem
-    AcornSparkFs = 0x4341,                // Acorn/SparkFS
-    WindowsNtSecurityDescriptor = 0x4453, // Windows NT security descriptor (binary ACL)
-    Poszip4690 = 0x4690,                  // POSZIP 4690 (reserved)
-    VmCms = 0x4704,                       // VM/CMS
-    Mvs = 0x470f,                         // MVS
-    TheosOld = 0x4854,                    // THEOS (old?)
-    FwkcsMd5 = 0x4b46,                    // FWKCS MD5
-    Os2AccessControlList = 0x4c41,        // OS/2 access control list (text ACL)
-    InfoZipOpenVms = 0x4d49,              // Info-ZIP OpenVMS
-    MacintoshSmartzip = 0x4d63,           // Macintosh Smartzip (??)
-    XceedOriginalLocation = 0x4f4c,       // Xceed original location extra field
-    AosVsAcl = 0x5356,                    // AOS/VS (ACL)
+    /// Macintosh
+    Macintosh = 0x07c8,
+    /// Pixar USD header ID
+    PixarUsdHeader = 0x1986,
+    /// ZipIt Macintosh
+    ZipItMacintosh = 0x2605,
+    /// ZipIt Macintosh 1.3.5+
+    ZipItMacintosh135Plus = 0x2705,
+    /// ZipIt Macintosh 1.3.5+
+    ZipItMacintosh135PlusAlt = 0x2805,
+    /// Info-ZIP Macintosh
+    InfoZipMacintosh = 0x334d,
+    /// Tandem
+    Tandem = 0x4154,
+    /// Acorn/SparkFS
+    AcornSparkFs = 0x4341,
+    /// Windows NT security descriptor (binary ACL)
+    WindowsNtSecurityDescriptor = 0x4453,
+    /// POSZIP 4690 (reserved)
+    Poszip4690 = 0x4690,
+    /// VM/CMS
+    VmCms = 0x4704,
+    /// MVS
+    Mvs = 0x470f,
+    /// THEOS (old?)
+    TheosOld = 0x4854,
+    /// FWKCS MD5
+    FwkcsMd5 = 0x4b46,
+    /// OS/2 access control list (text ACL)
+    Os2AccessControlList = 0x4c41,
+    /// Info-ZIP OpenVMS
+    InfoZipOpenVms = 0x4d49,
+    /// Macintosh Smartzip (??)
+    MacintoshSmartzip = 0x4d63,
+    /// Xceed original location extra field
+    XceedOriginalLocation = 0x4f4c,
+    /// AOS/VS (ACL)
+    AosVsAcl = 0x5356,
+    /// Extended Timestamp
     ExtendedTimestamp = 0x5455,
-    XceedUnicode = 0x554e,        // Xceed unicode extra field
-    InfoZipUnixOriginal = 0x5855, // Info-ZIP UNIX (original, also OS/2, NT, etc)
+    /// Xceed unicode extra field
+    XceedUnicode = 0x554e,
+    /// Info-ZIP UNIX (original, also OS/2, NT, etc)
+    InfoZipUnixOriginal = 0x5855,
+    /// Unicode comment
     UnicodeComment = 0x6375,
-    BeOsBeBox = 0x6542, // BeOS/BeBox
-    Theos = 0x6854,     // THEOS
+    /// BeOS/BeBox
+    BeOsBeBox = 0x6542,
+    /// THEOS
+    Theos = 0x6854,
+    /// Unicode Path
     UnicodePath = 0x7075,
-    AtheosSyllable = 0x7441,         // AtheOS/Syllable
-    AsiUnix = 0x756e,                // ASi UNIX
-    InfoZipUnixNew = 0x7855,         // Info-ZIP UNIX (new)
-    InfoZipUnixNewerUidGid = 0x7875, // Info-ZIP UNIX (newer UID/GID)
+    /// AtheOS/Syllable
+    AtheosSyllable = 0x7441,
+    /// ASi UNIX
+    AsiUnix = 0x756e,
+    /// Info-ZIP UNIX (new)
+    InfoZipUnixNew = 0x7855,
+    /// Info-ZIP UNIX (newer UID/GID)
+    InfoZipUnixNewerUidGid = 0x7875,
+    /// AE-X Encryption
     AeXEncryption = 0x9901,
-    Unknown9902 = 0x9902, // unknown
+    /// unknown
+    Unknown9902 = 0x9902,
+    /// DataStream Alignment
     DataStreamAlignment = 0xa11e,
-    MicrosoftOpenPackagingGrowthHint = 0xa220, // Microsoft Open Packaging Growth Hint
-    JavaJar = 0xcafe,                          // Java JAR file Extra Field Header ID
-    AndroidZipAlignment = 0xd935,              // Android ZIP Alignment Extra Field
-    KoreanZipCodePageInfo = 0xe57a,            // Korean ZIP code page info
-    SmsQdos = 0xfd4a,                          // SMS/QDOS
+    /// Microsoft Open Packaging Growth Hint
+    MicrosoftOpenPackagingGrowthHint = 0xa220,
+    /// Java JAR file Extra Field Header ID
+    JavaJar = 0xcafe,
+    /// Android ZIP Alignment Extra Field
+    AndroidZipAlignment = 0xd935,
+    /// Korean ZIP code page info
+    KoreanZipCodePageInfo = 0xe57a,
+    /// SMS/QDOS
+    SmsQdos = 0xfd4a,
 }
 
 impl ExtraFieldId {
+    /// Get value as u16
+    #[must_use]
     pub const fn as_u16(self) -> u16 {
         self as u16
     }

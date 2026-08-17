@@ -109,11 +109,13 @@ impl From<System> for u8 {
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub(crate) enum ZipFlags {
+pub enum ZipFlags {
     /// If set, indicates that the file is encrypted.
     Encrypted                   = 0b0000_0000_0000_0001,
+    /// Compression setting
     #[allow(unused)]
     CompressionSetting          = 0b0000_0000_0000_0010,
+    /// Compression setting 2
     #[allow(unused)]
     CompressionSetting2         = 0b0000_0000_0000_0100,
     /// If this bit is set, the fields crc-32, compressed size and uncompressed size are set to zero in the  local header.
