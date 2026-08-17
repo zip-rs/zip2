@@ -18,6 +18,7 @@ use crate::result::{ZipError, ZipResult};
 use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
 use crate::{CompressionMethod, ZipReadOptions};
+
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
@@ -241,7 +242,7 @@ impl ZipFileData {
         Some(enclosed)
     }
 
-    /// Give the extern compression - if AES is used, returns AES
+    /// Returns the extern compression - if AES is used, returns AES
     pub(crate) fn extern_compression(&self) -> u16 {
         #[cfg(feature = "aes-crypto")]
         {
