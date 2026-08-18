@@ -109,7 +109,7 @@ impl ZipFileData {
             aes_vendor_version,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
-            self.flags,
+            self.flags.as_u16(),
         )
     }
 
