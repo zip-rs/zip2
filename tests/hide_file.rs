@@ -9,7 +9,7 @@ use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 
 #[test]
-fn remove_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
+fn hide_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for name in ["a.txt", "b.txt", "c.txt"] {
         zip.start_file(
@@ -18,7 +18,7 @@ fn remove_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
         )?;
         zip.write_all(name.as_bytes())?;
     }
-    zip.soft_remove_file("b.txt")?;
+    zip.hide_file("b.txt")?;
 
     let mut archive = ZipArchive::new(zip.finish()?)?;
     assert_eq!(archive.len(), 2);
@@ -36,7 +36,7 @@ fn remove_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
 /// Central-directory order is `files` order, so a removal must not
 /// reshuffle the entries around it.
 #[test]
-fn remove_file_preserves_the_order_of_surviving_entries() -> ZipResult<()> {
+fn hide_file_preserves_the_order_of_surviving_entries() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
         zip.start_file(
@@ -45,7 +45,7 @@ fn remove_file_preserves_the_order_of_surviving_entries() -> ZipResult<()> {
         )?;
         zip.write_all(b"x")?;
     }
-    zip.soft_remove_file("b.txt")?;
+    zip.hide_file("b.txt")?;
 
     let archive = ZipArchive::new(zip.finish()?)?;
     let names: Vec<String> = (0..archive.len())
@@ -58,7 +58,7 @@ fn remove_file_preserves_the_order_of_surviving_entries() -> ZipResult<()> {
 /// The point of the method: the removed entry's bytes stay put, so the
 /// cost of a removal does not scale with what follows it.
 #[test]
-fn remove_file_does_not_rewrite_the_archive() -> ZipResult<()> {
+fn hide_file_does_not_rewrite_the_archive() -> ZipResult<()> {
     let big = vec![b'x'; 64 * 1024];
     // Stored, not deflated: the whole point is to observe the removed
     // entry's bytes still occupying the file, and 64 KiB of one byte
@@ -72,7 +72,7 @@ fn remove_file_does_not_rewrite_the_archive() -> ZipResult<()> {
     with_all.write_all(b"kept")?;
     let removed_len = {
         let mut zip = with_all;
-        zip.soft_remove_file("gone.txt")?;
+        zip.hide_file("gone.txt")?;
         zip.finish()?.into_inner().len()
     };
 
@@ -91,14 +91,14 @@ fn remove_file_does_not_rewrite_the_archive() -> ZipResult<()> {
 /// A name freed by removal can be reused, which is what makes
 /// replace-an-entry possible without rewriting.
 #[test]
-fn remove_file_frees_the_name_for_reuse() -> ZipResult<()> {
+fn hide_file_frees_the_name_for_reuse() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file(
         "a.txt",
         SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
     )?;
     zip.write_all(b"first")?;
-    zip.soft_remove_file("a.txt")?;
+    zip.hide_file("a.txt")?;
     zip.start_file(
         "a.txt",
         SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
@@ -116,7 +116,7 @@ fn remove_file_frees_the_name_for_reuse() -> ZipResult<()> {
 /// Removing the entry currently being written finishes it first, so the
 /// archive is left consistent rather than mid-entry.
 #[test]
-fn remove_file_can_remove_the_entry_being_written() -> ZipResult<()> {
+fn hide_file_can_remove_the_entry_being_written() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file(
         "a.txt",
@@ -128,7 +128,7 @@ fn remove_file_can_remove_the_entry_being_written() -> ZipResult<()> {
         SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
     )?;
     zip.write_all(b"b")?;
-    zip.soft_remove_file("b.txt")?;
+    zip.hide_file("b.txt")?;
 
     let mut archive = ZipArchive::new(zip.finish()?)?;
     assert_eq!(archive.len(), 1);
@@ -139,10 +139,10 @@ fn remove_file_can_remove_the_entry_being_written() -> ZipResult<()> {
 }
 
 #[test]
-fn remove_file_reports_a_missing_entry() {
+fn hide_file_reports_a_missing_entry() {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     assert!(matches!(
-        zip.soft_remove_file("absent.txt"),
+        zip.hide_file("absent.txt"),
         Err(ZipError::FileNotFound)
     ));
 }
@@ -150,7 +150,7 @@ fn remove_file_reports_a_missing_entry() {
 /// An entry sharing data with the removed one keeps working: removal
 /// touches the directory, never the bytes.
 #[test]
-fn remove_file_leaves_a_shallow_copy_readable() -> ZipResult<()> {
+fn hide_file_leaves_a_shallow_copy_readable() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file(
         "original.txt",
@@ -158,7 +158,7 @@ fn remove_file_leaves_a_shallow_copy_readable() -> ZipResult<()> {
     )?;
     zip.write_all(b"shared")?;
     zip.shallow_copy_file("original.txt", "copy.txt")?;
-    zip.soft_remove_file("original.txt")?;
+    zip.hide_file("original.txt")?;
 
     let mut archive = ZipArchive::new(zip.finish()?)?;
     assert_eq!(archive.len(), 1);
@@ -169,7 +169,7 @@ fn remove_file_leaves_a_shallow_copy_readable() -> ZipResult<()> {
 }
 
 #[test]
-fn remove_file_same_bytes() {
+fn hide_file_same_bytes() {
     use zip::HasZipMetadata;
 
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
@@ -195,7 +195,7 @@ fn remove_file_same_bytes() {
         };
 
         let mut zip = ZipWriter::new_append(zip.into_inner()).unwrap();
-        zip.soft_remove_file("file_5.txt").unwrap();
+        zip.hide_file("file_5.txt").unwrap();
 
         let readable = zip
             .finish_into_readable()
