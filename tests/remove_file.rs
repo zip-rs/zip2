@@ -154,8 +154,11 @@ fn remove_file_same_bytes() {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for idx in 0..=10 {
         let filename = format!("file_{idx}.txt");
-        zip.start_file(filename, SimpleFileOptions::default().compression_method(CompressionMethod::Stored))
-            .unwrap();
+        zip.start_file(
+            filename,
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
         zip.write_all(b"shared").unwrap();
     }
 
@@ -165,7 +168,7 @@ fn remove_file_same_bytes() {
 
     let (central_idx, zip_modified) = {
         let mut zip = ZipArchive::new(zip_raw).unwrap();
-        let central_idx= {
+        let central_idx = {
             let file = zip.by_name("file_5.txt").unwrap();
             file.get_metadata().central_header_start as usize
         };
@@ -173,7 +176,11 @@ fn remove_file_same_bytes() {
         let mut zip = ZipWriter::new_append(zip.into_inner()).unwrap();
         zip.soft_remove_file("file_5.txt").unwrap();
 
-        let readable = zip.finish_into_readable().unwrap().into_inner().into_inner();
+        let readable = zip
+            .finish_into_readable()
+            .unwrap()
+            .into_inner()
+            .into_inner();
         (central_idx, readable)
     };
     assert_eq!(central_idx, 787);
