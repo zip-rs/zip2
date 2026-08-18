@@ -68,7 +68,9 @@ fn read_entry_iterable(bench: &mut Bencher) {
             .unwrap()
             .unwrap();
         let mut buf = [0u8; 1024];
-        let mut zip_file = file.with_reader(&mut reader, ZipReadOptions::new()).unwrap();
+        let mut zip_file = file
+            .with_reader(&mut reader, ZipReadOptions::new())
+            .unwrap();
         loop {
             let n = zip_file.read(&mut buf).unwrap();
             if n == 0 {
