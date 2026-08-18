@@ -910,7 +910,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// zip.write_all(b"kept")?;
     /// zip.start_file("drop.txt", SimpleFileOptions::default())?;
     /// zip.write_all(b"dropped")?;
-    /// zip.soft_remove_file("drop.txt")?;
+    /// zip.hide_file("drop.txt")?;
     ///
     /// let mut archive = ZipArchive::new(zip.finish()?)?;
     /// assert_eq!(archive.len(), 1);
@@ -919,7 +919,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn soft_remove_file(&mut self, name: &str) -> ZipResult<()> {
+    pub fn hide_file(&mut self, name: &str) -> ZipResult<()> {
         self.finish_file()?;
         // `shift_remove` rather than `swap_remove`: the central directory is
         // written in `files` order, and reordering the surviving entries on
