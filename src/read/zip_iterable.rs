@@ -20,11 +20,7 @@ pub struct ZipIterable<R> {
 }
 impl<R: Read + Seek> ZipIterable<R> {
     /// Try to create a new zip archive
-    pub fn try_new(reader: R, config: Config) -> ZipResult<ZipIterable<R>> {
-        Self::with_config(config, reader)
-    }
-
-    fn with_config(config: Config, mut reader: R) -> ZipResult<ZipIterable<R>> {
+    pub fn try_new(mut reader: R, config: Config) -> ZipResult<ZipIterable<R>> {
         let file_len = reader.seek(SeekFrom::End(0))?;
         let mut end_exclusive = file_len;
         let mut last_err = None;
