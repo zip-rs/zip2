@@ -5,8 +5,8 @@ use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::{ExtraField, ExtraFields};
 use crate::format::blocks::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock};
-use crate::format::flags::System;
-use crate::format::flags::ZipFlags;
+use crate::format::flags::{ZipFileFlags, ZipFlags};
+use crate::format::system::System;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::types::ZipFileData;
 use indexmap::IndexMap;
@@ -496,7 +496,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         crc32,
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
-        flags,
+        flags: ZipFileFlags(flags),
         file_comment,
         header_start: offset.into(),
         central_header_start,

@@ -2,7 +2,8 @@
 
 use crate::CompressionMethod;
 use crate::format::aes::{AesMode, AesVendorVersion};
-use crate::format::flags::{System, ZipFlags};
+use crate::format::flags::{ZipFileFlags, ZipFlags};
+use crate::format::system::System;
 use crate::format::{DEFAULT_VERSION, MIN_VERSION, ffi};
 
 #[inline]
@@ -89,7 +90,7 @@ pub(crate) fn get_version_needed(
         .max(misc_feature_version)
 }
 
-pub(crate) fn get_flags(flags: u16, file_name_raw: &[u8], file_comment: &str) -> u16 {
+pub(crate) fn get_flags(flags: ZipFileFlags, file_name_raw: &[u8], file_comment: &str) -> u16 {
     let is_utf8 = core::str::from_utf8(file_name_raw).is_ok();
     let is_ascii = file_name_raw.is_ascii() && file_comment.is_ascii();
     let utf8_bit: u16 = if is_utf8 && !is_ascii {
@@ -98,17 +99,13 @@ pub(crate) fn get_flags(flags: u16, file_name_raw: &[u8], file_comment: &str) ->
         0
     };
 
-    let using_data_descriptor_bit = if ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor) {
+    let using_data_descriptor_bit = if flags.is_using_data_descriptor() {
         ZipFlags::UsingDataDescriptor.as_u16()
     } else {
         0
     };
 
-    let encrypted_bit: u16 = if ZipFlags::matching(flags, ZipFlags::Encrypted) {
-        1u16 << 0
-    } else {
-        0
-    };
+    let encrypted_bit: u16 = if flags.is_encrypted() { 1u16 << 0 } else { 0 };
 
     utf8_bit | using_data_descriptor_bit | encrypted_bit
 }
@@ -119,8 +116,8 @@ mod tests {
     #[test]
     fn unix_mode_robustness() {
         use crate::format::ffi;
-        use crate::format::flags::System;
         use crate::format::functions::get_unix_mode;
+        use crate::format::system::System;
         // Also, if we use the `unix_permissions()` in the `FileOptions`
         // The ZipFileData will be forced to be System::Unix if we use a symlink
 
