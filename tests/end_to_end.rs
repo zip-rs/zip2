@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
-use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
@@ -179,8 +178,8 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
         // Check an archive file for extra data field contents.
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
         let mut extra_field = Vec::new();
-        extra_field.write_u16_le(0xbeef)?;
-        extra_field.write_u16_le(EXTRA_DATA.len() as u16)?;
+        extra_field.write_all(&0xbeef_u16.to_le_bytes())?;
+        extra_field.write_all(&(EXTRA_DATA.len() as u16).to_le_bytes())?;
         extra_field.write_all(EXTRA_DATA)?;
         assert_eq!(file_with_extra_data.extra_data(), Some(extra_field));
     }
@@ -391,4 +390,170 @@ fn test_can_create_destination() -> zip::result::ZipResult<()> {
     reader.extract(&dest)?;
     assert!(dest.path().join("mimetype").exists());
     Ok(())
+}
+
+#[test]
+fn test_zip_file_entry() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::read::ZipFileEntry;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let zip_archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
+
+    let file_number = zip_archive.index_for_name("my_file.txt").unwrap();
+    let file = zip_archive.by_index_data(file_number).unwrap();
+    assert_eq!(file.compression(), CompressionMethod::Stored);
+
+    // we can use it in a callback
+    let verify_file = |file: &ZipFileEntry| -> bool { file.size() > 2 };
+    let is_correct_size = verify_file(&file);
+    assert!(is_correct_size);
+
+    // we can use it in a function
+    fn verify_file_2(file: &ZipFileEntry) -> bool {
+        file.name().unwrap() == "my_file.txt"
+    }
+
+    let is_correct_file_name = verify_file_2(&file);
+    assert!(is_correct_file_name);
+}
+
+#[test]
+fn test_zip_file_entry_to_reader() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipReadOptions;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let zip_raw = writer.finish().unwrap().into_inner().into_boxed_slice();
+
+    let reader_zip = Cursor::new(&zip_raw);
+
+    let zip_archive = ZipArchive::new(reader_zip).unwrap();
+
+    let file_number = zip_archive.index_for_name("my_file.txt").unwrap();
+    let file = zip_archive.by_index_data(file_number).unwrap();
+    assert_eq!(file.compression(), CompressionMethod::Stored);
+
+    let mut reader_zipfile = Cursor::new(&zip_raw);
+
+    let mut file_with_reader = file
+        .with_reader(&mut reader_zipfile, ZipReadOptions::new())
+        .unwrap();
+
+    let mut content = Vec::new();
+    file_with_reader.read_to_end(&mut content).unwrap();
+    assert_eq!(content, b"data");
+}
+
+#[test]
+fn modify_in_place_with_trait() {
+    use zip::HasZipMetadata;
+    use zip::ZipArchive;
+    // With the trait, the archive needs to be mut
+
+    // create a zip
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let datetime = (23825, 44746).try_into().unwrap();
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .last_modified_time(datetime);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let mut zip_raw = writer.finish().unwrap().into_inner();
+
+    {
+        // check current date
+        let reader_zip = Cursor::new(&zip_raw);
+        let mut zip_archive = ZipArchive::new(reader_zip).unwrap();
+        let file = zip_archive.by_name("my_file.txt").unwrap();
+        let date = file.get_metadata().last_modified_time.unwrap();
+        assert_eq!(date.datepart(), 23825);
+        assert_eq!(date.timepart(), 44746);
+    }
+
+    let start = {
+        let reader_zip = Cursor::new(&zip_raw);
+        let mut zip_archive = ZipArchive::new(reader_zip).unwrap();
+        let file = zip_archive.by_name("my_file.txt").unwrap();
+        file.get_metadata().central_header_start as usize
+    };
+
+    let offset_date = start + 14;
+    zip_raw[offset_date] += 10;
+
+    {
+        // check new date
+        let reader_zip = Cursor::new(&zip_raw);
+        let mut zip_archive = ZipArchive::new(reader_zip).unwrap();
+        let file = zip_archive.by_name("my_file.txt").unwrap();
+        let date = file.get_metadata().last_modified_time.unwrap();
+        assert_eq!(date.datepart(), 23835); // changed!
+        assert_eq!(date.timepart(), 44746);
+    }
+}
+
+#[test]
+fn modify_in_place_with_data() {
+    use zip::ZipArchive;
+    // Without the trait, the archive doesn't need to be mut
+
+    // create a zip
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let datetime = (23825, 44746).try_into().unwrap();
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .last_modified_time(datetime);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let mut zip_raw = writer.finish().unwrap().into_inner();
+
+    {
+        // check current date
+        let reader_zip = Cursor::new(&zip_raw);
+        let zip_archive = ZipArchive::new(reader_zip).unwrap();
+        let file_number = zip_archive.index_for_path("my_file.txt").unwrap();
+        let file = zip_archive.by_index_data(file_number).unwrap();
+        let date = file.last_modified().unwrap();
+        assert_eq!(date.datepart(), 23825);
+        assert_eq!(date.timepart(), 44746);
+    }
+
+    let start = {
+        let reader_zip = Cursor::new(&zip_raw);
+        let mut zip_archive = ZipArchive::new(reader_zip).unwrap();
+        let file = zip_archive.by_name("my_file.txt").unwrap();
+        file.central_header_start() as usize
+    };
+
+    let offset_date = start + 14;
+    zip_raw[offset_date] += 10;
+
+    {
+        // check new date
+        let reader_zip = Cursor::new(&zip_raw);
+        let zip_archive = ZipArchive::new(reader_zip).unwrap();
+        let file_number = zip_archive.index_for_path("my_file.txt").unwrap();
+        let file = zip_archive.by_index_data(file_number).unwrap();
+        let date = file.last_modified().unwrap();
+        assert_eq!(date.datepart(), 23835); // changed!
+        assert_eq!(date.timepart(), 44746);
+    }
 }

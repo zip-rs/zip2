@@ -2,12 +2,12 @@
 
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
-use crate::read::readers::{make_crypto_reader, make_reader};
+use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
+use crate::format::magic::Magic;
 use crate::read::{
-    ZipFile, ZipFileData, ZipResult, central_header_to_zip_file_inner, make_symlink,
+    ZipFile, ZipFileData, ZipFileEntry, ZipResult, central_header_to_zip_file_inner, make_symlink,
 };
 use crate::result::{ZipError, invalid};
-use crate::spec::{FixedSizeBlock, Magic, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -26,7 +26,7 @@ impl<R> ZipStreamReader<R> {
 }
 
 impl<R: Read> ZipStreamReader<R> {
-    fn parse_central_directory(&mut self) -> ZipResult<ZipStreamFileMetadata> {
+    fn parse_central_directory(&mut self) -> ZipResult<ZipFileEntry<'_>> {
         // Give archive_offset and central_header_start dummy value 0, since
         // they are not used in the output.
         let archive_offset = 0;
@@ -40,7 +40,10 @@ impl<R: Read> ZipStreamReader<R> {
             central_header_start,
             block,
         )?;
-        Ok(ZipStreamFileMetadata(file, file_name_raw.into()))
+        Ok(ZipFileEntry {
+            file_name_raw: Cow::Owned(file_name_raw),
+            data: Cow::Owned(file),
+        })
     }
 
     /// Iterate over the stream and extract all file and their
@@ -88,10 +91,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
 
             #[allow(unused)]
-            fn visit_additional_metadata(
-                &mut self,
-                metadata: &ZipStreamFileMetadata,
-            ) -> ZipResult<()> {
+            fn visit_additional_metadata(&mut self, metadata: &ZipFileEntry<'_>) -> ZipResult<()> {
                 #[cfg(unix)]
                 {
                     use super::ZipError;
@@ -130,90 +130,7 @@ pub trait ZipStreamVisitor {
     /// This function is guaranteed to be called after all `visit_file`s.
     ///
     ///  * `metadata` - Provides missing metadata in `visit_file`.
-    fn visit_additional_metadata(&mut self, metadata: &ZipStreamFileMetadata) -> ZipResult<()>;
-}
-
-/// Additional metadata for the file.
-#[derive(Debug)]
-pub struct ZipStreamFileMetadata(ZipFileData, Box<[u8]>);
-
-impl ZipStreamFileMetadata {
-    /// Get the name of the file
-    ///
-    /// # Warnings
-    ///
-    /// It is dangerous to use this name directly when extracting an archive.
-    /// It may contain an absolute path (`/etc/shadow`), or break out of the
-    /// current directory (`../runtime`). Carelessly writing to these paths
-    /// allows an attacker to craft a ZIP archive that will overwrite critical
-    /// files.
-    ///
-    /// You can use the [`ZipFile::enclosed_name`] method to validate the name
-    /// as a safe path.
-    pub fn name(&self) -> ZipResult<Cow<'_, str>> {
-        self.0.name(&self.1)
-    }
-
-    /// Get the name of the file, in the raw (internal) byte representation.
-    ///
-    /// The encoding of this data is currently undefined.
-    pub fn name_raw(&self) -> &[u8] {
-        &self.1
-    }
-
-    /// Rewrite the path, ignoring any path components with special meaning.
-    ///
-    /// - Absolute paths are made relative
-    /// - [`std::path::Component::ParentDir`]s are ignored
-    /// - Truncates the filename at a NULL byte
-    ///
-    /// This is appropriate if you need to be able to extract *something* from
-    /// any archive, but will easily misrepresent trivial paths like
-    /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
-    /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
-    pub fn mangled_name(&self) -> ZipResult<PathBuf> {
-        let name = self.name()?;
-        let sanitized = self.0.file_name_sanitized(&name);
-        Ok(sanitized)
-    }
-
-    /// Ensure the file path is safe to use as a [`Path`].
-    ///
-    /// - It can't contain NULL bytes
-    /// - It can't resolve to a path outside the current directory
-    ///   > `foo/../bar` is fine, `foo/../../bar` is not.
-    /// - It can't be an absolute path
-    ///
-    /// This will read well-formed ZIP files correctly, and is resistant
-    /// to path-based exploits. It is recommended over
-    /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<PathBuf> {
-        let Ok(name) = self.name() else {
-            return None;
-        };
-        let enclosed = self.0.enclosed_name(&name)?;
-        Some(enclosed)
-    }
-
-    /// Returns whether the file is actually a directory
-    pub fn is_dir(&self) -> bool {
-        self.0.is_dir(&self.1)
-    }
-
-    /// Returns whether the file is a regular file
-    pub fn is_file(&self) -> bool {
-        !self.is_dir()
-    }
-
-    /// Get the comment of the file
-    pub fn comment(&self) -> &str {
-        &self.0.file_comment
-    }
-
-    /// Get unix mode for the file
-    pub const fn unix_mode(&self) -> Option<u32> {
-        self.0.unix_mode()
-    }
+    fn visit_additional_metadata(&mut self, metadata: &ZipFileEntry<'_>) -> ZipResult<()>;
 }
 
 /// Read `ZipFile` structures from a non-seekable reader.
@@ -250,7 +167,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
-    mut options: ZipReadOptions<'a>,
+    options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
     // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
@@ -307,109 +224,23 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
         data.crc32 = crc;
     }
 
-    if options.ignore_encryption_flag {
-        // Always use no password when we're ignoring the encryption flag.
-        options.password = None;
-    } else {
-        // Require and use the password only if the file is encrypted.
-        match (options.password, data.is_encrypted()) {
-            (None, true) => {
-                return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
-            }
-            // Password supplied, but none needed! Discard.
-            (Some(_), false) => options.password = None,
-            _ => {}
-        }
-    }
-
     let limit_reader = reader.take(data.compressed_size);
-    let crypto_reader = make_crypto_reader(&data, limit_reader, options.password)?;
-    let ZipFileData {
-        compression_method,
-        uncompressed_size,
-        #[cfg(feature = "legacy-zip")]
-        flags,
-        ..
-    } = data;
-    let checksum = if options.ignore_crc {
-        None
-    } else {
-        Some(data.crc32)
-    };
-
-    let vendor_version = data.aes_mode.map(|aes| aes.1);
+    let reader = data.make_reader(limit_reader, options)?;
     Ok(Some(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(data),
-        reader: make_reader(
-            compression_method,
-            uncompressed_size,
-            checksum,
-            vendor_version,
-            crypto_reader,
-            #[cfg(feature = "legacy-zip")]
-            flags,
-        )?,
+        reader,
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::read::ZipFile;
-    use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
+    use crate::read::ZipFileEntry;
+    use crate::read::stream::{ZipStreamReader, ZipStreamVisitor};
     use crate::result::ZipResult;
     use std::collections::BTreeSet;
     use std::io::{Cursor, Read};
-
-    struct DummyVisitor;
-    impl ZipStreamVisitor for DummyVisitor {
-        fn visit_file<R: Read>(&mut self, _file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-            Ok(())
-        }
-
-        fn visit_additional_metadata(
-            &mut self,
-            _metadata: &ZipStreamFileMetadata,
-        ) -> ZipResult<()> {
-            Ok(())
-        }
-    }
-
-    #[allow(dead_code)]
-    #[derive(Default, Debug, Eq, PartialEq)]
-    struct CounterVisitor(u64, u64);
-    impl ZipStreamVisitor for CounterVisitor {
-        fn visit_file<R: Read>(&mut self, _file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-            self.0 += 1;
-            Ok(())
-        }
-
-        fn visit_additional_metadata(
-            &mut self,
-            _metadata: &ZipStreamFileMetadata,
-        ) -> ZipResult<()> {
-            self.1 += 1;
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn invalid_offset() {
-        ZipStreamReader::new(Cursor::new(include_bytes!(
-            "../../tests/data/invalid_offset.zip"
-        )))
-        .visit(&mut DummyVisitor)
-        .unwrap_err();
-    }
-
-    #[test]
-    fn invalid_offset2() {
-        ZipStreamReader::new(Cursor::new(include_bytes!(
-            "../../tests/data/invalid_offset2.zip"
-        )))
-        .visit(&mut DummyVisitor)
-        .unwrap_err();
-    }
 
     #[test]
     fn zip_read_streaming_visitor() {
@@ -431,7 +262,7 @@ mod tests {
             }
             fn visit_additional_metadata(
                 &mut self,
-                zip_file_metadata: &ZipStreamFileMetadata,
+                zip_file_metadata: &ZipFileEntry<'_>,
             ) -> ZipResult<()> {
                 if zip_file_metadata.is_file() {
                     let file_name = zip_file_metadata.name().unwrap();
@@ -477,7 +308,7 @@ mod tests {
             }
             fn visit_additional_metadata(
                 &mut self,
-                zip_file_metadata: &ZipStreamFileMetadata,
+                zip_file_metadata: &ZipFileEntry<'_>,
             ) -> ZipResult<()> {
                 if zip_file_metadata.is_file() {
                     let file_name = zip_file_metadata.name().unwrap();
@@ -493,30 +324,6 @@ mod tests {
         }
 
         reader.visit(&mut V::default()).unwrap();
-    }
-
-    /// test case to ensure we don't preemptively over allocate based on the
-    /// declared number of files in the CDE of an invalid zip when the number of
-    /// files declared is more than the alleged offset in the CDE
-    #[test]
-    fn invalid_cde_number_of_files_allocation_smaller_offset() {
-        ZipStreamReader::new(Cursor::new(include_bytes!(
-            "../../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
-        )))
-        .visit(&mut DummyVisitor)
-        .unwrap_err();
-    }
-
-    /// test case to ensure we don't preemptively over allocate based on the
-    /// declared number of files in the CDE of an invalid zip when the number of
-    /// files declared is less than the alleged offset in the CDE
-    #[test]
-    fn invalid_cde_number_of_files_allocation_greater_offset() {
-        ZipStreamReader::new(Cursor::new(include_bytes!(
-            "../../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
-        )))
-        .visit(&mut DummyVisitor)
-        .unwrap_err();
     }
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.

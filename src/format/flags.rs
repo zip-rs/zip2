@@ -109,11 +109,13 @@ impl From<System> for u8 {
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub(crate) enum ZipFlags {
+pub enum ZipFlags {
     /// If set, indicates that the file is encrypted.
     Encrypted                   = 0b0000_0000_0000_0001,
+    /// Compression setting
     #[allow(unused)]
     CompressionSetting          = 0b0000_0000_0000_0010,
+    /// Compression setting 2
     #[allow(unused)]
     CompressionSetting2         = 0b0000_0000_0000_0100,
     /// If this bit is set, the fields crc-32, compressed size and uncompressed size are set to zero in the  local header.
@@ -165,5 +167,21 @@ impl ZipFlags {
 impl From<ZipFlags> for u16 {
     fn from(value: ZipFlags) -> u16 {
         value.as_u16()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn system() {
+        use super::System;
+        assert_eq!(u8::from(System::Dos), 0u8);
+        assert_eq!(System::Dos as u8, 0u8);
+        assert_eq!(System::Unix as u8, 3u8);
+        assert_eq!(u8::from(System::Unix), 3u8);
+        assert_eq!(System::from(0), System::Dos);
+        assert_eq!(System::from(3), System::Unix);
+        assert_eq!(u8::from(System::Unknown), 255u8);
+        assert_eq!(System::Unknown as u8, 255u8);
     }
 }

@@ -2,7 +2,6 @@
 
 use crate::compression::{CompressionMethod, Decompressor};
 use crate::crc32::Crc32Reader;
-use crate::format::aes::AesVendorVersion;
 use crate::result::{ZipError, ZipResult};
 use crate::types::ZipFileData;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
@@ -207,8 +206,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
             return Err(ZipError::CompressionMethodNotSupported(id));
         }
     }
-
-    let reader = match (password, data.aes_mode) {
+    let reader = match (password, data.aes_settings()) {
         #[cfg(not(feature = "aes-crypto"))]
         (Some(_), Some(_)) => {
             return Err(ZipError::UnsupportedArchive(
@@ -240,14 +238,14 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
     crc32: Option<u32>,
-    vendor_version: Option<AesVendorVersion>,
+    aes_vendor_version: Option<crate::format::aes::AesVendorVersion>,
     reader: CryptoReader<'_, R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
 ) -> ZipResult<ZipFileReader<'_, R>> {
     // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
     let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
         (
-            vendor_version.is_some_and(|v| v.is_ae2_encrypted()),
+            aes_vendor_version.is_some_and(|v| v.is_ae2_encrypted()),
             data_crc32,
         )
     } else {
@@ -272,4 +270,41 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
         crc32,
         should_disable,
     ))))
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_size_reader_enum() {
+        use super::Crc32Reader;
+        use super::CryptoReader;
+        use super::Decompressor;
+        use super::ZipFileReader;
+        use std::io::BufReader;
+        use std::io::Cursor;
+        use std::io::Take;
+        use std::mem::size_of;
+
+        type R = Cursor<Vec<u8>>;
+        let enum_size = size_of::<ZipFileReader<'_, R>>();
+        // Ensure the enum stays small to optimize memory usage, particularly for archives
+        // with many files where many instances may exist simultaneously
+        assert!(enum_size <= 32);
+
+        let raw_reader_size = size_of::<Take<&R>>();
+        let stored_reader_size = size_of::<Crc32Reader<CryptoReader<'_, R>>>();
+        let compressed_reader_size =
+            size_of::<Crc32Reader<Decompressor<BufReader<CryptoReader<'_, R>>>>>();
+        let box_size = size_of::<Box<R>>();
+        // eprintln!("enum {enum_size}");
+        // eprintln!("raw: {raw_reader_size}");
+        // eprintln!("stored: {stored_reader_size}");
+        // eprintln!("compressed_reader_size: {compressed_reader_size}");
+        // eprintln!("box: {box_size}");
+        assert!(box_size < enum_size);
+        assert!(raw_reader_size < enum_size);
+        assert!(stored_reader_size > enum_size); // That's why we wrap in a box
+        assert!(compressed_reader_size > enum_size); // That's why we wrap in a box
+    }
 }
