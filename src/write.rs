@@ -2242,7 +2242,7 @@ mod tests {
     use crate::ZipArchive;
     use crate::compression::CompressionMethod;
     use crate::datetime::DateTime;
-    use crate::format::flags::System;
+    use crate::format::system::System;
     use crate::result::ZipResult;
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;

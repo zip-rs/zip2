@@ -8,7 +8,7 @@ use crate::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::CustomExtraField;
 use crate::format::ffi;
-use crate::format::flags::System;
+use crate::format::system::System;
 use crate::result::{ZipResult, invalid};
 use crate::write::DEFAULT_FILE_PERMISSIONS;
 use crate::zipcrypto::ZipCryptoKeys;

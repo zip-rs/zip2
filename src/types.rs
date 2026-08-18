@@ -7,10 +7,11 @@ use crate::format::blocks::{
     FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
 };
 use crate::format::ffi;
-use crate::format::flags::System;
+use crate::format::flags::ZipFileFlags;
 use crate::format::flags::ZipFlags;
 use crate::format::functions::{get_flags, get_unix_mode, get_version_needed, is_dir};
 use crate::format::magic::Magic;
+use crate::format::system::System;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::{SeekableTake, ZipFileReader, make_crypto_reader, make_reader};
@@ -43,7 +44,7 @@ pub struct ZipFileData {
     /// Specification version
     pub version_made_by: u8,
     /// ZIP flags
-    pub flags: u16,
+    pub flags: ZipFileFlags,
     /// Compression method used to store the file (get the inner compression method if encryption is used)
     pub compression_method: CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
@@ -108,7 +109,7 @@ impl ZipFileData {
             aes_vendor_version,
             crypto_reader,
             #[cfg(feature = "legacy-zip")]
-            self.flags,
+            self.flags.as_u16(),
         )
     }
 
@@ -144,13 +145,13 @@ impl ZipFileData {
     /// Check if the encrypted flag is set
     #[inline]
     pub(crate) fn is_encrypted(&self) -> bool {
-        ZipFlags::matching(self.flags, ZipFlags::Encrypted)
+        self.flags.is_encrypted()
     }
 
     /// Check if the data descriptor flag is set
     #[inline]
     pub(crate) fn is_using_data_descriptor(&self) -> bool {
-        ZipFlags::matching(self.flags, ZipFlags::UsingDataDescriptor)
+        self.flags.is_using_data_descriptor()
     }
 
     /// Get the starting offset of the data of the compressed file
@@ -338,7 +339,7 @@ impl ZipFileData {
             }
             external_attributes
         };
-        let mut flags = 0;
+        let mut flags = ZipFileFlags(0);
         if options.has_encryption() {
             // encrypt_with is AES or ZipCrypto
             flags |= ZipFlags::Encrypted.as_u16();
@@ -388,7 +389,7 @@ impl ZipFileData {
         let data = ZipFileData {
             system,
             version_made_by,
-            flags,
+            flags: ZipFileFlags(flags),
             compression_method,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
             crc32,
@@ -473,18 +474,10 @@ mod tests {
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
         let data = ZipFileData {
             system: System::Dos,
-            version_made_by: 0,
-            flags: 0,
             compression_method: CompressionMethod::Stored,
-            last_modified_time: None,
-            crc32: 0,
-            compressed_size: 0,
-            uncompressed_size: 0,
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
             data_start: OnceLock::new(),
-            central_header_start: 0,
-            external_attributes: 0,
             large_file: false,
             ..ZipFileData::default()
         };

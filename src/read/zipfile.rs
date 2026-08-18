@@ -6,7 +6,8 @@ use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
 use crate::ZipReadOptions;
 use crate::format::ffi;
-use crate::format::flags::System;
+use crate::format::flags::ZipFileFlags;
+use crate::format::system::System;
 use crate::read::ExtraField;
 use crate::read::RootDirFilter;
 use crate::read::make_writable_dir_all;
@@ -135,6 +136,16 @@ macro_rules! zip_file_methods {
         /// Get the system of the file
         pub fn system(&self) -> System {
             self.get_metadata().system
+        }
+
+        /// Get the external attributes of the file
+        pub fn external_attributes(&self) -> u32 {
+            self.get_metadata().external_attributes
+        }
+
+        /// Get the flags of the file
+        pub fn flags(&self) -> ZipFileFlags {
+            self.get_metadata().flags
         }
 
         /// Get the compression method used to store the file
