@@ -1,4 +1,4 @@
-//! Test aobut removing file
+//! Test about removing file
 
 use std::io::{Cursor, Write};
 
