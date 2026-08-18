@@ -12,7 +12,10 @@ use zip::write::SimpleFileOptions;
 fn remove_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for name in ["a.txt", "b.txt", "c.txt"] {
-        zip.start_file(name, SimpleFileOptions::default().compression_method(CompressionMethod::Stored))?;
+        zip.start_file(
+            name,
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )?;
         zip.write_all(name.as_bytes())?;
     }
     zip.soft_remove_file("b.txt")?;
@@ -36,7 +39,10 @@ fn remove_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
 fn remove_file_preserves_the_order_of_surviving_entries() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
-        zip.start_file(name, SimpleFileOptions::default().compression_method(CompressionMethod::Stored))?;
+        zip.start_file(
+            name,
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )?;
         zip.write_all(b"x")?;
     }
     zip.soft_remove_file("b.txt")?;
@@ -87,10 +93,16 @@ fn remove_file_does_not_rewrite_the_archive() -> ZipResult<()> {
 #[test]
 fn remove_file_frees_the_name_for_reuse() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("a.txt", SimpleFileOptions::default().compression_method(CompressionMethod::Stored))?;
+    zip.start_file(
+        "a.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
     zip.write_all(b"first")?;
     zip.soft_remove_file("a.txt")?;
-    zip.start_file("a.txt", SimpleFileOptions::default().compression_method(CompressionMethod::Stored))?;
+    zip.start_file(
+        "a.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
     zip.write_all(b"second")?;
 
     let mut archive = ZipArchive::new(zip.finish()?)?;
@@ -106,9 +118,15 @@ fn remove_file_frees_the_name_for_reuse() -> ZipResult<()> {
 #[test]
 fn remove_file_can_remove_the_entry_being_written() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("a.txt", SimpleFileOptions::default().compression_method(CompressionMethod::Stored))?;
+    zip.start_file(
+        "a.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
     zip.write_all(b"a")?;
-    zip.start_file("b.txt", SimpleFileOptions::default().compression_method(CompressionMethod::Stored))?;
+    zip.start_file(
+        "b.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
     zip.write_all(b"b")?;
     zip.soft_remove_file("b.txt")?;
 
@@ -134,7 +152,10 @@ fn remove_file_reports_a_missing_entry() {
 #[test]
 fn remove_file_leaves_a_shallow_copy_readable() -> ZipResult<()> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("original.txt", SimpleFileOptions::default().compression_method(CompressionMethod::Stored))?;
+    zip.start_file(
+        "original.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
     zip.write_all(b"shared")?;
     zip.shallow_copy_file("original.txt", "copy.txt")?;
     zip.soft_remove_file("original.txt")?;
