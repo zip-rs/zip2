@@ -7,11 +7,11 @@ use crate::format::blocks::{
     FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
 };
 use crate::format::ffi;
-use crate::format::flags::System;
 use crate::format::flags::ZipFileFlags;
 use crate::format::flags::ZipFlags;
 use crate::format::functions::{get_flags, get_unix_mode, get_version_needed, is_dir};
 use crate::format::magic::Magic;
+use crate::format::system::System;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::{SeekableTake, ZipFileReader, make_crypto_reader, make_reader};

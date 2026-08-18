@@ -2,7 +2,8 @@
 
 use crate::CompressionMethod;
 use crate::format::aes::{AesMode, AesVendorVersion};
-use crate::format::flags::{System, ZipFileFlags, ZipFlags};
+use crate::format::flags::{ZipFileFlags, ZipFlags};
+use crate::format::system::System;
 use crate::format::{DEFAULT_VERSION, MIN_VERSION, ffi};
 
 #[inline]
@@ -115,8 +116,8 @@ mod tests {
     #[test]
     fn unix_mode_robustness() {
         use crate::format::ffi;
-        use crate::format::flags::System;
         use crate::format::functions::get_unix_mode;
+        use crate::format::system::System;
         // Also, if we use the `unix_permissions()` in the `FileOptions`
         // The ZipFileData will be forced to be System::Unix if we use a symlink
 

@@ -7,6 +7,7 @@ pub(crate) mod find_central_directory;
 pub mod flags;
 pub(crate) mod functions;
 pub mod magic;
+pub mod system;
 
 /// ffi for Windows
 pub mod ffi {
