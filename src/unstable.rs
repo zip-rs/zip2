@@ -28,7 +28,7 @@ pub mod format {
 
 /// Iterable zip
 pub mod read {
-    pub use crate::read::iterable_zip::IterableZip;
+    pub use crate::read::zip_iterable::ZipIterable;
 }
 
 /// Types for creating ZIP archives.

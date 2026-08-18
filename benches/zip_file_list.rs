@@ -43,7 +43,7 @@ fn file_listing_memory(bench: &mut Bencher) {
         let mut names = vec![];
         for idx in 0..archive.len() {
             let file = archive.by_index(idx).unwrap();
-            names.push(file.name().to_string());
+            names.push(file.name().unwrap().to_string());
         }
     });
 }
@@ -61,7 +61,7 @@ fn file_listing_file(bench: &mut Bencher) {
         let mut names = vec![];
         for idx in 0..archive.len() {
             let file = archive.by_index(idx).unwrap();
-            names.push(file.name().to_string());
+            names.push(file.name().unwrap().to_string());
         }
     });
 
@@ -70,17 +70,17 @@ fn file_listing_file(bench: &mut Bencher) {
 
 fn file_listing_iterable_memory(bench: &mut Bencher) {
     use zip::read::Config;
-    use zip::unstable::read::IterableZip;
+    use zip::unstable::read::ZipIterable;
     let size = 1024 * 1024;
     let bytes = generate_random_archive(size)
         .expect("Failed to create a random archive for the bench read_entry()");
 
     bench.iter(|| {
-        let mut archive = IterableZip::try_new(Cursor::new(&bytes), Config::default()).unwrap();
+        let mut archive = ZipIterable::try_new(Cursor::new(&bytes), Config::default()).unwrap();
         let mut names = vec![];
         for file in archive.files().unwrap() {
             let file = file.unwrap();
-            names.push(file.file_name().unwrap().to_string());
+            names.push(file.name().unwrap().to_string());
         }
     });
 }
@@ -88,7 +88,7 @@ fn file_listing_iterable_memory(bench: &mut Bencher) {
 fn file_listing_iterable_file(bench: &mut Bencher) {
     use std::fs::File;
     use zip::read::Config;
-    use zip::unstable::read::IterableZip;
+    use zip::unstable::read::ZipIterable;
 
     let size = 1024 * 1024;
     generate_random_archive_to_file(size)
@@ -96,11 +96,11 @@ fn file_listing_iterable_file(bench: &mut Bencher) {
 
     bench.iter(|| {
         let file = File::open(FILENAME).unwrap();
-        let mut archive = IterableZip::try_new(file, Config::default()).unwrap();
+        let mut archive = ZipIterable::try_new(file, Config::default()).unwrap();
         let mut names = vec![];
         for file in archive.files().unwrap() {
             let file = file.unwrap();
-            names.push(file.file_name().unwrap().to_string());
+            names.push(file.name().unwrap().to_string());
         }
     });
     std::fs::remove_file(FILENAME).unwrap();
