@@ -557,5 +557,4 @@ fn modify_in_place_with_data() {
         assert_eq!(date.datepart(), 23835); // changed!
         assert_eq!(date.timepart(), 44746);
     }
-
 }
