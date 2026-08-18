@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
-use zip::unstable::LittleEndianWriteExt;
 use zip::write::ExtendedFileOptions;
 use zip::write::FileOptions;
 use zip::write::SimpleFileOptions;
@@ -179,8 +178,8 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
         // Check an archive file for extra data field contents.
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
         let mut extra_field = Vec::new();
-        extra_field.write_u16_le(0xbeef)?;
-        extra_field.write_u16_le(EXTRA_DATA.len() as u16)?;
+        extra_field.write_all(&0xbeef_u16.to_le_bytes())?;
+        extra_field.write_all(&(EXTRA_DATA.len() as u16).to_le_bytes())?;
         extra_field.write_all(EXTRA_DATA)?;
         assert_eq!(file_with_extra_data.extra_data(), Some(extra_field));
     }

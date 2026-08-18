@@ -26,20 +26,6 @@ pub use zipinfo_utf8::UnicodeExtraField;
 pub use crate::format::extra_fields::EXTRA_FIELD_MAPPING;
 use crate::format::extra_fields::ExtraFieldId;
 
-/// Marker trait to denote the place where this extra field has been stored.
-pub trait ExtraFieldVersion {}
-
-/// Marker type for extra fields specified in a local file header.
-#[derive(Debug, Clone)]
-pub struct LocalHeaderVersion;
-
-/// Use this marker type for extra fields specified in the central header.
-#[derive(Debug, Clone)]
-pub struct CentralHeaderVersion;
-
-impl ExtraFieldVersion for LocalHeaderVersion {}
-impl ExtraFieldVersion for CentralHeaderVersion {}
-
 /// Internal extra-field identifiers (`u16` tags) recognized by this crate.
 ///
 /// This enum is crate-private and used for matching/dispatch on raw ZIP extra

@@ -276,7 +276,6 @@ pub(crate) mod zip_writer {
 pub use self::options::sealed::FileOptionExtension;
 use crate::CompressionMethod::Stored;
 use crate::result::ZipError::UnsupportedArchive;
-use crate::unstable::LittleEndianWriteExt;
 use crate::unstable::path_to_string;
 use crate::zipcrypto::CHUNK_SIZE;
 pub use zip_writer::ZipWriter;
@@ -1289,12 +1288,12 @@ impl<W: Write + Seek> ZipWriter<W> {
 
             // Overwrite the magic so the footer is no longer valid.
             writer.seek(SeekFrom::Start(central_start))?;
-            writer.write_u32_le(0)?;
+            writer.write_all(&0_u32.to_le_bytes())?;
             let start_zip32_cde = footer_end
                 - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
                 - self.comment.len() as u64;
             writer.seek(SeekFrom::Start(start_zip32_cde))?;
-            writer.write_u32_le(0)?;
+            writer.write_all(&0_u32.to_le_bytes())?;
             let zip64_extensible_len = self
                 .zip64_extensible_data_sector
                 .as_ref()
@@ -1304,12 +1303,12 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let start_zip64_locator = start_zip32_cde
                     - (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>()) as u64;
                 writer.seek(SeekFrom::Start(start_zip64_locator))?;
-                writer.write_u32_le(0)?;
+                writer.write_all(&0_u32.to_le_bytes())?;
                 let start_zip64_cde = start_zip64_locator
                     - (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE) as u64
                     - zip64_extensible_len;
                 writer.seek(SeekFrom::Start(start_zip64_cde))?;
-                writer.write_u32_le(0)?;
+                writer.write_all(&0_u32.to_le_bytes())?;
             }
 
             // Rewrite the footer at the actual end.
@@ -1886,10 +1885,10 @@ impl ZipFileData {
         writer.seek(SeekFrom::Start(
             self.header_start + (size_of::<Magic>() + offset_of!(ZipLocalEntryBlock, crc32)) as u64,
         ))?;
-        writer.write_u32_le(self.crc32)?;
+        writer.write_all(&self.crc32.to_le_bytes())?;
         if self.large_file {
-            writer.write_u32_le(ZIP64_BYTES_THR_U32)?;
-            writer.write_u32_le(ZIP64_BYTES_THR_U32)?;
+            writer.write_all(&ZIP64_BYTES_THR_U32.to_le_bytes())?;
+            writer.write_all(&ZIP64_BYTES_THR_U32.to_le_bytes())?;
 
             self.update_local_zip64_extra_field(writer, file_name_raw)?;
         } else {
@@ -1899,9 +1898,9 @@ impl ZipFileData {
                     "large_file(true) option has not been set",
                 )));
             }
-            writer.write_u32_le(self.compressed_size as u32)?;
+            writer.write_all(&(self.compressed_size as u32).to_le_bytes())?;
             // uncompressed size is already checked on write to catch it as soon as possible
-            writer.write_u32_le(self.uncompressed_size as u32)?;
+            writer.write_all(&(self.uncompressed_size as u32).to_le_bytes())?;
         }
         Ok(())
     }
