@@ -155,10 +155,12 @@ pub enum ZipFlags {
 }
 
 impl ZipFlags {
+    #[inline]
     pub(crate) fn matching(flags: u16, matching_flag: Self) -> bool {
         flags & u16::from(matching_flag) != 0
     }
 
+    #[inline]
     pub(crate) const fn as_u16(self) -> u16 {
         self as u16
     }
@@ -167,6 +169,46 @@ impl ZipFlags {
 impl From<ZipFlags> for u16 {
     fn from(value: ZipFlags) -> u16 {
         value.as_u16()
+    }
+}
+
+/// Zip flags
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct ZipFileFlags(pub(crate) u16);
+
+impl ZipFileFlags {
+    /// Check if flags are matching a specific `ZipFlags`
+    #[inline]
+    #[must_use]
+    pub fn matching(&self, matching_flag: ZipFlags) -> bool {
+        ZipFlags::matching(self.0, matching_flag)
+    }
+
+    /// Check if the encrypted flag is set
+    #[inline]
+    #[must_use]
+    pub fn is_encrypted(&self) -> bool {
+        self.matching(ZipFlags::Encrypted)
+    }
+
+    /// Check if the data descriptor flag is set
+    #[inline]
+    #[must_use]
+    pub fn is_using_data_descriptor(&self) -> bool {
+        self.matching(ZipFlags::UsingDataDescriptor)
+    }
+}
+
+impl From<u16> for ZipFileFlags {
+    fn from(value: u16) -> Self {
+        ZipFileFlags(value)
+    }
+}
+
+impl core::ops::BitOrAssign<u16> for ZipFileFlags {
+    fn bitor_assign(&mut self, rhs: u16) {
+        self.0 |= rhs;
     }
 }
 
