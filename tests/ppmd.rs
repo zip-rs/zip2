@@ -15,7 +15,8 @@ fn decompress_ppmd() {
     let mut file = archive
         .by_name("ipsum.txt")
         .expect("could not find file in archive");
-    assert_eq!("ipsum.txt", file.name());
+    let file_name = file.name().unwrap();
+    assert_eq!("ipsum.txt", file_name);
 
     let mut data = Vec::new();
     file.read_to_end(&mut data).expect("could not read data");

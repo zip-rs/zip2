@@ -5,43 +5,12 @@
 
 use core::fmt::{Debug, Formatter};
 use core::hash::Hash;
-use core::marker::PhantomData;
 use core::num::Wrapping;
 
 use crate::result::ZipError;
 
 /// `ZipCrypto` header size in bytes.
 const ZIP_CRYPTO_HEADER_SIZE: usize = 12;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum EncryptWith<'k> {
-    #[cfg(feature = "aes-crypto")]
-    Aes {
-        mode: crate::AesMode,
-        password: &'k [u8],
-        salt: Option<crate::aes::AesSalt>,
-    },
-    ZipCrypto(ZipCryptoKeys, PhantomData<&'k ()>),
-}
-
-#[cfg(feature = "_arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for EncryptWith<'a> {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        #[cfg(feature = "aes-crypto")]
-        if bool::arbitrary(u)? {
-            return Ok(EncryptWith::Aes {
-                mode: crate::AesMode::arbitrary(u)?,
-                password: u.arbitrary::<&[u8]>()?,
-                salt: None, // We don't need to test with random salt. It's only for testing or reproducible zips
-            });
-        }
-
-        Ok(EncryptWith::ZipCrypto(
-            ZipCryptoKeys::arbitrary(u)?,
-            PhantomData,
-        ))
-    }
-}
 
 /// A container to hold the current key state
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]

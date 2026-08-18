@@ -7,6 +7,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0-pre3](https://github.com/zip-rs/zip2/compare/v9.0.0-pre2...v9.0.0-pre3) - 2026-08-10
+
+### <!-- 0 -->🚀 Features
+
+- add example for memory allocation ([#881](https://github.com/zip-rs/zip2/pull/881))
+- add method to README ([#857](https://github.com/zip-rs/zip2/pull/857))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- rewrite extra fields ([#879](https://github.com/zip-rs/zip2/pull/879))
+- zip64 creation of exactly 4GB without large file should crash ([#839](https://github.com/zip-rs/zip2/pull/839))
+- remove seek call and inline ([#858](https://github.com/zip-rs/zip2/pull/858))
+- change directory attributes detection and set `external attributes` ([#851](https://github.com/zip-rs/zip2/pull/851))
+- ignore zip info extra field on failure ([#868](https://github.com/zip-rs/zip2/pull/868))
+
+### <!-- 2 -->🚜 Refactor
+
+- change extra_data to extra_fields ([#833](https://github.com/zip-rs/zip2/pull/833))
+- change zip64 parsing ([#834](https://github.com/zip-rs/zip2/pull/834))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- tag PRs with size labels ([#882](https://github.com/zip-rs/zip2/pull/882))
+
+## [9.0.0-pre2](https://github.com/zip-rs/zip2/compare/v9.0.0-pre1...v9.0.0-pre1.1) - 2026-05-11
+
+### <!-- 2 -->🚜 Refactor
+
+- move types to zip format folder ([#827](https://github.com/zip-rs/zip2/pull/827))
+- split `read.rs` file to read folder ([#832](https://github.com/zip-rs/zip2/pull/832))
+- move tests outside of read.rs ([#829](https://github.com/zip-rs/zip2/pull/829))
+- add doc and remove useless variables ([#828](https://github.com/zip-rs/zip2/pull/828))
+- update some extra field ([#821](https://github.com/zip-rs/zip2/pull/821))
+- Allow zip file with data descriptor using `ZipReadOptions` ([#823](https://github.com/zip-rs/zip2/pull/823))
+- allow AES in zip file stream ([#820](https://github.com/zip-rs/zip2/pull/820))
+
+## [9.0.0-pre1](https://github.com/zip-rs/zip2/compare/v8.6.0...v9.0.0-pre1) - 2026-05-05
+
+### <!-- 0 -->🚀 Features
+
+- Allow FileOptions to specify filename that may be non-UTF8 ([#819](https://github.com/zip-rs/zip2/pull/819))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Zeroize derived_key when dropped, and suppress error details that may be sensitive ([#803](https://github.com/zip-rs/zip2/pull/803))
+
+### <!-- 2 -->🚜 Refactor
+
+- change vendor_version ([#817](https://github.com/zip-rs/zip2/pull/817))
+- rewrite aes settings ([#815](https://github.com/zip-rs/zip2/pull/815))
+- remove inner compression method from aes options ([#814](https://github.com/zip-rs/zip2/pull/814))
+- don't store converted filenames; convert on demand instead; and don't use Arc since it only deduplicates when copying to same path in another archive ([#807](https://github.com/zip-rs/zip2/pull/807))
+- Potential fixes for 5 code quality findings in src/aes.rs ([#808](https://github.com/zip-rs/zip2/pull/808))
+- [**breaking**] remove deprecated method *_zip64_comment methods ([#812](https://github.com/zip-rs/zip2/pull/812))
+- [**breaking**] Remove deprecated elements ([#802](https://github.com/zip-rs/zip2/pull/802))
+- store the file_name_raw only as key (BREAKING) ([#789](https://github.com/zip-rs/zip2/pull/789))
+- Remove fields from ZipFileData ([#790](https://github.com/zip-rs/zip2/pull/790))
+- Remove useless compression level ([#791](https://github.com/zip-rs/zip2/pull/791))
+- Add non-exhaustive to ExtraField enum ([#793](https://github.com/zip-rs/zip2/pull/793))
+- remove macro export ([#792](https://github.com/zip-rs/zip2/pull/792))
+
+## [8.6.0](https://github.com/zip-rs/zip2/compare/v8.5.1...v8.6.0) - 2026-04-25
+
+### <!-- 0 -->🚀 Features
+
+- add `compression not supported` as enum error ([#774](https://github.com/zip-rs/zip2/pull/774))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- allow for `[u8]` as filename ([#775](https://github.com/zip-rs/zip2/pull/775))
+
+### <!-- 2 -->🚜 Refactor
+
+- mark `ZipFlags` as non-exhaustive and add test for `HasZipMetadata` ([#777](https://github.com/zip-rs/zip2/pull/777))
+- use and simplify is_dir ([#776](https://github.com/zip-rs/zip2/pull/776))
+
+## [8.5.1](https://github.com/zip-rs/zip2/compare/v8.5.0...v8.5.1) - 2026-04-06
+
+### <!-- 2 -->🚜 Refactor
+
+- change magic finder to stack buffer ([#763](https://github.com/zip-rs/zip2/pull/763))
+- simplify extra field parsing ([#764](https://github.com/zip-rs/zip2/pull/764))
+
+## [8.5.0](https://github.com/zip-rs/zip2/compare/v8.4.0...v8.5.0) - 2026-04-01
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- remove `zip64 comment` and add `zip64 extensible data sector` ([#747](https://github.com/zip-rs/zip2/pull/747))
+
+### <!-- 2 -->🚜 Refactor
+
+- remove useless magic in struct ([#730](https://github.com/zip-rs/zip2/pull/730))
+- change extra_field from Arc<Vec<u8>> to Arc<[u8]> ([#741](https://github.com/zip-rs/zip2/pull/741))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- cleanup README ([#758](https://github.com/zip-rs/zip2/pull/758))
+
+## [8.4.0](https://github.com/zip-rs/zip2/compare/v8.3.1...v8.4.0) - 2026-03-23
+
+### <!-- 0 -->🚀 Features
+
+- add a check for building benches ([#748](https://github.com/zip-rs/zip2/pull/748))
+
+### <!-- 2 -->🚜 Refactor
+
+- split part of `read.rs` for code readability ([#744](https://github.com/zip-rs/zip2/pull/744))
+- remove unused allow ([#745](https://github.com/zip-rs/zip2/pull/745))
+
+### <!-- 4 -->⚡ Performance
+
+- skip BufReader for Stored files in make_reader ([#739](https://github.com/zip-rs/zip2/pull/739))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- move pull request template to correct folder ([#749](https://github.com/zip-rs/zip2/pull/749))
+
+## [8.3.1](https://github.com/zip-rs/zip2/compare/v8.3.0...v8.3.1) - 2026-03-21
+
+### <!-- 2 -->🚜 Refactor
+
+- use `AexEncryption::new` ([#736](https://github.com/zip-rs/zip2/pull/736))
+- update tests to add big endian miri check ([#735](https://github.com/zip-rs/zip2/pull/735))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- cleanup repository files ([#743](https://github.com/zip-rs/zip2/pull/743))
+
 ## [8.3.0](https://github.com/zip-rs/zip2/compare/v8.2.0...v8.3.0) - 2026-03-19
 
 ### <!-- 0 -->🚀 Features

@@ -139,7 +139,7 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
     zip.write_all(b"Hello, World!\n").unwrap();
 
     options
-        .add_extra_data(0xbeef, EXTRA_DATA.to_owned().into_boxed_slice(), false)
+        .add_extra_field(0xbeef, EXTRA_DATA.to_owned().into_boxed_slice(), false)
         .unwrap();
 
     zip.start_file("test_with_extra_data/🐢.txt", options)
@@ -162,22 +162,27 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
             ENTRY_NAME,
             INTERNAL_COPY_ENTRY_NAME,
         ];
-        let expected_file_names = HashSet::from_iter(expected_file_names.iter().copied());
-        let file_names = archive.file_names().collect::<HashSet<_>>();
+        let expected_file_names: HashSet<String> =
+            expected_file_names.iter().map(|f| f.to_string()).collect();
+        let file_names: HashSet<String> = archive
+            .file_names()
+            .map(|f| f.unwrap().into_owned())
+            .collect();
         assert_eq!(file_names, expected_file_names);
     }
-
-    // Check an archive file for extra data field contents.
     {
+        // Check an archive file for extra data field contents.
+        let file_without_extra_data = archive.by_name("test/☃.txt")?;
+        assert_eq!(file_without_extra_data.extra_data(), None);
+    }
+    {
+        // Check an archive file for extra data field contents.
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
-        let mut extra_data = Vec::new();
-        extra_data.write_u16_le(0xbeef)?;
-        extra_data.write_u16_le(EXTRA_DATA.len() as u16)?;
-        extra_data.write_all(EXTRA_DATA)?;
-        assert_eq!(
-            file_with_extra_data.extra_data(),
-            Some(extra_data.as_slice())
-        );
+        let mut extra_field = Vec::new();
+        extra_field.write_u16_le(0xbeef)?;
+        extra_field.write_u16_le(EXTRA_DATA.len() as u16)?;
+        extra_field.write_all(EXTRA_DATA)?;
+        assert_eq!(file_with_extra_data.extra_data(), Some(extra_field));
     }
 
     Ok(archive)
@@ -247,6 +252,9 @@ const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
 
 const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";
 
+#[cfg(windows)]
+const EXPECTED_FILE_PERMISSIONS: u32 = 0o100664;
+#[cfg(not(windows))]
 const EXPECTED_FILE_PERMISSIONS: u32 = 0o100755;
 
 #[test]
@@ -268,4 +276,188 @@ fn test_extra_field_mapping_contains_expected_values() {
 
     // Info-ZIP Unix (UID/GID) - 0x7875
     assert!(EXTRA_FIELD_MAPPING.contains(&0x7875));
+}
+
+#[test]
+fn test_long_comment_is_cut() {
+    use std::io::{Cursor, Write};
+    use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
+
+    let comment_length = (u16::MAX as usize) + 100; // the comment is larger than the max
+    let data = Vec::new();
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+    let mut bytes = vec![0u8; comment_length];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))
+        .unwrap();
+
+    let mut writer = ZipWriter::new(Cursor::new(data));
+    let res = writer.set_raw_comment(bytes.clone().into_boxed_slice());
+    assert!(res.is_err()); // `set_raw_comment` will throw an error
+    writer.start_file("asdf.txt", options).unwrap();
+    writer.write_all(b"asdf").unwrap();
+    let archive_as_bytes = writer.finish().unwrap().into_inner();
+
+    // reading
+    let zip_reader = ZipArchive::new(Cursor::new(archive_as_bytes)).unwrap();
+    let comment = zip_reader.comment();
+
+    assert_eq!(comment.len(), u16::MAX as usize);
+    assert_eq!(comment, &bytes[..(u16::MAX as usize)]);
+}
+
+// Test to use the HasZipMetadata trait which use a private unnamed type
+#[test]
+fn test_explicit_system_roundtrip() {
+    use std::io::Cursor;
+    use std::io::Write;
+    use zip::CompressionMethod::Stored;
+    use zip::HasZipMetadata; // We use the trait here
+    use zip::System;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+    let system = System::Unix;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default()
+        .compression_method(Stored)
+        .system(system);
+
+    let filename = format!("test_{:?}.txt", system);
+    writer.start_file(&filename, options).unwrap();
+    writer.write_all(b"content").unwrap();
+
+    // Write and read back
+    let bytes = writer.finish().unwrap().into_inner();
+    let mut reader = ZipArchive::new(Cursor::new(bytes)).unwrap();
+
+    let file = reader.by_index(0).unwrap();
+    assert_eq!(
+        file.get_metadata().system, // We use the trait here
+        system,
+        "System mismatch for {:?}",
+        system
+    );
+}
+
+/// Only on little endian because it runs too long with Miri CI
+#[cfg(all(target_endian = "little", not(miri)))]
+#[test]
+fn test_64k_files() -> zip::result::ZipResult<()> {
+    use std::io::{Read, Write};
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    for i in 0..=u16::MAX {
+        let file_name = format!("{i}.txt");
+        writer.start_file(&*file_name, options)?;
+        writer.write_all(i.to_string().as_bytes())?;
+    }
+
+    let mut reader = ZipArchive::new(writer.finish()?)?;
+    for i in 0..=u16::MAX {
+        let expected_name = format!("{i}.txt");
+        let expected_contents = i.to_string();
+        let expected_contents = expected_contents.as_bytes();
+        let mut file = reader.by_name(&expected_name)?;
+        let mut contents = Vec::with_capacity(expected_contents.len());
+        file.read_to_end(&mut contents)?;
+        assert_eq!(contents, expected_contents);
+        drop(file);
+        contents.clear();
+        let mut file = reader.by_index(i as usize)?;
+        file.read_to_end(&mut contents)?;
+        assert_eq!(contents, expected_contents);
+    }
+    Ok(())
+}
+
+/// Only on little endian because we cannot use fs with miri CI
+#[cfg(all(target_endian = "little", not(miri)))]
+#[test]
+fn test_can_create_destination() -> zip::result::ZipResult<()> {
+    use tempfile::TempDir;
+    use zip::ZipArchive;
+
+    let mut reader = ZipArchive::new(Cursor::new(include_bytes!("../tests/data/mimetype.zip")))?;
+    let dest = TempDir::with_prefix("read__test_can_create_destination")?;
+    reader.extract(&dest)?;
+    assert!(dest.path().join("mimetype").exists());
+    Ok(())
+}
+
+#[test]
+fn test_zip_file_entry() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::read::ZipFileEntry;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let zip_archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
+
+    let file_number = zip_archive.index_for_name("my_file.txt").unwrap();
+    let file = zip_archive.by_index_data(file_number).unwrap();
+    assert_eq!(file.compression(), CompressionMethod::Stored);
+
+    // we can use it in a callback
+    let verify_file = |file: &ZipFileEntry| -> bool { file.size() > 2 };
+    let is_correct_size = verify_file(&file);
+    assert!(is_correct_size);
+
+    // we can use it in a function
+    fn verify_file_2(file: &ZipFileEntry) -> bool {
+        file.name().unwrap() == "my_file.txt"
+    }
+
+    let is_correct_file_name = verify_file_2(&file);
+    assert!(is_correct_file_name);
+}
+
+#[test]
+fn test_zip_file_entry_to_reader() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipReadOptions;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("my_file.txt", options).unwrap();
+    writer.write_all(b"data").unwrap();
+
+    let zip_raw = writer.finish().unwrap().into_inner().into_boxed_slice();
+
+    let reader_zip = Cursor::new(&zip_raw);
+
+    let zip_archive = ZipArchive::new(reader_zip).unwrap();
+
+    let file_number = zip_archive.index_for_name("my_file.txt").unwrap();
+    let file = zip_archive.by_index_data(file_number).unwrap();
+    assert_eq!(file.compression(), CompressionMethod::Stored);
+
+    let mut reader_zipfile = Cursor::new(&zip_raw);
+
+    let mut file_with_reader = file
+        .with_reader(&mut reader_zipfile, ZipReadOptions::new())
+        .unwrap();
+
+    let mut content = Vec::new();
+    file_with_reader.read_to_end(&mut content).unwrap();
+    assert_eq!(content, b"data");
 }

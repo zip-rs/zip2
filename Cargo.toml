@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "8.3.0"
+version = "9.0.0-pre3"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -24,25 +24,25 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 arbitrary = { version = "1.4", features = ["derive"], optional = true }
-aes = { version = "0.8", optional = true }
+aes = { version = "0.9", optional = true }
 bzip2 = { version = "0.6", default-features = false, optional = true }
 chrono = { version = "^0.4.27", optional = true, default-features = false, features = ["std"] }
 constant_time_eq = { version = "0.4", optional = true }
 crc32fast = "1.5"
 flate2 = { version = "1.1", default-features = false, optional = true }
-hmac = { version = "0.12", optional = true, features = ["reset"] }
+hmac = { version = "0.13", optional = true, features = ["zeroize"] }
 indexmap = "2"
 jiff = { version = "^0.2.4", optional = true }
 memchr = "2.7"
 nt-time = { version = "0.13", default-features = false, optional = true }
 ppmd-rust = { version = "1.4", optional = true }
-pbkdf2 = { version = "0.12", optional = true }
-sha1 = { version = "0.10", optional = true }
+pbkdf2 = { version = "0.13", optional = true }
+sha1 = { version = "0.11", optional = true }
 zeroize = { version = "1.8", optional = true }
 zstd = { version = "^0.13.3", optional = true, default-features = false }
 zopfli = { version = "^0.8.3", optional = true }
 deflate64 = { version = "^0.1.10", optional = true }
-lzma-rust2 = { version = "^0.16.1", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+lzma-rust2 = { version = "^0.19.0", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.9", optional = true }
 typed-path = "0.12"
 
@@ -87,9 +87,6 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
-# Enables conversion to/from time::OffsetDateTime if `time` is also enabled, even though ZIP-file timestamps don't include a time zone.
-# This feature will be removed in version 9.0.0.
-deprecated-time = []
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
@@ -128,6 +125,10 @@ harness = false
 
 [[bench]]
 name = "read_metadata"
+harness = false
+
+[[bench]]
+name = "read_many_entries"
 harness = false
 
 [[bench]]

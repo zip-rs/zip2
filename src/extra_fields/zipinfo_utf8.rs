@@ -1,14 +1,14 @@
 use crate::result::{ZipResult, invalid};
 use crate::unstable::LittleEndianReadExt;
-use core::mem::size_of;
-use std::io::Read;
+use core::mem;
+use std::io::{Read, Write};
 
 /// Info-ZIP Unicode Path Extra Field (0x7075) or Unicode Comment Extra Field (0x6375), as
 /// specified in APPNOTE 4.6.8 and 4.6.9
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UnicodeExtraField {
     crc32: u32,
-    content: Box<[u8]>,
+    pub(crate) content: Box<[u8]>,
 }
 
 impl UnicodeExtraField {
@@ -29,20 +29,48 @@ impl UnicodeExtraField {
         }
         Ok(self.content)
     }
-}
 
-impl UnicodeExtraField {
+    /// Check if the crc32 is valid
+    pub(crate) fn is_crc32_valid(&self, ascii_field: &[u8]) -> bool {
+        let computed_crc32 = crc32fast::hash(ascii_field);
+        self.crc32 == computed_crc32
+    }
+
     pub(crate) fn try_from_reader<R: Read>(reader: &mut R, len: u16) -> ZipResult<Self> {
         // Read and discard version byte
         reader.read_exact(&mut [0u8])?;
 
         let crc32 = reader.read_u32_le()?;
         let content_len = (len as usize)
-            .checked_sub(size_of::<u8>() + size_of::<u32>())
+            .checked_sub(mem::size_of::<u8>() + mem::size_of::<u32>())
             .ok_or(invalid!("Unicode extra field is too small"))?;
         let mut content = vec![0u8; content_len].into_boxed_slice();
         reader.read_exact(&mut content)?;
         Ok(Self { crc32, content })
+    }
+
+    pub(crate) fn full_size(&self) -> usize {
+        mem::size_of::<u16>() // magic
+            + mem::size_of::<u16>() // length
+        + self.size()
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        mem::size_of::<u8>() // version
+            + mem::size_of::<u32>() // crc32
+            + self.content.len() // content
+    }
+
+    /// Write the Unicode extra field. Magic header should already be written
+    pub(crate) fn write<W: Write>(&self, writer: &mut W) -> ZipResult<()> {
+        // Magic header should already be written
+        let size = self.size() as u16;
+        writer.write_all(&size.to_le_bytes())?;
+        let version = 1u8;
+        writer.write_all(&version.to_le_bytes())?;
+        writer.write_all(&self.crc32.to_le_bytes())?;
+        writer.write_all(&self.content)?;
+        Ok(())
     }
 }
 
@@ -51,9 +79,7 @@ mod tests {
     use crate::extra_fields::UnicodeExtraField;
     #[test]
     fn unicode_extra_field_crc32_correct() {
-        let data = [
-            0x01, 0xef, 0x39, 0x8e, 0x4b, 'u' as u8, 't' as u8, 'f' as u8, '-' as u8, '8' as u8,
-        ];
+        let data = [0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8'];
         let extra =
             UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
         let res = extra.unwrap_valid(b"abcdef");
@@ -64,12 +90,29 @@ mod tests {
 
     #[test]
     fn unicode_extra_field_crc32_incorrect() {
-        let data = [
-            0x01, 0x00, 0x00, 0x00, 0x00, 'u' as u8, 't' as u8, 'f' as u8, '-' as u8, '8' as u8,
-        ];
+        let data = [0x01, 0x00, 0x00, 0x00, 0x00, b'u', b't', b'f', b'-', b'8'];
         let extra =
             UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
         let res = extra.unwrap_valid(b"abcdef");
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn unicode_extra_field_write_test() {
+        let data = [0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8'];
+        assert_eq!(data.len(), 10); // 0x0A
+        let extra =
+            UnicodeExtraField::try_from_reader(&mut std::io::Cursor::new(data), 10).unwrap();
+        let mut data = Vec::new();
+        extra.write(&mut data).unwrap();
+
+        // The magic is NOT written
+        // Size is 10
+        assert_eq!(
+            data,
+            [
+                0x0A, 0x00, 0x01, 0xef, 0x39, 0x8e, 0x4b, b'u', b't', b'f', b'-', b'8'
+            ]
+        );
     }
 }

@@ -43,31 +43,6 @@ impl fmt::Debug for DateTime {
     }
 }
 
-impl DateTime {
-    /// Constructs a default datetime of 1980-01-01 00:00:00.
-    pub const DEFAULT: Self = DateTime {
-        datepart: 0b0000_0000_0010_0001,
-        timepart: 0,
-    };
-
-    /// Returns the current time if possible, otherwise the default of 1980-01-01.
-    #[cfg(feature = "time")]
-    #[must_use]
-    pub fn default_for_write() -> Self {
-        let now = time::OffsetDateTime::now_utc();
-        time::PrimitiveDateTime::new(now.date(), now.time())
-            .try_into()
-            .unwrap_or_else(|_| DateTime::default())
-    }
-
-    /// Returns the current time if possible, otherwise the default of 1980-01-01.
-    #[cfg(not(feature = "time"))]
-    #[must_use]
-    pub fn default_for_write() -> Self {
-        DateTime::default()
-    }
-}
-
 #[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for DateTime {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
@@ -199,6 +174,59 @@ impl fmt::Display for DateTime {
 }
 
 impl DateTime {
+    /// Constructs a default datetime of 1980-01-01 00:00:00.
+    pub const DEFAULT: Self = DateTime {
+        datepart: 0b0000_0000_0010_0001,
+        timepart: 0,
+    };
+
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(feature = "time")]
+    #[must_use]
+    pub fn default_for_write() -> Self {
+        let now = time::OffsetDateTime::now_utc();
+        time::PrimitiveDateTime::new(now.date(), now.time())
+            .try_into()
+            .unwrap_or_else(|_| DateTime::default())
+    }
+
+    /// Returns the current time if possible, otherwise the default of 1980-01-01.
+    #[cfg(not(feature = "time"))]
+    #[must_use]
+    pub fn default_for_write() -> Self {
+        DateTime::default()
+    }
+
+    #[cfg(feature = "chrono")]
+    /// Generate a `SystemTime` from a `DateTime`.
+    pub(crate) fn datetime_to_systemtime(&self) -> Option<std::time::SystemTime> {
+        if let Some(chrono_datetime) = self.generate_chrono_datetime() {
+            let time = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                chrono_datetime,
+                chrono::Utc,
+            );
+            return Some(time.into());
+        }
+        None
+    }
+
+    #[cfg(feature = "chrono")]
+    /// Generate a `NaiveDateTime` from a `DateTime`.
+    fn generate_chrono_datetime(&self) -> Option<chrono::NaiveDateTime> {
+        if let Some(chrono_date) = chrono::NaiveDate::from_ymd_opt(
+            self.year().into(),
+            self.month().into(),
+            self.day().into(),
+        ) && let Some(chrono_datetime) = chrono_date.and_hms_opt(
+            self.hour().into(),
+            self.minute().into(),
+            self.second().into(),
+        ) {
+            return Some(chrono_datetime);
+        }
+        None
+    }
+
     /// Converts an msdos (u16, u16) pair to a `DateTime` object
     ///
     /// # Safety
@@ -351,15 +379,6 @@ impl DateTime {
     }
 }
 
-#[cfg(all(feature = "time", feature = "deprecated-time"))]
-impl TryFrom<time::OffsetDateTime> for DateTime {
-    type Error = DateTimeRangeError;
-
-    fn try_from(dt: time::OffsetDateTime) -> Result<Self, Self::Error> {
-        Self::try_from(time::PrimitiveDateTime::new(dt.date(), dt.time()))
-    }
-}
-
 #[cfg(feature = "time")]
 impl TryFrom<time::PrimitiveDateTime> for DateTime {
     type Error = DateTimeRangeError;
@@ -373,15 +392,6 @@ impl TryFrom<time::PrimitiveDateTime> for DateTime {
             dt.minute(),
             dt.second(),
         )
-    }
-}
-
-#[cfg(all(feature = "time", feature = "deprecated-time"))]
-impl TryFrom<DateTime> for time::OffsetDateTime {
-    type Error = time::error::ComponentRange;
-
-    fn try_from(dt: DateTime) -> Result<Self, Self::Error> {
-        time::PrimitiveDateTime::try_from(dt).map(time::PrimitiveDateTime::assume_utc)
     }
 }
 
@@ -531,23 +541,6 @@ mod tests {
         assert!(DateTime::from_date_and_time(2100, 2, 29, 0, 0, 0).is_err());
     }
 
-    #[cfg(all(feature = "time", feature = "deprecated-time"))]
-    #[test]
-    fn datetime_try_from_offset_datetime() {
-        use time::macros::datetime;
-
-        use super::DateTime;
-
-        // 2018-11-17 10:38:30
-        let dt = DateTime::try_from(datetime!(2018-11-17 10:38:30 UTC)).unwrap();
-        assert_eq!(dt.year(), 2018);
-        assert_eq!(dt.month(), 11);
-        assert_eq!(dt.day(), 17);
-        assert_eq!(dt.hour(), 10);
-        assert_eq!(dt.minute(), 38);
-        assert_eq!(dt.second(), 30);
-    }
-
     #[cfg(feature = "time")]
     #[test]
     fn datetime_try_from_primitive_datetime() {
@@ -584,20 +577,6 @@ mod tests {
         assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00)).is_err());
     }
 
-    #[cfg(all(feature = "time", feature = "deprecated-time"))]
-    #[test]
-    fn offset_datetime_try_from_datetime() {
-        use time::OffsetDateTime;
-        use time::macros::datetime;
-
-        use super::DateTime;
-
-        // 2018-11-17 10:38:30 UTC
-        let dt =
-            OffsetDateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
-        assert_eq!(dt, datetime!(2018-11-17 10:38:30 UTC));
-    }
-
     #[cfg(feature = "time")]
     #[test]
     fn primitive_datetime_try_from_datetime() {
@@ -610,25 +589,6 @@ mod tests {
         let dt =
             PrimitiveDateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
         assert_eq!(dt, datetime!(2018-11-17 10:38:30));
-    }
-
-    #[cfg(all(feature = "time", feature = "deprecated-time"))]
-    #[test]
-    fn offset_datetime_try_from_bounds() {
-        use super::DateTime;
-        use time::OffsetDateTime;
-
-        // 1980-00-00 00:00:00
-        assert!(
-            OffsetDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
-                .is_err()
-        );
-
-        // 2107-15-31 31:63:62
-        assert!(
-            OffsetDateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
-                .is_err()
-        );
     }
 
     #[cfg(feature = "time")]

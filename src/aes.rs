@@ -4,13 +4,12 @@
 //! Note that using CRC with AES depends on the used encryption specification, AE-1 or AE-2.
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
-use crate::CompressionMethod;
 use crate::aes_ctr::AesCipher;
+use crate::format::aes::AesMode;
 use crate::result::ZipResult;
-use crate::types::{AesMode, AesVendorVersion};
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
-use hmac::{Hmac, Mac};
+use hmac::{KeyInit, Mac, SimpleHmacReset};
 use sha1::Sha1;
 use std::io::{self, Error, ErrorKind, Read, Write};
 use zeroize::{Zeroize, Zeroizing};
@@ -29,38 +28,15 @@ enum Cipher {
     Aes256(Box<aes_ctr::AesCtrZipKeyStream<aes_ctr::Aes256>>),
 }
 
-#[non_exhaustive]
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub(crate) struct AesModeOptions {
-    pub(crate) mode: AesMode,
-    pub(crate) vendor_version: AesVendorVersion,
-    pub(crate) actual_compression_method: CompressionMethod,
-    pub(crate) custom_salt: Option<AesSalt>,
-}
-
-impl AesModeOptions {
-    pub(crate) fn new(
-        mode: AesMode,
-        vendor_version: AesVendorVersion,
-        actual_compression_method: CompressionMethod,
-        custom_salt: Option<AesSalt>,
-    ) -> Self {
-        Self {
-            mode,
-            vendor_version,
-            actual_compression_method,
-            custom_salt,
-        }
-    }
-
-    /// Used to create a the `aes_mode` of `ZipFileData`
-    pub(crate) fn to_tuple(self) -> (AesMode, AesVendorVersion, CompressionMethod) {
-        (
-            self.mode,
-            self.vendor_version,
-            self.actual_compression_method,
-        )
-    }
+/// Holds the AES information of a file in the zip archive
+#[derive(Debug)]
+pub struct AesInfo {
+    /// The AES encryption mode
+    pub aes_mode: AesMode,
+    /// The verification key
+    pub verification_value: [u8; PWD_VERIFY_LENGTH],
+    /// The salt
+    pub salt: Vec<u8>,
 }
 
 /// A custom salt that can be used instead of a randomly generated one when encrypting files with AES.
@@ -103,8 +79,9 @@ impl AesSalt {
         )
     }
 
-    /// Creates a new `CustomSalt` with the given `mode` and `salt`.
-    /// The length of `salt` must be at least the required salt length for the given `mode`, otherwise an error is returned.
+    /// Creates a new `AesSalt` with the given `mode` and `salt`.
+    /// The length of `salt` must be exactly one-half the key length for the given `mode`, otherwise
+    /// an error is returned.
     ///
     /// # Errors
     /// Returns an error if the length of `salt` is too short for the given `mode`.
@@ -194,10 +171,10 @@ impl<R: Read> AesReader<R> {
         // derive a key from the password and salt
         // the length depends on the aes key length
         let derived_key_len = 2 * key_length + PWD_VERIFY_LENGTH;
-        let mut derived_key: Box<[u8]> = vec![0; derived_key_len].into_boxed_slice();
+        let mut derived_key: Zeroizing<Vec<u8>> = Zeroizing::new(vec![0; derived_key_len]);
 
         // use PBKDF2 with HMAC-Sha1 to derive the key
-        pbkdf2::pbkdf2::<Hmac<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
+        pbkdf2::pbkdf2::<SimpleHmacReset<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
             .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
         let decrypt_key = &derived_key[0..key_length];
         let hmac_key = &derived_key[key_length..key_length * 2];
@@ -210,11 +187,8 @@ impl<R: Read> AesReader<R> {
         }
 
         let cipher = Cipher::from_mode(self.aes_mode, decrypt_key)?;
-        let hmac = Hmac::<Sha1>::new_from_slice(hmac_key).map_err(|e| {
-            ZipError::Io(std::io::Error::other(format!(
-                "Cannot create hmac with key: {e}"
-            )))
-        })?;
+        let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key)
+            .map_err(|_e| ZipError::Io(std::io::Error::other("Failed to initialize HMAC")))?;
 
         Ok(AesReaderValid {
             reader: self.reader,
@@ -255,7 +229,7 @@ pub struct AesReaderValid<R: Read> {
     reader: R,
     data_remaining: u64,
     cipher: Cipher,
-    hmac: Hmac<Sha1>,
+    hmac: SimpleHmacReset<Sha1>,
     finalized: bool,
 }
 
@@ -288,10 +262,16 @@ impl<R: Read> Read for AesReaderValid<R> {
 
         // if there is no data left to read, check the integrity of the data
         if self.data_remaining == 0 {
-            assert!(
+            debug_assert!(
                 !self.finalized,
                 "Tried to use an already finalized HMAC. This is a bug!"
             );
+            if self.finalized {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Tried to use an already finalized HMAC",
+                ));
+            }
             self.finalized = true;
 
             // Zip uses HMAC-Sha1-80, which only uses the first half of the hash
@@ -323,7 +303,7 @@ impl<R: Read> AesReaderValid<R> {
 pub struct AesWriter<W> {
     writer: W,
     cipher: Cipher,
-    hmac: Hmac<Sha1>,
+    hmac: SimpleHmacReset<Sha1>,
     buffer: Zeroizing<Vec<u8>>,
     encrypted_file_header: Option<Vec<u8>>,
 }
@@ -357,7 +337,7 @@ impl<W: Write> AesWriter<W> {
         let mut derived_key: Zeroizing<Vec<u8>> = Zeroizing::new(vec![0; derived_key_len]);
 
         // Use PBKDF2 with HMAC-Sha1 to derive the key.
-        pbkdf2::pbkdf2::<Hmac<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
+        pbkdf2::pbkdf2::<SimpleHmacReset<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
             .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
         let encryption_key = &derived_key[0..key_length];
         let hmac_key = &derived_key[key_length..key_length * 2];
@@ -366,8 +346,8 @@ impl<W: Write> AesWriter<W> {
         encrypted_file_header.write_all(&pwd_verify)?;
 
         let cipher = Cipher::from_mode(aes_mode, encryption_key)?;
-        let hmac = Hmac::<Sha1>::new_from_slice(hmac_key)
-            .map_err(|e| std::io::Error::other(format!("Cannot create hmac with key: {e}")))?;
+        let hmac = SimpleHmacReset::<Sha1>::new_from_slice(hmac_key)
+            .map_err(|_| std::io::Error::other("Failed to initialize HMAC"))?;
 
         Ok(Self {
             writer,
@@ -451,8 +431,8 @@ mod tests {
 
     use crate::{
         aes::{AesReader, AesWriter},
+        format::aes::AesMode,
         result::ZipError,
-        types::AesMode,
     };
 
     /// Checks whether `AesReader` can successfully decrypt what `AesWriter` produces.

@@ -28,6 +28,7 @@ fn read_entry(bench: &mut Bencher) {
     let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
 
     bench.iter(|| {
+        let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
         let mut file = archive.by_name("random.dat").unwrap();
         let mut buf = [0u8; 1024];
         loop {

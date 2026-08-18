@@ -53,22 +53,24 @@ By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time`
 ## Library usage
 
 Reading:
-- [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html)
+- [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html#method.new)
+- [`read_zipfile_from_stream_*`](https://docs.rs/zip/latest/zip/read/)
 
 Writing:
-- [`ZipWriter::new()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html) - to create a new archive
+- [`ZipWriter::new()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new) - to create a new archive
+- [`ZipWriter::new_append()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new_append) - to read and append to an existing zip file
 - [`ZipWriter::new_stream()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new_stream) - to write in stream mode
 
 ## Examples
 
-See the [examples directory](./examples) for:
+See the [examples directory](https://github.com/zip-rs/zip2/tree/master/examples) for:
 
-- How to [write a file to a zip](./examples/write_sample.rs).
-- How to [write a directory of files to a zip](./examples/write_dir.rs) (using [walkdir](https://github.com/BurntSushi/walkdir)).
-- How to [extract a zip file](./examples/extract.rs).
-- How to [extract a single file from a zip](./examples/extract_lorem.rs).
-- How to [read a zip from the standard input](./examples/stdin_info.rs).
-- How to [append a directory to an existing archive](./examples/append.rs)
+- How to [write a file to a zip](https://github.com/zip-rs/zip2/tree/master/examples/write_sample.rs).
+- How to [write a directory of files to a zip](https://github.com/zip-rs/zip2/tree/master/examples/write_dir.rs) (using [walkdir](https://github.com/BurntSushi/walkdir)).
+- How to [extract a zip file](https://github.com/zip-rs/zip2/tree/master/examples/extract.rs).
+- How to [extract a single file from a zip](https://github.com/zip-rs/zip2/tree/master/examples/extract_lorem.rs).
+- How to [read a zip from the standard input](https://github.com/zip-rs/zip2/tree/master/examples/stdin_info.rs).
+- How to [append a directory to an existing archive](https://github.com/zip-rs/zip2/tree/master/examples/append.rs)
 
 ## Wasm
 
@@ -153,7 +155,7 @@ The zip creation fuzzer will try to print out a description of the kind of input
 # This input was translated into one or more test cases:
 <fuzz/write/in/id-000000,time-0,execs-0,orig-0011743621118ab6c5278ffbb8fd14bddd8369ee.min \
   cargo run --manifest-path=fuzz/Cargo.toml --quiet -p fuzz_write
-writer.start_file_from_path("", FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2048, 1, 1, 0, 0, 0)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_data: vec![].into(), central_extra_data: vec![].into()}, alignment: 0 })?;
+writer.start_file_from_path("", FileOptions { compression_method: Stored, compression_level: None, last_modified_time: DateTime::from_date_and_time(2048, 1, 1, 0, 0, 0)?, permissions: None, large_file: false, encrypt_with: None, extended_options: ExtendedFileOptions {extra_fields: vec![].into()}, alignment: 0 })?;
 writer.write_all(&[])?;
 writer
 let _ = writer.finish_into_readable()?;

@@ -1,5 +1,3 @@
-#![allow(unknown_lints)] // non_local_definitions isn't in Rust 1.70
-#![allow(non_local_definitions)]
 //! Error types that can be emitted from this library
 
 use core::error::Error;
@@ -29,6 +27,9 @@ pub enum ZipError {
 
     /// provided password is incorrect
     InvalidPassword,
+
+    /// Compression method not supported
+    CompressionMethodNotSupported(u16),
 }
 
 impl ZipError {
@@ -54,6 +55,9 @@ impl Display for ZipError {
             Self::UnsupportedArchive(e) => write!(f, "unsupported Zip archive: {e}"),
             Self::FileNotFound => f.write_str("specified file not found in archive"),
             Self::InvalidPassword => f.write_str("provided password is incorrect"),
+            Self::CompressionMethodNotSupported(id) => {
+                write!(f, "compression method not supported: {id}")
+            }
         }
     }
 }
@@ -65,7 +69,8 @@ impl Error for ZipError {
             Self::InvalidArchive(_)
             | Self::UnsupportedArchive(_)
             | Self::FileNotFound
-            | Self::InvalidPassword => None,
+            | Self::InvalidPassword
+            | Self::CompressionMethodNotSupported(_) => None,
         }
     }
 }
@@ -75,7 +80,9 @@ impl From<ZipError> for io::Error {
         let kind = match &err {
             ZipError::Io(err) => err.kind(),
             ZipError::InvalidArchive(_) => io::ErrorKind::InvalidData,
-            ZipError::UnsupportedArchive(_) => io::ErrorKind::Unsupported,
+            ZipError::UnsupportedArchive(_) | ZipError::CompressionMethodNotSupported(_) => {
+                io::ErrorKind::Unsupported
+            }
             ZipError::FileNotFound => io::ErrorKind::NotFound,
             ZipError::InvalidPassword => io::ErrorKind::InvalidInput,
         };
