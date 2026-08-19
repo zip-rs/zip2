@@ -902,6 +902,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// ```
     /// # fn main() -> Result<(), zip::result::ZipError> {
+    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
+    /// # {
     /// use std::io::{Cursor, Write};
     /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
     ///
@@ -916,6 +918,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// assert_eq!(archive.len(), 1);
     /// assert!(archive.by_name("keep.txt").is_ok());
     /// assert!(archive.by_name("drop.txt").is_err());
+    /// # }
     /// # Ok(())
     /// # }
     /// ```
