@@ -869,6 +869,70 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
+    /// Removes an entry from the archive's directory without rewriting the
+    /// archive.
+    ///
+    /// The entry stops appearing in the archive: it is dropped from the central
+    /// directory written by [`ZipWriter::finish`], so readers no longer see it.
+    /// Its local header and file data are **left in place** as unreferenced
+    /// bytes, which is what makes this cheap — nothing after the removed entry
+    /// is moved or rewritten, so the cost does not scale with the size of the
+    /// archive.
+    ///
+    /// The file therefore does not shrink. Reclaiming the space needs a
+    /// rewrite, which a caller can do when it is worth doing (for example by
+    /// copying the surviving entries into a fresh archive with
+    /// [`ZipWriter::merge_archive`]) rather than on every removal.
+    ///
+    /// Any entry that shares data with the removed one — see
+    /// [`ZipWriter::shallow_copy_file`] — keeps working, because the bytes it
+    /// points at are untouched.
+    ///
+    /// If a file is currently being written, it is finished first, exactly as
+    /// [`ZipWriter::start_file`] does.
+    ///
+    /// # Safety
+    ///
+    ///.This function only deletes the file entry from the archive's central
+    /// directory. The file's content remains untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ZipError::FileNotFound`] if `name` does not match an entry.
+    ///
+    /// ```
+    /// # fn main() -> Result<(), zip::result::ZipError> {
+    /// # #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
+    /// # {
+    /// use std::io::{Cursor, Write};
+    /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+    ///
+    /// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    /// zip.start_file("keep.txt", SimpleFileOptions::default())?;
+    /// zip.write_all(b"kept")?;
+    /// zip.start_file("drop.txt", SimpleFileOptions::default())?;
+    /// zip.write_all(b"dropped")?;
+    /// zip.hide_file("drop.txt")?;
+    ///
+    /// let mut archive = ZipArchive::new(zip.finish()?)?;
+    /// assert_eq!(archive.len(), 1);
+    /// assert!(archive.by_name("keep.txt").is_ok());
+    /// assert!(archive.by_name("drop.txt").is_err());
+    /// # }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn hide_file(&mut self, name: &str) -> ZipResult<()> {
+        self.finish_file()?;
+        // `shift_remove` rather than `swap_remove`: the central directory is
+        // written in `files` order, and reordering the surviving entries on
+        // every removal would be a surprising side effect.
+        self.files
+            .shift_remove(name.as_bytes())
+            .map(|_| ())
+            .ok_or(ZipError::FileNotFound)
+    }
+
     /// Removes the file currently being written from the archive if there is one, or else removes
     /// the file most recently written.
     pub fn abort_file(&mut self) -> ZipResult<()> {
