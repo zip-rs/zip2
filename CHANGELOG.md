@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0-pre3.1](https://github.com/zip-rs/zip2/compare/v9.0.0-pre3...v9.0.0-pre3.1) - 2026-08-21
+
+### <!-- 0 -->🚀 Features
+
+- *(write)* add `ZipWriter::hide_file` for in-place entry deletion ([#924](https://github.com/zip-rs/zip2/pull/924))
+- add compression ([#948](https://github.com/zip-rs/zip2/pull/948))
+- add test to in place modification ([#945](https://github.com/zip-rs/zip2/pull/945))
+- move CustomExtraField to own file ([#941](https://github.com/zip-rs/zip2/pull/941))
+- add a test on enum size ([#939](https://github.com/zip-rs/zip2/pull/939))
+- use ZipFileEntry instead of ZipStreamFileMetadata ([#935](https://github.com/zip-rs/zip2/pull/935))
+- add ZipFileEntry with no Reader ([#933](https://github.com/zip-rs/zip2/pull/933))
+- change `aes_mode` to `aes_settings()` in ZipFileData ([#925](https://github.com/zip-rs/zip2/pull/925))
+- cleanup and harmonize extra fields ([#923](https://github.com/zip-rs/zip2/pull/923))
+- Rewrite zip64 extra ([#913](https://github.com/zip-rs/zip2/pull/913))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- remove extra alloc used to copy ([#938](https://github.com/zip-rs/zip2/pull/938))
+- lazy allocation on error case ([#937](https://github.com/zip-rs/zip2/pull/937))
+- fix data alignement ([#929](https://github.com/zip-rs/zip2/pull/929))
+
+### <!-- 2 -->🚜 Refactor
+
+- remove feature gate ([#949](https://github.com/zip-rs/zip2/pull/949))
+- create `ZipFileFlags` to wrap `flags` ([#947](https://github.com/zip-rs/zip2/pull/947))
+- remove unused trait ([#946](https://github.com/zip-rs/zip2/pull/946))
+- access `crate::format` with `zip::unstable::format` ([#944](https://github.com/zip-rs/zip2/pull/944))
+- harmonize functions to `format/functions.rs` ([#943](https://github.com/zip-rs/zip2/pull/943))
+- rewrite `make_reader()` function ([#936](https://github.com/zip-rs/zip2/pull/936))
+- simplify `initialize_local_block` ([#934](https://github.com/zip-rs/zip2/pull/934))
+- move write options to `write/options.rs` ([#931](https://github.com/zip-rs/zip2/pull/931))
+- move spec to format ([#932](https://github.com/zip-rs/zip2/pull/932))
+- move Magic to format ([#930](https://github.com/zip-rs/zip2/pull/930))
+- [**breaking**] Remove ZipFileData::extra_data_start field that is never read ([#926](https://github.com/zip-rs/zip2/pull/926))
+
 ## [9.0.0-pre3](https://github.com/zip-rs/zip2/compare/v9.0.0-pre2...v9.0.0-pre3) - 2026-08-10
 
 ### <!-- 0 -->🚀 Features
