@@ -375,14 +375,13 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         let mut options = SimpleFileOptions::default()
             .large_file(self.compressed_size().max(self.size()) >= ZIP64_BYTES_THR)
             .compression_method(self.compression())
-            .unix_permissions(self.unix_mode().unwrap_or(0o644) | ffi::S_IFREG)
             .last_modified_time(
                 self.last_modified()
                     .filter(DateTime::is_valid)
                     .unwrap_or_else(DateTime::default_for_write),
             );
+        options.permissions = self.unix_mode();
 
-        options.normalize();
         #[cfg(feature = "aes-crypto")]
         if let Some((mode, vendor_version)) = self.get_metadata().aes_settings() {
             use crate::write::options::EncryptWith;
