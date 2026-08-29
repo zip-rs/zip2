@@ -2,7 +2,6 @@ use std::error::Error;
 use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
-    str::FromStr,
 };
 use zip::write::SimpleFileOptions;
 
@@ -44,9 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("Wrong usage".into());
     }
 
-    let existing_archive_path = &*args[1];
-    let append_dir_path = &*args[2];
-    let archive = PathBuf::from_str(existing_archive_path).unwrap();
+    let existing_archive_path = PathBuf::from(&*args[1]);
+    let append_dir_path = PathBuf::from(&*args[2]);
     let base_dir = match std::env::current_dir() {
         Ok(dir) => match dir.canonicalize() {
             Ok(c) => c,
@@ -61,24 +59,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let to_append = match PathBuf::from_str(append_dir_path) {
-        Ok(path) => {
-            if path.is_absolute() {
-                return Err("Absolute paths are not allowed".into());
-            }
-            if path
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-            {
-                return Err("Parent directory references (..) are not allowed".into());
-            }
-            base_dir.join(path)
-        }
-        Err(e) => {
-            eprintln!("Invalid path: {}", e);
-            return Err(e.into());
-        }
-    };
+    if append_dir_path.is_absolute() {
+        return Err("Absolute paths are not allowed".into());
+    }
+    if append_dir_path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("Parent directory references (..) are not allowed".into());
+    }
+    let to_append = base_dir.join(append_dir_path);
     let to_append = match to_append.canonicalize() {
         Ok(p) => p,
         Err(e) => {
@@ -94,7 +84,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let existing_zip = OpenOptions::new()
         .read(true)
         .write(true)
-        .open(archive)
+        .open(existing_archive_path)
         .unwrap();
     let mut append_zip = zip::ZipWriter::new_append(existing_zip).unwrap();
 
