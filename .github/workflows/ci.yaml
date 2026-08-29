@@ -240,11 +240,11 @@ jobs:
       - run: rustup toolchain add nightly && rustup default nightly
 
       - name: resolve minimal versions
-        run: cargo -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
-        run: cargo check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: test
-        run: cargo test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo +nightly test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   style_and_docs:
     strategy:

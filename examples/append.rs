@@ -61,23 +61,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let to_append = match PathBuf::from_str(append_dir_path) {
-        Ok(path) => {
-            if path.is_absolute() {
-                return Err("Absolute paths are not allowed".into());
-            }
-            if path
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-            {
-                return Err("Parent directory references (..) are not allowed".into());
-            }
-            base_dir.join(path)
+    let to_append = {
+        let path = PathBuf::from(append_dir_path);
+        if path.is_absolute() {
+            return Err("Absolute paths are not allowed".into());
         }
-        Err(e) => {
-            eprintln!("Invalid path: {}", e);
-            return Err(e.into());
+        if path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err("Parent directory references (..) are not allowed".into());
         }
+        base_dir.join(path)
     };
     let to_append = match to_append.canonicalize() {
         Ok(p) => p,
