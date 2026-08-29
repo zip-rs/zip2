@@ -375,6 +375,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         let mut options = SimpleFileOptions::default()
             .large_file(self.compressed_size().max(self.size()) >= ZIP64_BYTES_THR)
             .compression_method(self.compression())
+            .system(self.system())
             .external_attributes(self.external_attributes())
             .last_modified_time(
                 self.last_modified()
