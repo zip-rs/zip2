@@ -381,7 +381,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
                     .filter(DateTime::is_valid)
                     .unwrap_or_else(DateTime::default_for_write),
             );
-        
+
         options.normalize();
         #[cfg(feature = "aes-crypto")]
         if let Some((mode, vendor_version)) = self.get_metadata().aes_settings() {
