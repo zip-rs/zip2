@@ -140,6 +140,28 @@ impl Zip64ExtendedInformation {
         Ok(())
     }
 
+    /// Reads one of the block's 8 byte values, reporting a short read as a truncated block.
+    fn read_value<R: Read>(reader: &mut R) -> ZipResult<u64> {
+        match reader.read_u64_le() {
+            Ok(value) => Ok(value),
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                Err(invalid!("ZIP64 extra field truncated"))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Reads the block and returns the entry's real uncompressed size, compressed size and
+    /// local header offset.
+    ///
+    /// Per APPNOTE 4.5.3 a value belongs in this block only when the matching field in the
+    /// entry itself holds the 0xFFFFFFFF sentinel, which means "too large to store here, the
+    /// real value is in the ZIP64 block". Writers exist that emit a full length block anyway,
+    /// so keep deciding what to *read* by the block's length, to stay in step with the stream,
+    /// but let a value *replace* the entry's own only when a sentinel asked for it. A block
+    /// present without a sentinel repeats what the entry already said, so ignoring it costs
+    /// nothing, and when such a block is malformed, trusting it turns an archive every other
+    /// tool reads into an unreadable one.
     #[inline]
     pub(crate) fn parse<R: Read>(
         reader: &mut R,
@@ -149,63 +171,47 @@ impl Zip64ExtendedInformation {
         header_start: Option<u32>,
     ) -> ZipResult<(u64, u64, u64)> {
         let mut consumed_len = 0;
-        let new_uncompressed_size = if len >= 24 || u64::from(uncompressed_size) == ZIP64_BYTES_THR
-        {
-            let new_uncompressed_size = match reader.read_u64_le() {
-                Ok(v) => v,
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                    return Err(invalid!("ZIP64 extra field truncated"));
-                }
-                Err(e) => return Err(e.into()),
-            };
+
+        let uncompressed_size_is_zip64 = u64::from(uncompressed_size) == ZIP64_BYTES_THR;
+        let new_uncompressed_size = if len >= 24 || uncompressed_size_is_zip64 {
+            let value = Self::read_value(reader)?;
             consumed_len += mem::size_of::<u64>();
-            new_uncompressed_size
+            if uncompressed_size_is_zip64 {
+                value
+            } else {
+                uncompressed_size.into()
+            }
         } else {
             uncompressed_size.into()
         };
 
-        let new_compressed_size = if len >= 24 || u64::from(compressed_size) == ZIP64_BYTES_THR {
-            let new_compressed_size = match reader.read_u64_le() {
-                Ok(v) => v,
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                    return Err(invalid!("ZIP64 extra field truncated"));
-                }
-                Err(e) => return Err(e.into()),
-            };
+        let compressed_size_is_zip64 = u64::from(compressed_size) == ZIP64_BYTES_THR;
+        let new_compressed_size = if len >= 24 || compressed_size_is_zip64 {
+            let value = Self::read_value(reader)?;
             consumed_len += mem::size_of::<u64>();
-            new_compressed_size
+            if compressed_size_is_zip64 {
+                value
+            } else {
+                compressed_size.into()
+            }
         } else {
             compressed_size.into()
         };
 
-        let new_header_start = if len >= 24 {
-            let new_header_start = match reader.read_u64_le() {
-                Ok(v) => v,
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                    return Err(invalid!("ZIP64 extra field truncated"));
-                }
-                Err(e) => return Err(e.into()),
-            };
+        // `header_start` is `None` for a local header, which has no relative offset field to
+        // override in the first place.
+        let header_start_is_zip64 =
+            header_start.is_some_and(|start| u64::from(start) == ZIP64_BYTES_THR);
+        let new_header_start = if len >= 24 || header_start_is_zip64 {
+            let value = Self::read_value(reader)?;
             consumed_len += mem::size_of::<u64>();
-            new_header_start
-        } else {
-            if let Some(header_start) = header_start {
-                if u64::from(header_start) == ZIP64_BYTES_THR {
-                    let new_header_start = match reader.read_u64_le() {
-                        Ok(v) => v,
-                        Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                            return Err(invalid!("ZIP64 extra field truncated"));
-                        }
-                        Err(e) => return Err(e.into()),
-                    };
-                    consumed_len += mem::size_of::<u64>();
-                    new_header_start
-                } else {
-                    header_start.into()
-                }
+            if header_start_is_zip64 {
+                value
             } else {
-                0
+                header_start.map_or(0, u64::from)
             }
+        } else {
+            header_start.map_or(0, u64::from)
         };
 
         let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
