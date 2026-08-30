@@ -10,7 +10,6 @@ use crate::extra_fields::CustomExtraField;
 use crate::format::ffi;
 use crate::format::system::System;
 use crate::result::{ZipResult, invalid};
-use crate::write::DEFAULT_FILE_PERMISSIONS;
 use crate::zipcrypto::ZipCryptoKeys;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -68,7 +67,9 @@ pub struct FileOptions<'k, 'n, T: sealed::FileOptionExtension> {
 pub type SimpleFileOptions = FileOptions<'static, 'static, ()>;
 
 impl FileOptions<'static, 'static, ()> {
-    pub(crate) const DEFAULT_FILE_PERMISSION: u32 = 0o100_644;
+    pub(crate) const DEFAULT_FILE_PERMISSION: u32 = 0o644 | ffi::S_IFREG;
+    pub(crate) const DEFAULT_DIR_PERMISSIONS: u32 = 0o755 | ffi::S_IFDIR; // rwxr-xr-x default for directories
+    pub(crate) const DEFAULT_SYMLINK_PERMISSIONS: u32 = 0o777 | ffi::S_IFLNK;
 }
 
 pub(crate) mod sealed {
@@ -261,8 +262,12 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
         if !self.last_modified_time.is_valid() {
             self.last_modified_time = FileOptions::<T>::default().last_modified_time;
         }
-
-        *self.permissions.get_or_insert(DEFAULT_FILE_PERMISSIONS) |= ffi::S_IFREG;
+        // The permissions set by the user
+        if let Some(perms) = &mut self.permissions
+            && (*perms & !0o777 == 0)
+        {
+            *perms |= ffi::S_IFREG;
+        }
     }
 
     /// Indicates whether this file will be encrypted (whether with AES or `ZipCrypto`).

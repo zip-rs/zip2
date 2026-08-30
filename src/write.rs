@@ -37,9 +37,6 @@ pub use crate::write::options::{
     ExtendedFileOptions, FileOptions, FullFileOptions, SimpleFileOptions,
 };
 
-pub(crate) const DEFAULT_FILE_PERMISSIONS: u32 = 0o644; // rw-r--r-- default for regular files
-pub(crate) const DEFAULT_DIR_PERMISSIONS: u32 = 0o755; // rwxr-xr-x default for directories
-
 #[allow(clippy::large_enum_variant)]
 enum MaybeEncrypted<W> {
     Unencrypted(W),
@@ -1240,7 +1237,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        *options.permissions.get_or_insert(DEFAULT_DIR_PERMISSIONS) |= 0o40000;
+        let permissions = options
+            .permissions
+            .get_or_insert(FileOptions::DEFAULT_DIR_PERMISSIONS);
+        *permissions |= ffi::S_IFDIR; // if permissions are already set by user
         options.compression_method = Stored;
         options.encrypt_with = None;
 
@@ -1307,8 +1307,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         target: T,
         mut options: FileOptions<'_, '_, E>,
     ) -> ZipResult<()> {
-        let permissions = options.permissions.get_or_insert(0o777);
-        *permissions |= ffi::S_IFLNK;
+        let permissions = options
+            .permissions
+            .get_or_insert(FileOptions::DEFAULT_SYMLINK_PERMISSIONS);
+        *permissions |= ffi::S_IFLNK; // if permissions are already set by user
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;

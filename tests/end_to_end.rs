@@ -117,6 +117,29 @@ fn test_copy_zip_symlink() {
     });
 }
 
+/// https://github.com/zip-rs/zip2/issues/954
+#[test]
+fn test_raw_copy_dir() {
+    let mut src_archive = {
+        let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        b.add_directory("dir", zip::write::FileOptions::DEFAULT)
+            .unwrap();
+        b.finish_into_readable().unwrap()
+    };
+    let mut tgt_archive = {
+        let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        b.raw_copy_file(src_archive.by_name("dir/").unwrap())
+            .unwrap();
+        b.finish_into_readable().unwrap()
+    };
+
+    let src_dir = src_archive.by_name("dir/").unwrap();
+    let tgt_dir = tgt_archive.by_name("dir/").unwrap();
+
+    assert_eq!(src_dir.compression(), tgt_dir.compression());
+    assert_eq!(src_dir.unix_mode(), tgt_dir.unix_mode());
+}
+
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
@@ -265,7 +288,10 @@ fn check_archive_file_contents<R: Read + Seek>(
     expected: &[u8],
 ) {
     let file_permissions: u32 = archive.by_name(name).unwrap().unix_mode().unwrap();
-    assert_eq!(file_permissions, EXPECTED_FILE_PERMISSIONS);
+    assert_eq!(
+        file_permissions, EXPECTED_FILE_PERMISSIONS,
+        "{file_permissions:o} != {EXPECTED_FILE_PERMISSIONS:o}"
+    );
 
     let file_contents: String = read_archive_file(archive, name).unwrap();
     assert_eq!(file_contents.as_bytes(), expected);
