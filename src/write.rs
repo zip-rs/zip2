@@ -1240,7 +1240,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let permissions = options
             .permissions
             .get_or_insert(FileOptions::DEFAULT_DIR_PERMISSIONS);
-        *permissions |= ffi::S_IFDIR; // if permissions are set already set by user
+        *permissions |= ffi::S_IFDIR; // if permissions are already set by user
         options.compression_method = Stored;
         options.encrypt_with = None;
 
@@ -1310,7 +1310,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let permissions = options
             .permissions
             .get_or_insert(FileOptions::DEFAULT_SYMLINK_PERMISSIONS);
-        *permissions |= ffi::S_IFLNK; // if permissions are set already set by user
+        *permissions |= ffi::S_IFLNK; // if permissions are already set by user
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
         options.compression_method = Stored;
