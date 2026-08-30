@@ -288,7 +288,10 @@ fn check_archive_file_contents<R: Read + Seek>(
     expected: &[u8],
 ) {
     let file_permissions: u32 = archive.by_name(name).unwrap().unix_mode().unwrap();
-    assert_eq!(file_permissions, EXPECTED_FILE_PERMISSIONS);
+    assert_eq!(
+        file_permissions, EXPECTED_FILE_PERMISSIONS,
+        "{file_permissions:o} != {EXPECTED_FILE_PERMISSIONS:o}"
+    );
 
     let file_contents: String = read_archive_file(archive, name).unwrap();
     assert_eq!(file_contents.as_bytes(), expected);

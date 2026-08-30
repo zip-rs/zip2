@@ -308,7 +308,6 @@ impl ZipFileData {
         let permissions = options
             .permissions
             .unwrap_or(FileOptions::DEFAULT_FILE_PERMISSION);
-        let mut external_attributes = permissions << 16;
         let system = if (permissions & ffi::S_IFLNK) == ffi::S_IFLNK {
             // DOS/FAT filesystems have no concept of symlinks
             // We force to System::Unix
@@ -324,6 +323,7 @@ impl ZipFileData {
         let external_attributes = if let Some(external_attr) = options.external_attributes {
             external_attr
         } else {
+            let mut external_attributes = permissions << 16;
             if system == System::Dos {
                 if is_dir(file_name_raw) {
                     // DOS directory bit
