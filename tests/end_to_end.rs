@@ -82,6 +82,41 @@ fn test_copy_zip_entries() {
     });
 }
 
+#[test]
+fn test_copy_zip_symlink() {
+    const LINK_NAME: &str = "symlink";
+    const LINK_TARGET: &str = "link-target";
+    for_each_supported_method(|method| {
+        let mut src_archive = {
+            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            zip.add_symlink_from_path(
+                LINK_NAME,
+                LINK_TARGET,
+                zip::write::SimpleFileOptions::DEFAULT.compression_method(method),
+            )
+            .unwrap();
+            zip.finish_into_readable().unwrap()
+        };
+        let mut tgt_archive = {
+            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            zip.raw_copy_file(src_archive.by_name(LINK_NAME).unwrap())
+                .unwrap();
+            zip.finish_into_readable().unwrap()
+        };
+
+        let src_file = src_archive.by_name(LINK_NAME).unwrap();
+        let mut tgt_file = tgt_archive.by_name(LINK_NAME).unwrap();
+
+        {
+            let mut dest_buf = String::new();
+            tgt_file.read_to_string(&mut dest_buf).unwrap();
+            assert_eq!(dest_buf.as_str(), LINK_TARGET);
+        }
+        assert_eq!(src_file.compression(), tgt_file.compression());
+        assert_eq!(src_file.unix_mode(), tgt_file.unix_mode());
+    });
+}
+
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
