@@ -1,5 +1,6 @@
 //! Code related to the `ExtraField` enum
 
+use crate::ZIP64_BYTES_THR;
 #[cfg(feature = "aes-crypto")]
 use crate::extra_fields::AexEncryption;
 use crate::extra_fields::CustomExtraField;
@@ -10,6 +11,7 @@ use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::zip64_extended_information::Zip64Sizes;
+use crate::format::ZIP64_BYTES_THR_U32;
 use crate::format::blocks::ZipEntryBlock;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
@@ -246,15 +248,19 @@ impl ZipFileData {
                 // Zip64 extended information extra field
                 ExtraField::Zip64ExtendedInformation(zip64_block) => {
                     self.large_file = true;
-                    if let Some(Zip64Sizes {
-                        uncompressed_size,
-                        compressed_size,
-                    }) = zip64_block.sizes
+                    if (self.uncompressed_size >= ZIP64_BYTES_THR
+                        || self.compressed_size >= ZIP64_BYTES_THR)
+                        && let Some(Zip64Sizes {
+                            uncompressed_size,
+                            compressed_size,
+                        }) = zip64_block.sizes
                     {
                         self.uncompressed_size = uncompressed_size;
                         self.compressed_size = compressed_size;
                     }
-                    if let Some(head_start) = zip64_block.header_start {
+                    if self.header_start >= ZIP64_BYTES_THR
+                        && let Some(head_start) = zip64_block.header_start
+                    {
                         self.header_start = head_start;
                     }
                 }
