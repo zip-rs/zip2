@@ -4,7 +4,7 @@
 //! turns an archive that every other tool accepts into an unreadable one, so a value from this
 //! block may only replace a field holding the 0xFFFFFFFF sentinel that asked for it.
 
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Seek, Write};
 
 use zip::{
     ZipArchive, ZipWriter,
@@ -117,18 +117,13 @@ fn the_streaming_reader_also_ignores_such_a_block() {
 fn the_epub_this_came_from_reads() {
     let mut archive = ZipArchive::new(Cursor::new(REAL_WORLD_EPUB)).expect("archive should open");
     assert_eq!(archive.len(), 2);
+    check_entries_line_up(&mut archive);
 
+    // `mimetype` is stored, so it reads whatever features are on.
     let mut mimetype = archive.by_name("mimetype").unwrap();
     let mut read_back = String::new();
     mimetype.read_to_string(&mut read_back).unwrap();
     assert_eq!(read_back, "application/epub+zip");
-    drop(mimetype);
-
-    let mut container = archive.by_name("META-INF/container.xml").unwrap();
-    assert_eq!(container.size(), 270, "the entry's own size stands");
-    let mut read_back = String::new();
-    container.read_to_string(&mut read_back).unwrap();
-    assert!(read_back.contains("OEBPS/content.opf"));
 }
 
 /// A value that was ignored on the way in must not be written back out on the way through.
@@ -153,6 +148,43 @@ fn a_value_no_sentinel_asked_for_is_not_written_back_out() {
 
     let mut archive = ZipArchive::new(Cursor::new(appended)).expect("output should open");
     assert_eq!(archive.len(), 2);
+    check_entries_line_up(&mut archive);
+}
+
+/// Every entry's local header is where the central directory says it is, and still declares the
+/// sizes the central directory does. This is the check the bug used to fail: a relative offset
+/// taken from a block no sentinel asked for pointed into the middle of the compressed data, and
+/// the seek there found no `PK\x03\x04`.
+///
+/// It goes through the raw reader so that it holds whatever compression features are enabled;
+/// `META-INF/container.xml` is deflated, and this crate can be built without a deflate decoder.
+fn check_entries_line_up<R: Read + Seek>(archive: &mut ZipArchive<R>) {
+    for i in 0..archive.len() {
+        let entry = archive.by_index_raw(i).expect("entry should be found");
+        assert!(
+            entry.size() > 0 && entry.compressed_size() > 0,
+            "{}: empty entry, fixture is not what the test expects",
+            entry.name().unwrap()
+        );
+    }
+
+    let container = archive
+        .by_index_raw(1)
+        .expect("META-INF/container.xml should be found");
+    assert_eq!(container.name().unwrap(), "META-INF/container.xml");
+    assert_eq!(container.size(), 270, "the entry's own size stands");
+    assert_eq!(
+        container.compressed_size(),
+        186,
+        "the entry's own compressed size stands"
+    );
+}
+
+/// The same fixture read all the way through, where there is a deflate decoder to do it with.
+#[cfg(feature = "deflate-flate2")]
+#[test]
+fn the_epub_this_came_from_reads_its_contents() {
+    let mut archive = ZipArchive::new(Cursor::new(REAL_WORLD_EPUB)).expect("archive should open");
     let mut container = archive.by_name("META-INF/container.xml").unwrap();
     let mut read_back = String::new();
     container.read_to_string(&mut read_back).unwrap();
