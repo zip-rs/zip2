@@ -134,3 +134,7 @@ harness = false
 [[bench]]
 name = "merge_archive"
 harness = false
+
+[[bench]]
+name = "deflate_alloc"
+harness = false
