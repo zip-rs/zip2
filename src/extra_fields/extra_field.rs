@@ -11,7 +11,6 @@ use crate::extra_fields::UnicodeExtraField;
 use crate::extra_fields::UsedExtraField;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::extra_fields::zip64_extended_information::Zip64Sizes;
-use crate::format::ZIP64_BYTES_THR_U32;
 use crate::format::blocks::ZipEntryBlock;
 use crate::format::flags::ZipFlags;
 use crate::result::ZipResult;
