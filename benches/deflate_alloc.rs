@@ -13,7 +13,7 @@ fn bench_many_small_files(c: &mut Criterion) {
             b.iter(|| {
                 let buf = Cursor::new(Vec::new());
                 let mut zip = ZipWriter::new(buf);
-                let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                let opts = SimpleFileOptions::default().compression_method(CompressionMethod::DEFLATE);
                 for i in 0..n {
                     zip.start_file(format!("file_{:04}.txt", i), opts).unwrap();
                     zip.write_all(&data).unwrap();
