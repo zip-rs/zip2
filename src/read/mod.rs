@@ -27,6 +27,7 @@ pub use stream::{
 
 pub(crate) mod magic_finder;
 pub(crate) mod readers;
+pub(crate) mod zip_iterable;
 
 pub(crate) mod zipfile;
 pub use zipfile::{ZipFile, ZipFileEntry, ZipFileSeek};
