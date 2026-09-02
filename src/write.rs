@@ -2382,7 +2382,7 @@ impl ZipFileBuilder {
     /// `options`.
     ///
     /// Fails if `options` requests encryption or an unsupported compression method or level.
-    pub fn new<N: ToString, T: FileOptionExtension>(
+    pub fn new<N: AsRef<str>, T: FileOptionExtension>(
         name: N,
         mut options: FileOptions<'_, '_, T>,
     ) -> ZipResult<Self> {
@@ -2425,7 +2425,7 @@ impl ZipFileBuilder {
         compressor.switch_to(make_compressor)?;
         Ok(Self {
             compressor,
-            file_name: name.to_string().into_bytes().into_boxed_slice(),
+            file_name: name.as_ref().as_bytes().into(),
             options: owned_options,
             hasher: Hasher::new(),
             uncompressed_size: 0,
