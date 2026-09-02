@@ -1,9 +1,9 @@
 #[test]
 fn test_prepared_file_roundtrip() {
     use std::io::{Cursor, Read, Write};
-    use zip::{ZipWriter, CompressionMethod};
     use zip::write::ZipFileBuilder;
     use zip::write::{FullFileOptions, SimpleFileOptions};
+    use zip::{CompressionMethod, ZipWriter};
 
     // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
     #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
@@ -87,7 +87,7 @@ fn test_prepared_file_stream_mode() {
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
     use zip::write::ZipFileBuilder;
-    use zip::{ZipArchive, ZipWriter, CompressionMethod};
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
     // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
     #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
