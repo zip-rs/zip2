@@ -13,12 +13,17 @@ zip = \"="]
 
 use std::borrow::Cow;
 use std::io;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Component, MAIN_SEPARATOR, Path};
 
 /// Provides high level API for reading from a stream.
 pub mod stream {
-    pub use crate::read::stream::{ZipStreamFileMetadata, ZipStreamReader, ZipStreamVisitor};
+    pub use crate::read::stream::{ZipStreamReader, ZipStreamVisitor};
+}
+
+/// Zip format
+pub mod format {
+    pub use crate::format::*;
 }
 /// Types for creating ZIP archives.
 pub mod write {
@@ -53,30 +58,6 @@ pub mod write {
         }
     }
 }
-
-/// Helper methods for writing unsigned integers in little-endian form.
-pub trait LittleEndianWriteExt: Write {
-    /// Write a u16 as little endian
-    fn write_u16_le(&mut self, input: u16) -> io::Result<()> {
-        self.write_all(&input.to_le_bytes())
-    }
-    /// Write a u32 as little endian
-    fn write_u32_le(&mut self, input: u32) -> io::Result<()> {
-        self.write_all(&input.to_le_bytes())
-    }
-
-    /// Write a u64 as little endian
-    fn write_u64_le(&mut self, input: u64) -> io::Result<()> {
-        self.write_all(&input.to_le_bytes())
-    }
-
-    /// Write a u128 as little endian
-    fn write_u128_le(&mut self, input: u128) -> io::Result<()> {
-        self.write_all(&input.to_le_bytes())
-    }
-}
-
-impl<W: Write + ?Sized> LittleEndianWriteExt for W {}
 
 /// Helper methods for reading unsigned integers in little-endian form.
 pub trait LittleEndianReadExt: Read {

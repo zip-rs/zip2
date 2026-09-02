@@ -4,10 +4,11 @@ use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
 use crate::extra_fields::{ExtraField, ExtraFields};
-use crate::format::flags::ZipFlags;
+use crate::format::blocks::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock};
+use crate::format::flags::{ZipFileFlags, ZipFlags};
+use crate::format::system::System;
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock};
-use crate::types::{System, ZipFileData};
+use crate::types::ZipFileData;
 use indexmap::IndexMap;
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek, Write};
@@ -28,7 +29,7 @@ pub(crate) mod magic_finder;
 pub(crate) mod readers;
 
 pub(crate) mod zipfile;
-pub use zipfile::{ZipFile, ZipFileSeek};
+pub use zipfile::{ZipFile, ZipFileEntry, ZipFileSeek};
 
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
@@ -69,7 +70,7 @@ pub(crate) fn make_symlink_impl<T>(
     target_str: &str,
     existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
-    use crate::spec::is_dir;
+    use crate::format::functions::is_dir;
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
         is_dir(target_str.as_bytes()) && existing_files.contains_key(target_str.as_bytes());
@@ -495,15 +496,13 @@ fn central_header_to_zip_file_inner<R: Read>(
         crc32,
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
-        flags,
+        flags: ZipFileFlags(flags),
         file_comment,
         header_start: offset.into(),
-        extra_data_start: None,
         central_header_start,
         data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
         large_file: false,
-        aes_mode: None,
         extra_fields,
     };
     result.apply_extra_fields(&mut file_name_raw)?;
@@ -528,13 +527,11 @@ pub trait HasZipMetadata {
 #[non_exhaustive]
 pub struct ZipReadOptions<'a> {
     /// The password to use when decrypting the file.  This is ignored if not required.
-    password: Option<&'a [u8]>,
-
+    pub(crate) password: Option<&'a [u8]>,
     /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
-    ignore_encryption_flag: bool,
-
+    pub(crate) ignore_encryption_flag: bool,
     /// Ignore the crc32 of the file
-    ignore_crc: bool,
+    pub(crate) ignore_crc: bool,
     /// override the compressed_size for stream read
     force_compressed_size: Option<u64>,
     /// override the uncompressed_size for stream read

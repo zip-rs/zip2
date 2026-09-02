@@ -1,0 +1,209 @@
+//! Test about removing file
+
+use std::io::{Cursor, Write};
+
+use zip::CompressionMethod;
+use zip::ZipArchive;
+use zip::ZipWriter;
+use zip::result::{ZipError, ZipResult};
+use zip::write::SimpleFileOptions;
+
+#[test]
+fn hide_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        zip.start_file(
+            name,
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )?;
+        zip.write_all(name.as_bytes())?;
+    }
+    zip.hide_file("b.txt")?;
+
+    let mut archive = ZipArchive::new(zip.finish()?)?;
+    assert_eq!(archive.len(), 2);
+    assert!(archive.by_name("b.txt").is_err());
+    // The survivors still read back correctly: removing an entry must not
+    // disturb data written after it.
+    for name in ["a.txt", "c.txt"] {
+        let mut contents = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name(name)?, &mut contents)?;
+        assert_eq!(contents, name);
+    }
+    Ok(())
+}
+
+/// Central-directory order is `files` order, so a removal must not
+/// reshuffle the entries around it.
+#[test]
+fn hide_file_preserves_the_order_of_surviving_entries() -> ZipResult<()> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
+        zip.start_file(
+            name,
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )?;
+        zip.write_all(b"x")?;
+    }
+    zip.hide_file("b.txt")?;
+
+    let archive = ZipArchive::new(zip.finish()?)?;
+    let names: Vec<String> = (0..archive.len())
+        .map(|i| archive.name_for_index(i).unwrap().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["a.txt", "c.txt", "d.txt"]);
+    Ok(())
+}
+
+/// The point of the method: the removed entry's bytes stay put, so the
+/// cost of a removal does not scale with what follows it.
+#[test]
+fn hide_file_does_not_rewrite_the_archive() -> ZipResult<()> {
+    let big = vec![b'x'; 64 * 1024];
+    // Stored, not deflated: the whole point is to observe the removed
+    // entry's bytes still occupying the file, and 64 KiB of one byte
+    // deflates to almost nothing.
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    let mut with_all = ZipWriter::new(Cursor::new(Vec::new()));
+    with_all.start_file("gone.txt", stored)?;
+    with_all.write_all(&big)?;
+    with_all.start_file("kept.txt", stored)?;
+    with_all.write_all(b"kept")?;
+    let removed_len = {
+        let mut zip = with_all;
+        zip.hide_file("gone.txt")?;
+        zip.finish()?.into_inner().len()
+    };
+
+    let mut only_kept = ZipWriter::new(Cursor::new(Vec::new()));
+    only_kept.start_file("kept.txt", stored)?;
+    only_kept.write_all(b"kept")?;
+    let fresh_len = only_kept.finish()?.into_inner().len();
+
+    assert!(
+        removed_len > fresh_len + big.len() / 2,
+        "removed entry's bytes should still be present ({removed_len} vs {fresh_len})"
+    );
+    Ok(())
+}
+
+/// A name freed by removal can be reused, which is what makes
+/// replace-an-entry possible without rewriting.
+#[test]
+fn hide_file_frees_the_name_for_reuse() -> ZipResult<()> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "a.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
+    zip.write_all(b"first")?;
+    zip.hide_file("a.txt")?;
+    zip.start_file(
+        "a.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
+    zip.write_all(b"second")?;
+
+    let mut archive = ZipArchive::new(zip.finish()?)?;
+    assert_eq!(archive.len(), 1);
+    let mut contents = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name("a.txt")?, &mut contents)?;
+    assert_eq!(contents, "second");
+    Ok(())
+}
+
+/// Removing the entry currently being written finishes it first, so the
+/// archive is left consistent rather than mid-entry.
+#[test]
+fn hide_file_can_remove_the_entry_being_written() -> ZipResult<()> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "a.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
+    zip.write_all(b"a")?;
+    zip.start_file(
+        "b.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
+    zip.write_all(b"b")?;
+    zip.hide_file("b.txt")?;
+
+    let mut archive = ZipArchive::new(zip.finish()?)?;
+    assert_eq!(archive.len(), 1);
+    let mut contents = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name("a.txt")?, &mut contents)?;
+    assert_eq!(contents, "a");
+    Ok(())
+}
+
+#[test]
+fn hide_file_reports_a_missing_entry() {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    assert!(matches!(
+        zip.hide_file("absent.txt"),
+        Err(ZipError::FileNotFound)
+    ));
+}
+
+/// An entry sharing data with the removed one keeps working: removal
+/// touches the directory, never the bytes.
+#[test]
+fn hide_file_leaves_a_shallow_copy_readable() -> ZipResult<()> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "original.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
+    zip.write_all(b"shared")?;
+    zip.shallow_copy_file("original.txt", "copy.txt")?;
+    zip.hide_file("original.txt")?;
+
+    let mut archive = ZipArchive::new(zip.finish()?)?;
+    assert_eq!(archive.len(), 1);
+    let mut contents = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name("copy.txt")?, &mut contents)?;
+    assert_eq!(contents, "shared");
+    Ok(())
+}
+
+#[test]
+fn hide_file_same_bytes() {
+    use zip::HasZipMetadata;
+
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    for idx in 0..=10 {
+        let filename = format!("file_{idx}.txt");
+        zip.start_file(
+            filename,
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
+        zip.write_all(b"shared").unwrap();
+    }
+
+    // we have a basic zip file
+    let zip_raw = zip.finish_into_readable().unwrap().into_inner();
+    let zip_raw_copy = zip_raw.clone().into_inner();
+
+    let (central_idx, zip_modified) = {
+        let mut zip = ZipArchive::new(zip_raw).unwrap();
+        let central_idx = {
+            let file = zip.by_name("file_5.txt").unwrap();
+            file.get_metadata().central_header_start as usize
+        };
+
+        let mut zip = ZipWriter::new_append(zip.into_inner()).unwrap();
+        zip.hide_file("file_5.txt").unwrap();
+
+        let readable = zip
+            .finish_into_readable()
+            .unwrap()
+            .into_inner()
+            .into_inner();
+        (central_idx, readable)
+    };
+    assert_eq!(central_idx, 787);
+    assert_eq!(zip_modified[0..central_idx], zip_raw_copy[0..central_idx]);
+}

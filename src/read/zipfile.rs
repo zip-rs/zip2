@@ -4,6 +4,10 @@ use crate::CompressionMethod;
 use crate::DateTime;
 use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
+use crate::ZipReadOptions;
+use crate::format::ffi;
+use crate::format::flags::ZipFileFlags;
+use crate::format::system::System;
 use crate::read::ExtraField;
 use crate::read::RootDirFilter;
 use crate::read::make_writable_dir_all;
@@ -11,7 +15,8 @@ use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::ZipResult;
 use crate::result::invalid;
 use crate::types::ZipFileData;
-use crate::types::{SimpleFileOptions, ffi};
+use crate::write::options::SimpleFileOptions;
+
 use core::mem::replace;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -30,79 +35,203 @@ pub struct ZipFile<'a, R: Read + ?Sized> {
     pub(crate) reader: ZipFileReader<'a, R>,
 }
 
+/// A struct for reading a zip file, without a reader
+#[derive(Debug)]
+pub struct ZipFileEntry<'a> {
+    pub(crate) file_name_raw: Cow<'a, [u8]>,
+    pub(crate) data: Cow<'a, ZipFileData>,
+}
+
 /// A struct for reading and seeking a zip file
 pub struct ZipFileSeek<'a, R> {
+    pub(crate) file_name_raw: Cow<'a, [u8]>,
     pub(crate) data: Cow<'a, ZipFileData>,
     pub(crate) reader: ZipFileSeekReader<'a, R>,
 }
 
+macro_rules! zip_file_methods {
+    () => {
+        /// Get the name of the file, in the raw (internal) byte representation.
+        ///
+        /// The encoding of this data is currently undefined.
+        pub fn name_raw(&self) -> &[u8] {
+            &self.file_name_raw
+        }
+
+        /// Get the name of the file
+        ///
+        /// # Warnings
+        ///
+        /// It is dangerous to use this name directly when extracting an archive.
+        /// It may contain an absolute path (`/etc/shadow`), or break out of the
+        /// current directory (`../runtime`). Carelessly writing to these paths
+        /// allows an attacker to craft a ZIP archive that will overwrite critical
+        /// files.
+        ///
+        /// You can use the [`ZipFile::enclosed_name`] method to validate the name
+        /// as a safe path.
+        pub fn name(&self) -> ZipResult<Cow<'_, str>> {
+            self.get_metadata().name(&self.file_name_raw)
+        }
+
+        /// Rewrite the path, ignoring any path components with special meaning.
+        ///
+        /// - Absolute paths are made relative
+        /// - [`ParentDir`]s are ignored
+        /// - Truncates the filename at a NULL byte
+        ///
+        /// This is appropriate if you need to be able to extract *something* from
+        /// any archive, but will easily misrepresent trivial paths like
+        /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
+        /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
+        ///
+        /// [`ParentDir`]: `Component::ParentDir`
+        pub fn mangled_name(&self) -> ZipResult<PathBuf> {
+            let file_name = self.name()?;
+            let sanitized = self.get_metadata().file_name_sanitized(&file_name);
+            Ok(sanitized)
+        }
+
+        /// Ensure the file path is safe to use as a [`Path`].
+        ///
+        /// - It can't contain NULL bytes
+        /// - It can't resolve to a path outside the current directory
+        ///   > `foo/../bar` is fine, `foo/../../bar` is not.
+        /// - It can't be an absolute path
+        ///
+        /// This will read well-formed ZIP files correctly, and is resistant
+        /// to path-based exploits. It is recommended over
+        /// [`ZipFile::mangled_name`].
+        pub fn enclosed_name(&self) -> Option<PathBuf> {
+            self.get_metadata().enclosed_name(&self.name().ok()?)
+        }
+
+        /// Get the starting offset of the zip header for this file
+        pub fn header_start(&self) -> u64 {
+            self.get_metadata().header_start
+        }
+        /// Get the starting offset of the zip header in the central directory for this file
+        pub fn central_header_start(&self) -> u64 {
+            self.get_metadata().central_header_start
+        }
+
+        /// Get the version of the file
+        pub fn version_made_by(&self) -> (u8, u8) {
+            (
+                self.get_metadata().version_made_by / 10,
+                self.get_metadata().version_made_by % 10,
+            )
+        }
+
+        /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
+        pub fn version_needed(&self) -> u16 {
+            self.get_metadata().version_needed()
+        }
+
+        /// Get the comment of the file
+        pub fn comment(&self) -> &str {
+            &self.get_metadata().file_comment
+        }
+
+        /// Get the system of the file
+        pub fn system(&self) -> System {
+            self.get_metadata().system
+        }
+
+        /// Get the external attributes of the file
+        pub fn external_attributes(&self) -> u32 {
+            self.get_metadata().external_attributes
+        }
+
+        /// Get the flags of the file
+        pub fn flags(&self) -> ZipFileFlags {
+            self.get_metadata().flags
+        }
+
+        /// Get the compression method used to store the file
+        pub fn compression(&self) -> CompressionMethod {
+            self.get_metadata().compression_method
+        }
+
+        /// Get if the files is encrypted or not
+        pub fn encrypted(&self) -> bool {
+            self.data.is_encrypted()
+        }
+
+        /// Get the size of the file, in bytes, in the archive
+        pub fn compressed_size(&self) -> u64 {
+            self.get_metadata().compressed_size
+        }
+
+        /// Get the size of the file, in bytes, when uncompressed
+        pub fn size(&self) -> u64 {
+            self.get_metadata().uncompressed_size
+        }
+
+        /// Get the time the file was last modified
+        pub fn last_modified(&self) -> Option<DateTime> {
+            self.get_metadata().last_modified_time
+        }
+        /// Returns whether the file is actually a directory
+        pub fn is_dir(&self) -> bool {
+            self.get_metadata().is_dir(&self.file_name_raw)
+        }
+
+        /// Returns whether the file is actually a symbolic link
+        pub fn is_symlink(&self) -> bool {
+            self.unix_mode()
+                .is_some_and(|mode| mode & ffi::S_IFLNK == ffi::S_IFLNK)
+        }
+
+        /// Returns whether the file is a normal file (i.e. not a directory or symlink)
+        pub fn is_file(&self) -> bool {
+            !self.is_dir() && !self.is_symlink()
+        }
+
+        /// Get unix mode for the file
+        pub fn unix_mode(&self) -> Option<u32> {
+            self.get_metadata().unix_mode()
+        }
+
+        /// Get the CRC32 hash of the original file
+        pub fn crc32(&self) -> u32 {
+            self.get_metadata().crc32
+        }
+    };
+}
+
+impl<'a> ZipFileEntry<'a> {
+    zip_file_methods!();
+
+    /// Create a readable
+    pub fn with_reader<R: Read + Seek>(
+        self,
+        reader: &'a mut R,
+        options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFile<'a, R>> {
+        let limit_reader = self.data.find_content(reader)?;
+
+        let reader = self.data.make_reader(limit_reader, options)?;
+        Ok(ZipFile {
+            file_name_raw: self.file_name_raw,
+            data: self.data,
+            reader,
+        })
+    }
+}
+
+impl HasZipMetadata for ZipFileEntry<'_> {
+    fn get_metadata(&self) -> &ZipFileData {
+        self.data.as_ref()
+    }
+}
+
 /// Methods for retrieving information on zip files
 impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
+    zip_file_methods!();
+
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
         replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
-    }
-
-    /// Get the version of the file
-    pub fn version_made_by(&self) -> (u8, u8) {
-        (
-            self.get_metadata().version_made_by / 10,
-            self.get_metadata().version_made_by % 10,
-        )
-    }
-
-    /// Get the name of the file
-    ///
-    /// # Warnings
-    ///
-    /// It is dangerous to use this name directly when extracting an archive.
-    /// It may contain an absolute path (`/etc/shadow`), or break out of the
-    /// current directory (`../runtime`). Carelessly writing to these paths
-    /// allows an attacker to craft a ZIP archive that will overwrite critical
-    /// files.
-    ///
-    /// You can use the [`ZipFile::enclosed_name`] method to validate the name
-    /// as a safe path.
-    pub fn name(&self) -> ZipResult<Cow<'_, str>> {
-        self.data.name(&self.file_name_raw)
-    }
-
-    /// Get the name of the file, in the raw (internal) byte representation.
-    ///
-    /// The encoding of this data is currently undefined.
-    pub fn name_raw(&self) -> &[u8] {
-        &self.file_name_raw
-    }
-
-    /// Rewrite the path, ignoring any path components with special meaning.
-    ///
-    /// - Absolute paths are made relative
-    /// - [`ParentDir`]s are ignored
-    /// - Truncates the filename at a NULL byte
-    ///
-    /// This is appropriate if you need to be able to extract *something* from
-    /// any archive, but will easily misrepresent trivial paths like
-    /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
-    /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
-    ///
-    /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> ZipResult<PathBuf> {
-        let file_name = self.name()?;
-        let sanitized = self.data.file_name_sanitized(&file_name);
-        Ok(sanitized)
-    }
-
-    /// Ensure the file path is safe to use as a [`Path`].
-    ///
-    /// - It can't contain NULL bytes
-    /// - It can't resolve to a path outside the current directory
-    ///   > `foo/../bar` is fine, `foo/../../bar` is not.
-    /// - It can't be an absolute path
-    ///
-    /// This will read well-formed ZIP files correctly, and is resistant
-    /// to path-based exploits. It is recommended over
-    /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<PathBuf> {
-        self.data.enclosed_name(&self.name().ok()?)
     }
 
     /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
@@ -219,61 +348,6 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         Ok(())
     }
 
-    /// Get the comment of the file
-    pub fn comment(&self) -> &str {
-        &self.get_metadata().file_comment
-    }
-
-    /// Get the compression method used to store the file
-    pub fn compression(&self) -> CompressionMethod {
-        self.get_metadata().compression_method
-    }
-
-    /// Get if the files is encrypted or not
-    pub fn encrypted(&self) -> bool {
-        self.data.is_encrypted()
-    }
-
-    /// Get the size of the file, in bytes, in the archive
-    pub fn compressed_size(&self) -> u64 {
-        self.get_metadata().compressed_size
-    }
-
-    /// Get the size of the file, in bytes, when uncompressed
-    pub fn size(&self) -> u64 {
-        self.get_metadata().uncompressed_size
-    }
-
-    /// Get the time the file was last modified
-    pub fn last_modified(&self) -> Option<DateTime> {
-        self.data.last_modified_time
-    }
-    /// Returns whether the file is actually a directory
-    pub fn is_dir(&self) -> bool {
-        self.data.is_dir(&self.file_name_raw)
-    }
-
-    /// Returns whether the file is actually a symbolic link
-    pub fn is_symlink(&self) -> bool {
-        self.unix_mode()
-            .is_some_and(|mode| mode & ffi::S_IFLNK == ffi::S_IFLNK)
-    }
-
-    /// Returns whether the file is a normal file (i.e. not a directory or symlink)
-    pub fn is_file(&self) -> bool {
-        !self.is_dir() && !self.is_symlink()
-    }
-
-    /// Get unix mode for the file
-    pub fn unix_mode(&self) -> Option<u32> {
-        self.get_metadata().unix_mode()
-    }
-
-    /// Get the CRC32 hash of the original file
-    pub fn crc32(&self) -> u32 {
-        self.get_metadata().crc32
-    }
-
     /// Get the extra data of the zip header for this file
     pub fn extra_data(&self) -> Option<Vec<u8>> {
         let out_buffer = Vec::new();
@@ -295,22 +369,14 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         self.data.data_start.get().copied()
     }
 
-    /// Get the starting offset of the zip header for this file
-    pub fn header_start(&self) -> u64 {
-        self.get_metadata().header_start
-    }
-    /// Get the starting offset of the zip header in the central directory for this file
-    pub fn central_header_start(&self) -> u64 {
-        self.get_metadata().central_header_start
-    }
-
     /// Get the [`SimpleFileOptions`] that would be used to write this file to
     /// a new zip archive.
     pub fn options(&self) -> SimpleFileOptions {
         let mut options = SimpleFileOptions::default()
             .large_file(self.compressed_size().max(self.size()) >= ZIP64_BYTES_THR)
             .compression_method(self.compression())
-            .unix_permissions(self.unix_mode().unwrap_or(0o644) | ffi::S_IFREG)
+            .system(self.system())
+            .external_attributes(self.external_attributes())
             .last_modified_time(
                 self.last_modified()
                     .filter(DateTime::is_valid)
@@ -319,8 +385,8 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
         options.normalize();
         #[cfg(feature = "aes-crypto")]
-        if let Some((mode, vendor_version)) = self.get_metadata().aes_mode {
-            use crate::types::EncryptWith;
+        if let Some((mode, vendor_version)) = self.get_metadata().aes_settings() {
+            use crate::write::options::EncryptWith;
             // Preserve AES metadata in options for downstream writers.
             // This is metadata-only and does not trigger encryption.
             options.encrypt_with = Some(EncryptWith::Aes {
@@ -386,6 +452,10 @@ impl<R> HasZipMetadata for ZipFileSeek<'_, R> {
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
     }
+}
+
+impl<'a, R> ZipFileSeek<'a, R> {
+    zip_file_methods!();
 }
 
 impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {

@@ -1,15 +1,16 @@
 //! Code related to `ZipArchive`
 
 use crate::compression::CompressionMethod;
+use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
+use crate::format::find_central_directory_end;
 use crate::read::config::Config;
-use crate::read::readers::{ZipFileReader, ZipFileSeekReader, make_crypto_reader, make_reader};
+use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
+use crate::read::zipfile::ZipFileEntry;
 use crate::read::{
     ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek, ZipReadOptions,
     central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, ZipResult};
-use crate::spec;
-use crate::spec::{FixedSizeBlock, ZipCentralEntryBlock};
 use crate::types::ZipFileData;
 use crate::unstable::path_to_string;
 use core::ops::Range;
@@ -139,7 +140,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         loop {
             // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
-            let cde = match spec::find_central_directory(
+            let cde = match find_central_directory_end(
                 reader,
                 config.archive_offset,
                 end_exclusive,
@@ -243,7 +244,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .ok_or(ZipError::FileNotFound)?;
 
         let limit_reader = data.find_content(&mut self.reader)?;
-        match data.aes_mode {
+        match data.aes_settings() {
             None => Ok(None),
             Some((aes_mode, _)) => {
                 let (verification_value, salt) =
@@ -327,7 +328,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         Ok(ZipArchive {
             reader,
-            shared: shared.into(),
+            shared: Arc::new(shared),
         })
     }
 
@@ -482,7 +483,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .files
             .get_index(index)
             .ok_or(ZipError::FileNotFound)
-            .and_then(move |(_, data)| {
+            .and_then(move |(file_name_raw, data)| {
                 let seek_reader = match data.compression_method {
                     CompressionMethod::Stored => {
                         ZipFileSeekReader::Raw(data.find_content_seek(reader)?)
@@ -494,6 +495,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     }
                 };
                 Ok(ZipFileSeek {
+                    file_name_raw: Cow::Borrowed(file_name_raw),
                     reader: seek_reader,
                     data: Cow::Borrowed(data),
                 })
@@ -537,6 +539,19 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.by_index_with_options(file_number, ZipReadOptions::new())
     }
 
+    /// Get a contained file by index
+    pub fn by_index_data(&self, file_number: usize) -> ZipResult<ZipFileEntry<'_>> {
+        let (file_name_raw, data) = self
+            .shared
+            .files
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        Ok(ZipFileEntry {
+            file_name_raw: Cow::Borrowed(file_name_raw),
+            data: Cow::Borrowed(data),
+        })
+    }
+
     /// Get a contained file by index without decompressing it
     pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
         let reader = &mut self.reader;
@@ -556,49 +571,19 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn by_index_with_options(
         &mut self,
         file_number: usize,
-        mut options: ZipReadOptions<'_>,
+        options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'_, R>> {
         let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
-        if options.ignore_encryption_flag {
-            // Always use no password when we're ignoring the encryption flag.
-            options.password = None;
-        } else {
-            // Require and use the password only if the file is encrypted.
-            match (options.password, data.is_encrypted()) {
-                (None, true) => {
-                    return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED));
-                }
-                // Password supplied, but none needed! Discard.
-                (Some(_), false) => options.password = None,
-                _ => {}
-            }
-        }
         let limit_reader = data.find_content(&mut self.reader)?;
-
-        let crypto_reader = make_crypto_reader(data, limit_reader, options.password)?;
-
-        let crc32 = if options.ignore_crc {
-            None
-        } else {
-            Some(data.crc32)
-        };
-
+        let reader = data.make_reader(limit_reader, options)?;
         Ok(ZipFile {
             file_name_raw: Cow::Borrowed(file_name_raw),
             data: Cow::Borrowed(data),
-            reader: make_reader(
-                data.compression_method,
-                data.uncompressed_size,
-                crc32,
-                data.aes_mode.map(|aes| aes.1),
-                crypto_reader,
-                #[cfg(feature = "legacy-zip")]
-                data.flags,
-            )?,
+            reader,
         })
     }
 
