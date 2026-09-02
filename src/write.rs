@@ -2031,9 +2031,7 @@ impl ZipFileBuilder {
         let data = cursor.into_inner().into_boxed_slice();
         let compressed_size = data.len() as u64;
         let mut options = self.options;
-        if compressed_size >= spec::ZIP64_BYTES_THR
-            || self.uncompressed_size >= spec::ZIP64_BYTES_THR
-        {
+        if compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
             options.large_file = true;
         }
         Ok(PreparedZipFile {
