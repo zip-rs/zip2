@@ -1,17 +1,15 @@
+//! Tests on PreparedFile
+
+/// Disable when only deflate-zopfli
 #[test]
+#[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
 fn test_prepared_file_roundtrip() {
     use std::io::{Cursor, Read, Write};
+    use zip::ZipWriter;
     use zip::write::ZipFileBuilder;
     use zip::write::{FullFileOptions, SimpleFileOptions};
-    use zip::{CompressionMethod, ZipWriter};
 
-    // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
-    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
-    let compression_method = CompressionMethod::Stored;
-    #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
-    let compression_method = CompressionMethod::default();
-
-    let options = SimpleFileOptions::default().compression_method(compression_method);
+    let options = SimpleFileOptions::default();
     let mut builder = ZipFileBuilder::new(
         "prepared.txt",
         FullFileOptions::default().with_file_comment("file comment"),
