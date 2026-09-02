@@ -1,11 +1,17 @@
 #[test]
 fn test_prepared_file_roundtrip() {
     use std::io::{Cursor, Read, Write};
-    use zip::ZipWriter;
+    use zip::{ZipWriter, CompressionMethod};
     use zip::write::ZipFileBuilder;
     use zip::write::{FullFileOptions, SimpleFileOptions};
 
-    let options = SimpleFileOptions::default();
+    // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
+    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    let compression_method = CompressionMethod::Stored;
+    #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
+    let compression_method = CompressionMethod::default();
+
+    let options = SimpleFileOptions::default().compression_method(compression_method);
     let mut builder = ZipFileBuilder::new(
         "prepared.txt",
         FullFileOptions::default().with_file_comment("file comment"),
@@ -81,9 +87,15 @@ fn test_prepared_file_stream_mode() {
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
     use zip::write::ZipFileBuilder;
-    use zip::{ZipArchive, ZipWriter};
+    use zip::{ZipArchive, ZipWriter, CompressionMethod};
 
-    let options = SimpleFileOptions::default();
+    // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
+    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    let compression_method = CompressionMethod::Stored;
+    #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
+    let compression_method = CompressionMethod::default();
+
+    let options = SimpleFileOptions::default().compression_method(compression_method);
     let mut builder = ZipFileBuilder::new("streamed.txt", options).unwrap();
     builder.write_all(b"streamed contents").unwrap();
     let prepared = builder.finish().unwrap();
@@ -120,10 +132,17 @@ fn test_prepared_file_rejects_encryption() {
 #[test]
 fn test_prepared_files_on_threads() {
     use std::io::{Cursor, Read, Write};
+    use zip::CompressionMethod;
     use zip::ZipWriter;
     use zip::result::ZipResult;
     use zip::write::SimpleFileOptions;
     use zip::write::ZipFileBuilder;
+
+    // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
+    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    let compression_method = CompressionMethod::Stored;
+    #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
+    let compression_method = CompressionMethod::default();
 
     let entries: Vec<(String, Vec<u8>)> = (0..8)
         .map(|i| (format!("file{i}.bin"), vec![i as u8; 10_000]))
@@ -134,7 +153,10 @@ fn test_prepared_files_on_threads() {
             .iter()
             .map(|(name, data)| {
                 scope.spawn(move || -> ZipResult<_> {
-                    let mut builder = ZipFileBuilder::new(name, SimpleFileOptions::default())?;
+                    let mut builder = ZipFileBuilder::new(
+                        name,
+                        SimpleFileOptions::default().compression_method(compression_method),
+                    )?;
                     builder.write_all(data)?;
                     builder.finish()
                 })
