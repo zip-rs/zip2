@@ -138,7 +138,9 @@ fn archive_with_malformed_zip64_block() -> Vec<u8> {
     archive
 }
 
+/// Disable when only deflate-zopfli
 #[test]
+#[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
 fn a_zip64_block_no_field_asked_for_does_not_override_the_entry() {
     let bytes = archive_with_malformed_zip64_block();
     let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("archive should open");
@@ -157,7 +159,9 @@ fn a_zip64_block_no_field_asked_for_does_not_override_the_entry() {
 
 /// The same archive read by the streaming reader, which parses the local header rather than the
 /// central directory and so reaches the block by a different path.
+/// Disable when only deflate-zopfli
 #[test]
+#[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
 fn the_streaming_reader_also_ignores_such_a_block() {
     let bytes = archive_with_malformed_zip64_block();
     let mut reader = Cursor::new(bytes);
