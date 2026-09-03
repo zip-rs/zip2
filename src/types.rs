@@ -144,13 +144,13 @@ impl ZipFileData {
 
     /// Check if the encrypted flag is set
     #[inline]
-    pub(crate) fn is_encrypted(&self) -> bool {
+    pub fn is_encrypted(&self) -> bool {
         self.flags.is_encrypted()
     }
 
     /// Check if the data descriptor flag is set
     #[inline]
-    pub(crate) fn is_using_data_descriptor(&self) -> bool {
+    pub fn is_using_data_descriptor(&self) -> bool {
         self.flags.is_using_data_descriptor()
     }
 
