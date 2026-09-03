@@ -140,22 +140,12 @@ impl Zip64ExtendedInformation {
         Ok(())
     }
 
-    /// Reads one of the block's 8 byte values, reporting a short read as a truncated block.
-    fn read_value<R: Read>(reader: &mut R) -> ZipResult<u64> {
-        match reader.read_u64_le() {
-            Ok(value) => Ok(value),
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                Err(invalid!("ZIP64 extra field truncated"))
-            }
-            Err(e) => Err(e.into()),
-        }
-    }
-
     /// Reads the value for one field, and keeps it only if the entry asked for it.
     ///
     /// Whether the value is *read* is decided by the block's length, so that the reader stays in
     /// step with writers that emit more fields than they need to. Whether it is *kept* is decided
     /// by `is_zip64`, which says whether the matching field in the entry held the sentinel.
+    #[inline]
     fn read_field<R: Read>(
         reader: &mut R,
         len: u16,
@@ -165,7 +155,13 @@ impl Zip64ExtendedInformation {
         if len < 24 && !is_zip64 {
             return Ok(None);
         }
-        let value = Self::read_value(reader)?;
+        let value = match reader.read_u64_le() {
+            Ok(value) => value,
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                return Err(invalid!("ZIP64 extra field truncated"));
+            }
+            Err(e) => return Err(e.into()),
+        };
         *consumed_len += mem::size_of::<u64>();
         Ok(is_zip64.then_some(value))
     }
@@ -217,12 +213,15 @@ impl Zip64ExtendedInformation {
 
         // The two sizes travel together, so one sentinel brings both along. The field that had no
         // sentinel keeps the entry's own value, which is what it already held.
-        let sizes =
-            (uncompressed_size.is_some() || compressed_size.is_some()).then(|| Zip64Sizes {
+        let sizes = if uncompressed_size.is_some() || compressed_size.is_some() {
+            Some(Zip64Sizes {
                 uncompressed_size: uncompressed_size
                     .unwrap_or_else(|| entry_uncompressed_size.into()),
                 compressed_size: compressed_size.unwrap_or_else(|| entry_compressed_size.into()),
-            });
+            })
+        } else {
+            None
+        };
 
         let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
             return Err(invalid!("ZIP64 extra-data field is the wrong length"));
