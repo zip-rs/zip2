@@ -29,5 +29,5 @@ fn directory_should_not_have_a_data_descriptor() {
     let next_bytes: [u8; 4] = bytes[data_start..data_start + 4].try_into().unwrap();
     println!("bytes right after dir's data: {next_bytes:02x?}");
 
-    assert_eq!(next_bytes, LOCAL_FILE_HEADER_SIGNATURE,);
+    assert_eq!(next_bytes, LOCAL_FILE_HEADER_SIGNATURE);
 }
