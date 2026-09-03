@@ -698,7 +698,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             file.file_comment = comment;
         }
-        if !self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..))) {
+        if (!self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..))))
+            && file
+                .unix_mode()
+                .is_some_and(|p| p & ffi::S_IFDIR != ffi::S_IFDIR)
+        {
             file.flags |= ZipFlags::UsingDataDescriptor.as_u16();
         }
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
