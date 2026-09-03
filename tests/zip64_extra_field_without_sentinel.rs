@@ -4,12 +4,9 @@
 //! turns an archive that every other tool accepts into an unreadable one, so a value from this
 //! block may only replace a field holding the 0xFFFFFFFF sentinel that asked for it.
 
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{Cursor, Read, Seek};
 
-use zip::{
-    ZipArchive, ZipWriter,
-    write::{ExtendedFileOptions, FileOptions},
-};
+use zip::{ZipArchive, ZipWriter};
 
 /// The first two entries of a real EPUB that this crate could not read, kept byte for byte: the
 /// boilerplate `mimetype` and `META-INF/container.xml`, with a fresh end of central directory
@@ -77,50 +74,37 @@ const REAL_WORLD_EPUB: [u8; 584] = [
     0x00_u8, 0x00_u8, 0x00_u8, 0x00_u8,
 ];
 
-/// Header id the archive is built with, swapped for the ZIP64 id once it is finished: the
-/// writer rightly refuses to emit a custom field under 0x0001, and rewriting the two id bytes
-/// afterwards leaves every length and offset exactly where the writer put them.
-const PLACEHOLDER_ID: u16 = 0x7a7a;
 const ZIP64_ID: u16 = 0x0001;
 
+/// Disable when only deflate-zopfli
+#[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
 const CONTENT: &[u8] = b"the entry's own sizes and offset are the ones to trust";
 
-/// The 32 byte payload of the malformed block, shaped like the one found in the wild. A correct
-/// block is `[uncompressed u64][compressed u64][header offset u64][disk u32]`; this one begins
-/// with eight bytes belonging to the NTFS block's header (a reserved u32, then tag 0x0001 and
-/// size 0x0018), so every value sits eight bytes to the right of where a reader looks for it.
-/// The values here are deliberately nothing like the entry's real ones: if any of them were
-/// applied, the archive would not read.
-fn malformed_payload() -> Vec<u8> {
-    let mut payload = Vec::with_capacity(32);
-    payload.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00]);
-    payload.extend_from_slice(&u64::to_le_bytes(0x0018_0100_0000_0000));
-    payload.extend_from_slice(&u64::to_le_bytes(270));
-    payload.extend_from_slice(&u64::to_le_bytes(186));
-    payload
-}
-
-/// Rewrites every `PLACEHOLDER_ID` field header to `ZIP64_ID`, in place and in both the local
-/// and the central header, without moving a byte.
-fn promote_placeholder_to_zip64(archive: &mut [u8], payload_len: u16) {
-    let mut needle = Vec::with_capacity(4);
-    needle.extend_from_slice(&PLACEHOLDER_ID.to_le_bytes());
-    needle.extend_from_slice(&payload_len.to_le_bytes());
-    let mut promoted = 0;
-    for start in 0..archive.len().saturating_sub(needle.len()) {
-        if &archive[start..start + needle.len()] == needle.as_slice() {
-            archive[start..start + 2].copy_from_slice(&ZIP64_ID.to_le_bytes());
-            promoted += 1;
-        }
-    }
-    assert_eq!(
-        promoted, 2,
-        "expected the field in both the local and central header"
-    );
-}
-
+/// Disable when only deflate-zopfli
+#[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
 fn archive_with_malformed_zip64_block() -> Vec<u8> {
-    let payload = malformed_payload();
+    use std::io::Write;
+
+    use zip::write::{ExtendedFileOptions, FileOptions};
+
+    // Header id the archive is built with, swapped for the ZIP64 id once it is finished: the
+    // writer rightly refuses to emit a custom field under 0x0001, and rewriting the two id bytes
+    // afterwards leaves every length and offset exactly where the writer put them.
+    const PLACEHOLDER_ID: u16 = 0x7a7a;
+    let payload = {
+        // The 32 byte payload of the malformed block, shaped like the one found in the wild. A correct
+        // block is `[uncompressed u64][compressed u64][header offset u64][disk u32]`; this one begins
+        // with eight bytes belonging to the NTFS block's header (a reserved u32, then tag 0x0001 and
+        // size 0x0018), so every value sits eight bytes to the right of where a reader looks for it.
+        // The values here are deliberately nothing like the entry's real ones: if any of them were
+        // applied, the archive would not read.
+        let mut payload = Vec::with_capacity(32);
+        payload.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00]);
+        payload.extend_from_slice(&u64::to_le_bytes(0x0018_0100_0000_0000));
+        payload.extend_from_slice(&u64::to_le_bytes(270));
+        payload.extend_from_slice(&u64::to_le_bytes(186));
+        payload
+    };
     let mut options: FileOptions<ExtendedFileOptions> = FileOptions::default();
     // Added to the local header, from where the writer mirrors it into the central directory,
     // so both headers carry it exactly as the archives found in the wild do.
@@ -134,7 +118,24 @@ fn archive_with_malformed_zip64_block() -> Vec<u8> {
     let mut archive = writer.finish().unwrap().into_inner();
 
     let payload_len = u16::try_from(payload.len()).unwrap();
-    promote_placeholder_to_zip64(&mut archive, payload_len);
+    {
+        // Rewrites every `PLACEHOLDER_ID` field header to `ZIP64_ID`, in place and in both the local
+        // and the central header, without moving a byte.
+        let mut needle = Vec::with_capacity(4);
+        needle.extend_from_slice(&PLACEHOLDER_ID.to_le_bytes());
+        needle.extend_from_slice(&payload_len.to_le_bytes());
+        let mut promoted = 0;
+        for start in 0..archive.len().saturating_sub(needle.len()) {
+            if &archive[start..start + needle.len()] == needle.as_slice() {
+                archive[start..start + 2].copy_from_slice(&ZIP64_ID.to_le_bytes());
+                promoted += 1;
+            }
+        }
+        assert_eq!(
+            promoted, 2,
+            "expected the field in both the local and central header"
+        );
+    }
     archive
 }
 
