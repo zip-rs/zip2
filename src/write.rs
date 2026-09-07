@@ -1332,9 +1332,11 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Add a symlink entry, taking Paths to the location and target as arguments.
     ///
+    /// This function sanitizes both the path and the target. If you don't want to sanitize the
+    /// path, it's recommended to use the normal [`Self::add_symlink`]
+    ///
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
-    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
-    /// root.
+    /// ignores any `..` or Windows drive letter
     pub fn add_symlink_from_path<P: AsRef<Path>, T: AsRef<Path>, E: FileOptionExtension>(
         &mut self,
         path: P,
