@@ -1,6 +1,17 @@
-// Criterion-based benchmarks. Run: `cargo bench --bench criterion_bench`.
-// Optional baselines: pass Criterion flags after `--` (e.g. `--save-baseline`, `--baseline <name>`).
-// Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
+//! Criterion-based benchmarks.
+//!
+//! Usage:
+//!
+//! ```sh
+//! cargo bench --bench criterion_bench
+//!
+//! # optional baselines
+//!
+//! cargo bench --bench criterion_bench -- --save-baseline my_version
+//! cargo bench --bench criterion_bench -- --baseline my_version
+//! ```
+//!
+//! Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::fs;
