@@ -72,7 +72,6 @@ impl Zip64ExtendedInformation {
         header_start: u64,
     ) -> Option<Self> {
         let mut size: u16 = 0;
-        // >= matches local_header and the other ZIP64 size checks in the crate
         let sizes = if is_large_file
             || uncompressed_size >= ZIP64_BYTES_THR
             || compressed_size >= ZIP64_BYTES_THR
