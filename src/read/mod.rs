@@ -3,20 +3,17 @@
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::datetime::DateTime;
-use crate::extra_fields::AexEncryption;
-use crate::extra_fields::UnicodeExtraField;
-use crate::extra_fields::Zip64ExtendedInformation;
-use crate::extra_fields::{ExtendedTimestamp, ExtraField, Ntfs, UsedExtraField};
-use crate::format::flags::ZipFlags;
+use crate::extra_fields::{ExtraField, ExtraFields};
+use crate::format::blocks::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock};
+use crate::format::flags::{ZipFileFlags, ZipFlags};
+use crate::format::system::System;
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::spec::{CentralDirectoryEndInfo, DataAndPosition, FixedSizeBlock, ZipCentralEntryBlock};
-use crate::types::{System, ZipFileData};
-use crate::unstable::LittleEndianReadExt;
+use crate::types::ZipFileData;
 use indexmap::IndexMap;
 use std::ffi::OsStr;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, Write};
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 mod config;
 pub use config::{ArchiveOffset, Config};
@@ -32,7 +29,7 @@ pub(crate) mod magic_finder;
 pub(crate) mod readers;
 
 pub(crate) mod zipfile;
-pub use zipfile::{ZipFile, ZipFileSeek};
+pub use zipfile::{ZipFile, ZipFileEntry, ZipFileSeek};
 
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
@@ -73,7 +70,7 @@ pub(crate) fn make_symlink_impl<T>(
     target_str: &str,
     existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
-    use crate::spec::is_dir;
+    use crate::format::functions::is_dir;
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
         is_dir(target_str.as_bytes()) && existing_files.contains_key(target_str.as_bytes());
@@ -435,29 +432,6 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 }
 
-/// Parse a central directory entry to collect the information for the file.
-pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
-    reader: &mut R,
-    central_directory: &CentralDirectoryInfo,
-) -> ZipResult<(ZipFileData, Box<[u8]>)> {
-    let central_header_start = reader.stream_position()?;
-
-    // Parse central header
-    let block = ZipCentralEntryBlock::parse(reader)?;
-
-    let (file, file_name_raw) = central_header_to_zip_file_inner(
-        reader,
-        central_directory.archive_offset,
-        central_header_start,
-        block,
-    )?;
-
-    let central_header_end = reader.stream_position()?;
-
-    reader.seek(SeekFrom::Start(central_header_end))?;
-    Ok((file, file_name_raw.into()))
-}
-
 #[inline]
 fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipResult<Vec<u8>> {
     let mut data = vec![0; len];
@@ -503,7 +477,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     let is_utf8 = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
 
     let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
-    let extra_field = read_variable_length_byte_field(reader, extra_field_length as usize)?;
+    let extra_fields_raw = read_variable_length_byte_field(reader, extra_field_length as usize)?;
     let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
     let file_comment: Box<str> = if is_utf8 {
         String::from_utf8_lossy(&file_comment_raw).into()
@@ -512,6 +486,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block)?;
     // Construct the result
     let mut result = ZipFileData {
         system,
@@ -521,21 +496,16 @@ fn central_header_to_zip_file_inner<R: Read>(
         crc32,
         compressed_size: compressed_size.into(),
         uncompressed_size: uncompressed_size.into(),
-        flags,
-        extra_field: Some(Arc::from(extra_field)),
-        central_extra_field: None,
+        flags: ZipFileFlags(flags),
         file_comment,
         header_start: offset.into(),
-        extra_data_start: None,
         central_header_start,
         data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
         large_file: false,
-        aes_mode: None,
-        aes_extra_data_start: 0,
-        extra_fields: Vec::new(),
+        extra_fields,
     };
-    parse_extra_field(&mut result, &mut file_name_raw)?;
+    result.apply_extra_fields(&mut file_name_raw)?;
 
     // Account for shifted zip offsets.
     result.header_start = result
@@ -544,156 +514,6 @@ fn central_header_to_zip_file_inner<R: Read>(
         .ok_or(invalid!("Archive header is too large"))?;
 
     Ok((result, file_name_raw))
-}
-
-pub(crate) fn parse_extra_field(
-    file: &mut ZipFileData,
-    file_name_raw: &mut Vec<u8>,
-) -> ZipResult<()> {
-    let mut extra_field = file.extra_field.clone();
-    let mut central_extra_field = file.central_extra_field.clone();
-    for field_group in [&mut extra_field, &mut central_extra_field] {
-        let Some(extra_field) = field_group else {
-            continue;
-        };
-        let mut modified = false;
-        let mut processed_extra_field = vec![];
-        let len = extra_field.len();
-        let mut reader = io::Cursor::new(&**extra_field);
-
-        let mut position = reader.position();
-        while position < len as u64 {
-            let old_position = position;
-            let remove =
-                parse_single_extra_field(file, &mut reader, position, false, file_name_raw)?;
-            position = reader.position();
-            if remove {
-                modified = true;
-            } else {
-                let field_len = (position - old_position) as usize;
-                let write_start = processed_extra_field.len();
-                reader.seek(SeekFrom::Start(old_position))?;
-                processed_extra_field.extend_from_slice(&vec![0u8; field_len]);
-                if let Err(e) = reader
-                    .read_exact(&mut processed_extra_field[write_start..(write_start + field_len)])
-                {
-                    if e.kind() == io::ErrorKind::UnexpectedEof {
-                        return Err(invalid!("Extra field content exceeds declared length"));
-                    }
-                    return Err(e.into());
-                }
-            }
-        }
-        if modified {
-            *field_group = Some(Arc::from(processed_extra_field.into_boxed_slice()));
-        }
-    }
-    file.extra_field = extra_field;
-    file.central_extra_field = central_extra_field;
-    Ok(())
-}
-
-pub(crate) fn parse_single_extra_field<R: Read>(
-    file: &mut ZipFileData,
-    reader: &mut R,
-    bytes_already_read: u64,
-    disallow_zip64: bool,
-    file_name_raw: &mut Vec<u8>,
-) -> ZipResult<bool> {
-    let kind = match reader.read_u16_le() {
-        Ok(kind) => kind,
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false),
-        Err(e) => return Err(e.into()),
-    };
-    let decoded_extra_field = UsedExtraField::try_from(kind);
-    let len = match decoded_extra_field {
-        Ok(known_field) => match reader.read_u16_le() {
-            Ok(len) => len,
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                return Err(invalid!("Extra field {} header truncated", known_field));
-            }
-            Err(e) => return Err(e.into()),
-        },
-        Err(()) => {
-            match reader.read_u16_le() {
-                Ok(len) => len,
-                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false), // early return, most likely a padding
-                Err(_e) => {
-                    // Consume remaining bytes to avoid infinite loop in caller
-                    let mut buf = [0u8; 2048];
-                    while reader.read(&mut buf)? != 0 {
-                        // loop to read and consume
-                    }
-                    return Ok(false);
-                }
-            }
-        }
-    };
-    match decoded_extra_field {
-        // Zip64 extended information extra field
-        Ok(UsedExtraField::Zip64ExtendedInfo) => {
-            if disallow_zip64 {
-                return Err(invalid!("Can't write a custom field using the ZIP64 ID"));
-            }
-            file.large_file = true;
-            let (uncomp_size, comp_size, header_start) = Zip64ExtendedInformation::parse(
-                reader,
-                len,
-                file.uncompressed_size,
-                file.compressed_size,
-                file.header_start,
-            )?;
-            file.uncompressed_size = uncomp_size;
-            file.compressed_size = comp_size;
-            file.header_start = header_start;
-            return Ok(true);
-        }
-        Ok(UsedExtraField::Ntfs) => {
-            // NTFS extra field
-            file.extra_fields
-                .push(ExtraField::Ntfs(Ntfs::try_from_reader(reader, len)?));
-        }
-        Ok(UsedExtraField::AeXEncryption) => {
-            // AES
-            let (aes_options, inner_compression_method) = AexEncryption::parse(reader, len)?;
-            file.aes_mode = Some(aes_options);
-            file.compression_method = inner_compression_method;
-            file.aes_extra_data_start = bytes_already_read;
-        }
-        Ok(UsedExtraField::ExtendedTimestamp) => {
-            file.extra_fields.push(ExtraField::ExtendedTimestamp(
-                ExtendedTimestamp::try_from_reader(reader, len)?,
-            ));
-        }
-        Ok(UsedExtraField::UnicodeComment) => {
-            // Info-ZIP Unicode Comment Extra Field
-            // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
-            file.file_comment = String::from_utf8(
-                UnicodeExtraField::try_from_reader(reader, len)?
-                    .unwrap_valid(file.file_comment.as_bytes())?
-                    .into_vec(),
-            )?
-            .into();
-        }
-        Ok(UsedExtraField::UnicodePath) => {
-            // Info-ZIP Unicode Path Extra Field
-            // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
-            let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
-            let file_name = unicode.unwrap_valid(file_name_raw)?;
-            *file_name_raw = file_name.into_vec();
-            file.flags |= ZipFlags::LanguageEncoding.as_u16();
-        }
-        _ => {
-            if let Err(e) = reader.read_exact(&mut vec![0u8; len as usize]) {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Err(invalid!("Extra field content truncated"));
-                }
-                return Err(e.into());
-            }
-            // Other fields are ignored
-        }
-    }
-    Ok(false)
 }
 
 /// A trait for exposing file metadata inside the zip.
@@ -707,13 +527,11 @@ pub trait HasZipMetadata {
 #[non_exhaustive]
 pub struct ZipReadOptions<'a> {
     /// The password to use when decrypting the file.  This is ignored if not required.
-    password: Option<&'a [u8]>,
-
+    pub(crate) password: Option<&'a [u8]>,
     /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
-    ignore_encryption_flag: bool,
-
+    pub(crate) ignore_encryption_flag: bool,
     /// Ignore the crc32 of the file
-    ignore_crc: bool,
+    pub(crate) ignore_crc: bool,
     /// override the compressed_size for stream read
     force_compressed_size: Option<u64>,
     /// override the uncompressed_size for stream read

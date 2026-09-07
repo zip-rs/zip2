@@ -1,5 +1,6 @@
 [default.extend-identifiers]
 ZIP64_BYTES_THR = "ZIP64_BYTES_THR"
+ZIP64_BYTES_THR_U32 = "ZIP64_BYTES_THR_U32"
 ZIP64_ENTRY_THR = "ZIP64_ENTRY_THR"
 flate2 = "flate2"
 "00ba" = "00ba"

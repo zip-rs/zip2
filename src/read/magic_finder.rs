@@ -17,7 +17,9 @@ pub(crate) trait FinderDirection<'a, B> {
     fn move_scope(&self, offset: usize) -> usize;
 }
 
+#[derive(Debug)]
 pub(crate) struct Forward<'a>(Finder<'a>);
+
 impl<'a> FinderDirection<'a, MagicLengthByteArray> for Forward<'a> {
     fn new(needle: &'a MagicLengthByteArray) -> Self {
         Self(Finder::new(needle))
@@ -51,7 +53,9 @@ impl<'a> FinderDirection<'a, MagicLengthByteArray> for Forward<'a> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Backwards<'a>(FinderRev<'a>);
+
 impl<'a> FinderDirection<'a, MagicLengthByteArray> for Backwards<'a> {
     fn new(needle: &'a MagicLengthByteArray) -> Self {
         Self(FinderRev::new(needle))
@@ -102,6 +106,7 @@ const BUFFER_SIZE: usize = 1024;
 /// A utility for finding magic symbols from the end of a seekable reader.
 ///
 /// Can be repurposed to recycle the internal buffer.
+#[derive(Debug)]
 pub(crate) struct MagicFinder<Direction> {
     buffer: [u8; BUFFER_SIZE],
     pub(self) finder: Direction,
@@ -217,6 +222,7 @@ impl<'a, T: FinderDirection<'a, MagicLengthByteArray>> MagicFinder<T> {
 ///
 /// The guess can be marked as mandatory to produce an error. This is useful
 /// if the `ArchiveOffset` is known and auto-detection is not desired.
+#[derive(Debug)]
 pub(crate) struct OptimisticMagicFinder<Direction> {
     inner: MagicFinder<Direction>,
     initial_guess: Option<(u64, bool)>,

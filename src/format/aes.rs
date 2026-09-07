@@ -9,7 +9,9 @@ use core::fmt::Display;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u16)]
 pub enum AesVendorVersion {
+    /// Ae1 version
     Ae1 = 0x0001,
+    /// Ae2 version
     Ae2 = 0x0002,
 }
 
@@ -21,15 +23,9 @@ impl AesVendorVersion {
     }
 
     /// Returns `true` if the data is encrypted using AE2.
-    #[cfg(feature = "aes-crypto")]
+    #[must_use]
     pub const fn is_ae2_encrypted(&self) -> bool {
         matches!(self, AesVendorVersion::Ae2)
-    }
-
-    /// `false` since the feature `aes-crypto` is not enabled
-    #[cfg(not(feature = "aes-crypto"))]
-    pub const fn is_ae2_encrypted(&self) -> bool {
-        false
     }
 }
 
@@ -97,7 +93,6 @@ impl TryFrom<u8> for AesMode {
     }
 }
 
-#[cfg(feature = "aes-crypto")]
 impl AesMode {
     /// Length of the salt for the given AES mode.
     #[must_use]

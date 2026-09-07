@@ -20,28 +20,27 @@ use crate::{
     result::{ZipResult, invalid},
 };
 
+/// Zip64 Sizes
+/// This entry in the Local header MUST include BOTH original
+/// and compressed file size fields.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Zip64Sizes {
+    pub(crate) uncompressed_size: u64,
+    pub(crate) compressed_size: u64,
+}
+
 /// Zip64 extended information extra field
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct Zip64ExtendedInformation {
-    /// The local header does not contains any `header_start`
-    is_local_header: bool,
-    uncompressed_size: Option<u64>,
-    compressed_size: Option<u64>,
-    header_start: Option<u64>,
-    // Not used field
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Zip64ExtendedInformation {
+    pub(crate) sizes: Option<Zip64Sizes>,
+    pub(crate) header_start: Option<u64>,
+    // TODO: (unsupported for now)
+    // Disk Start Number  4 bytes    Number of the disk on which this file starts
     // disk_start: Option<u32>
 }
 
 impl Zip64ExtendedInformation {
-    const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
-
-    pub(crate) fn new_local(is_large_file: bool) -> Option<Self> {
-        if is_large_file {
-            Self::local_header(true, u64::MAX, u64::MAX)
-        } else {
-            None
-        }
-    }
+    pub(crate) const MAGIC: UsedExtraField = UsedExtraField::Zip64ExtendedInfo;
 
     /// This entry in the Local header MUST include BOTH original and compressed file size fields
     /// If the user is using `is_large_file` when the file is not large we force the zip64 extra field
@@ -57,16 +56,11 @@ impl Zip64ExtendedInformation {
         if !should_add_size {
             return None;
         }
-        let uncompressed_size = Some(uncompressed_size);
-        let compressed_size = Some(compressed_size);
-
-        // TODO: (unsupported for now)
-        // Disk Start Number  4 bytes    Number of the disk on which this file starts
-
         Some(Self {
-            is_local_header: true,
-            uncompressed_size,
-            compressed_size,
+            sizes: Some(Zip64Sizes {
+                uncompressed_size,
+                compressed_size,
+            }),
             header_start: None,
         })
     }
@@ -78,15 +72,15 @@ impl Zip64ExtendedInformation {
         header_start: u64,
     ) -> Option<Self> {
         let mut size: u16 = 0;
-        let uncompressed_size = if is_large_file || uncompressed_size >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(uncompressed_size)
-        } else {
-            None
-        };
-        let compressed_size = if is_large_file || compressed_size >= ZIP64_BYTES_THR {
-            size += mem::size_of::<u64>() as u16;
-            Some(compressed_size)
+        let sizes = if is_large_file
+            || uncompressed_size >= ZIP64_BYTES_THR
+            || compressed_size > ZIP64_BYTES_THR
+        {
+            size += mem::size_of::<u64>() as u16 + mem::size_of::<u64>() as u16;
+            Some(Zip64Sizes {
+                uncompressed_size,
+                compressed_size,
+            })
         } else {
             None
         };
@@ -105,112 +99,128 @@ impl Zip64ExtendedInformation {
         }
 
         Some(Self {
-            is_local_header: false,
-            uncompressed_size,
-            compressed_size,
+            sizes,
             header_start,
         })
     }
 
-    /// Get the full size of the block
-    pub(crate) fn full_size(&self) -> usize {
-        self.size() + mem::size_of::<UsedExtraField>() + mem::size_of::<u16>()
+    pub(crate) fn full_size(&self, is_local_header: bool) -> usize {
+        mem::size_of::<UsedExtraField>() + mem::size_of::<u16>() + self.size(is_local_header)
     }
 
-    pub(crate) fn size(&self) -> usize {
+    pub(crate) fn size(&self, is_local_header: bool) -> usize {
         let mut size = 0;
-        if self.uncompressed_size.is_some() {
-            size += mem::size_of::<u64>();
+        if self.sizes.is_some() {
+            size += mem::size_of::<u64>() + mem::size_of::<u64>();
         }
-        if self.compressed_size.is_some() {
-            size += mem::size_of::<u64>();
-        }
-        if self.header_start.is_some() {
+        if !is_local_header && self.header_start.is_some() {
             size += mem::size_of::<u64>();
         }
         size
     }
 
     /// Serialize the block
-    pub fn write<T: Write>(self, writer: &mut T) -> ZipResult<()> {
+    pub fn write<T: Write>(&self, writer: &mut T, is_local_header: bool) -> ZipResult<()> {
         writer.write_all(&Self::MAGIC.to_le_bytes())?;
+        let size = self.size(is_local_header) as u16;
+        writer.write_all(&size.to_le_bytes())?;
+        if let Some(Zip64Sizes {
+            uncompressed_size,
+            compressed_size,
+        }) = self.sizes
+        {
+            writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
+            writer.write_all(&u64::to_le_bytes(compressed_size))?;
+        }
 
-        if self.is_local_header {
-            // the local header does not contains the header start
-            if let (Some(uncompressed_size), Some(compressed_size)) =
-                (self.uncompressed_size, self.compressed_size)
-            {
-                let size = (mem::size_of::<u64>() + mem::size_of::<u64>()) as u16;
-                writer.write_all(&size.to_le_bytes())?;
-                writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
-                writer.write_all(&u64::to_le_bytes(compressed_size))?;
-            }
-            // the else should be unreachable
-        } else {
-            let size = self.size() as u16;
-            writer.write_all(&size.to_le_bytes())?;
-            if let Some(uncompressed_size) = self.uncompressed_size {
-                writer.write_all(&u64::to_le_bytes(uncompressed_size))?;
-            }
-            if let Some(compressed_size) = self.compressed_size {
-                writer.write_all(&u64::to_le_bytes(compressed_size))?;
-            }
-            if let Some(header_start) = self.header_start {
-                writer.write_all(&u64::to_le_bytes(header_start))?;
-            }
+        // the local header does not contains the header start
+        if !is_local_header && let Some(header_start) = self.header_start {
+            writer.write_all(&u64::to_le_bytes(header_start))?;
         }
         Ok(())
     }
 
+    /// Reads the value for one field, and keeps it only if the entry asked for it.
+    ///
+    /// Whether the value is *read* is decided by the block's length, so that the reader stays in
+    /// step with writers that emit more fields than they need to. Whether it is *kept* is decided
+    /// by `is_zip64`, which says whether the matching field in the entry held the sentinel.
+    #[inline]
+    fn read_field<R: Read>(
+        reader: &mut R,
+        len: u16,
+        consumed_len: &mut usize,
+        is_zip64: bool,
+    ) -> ZipResult<Option<u64>> {
+        if len < 24 && !is_zip64 {
+            return Ok(None);
+        }
+        let value = match reader.read_u64_le() {
+            Ok(value) => value,
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                return Err(invalid!("ZIP64 extra field truncated"));
+            }
+            Err(e) => return Err(e.into()),
+        };
+        *consumed_len += mem::size_of::<u64>();
+        Ok(is_zip64.then_some(value))
+    }
+
+    /// Reads the block, keeping only the values the entry actually asked for.
+    ///
+    /// Per APPNOTE 4.5.3 a value belongs in this block only when the matching field in the entry
+    /// itself holds the 0xFFFFFFFF sentinel, which means "too large to store here, the real value
+    /// is in the ZIP64 block". Writers exist that emit a full length block anyway, and at least
+    /// one emits a malformed one, so a value that no sentinel asked for is dropped rather than
+    /// read over the entry's own perfectly good field. Such a value can only repeat what the entry
+    /// already said, so dropping it costs nothing when the block is well formed, and it is the
+    /// only way a malformed block can be told apart from a meaningful one.
+    ///
+    /// The `None` fields this leaves behind are the same `None` the writer uses for "this entry
+    /// has nothing to record here", so a block that was ignored on the way in is not written back
+    /// out on the way through.
+    ///
+    /// `entry_header_start` is `None` for a local header, which has no relative offset field for
+    /// the block to override in the first place.
     #[inline]
     pub(crate) fn parse<R: Read>(
         reader: &mut R,
         len: u16,
-        uncompressed_size: u64,
-        compressed_size: u64,
-        header_start: u64,
-    ) -> ZipResult<(u64, u64, u64)> {
+        entry_uncompressed_size: u32,
+        entry_compressed_size: u32,
+        entry_header_start: Option<u32>,
+    ) -> ZipResult<Self> {
         let mut consumed_len = 0;
-        let new_uncompressed_size = if len >= 24 || uncompressed_size == ZIP64_BYTES_THR {
-            let new_uncompressed_size = match reader.read_u64_le() {
-                Ok(v) => v,
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                    return Err(invalid!("ZIP64 extra field truncated"));
-                }
-                Err(e) => return Err(e.into()),
-            };
-            consumed_len += mem::size_of::<u64>();
-            new_uncompressed_size
-        } else {
-            uncompressed_size
-        };
 
-        let new_compressed_size = if len >= 24 || compressed_size == ZIP64_BYTES_THR {
-            let new_compressed_size = match reader.read_u64_le() {
-                Ok(v) => v,
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                    return Err(invalid!("ZIP64 extra field truncated"));
-                }
-                Err(e) => return Err(e.into()),
-            };
-            consumed_len += mem::size_of::<u64>();
-            new_compressed_size
-        } else {
-            compressed_size
-        };
+        let uncompressed_size = Self::read_field(
+            reader,
+            len,
+            &mut consumed_len,
+            u64::from(entry_uncompressed_size) == ZIP64_BYTES_THR,
+        )?;
+        let compressed_size = Self::read_field(
+            reader,
+            len,
+            &mut consumed_len,
+            u64::from(entry_compressed_size) == ZIP64_BYTES_THR,
+        )?;
+        let header_start = Self::read_field(
+            reader,
+            len,
+            &mut consumed_len,
+            entry_header_start.is_some_and(|start| u64::from(start) == ZIP64_BYTES_THR),
+        )?;
 
-        let new_header_start = if len >= 24 || header_start == ZIP64_BYTES_THR {
-            let new_header_start = match reader.read_u64_le() {
-                Ok(v) => v,
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                    return Err(invalid!("ZIP64 extra field truncated"));
-                }
-                Err(e) => return Err(e.into()),
-            };
-            consumed_len += mem::size_of::<u64>();
-            new_header_start
+        // The two sizes travel together, so one sentinel brings both along. The field that had no
+        // sentinel keeps the entry's own value, which is what it already held.
+        let sizes = if uncompressed_size.is_some() || compressed_size.is_some() {
+            Some(Zip64Sizes {
+                uncompressed_size: uncompressed_size
+                    .unwrap_or_else(|| entry_uncompressed_size.into()),
+                compressed_size: compressed_size.unwrap_or_else(|| entry_compressed_size.into()),
+            })
         } else {
-            header_start
+            None
         };
 
         let Some(leftover_len) = (len as usize).checked_sub(consumed_len) else {
@@ -224,6 +234,9 @@ impl Zip64ExtendedInformation {
             return Err(e.into());
         }
 
-        Ok((new_uncompressed_size, new_compressed_size, new_header_start))
+        Ok(Self {
+            sizes,
+            header_start,
+        })
     }
 }

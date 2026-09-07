@@ -5,8 +5,8 @@
 //! If the file is marked as encrypted with AE-2 the CRC field is ignored, even if it isn't set to 0.
 
 use crate::aes_ctr::AesCipher;
+use crate::format::aes::AesMode;
 use crate::result::ZipResult;
-use crate::types::AesMode;
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{KeyInit, Mac, SimpleHmacReset};
@@ -431,8 +431,8 @@ mod tests {
 
     use crate::{
         aes::{AesReader, AesWriter},
+        format::aes::AesMode,
         result::ZipError,
-        types::AesMode,
     };
 
     /// Checks whether `AesReader` can successfully decrypt what `AesWriter` produces.
