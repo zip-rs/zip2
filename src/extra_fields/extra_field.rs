@@ -117,20 +117,13 @@ impl ExtraField {
         let parsed_extra_field = match decoded_extra_field {
             // Zip64 extended information extra field
             Ok(UsedExtraField::Zip64ExtendedInfo) => {
-                let (new_uncomp, new_comp, new_head) = Zip64ExtendedInformation::parse(
+                ExtraField::Zip64ExtendedInformation(Zip64ExtendedInformation::parse(
                     reader,
                     len,
                     file.get_uncompressed_size(),
                     file.get_compressed_size(),
                     file.get_header_start(),
-                )?;
-                ExtraField::Zip64ExtendedInformation(Zip64ExtendedInformation {
-                    sizes: Some(Zip64Sizes {
-                        uncompressed_size: new_uncomp,
-                        compressed_size: new_comp,
-                    }),
-                    header_start: Some(new_head),
-                })
+                )?)
             }
             Ok(UsedExtraField::Ntfs) => {
                 // NTFS extra field
