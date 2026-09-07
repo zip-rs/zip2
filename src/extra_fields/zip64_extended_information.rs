@@ -72,9 +72,10 @@ impl Zip64ExtendedInformation {
         header_start: u64,
     ) -> Option<Self> {
         let mut size: u16 = 0;
+        // >= matches local_header and the other ZIP64 size checks in the crate
         let sizes = if is_large_file
             || uncompressed_size >= ZIP64_BYTES_THR
-            || compressed_size > ZIP64_BYTES_THR
+            || compressed_size >= ZIP64_BYTES_THR
         {
             size += mem::size_of::<u64>() as u16 + mem::size_of::<u64>() as u16;
             Some(Zip64Sizes {
@@ -220,5 +221,48 @@ impl Zip64ExtendedInformation {
         }
 
         Ok((new_uncompressed_size, new_compressed_size, new_header_start))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_and_central_agree_at_the_threshold() {
+        // The two constructors decide the same question, so they must agree for
+        // every input; ZIP64_BYTES_THR itself is the only value where they did not.
+        for size in [ZIP64_BYTES_THR - 1, ZIP64_BYTES_THR, ZIP64_BYTES_THR + 1] {
+            for (uncompressed, compressed) in [(0, size), (size, 0)] {
+                let local = Zip64ExtendedInformation::local_header(false, uncompressed, compressed);
+                let central =
+                    Zip64ExtendedInformation::central_header(false, uncompressed, compressed, 0);
+                let want = size >= ZIP64_BYTES_THR;
+                assert_eq!(
+                    local.is_some(),
+                    want,
+                    "local_header({uncompressed}, {compressed})"
+                );
+                assert_eq!(
+                    central.is_some_and(|c| c.sizes.is_some()),
+                    want,
+                    "central_header({uncompressed}, {compressed})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn central_header_treats_both_sizes_alike() {
+        let by_uncompressed =
+            Zip64ExtendedInformation::central_header(false, ZIP64_BYTES_THR, 0, 0);
+        let by_compressed = Zip64ExtendedInformation::central_header(false, 0, ZIP64_BYTES_THR, 0);
+        assert_eq!(
+            by_uncompressed.is_some(),
+            by_compressed.is_some(),
+            "the two size terms disagree at the threshold",
+        );
+        // A size of exactly ZIP64_BYTES_THR does not fit a u32 field, so both must ask for ZIP64.
+        assert!(by_uncompressed.is_some_and(|c| c.sizes.is_some()));
     }
 }
