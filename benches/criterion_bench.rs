@@ -175,7 +175,7 @@ fn merge_archive_benchmarks(c: &mut Criterion) {
                 assert_eq!(out.metadata().unwrap().len() as usize, len);
                 black_box(out);
             },
-            BatchSize::SmallInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -199,7 +199,7 @@ fn merge_archive_benchmarks(c: &mut Criterion) {
                 assert_eq!(out.metadata().unwrap().len() as usize, len2);
                 black_box(out);
             },
-            BatchSize::SmallInput,
+            BatchSize::PerIteration,
         );
     });
 }
