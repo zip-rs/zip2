@@ -145,31 +145,33 @@ fn test_raw_copy_file_permissions() {
     use zip::DateTime;
     use zip::unstable::format::ffi;
 
-    let mut src_archive = {
-        let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        b.start_file("file", zip::write::FileOptions::DEFAULT)
+    for_each_supported_method(|method| {
+        let mut src_archive = {
+            let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            let options = SimpleFileOptions::default().compression_method(method);
+            b.start_file("file", options).unwrap();
+            b.finish_into_readable().unwrap()
+        };
+        let datetime = DateTime::from_date_and_time(2026, 1, 1, 10, 10, 10).unwrap();
+        let unix_mode = 0o777;
+        let mut tgt_archive = {
+            let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            b.raw_copy_file_touch(
+                src_archive.by_name("file").unwrap(),
+                datetime,
+                Some(unix_mode),
+            )
             .unwrap();
-        b.finish_into_readable().unwrap()
-    };
-    let datetime = DateTime::from_date_and_time(2026, 1, 1, 10, 10, 10).unwrap();
-    let unix_mode = 0o777;
-    let mut tgt_archive = {
-        let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        b.raw_copy_file_touch(
-            src_archive.by_name("file").unwrap(),
-            datetime,
-            Some(unix_mode),
-        )
-        .unwrap();
-        b.finish_into_readable().unwrap()
-    };
+            b.finish_into_readable().unwrap()
+        };
 
-    let src_file = src_archive.by_name("file").unwrap();
-    let tgt_file = tgt_archive.by_name("file").unwrap();
+        let src_file = src_archive.by_name("file").unwrap();
+        let tgt_file = tgt_archive.by_name("file").unwrap();
 
-    assert_eq!(src_file.compression(), tgt_file.compression());
-    assert_eq!(tgt_file.last_modified(), Some(datetime));
-    assert_eq!(tgt_file.unix_mode(), Some(unix_mode | ffi::S_IFREG));
+        assert_eq!(src_file.compression(), tgt_file.compression());
+        assert_eq!(tgt_file.last_modified(), Some(datetime));
+        assert_eq!(tgt_file.unix_mode(), Some(unix_mode | ffi::S_IFREG));
+    });
 }
 
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
