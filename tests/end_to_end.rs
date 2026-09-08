@@ -173,7 +173,7 @@ fn test_raw_copy_file_permissions() {
 
         // Windows: `unix_mode()` gives the default mode
         #[cfg(windows)]
-        assert_eq!(file.unix_mode(), Some(0o664 | ffi::S_IFREG));
+        assert_eq!(tgt_file.unix_mode(), Some(0o664 | ffi::S_IFREG));
 
         #[cfg(not(windows))]
         assert_eq!(tgt_file.unix_mode(), Some(unix_mode | ffi::S_IFREG));
