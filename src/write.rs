@@ -1218,6 +1218,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         options = options.last_modified_time(last_modified_time);
 
         if let Some(perms) = unix_mode {
+            options.external_attributes = None;
             options = options.unix_permissions(perms);
         }
 
