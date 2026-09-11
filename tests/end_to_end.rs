@@ -141,6 +141,41 @@ fn test_raw_copy_dir() {
 }
 
 #[test]
+fn test_raw_copy_extra_fields() {
+    for_each_supported_method(|method| {
+        let mut src_archive = {
+            let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            let mut options = SimpleFileOptions::default()
+                .compression_method(method)
+                .into_full_options();
+            options.add_extra_field(87_u16, b"abc", false).unwrap();
+            b.start_file("file", options).unwrap();
+            b.finish_into_readable().unwrap()
+        };
+        let mut tgt_archive = {
+            let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            b.raw_copy_file(src_archive.by_name("file").unwrap())
+                .unwrap();
+            b.finish_into_readable().unwrap()
+        };
+
+        let src_file = src_archive.by_name("file").unwrap();
+        let tgt_file = tgt_archive.by_name("file").unwrap();
+
+        assert_eq!(src_file.compression(), tgt_file.compression());
+        assert_eq!(src_file.unix_mode(), tgt_file.unix_mode());
+        assert_eq!(
+            src_file.extra_data().unwrap(),
+            vec![87, 0, 3, 0, b'a', b'b', b'c']
+        );
+        assert_eq!(
+            src_file.extra_data().unwrap(),
+            tgt_file.extra_data().unwrap()
+        );
+    });
+}
+
+#[test]
 fn test_raw_copy_file_permissions() {
     use zip::DateTime;
     use zip::unstable::format::ffi;
