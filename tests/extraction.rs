@@ -49,12 +49,12 @@ fn test_extract_with_zip_stream() {
     assert!(dest.path().join("dir/file_test_in_folder").exists());
     assert!(dest.path().join("dir/file_test_in_folder").is_file());
 
-    // Will be create because the patchends with `/`
+    // Will be create because the path ends with `/`
     assert!(dest.path().join("empty_dir/").exists());
     assert!(dest.path().join("empty_dir/").is_dir());
 
-    // Does not exists because we cannot know if it's a symlink (not attributes in the local
-    // header)
+    // Does not exists because we cannot know if it's a symlink
+    // (no attributes in the local header)
     assert!(!dest.path().join("symlink/").exists());
     assert!(!dest.path().join("symlink/").is_dir());
 }
