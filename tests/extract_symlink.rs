@@ -59,3 +59,32 @@ fn test_cannot_symlink_outside_destination() -> zip::result::ZipResult<()> {
     assert!(!dest_sibling.join("dest-file").exists());
     Ok(())
 }
+
+/// Symlinks being extracted shouldn't be followed out of the destination directory.
+/// Only on little endian because we cannot use fs with miri CI
+#[test]
+#[cfg(all(target_endian = "little", not(miri)))]
+fn test_cannot_symlink_outside_destination_zip_stream() {
+    use std::fs::create_dir;
+    use std::io::Cursor;
+    use tempfile::TempDir;
+    use zip::ZipWriter;
+    use zip::unstable::stream::ZipStreamReader;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())
+        .unwrap();
+    writer
+        .start_file("symlink/dest-file", SimpleFileOptions::default())
+        .unwrap();
+    let reader = ZipStreamReader::new(writer.finish().unwrap());
+    let dest_parent = TempDir::with_prefix("stream__cannot_symlink_outside_destination").unwrap();
+    let dest_sibling = dest_parent.path().join("dest-sibling");
+    create_dir(&dest_sibling).unwrap();
+    let dest = dest_parent.path().join("dest");
+    create_dir(&dest).unwrap();
+    assert!(reader.extract(dest).is_err());
+    assert!(!dest_sibling.join("dest-file").exists());
+}
