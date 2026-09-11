@@ -68,6 +68,7 @@ wasm-bindgen-test = "^0.3.56"
 
 [dev-dependencies]
 bencher = "0.1"
+criterion = "0.5"
 getrandom = { version = "0.4", default-features = false }
 walkdir = "2.5"
 time = { version = "^0.3.47", features = ["formatting", "macros"] }
@@ -133,4 +134,8 @@ harness = false
 
 [[bench]]
 name = "merge_archive"
+harness = false
+
+[[bench]]
+name = "deflate_alloc"
 harness = false
