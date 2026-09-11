@@ -78,6 +78,7 @@ impl<R: Read> ZipStreamReader<R> {
                 file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
 
                 if file.is_symlink() {
+                    // Not used because we don't have the external attributes
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_to_end(&mut target)?;
                     make_symlink(&outpath, &target, &self.1)?;
