@@ -18,12 +18,13 @@ fn test_extract_with_zip_stream() {
     use std::io::Cursor;
     use std::io::Write;
     use tempfile::TempDir;
+    use zip::CompressionMethod;
     use zip::ZipWriter;
     use zip::{unstable::stream::ZipStreamReader, write::SimpleFileOptions};
 
     let buf = Vec::new();
     let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
-    let options = SimpleFileOptions::default();
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     // Create a ZIP with directory traversal attempts
     writer.start_file("file_test", options).unwrap();
