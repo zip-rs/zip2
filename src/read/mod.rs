@@ -7,13 +7,21 @@ use crate::extra_fields::{ExtraField, ExtraFields};
 use crate::format::blocks::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock};
 use crate::format::flags::{ZipFileFlags, ZipFlags};
 use crate::format::system::System;
-use crate::result::{ZipError, ZipResult, invalid};
+use crate::result::{ZipError, ZipResult, invalid, invalid_archive};
 use crate::types::ZipFileData;
 use indexmap::IndexMap;
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 use std::sync::OnceLock;
+
+/// Upper bound on the uncompressed size of a symlink entry.
+///
+/// A symlink target is a filesystem path, so its length is bounded by the
+/// platform (`PATH_MAX` is 4096 on Linux) no matter what the archive says. The
+/// uncompressed size stored in the central directory is attacker-controlled,
+/// so entries above this bound are rejected rather than pre-allocated.
+pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
 mod config;
 pub use config::{ArchiveOffset, Config};
@@ -395,7 +403,21 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             #[cfg(any(unix, windows))]
             if file.is_symlink() {
-                let mut target = Vec::with_capacity(file.size() as usize);
+                // `file.size()` is the uncompressed size declared in the central
+                // directory, i.e. attacker-controlled. A symlink target is a
+                // path, so an entry claiming more than `MAX_SYMLINK_TARGET_LEN`
+                // bytes is malformed. Reject it instead of reserving -- and then
+                // reading -- the declared size, which would otherwise let a
+                // small archive exhaust memory or abort the process.
+                let declared_len = file.size();
+                if declared_len > MAX_SYMLINK_TARGET_LEN {
+                    return Err(invalid_archive(format!(
+                        "symlink target declares {} bytes, more than the {} byte limit",
+                        declared_len, MAX_SYMLINK_TARGET_LEN
+                    )));
+                }
+
+                let mut target = Vec::with_capacity(declared_len as usize);
                 file.read_to_end(&mut target)?;
                 drop(file);
                 make_symlink(&outpath, &target, &self.shared.files)?;
