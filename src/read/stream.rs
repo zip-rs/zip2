@@ -65,7 +65,11 @@ impl<R: Read> ZipStreamReader<R> {
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
     /// Extraction is not atomic; If an error is encountered, some of the files
-    /// may be left on disk.
+    /// may be left on disk. The file(s) and dir(s) are first created, then the
+    /// permissions are applied to them
+    ///
+    /// Extraction of symlink is not possible since we don't have access to the
+    /// external attributes in the local headers of the entries
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
         impl ZipStreamVisitor for Extractor {
@@ -96,7 +100,6 @@ impl<R: Read> ZipStreamReader<R> {
                     make_symlink(&outpath, &target, &self.1)?;
                     return Ok(());
                 }
-
                 if file.is_dir() {
                     fs::create_dir_all(&outpath)?;
                 } else {
