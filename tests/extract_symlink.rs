@@ -43,7 +43,7 @@ fn extract_should_respect_links() {
 /// 2^62 bytes and abort the whole process ("memory allocation of ... failed").
 /// A symlink target is a path, so a size this large is malformed and the entry
 /// must come back as an error.
-#[cfg(all(target_pointer_width = "64", target_endian = "little", not(miri)))]
+#[cfg(not(miri))]
 #[test]
 fn extract_symlink_with_hostile_declared_size() -> zip::result::ZipResult<()> {
     use std::io::Cursor;
