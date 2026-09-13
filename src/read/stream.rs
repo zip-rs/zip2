@@ -344,8 +344,8 @@ mod tests {
     }
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
         use crate::ZipWriter;
@@ -377,7 +377,6 @@ mod tests {
     /// changes. This test pins the current behaviour: if the local header starts
     /// carrying the attribute, the assertion fails and the guard needs a real
     /// regression test.
-    #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
     fn stream_does_not_expose_the_symlink_bit() -> ZipResult<()> {
         use crate::ZipWriter;
@@ -398,8 +397,8 @@ mod tests {
         Ok(())
     }
 
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
         use tempfile::TempDir;
