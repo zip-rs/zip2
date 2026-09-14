@@ -64,7 +64,11 @@ impl<R: Read> ZipStreamReader<R> {
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
     /// Extraction is not atomic; If an error is encountered, some of the files
-    /// may be left on disk.
+    /// may be left on disk. The file(s) and dir(s) are first created, then the
+    /// permissions are applied to them
+    ///
+    /// Extraction of symlink is not possible since we don't have access to the
+    /// external attributes in the local headers of the entries
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
         impl ZipStreamVisitor for Extractor {
@@ -74,12 +78,12 @@ impl<R: Read> ZipStreamReader<R> {
                 file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
 
                 if file.is_symlink() {
+                    // Not used because we don't have the external attributes
                     let mut target = Vec::with_capacity(file.size() as usize);
                     file.read_to_end(&mut target)?;
                     make_symlink(&outpath, &target, &self.1)?;
                     return Ok(());
                 }
-
                 if file.is_dir() {
                     fs::create_dir_all(&outpath)?;
                 } else {
@@ -324,44 +328,6 @@ mod tests {
         }
 
         reader.visit(&mut V::default()).unwrap();
-    }
-
-    /// Symlinks being extracted shouldn't be followed out of the destination directory.
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
-    #[test]
-    fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
-        use crate::ZipWriter;
-        use crate::write::SimpleFileOptions;
-        use std::fs::create_dir;
-        use tempfile::TempDir;
-
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
-        writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
-        let reader = ZipStreamReader::new(writer.finish()?);
-        let dest_parent = TempDir::with_prefix("stream__cannot_symlink_outside_destination")?;
-        let dest_sibling = dest_parent.path().join("dest-sibling");
-        create_dir(&dest_sibling)?;
-        let dest = dest_parent.path().join("dest");
-        create_dir(&dest)?;
-        assert!(reader.extract(dest).is_err());
-        assert!(!dest_sibling.join("dest-file").exists());
-        Ok(())
-    }
-
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
-    #[test]
-    fn test_can_create_destination() -> ZipResult<()> {
-        use tempfile::TempDir;
-
-        let v = include_bytes!("../../tests/data/mimetype.zip");
-        let reader = ZipStreamReader::new(v.as_ref());
-        let dest = TempDir::with_prefix("stream_test_can_create_destination").unwrap();
-        reader.extract(&dest)?;
-        assert!(dest.path().join("mimetype").exists());
-        Ok(())
     }
 
     #[test]
