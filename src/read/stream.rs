@@ -8,7 +8,7 @@ use crate::read::{
     MAX_SYMLINK_TARGET_LEN, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
     central_header_to_zip_file_inner, make_symlink,
 };
-use crate::result::{ZipError, invalid, invalid_archive};
+use crate::result::{ZipError, invalid};
 
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -89,10 +89,11 @@ impl<R: Read> ZipStreamReader<R> {
                     // `stream_does_not_expose_the_symlink_bit`.
                     let declared_len = file.size();
                     if declared_len > MAX_SYMLINK_TARGET_LEN {
-                        return Err(invalid_archive(format!(
+                        return Err(invalid!(
                             "symlink target declares {} bytes, more than the {} byte limit",
-                            declared_len, MAX_SYMLINK_TARGET_LEN
-                        )));
+                            declared_len,
+                            MAX_SYMLINK_TARGET_LEN
+                        ));
                     }
 
                     let mut target = Vec::with_capacity(declared_len as usize);

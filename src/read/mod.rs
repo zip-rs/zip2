@@ -7,7 +7,7 @@ use crate::extra_fields::{ExtraField, ExtraFields};
 use crate::format::blocks::{CentralDirectoryEndInfo, DataAndPosition, ZipCentralEntryBlock};
 use crate::format::flags::{ZipFileFlags, ZipFlags};
 use crate::format::system::System;
-use crate::result::{ZipError, ZipResult, invalid, invalid_archive};
+use crate::result::{ZipError, ZipResult, invalid};
 use crate::types::ZipFileData;
 use indexmap::IndexMap;
 use std::ffi::OsStr;
@@ -411,10 +411,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                 // small archive exhaust memory or abort the process.
                 let declared_len = file.size();
                 if declared_len > MAX_SYMLINK_TARGET_LEN {
-                    return Err(invalid_archive(format!(
+                    return Err(invalid!(
                         "symlink target declares {} bytes, more than the {} byte limit",
-                        declared_len, MAX_SYMLINK_TARGET_LEN
-                    )));
+                        declared_len,
+                        MAX_SYMLINK_TARGET_LEN
+                    ));
                 }
 
                 let mut target = Vec::with_capacity(declared_len as usize);
