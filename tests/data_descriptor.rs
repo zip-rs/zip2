@@ -1,8 +1,9 @@
-use std::io::{Cursor, Write};
+//! Tests with data descriptors
 
 // https://github.com/zip-rs/zip2/issues/971
 #[test]
 fn directory_should_not_have_a_data_descriptor() {
+    use std::io::{Cursor, Write};
     use zip::{HasZipMetadata, ZipArchive, ZipWriter, write::SimpleFileOptions};
     const LOCAL_FILE_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
     let mut writer = ZipWriter::new_stream(Vec::new());
@@ -35,6 +36,8 @@ fn directory_should_not_have_a_data_descriptor() {
 
 #[test]
 fn read_data_descriptor() {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
     use zip::unstable::format::magic::Magic;
     use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -43,7 +46,10 @@ fn read_data_descriptor() {
         .add_directory("mydir", SimpleFileOptions::default())
         .unwrap();
     writer
-        .start_file("mydir/file.txt", SimpleFileOptions::default())
+        .start_file(
+            "mydir/file.txt",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
         .unwrap();
     writer.write_all(b"hello").unwrap();
     let bytes = writer.finish().unwrap().into_inner();
@@ -63,7 +69,7 @@ fn read_data_descriptor() {
         [
             magic[0], magic[1], magic[2], magic[3], // magic
             crc32[0], crc32[1], crc32[2], crc32[3], // crc32
-            7, 0, 0, 0, // compressed size
+            5, 0, 0, 0, // compressed size
             5, 0, 0, 0 // uncompressed size
         ]
     );
