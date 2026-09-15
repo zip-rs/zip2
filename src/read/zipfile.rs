@@ -5,6 +5,7 @@ use crate::DateTime;
 use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
 use crate::ZipReadOptions;
+use crate::format::data_descriptor::ZipDataDescriptor;
 use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
 use crate::format::system::System;
@@ -33,6 +34,13 @@ pub struct ZipFile<'a, R: Read + ?Sized> {
     pub(crate) file_name_raw: Cow<'a, [u8]>,
     pub(crate) data: Cow<'a, ZipFileData>,
     pub(crate) reader: ZipFileReader<'a, R>,
+}
+
+#[derive(Debug)]
+pub struct ZipFileEntryWithDataDescriptor<'a> {
+    pub(crate) file_name_raw: Cow<'a, [u8]>,
+    pub(crate) data: Cow<'a, ZipFileData>,
+    pub(crate) data_descriptor: Option<ZipDataDescriptor>,
 }
 
 /// A struct for reading a zip file, without a reader
@@ -198,6 +206,19 @@ macro_rules! zip_file_methods {
             self.get_metadata().crc32
         }
     };
+}
+impl<'a> ZipFileEntryWithDataDescriptor<'a> {
+    zip_file_methods!();
+
+    pub fn data_descriptor(&self) -> &Option<ZipDataDescriptor> {
+        &self.data_descriptor
+    }
+}
+
+impl HasZipMetadata for ZipFileEntryWithDataDescriptor<'_> {
+    fn get_metadata(&self) -> &ZipFileData {
+        self.data.as_ref()
+    }
 }
 
 impl<'a> ZipFileEntry<'a> {

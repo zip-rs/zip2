@@ -264,52 +264,6 @@ impl FixedSizeBlock for ZipLocalEntryBlock {
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
 #[allow(missing_docs)]
-pub struct ZipDataDescriptorBlock {
-    pub crc32: u32,
-    pub compressed_size: u32,
-    pub uncompressed_size: u32,
-}
-
-unsafe impl Pod for ZipDataDescriptorBlock {}
-
-impl FixedSizeBlock for ZipDataDescriptorBlock {
-    const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
-
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid data descriptor header");
-
-    to_and_from_le![
-        (crc32, u32),
-        (compressed_size, u32),
-        (uncompressed_size, u32),
-    ];
-}
-
-#[derive(Copy, Clone, Debug)]
-#[repr(packed, C)]
-#[allow(missing_docs)]
-pub struct Zip64DataDescriptorBlock {
-    pub crc32: u32,
-    pub compressed_size: u64,
-    pub uncompressed_size: u64,
-}
-
-unsafe impl Pod for Zip64DataDescriptorBlock {}
-
-impl FixedSizeBlock for Zip64DataDescriptorBlock {
-    const MAGIC: Magic = Magic::DATA_DESCRIPTOR_SIGNATURE;
-
-    const WRONG_MAGIC_ERROR: ZipError = invalid!("Invalid zip64 data descriptor header");
-
-    to_and_from_le![
-        (crc32, u32),
-        (compressed_size, u64),
-        (uncompressed_size, u64),
-    ];
-}
-
-#[derive(Copy, Clone, Debug)]
-#[repr(packed, C)]
-#[allow(missing_docs)]
 pub struct Zip32CDEBlock {
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
