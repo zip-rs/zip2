@@ -72,6 +72,8 @@ fn read_entry(method: u16, declared: u64) {
         "  -> result = {:?}",
         r.as_ref().map(|n| *n).map_err(|e| e.to_string())
     );
+    // The payload is garbage, so on top of not panicking the decoder must report it
+    assert!(r.is_err(), "method {method} accepted a malformed entry");
 }
 
 #[test]
