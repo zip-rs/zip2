@@ -103,8 +103,12 @@ fn lsb(x: u8, n: u8) -> u8 {
 fn hwexpand(src: &[u8], uncomp_len: usize, comp_factor: u8, dst: &mut Vec<u8>) -> io::Result<()> {
     debug_assert!((1..=4).contains(&comp_factor));
 
-    // Pre-allocate to avoid reallocations
-    dst.reserve(uncomp_len);
+    // NOTE: no pre-allocation from the declared uncompressed size. That value
+    // comes straight from the archive header and is fully attacker-controlled, so
+    // reserving it lets a tiny archive request an arbitrarily large allocation --
+    // an uncatchable abort, or a capacity-overflow panic, before a single byte is
+    // decoded. The buffer grows with the data the stream actually produces
+    // instead. Same class of issue as the symlink guard in `read::mod`.
 
     let mut is = BitReader::endian(src, LittleEndian);
     let mut fsets = read_follower_sets(&mut is)?;

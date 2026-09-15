@@ -231,7 +231,12 @@ fn output_code(
 }
 
 fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut Vec<u8>) -> io::Result<()> {
-    dst.reserve(uncompressed_size);
+    // NOTE: no pre-allocation from the declared uncompressed size. That value
+    // comes straight from the archive header and is fully attacker-controlled, so
+    // reserving it lets a tiny archive request an arbitrarily large allocation --
+    // an uncatchable abort, or a capacity-overflow panic, before a single byte is
+    // decoded. The buffer grows with the data the stream actually produces
+    // instead. Same class of issue as the symlink guard in `read::mod`.
     let mut codetab = Codetab::create_new();
     let mut queue = CodeQueue::new();
     let mut is = BitReader::endian(src, LittleEndian);
@@ -344,7 +349,7 @@ impl<R: Read> Read for ShrinkDecoder<R> {
             self.stream_read = true;
             let mut compressed_bytes = Vec::new();
             self.compressed_reader.read_to_end(&mut compressed_bytes)?;
-            self.stream.reserve(self.uncompressed_size as usize);
+            // No pre-allocation here -- see the note in `hwunshrink`.
             hwunshrink(
                 &compressed_bytes,
                 self.uncompressed_size as usize,

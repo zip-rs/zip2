@@ -93,8 +93,12 @@ fn hwexplode(
     pk101_bug_compat: bool,
     dst: &mut Vec<u8>,
 ) -> std::io::Result<()> {
-    // Pre-allocate capacity
-    dst.reserve(uncomp_len);
+    // NOTE: no pre-allocation from the declared uncompressed size. That value
+    // comes straight from the archive header and is fully attacker-controlled, so
+    // reserving it lets a tiny archive request an arbitrarily large allocation --
+    // an uncatchable abort, or a capacity-overflow panic, before a single byte is
+    // decoded. The buffer grows with the data the stream actually produces
+    // instead. Same class of issue as the symlink guard in `read::mod`.
 
     let bit_length = src.len() as u64 * 8;
     let mut is = BitReader::endian(Cursor::new(&src), LittleEndian);
@@ -210,8 +214,7 @@ impl<R: Read> Read for ImplodeDecoder<R> {
             let mut compressed_bytes = Vec::new();
             self.compressed_reader.read_to_end(&mut compressed_bytes)?;
 
-            // Pre-allocate stream buffer
-            self.stream.reserve(self.uncompressed_size as usize);
+            // No pre-allocation here -- see the note in `hwexplode`.
 
             hwexplode(
                 &compressed_bytes,
