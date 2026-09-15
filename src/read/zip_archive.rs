@@ -427,7 +427,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.shared.files.get_index_of(name.as_bytes())
     }
 
-    /// Get data and descriptor of file
+    /// Get data and the data descriptor of the file
+    /// This method will work if the zip is using the data descriptor signature (see 4.3.9.3)
+    /// To access the data descriptor, the ZipFileData needs to have a correct `compressed_size` and
+    /// the Data Descriptor should follow the data
     pub fn by_index_with_data_descriptor(
         &mut self,
         index: usize,
