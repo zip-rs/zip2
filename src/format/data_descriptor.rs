@@ -36,7 +36,7 @@ impl ZipDataDescriptorBlock {
 
     /// Parse the zip64 data descriptor
     pub fn parse(buff: &[u8; Self::SIZE]) -> Result<Self, &'static str> {
-        let magic = Magic::from_le(Magic::from_le_bytes([buff[0], buff[1], buff[2], buff[3]]));
+        let magic = Magic::from_le_bytes([buff[0], buff[1], buff[2], buff[3]]);
         if magic != Self::MAGIC {
             return Err("Invalid data descriptor header");
         }
@@ -83,7 +83,7 @@ impl Zip64DataDescriptorBlock {
 
     /// Parse the zip64 data descriptor
     pub fn parse(buff: &[u8; Self::SIZE]) -> Result<Self, &'static str> {
-        let magic = Magic::from_le(Magic::from_le_bytes([buff[0], buff[1], buff[2], buff[3]]));
+        let magic = Magic::from_le_bytes([buff[0], buff[1], buff[2], buff[3]]);
         if magic != Self::MAGIC {
             return Err("Invalid zip64 data descriptor header");
         }
