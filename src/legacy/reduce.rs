@@ -104,7 +104,7 @@ fn hwexpand(src: &[u8], uncomp_len: usize, comp_factor: u8, dst: &mut Vec<u8>) -
     debug_assert!((1..=4).contains(&comp_factor));
 
     // Pre-allocate to avoid reallocations
-    dst.reserve(uncomp_len);
+    dst.reserve(uncomp_len.min(crate::legacy::MAX_PREALLOC));
 
     let mut is = BitReader::endian(src, LittleEndian);
     let mut fsets = read_follower_sets(&mut is)?;
