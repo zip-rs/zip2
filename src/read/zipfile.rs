@@ -38,7 +38,7 @@ pub struct ZipFile<'a, R: Read + ?Sized> {
 
 /// A zip file Entry with a data descriptor (if present).
 ///
-/// The method [`Self::data_descriptor`] can be use to retreived it
+/// The method [`Self::data_descriptor`] can be use to retrieve it
 #[derive(Debug)]
 pub struct ZipFileEntryWithDataDescriptor<'a> {
     pub(crate) file_name_raw: Cow<'a, [u8]>,
