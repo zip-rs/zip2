@@ -15,7 +15,6 @@ pub enum ZipDataDescriptor {
 
 /// Zip data descriptor
 #[derive(Copy, Clone, Debug, PartialEq)]
-#[repr(packed, C)]
 pub struct ZipDataDescriptorBlock {
     /// crc 32
     pub crc32: u32,
@@ -63,7 +62,6 @@ impl ZipDataDescriptorBlock {
 
 /// Zip64 data descriptor
 #[derive(Copy, Clone, Debug, PartialEq)]
-#[repr(packed, C)]
 pub struct Zip64DataDescriptorBlock {
     /// crc 32
     pub crc32: u32,
