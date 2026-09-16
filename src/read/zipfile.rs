@@ -36,6 +36,9 @@ pub struct ZipFile<'a, R: Read + ?Sized> {
     pub(crate) reader: ZipFileReader<'a, R>,
 }
 
+/// A zip file Entry with a data descriptor (if present).
+///
+/// The method [`Self::data_descriptor`] can be use to retreived it
 #[derive(Debug)]
 pub struct ZipFileEntryWithDataDescriptor<'a> {
     pub(crate) file_name_raw: Cow<'a, [u8]>,
@@ -210,6 +213,7 @@ macro_rules! zip_file_methods {
 impl<'a> ZipFileEntryWithDataDescriptor<'a> {
     zip_file_methods!();
 
+    /// Get the data descriptor
     pub fn data_descriptor(&self) -> &Option<ZipDataDescriptor> {
         &self.data_descriptor
     }
