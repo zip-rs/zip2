@@ -178,8 +178,8 @@ fn test_strip_suid() {
     assert!(mode & 0o4000 == 0); // bits got stripped
 }
 
-/// We cannot use fs with miri CI
-#[cfg(not(miri))]
+/// We cannot use fs with miri CI, and this test reads Unix file permissions
+#[cfg(all(unix,not(miri)))]
 #[test]
 fn test_strip_sgid() {
     use std::fs;
