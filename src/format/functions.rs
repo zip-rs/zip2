@@ -11,14 +11,38 @@ pub(crate) fn is_dir(filename: &[u8]) -> bool {
     matches!(filename.last(), Some(b'/') | Some(b'\\'))
 }
 
+/// Clear specials bits
+///
+/// ```txt
+/// [ file type ][ special ][ owner ][ group ][ other ]
+///    4 bits      3 bits     3 bits   3 bits   3 bits
+///
+/// special bit:
+///   11    10     9
+/// ┌─────┬─────┬──────┐
+/// │SUID │SGID │Sticky│
+/// └─────┴─────┴──────┘
+/// ```
+const fn clear_specials_bits(unix_perms: u32) -> u32 {
+    unix_perms & !0o7000
+}
+
 #[inline]
 pub(crate) const fn get_unix_mode(system: System, external_attributes: u32) -> Option<u32> {
     if external_attributes == 0 {
         return None;
     }
+    //     external_attributes
+    //     ┌────────────────┬────────────────┐
+    //     │   Unix mode    │ DOS attributes │
+    //     │    16 bits     │    16 bits     │
+    //     └────────────────┴────────────────┘
+    //              ▲
+    //              │
+    //       `>> 16` extracts this
     let unix_mode = external_attributes >> 16;
     match system {
-        System::Unix => Some(unix_mode),
+        System::Unix => Some(clear_specials_bits(unix_mode)),
         System::Dos => {
             // For MS-DOS, the low order byte is the MS-DOS directory attribute byte.
             let dos_attributes = (external_attributes & 0xFF) as u8;
@@ -40,7 +64,7 @@ pub(crate) const fn get_unix_mode(system: System, external_attributes: u32) -> O
                 // If the high 16 bits are non-zero, they probably contain Unix permissions.
                 // This happens for archives created on Windows by this crate or other tools,
                 // and is the only way to identify symlinks in such archives.
-                return Some(unix_mode);
+                return Some(clear_specials_bits(unix_mode));
             }
             None
         }
