@@ -98,7 +98,7 @@ impl<R: Read> ZipStreamReader<R> {
 
                     let mut target = Vec::with_capacity(declared_len as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(&outpath, &target, &self.1)?;
+                    make_symlink(&self.0, &outpath, &target, &self.1)?;
                     return Ok(());
                 }
                 if file.is_dir() {

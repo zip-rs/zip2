@@ -99,6 +99,7 @@ pub(crate) fn make_symlink_impl<T>(
 
 #[cfg(any(windows, unix))]
 pub(crate) fn make_symlink<T>(
+    base: &Path, // canonicalized destination directory
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
@@ -106,11 +107,50 @@ pub(crate) fn make_symlink<T>(
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
+
+    // Check where the symlink would resolve to before creating it. A relative target
+    // is resolved from the parent of the symlink itself, exactly as the OS would.
+    let target_path = Path::new(target_str);
+    let (start, rest) = if target_path.is_absolute() {
+        let Some(rest) = crate::path::strip_base_prefix(base, target_path) else {
+            return Err(invalid!("Symlink target escapes the destination directory"));
+        };
+        (base.to_path_buf(), rest.to_path_buf())
+    } else {
+        // A Windows target such as `C:foo` (relative to the current directory of a
+        // drive) or `\foo` (relative to the root of the current drive) is neither
+        // absolute nor safely relative: the OS resolves it from somewhere other than
+        // the parent of the symlink, so there is nothing meaningful to check here.
+        if target_path.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::Prefix(_) | std::path::Component::RootDir
+            )
+        }) {
+            return Err(invalid!("Invalid symlink target path"));
+        }
+
+        let parent = outpath.parent().unwrap_or(base);
+        if !parent.starts_with(base) {
+            return Err(invalid!("Symlink is not inside the destination directory"));
+        }
+        (parent.to_path_buf(), target_path.to_path_buf())
+    };
+
+    crate::path::resolve_enclosed(
+        base,
+        &start,
+        rest.components().map(|c| c.as_os_str().to_os_string()),
+        false, // only checking here, so nothing is created
+    )?;
+
     make_symlink_impl(outpath, target_str, existing_files)
 }
 
 #[cfg(not(any(windows, unix)))]
 pub(crate) fn make_symlink<T>(
+    // No symlink is created on these targets, so there is nothing to contain.
+    _base: &Path,
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
@@ -272,9 +312,14 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Extract a Zip archive into a directory, overwriting files if they
-    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`]. Symbolic links are only
-    /// created and followed if the target is within the destination directory (this is checked
-    /// conservatively using [`std::fs::canonicalize`]).
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
+    ///
+    /// Symbolic links are only created, and only followed, if their target resolves to a path
+    /// inside the destination directory. Paths are resolved one component at a time, and the
+    /// target of every symlink encountered is resolved in the same way, so a symlink cannot be
+    /// used as an intermediate component to reach outside the destination directory. Note that
+    /// this does not protect against another process concurrently modifying the destination
+    /// directory during extraction.
     ///
     /// Extraction is not atomic. If an error is encountered, some of the files
     /// may be left on disk. However, on Unix targets, no newly-created directories with part but
@@ -421,7 +466,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let mut target = Vec::with_capacity(declared_len as usize);
                 file.read_to_end(&mut target)?;
                 drop(file);
-                make_symlink(&outpath, &target, &self.shared.files)?;
+                make_symlink(directory.as_ref(), &outpath, &target, &self.shared.files)?;
                 continue;
             } else if file.is_dir() {
                 make_writable_dir_all(&outpath)?;
