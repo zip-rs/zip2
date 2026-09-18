@@ -66,14 +66,14 @@ fn test_extended_timestamp_empty_central() {
     ];
     let mut archive = ZipArchive::new(Cursor::new(zip)).expect("couldn't open test zip file");
 
-    let mut is_extended_timestamp_extra_field = false;
+    let mut extended_timestamp_field_found = false;
     for field in archive.by_name("hello.txt").unwrap().extra_data_fields() {
         if let zip::ExtraField::ExtendedTimestamp(ts) = field {
-            is_extended_timestamp_extra_field = true;
+            extended_timestamp_field_found = true;
             assert!(ts.mod_time().is_none());
             assert!(ts.ac_time().is_none());
             assert!(ts.cr_time().is_none());
         }
     }
-    assert!(is_extended_timestamp_extra_field);
+    assert!(extended_timestamp_field_found);
 }
