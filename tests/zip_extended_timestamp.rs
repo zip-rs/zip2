@@ -33,16 +33,16 @@ fn test_extended_timestamp_stream() {
     let file = read_zipfile_from_stream(&mut stream).unwrap().unwrap();
     assert_eq!(file.name_raw(), "test.txt".as_bytes());
 
-    let mut is_extended_timestamp_extra_field = false;
+    let mut extended_timestamp_field_found = false;
     for field in file.extra_data_fields() {
         if let zip::ExtraField::ExtendedTimestamp(ts) = field {
-            is_extended_timestamp_extra_field = true;
+            extended_timestamp_field_found = true;
             assert_eq!(ts.mod_time(), Some(1714635025));
             assert_eq!(ts.ac_time(), Some(1714635039));
             assert_eq!(ts.cr_time(), None);
         }
     }
-    assert!(is_extended_timestamp_extra_field);
+    assert!(extended_timestamp_field_found);
 }
 
 #[test]
