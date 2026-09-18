@@ -13,9 +13,9 @@ fn test_extended_timestamp() {
     for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
         if let zip::ExtraField::ExtendedTimestamp(ts) = field {
             is_extended_timestamp_extra_field = true;
+            assert_eq!(ts.mod_time().unwrap(), 1714635025);
             assert!(ts.ac_time().is_none());
             assert!(ts.cr_time().is_none());
-            assert_eq!(ts.mod_time().unwrap(), 1714635025);
         }
     }
     assert!(is_extended_timestamp_extra_field);
@@ -37,9 +37,9 @@ fn test_extended_timestamp_stream() {
     for field in file.extra_data_fields() {
         if let zip::ExtraField::ExtendedTimestamp(ts) = field {
             is_extended_timestamp_extra_field = true;
+            assert_eq!(ts.mod_time(), Some(1714635025));
             assert_eq!(ts.ac_time(), Some(1714635039));
             assert_eq!(ts.cr_time(), None);
-            assert_eq!(ts.mod_time(), Some(1714635025));
         }
     }
     assert!(is_extended_timestamp_extra_field);
@@ -57,8 +57,12 @@ fn test_extended_timestamp_empty_central() {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x00, 0x86, 0xA6, 0x10, 0x36, 0x05, 0x00,
         0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x09, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x2E,
-        0x74, 0x78, 0x74, 0x55, 0x54, 0x01, 0x00, 0x04, 0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00,
-        0x00, 0x01, 0x00, 0x01, 0x00, 0x3C, 0x00, 0x00, 0x00, 0x35, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x74, 0x78, 0x74,
+        0x55, 0x54, // extra field ID
+        0x01, 0x00, // extra field length
+        0x04, // extra field content (extended timestamp flags)
+        0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+        0x3C, 0x00, 0x00, 0x00, 0x35, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
     let mut archive = ZipArchive::new(Cursor::new(zip)).expect("couldn't open test zip file");
 
@@ -66,9 +70,9 @@ fn test_extended_timestamp_empty_central() {
     for field in archive.by_name("hello.txt").unwrap().extra_data_fields() {
         if let zip::ExtraField::ExtendedTimestamp(ts) = field {
             is_extended_timestamp_extra_field = true;
+            assert!(ts.mod_time().is_none());
             assert!(ts.ac_time().is_none());
             assert!(ts.cr_time().is_none());
-            assert!(ts.mod_time().is_none());
         }
     }
     assert!(is_extended_timestamp_extra_field);

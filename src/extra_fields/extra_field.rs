@@ -336,7 +336,7 @@ mod tests {
 
         let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
 
-        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock).unwrap();
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         let extra = CustomExtraField::new(
             false,
             UsedExtraField::AeXEncryption.as_u16(),
