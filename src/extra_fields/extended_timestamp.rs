@@ -78,7 +78,7 @@ impl ExtendedTimestamp {
         Self::parse_central_header(reader, bytes_to_read)
     }
 
-    /// parse the central header
+    /// parse the local header
     fn parse_local_header<R: Read>(
         reader: &mut R,
         len: u16,
