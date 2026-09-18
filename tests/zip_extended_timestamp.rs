@@ -10,8 +10,8 @@ fn test_extended_timestamp() {
     let mut archive = ZipArchive::new(Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut extended_timestamp_field_found = false;
-for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
-if let zip::ExtraField::ExtendedTimestamp(ts) = field {
+    for field in archive.by_name("test.txt").unwrap().extra_data_fields() {
+        if let zip::ExtraField::ExtendedTimestamp(ts) = field {
             extended_timestamp_field_found = true;
             assert_eq!(ts.mod_time().unwrap(), 1714635025);
             assert!(ts.ac_time().is_none());
