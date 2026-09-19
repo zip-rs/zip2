@@ -37,7 +37,7 @@ pub(crate) mod magic_finder;
 pub(crate) mod readers;
 
 pub(crate) mod zipfile;
-pub use zipfile::{ZipFile, ZipFileEntry, ZipFileSeek};
+pub use zipfile::{ZipFile, ZipFileEntry, ZipFileEntryWithDataDescriptor, ZipFileSeek};
 
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};

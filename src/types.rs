@@ -3,9 +3,8 @@
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
 use crate::format::aes::{AesMode, AesVendorVersion};
-use crate::format::blocks::{
-    FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
-};
+use crate::format::blocks::{FixedSizeBlock, ZipLocalEntryBlock};
+use crate::format::data_descriptor::{Zip64DataDescriptorBlock, ZipDataDescriptorBlock};
 use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
 use crate::format::flags::ZipFlags;
@@ -434,17 +433,20 @@ impl ZipFileData {
         auto_large_file: bool,
     ) -> Result<(), ZipError> {
         if self.large_file {
-            return self.zip64_data_descriptor_block().write(writer);
+            self.zip64_data_descriptor_block().write(writer)?;
+            return Ok(());
         }
         if self.compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
             if auto_large_file {
-                return self.zip64_data_descriptor_block().write(writer);
+                self.zip64_data_descriptor_block().write(writer)?;
+                return Ok(());
             }
             return Err(ZipError::Io(std::io::Error::other(
                 "Large file option has not been set - use .large_file(true) in options",
             )));
         }
-        self.data_descriptor_block().write(writer)
+        self.data_descriptor_block().write(writer)?;
+        Ok(())
     }
 
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
