@@ -127,3 +127,153 @@ fn test_set_external_attributes() {
         attr
     );
 }
+
+/// We cannot use fs with miri CI, and this test reads Unix file permissions
+#[cfg(all(unix, not(miri)))]
+#[test]
+fn test_strip_suid() {
+    use std::fs;
+    use std::io::{Cursor, Write};
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let zip_buf = {
+        let cur = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cur);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o755);
+
+        zip.start_file("suid_check", opts).unwrap();
+        zip.write_all(b"binary_file").unwrap();
+
+        let mut buf = zip.finish().unwrap().into_inner();
+
+        // Patch central directory to inject SUID bit (0o104755)
+        let sig = [0x50, 0x4b, 0x01, 0x02];
+        for i in 0..buf.len().saturating_sub(46) {
+            if buf[i..i + 4] == sig {
+                let off = i + 38;
+                let mode: u32 = 0o104755; // regular file + suid + 755
+                buf[off..off + 4].copy_from_slice(&(mode << 16).to_le_bytes());
+                break;
+            }
+        }
+        buf
+    };
+    let out_dir = temp_dir.path();
+    if out_dir.exists() {
+        fs::remove_dir_all(out_dir).unwrap();
+    }
+    fs::create_dir_all(out_dir).unwrap();
+
+    let reader = Cursor::new(zip_buf);
+    let mut zip = zip::ZipArchive::new(reader).unwrap();
+    zip.extract(out_dir).unwrap();
+
+    let target = out_dir.join("suid_check");
+    let meta = fs::metadata(&target).unwrap();
+    let mode = meta.permissions().mode();
+    assert!(mode & 0o4000 == 0); // bits got stripped
+}
+
+/// We cannot use fs with miri CI, and this test reads Unix file permissions
+#[cfg(all(unix, not(miri)))]
+#[test]
+fn test_strip_sgid() {
+    use std::fs;
+    use std::io::{Cursor, Write};
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let zip_buf = {
+        let cur = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cur);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o755);
+
+        zip.start_file("suid_check", opts).unwrap();
+        zip.write_all(b"binary_file").unwrap();
+
+        let mut buf = zip.finish().unwrap().into_inner();
+
+        // Patch central directory to inject SUID bit (0o104755)
+        let sig = [0x50, 0x4b, 0x01, 0x02];
+        for i in 0..buf.len().saturating_sub(46) {
+            if buf[i..i + 4] == sig {
+                let off = i + 38;
+                let mode: u32 = 0o102755; // regular file + sgid + 755
+                buf[off..off + 4].copy_from_slice(&(mode << 16).to_le_bytes());
+                break;
+            }
+        }
+        buf
+    };
+    let out_dir = temp_dir.path();
+    if out_dir.exists() {
+        fs::remove_dir_all(out_dir).unwrap();
+    }
+    fs::create_dir_all(out_dir).unwrap();
+
+    let reader = Cursor::new(zip_buf);
+    let mut zip = zip::ZipArchive::new(reader).unwrap();
+    zip.extract(out_dir).unwrap();
+
+    let target = out_dir.join("suid_check");
+    let meta = fs::metadata(&target).unwrap();
+    let mode = meta.permissions().mode();
+    assert!(mode & 0o2000 == 0); // bits got stripped
+}
+
+/// We cannot use fs with miri CI, and this test reads Unix file permissions
+#[cfg(all(unix, not(miri)))]
+#[test]
+fn test_strip_sticky_bit() {
+    use std::fs;
+    use std::io::{Cursor, Write};
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let zip_buf = {
+        let cur = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cur);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o755);
+
+        zip.start_file("suid_check", opts).unwrap();
+        zip.write_all(b"binary_file").unwrap();
+
+        let mut buf = zip.finish().unwrap().into_inner();
+
+        // Patch central directory to inject SUID bit (0o104755)
+        let sig = [0x50, 0x4b, 0x01, 0x02];
+        for i in 0..buf.len().saturating_sub(46) {
+            if buf[i..i + 4] == sig {
+                let off = i + 38;
+                let mode: u32 = 0o101755; // regular file + sticky + 755
+                buf[off..off + 4].copy_from_slice(&(mode << 16).to_le_bytes());
+                break;
+            }
+        }
+        buf
+    };
+    let out_dir = temp_dir.path();
+    if out_dir.exists() {
+        fs::remove_dir_all(out_dir).unwrap();
+    }
+    fs::create_dir_all(out_dir).unwrap();
+
+    let reader = Cursor::new(zip_buf);
+    let mut zip = zip::ZipArchive::new(reader).unwrap();
+    zip.extract(out_dir).unwrap();
+
+    let target = out_dir.join("suid_check");
+    let meta = fs::metadata(&target).unwrap();
+    let mode = meta.permissions().mode();
+    assert!(mode & 0o1000 == 0); // bits got stripped
+}

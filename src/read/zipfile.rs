@@ -11,7 +11,6 @@ use crate::format::flags::ZipFileFlags;
 use crate::format::system::System;
 use crate::read::ExtraField;
 use crate::read::RootDirFilter;
-use crate::read::make_writable_dir_all;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::ZipResult;
 use crate::result::invalid;
@@ -22,7 +21,7 @@ use core::mem::replace;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{self, Cursor, Read, Seek, SeekFrom, copy, sink};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 /// A struct for reading a zip file
 ///
@@ -96,7 +95,7 @@ macro_rules! zip_file_methods {
         /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
         /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
         ///
-        /// [`ParentDir`]: `Component::ParentDir`
+        /// [`ParentDir`]: `std::path::Component::ParentDir`
         pub fn mangled_name(&self) -> ZipResult<PathBuf> {
             let file_name = self.name()?;
             let sanitized = self.get_metadata().file_name_sanitized(&file_name);
@@ -302,74 +301,13 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
             None => &components[..],
         };
 
-        let components_len = components.len();
+        *outpath = crate::path::resolve_enclosed(
+            base_path,
+            base_path,
+            components.iter().map(|c| c.to_os_string()),
+            true, // create intermediate directories
+        )?;
 
-        for (is_last, component) in components
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (i == components_len - 1, c))
-        {
-            // we can skip the target directory itself because the base path is assumed to be "trusted" (if the user say extract to a symlink we can follow it)
-            outpath.push(component);
-
-            // check if the path is a symlink, the target must be _inherently_ within the directory
-            for limit in (0..5u8).rev() {
-                let meta = match std::fs::symlink_metadata(&outpath) {
-                    Ok(meta) => meta,
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                        if !is_last {
-                            make_writable_dir_all(&outpath)?;
-                        }
-                        break;
-                    }
-                    Err(e) => return Err(e.into()),
-                };
-
-                if !meta.is_symlink() {
-                    break;
-                }
-
-                if limit == 0 {
-                    return Err(invalid!("Extraction followed a symlink too deep"));
-                }
-
-                // note that we cannot accept links that do not inherently resolve to a path inside the directory to prevent:
-                // - disclosure of unrelated path exists (no check for a path exist and then ../ out)
-                // - issues with file-system specific path resolution (case sensitivity, etc)
-                let target = std::fs::read_link(&outpath)?;
-
-                if !crate::path::simplified_components(&target)
-                    .ok_or(invalid!("Invalid symlink target path"))?
-                    .starts_with(
-                        &crate::path::simplified_components(base_path)
-                            .ok_or(invalid!("Invalid base path"))?,
-                    )
-                {
-                    let is_absolute_enclosed = base_path
-                        .components()
-                        .map(Some)
-                        .chain(std::iter::once(None))
-                        .zip(target.components().map(Some).chain(std::iter::repeat(None)))
-                        .all(|(a, b)| match (a, b) {
-                            // both components are normal
-                            (Some(Component::Normal(a)), Some(Component::Normal(b))) => a == b,
-                            // both components consumed fully
-                            (None, None) => true,
-                            // target consumed fully but base path is not
-                            (Some(_), None) => false,
-                            // base path consumed fully but target is not (and normal)
-                            (None, Some(Component::CurDir | Component::Normal(_))) => true,
-                            _ => false,
-                        });
-
-                    if !is_absolute_enclosed {
-                        return Err(invalid!("Symlink is not inherently safe"));
-                    }
-                }
-
-                outpath.push(target);
-            }
-        }
         Ok(())
     }
 

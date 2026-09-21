@@ -98,7 +98,7 @@ impl<R: Read> ZipStreamReader<R> {
 
                     let mut target = Vec::with_capacity(declared_len as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(&outpath, &target, &self.1)?;
+                    make_symlink(&self.0, &outpath, &target, &self.1)?;
                     return Ok(());
                 }
                 if file.is_dir() {
@@ -226,7 +226,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
         return Err(e.into());
     }
     // parse extra fields
-    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block)?;
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, true)?;
     let mut data = ZipFileData::from_local_block(block, extra_fields)?;
     data.apply_extra_fields(&mut file_name_raw)?;
     if data.is_using_data_descriptor() {

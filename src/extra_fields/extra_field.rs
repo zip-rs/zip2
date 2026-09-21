@@ -49,11 +49,15 @@ pub struct ExtraFields {
 }
 
 impl ExtraFields {
-    pub(crate) fn parse<B: ZipEntryBlock>(buff: &[u8], block: &B) -> ZipResult<Self> {
+    pub(crate) fn parse<B: ZipEntryBlock>(
+        buff: &[u8],
+        block: &B,
+        is_local_header: bool,
+    ) -> ZipResult<Self> {
         let mut reader = Cursor::new(buff);
         let mut extra_fields = Vec::new();
         while (reader.position() as usize) < buff.len() {
-            let parsed_extra_field = ExtraField::parse(&mut reader, block)?;
+            let parsed_extra_field = ExtraField::parse(&mut reader, block, is_local_header)?;
             let Some(parsed_extra_field) = parsed_extra_field else {
                 break;
             };
@@ -87,6 +91,7 @@ impl ExtraField {
     pub(crate) fn parse<R: Read, B: ZipEntryBlock>(
         reader: &mut R,
         file: &B,
+        is_local_header: bool,
     ) -> ZipResult<Option<Self>> {
         let extra_field_header_id = match reader.read_u16_le() {
             Ok(value) => value,
@@ -139,9 +144,9 @@ impl ExtraField {
                     inner_compression,
                 ))
             }
-            Ok(UsedExtraField::ExtendedTimestamp) => {
-                ExtraField::ExtendedTimestamp(ExtendedTimestamp::try_from_reader(reader, len)?)
-            }
+            Ok(UsedExtraField::ExtendedTimestamp) => ExtraField::ExtendedTimestamp(
+                ExtendedTimestamp::try_from_reader(reader, len, is_local_header)?,
+            ),
             Ok(UsedExtraField::UnicodeComment) => {
                 // Info-ZIP Unicode Comment Extra Field
                 // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
@@ -316,7 +321,7 @@ mod tests {
     fn aex_extra_field_with_feature() {
         let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
 
-        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock).unwrap();
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         assert!(matches!(
             extra_fields.inner[0],
             ExtraField::AeXEncryption(..)
@@ -331,7 +336,7 @@ mod tests {
 
         let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
 
-        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock).unwrap();
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         let extra = CustomExtraField::new(
             false,
             UsedExtraField::AeXEncryption.as_u16(),
