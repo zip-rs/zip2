@@ -486,29 +486,30 @@ impl ZipFileData {
                         .any(|e| matches!(e, ExtraField::Zip64ExtendedInformation(_)));
                 let desc_start = data_start + self.compressed_size;
                 reader.seek(SeekFrom::Start(desc_start))?;
-                if is_zip64 {
+                let res = if is_zip64 {
                     let mut buff: [u8; 24] = [0; Zip64DataDescriptorBlock::SIZE];
                     if let Err(err) = reader.read_exact(&mut buff) {
-                        reader.seek(SeekFrom::Start(current))?;
-                        return Err(err.into());
-                    };
-                    reader.seek(SeekFrom::Start(current))?;
-                    Ok(Some(ZipDataDescriptor::Zip64DataDescriptorBlock(
-                        Zip64DataDescriptorBlock::parse(&buff)
-                            .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
-                    )))
+                        Err(err)
+                    } else {
+                        Ok(ZipDataDescriptor::Zip64DataDescriptorBlock(
+                            Zip64DataDescriptorBlock::parse(&buff)
+                                .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
+                        ))
+                    }
                 } else {
                     let mut buff: [u8; 16] = [0; ZipDataDescriptorBlock::SIZE];
                     if let Err(err) = reader.read_exact(&mut buff) {
-                        reader.seek(SeekFrom::Start(current))?;
-                        return Err(err.into());
-                    };
-                    reader.seek(SeekFrom::Start(current))?;
-                    Ok(Some(ZipDataDescriptor::ZipDataDescriptorBlock(
-                        ZipDataDescriptorBlock::parse(&buff)
-                            .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
-                    )))
-                }
+                        Err(err)
+                    } else {
+                        Ok(ZipDataDescriptor::ZipDataDescriptorBlock(
+                            ZipDataDescriptorBlock::parse(&buff)
+                                .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
+                        ))
+                    }
+                };
+                let data_desc = res?;
+                reader.seek(SeekFrom::Start(current))?;
+                Ok(Some(data_desc))
             }
             Err(_err) => Ok(None),
         }
