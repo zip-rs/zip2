@@ -43,11 +43,8 @@ fn read_data_descriptor() {
 
     let mut writer = ZipWriter::new_stream(Vec::new());
     writer
-        .add_directory("mydir", SimpleFileOptions::default())
-        .unwrap();
-    writer
         .start_file(
-            "mydir/file.txt",
+            "file.txt",
             SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
         )
         .unwrap();
@@ -55,7 +52,7 @@ fn read_data_descriptor() {
     let bytes = writer.finish().unwrap().into_inner();
 
     let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
-    let file = archive.by_name("mydir/file.txt").unwrap();
+    let file = archive.by_name("file.txt").unwrap();
     let data_start = file.data_start().unwrap() as usize;
 
     // Also handle big data descriptor
@@ -84,11 +81,8 @@ fn read_data_descriptor_stream() {
 
     let mut writer = ZipWriter::new_stream(Vec::new());
     writer
-        .add_directory("mydir", SimpleFileOptions::default())
-        .unwrap();
-    writer
         .start_file(
-            "mydir/file.txt",
+            "file.txt",
             SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
         )
         .unwrap();
@@ -98,7 +92,7 @@ fn read_data_descriptor_stream() {
 
     let mut archive = ZipArchive::new(stream).unwrap();
 
-    let index = archive.index_for_name("mydir/file.txt").unwrap();
+    let index = archive.index_for_name("file.txt").unwrap();
     let data = archive.by_index_with_data_descriptor(index).unwrap();
     let data_descriptor = data.data_descriptor().unwrap();
     assert_eq!(
@@ -112,18 +106,15 @@ fn read_data_descriptor_stream() {
 }
 
 #[test]
-fn read_data_descriptor_not_be_present() {
+fn read_data_descriptor_not_present() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
     use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     writer
-        .add_directory("mydir", SimpleFileOptions::default())
-        .unwrap();
-    writer
         .start_file(
-            "mydir/file.txt",
+            "file.txt",
             SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
         )
         .unwrap();
@@ -133,7 +124,7 @@ fn read_data_descriptor_not_be_present() {
 
     let mut archive = ZipArchive::new(stream).unwrap();
 
-    let index = archive.index_for_name("mydir/file.txt").unwrap();
+    let index = archive.index_for_name("file.txt").unwrap();
     let data = archive.by_index_with_data_descriptor(index).unwrap();
     let data_descriptor = data.data_descriptor();
     // this is not a stream, no data_descriptor

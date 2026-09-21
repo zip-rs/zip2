@@ -2,9 +2,6 @@
 
 use crate::compression::CompressionMethod;
 use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
-use crate::format::data_descriptor::{
-    Zip64DataDescriptorBlock, ZipDataDescriptor, ZipDataDescriptorBlock,
-};
 use crate::format::find_central_directory_end;
 use crate::read::config::Config;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
@@ -16,7 +13,6 @@ use crate::read::{
 use crate::result::{ZipError, ZipResult};
 use crate::types::ZipFileData;
 use crate::unstable::path_to_string;
-use crate::{ExtraField, ZIP64_BYTES_THR};
 use core::ops::Range;
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -440,49 +436,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             .files
             .get_index(index)
             .ok_or(ZipError::FileNotFound)?;
-        let data_descriptor = {
-            if data.is_using_data_descriptor() {
-                let current = self.reader.stream_position()?;
-                if let Ok(data_start) = data.data_start(&mut self.reader) {
-                    let is_zip64 = data.compressed_size >= ZIP64_BYTES_THR
-                        || data.uncompressed_size >= ZIP64_BYTES_THR
-                        || data
-                            .extra_fields
-                            .inner
-                            .iter()
-                            .any(|e| matches!(e, ExtraField::Zip64ExtendedInformation(_)));
-                    let desc_start = data_start + data.compressed_size;
-                    self.reader.seek(SeekFrom::Start(desc_start))?;
-                    if is_zip64 {
-                        let mut buff: [u8; 24] = [0; Zip64DataDescriptorBlock::SIZE];
-                        if let Err(err) = self.reader.read_exact(&mut buff) {
-                            self.reader.seek(SeekFrom::Start(current))?;
-                            return Err(err.into());
-                        };
-                        self.reader.seek(SeekFrom::Start(current))?;
-                        Some(ZipDataDescriptor::Zip64DataDescriptorBlock(
-                            Zip64DataDescriptorBlock::parse(&buff)
-                                .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
-                        ))
-                    } else {
-                        let mut buff: [u8; 16] = [0; ZipDataDescriptorBlock::SIZE];
-                        if let Err(err) = self.reader.read_exact(&mut buff) {
-                            self.reader.seek(SeekFrom::Start(current))?;
-                            return Err(err.into());
-                        };
-                        self.reader.seek(SeekFrom::Start(current))?;
-                        Some(ZipDataDescriptor::ZipDataDescriptorBlock(
-                            ZipDataDescriptorBlock::parse(&buff)
-                                .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
-                        ))
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
+
+        let data_descriptor = data.get_data_descriptor(&mut self.reader)?;
         Ok(ZipFileEntryWithDataDescriptor {
             file_name_raw: Cow::Borrowed(file_name_raw),
             data: Cow::Borrowed(data),
