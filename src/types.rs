@@ -507,9 +507,16 @@ impl ZipFileData {
                         ))
                     }
                 };
-                let data_desc = res?;
-                reader.seek(SeekFrom::Start(current))?;
-                Ok(Some(data_desc))
+                match res {
+                    Ok(data_desc) => {
+                        reader.seek(SeekFrom::Start(current))?;
+                        Ok(Some(data_desc))
+                    }
+                    Err(err) => {
+                        reader.seek(SeekFrom::Start(current))?;
+                        Err(err.into())
+                    }
+                }
             }
             Err(_err) => Ok(None),
         }
