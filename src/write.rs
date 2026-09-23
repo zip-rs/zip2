@@ -1365,7 +1365,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
 
         self.start_entry(&file_name, options, Some(raw_values))?;
-        self.writing_to_file = true;
         self.writing_raw = true;
 
         // start_entry leaves the inner writer as a bare Storer (a compression encoder is only
@@ -1387,7 +1386,11 @@ impl<W: Write + Seek> ZipWriter<W> {
         let result = (|| -> ZipResult<()> {
             let writer = self.inner.try_inner_mut()?;
             let Some((file_name_raw, file)) = self.files.last_mut() else {
-                return Err(ZipError::Io(io::Error::other("Cannot get last file")));
+                debug_assert!(
+                    false,
+                    "Newly added file not found while finishing it in add_prepared_file"
+                );
+                return Err(ZipError::FileNotFound);
             };
             if file.is_using_data_descriptor() {
                 file.write_data_descriptor(writer, auto_large_file)?;
