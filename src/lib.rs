@@ -34,7 +34,6 @@ mod cp437;
 mod crc32;
 mod datetime;
 pub mod extra_fields;
-mod extract;
 mod format;
 mod path;
 pub mod read;

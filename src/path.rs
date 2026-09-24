@@ -9,7 +9,7 @@ use std::{
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
 use crate::{
-    extract::make_writable_dir_all,
+    read::extract::make_writable_dir_all,
     result::{ZipResult, invalid},
 };
 

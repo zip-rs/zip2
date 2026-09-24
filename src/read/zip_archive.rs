@@ -1,10 +1,10 @@
 //! Code related to `ZipArchive`
 
 use crate::compression::CompressionMethod;
-use crate::extract::RootDirFilter;
 use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
 use crate::format::find_central_directory_end;
 use crate::read::config::Config;
+use crate::read::extract::RootDirFilter;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::ZipFileEntry;
 use crate::read::{

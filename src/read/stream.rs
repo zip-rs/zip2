@@ -2,10 +2,10 @@
 
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
-use crate::extract::MAX_SYMLINK_TARGET_LEN;
-use crate::extract::make_symlink;
 use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::magic::Magic;
+use crate::read::extract::MAX_SYMLINK_TARGET_LEN;
+use crate::read::extract::make_symlink;
 use crate::read::{
     ZipFile, ZipFileData, ZipFileEntry, ZipResult, central_header_to_zip_file_inner,
 };
