@@ -159,7 +159,7 @@ impl UnixFileModes {
 
 impl<R: Read + Seek> ZipArchive<R> {
     /// Extract a Zip archive into a directory, overwriting files if they
-    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`](crate::read::ZipFile::enclosed_name).
     ///
     /// Symbolic links are only created, and only followed, if their target resolves to a path
     /// inside the destination directory. Paths are resolved one component at a time, and the
