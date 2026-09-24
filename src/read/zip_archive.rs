@@ -1,13 +1,14 @@
 //! Code related to `ZipArchive`
 
 use crate::compression::CompressionMethod;
+use crate::extract::RootDirFilter;
 use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
 use crate::format::find_central_directory_end;
 use crate::read::config::Config;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::ZipFileEntry;
 use crate::read::{
-    ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek, ZipReadOptions,
+    ArchiveOffset, CentralDirectoryInfo, ZipFile, ZipFileSeek, ZipReadOptions,
     central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, ZipResult};
@@ -87,7 +88,7 @@ impl SharedBuilder {
 #[derive(Clone, Debug)]
 pub struct ZipArchive<R> {
     pub(super) reader: R,
-    pub(super) shared: Arc<ZipArchiveMetadata>,
+    pub(crate) shared: Arc<ZipArchiveMetadata>,
 }
 
 impl<R> ZipArchive<R> {
