@@ -1,6 +1,5 @@
 //! Extraction
 
-use crate::read::MAX_SYMLINK_TARGET_LEN;
 use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
@@ -8,6 +7,14 @@ use std::io::{self, Read, Seek};
 use std::path::Path;
 
 use indexmap::IndexMap;
+
+/// Upper bound on the uncompressed size of a symlink entry.
+///
+/// A symlink target is a filesystem path, so its length is bounded by the
+/// platform (`PATH_MAX` is 4096 on Linux) no matter what the archive says. The
+/// uncompressed size stored in the central directory is attacker-controlled,
+/// so entries above this bound are rejected rather than pre-allocated.
+pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
     use std::fs;
@@ -119,10 +126,11 @@ pub(crate) fn make_symlink<T>(
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
 ) -> ZipResult<()> {
+    use std::fs::File;
+    use std::io::Write;
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
-    use std::fs::File;
     let output = File::create(outpath);
     output?.write_all(target)?;
     Ok(())

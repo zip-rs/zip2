@@ -10,16 +10,8 @@ use crate::format::system::System;
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::types::ZipFileData;
 use indexmap::IndexMap;
-use std::io::{self, Read, Seek, Write};
+use std::io::{self, Read, Seek};
 use std::sync::OnceLock;
-
-/// Upper bound on the uncompressed size of a symlink entry.
-///
-/// A symlink target is a filesystem path, so its length is bounded by the
-/// platform (`PATH_MAX` is 4096 on Linux) no matter what the archive says. The
-/// uncompressed size stored in the central directory is attacker-controlled,
-/// so entries above this bound are rejected rather than pre-allocated.
-pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
 mod config;
 pub use config::{ArchiveOffset, Config};
@@ -95,7 +87,7 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
-    pub(crate) fn merge_contents<W: Write + Seek>(
+    pub(crate) fn merge_contents<W: std::io::Write + Seek>(
         &mut self,
         mut w: W,
     ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
