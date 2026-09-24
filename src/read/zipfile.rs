@@ -9,7 +9,7 @@ use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
 use crate::format::system::System;
 use crate::read::ExtraField;
-use crate::read::RootDirFilter;
+use crate::read::extract::RootDirFilter;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::ZipResult;
 use crate::result::invalid;
