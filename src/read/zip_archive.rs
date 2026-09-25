@@ -33,6 +33,29 @@ pub struct ZipArchiveMetadata {
     pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
 }
 
+impl ZipArchiveMetadata {
+    /// Number of files contained in the central directory.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    /// Whether the central directory contains no files.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get a central directory entry by index
+    pub fn entry(&self, index: usize) -> ZipResult<ZipFileEntry<'_>> {
+        let (file_name_raw, data) = self.files.get_index(index).ok_or(ZipError::FileNotFound)?;
+        Ok(ZipFileEntry {
+            file_name_raw: Cow::Borrowed(file_name_raw),
+            data: Cow::Borrowed(data),
+        })
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
     pub(crate) files: Vec<(Box<[u8]>, ZipFileData)>,
@@ -335,7 +358,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Number of files contained in this zip.
     pub fn len(&self) -> usize {
-        self.shared.files.len()
+        self.shared.len()
     }
 
     /// Get the starting offset of the zip central directory.
@@ -542,15 +565,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get a contained file by index
     pub fn by_index_data(&self, file_number: usize) -> ZipResult<ZipFileEntry<'_>> {
-        let (file_name_raw, data) = self
-            .shared
-            .files
-            .get_index(file_number)
-            .ok_or(ZipError::FileNotFound)?;
-        Ok(ZipFileEntry {
-            file_name_raw: Cow::Borrowed(file_name_raw),
-            data: Cow::Borrowed(data),
-        })
+        self.shared.entry(file_number)
     }
 
     /// Get a contained file by index without decompressing it
@@ -716,6 +731,50 @@ mod tests {
             ZipArchive::new(Cursor::new(include_bytes!("../../tests/data/mimetype.zip"))).unwrap();
         assert_eq!(reader.comment(), b"");
         assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
+    }
+
+    #[test]
+    fn metadata_entry_matches_by_index() {
+        use super::ZipArchive;
+        use crate::result::ZipError;
+        use std::io::Cursor;
+
+        let mut reader = ZipArchive::new(Cursor::new(include_bytes!(
+            "../../tests/data/files_and_dirs.zip"
+        )))
+        .unwrap();
+        let metadata = reader.metadata();
+        assert_eq!(metadata.len(), reader.len());
+        assert!(!metadata.is_empty());
+
+        for i in 0..metadata.len() {
+            let entry = metadata.entry(i).unwrap();
+            let file = reader.by_index(i).unwrap();
+            assert_eq!(entry.name_raw(), file.name_raw());
+            assert_eq!(entry.size(), file.size());
+            assert_eq!(entry.compressed_size(), file.compressed_size());
+            assert_eq!(entry.central_header_start(), file.central_header_start());
+        }
+
+        assert!(matches!(
+            metadata.entry(metadata.len()),
+            Err(ZipError::FileNotFound)
+        ));
+    }
+
+    #[test]
+    fn metadata_empty_archive() {
+        use super::ZipArchive;
+        use crate::result::ZipError;
+        use crate::write::ZipWriter;
+        use std::io::Cursor;
+
+        let writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let reader = ZipArchive::new(writer.finish().unwrap()).unwrap();
+        let metadata = reader.metadata();
+        assert_eq!(metadata.len(), 0);
+        assert!(metadata.is_empty());
+        assert!(matches!(metadata.entry(0), Err(ZipError::FileNotFound)));
     }
 
     #[test]
