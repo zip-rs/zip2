@@ -6,7 +6,7 @@ use crate::format::find_central_directory_end;
 use crate::read::config::Config;
 use crate::read::extract::RootDirFilter;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
-use crate::read::zipfile::ZipFileEntry;
+use crate::read::zipfile::{ZipFileEntry, ZipFileEntryWithDataDescriptor};
 use crate::read::{
     ArchiveOffset, CentralDirectoryInfo, ZipFile, ZipFileSeek, ZipReadOptions,
     central_header_to_zip_file_inner,
@@ -422,6 +422,28 @@ impl<R: Read + Seek> ZipArchive<R> {
     #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
         self.shared.files.get_index_of(name.as_bytes())
+    }
+
+    /// Get data and the data descriptor of the file
+    /// This method will work if the zip is using the data descriptor signature (see 4.3.9.3)
+    /// To access the data descriptor, the ZipFileData needs to have a correct `compressed_size` and
+    /// the Data Descriptor should follow the data
+    pub fn by_index_with_data_descriptor(
+        &mut self,
+        index: usize,
+    ) -> ZipResult<ZipFileEntryWithDataDescriptor<'_>> {
+        let (file_name_raw, data) = self
+            .shared
+            .files
+            .get_index(index)
+            .ok_or(ZipError::FileNotFound)?;
+
+        let data_descriptor = data.get_data_descriptor(&mut self.reader)?;
+        Ok(ZipFileEntryWithDataDescriptor {
+            file_name_raw: Cow::Borrowed(file_name_raw),
+            data: Cow::Borrowed(data),
+            data_descriptor,
+        })
     }
 
     /// Search for a file entry by path, decrypt with given password
