@@ -150,13 +150,12 @@ impl ExtendedTimestamp {
 
         if bytes_to_read > 0 {
             // ignore undocumented bytes
-            let n = std::io::copy(
-                &mut reader.take(bytes_to_read as u64),
-                &mut std::io::sink(),
-            )?;
-            
+            let n = std::io::copy(&mut reader.take(bytes_to_read as u64), &mut std::io::sink())?;
+
             if n != bytes_to_read as u64 {
-                return Err(invalid!("unexpected EOF"));
+                return Err(invalid!(
+                    "unexpected EOF in local header of Extended Timestamp extra field"
+                ));
             }
         }
 
@@ -177,13 +176,12 @@ impl ExtendedTimestamp {
         };
         if bytes_to_read > 0 {
             // ignore undocumented bytes
-            let n = std::io::copy(
-                &mut reader.take(bytes_to_read as u64),
-                &mut std::io::sink(),
-            )?;
-            
+            let n = std::io::copy(&mut reader.take(bytes_to_read as u64), &mut std::io::sink())?;
+
             if n != bytes_to_read as u64 {
-                return Err(invalid!("unexpected EOF"));
+                return Err(invalid!(
+                    "unexpected EOF in central header of Extended Timestamp extra field"
+                ));
             }
         }
         Ok(Self {
