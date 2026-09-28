@@ -94,7 +94,7 @@ fn hwexplode(
     dst: &mut Vec<u8>,
 ) -> std::io::Result<()> {
     // Pre-allocate capacity
-    dst.reserve(uncomp_len);
+    dst.reserve(uncomp_len.min(crate::legacy::MAX_PREALLOC));
 
     let bit_length = src.len() as u64 * 8;
     let mut is = BitReader::endian(Cursor::new(&src), LittleEndian);
@@ -211,7 +211,8 @@ impl<R: Read> Read for ImplodeDecoder<R> {
             self.compressed_reader.read_to_end(&mut compressed_bytes)?;
 
             // Pre-allocate stream buffer
-            self.stream.reserve(self.uncompressed_size as usize);
+            self.stream
+                .reserve((self.uncompressed_size as usize).min(crate::legacy::MAX_PREALLOC));
 
             hwexplode(
                 &compressed_bytes,

@@ -215,7 +215,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
         }
         #[cfg(feature = "aes-crypto")]
         (Some(password), Some((aes_mode, _))) => CryptoReader::Aes {
-            reader: crate::aes::AesReader::new(reader, aes_mode, data.compressed_size)
+            reader: crate::aes::AesReader::new(reader, aes_mode, data.compressed_size)?
                 .validate(password)?,
         },
         (Some(password), None) => {

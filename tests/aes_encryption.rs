@@ -390,3 +390,97 @@ fn test_update_aes_version_on_threshold() {
     assert_eq!(data[167], 3); // AES Mode
     assert_eq!(data[168..170], [0, 0]); // Compression Method
 }
+
+const GENUINE: &[u8] = b"balance: 100 USD\n";
+const FORGED: &[u8] = b"balance: 999 USD\n";
+const AES256_OVERHEAD: usize = 28; // 16-byte salt + 2-byte verifier + 10-byte tag
+
+fn genuine_archive(plaintext: &[u8]) -> Vec<u8> {
+    use std::io::{Cursor, Write};
+    use zip::write::SimpleFileOptions;
+    use zip::{AesMode, CompressionMethod, ZipWriter};
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .with_aes_encryption_bytes(AesMode::Aes256, PASSWORD);
+    w.start_file("secret.txt", opts).unwrap();
+    w.write_all(plaintext).unwrap();
+    w.finish().unwrap().into_inner()
+}
+
+/// What a victim does: open with the correct password and read the entry.
+fn victim_reads(archive: &[u8]) -> std::io::Result<Vec<u8>> {
+    use std::io::{Cursor, Read};
+    use zip::ZipArchive;
+    let mut a = ZipArchive::new(Cursor::new(archive.to_vec())).unwrap();
+    let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+    let mut out = Vec::new();
+    f.read_to_end(&mut out)?;
+    Ok(out)
+}
+
+fn u16le(b: &[u8], off: usize) -> usize {
+    u16::from_le_bytes([b[off], b[off + 1]]) as usize
+}
+
+/// Payload offset of the single local file header at offset 0.
+fn payload_start(a: &[u8]) -> usize {
+    30 + u16le(a, 26) + u16le(a, 28)
+}
+
+/// Control: on a well-formed archive the HMAC does reject forged ciphertext.
+#[test]
+fn tampering_is_detected_when_the_declared_size_is_honest() {
+    let mut a = genuine_archive(GENUINE);
+    let ct = payload_start(&a) + 18;
+    for i in 0..GENUINE.len() {
+        a[ct + i] ^= GENUINE[i] ^ FORGED[i]; // AES-CTR is malleable
+    }
+    let err = victim_reads(&a).unwrap_err();
+    assert!(err.to_string().contains("Invalid authentication code"));
+}
+
+/// The bypass: chosen plaintext is delivered verbatim, without the password.
+#[test]
+fn hmac_is_bypassed_when_the_entry_ends_early() {
+    let genuine = genuine_archive(GENUINE);
+    let hdr_len = payload_start(&genuine);
+    let eocd = genuine.len() - 22; // no archive comment yet
+    let cd_offset = u32::from_le_bytes(genuine[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+
+    // Park a second copy of the entry after the end-of-central-directory record,
+    // inside the archive comment, so its data ends at true EOF. Header, salt and
+    // password verifier are copied verbatim — no password knowledge is required.
+    let mut evil = genuine.clone();
+    let new_hdr_offset = evil.len() as u32;
+    evil.extend_from_slice(&genuine[..hdr_len + 18]); // local header + salt + verifier
+    for i in 0..GENUINE.len() {
+        // XOR the keystream onto the chosen plaintext; the 10-byte tag is omitted.
+        evil.push(genuine[hdr_len + 18 + i] ^ GENUINE[i] ^ FORGED[i]);
+    }
+    let comment_len = (evil.len() - genuine.len()) as u16;
+    evil[eocd + 20..eocd + 22].copy_from_slice(&comment_len.to_le_bytes());
+
+    // Repoint the central directory at the parked copy and declare more data than
+    // is present, so `data_remaining` can never reach zero.
+    let declared = (AES256_OVERHEAD + GENUINE.len() + 64) as u32;
+    evil[cd_offset + 42..cd_offset + 46].copy_from_slice(&new_hdr_offset.to_le_bytes());
+    evil[cd_offset + 20..cd_offset + 24].copy_from_slice(&declared.to_le_bytes());
+    let hdr2 = new_hdr_offset as usize;
+    evil[hdr2 + 18..hdr2 + 22].copy_from_slice(&declared.to_le_bytes());
+
+    let read_result = victim_reads(&evil);
+    // unauthenticated content was detected
+    assert!(read_result.is_err());
+}
+
+/// Second path: an entry with no payload bytes is never authenticated at all.
+#[test]
+fn hmac_is_never_checked_for_a_zero_length_entry() {
+    let mut a = genuine_archive(b"");
+    let tag = payload_start(&a) + 18;
+    a[tag] ^= 0xff; // corrupt the 10-byte authentication code
+    let read_result = victim_reads(&a);
+    // corrupt authentication code was detected
+    assert!(read_result.is_err());
+}

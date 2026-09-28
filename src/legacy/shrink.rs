@@ -231,7 +231,7 @@ fn output_code(
 }
 
 fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut Vec<u8>) -> io::Result<()> {
-    dst.reserve(uncompressed_size);
+    dst.reserve(uncompressed_size.min(crate::legacy::MAX_PREALLOC));
     let mut codetab = Codetab::create_new();
     let mut queue = CodeQueue::new();
     let mut is = BitReader::endian(src, LittleEndian);
@@ -344,7 +344,8 @@ impl<R: Read> Read for ShrinkDecoder<R> {
             self.stream_read = true;
             let mut compressed_bytes = Vec::new();
             self.compressed_reader.read_to_end(&mut compressed_bytes)?;
-            self.stream.reserve(self.uncompressed_size as usize);
+            self.stream
+                .reserve((self.uncompressed_size as usize).min(crate::legacy::MAX_PREALLOC));
             hwunshrink(
                 &compressed_bytes,
                 self.uncompressed_size as usize,

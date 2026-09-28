@@ -25,6 +25,7 @@ use core::mem::{self, offset_of, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
+use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
@@ -1119,6 +1120,18 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
+        for one_extra in file.extra_data_fields() {
+            let mut buff = Cursor::new(Vec::new());
+            one_extra.write(&mut buff, false)?;
+            let buff = buff.into_inner();
+            if buff.len() >= 4 {
+                options.add_extra_field(
+                    u16::from_le_bytes([buff[0], buff[1]]),
+                    &buff[4..],
+                    false,
+                )?;
+            }
+        }
         let file_name = name.to_string();
         self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options)
     }
@@ -1218,6 +1231,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         options = options.last_modified_time(last_modified_time);
 
         if let Some(perms) = unix_mode {
+            options.external_attributes = None;
             options = options.unix_permissions(perms);
         }
 
@@ -1332,9 +1346,11 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Add a symlink entry, taking Paths to the location and target as arguments.
     ///
+    /// This function sanitizes both the path and the target. If you don't want to sanitize the
+    /// path, it's recommended to use the normal [`Self::add_symlink`]
+    ///
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
-    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
-    /// root.
+    /// ignores any `..` or Windows drive letter
     pub fn add_symlink_from_path<P: AsRef<Path>, T: AsRef<Path>, E: FileOptionExtension>(
         &mut self,
         path: P,

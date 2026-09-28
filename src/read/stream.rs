@@ -4,8 +4,10 @@ use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::magic::Magic;
+use crate::read::extract::MAX_SYMLINK_TARGET_LEN;
+use crate::read::extract::make_symlink;
 use crate::read::{
-    ZipFile, ZipFileData, ZipFileEntry, ZipResult, central_header_to_zip_file_inner, make_symlink,
+    ZipFile, ZipFileData, ZipFileEntry, ZipResult, central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, invalid};
 
@@ -64,7 +66,11 @@ impl<R: Read> ZipStreamReader<R> {
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
     /// Extraction is not atomic; If an error is encountered, some of the files
-    /// may be left on disk.
+    /// may be left on disk. The file(s) and dir(s) are first created, then the
+    /// permissions are applied to them
+    ///
+    /// Extraction of symlink is not possible since we don't have access to the
+    /// external attributes in the local headers of the entries
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
         impl ZipStreamVisitor for Extractor {
@@ -74,12 +80,28 @@ impl<R: Read> ZipStreamReader<R> {
                 file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
 
                 if file.is_symlink() {
-                    let mut target = Vec::with_capacity(file.size() as usize);
+                    // Same bound as `ZipArchive::extract`: the declared
+                    // uncompressed size is attacker-controlled, so reject
+                    // oversized entries rather than pre-allocating them.
+                    //
+                    // `is_symlink()` is currently always false on this path
+                    // (`from_local_block` has no external attributes to read),
+                    // so this is defence in depth -- see
+                    // `stream_does_not_expose_the_symlink_bit`.
+                    let declared_len = file.size();
+                    if declared_len > MAX_SYMLINK_TARGET_LEN {
+                        return Err(invalid!(
+                            "symlink target declares {} bytes, more than the {} byte limit",
+                            declared_len,
+                            MAX_SYMLINK_TARGET_LEN
+                        ));
+                    }
+
+                    let mut target = Vec::with_capacity(declared_len as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(&outpath, &target, &self.1)?;
+                    make_symlink(&self.0, &outpath, &target, &self.1)?;
                     return Ok(());
                 }
-
                 if file.is_dir() {
                     fs::create_dir_all(&outpath)?;
                 } else {
@@ -205,7 +227,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
         return Err(e.into());
     }
     // parse extra fields
-    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block)?;
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, true)?;
     let mut data = ZipFileData::from_local_block(block, extra_fields)?;
     data.apply_extra_fields(&mut file_name_raw)?;
     if data.is_using_data_descriptor() {
@@ -327,8 +349,8 @@ mod tests {
     }
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
         use crate::ZipWriter;
@@ -350,8 +372,38 @@ mod tests {
         Ok(())
     }
 
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// The stream reader builds each entry from the *local* file header, which
+    /// has no external-attributes field (`ZipFileData::from_local_block` sets it
+    /// to 0), so `is_symlink()` is always false on this path and the symlink
+    /// branch in `extract` is currently unreachable.
+    ///
+    /// The `MAX_SYMLINK_TARGET_LEN` guard is still kept there, for consistency
+    /// with `ZipArchive::extract` and so it is already in place if that ever
+    /// changes. This test pins the current behaviour: if the local header starts
+    /// carrying the attribute, the assertion fails and the guard needs a real
+    /// regression test.
+    #[test]
+    fn stream_does_not_expose_the_symlink_bit() -> ZipResult<()> {
+        use crate::ZipWriter;
+        use crate::write::SimpleFileOptions;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_symlink("link", "/target", SimpleFileOptions::default())?;
+        let mut cur = writer.finish()?;
+        cur.set_position(0);
+
+        let file = crate::read::read_zipfile_from_stream(&mut cur)?.unwrap();
+        assert!(
+            !file.is_symlink(),
+            "the stream path now sees the symlink bit -- the MAX_SYMLINK_TARGET_LEN \
+             guard in `stream.rs` is reachable and needs a regression test"
+        );
+
+        Ok(())
+    }
+
+    /// Cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
         use tempfile::TempDir;
