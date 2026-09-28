@@ -407,7 +407,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    #[cfg(feature = "deflate")]
+    #[cfg(feature = "_deflate-any")]
     {
         // ============================================================================
         // read_deflated_entry
