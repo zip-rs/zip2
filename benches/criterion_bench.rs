@@ -13,6 +13,9 @@
 //!
 //! Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
 
+/// Does not compiles on big endian
+#![cfg(target_endian = "little")]
+
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::fs;
 use std::hint::black_box;
