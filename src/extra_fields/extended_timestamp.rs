@@ -150,7 +150,14 @@ impl ExtendedTimestamp {
 
         if bytes_to_read > 0 {
             // ignore undocumented bytes
-            reader.read_exact(&mut vec![0; bytes_to_read])?;
+            let n = std::io::copy(
+                &mut reader.take(bytes_to_read as u64),
+                &mut std::io::sink(),
+            )?;
+            
+            if n != bytes_to_read as u64 {
+                return Err(invalid!("unexpected EOF"));
+            }
         }
 
         Ok(Self {
@@ -170,7 +177,14 @@ impl ExtendedTimestamp {
         };
         if bytes_to_read > 0 {
             // ignore undocumented bytes
-            reader.read_exact(&mut vec![0; bytes_to_read])?;
+            let n = std::io::copy(
+                &mut reader.take(bytes_to_read as u64),
+                &mut std::io::sink(),
+            )?;
+            
+            if n != bytes_to_read as u64 {
+                return Err(invalid!("unexpected EOF"));
+            }
         }
         Ok(Self {
             modified,
