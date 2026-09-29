@@ -3,8 +3,9 @@
 use crate::datetime::DateTime;
 use crate::extra_fields::ExtraFields;
 use crate::format::aes::{AesMode, AesVendorVersion};
-use crate::format::blocks::{
-    FixedSizeBlock, Zip64DataDescriptorBlock, ZipDataDescriptorBlock, ZipLocalEntryBlock,
+use crate::format::blocks::{FixedSizeBlock, ZipLocalEntryBlock};
+use crate::format::data_descriptor::{
+    Zip64DataDescriptorBlock, ZipDataDescriptor, ZipDataDescriptorBlock,
 };
 use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
@@ -18,7 +19,7 @@ use crate::read::readers::{SeekableTake, ZipFileReader, make_crypto_reader, make
 use crate::result::{ZipError, ZipResult};
 use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
-use crate::{CompressionMethod, ZipReadOptions};
+use crate::{CompressionMethod, ExtraField, ZipReadOptions};
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -434,17 +435,20 @@ impl ZipFileData {
         auto_large_file: bool,
     ) -> Result<(), ZipError> {
         if self.large_file {
-            return self.zip64_data_descriptor_block().write(writer);
+            self.zip64_data_descriptor_block().write(writer)?;
+            return Ok(());
         }
         if self.compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
             if auto_large_file {
-                return self.zip64_data_descriptor_block().write(writer);
+                self.zip64_data_descriptor_block().write(writer)?;
+                return Ok(());
             }
             return Err(ZipError::Io(std::io::Error::other(
                 "Large file option has not been set - use .large_file(true) in options",
             )));
         }
-        self.data_descriptor_block().write(writer)
+        self.data_descriptor_block().write(writer)?;
+        Ok(())
     }
 
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
@@ -460,6 +464,61 @@ impl ZipFileData {
             crc32: self.crc32,
             compressed_size: self.compressed_size,
             uncompressed_size: self.uncompressed_size,
+        }
+    }
+
+    pub(crate) fn get_data_descriptor<R: Read + Seek>(
+        &self,
+        mut reader: &mut R,
+    ) -> ZipResult<Option<ZipDataDescriptor>> {
+        if !self.is_using_data_descriptor() {
+            return Ok(None);
+        }
+        let current = reader.stream_position()?;
+        match self.data_start(&mut reader) {
+            Ok(data_start) => {
+                let is_zip64 = self.compressed_size >= ZIP64_BYTES_THR
+                    || self.uncompressed_size >= ZIP64_BYTES_THR
+                    || self
+                        .extra_fields
+                        .inner
+                        .iter()
+                        .any(|e| matches!(e, ExtraField::Zip64ExtendedInformation(_)));
+                let desc_start = data_start + self.compressed_size;
+                reader.seek(SeekFrom::Start(desc_start))?;
+                let res = if is_zip64 {
+                    let mut buff: [u8; 24] = [0; Zip64DataDescriptorBlock::SIZE];
+                    if let Err(err) = reader.read_exact(&mut buff) {
+                        Err(err)
+                    } else {
+                        Ok(ZipDataDescriptor::Zip64DataDescriptorBlock(
+                            Zip64DataDescriptorBlock::parse(&buff)
+                                .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
+                        ))
+                    }
+                } else {
+                    let mut buff: [u8; 16] = [0; ZipDataDescriptorBlock::SIZE];
+                    if let Err(err) = reader.read_exact(&mut buff) {
+                        Err(err)
+                    } else {
+                        Ok(ZipDataDescriptor::ZipDataDescriptorBlock(
+                            ZipDataDescriptorBlock::parse(&buff)
+                                .map_err(|s| ZipError::InvalidArchive(Cow::Borrowed(s)))?,
+                        ))
+                    }
+                };
+                match res {
+                    Ok(data_desc) => {
+                        reader.seek(SeekFrom::Start(current))?;
+                        Ok(Some(data_desc))
+                    }
+                    Err(err) => {
+                        reader.seek(SeekFrom::Start(current))?;
+                        Err(err.into())
+                    }
+                }
+            }
+            Err(_err) => Ok(None),
         }
     }
 }
