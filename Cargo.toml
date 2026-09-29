@@ -51,9 +51,13 @@ typed-path = "0.12"
 getrandom = { version = "0.4", default-features = false, optional = true }
 time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
 
+# native dev-dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
 getrandom = { version = "0.4", default-features = false }
+
+# native dev-dependencies - criterion does not compiles on big endian
+[target.'cfg(all(not(target_arch = "wasm32"), target_endian = "little"))'.dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
