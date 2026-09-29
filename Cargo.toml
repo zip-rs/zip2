@@ -55,7 +55,7 @@ time = { version = "^0.3.47", default-features = false, optional = true, feature
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 getrandom = { version = "0.4", default-features = false }
 
-# native dev-dependencies - criterion does not compiles on big endian
+# native dev-dependencies - criterion does not compile on big endian
 [target.'cfg(all(not(target_arch = "wasm32"), target_endian = "little"))'.dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
 
