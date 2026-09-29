@@ -150,7 +150,13 @@ impl ExtendedTimestamp {
 
         if bytes_to_read > 0 {
             // ignore undocumented bytes
-            reader.read_exact(&mut vec![0; bytes_to_read])?;
+            let n = std::io::copy(&mut reader.take(bytes_to_read as u64), &mut std::io::sink())?;
+
+            if n != bytes_to_read as u64 {
+                return Err(invalid!(
+                    "unexpected EOF in local header of Extended Timestamp extra field"
+                ));
+            }
         }
 
         Ok(Self {
@@ -161,12 +167,23 @@ impl ExtendedTimestamp {
     }
 
     /// parse the central header
-    fn parse_central_header<R: Read>(reader: &mut R, bytes_to_read: usize) -> ZipResult<Self> {
-        let modified = if bytes_to_read == mem::size_of::<u32>() {
+    fn parse_central_header<R: Read>(reader: &mut R, mut bytes_to_read: usize) -> ZipResult<Self> {
+        let modified = if bytes_to_read >= mem::size_of::<u32>() {
+            bytes_to_read -= mem::size_of::<u32>();
             Some(reader.read_u32_le()?)
         } else {
             None
         };
+        if bytes_to_read > 0 {
+            // ignore undocumented bytes
+            let n = std::io::copy(&mut reader.take(bytes_to_read as u64), &mut std::io::sink())?;
+
+            if n != bytes_to_read as u64 {
+                return Err(invalid!(
+                    "unexpected EOF in central header of Extended Timestamp extra field"
+                ));
+            }
+        }
         Ok(Self {
             modified,
             accessed: None,
@@ -348,5 +365,22 @@ mod tests {
         assert_eq!(result.mod_time(), Some(1700000000));
         assert_eq!(result.ac_time(), None);
         assert_eq!(result.cr_time(), None);
+
+        // a writer that copies the local field into the central directory
+        let data = [
+            0b0000_0011_u8,
+            0x00,
+            0xF1,
+            0x53,
+            0x65,
+            0x01,
+            0xF1,
+            0x53,
+            0x65,
+        ];
+        let mut cursor = Cursor::new(&data);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 9, false).unwrap();
+        assert_eq!(result.mod_time(), Some(1700000000));
+        assert_eq!(cursor.position(), 9);
     }
 }
