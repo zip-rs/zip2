@@ -188,6 +188,31 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.extract_internal(directory, None::<fn(&Path) -> bool>)
     }
 
+    /// Extract like [`ZipArchive::extract`], after checking
+    /// [`ZipArchive::decompressed_size`] against `limit`.
+    ///
+    /// Returns [`ZipError::DecompressedSizeLimitExceeded`] when the declared
+    /// total is above `limit`, and [`ZipError::DecompressedSizeUnknown`] when
+    /// that total cannot be known. Either error is returned before the
+    /// destination directory is created. A total equal to `limit` is extracted.
+    /// [`ZipArchive::extract`] does not apply this check.
+    ///
+    /// The check uses the sizes stored in the central directory. It does not
+    /// measure bytes as they are inflated.
+    pub fn extract_with_size_limit<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        limit: u64,
+    ) -> ZipResult<()> {
+        match self.decompressed_size() {
+            Some(size) if size > u128::from(limit) => {
+                Err(ZipError::DecompressedSizeLimitExceeded { size, limit })
+            }
+            None => Err(ZipError::DecompressedSizeUnknown),
+            Some(_) => self.extract(directory),
+        }
+    }
+
     /// Extracts a Zip archive into a directory in the same fashion as
     /// [`ZipArchive::extract`], but detects a "root" directory in the archive
     /// (a single top-level directory that contains the rest of the archive's
