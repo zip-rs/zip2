@@ -262,6 +262,9 @@ pub struct ZipReadOptions<'a> {
     force_uncompressed_size: Option<u64>,
     /// override the checksum for stream read
     force_crc: Option<u32>,
+    /// The uncompressed size is not known (streamed entry with a data descriptor), so it
+    /// can't bound the output.
+    pub(crate) size_unknown: bool,
 }
 
 impl<'a> ZipReadOptions<'a> {
