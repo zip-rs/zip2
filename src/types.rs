@@ -101,11 +101,15 @@ impl ZipFileData {
         } else {
             Some(self.crc32)
         };
+        // The declared size bounds the output, unless it is not known (a streamed entry with
+        // a data descriptor, see `read_zipfile_from_stream`).
+        let size_limit = (!options.size_unknown).then_some(uncompressed_size);
         let crypto_reader = make_crypto_reader(self, limit_reader, options.password)?;
         let aes_vendor_version = self.aes_settings().map(|aes| aes.1);
         make_reader(
             compression_method,
             uncompressed_size,
+            size_limit,
             crc32,
             aes_vendor_version,
             crypto_reader,
