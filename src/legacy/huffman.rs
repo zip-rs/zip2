@@ -137,8 +137,18 @@ impl HuffmanDecoder {
         length: u64,
         is: &mut BitReader<T, E>,
     ) -> std::io::Result<u16> {
+        // A previous symbol can leave the reader past the end of the data (its length is only
+        // known after the lookup), so the remaining bit count may be negative: that is the end
+        // of the stream, not a value to subtract.
+        let remaining = length.saturating_sub(is.position_in_bits()?);
+        if remaining == 0 {
+            return Err(Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "huffman decode past the end of the stream",
+            ));
+        }
         // First try the lookup table.
-        let read_bits1 = u64::from(HUFFMAN_LOOKUP_TABLE_BITS).min(length - is.position_in_bits()?);
+        let read_bits1 = u64::from(HUFFMAN_LOOKUP_TABLE_BITS).min(remaining);
         let lookup_bits = !is.read_var::<u8>(read_bits1 as u32)? as usize;
         debug_assert!(lookup_bits < self.table.len());
         if self.table[lookup_bits].len != 0 {
@@ -150,7 +160,8 @@ impl HuffmanDecoder {
         }
 
         // Then do canonical decoding with the bits in MSB-first order.
-        let read_bits2 = u64::from(HUFFMAN_LOOKUP_TABLE_BITS).min(length - is.position_in_bits()?);
+        let read_bits2 =
+            u64::from(HUFFMAN_LOOKUP_TABLE_BITS).min(length.saturating_sub(is.position_in_bits()?));
         let mut bits = reverse_lsb(
             (lookup_bits | ((!is.read_var::<u8>(read_bits2 as u32)? as usize) << read_bits1))
                 as u16,
