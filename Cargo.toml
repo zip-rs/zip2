@@ -51,8 +51,13 @@ typed-path = "0.12"
 getrandom = { version = "0.4", default-features = false, optional = true }
 time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
 
+# native dev-dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 getrandom = { version = "0.4", default-features = false }
+
+# native dev-dependencies - criterion does not compile on big endian
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_endian = "big")))'.dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -67,7 +72,7 @@ getrandom = { version = "0.4", default-features = false, features = ["wasm_js"] 
 wasm-bindgen-test = "^0.3.56"
 
 [dev-dependencies]
-bencher = "0.1"
+bencher = "0.1.5"
 getrandom = { version = "0.4", default-features = false }
 walkdir = "2.5"
 time = { version = "^0.3.47", features = ["formatting", "macros"] }
@@ -134,3 +139,8 @@ harness = false
 [[bench]]
 name = "merge_archive"
 harness = false
+
+[[bench]]
+name = "criterion_bench"
+harness = false
+
