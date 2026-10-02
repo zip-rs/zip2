@@ -30,6 +30,21 @@ pub enum ZipError {
 
     /// Compression method not supported
     CompressionMethodNotSupported(u16),
+
+    /// Declared uncompressed size is above the limit passed to
+    /// [`ZipArchive::extract_with_size_limit`](crate::ZipArchive::extract_with_size_limit).
+    DecompressedSizeLimitExceeded {
+        /// Sum reported by [`ZipArchive::decompressed_size`](crate::ZipArchive::decompressed_size).
+        size: u128,
+        /// Limit passed by the caller.
+        limit: u64,
+    },
+
+    /// A size limit was requested, but
+    /// [`ZipArchive::decompressed_size`](crate::ZipArchive::decompressed_size) is `None`.
+    /// That happens when an entry uses a data descriptor, or when the sum of the
+    /// declared sizes overflows.
+    DecompressedSizeUnknown,
 }
 
 impl ZipError {
@@ -58,6 +73,12 @@ impl Display for ZipError {
             Self::CompressionMethodNotSupported(id) => {
                 write!(f, "compression method not supported: {id}")
             }
+            Self::DecompressedSizeLimitExceeded { size, limit } => {
+                write!(f, "decompressed size {size} exceeds limit {limit}")
+            }
+            Self::DecompressedSizeUnknown => {
+                f.write_str("decompressed size is unknown, so a size limit cannot be checked")
+            }
         }
     }
 }
@@ -70,7 +91,9 @@ impl Error for ZipError {
             | Self::UnsupportedArchive(_)
             | Self::FileNotFound
             | Self::InvalidPassword
-            | Self::CompressionMethodNotSupported(_) => None,
+            | Self::CompressionMethodNotSupported(_)
+            | Self::DecompressedSizeLimitExceeded { .. }
+            | Self::DecompressedSizeUnknown => None,
         }
     }
 }
@@ -84,7 +107,9 @@ impl From<ZipError> for io::Error {
                 io::ErrorKind::Unsupported
             }
             ZipError::FileNotFound => io::ErrorKind::NotFound,
-            ZipError::InvalidPassword => io::ErrorKind::InvalidInput,
+            ZipError::InvalidPassword
+            | ZipError::DecompressedSizeLimitExceeded { .. }
+            | ZipError::DecompressedSizeUnknown => io::ErrorKind::InvalidInput,
         };
 
         io::Error::new(kind, err)
