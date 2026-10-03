@@ -27,27 +27,23 @@ impl<R> ZipStreamReader<R> {
     }
 }
 
+fn parse_central_directory<R: Read>(reader: &mut R) -> ZipResult<ZipFileEntry<'static>> {
+    // Give archive_offset and central_header_start dummy value 0, since
+    // they are not used in the output.
+    let archive_offset = 0;
+    let central_header_start = 0;
+
+    // Parse central header
+    let block = ZipCentralEntryBlock::parse(reader)?;
+    let (file, file_name_raw) =
+        central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
+    Ok(ZipFileEntry {
+        file_name_raw: Cow::Owned(file_name_raw),
+        data: Cow::Owned(file),
+    })
+}
+
 impl<R: Read> ZipStreamReader<R> {
-    fn parse_central_directory(&mut self) -> ZipResult<ZipFileEntry<'_>> {
-        // Give archive_offset and central_header_start dummy value 0, since
-        // they are not used in the output.
-        let archive_offset = 0;
-        let central_header_start = 0;
-
-        // Parse central header
-        let block = ZipCentralEntryBlock::parse(&mut self.0)?;
-        let (file, file_name_raw) = central_header_to_zip_file_inner(
-            &mut self.0,
-            archive_offset,
-            central_header_start,
-            block,
-        )?;
-        Ok(ZipFileEntry {
-            file_name_raw: Cow::Owned(file_name_raw),
-            data: Cow::Owned(file),
-        })
-    }
-
     /// Iterate over the stream and extract all file and their
     /// metadata.
     pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
@@ -55,7 +51,12 @@ impl<R: Read> ZipStreamReader<R> {
             visitor.visit_file(&mut file)?;
         }
 
-        while let Ok(metadata) = self.parse_central_directory() {
+        // `read_zipfile_from_stream` returned `None` because it read the signature of the
+        // first central directory header, so the stream is now 4 bytes into that header. Put
+        // the signature back in front so every header, the first one included, parses whole.
+        let signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
+        let mut central_directory = (&signature[..]).chain(&mut self.0);
+        while let Ok(metadata) = parse_central_directory(&mut central_directory) {
             visitor.visit_additional_metadata(&metadata)?;
         }
 
@@ -72,12 +73,18 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction of symlink is not possible since we don't have access to the
     /// external attributes in the local headers of the entries
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
+        /// Destination, every entry written in this pass (raw local name -> the checked output
+        /// path `visit_file` wrote it to), and the modes the central directory gives them.
+        struct Extractor(
+            PathBuf,
+            IndexMap<Box<[u8]>, PathBuf>,
+            std::collections::BTreeMap<PathBuf, u32>,
+        );
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-                self.1.insert(file.name_raw().into(), ());
                 let mut outpath = self.0.clone();
                 file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
+                self.1.insert(file.name_raw().into(), outpath.clone());
 
                 if file.is_symlink() {
                     // Same bound as `ZipArchive::extract`: the declared
@@ -114,21 +121,16 @@ impl<R: Read> ZipStreamReader<R> {
 
             #[allow(unused)]
             fn visit_additional_metadata(&mut self, metadata: &ZipFileEntry<'_>) -> ZipResult<()> {
+                // The central directory is not checked against the local headers, so its
+                // names only select entries this pass already wrote: a name that wasn't
+                // written gets no mode, and the mode goes to the path `visit_file` checked,
+                // never to a path rebuilt from the central directory.
                 #[cfg(unix)]
+                if let (Some(outpath), Some(mode)) =
+                    (self.1.get(metadata.name_raw()), metadata.unix_mode())
                 {
-                    use super::ZipError;
-                    use std::os::unix::fs::PermissionsExt;
-                    let filepath = metadata
-                        .enclosed_name()
-                        .ok_or(crate::result::invalid!("Invalid file path"))?;
-
-                    let outpath = self.0.join(filepath);
-
-                    if let Some(mode) = metadata.unix_mode() {
-                        fs::set_permissions(outpath, fs::Permissions::from_mode(mode))?;
-                    }
+                    self.2.insert(outpath.clone(), mode);
                 }
-
                 Ok(())
             }
         }
@@ -136,7 +138,22 @@ impl<R: Read> ZipStreamReader<R> {
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
-        self.visit(&mut Extractor(directory, IndexMap::new()))
+        let mut extractor = Extractor(directory, IndexMap::new(), Default::default());
+        self.visit(&mut extractor)?;
+
+        // As `ZipArchive::extract`: children before parents, so a read-only directory does not
+        // block setting its contents. Never through a symlink: `set_permissions` follows them.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for (path, mode) in extractor.2.into_iter().rev() {
+                if fs::symlink_metadata(&path)?.file_type().is_symlink() {
+                    continue;
+                }
+                fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+            }
+        }
+        Ok(())
     }
 }
 
