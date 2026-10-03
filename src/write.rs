@@ -2288,39 +2288,40 @@ impl ZipFileData {
         writer: &mut T,
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
-        let mut zip64_field_is_present = false;
-        for one_extra_field in self.extra_fields.inner.iter_mut() {
-            if let ExtraField::Zip64ExtendedInformation(zip64_block) = one_extra_field {
-                zip64_block.sizes = Some(Zip64Sizes {
-                    uncompressed_size: self.uncompressed_size,
-                    compressed_size: self.compressed_size,
-                });
-                if self.header_start >= ZIP64_BYTES_THR {
-                    zip64_block.header_start = Some(self.header_start);
-                }
-                zip64_field_is_present = true;
-            }
+        // Rebuild the ZIP64 extra field from the entry's current sizes and offset so it carries
+        // exactly the values the central header marks with the 0xFFFFFFFF sentinel (APPNOTE
+        // 4.5.3), and nothing more. The previous code edited an existing field in place and set
+        // both sizes unconditionally, so an entry whose offset alone needed ZIP64 got a field
+        // with size values the header did not mark; a reader that follows the spec then takes the
+        // first stored value (a size) as the offset. Recomputing (instead of editing in place)
+        // also makes repeated writes of this header identical, which `finalize` relies on when it
+        // writes the central directory and then rewrites it at the end of the file.
+        self.extra_fields
+            .inner
+            .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation(_)));
+        if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
+            self.large_file,
+            self.uncompressed_size,
+            self.compressed_size,
+            self.header_start,
+        ) {
+            self.extra_fields
+                .inner
+                .insert(0, ExtraField::Zip64ExtendedInformation(zip64_block));
         }
-        if !zip64_field_is_present {
-            // check if needed and add it
-            if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
-                self.large_file,
-                self.uncompressed_size,
-                self.compressed_size,
-                self.header_start,
-            ) {
-                self.extra_fields
-                    .inner
-                    .insert(0, ExtraField::Zip64ExtendedInformation(zip64_block));
-            }
-        }
+        // The ZIP64 field stores the two sizes together, so when it carries them both size
+        // fields of the header must hold the sentinel, not only the one that overflowed;
+        // otherwise the field has one more value than the header marks.
+        let sizes_in_zip64 = self.extra_fields.inner.iter().any(
+            |field| matches!(field, ExtraField::Zip64ExtendedInformation(z) if z.sizes.is_some()),
+        );
         let central_extra_fields = self.extra_fields.central_extra_fields();
         let extra_field_len: usize = self
             .extra_fields
             .central_extra_fields()
             .map(|x| x.size(false))
             .sum();
-        let compressed_size = if self.large_file {
+        let compressed_size = if self.large_file || sizes_in_zip64 {
             ZIP64_BYTES_THR as u32
         } else {
             self.compressed_size
@@ -2328,7 +2329,7 @@ impl ZipFileData {
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
-        let uncompressed_size = if self.large_file {
+        let uncompressed_size = if self.large_file || sizes_in_zip64 {
             ZIP64_BYTES_THR as u32
         } else {
             self.uncompressed_size
