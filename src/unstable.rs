@@ -25,6 +25,12 @@ pub mod stream {
 pub mod format {
     pub use crate::format::*;
 }
+
+/// Iterable zip
+pub mod read {
+    pub use crate::read::zip_iterable::ZipIterable;
+}
+
 /// Types for creating ZIP archives.
 pub mod write {
     use crate::result::{ZipError, ZipResult};
