@@ -60,6 +60,7 @@ fn is_a_symlink(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(not(miri))]
 #[test]
 fn test_extract_options_no_symlink() {
     use std::io::Cursor;
@@ -92,6 +93,7 @@ fn test_extract_options_no_symlink() {
     assert!(!dest.path().join("symlink_root_tmp").exists()); // NOT HERE
 }
 
+#[cfg(not(miri))]
 #[test]
 fn test_extract_options_symlink_file() {
     use std::io::Cursor;
