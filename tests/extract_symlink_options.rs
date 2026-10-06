@@ -231,14 +231,12 @@ fn test_extract_options_recursive_in_folder() {
     std::fs::create_dir_all(&final_dest).unwrap();
     #[cfg(unix)]
     {
-        // create a symlink to the inside
-        std::os::unix::fs::symlink("extracted/file_test", dest.path().join("file_test")).unwrap();
+        // create a symlink to the inside using absolute path
+        std::os::unix::fs::symlink(&final_dest.join("file_test"), dest.path().join("file_test"))
+            .unwrap();
     }
     #[cfg(windows)]
     {
-        // On Windows, relative symlink targets are resolved from the process's working
-        // directory, not the symlink's parent. Use an absolute target so that
-        // dest/file_test reliably resolves to final_dest/file_test.
         std::os::windows::fs::symlink_file(
             &final_dest.join("file_test"),
             dest.path().join("file_test"),
