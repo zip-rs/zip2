@@ -5,6 +5,7 @@
 //    - file_test_in_folder
 //  - symlink -> file_test
 //  - symlink_outside -> ../file_test
+#[cfg(not(miri))]
 fn create_base_archive_to_extract() -> zip::ZipWriter<std::io::Cursor<Vec<u8>>> {
     use std::io::Write;
     use zip::CompressionMethod;
@@ -39,6 +40,7 @@ fn create_base_archive_to_extract() -> zip::ZipWriter<std::io::Cursor<Vec<u8>>> 
 //  - symlink_outside -> ../file_test
 //  - symlink_root -> /
 //  - symlink_root_tmp -> /tmp/not_here
+#[cfg(not(miri))]
 fn create_archive_to_extract() -> Vec<u8> {
     use zip::CompressionMethod;
     use zip::write::SimpleFileOptions;
@@ -53,6 +55,7 @@ fn create_archive_to_extract() -> Vec<u8> {
 }
 
 /// check is the symlink exists
+#[cfg(not(miri))]
 fn is_a_symlink(path: &std::path::Path) -> bool {
     use std::fs::symlink_metadata;
     symlink_metadata(path)
@@ -60,7 +63,7 @@ fn is_a_symlink(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(all(any(unix, windows), not(miri)))]
+#[cfg(not(miri))]
 #[test]
 fn test_extract_options_no_symlink() {
     use std::io::Cursor;
@@ -93,7 +96,7 @@ fn test_extract_options_no_symlink() {
     assert!(!dest.path().join("symlink_root_tmp").exists()); // NOT HERE
 }
 
-#[cfg(all(any(unix, windows), not(miri)))]
+#[cfg(not(miri))]
 #[test]
 fn test_extract_options_symlink_file() {
     use std::io::Cursor;
