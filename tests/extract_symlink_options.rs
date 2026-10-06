@@ -39,6 +39,7 @@ fn create_base_archive_to_extract() -> zip::ZipWriter<std::io::Cursor<Vec<u8>>> 
 //  - symlink_outside -> ../file_test
 //  - symlink_root -> /
 //  - symlink_root_tmp -> /tmp/not_here
+#[cfg(not(miri))]
 fn create_archive_to_extract() -> Vec<u8> {
     use zip::CompressionMethod;
     use zip::write::SimpleFileOptions;
@@ -53,6 +54,7 @@ fn create_archive_to_extract() -> Vec<u8> {
 }
 
 /// check if the symlink exists
+#[cfg(not(miri))]
 fn is_a_symlink(path: &std::path::Path) -> bool {
     use std::fs::symlink_metadata;
     symlink_metadata(path)
