@@ -147,27 +147,37 @@ pub(crate) fn make_symlink<T>(
         }
         (parent, target_path)
     };
-    #[cfg(any(unix, windows))]
-    if matches!(
+    #[cfg(any(windows,unix))]
+    let allow_outside = matches!(
         symlink_action,
-        SymlinkExtractAction::ExtractRecursiveInFolder
-    ) && let Ok(final_target) = std::fs::symlink_metadata(target_path)
-        && final_target.is_symlink()
-    {
-        let final_target = std::fs::read_link(target_path)?;
-        if !final_target.starts_with(base) {
-            return Err(invalid!(
-                "Final target of symlink is outside the destination folder"
-            ));
-        }
-    }
-    crate::path::resolve_enclosed(
+        SymlinkExtractAction::ExtractNoRestrictions
+    );
+    #[cfg(not(any(windows,unix)))]
+    let allow_outside = false;
+    let resolved = crate::path::resolve_enclosed(
         base,
         start,
         rest.components().map(|c| c.as_os_str().to_os_string()),
         false, // only checking here, so nothing is created
-        matches!(symlink_action, SymlinkExtractAction::ExtractNoRestrictions),
+        allow_outside,
     )?;
+
+    // For ExtractRecursiveInFolder: the literal path may leave `base` (e.g.
+    // `../sibling`), but it must canonicalize (following real filesystem symlinks) back into `base`.
+    #[cfg(any(unix, windows))]
+    if matches!(
+        symlink_action,
+        SymlinkExtractAction::ExtractRecursiveInFolder
+    ) && !resolved.starts_with(base)
+    {
+        // Try to canonicalize the resolved path so that symlinks in the filesystem
+        // that point back inside `base` are followed.
+        let canonical = std::fs::canonicalize(&resolved).unwrap_or(resolved);
+        if !canonical.starts_with(base) {
+            return Err(invalid!("Path escapes the destination directory"));
+        }
+    }
+
 
     make_symlink_impl(outpath, target_str, existing_files)
 }
