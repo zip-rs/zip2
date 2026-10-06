@@ -17,7 +17,7 @@ use indexmap::IndexMap;
 pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
 /// Symlink extract action
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum SymlinkExtractAction {
     ///  Omit symlinks.
     NoExtract,
@@ -114,7 +114,7 @@ pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
-    symlink_action: &SymlinkExtractAction,
+    symlink_action: SymlinkExtractAction,
 ) -> ZipResult<()> {
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -414,7 +414,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                             &outpath,
                             &target,
                             &self.shared.files,
-                            &extract_options.symlink_action,
+                            extract_options.symlink_action,
                         )?;
                     }
                     #[cfg(any(unix, windows))]
@@ -424,7 +424,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                             &outpath,
                             &target,
                             &self.shared.files,
-                            &extract_options.symlink_action,
+                            extract_options.symlink_action,
                         )?;
                     }
                     #[cfg(any(unix, windows))]

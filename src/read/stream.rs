@@ -104,7 +104,7 @@ impl<R: Read> ZipStreamReader<R> {
                         &outpath,
                         &target,
                         &self.1,
-                        &SymlinkExtractAction::ExtractInFolder,
+                        SymlinkExtractAction::ExtractInFolder,
                     )?;
                     return Ok(());
                 }
@@ -183,10 +183,10 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
 /// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
-    reader: &'a mut R,
+pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
+    reader: &mut R,
     compressed_size: u64,
-) -> ZipResult<Option<ZipFile<'a, R>>> {
+) -> ZipResult<Option<ZipFile<R>>> {
     let options = ZipReadOptions::default().override_compressed_size(compressed_size);
     read_zipfile_from_stream_with_options(reader, options)
 }
