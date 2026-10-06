@@ -52,7 +52,7 @@ fn create_archive_to_extract() -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
-/// check is the symlink exists
+/// check if the symlink exists
 fn is_a_symlink(path: &std::path::Path) -> bool {
     use std::fs::symlink_metadata;
     symlink_metadata(path)
@@ -124,7 +124,7 @@ fn test_extract_options_symlink_file() {
     assert!(!dest.path().join("symlink_root_tmp").is_symlink()); // not a symlink
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_extract_in_folder() {
     use std::io::Cursor;
@@ -148,7 +148,7 @@ fn test_extract_options_extract_in_folder() {
     assert!(!dest.path().join("symlink_outside").exists()); // NOT HERE
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_no_restrictions() {
     use std::fs::read_link;
@@ -181,7 +181,7 @@ fn test_extract_options_no_restrictions() {
 
     assert!(is_a_symlink(&dest.path().join("symlink_outside")));
     assert!(dest.path().join("symlink_outside").is_symlink());
-    assert!(!dest.path().join("symlink_outside").exists()); // target does not exists
+    assert!(!dest.path().join("symlink_outside").exists()); // target does not exist
     assert_eq!(
         read_link(dest.path().join("symlink_outside")).unwrap(),
         PathBuf::from("../file_test")
@@ -197,14 +197,14 @@ fn test_extract_options_no_restrictions() {
 
     assert!(is_a_symlink(&dest.path().join("symlink_root_tmp")));
     assert!(dest.path().join("symlink_root_tmp").is_symlink());
-    assert!(!dest.path().join("symlink_root_tmp").exists()); // target does not exists
+    assert!(!dest.path().join("symlink_root_tmp").exists()); // target does not exist
     assert_eq!(
         read_link(dest.path().join("symlink_root_tmp")).unwrap(),
         PathBuf::from("/tmp/not_here")
     );
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_recursive_in_folder() {
     use std::fs::read_link;
@@ -254,14 +254,14 @@ fn test_extract_options_recursive_in_folder() {
 
     assert!(is_a_symlink(&final_dest.join("symlink_outside")));
     assert!(final_dest.join("symlink_outside").is_symlink());
-    assert!(final_dest.join("symlink_outside").exists()); // target does exists
+    assert!(final_dest.join("symlink_outside").exists()); // target does exist
     assert_eq!(
         read_link(final_dest.join("symlink_outside")).unwrap(),
         PathBuf::from("../file_test")
     );
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_recursive_in_folder_non_working() {
     use std::io::Cursor;
