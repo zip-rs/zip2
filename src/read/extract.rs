@@ -168,7 +168,7 @@ pub(crate) fn make_symlink<T>(
         false, // only checking here, so nothing is created
         matches!(
             symlink_action,
-            SymlinkExtractAction::ExtractRecursiveInFolder
+            SymlinkExtractAction::ExtractNoRestrictions
         ),
     )?;
 
