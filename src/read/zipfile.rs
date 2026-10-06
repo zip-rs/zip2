@@ -306,6 +306,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
             base_path,
             components.iter().map(|c| c.to_os_string()),
             true, // create intermediate directories
+            false,
         )?;
 
         Ok(())

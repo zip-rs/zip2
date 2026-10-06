@@ -167,6 +167,7 @@ pub(crate) fn resolve_enclosed(
     start: &Path,
     components: impl IntoIterator<Item = OsString>,
     create_dirs: bool,
+    allow_outside: bool,
 ) -> ZipResult<PathBuf> {
     debug_assert!(start.starts_with(base));
 
@@ -180,7 +181,7 @@ pub(crate) fn resolve_enclosed(
         }
         if component == OsStr::new("..") {
             // Never walk above `base`: `..` is rejected once we are back at `base`.
-            if current == base {
+            if current == base && !allow_outside {
                 return Err(invalid!("Path escapes the destination directory"));
             }
             current.pop();
@@ -239,7 +240,6 @@ pub(crate) fn resolve_enclosed(
             }
         }
     }
-
     debug_assert!(current.starts_with(base));
     Ok(current)
 }
