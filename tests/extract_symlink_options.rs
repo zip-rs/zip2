@@ -273,7 +273,6 @@ fn test_extract_options_recursive_in_folder() {
         read_link(final_dest.join("symlink_outside")).unwrap(),
         PathBuf::from("../file_test")
     );
-
 }
 
 #[cfg(all(any(unix, windows), not(miri)))]

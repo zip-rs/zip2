@@ -147,12 +147,9 @@ pub(crate) fn make_symlink<T>(
         }
         (parent, target_path)
     };
-    #[cfg(any(windows,unix))]
-    let allow_outside = matches!(
-        symlink_action,
-        SymlinkExtractAction::ExtractNoRestrictions
-    );
-    #[cfg(not(any(windows,unix)))]
+    #[cfg(any(windows, unix))]
+    let allow_outside = matches!(symlink_action, SymlinkExtractAction::ExtractNoRestrictions);
+    #[cfg(not(any(windows, unix)))]
     let allow_outside = false;
     let resolved = crate::path::resolve_enclosed(
         base,
@@ -177,7 +174,6 @@ pub(crate) fn make_symlink<T>(
             return Err(invalid!("Path escapes the destination directory"));
         }
     }
-
 
     make_symlink_impl(outpath, target_str, existing_files)
 }
