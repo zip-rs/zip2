@@ -231,12 +231,12 @@ fn test_extract_options_recursive_in_folder() {
     #[cfg(unix)]
     {
         // create a symlink to the inside
-        std::os::unix::fs::symlink("extracted", dest.path().join("extracted_link")).unwrap();
+        std::os::unix::fs::symlink("extracted/file_test", dest.path().join("file_test")).unwrap();
     }
     #[cfg(windows)]
     {
         // create a symlink to the inside
-        std::os::windows::fs::symlink_file("extracted", final_dest.join("extracted_link")).unwrap();
+        std::os::windows::fs::symlink_file("extracted/file_test", final_dest.join("file_test")).unwrap();
     }
 
     archive
