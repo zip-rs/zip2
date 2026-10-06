@@ -240,7 +240,10 @@ pub(crate) fn resolve_enclosed(
             }
         }
     }
-    debug_assert!(current.starts_with(base));
+    // After processing all components, verify we're still inside base
+    if !current.starts_with(base) && !allow_outside {
+        return Err(invalid!("Path escapes the destination directory"));
+    }
     Ok(current)
 }
 
