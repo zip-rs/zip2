@@ -236,7 +236,8 @@ fn test_extract_options_recursive_in_folder() {
     #[cfg(windows)]
     {
         // create a symlink to the inside
-        std::os::windows::fs::symlink_file("extracted/file_test", final_dest.join("file_test")).unwrap();
+        std::os::windows::fs::symlink_file("extracted/file_test", final_dest.join("file_test"))
+            .unwrap();
     }
 
     archive
