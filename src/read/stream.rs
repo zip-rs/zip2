@@ -75,16 +75,16 @@ impl<R: Read> ZipStreamReader<R> {
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         /// Destination, every entry written in this pass (raw local name -> the checked output
         /// path `visit_file` wrote it to), and the modes the central directory gives them.
-        struct Extractor(
-            PathBuf,
-            IndexMap<Box<[u8]>, PathBuf>,
-            std::collections::BTreeMap<PathBuf, u32>,
-        );
+        struct Extractor {
+            outpath: PathBuf,
+            resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
+            #[cfg(unix)] file_permissions: std::collections::BTreeMap<PathBuf, u32>,
+        }
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-                let mut outpath = self.0.clone();
-                file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
-                self.1.insert(file.name_raw().into(), outpath.clone());
+                let mut outpath = self.outpath.clone();
+                file.safe_prepare_path(&self.outpath, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
+                self.resolved_paths.insert(file.name_raw().into(), outpath.clone());
 
                 if file.is_symlink() {
                     // Same bound as `ZipArchive::extract`: the declared
@@ -107,10 +107,10 @@ impl<R: Read> ZipStreamReader<R> {
                     let mut target = Vec::with_capacity(declared_len as usize);
                     file.read_to_end(&mut target)?;
                     make_symlink(
-                        &self.0,
+                        &self.outpath,
                         &outpath,
                         &target,
-                        &self.1,
+                        &self.resolved_paths,
                         &SymlinkExtractAction::ExtractInFolder,
                     )?;
                     return Ok(());
@@ -133,9 +133,9 @@ impl<R: Read> ZipStreamReader<R> {
                 // never to a path rebuilt from the central directory.
                 #[cfg(unix)]
                 if let (Some(outpath), Some(mode)) =
-                    (self.1.get(metadata.name_raw()), metadata.unix_mode())
+                    (self.resolved_paths.get(metadata.name_raw()), metadata.unix_mode())
                 {
-                    self.2.insert(outpath.clone(), mode);
+                    self.file_permissions.insert(outpath.clone(), mode);
                 }
                 Ok(())
             }
@@ -144,7 +144,11 @@ impl<R: Read> ZipStreamReader<R> {
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
-        let mut extractor = Extractor(directory, IndexMap::new(), Default::default());
+        let mut extractor = Extractor {
+            outpath: directory,
+            resolved_paths: IndexMap::new(),
+            #[cfg(unix)] file_permissions: Default::default()
+        };
         self.visit(&mut extractor)?;
 
         // As `ZipArchive::extract`: children before parents, so a read-only directory does not
@@ -152,7 +156,7 @@ impl<R: Read> ZipStreamReader<R> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            for (path, mode) in extractor.2.into_iter().rev() {
+            for (path, mode) in extractor.file_permissions.into_iter().rev() {
                 if fs::symlink_metadata(&path)?.file_type().is_symlink() {
                     continue;
                 }
@@ -200,10 +204,10 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
 /// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
-    reader: &'a mut R,
+pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
+    reader: &mut R,
     compressed_size: u64,
-) -> ZipResult<Option<ZipFile<'a, R>>> {
+) -> ZipResult<Option<ZipFile<R>>> {
     let options = ZipReadOptions::default().override_compressed_size(compressed_size);
     read_zipfile_from_stream_with_options(reader, options)
 }
