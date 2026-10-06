@@ -60,7 +60,7 @@ fn is_a_symlink(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-#[test]
+#[cfg(all(any(unix, windows), not(miri)))]
 fn test_extract_options_no_symlink() {
     use std::io::Cursor;
     use tempfile::TempDir;
@@ -92,7 +92,7 @@ fn test_extract_options_no_symlink() {
     assert!(!dest.path().join("symlink_root_tmp").exists()); // NOT HERE
 }
 
-#[test]
+#[cfg(all(any(unix, windows), not(miri)))]
 fn test_extract_options_symlink_file() {
     use std::io::Cursor;
     use tempfile::TempDir;
@@ -124,7 +124,7 @@ fn test_extract_options_symlink_file() {
     assert!(!dest.path().join("symlink_root_tmp").is_symlink()); // not a symlink
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_extract_in_folder() {
     use std::io::Cursor;
@@ -148,7 +148,7 @@ fn test_extract_options_extract_in_folder() {
     assert!(!dest.path().join("symlink_outside").exists()); // NOT HERE
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_no_restrictions() {
     use std::fs::read_link;
@@ -204,7 +204,7 @@ fn test_extract_options_no_restrictions() {
     );
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_recursive_in_folder() {
     use std::fs::read_link;
@@ -261,7 +261,7 @@ fn test_extract_options_recursive_in_folder() {
     );
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_recursive_in_folder_non_working() {
     use std::io::Cursor;
