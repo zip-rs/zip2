@@ -146,7 +146,7 @@ fn test_extract_options_extract_in_folder() {
         ExtractOptions::default().symlink_action(SymlinkExtractAction::ExtractInFolder),
     );
     assert!(res.is_err());
-    // error because symlink_ouside target is outside
+    // error because symlink_outside target is outside
     assert!(!dest.path().join("symlink_outside").exists()); // NOT HERE
 }
 
