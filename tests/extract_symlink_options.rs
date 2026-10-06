@@ -61,6 +61,7 @@ fn is_a_symlink(path: &std::path::Path) -> bool {
 }
 
 #[cfg(all(any(unix, windows), not(miri)))]
+#[test]
 fn test_extract_options_no_symlink() {
     use std::io::Cursor;
     use tempfile::TempDir;
