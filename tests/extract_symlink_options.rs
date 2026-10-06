@@ -5,6 +5,7 @@
 //    - file_test_in_folder
 //  - symlink -> file_test
 //  - symlink_outside -> ../file_test
+#[cfg(not(miri))]
 fn create_base_archive_to_extract() -> zip::ZipWriter<std::io::Cursor<Vec<u8>>> {
     use std::io::Write;
     use zip::CompressionMethod;
