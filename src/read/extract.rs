@@ -166,10 +166,7 @@ pub(crate) fn make_symlink<T>(
         start,
         rest.components().map(|c| c.as_os_str().to_os_string()),
         false, // only checking here, so nothing is created
-        matches!(
-            symlink_action,
-            SymlinkExtractAction::ExtractNoRestrictions
-        ),
+        matches!(symlink_action, SymlinkExtractAction::ExtractNoRestrictions),
     )?;
 
     make_symlink_impl(outpath, target_str, existing_files)
