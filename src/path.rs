@@ -240,7 +240,9 @@ pub(crate) fn resolve_enclosed(
             }
         }
     }
-    debug_assert!(current.starts_with(base));
+    if !allow_outside {
+        debug_assert!(current.starts_with(base));
+    }
     Ok(current)
 }
 
