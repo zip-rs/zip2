@@ -41,9 +41,6 @@ fn parse_central_directory<R: Read>(reader: &mut R) -> ZipResult<ZipFileEntry<'s
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(file),
     })
-}
-
-impl<R: Read> ZipStreamReader<R> {
     /// Iterate over the stream and extract all file and their
     /// metadata.
     pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
