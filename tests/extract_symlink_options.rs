@@ -94,6 +94,7 @@ fn test_extract_options_no_symlink() {
 }
 
 #[cfg(all(any(unix, windows), not(miri)))]
+#[test]
 fn test_extract_options_symlink_file() {
     use std::io::Cursor;
     use tempfile::TempDir;
