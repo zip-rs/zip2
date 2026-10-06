@@ -186,7 +186,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
     reader: &mut R,
     compressed_size: u64,
-) -> ZipResult<Option<ZipFile<R>>> {
+) -> ZipResult<Option<ZipFile<'_, R>>> {
     let options = ZipReadOptions::default().override_compressed_size(compressed_size);
     read_zipfile_from_stream_with_options(reader, options)
 }
