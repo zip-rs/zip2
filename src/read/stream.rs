@@ -78,13 +78,19 @@ impl<R: Read> ZipStreamReader<R> {
         struct Extractor {
             outpath: PathBuf,
             resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
-            #[cfg(unix)] file_permissions: std::collections::BTreeMap<PathBuf, u32>,
+            #[cfg(unix)]
+            file_permissions: std::collections::BTreeMap<PathBuf, u32>,
         }
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
                 let mut outpath = self.outpath.clone();
-                file.safe_prepare_path(&self.outpath, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
-                self.resolved_paths.insert(file.name_raw().into(), outpath.clone());
+                file.safe_prepare_path(
+                    &self.outpath,
+                    &mut outpath,
+                    None::<&(_, fn(&Path) -> bool)>,
+                )?;
+                self.resolved_paths
+                    .insert(file.name_raw().into(), outpath.clone());
 
                 if file.is_symlink() {
                     // Same bound as `ZipArchive::extract`: the declared
@@ -132,9 +138,10 @@ impl<R: Read> ZipStreamReader<R> {
                 // written gets no mode, and the mode goes to the path `visit_file` checked,
                 // never to a path rebuilt from the central directory.
                 #[cfg(unix)]
-                if let (Some(outpath), Some(mode)) =
-                    (self.resolved_paths.get(metadata.name_raw()), metadata.unix_mode())
-                {
+                if let (Some(outpath), Some(mode)) = (
+                    self.resolved_paths.get(metadata.name_raw()),
+                    metadata.unix_mode(),
+                ) {
                     self.file_permissions.insert(outpath.clone(), mode);
                 }
                 Ok(())
@@ -147,7 +154,8 @@ impl<R: Read> ZipStreamReader<R> {
         let mut extractor = Extractor {
             outpath: directory,
             resolved_paths: IndexMap::new(),
-            #[cfg(unix)] file_permissions: Default::default()
+            #[cfg(unix)]
+            file_permissions: Default::default(),
         };
         self.visit(&mut extractor)?;
 
