@@ -221,14 +221,8 @@ pub(crate) fn resolve_enclosed(
             // An absolute target is rejected unless it can be reduced to a path relative
             // to the canonicalized `base`. Whole components are compared, so a different
             // Windows drive or UNC share does not match.
-            let rest = match strip_base_prefix(base, &target) {
-                Some(rest) => rest,
-                None => {
-                    if !allow_outside {
-                        return Err(invalid!("Symlink target escapes the destination directory"));
-                    }
-                    &target
-                }
+            let Some(rest) = strip_base_prefix(base, &target) else {
+                return Err(invalid!("Symlink target escapes the destination directory"));
             };
             current = base.to_path_buf();
             rest.to_path_buf()
@@ -240,9 +234,7 @@ pub(crate) fn resolve_enclosed(
         for c in rest.components().rev() {
             match c {
                 Component::Prefix(_) | Component::RootDir => {
-                    if !allow_outside {
-                        return Err(invalid!("Invalid symlink target path"));
-                    }
+                    return Err(invalid!("Invalid symlink target path"));
                 }
                 Component::CurDir => (),
                 Component::ParentDir => queue.push_front(OsString::from("..")),
