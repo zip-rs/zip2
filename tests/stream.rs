@@ -71,7 +71,8 @@ fn visit_sees_every_central_directory_entry() {
 }
 
 /// `extract` applies the unix modes from the central directory, as `ZipArchive::extract` does.
-#[cfg(unix)]
+// These tests use the file system, which miri's isolation does not allow.
+#[cfg(all(unix, not(miri)))]
 #[test]
 fn extract_applies_unix_modes() {
     use std::os::unix::fs::PermissionsExt;
@@ -94,7 +95,7 @@ fn extract_applies_unix_modes() {
 /// which also holds `outside/b.txt` with mode 600), extracts one entry whose central directory
 /// name is `central_name` with mode 777 while its local header says `local_name` (same length),
 /// and returns the mode of `outside/b.txt` afterwards.
-#[cfg(unix)]
+#[cfg(all(unix, not(miri)))]
 fn victim_mode_after_central_only_name(
     link: &str,
     link_target: &str,
@@ -142,7 +143,7 @@ fn victim_mode_after_central_only_name(
 
 /// A central-directory-only name that goes through a symlink already in the destination, to a
 /// file outside it, must get no mode.
-#[cfg(unix)]
+#[cfg(all(unix, not(miri)))]
 #[test]
 fn extract_ignores_modes_for_names_it_did_not_write() {
     let mode = victim_mode_after_central_only_name("a", "outside", "a/b.txt", "c_d.txt");
@@ -151,7 +152,7 @@ fn extract_ignores_modes_for_names_it_did_not_write() {
 
 /// The same when the central-directory-only name is the symlink itself: `set_permissions` would
 /// follow it to the file outside.
-#[cfg(unix)]
+#[cfg(all(unix, not(miri)))]
 #[test]
 fn extract_ignores_modes_for_a_name_that_is_a_symlink_it_did_not_write() {
     let mode = victim_mode_after_central_only_name("e.txt", "outside/b.txt", "e.txt", "f.txt");
