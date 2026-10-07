@@ -42,7 +42,7 @@ pub enum SymlinkExtractAction {
 #[derive(Debug, Default)]
 #[non_exhaustive]
 pub struct ExtractOptions {
-    symlink_action: SymlinkExtractAction,
+    pub(crate) symlink_action: SymlinkExtractAction,
 }
 
 impl ExtractOptions {
@@ -198,6 +198,7 @@ pub(crate) fn make_symlink<T>(
     make_symlink_impl(outpath, target_str, existing_files)
 }
 
+/// Wasm and others
 #[cfg(not(any(windows, unix)))]
 pub(crate) fn make_symlink<T>(
     // No symlink is created on these targets, so there is nothing to contain.
@@ -205,12 +206,13 @@ pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
+    _symlink_action: SymlinkExtractAction,
 ) -> ZipResult<()> {
     make_symlink_as_file_utf8(outpath, target)?;
     Ok(())
 }
 
-fn make_symlink_as_file_utf8(outpath: &Path, target: &[u8]) -> ZipResult<()> {
+pub(crate) fn make_symlink_as_file_utf8(outpath: &Path, target: &[u8]) -> ZipResult<()> {
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
@@ -218,7 +220,7 @@ fn make_symlink_as_file_utf8(outpath: &Path, target: &[u8]) -> ZipResult<()> {
     Ok(())
 }
 
-fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Result<()> {
+pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Result<()> {
     use std::fs::File;
     use std::io::Write;
     let output = File::create(outpath);
@@ -404,7 +406,6 @@ impl<R: Read + Seek> ZipArchive<R> {
              *       accept two arguments that point to the same directory path, one mutable? */
             file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
 
-            #[cfg(any(unix, windows))]
             if file.is_symlink() {
                 // `file.size()` is the uncompressed size declared in the central
                 // directory, i.e. attacker-controlled. A symlink target is a

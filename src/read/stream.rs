@@ -4,10 +4,11 @@ use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::magic::Magic;
-use crate::read::extract::MAX_SYMLINK_TARGET_LEN;
-use crate::read::extract::{SymlinkExtractAction, make_symlink};
+use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
+use crate::read::extract::{make_symlink, make_symlink_as_file_utf8};
 use crate::read::{
-    ZipFile, ZipFileData, ZipFileEntry, ZipResult, central_header_to_zip_file_inner,
+    SymlinkExtractAction, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
+    central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, invalid};
 
@@ -75,6 +76,7 @@ impl<R: Read> ZipStreamReader<R> {
         struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
+                let extract_options = crate::read::extract::ExtractOptions::default();
                 self.1.insert(file.name_raw().into(), ());
                 let mut outpath = self.0.clone();
                 file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
@@ -99,13 +101,23 @@ impl<R: Read> ZipStreamReader<R> {
 
                     let mut target = Vec::with_capacity(declared_len as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(
-                        &self.0,
-                        &outpath,
-                        &target,
-                        &self.1,
-                        SymlinkExtractAction::ExtractInFolder,
-                    )?;
+                    match extract_options.symlink_action {
+                        SymlinkExtractAction::ExtractAsFile => {
+                            make_symlink_as_file(&outpath, &target)?;
+                        }
+                        SymlinkExtractAction::ExtractAsFileUtf8 => {
+                            make_symlink_as_file_utf8(&outpath, &target)?;
+                        }
+                        _ => {
+                            make_symlink(
+                                &self.0,
+                                &outpath,
+                                &target,
+                                &self.1,
+                                extract_options.symlink_action,
+                            )?;
+                        }
+                    }
                     return Ok(());
                 }
                 if file.is_dir() {
