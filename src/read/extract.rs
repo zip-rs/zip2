@@ -191,7 +191,6 @@ pub(crate) fn make_symlink<T>(
             start,
             rest.components().map(|c| c.as_os_str().to_os_string()),
             false, // only checking here, so nothing is created
-            allow_outside,
         )?;
     }
 
