@@ -161,28 +161,38 @@ pub(crate) fn make_symlink<T>(
     );
     #[cfg(not(any(windows, unix)))]
     let allow_outside = false;
-    let resolved = crate::path::resolve_enclosed(
-        base,
-        start,
-        rest.components().map(|c| c.as_os_str().to_os_string()),
-        false, // only checking here, so nothing is created
-        allow_outside,
-    )?;
-
-    // For ExtractRecursiveInFolder: the literal path may leave `base` (e.g.
-    // `../sibling`), but it must canonicalize (following real filesystem symlinks) back into `base`.
-    #[cfg(any(unix, windows))]
-    if matches!(
-        symlink_action,
-        SymlinkExtractAction::ExtractRecursiveInFolder
-    ) && !resolved.starts_with(base)
-    {
-        // Try to canonicalize the resolved path so that symlinks in the filesystem
-        // that point back inside `base` are followed.
-        let canonical = std::fs::canonicalize(&resolved).unwrap_or(resolved);
-        if !canonical.starts_with(base) {
-            return Err(invalid!("Path escapes the destination directory"));
+    if allow_outside {
+        // For ExtractRecursiveInFolder: the literal path may leave `base` (e.g.
+        // `../sibling`), but it must canonicalize (following real filesystem symlinks) back into `base`.
+        #[cfg(any(unix, windows))]
+        if matches!(
+            symlink_action,
+            SymlinkExtractAction::ExtractRecursiveInFolder
+        ) {
+            // Try to canonicalize the resolved path so that symlinks in the filesystem
+            // that point back inside `base` are followed.
+            let abs_to_canoncalize = if target_path.is_absolute() {
+                target_path
+            } else {
+                &base.join(target_path)
+            };
+            let canonical = if let Ok(p) = std::fs::canonicalize(abs_to_canoncalize) {
+                p
+            } else {
+                abs_to_canoncalize.to_path_buf()
+            };
+            if !canonical.starts_with(base) {
+                return Err(invalid!("Path escapes the destination directory"));
+            }
         }
+    } else {
+        crate::path::resolve_enclosed(
+            base,
+            start,
+            rest.components().map(|c| c.as_os_str().to_os_string()),
+            false, // only checking here, so nothing is created
+            allow_outside,
+        )?;
     }
 
     make_symlink_impl(outpath, target_str, existing_files)
