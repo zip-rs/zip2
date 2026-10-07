@@ -125,7 +125,7 @@ pub(crate) fn make_symlink<T>(
     let target_path = Path::new(target_str);
     let (start, rest) = if target_path.is_absolute() {
         let Some(rest) = crate::path::strip_base_prefix(base, target_path) else {
-            return Err(invalid!("Symlink target escapes the destination directory"));
+            return Err(invalid!("make_symlink: Symlink target escapes the destination directory"));
         };
         (base, rest)
     } else {
