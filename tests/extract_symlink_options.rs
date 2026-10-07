@@ -194,7 +194,11 @@ fn test_extract_options_no_restrictions() {
 
     assert!(is_a_symlink(&dest.path().join("symlink_root")));
     assert!(dest.path().join("symlink_root").is_symlink());
+
+    #[cfg(unix)]
     assert!(dest.path().join("symlink_root").exists()); // target (/) exists
+    // on windows / does not exists
+
     assert_eq!(
         read_link(dest.path().join("symlink_root")).unwrap(),
         PathBuf::from("/")
