@@ -182,7 +182,9 @@ pub(crate) fn resolve_enclosed(
         if component == OsStr::new("..") {
             // Never walk above `base`: `..` is rejected once we are back at `base`.
             if current == base && !allow_outside {
-                return Err(invalid!("Path escapes the destination directory"));
+                return Err(invalid!(
+                    "Path escapes the destination directory - component is '..'"
+                ));
             }
             current.pop();
             continue;
@@ -242,7 +244,9 @@ pub(crate) fn resolve_enclosed(
     }
     // After processing all components, verify we're still inside base
     if !allow_outside && !current.starts_with(base) {
-        return Err(invalid!("Path escapes the destination directory"));
+        return Err(invalid!(
+            "Path escapes the destination directory and not allowed outside"
+        ));
     }
     Ok(current)
 }

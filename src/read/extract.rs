@@ -147,8 +147,16 @@ pub(crate) fn make_symlink<T>(
         }
         (parent, target_path)
     };
+
+    // ExtractNoRestrictions is allowed outside (no restrictions)
+    // ExtractRecursiveInFolder is allowed outside (it will be checked that the symlink fall in the
+    // folder)
     #[cfg(any(windows, unix))]
-    let allow_outside = matches!(symlink_action, SymlinkExtractAction::ExtractNoRestrictions);
+    let allow_outside = matches!(
+        symlink_action,
+        SymlinkExtractAction::ExtractNoRestrictions
+            | SymlinkExtractAction::ExtractRecursiveInFolder
+    );
     #[cfg(not(any(windows, unix)))]
     let allow_outside = false;
     let resolved = crate::path::resolve_enclosed(

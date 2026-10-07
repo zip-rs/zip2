@@ -232,7 +232,7 @@ fn test_extract_options_recursive_in_folder() {
     #[cfg(unix)]
     {
         // create a symlink to the inside using absolute path
-        std::os::unix::fs::symlink(&final_dest.join("file_test"), dest.path().join("file_test"))
+        std::os::unix::fs::symlink(final_dest.join("file_test"), dest.path().join("file_test"))
             .unwrap();
     }
     #[cfg(windows)]
