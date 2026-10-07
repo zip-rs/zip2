@@ -171,15 +171,15 @@ pub(crate) fn make_symlink<T>(
         ) {
             // Try to canonicalize the resolved path so that symlinks in the filesystem
             // that point back inside `base` are followed.
-            let abs_to_canoncalize = if target_path.is_absolute() {
+            let abs_to_canonicalize = if target_path.is_absolute() {
                 target_path
             } else {
                 &base.join(target_path)
             };
-            let canonical = if let Ok(p) = std::fs::canonicalize(abs_to_canoncalize) {
+            let canonical = if let Ok(p) = std::fs::canonicalize(abs_to_canonicalize) {
                 p
             } else {
-                abs_to_canoncalize.to_path_buf()
+                abs_to_canonicalize.to_path_buf()
             };
             if !canonical.starts_with(base) {
                 return Err(invalid!("Path escapes the destination directory"));
