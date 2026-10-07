@@ -240,7 +240,9 @@ pub(crate) fn resolve_enclosed(
         for c in rest.components().rev() {
             match c {
                 Component::Prefix(_) | Component::RootDir => {
-                    return Err(invalid!("Invalid symlink target path"));
+                    if !allow_outside {
+                        return Err(invalid!("Invalid symlink target path"));
+                    }
                 }
                 Component::CurDir => (),
                 Component::ParentDir => queue.push_front(OsString::from("..")),
