@@ -81,3 +81,12 @@ fn has_overlapping_files_rejects_overflowing_compressed_size() {
         Err(ZipError::InvalidArchive(_))
     ));
 }
+
+#[test]
+fn data_descriptor_lookup_rejects_overflowing_compressed_size() {
+    let mut archive = ZipArchive::new(Cursor::new(zip64_huge_compressed_size())).unwrap();
+    assert!(matches!(
+        archive.by_index_with_data_descriptor(0),
+        Err(ZipError::InvalidArchive(_))
+    ));
+}
