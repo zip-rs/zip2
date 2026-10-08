@@ -234,7 +234,6 @@ pub(crate) fn set_permissions_no_follow_symlink(
     mode: std::fs::Permissions,
 ) -> std::io::Result<()> {
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
     if fs::symlink_metadata(&path)?.file_type().is_symlink() {
         #[cfg(any(
             target_os = "macos",
@@ -248,6 +247,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
 
             use nix::fcntl::AtFlags;
             use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
+            use std::os::unix::fs::PermissionsExt;
 
             let mode = Mode::from_bits_truncate(mode.mode());
 
