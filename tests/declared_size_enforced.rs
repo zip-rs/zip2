@@ -34,7 +34,7 @@ fn lying_archive(method: CompressionMethod) -> Vec<u8> {
 fn methods() -> Vec<CompressionMethod> {
     vec![
         CompressionMethod::Stored,
-        #[cfg(feature = "_deflate-any")]
+        #[cfg(feature = "deflate-bzip2")]
         CompressionMethod::Deflated,
     ]
 }
