@@ -256,6 +256,7 @@ pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) -> std::
             )?;
         }
     } else {
+        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
     }
     Ok(())
@@ -520,7 +521,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         // Ensure we update children's permissions before making a parent unwritable.
         #[cfg(unix)]
         for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
-            set_permissions_no_follow_symlink(path, perms)?;
+            set_permissions_no_follow_symlink(&path, perms)?;
         }
 
         Ok(())
