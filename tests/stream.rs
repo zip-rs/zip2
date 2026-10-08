@@ -138,6 +138,26 @@ fn victim_mode_after_central_only_name(
         dest.join(local_name).is_file(),
         "the local entry was not written"
     );
+
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    {
+        let symlink_mode = std::os::unix::fs::symlink_metadata(dest.join(link))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(
+            symlink_mode & 0o777,
+            0o600,
+            "symlink permissions were not preserved"
+        );
+    }
+
     std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777
 }
 

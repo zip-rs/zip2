@@ -228,6 +228,37 @@ pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Re
     Ok(())
 }
 
+#[cfg(unix)]
+pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) {
+    if fs::symlink_metadata(&path)?.file_type().is_symlink() {
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
+        {
+            // These are the only platforms where permission bits on symlinks themselves are meaningful.
+
+            use nix::fcntl::AtFlags;
+            use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
+
+            let mode = Mode::from_bits_truncate(mode_u32);
+
+            // Use fchmodat with the flag telling it NOT to follow the symlink
+            fchmodat(
+                None,
+                path,
+                mode,
+                FchmodatFlags::FollowSymlink(AtFlags::AT_SYMLINK_NOFOLLOW),
+            )?;
+        }
+        continue;
+    }
+    fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+}
+
 /// Store all entries which specify a numeric "mode" which is familiar to POSIX operating systems.
 #[cfg(unix)]
 #[derive(Default, Debug)]
@@ -487,7 +518,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         // Ensure we update children's permissions before making a parent unwritable.
         #[cfg(unix)]
         for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
-            std::fs::set_permissions(path, perms)?;
+            set_permissions_no_follow_symlink(path, perms)?;
         }
 
         Ok(())
