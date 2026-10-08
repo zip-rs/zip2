@@ -1,5 +1,5 @@
-//! Only on little endian because we cannot use fs with miri CI
-#![cfg(all(target_endian = "little", not(miri)))]
+//! Native-only because filesystem access is unavailable in Miri CI.
+#![cfg(not(miri))]
 
 use std::io::{Cursor, Write};
 
@@ -33,7 +33,7 @@ fn extract_options_size_limit_rejects_before_writing() {
     let dest = TempDir::with_prefix("zip_size_limit_reject").unwrap();
     let out = dest.path().join("out");
     let err = archive
-        .extract_with_options(&out, ExtractOptions::default().size_limit(19))
+        .extract_with_options(&out, ExtractOptions::default().with_size_limit(19))
         .expect_err("declared size is above the limit");
 
     assert!(matches!(
@@ -53,7 +53,7 @@ fn extract_options_size_limit_allows_an_equal_total_and_extract_stays_unlimited(
     let limited = TempDir::with_prefix("zip_size_limit_equal").unwrap();
     let limited_out = limited.path().join("out");
     open(&bytes)
-        .extract_with_options(&limited_out, ExtractOptions::default().size_limit(20))
+        .extract_with_options(&limited_out, ExtractOptions::default().with_size_limit(20))
         .unwrap();
     assert_eq!(
         std::fs::read(limited_out.join("a.txt")).unwrap(),
@@ -78,7 +78,7 @@ fn extract_options_size_limit_rejects_an_unknown_total() {
     let dest = TempDir::with_prefix("zip_size_limit_unknown").unwrap();
     let out = dest.path().join("out");
     let err = archive
-        .extract_with_options(&out, ExtractOptions::default().size_limit(u64::MAX))
+        .extract_with_options(&out, ExtractOptions::default().with_size_limit(u64::MAX))
         .expect_err("a limit cannot be checked when the declared size is unknown");
 
     assert!(matches!(err, ZipError::DecompressedSizeUnknown));
