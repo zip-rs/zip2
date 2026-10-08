@@ -149,6 +149,15 @@ fn victim_mode_after_central_only_name(
         target_os = "dragonfly"
     ))]
     {
+        let symlink_mode = std::fs::symlink_metadata(dest.join(link))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(
+            symlink_mode & 0o777,
+            0o600,
+            "symlink permissions were not preserved"
+        );
         let symlink_mode = std::fs::symlink_metadata(dest.join("new_link"))
             .unwrap()
             .permissions()
