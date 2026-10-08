@@ -249,7 +249,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
             use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
             use std::os::unix::fs::PermissionsExt;
 
-            let mode = Mode::from_bits_truncate(mode.mode());
+            let mode = Mode::from_bits_truncate(mode.mode() as u16);
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
             fchmodat(
