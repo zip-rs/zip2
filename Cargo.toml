@@ -47,7 +47,7 @@ bitstream-io = { version = "4.9", optional = true }
 typed-path = "0.12"
 
 [target.'cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
-nix = "0.31.3"
+nix = { version = "^0.31.3", features = ["fs"], default-features = false }
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
