@@ -229,7 +229,7 @@ pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Re
 }
 
 #[cfg(unix)]
-pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) {
+pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) -> std::io::Result<()> {
     if fs::symlink_metadata(&path)?.file_type().is_symlink() {
         #[cfg(any(
             target_os = "macos",
@@ -244,7 +244,7 @@ pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) {
             use nix::fcntl::AtFlags;
             use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
 
-            let mode = Mode::from_bits_truncate(mode_u32);
+            let mode = Mode::from_bits_truncate(mode);
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
             fchmodat(
@@ -254,9 +254,10 @@ pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) {
                 FchmodatFlags::FollowSymlink(AtFlags::AT_SYMLINK_NOFOLLOW),
             )?;
         }
-        continue;
+    } else {
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
     }
-    fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+    Ok(())
 }
 
 /// Store all entries which specify a numeric "mode" which is familiar to POSIX operating systems.

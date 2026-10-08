@@ -177,7 +177,7 @@ impl<R: Read> ZipStreamReader<R> {
         {
             use std::os::unix::fs::PermissionsExt;
             for (path, mode) in extractor.file_permissions.into_iter().rev() {
-                crate::read::extract::set_permissions_no_follow_symlink(&path, mode);
+                crate::read::extract::set_permissions_no_follow_symlink(&path, mode)?;
             }
         }
         Ok(())

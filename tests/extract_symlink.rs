@@ -506,58 +506,6 @@ fn victim_mode_after_central_only_name(
     assert_eq!(&archive[at..at + len], central_name.as_bytes());
     archive[at..at + len].copy_from_slice(local_name.as_bytes());
 
-    ZipArchive::new(Cursor::new(archive))
-        .unwrap()
-        .extract(&dest)
-        .unwrap();
-    assert!(
-        dest.join(local_name).is_file(),
-        "the local entry was not written"
-    );
-    std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777
-}
-
-/// The central directory is not checked against the local headers, so it can name a path that no
-/// local entry wrote. Sets up `dest/<link>` as a symlink to `link_target` (relative to the base,
-/// which also holds `outside/b.txt` with mode 600), extracts one entry whose central directory
-/// name is `central_name` with mode 777 while its local header says `local_name` (same length),
-/// and returns the mode of `outside/b.txt` afterwards.
-#[cfg(all(unix, not(miri)))]
-fn victim_mode_after_central_only_name(
-    link: &str,
-    link_target: &str,
-    central_name: &str,
-    local_name: &str,
-) -> u32 {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-    use zip::write::SimpleFileOptions;
-
-    let base = tempfile::TempDir::new().unwrap();
-    let outside = base.path().join("outside");
-    std::fs::create_dir(&outside).unwrap();
-    let victim = outside.join("b.txt");
-    std::fs::write(&victim, b"keep").unwrap();
-    std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o600)).unwrap();
-    let dest = base.path().join("dest");
-    std::fs::create_dir(&dest).unwrap();
-    std::os::unix::fs::symlink(base.path().join(link_target), dest.join(link)).unwrap();
-
-    let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let opts = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .unix_permissions(0o777);
-    w.start_file(central_name, opts).unwrap();
-    w.write_all(b"x").unwrap();
-    let mut archive = w.finish().unwrap().into_inner();
-    // Rename the entry in its local header only, so the stream writes `local_name` while the
-    // central directory still gives `central_name` mode 777.
-    let at = 30;
-    let len = central_name.len();
-    assert_eq!(local_name.len(), len);
-    assert_eq!(&archive[at..at + len], central_name.as_bytes());
-    archive[at..at + len].copy_from_slice(local_name.as_bytes());
-
     ZipStreamReader::new(Cursor::new(archive))
         .extract(&dest)
         .unwrap();
