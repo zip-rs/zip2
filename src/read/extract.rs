@@ -234,7 +234,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
     mode: std::fs::Permissions,
 ) -> std::io::Result<()> {
     use std::fs;
-    if fs::symlink_metadata(&path)?.file_type().is_symlink() {
+    if fs::symlink_metadata(path)?.file_type().is_symlink() {
         #[cfg(any(
             target_os = "macos",
             target_os = "freebsd",
@@ -260,7 +260,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
             )?;
         }
     } else {
-        fs::set_permissions(&path, mode)?;
+        fs::set_permissions(path, mode)?;
     }
     Ok(())
 }
