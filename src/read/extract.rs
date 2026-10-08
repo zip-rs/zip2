@@ -58,7 +58,7 @@ impl ExtractOptions {
 
     /// Set the maximum declared uncompressed size accepted for extraction.
     #[must_use]
-    pub fn size_limit(self, size_limit: u64) -> Self {
+    pub fn with_size_limit(self, size_limit: u64) -> Self {
         Self {
             size_limit: Some(size_limit),
             ..self
