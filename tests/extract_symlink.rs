@@ -476,8 +476,9 @@ fn victim_mode_after_central_only_name(
     central_name: &str,
     local_name: &str,
 ) -> u32 {
-    use std::io::Write;
+    use std::io::{Cursor, Write};
     use std::os::unix::fs::PermissionsExt;
+    use zip::unstable::stream::ZipStreamReader;
     use zip::write::SimpleFileOptions;
 
     let base = tempfile::TempDir::new().unwrap();
