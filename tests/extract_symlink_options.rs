@@ -5,6 +5,7 @@
 //    - file_test_in_folder
 //  - symlink -> file_test
 //  - symlink_outside -> ../file_test
+#[cfg(not(miri))]
 fn create_base_archive_to_extract() -> zip::ZipWriter<std::io::Cursor<Vec<u8>>> {
     use std::io::Write;
     use zip::CompressionMethod;
@@ -39,6 +40,7 @@ fn create_base_archive_to_extract() -> zip::ZipWriter<std::io::Cursor<Vec<u8>>> 
 //  - symlink_outside -> ../file_test
 //  - symlink_root -> /
 //  - symlink_root_tmp -> /tmp/not_here
+#[cfg(not(miri))]
 fn create_archive_to_extract() -> Vec<u8> {
     use zip::CompressionMethod;
     use zip::write::SimpleFileOptions;
@@ -52,7 +54,8 @@ fn create_archive_to_extract() -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
-/// check is the symlink exists
+/// check if the symlink exists
+#[cfg(not(miri))]
 fn is_a_symlink(path: &std::path::Path) -> bool {
     use std::fs::symlink_metadata;
     symlink_metadata(path)
@@ -60,6 +63,7 @@ fn is_a_symlink(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(not(miri))]
 #[test]
 fn test_extract_options_no_symlink() {
     use std::io::Cursor;
@@ -92,6 +96,7 @@ fn test_extract_options_no_symlink() {
     assert!(!dest.path().join("symlink_root_tmp").exists()); // NOT HERE
 }
 
+#[cfg(not(miri))]
 #[test]
 fn test_extract_options_symlink_file() {
     use std::io::Cursor;
@@ -124,7 +129,7 @@ fn test_extract_options_symlink_file() {
     assert!(!dest.path().join("symlink_root_tmp").is_symlink()); // not a symlink
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_extract_in_folder() {
     use std::io::Cursor;
@@ -144,11 +149,11 @@ fn test_extract_options_extract_in_folder() {
         ExtractOptions::default().symlink_action(SymlinkExtractAction::ExtractInFolder),
     );
     assert!(res.is_err());
-    // error because symlink_ouside target is outside
+    // error because symlink_outside target is outside
     assert!(!dest.path().join("symlink_outside").exists()); // NOT HERE
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_no_restrictions() {
     use std::fs::read_link;
@@ -181,7 +186,7 @@ fn test_extract_options_no_restrictions() {
 
     assert!(is_a_symlink(&dest.path().join("symlink_outside")));
     assert!(dest.path().join("symlink_outside").is_symlink());
-    assert!(!dest.path().join("symlink_outside").exists()); // target does not exists
+    assert!(!dest.path().join("symlink_outside").exists()); // target does not exist
     assert_eq!(
         read_link(dest.path().join("symlink_outside")).unwrap(),
         PathBuf::from("../file_test")
@@ -189,7 +194,11 @@ fn test_extract_options_no_restrictions() {
 
     assert!(is_a_symlink(&dest.path().join("symlink_root")));
     assert!(dest.path().join("symlink_root").is_symlink());
+
+    #[cfg(unix)]
     assert!(dest.path().join("symlink_root").exists()); // target (/) exists
+    // on windows / does not exists
+
     assert_eq!(
         read_link(dest.path().join("symlink_root")).unwrap(),
         PathBuf::from("/")
@@ -197,14 +206,14 @@ fn test_extract_options_no_restrictions() {
 
     assert!(is_a_symlink(&dest.path().join("symlink_root_tmp")));
     assert!(dest.path().join("symlink_root_tmp").is_symlink());
-    assert!(!dest.path().join("symlink_root_tmp").exists()); // target does not exists
+    assert!(!dest.path().join("symlink_root_tmp").exists()); // target does not exist
     assert_eq!(
         read_link(dest.path().join("symlink_root_tmp")).unwrap(),
         PathBuf::from("/tmp/not_here")
     );
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_recursive_in_folder() {
     use std::fs::read_link;
@@ -226,14 +235,17 @@ fn test_extract_options_recursive_in_folder() {
     std::fs::create_dir_all(&final_dest).unwrap();
     #[cfg(unix)]
     {
-        // create a symlink to the inside
-        std::os::unix::fs::symlink("extracted/file_test", dest.path().join("file_test")).unwrap();
+        // create a symlink to the inside using absolute path
+        std::os::unix::fs::symlink(final_dest.join("file_test"), dest.path().join("file_test"))
+            .unwrap();
     }
     #[cfg(windows)]
     {
-        // create a symlink to the inside
-        std::os::windows::fs::symlink_file("extracted/file_test", final_dest.join("file_test"))
-            .unwrap();
+        std::os::windows::fs::symlink_file(
+            &final_dest.join("file_test"),
+            dest.path().join("file_test"),
+        )
+        .unwrap();
     }
 
     archive
@@ -254,14 +266,18 @@ fn test_extract_options_recursive_in_folder() {
 
     assert!(is_a_symlink(&final_dest.join("symlink_outside")));
     assert!(final_dest.join("symlink_outside").is_symlink());
-    assert!(final_dest.join("symlink_outside").exists()); // target does exists
+    // On Windows, relative symlinks with '..' components are resolved from the process
+    // working directory rather than the symlink's parent, so cross-directory following
+    // does not work reliably. Only assert on Unix.
+    #[cfg(unix)]
+    assert!(final_dest.join("symlink_outside").exists()); // target does exist
     assert_eq!(
         read_link(final_dest.join("symlink_outside")).unwrap(),
         PathBuf::from("../file_test")
     );
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(all(any(unix, windows), not(miri)))]
 #[test]
 fn test_extract_options_recursive_in_folder_non_working() {
     use std::io::Cursor;
