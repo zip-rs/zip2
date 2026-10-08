@@ -230,6 +230,7 @@ pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Re
 
 #[cfg(unix)]
 pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) -> std::io::Result<()> {
+    use std::fs;
     if fs::symlink_metadata(&path)?.file_type().is_symlink() {
         #[cfg(any(
             target_os = "macos",
