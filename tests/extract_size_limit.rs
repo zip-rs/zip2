@@ -4,6 +4,7 @@
 use std::io::{Cursor, Write};
 
 use tempfile::TempDir;
+use zip::read::ExtractOptions;
 use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
@@ -23,7 +24,7 @@ fn open(bytes: &[u8]) -> ZipArchive<Cursor<&[u8]>> {
 }
 
 #[test]
-fn extract_with_size_limit_rejects_before_writing() {
+fn extract_options_size_limit_rejects_before_writing() {
     let bytes = stored_archive(&[("a.txt", b"0123456789"), ("b.txt", b"0123456789")]);
     let mut archive = open(&bytes);
     let declared = archive.decompressed_size().unwrap();
@@ -32,7 +33,7 @@ fn extract_with_size_limit_rejects_before_writing() {
     let dest = TempDir::with_prefix("zip_size_limit_reject").unwrap();
     let out = dest.path().join("out");
     let err = archive
-        .extract_with_size_limit(&out, 19)
+        .extract_with_options(&out, ExtractOptions::default().size_limit(19))
         .expect_err("declared size is above the limit");
 
     assert!(matches!(
@@ -46,13 +47,13 @@ fn extract_with_size_limit_rejects_before_writing() {
 }
 
 #[test]
-fn extract_with_size_limit_allows_an_equal_total_and_extract_stays_unlimited() {
+fn extract_options_size_limit_allows_an_equal_total_and_extract_stays_unlimited() {
     let bytes = stored_archive(&[("a.txt", b"0123456789"), ("b.txt", b"0123456789")]);
 
     let limited = TempDir::with_prefix("zip_size_limit_equal").unwrap();
     let limited_out = limited.path().join("out");
     open(&bytes)
-        .extract_with_size_limit(&limited_out, 20)
+        .extract_with_options(&limited_out, ExtractOptions::default().size_limit(20))
         .unwrap();
     assert_eq!(
         std::fs::read(limited_out.join("a.txt")).unwrap(),
@@ -69,7 +70,7 @@ fn extract_with_size_limit_allows_an_equal_total_and_extract_stays_unlimited() {
 }
 
 #[test]
-fn extract_with_size_limit_rejects_an_unknown_total() {
+fn extract_options_size_limit_rejects_an_unknown_total() {
     let bytes = include_bytes!("data/data_descriptor.zip");
     let mut archive = open(bytes);
     assert_eq!(archive.decompressed_size(), None);
@@ -77,7 +78,7 @@ fn extract_with_size_limit_rejects_an_unknown_total() {
     let dest = TempDir::with_prefix("zip_size_limit_unknown").unwrap();
     let out = dest.path().join("out");
     let err = archive
-        .extract_with_size_limit(&out, u64::MAX)
+        .extract_with_options(&out, ExtractOptions::default().size_limit(u64::MAX))
         .expect_err("a limit cannot be checked when the declared size is unknown");
 
     assert!(matches!(err, ZipError::DecompressedSizeUnknown));

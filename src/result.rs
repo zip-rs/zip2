@@ -32,7 +32,7 @@ pub enum ZipError {
     CompressionMethodNotSupported(u16),
 
     /// Declared uncompressed size is above the limit passed to
-    /// [`ZipArchive::extract_with_size_limit`](crate::ZipArchive::extract_with_size_limit).
+    /// [`ExtractOptions::size_limit`](crate::read::ExtractOptions::size_limit).
     DecompressedSizeLimitExceeded {
         /// Sum reported by [`ZipArchive::decompressed_size`](crate::ZipArchive::decompressed_size).
         size: u128,
