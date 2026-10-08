@@ -6,7 +6,9 @@ use std::io::{Cursor, Read, Write};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-const REAL_SIZE: usize = 1 << 20;
+// Large enough that reading past the declared size would be obvious; smaller under miri,
+// which is slow.
+const REAL_SIZE: usize = if cfg!(miri) { 1 << 12 } else { 1 << 20 };
 const DECLARED_SIZE: u32 = 10;
 
 /// Build an archive with one entry of `REAL_SIZE` zero bytes, then patch the uncompressed
@@ -71,6 +73,8 @@ fn read_fails_past_declared_size() {
     }
 }
 
+// uses the file system, which miri's isolation does not allow
+#[cfg(not(miri))]
 #[test]
 fn extract_fails_past_declared_size() {
     for method in methods() {
