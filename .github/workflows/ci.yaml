@@ -55,6 +55,7 @@ jobs:
       - check_minimal_versions
       - cargo_semver
       - dependency_review
+      - endianness_miri
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
