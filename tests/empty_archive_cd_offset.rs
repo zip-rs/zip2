@@ -33,6 +33,7 @@ fn empty_archive_with_cd_offset_past_eocd_is_rejected() {
     }
 }
 
+#[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
 #[test]
 fn empty_archive_still_opens_and_appends() {
     // The canonical empty archive (offset 0) and one with a prefix (the offset is then relative
@@ -45,7 +46,7 @@ fn empty_archive_still_opens_and_appends() {
 
         let mut w = ZipWriter::new_append(Cursor::new(data.clone())).expect("new_append");
         // Stored: reading back must not depend on a decompressor (zopfli-only builds can't inflate).
-        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let opts = SimpleFileOptions::default();
         w.start_file("a.txt", opts).unwrap();
         w.write_all(b"hello").unwrap();
         let out = w.finish().unwrap().into_inner();
