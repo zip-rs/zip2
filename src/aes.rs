@@ -250,8 +250,9 @@ impl<R: Read> Read for AesReaderValid<R> {
     /// practically unusable, since its position after the error is not known.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.data_remaining == 0 {
-            // handle case were payload is empty
-            if self.data_length == 0 {
+            // handle case where payload is empty: verify the HMAC on the first read only, so
+            // that reading again at EOF returns Ok(0) like a non-empty entry does.
+            if self.data_length == 0 && !self.finalized {
                 self.verify_hmac()?;
             }
             return Ok(0);

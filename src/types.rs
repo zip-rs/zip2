@@ -484,7 +484,9 @@ impl ZipFileData {
                         .inner
                         .iter()
                         .any(|e| matches!(e, ExtraField::Zip64ExtendedInformation(_)));
-                let desc_start = data_start + self.compressed_size;
+                let desc_start = data_start.checked_add(self.compressed_size).ok_or(
+                    ZipError::InvalidArchive(Cow::Borrowed("Data descriptor offset overflows u64")),
+                )?;
                 reader.seek(SeekFrom::Start(desc_start))?;
                 let res = if is_zip64 {
                     let mut buff: [u8; 24] = [0; Zip64DataDescriptorBlock::SIZE];
