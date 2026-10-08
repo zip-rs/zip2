@@ -23,6 +23,111 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "14.5"
 
 jobs:
+  miri:
+    strategy:
+      matrix:
+        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
+        feature_flag:
+          - "--all-features"
+          - "--no-default-features"
+          - ""
+          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+          - "--no-default-features --features zip/deflate-zopfli"
+    name: "Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: sudo apt update
+      - run: sudo apt install crossbuild-essential-s390x
+      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
+      - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
+      - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
+      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
+      - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
+  endianness_miri:
+    name: "Test endianness platform"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
+      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
+      - run: cargo +nightly miri test --target aarch64_be-unknown-linux-gnu --all --no-default-features
+  check_minimal_versions:
+    strategy:
+      matrix:
+        # Only check minimal versions for the released library.
+        workspace: ["Cargo.toml"]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add nightly && rustup default nightly
+
+      - name: resolve minimal versions
+        run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+      - name: check
+        run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+      - name: test
+        run: cargo +nightly test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+
+  style_and_docs:
+    strategy:
+      matrix:
+        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
+        feature_flag: ["--all-features", "--no-default-features", ""]
+    name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+      - name: Install required cargo
+        run: cargo install clippy-sarif sarif-fmt
+      - name: Run clippy - inside bash for pipefail
+        shell: bash
+        # allow warnings but not errors
+        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+      - name: Upload analysis results to GitHub
+        if: always()
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: rust-clippy-results.sarif
+          wait-for-processing: true
+      - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
   dependency_review:
     name: 'Dependency Review'
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -129,56 +234,6 @@ jobs:
       - run: rustup target add wasm32-unknown-unknown
       - run: cargo install wasm-pack --locked
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
-  endianness_miri:
-    name: "Test endianness platform"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
-      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
-      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-      - run: cargo +nightly miri test --target aarch64_be-unknown-linux-gnu --all --no-default-features
-  miri:
-    strategy:
-      matrix:
-        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
-        feature_flag:
-          - "--all-features"
-          - "--no-default-features"
-          - ""
-          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-          - "--no-default-features --features zip/deflate-zopfli"
-    name: "Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
-      - run: sudo apt update
-      - run: sudo apt install crossbuild-essential-s390x
-      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
-      - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
-      - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
-      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-      - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
   cargo_semver:
     strategy:
       matrix:
@@ -221,63 +276,6 @@ jobs:
         run: cargo fmt --all -- --check
       - name: fmt fuzz
         run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
-
-  check_minimal_versions:
-    strategy:
-      matrix:
-        # Only check minimal versions for the released library.
-        workspace: ["Cargo.toml"]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly
-
-      - name: resolve minimal versions
-        run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-      - name: check
-        run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-      - name: test
-        run: cargo +nightly test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-
-  style_and_docs:
-    strategy:
-      matrix:
-        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
-        feature_flag: ["--all-features", "--no-default-features", ""]
-    name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      - name: Install required cargo
-        run: cargo install clippy-sarif sarif-fmt
-      - name: Run clippy - inside bash for pipefail
-        shell: bash
-        # allow warnings but not errors
-        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
-      - name: Upload analysis results to GitHub
-        if: always()
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
-        with:
-          sarif_file: rust-clippy-results.sarif
-          wait-for-processing: true
-      - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-
   fuzz_read:
     runs-on: ubuntu-latest
     needs:
