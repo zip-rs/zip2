@@ -407,7 +407,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                 continue;
             }
             let start = file.data_start(&mut self.reader)?;
-            let end = start + file.compressed_size;
+            let end = start
+                .checked_add(file.compressed_size)
+                .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                    "File data end offset overflows u64",
+                )))?;
             if ranges
                 .iter()
                 .any(|range| range.start <= end && start <= range.end)

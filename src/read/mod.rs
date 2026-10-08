@@ -16,10 +16,11 @@ use std::sync::OnceLock;
 mod config;
 pub use config::{ArchiveOffset, Config};
 
-/// Provides high level API for reading from a stream.
 pub(crate) mod extract;
+pub use extract::{ExtractOptions, RootDirFilter, SymlinkExtractAction, root_dir_common_filter};
+
+/// Provides high level API for reading from a stream.
 pub(crate) mod stream;
-pub use extract::{RootDirFilter, root_dir_common_filter};
 pub use stream::{
     read_zipfile_from_stream, read_zipfile_from_stream_with_compressed_size,
     read_zipfile_from_stream_with_options,
