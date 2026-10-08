@@ -122,6 +122,7 @@ fn victim_mode_after_central_only_name(
         .unix_permissions(0o777);
     w.start_file(central_name, opts).unwrap();
     w.write_all(b"x").unwrap();
+    w.add_symlink(b"new_link", dest.join(link), opts).unwrap();
     let mut archive = w.finish().unwrap().into_inner();
     // Rename the entry in its local header only, so the stream writes `local_name` while the
     // central directory still gives `central_name` mode 777.
@@ -147,7 +148,7 @@ fn victim_mode_after_central_only_name(
         target_os = "dragonfly"
     ))]
     {
-        let symlink_mode = std::fs::symlink_metadata(dest.join(link))
+        let symlink_mode = std::fs::symlink_metadata(dest.join(b"new_link"))
             .unwrap()
             .permissions()
             .mode();
