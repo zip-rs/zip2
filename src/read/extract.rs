@@ -256,7 +256,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
                 AT_FDCWD,
                 path,
                 mode,
-                FchmodatFlags::FollowSymlink(AtFlags::AT_SYMLINK_NOFOLLOW),
+                FchmodatFlags::NoFollowSymlinks,
             )?;
         }
     } else {
