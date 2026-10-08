@@ -252,7 +252,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
             let mode = Mode::from_bits_truncate(mode.mode() as u16);
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
-            fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlinks)?;
+            fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink)?;
         }
     } else {
         fs::set_permissions(path, mode)?;
