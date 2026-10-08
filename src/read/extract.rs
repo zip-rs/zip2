@@ -245,7 +245,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
         {
             // These are the only platforms where permission bits on symlinks themselves are meaningful.
 
-            use nix::fcntl::AtFlags;
+            use nix::fcntl::{AT_FDCWD, AtFlags};
             use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
             use std::os::unix::fs::PermissionsExt;
 
@@ -253,7 +253,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
             fchmodat(
-                None,
+                AT_FDCWD,
                 path,
                 mode,
                 FchmodatFlags::FollowSymlink(AtFlags::AT_SYMLINK_NOFOLLOW),
