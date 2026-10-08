@@ -1,4 +1,3 @@
-
 /// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
