@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - clippy warning on nightly ([#960](https://github.com/zip-rs/zip2/pull/960))
 - remove extra alloc used to copy ([#938](https://github.com/zip-rs/zip2/pull/938))
 - lazy allocation on error case ([#937](https://github.com/zip-rs/zip2/pull/937))
-- fix data alignement ([#929](https://github.com/zip-rs/zip2/pull/929))
+- fix data alignment ([#929](https://github.com/zip-rs/zip2/pull/929))
 
 ### <!-- 2 -->🚜 Refactor
 
