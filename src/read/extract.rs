@@ -229,8 +229,12 @@ pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Re
 }
 
 #[cfg(unix)]
-pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) -> std::io::Result<()> {
+pub(crate) fn set_permissions_no_follow_symlink(
+    path: &Path,
+    mode: std::fs::Permissions,
+) -> std::io::Result<()> {
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     if fs::symlink_metadata(&path)?.file_type().is_symlink() {
         #[cfg(any(
             target_os = "macos",
@@ -245,7 +249,7 @@ pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) -> std::
             use nix::fcntl::AtFlags;
             use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
 
-            let mode = Mode::from_bits_truncate(mode);
+            let mode = Mode::from_bits_truncate(mode.mode());
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
             fchmodat(
@@ -256,8 +260,7 @@ pub(crate) fn set_permissions_no_follow_symlink(path: &Path, mode: u32) -> std::
             )?;
         }
     } else {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+        fs::set_permissions(&path, mode)?;
     }
     Ok(())
 }
