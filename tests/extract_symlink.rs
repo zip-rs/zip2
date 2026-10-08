@@ -524,7 +524,7 @@ fn victim_mode_after_central_only_name(
         target_os = "dragonfly"
     ))]
     {
-        let symlink_mode = std::fs::symlink_metadata(dest.join(b"new_link"))
+        let symlink_mode = std::fs::symlink_metadata(dest.join("new_link"))
             .unwrap()
             .permissions()
             .mode();
