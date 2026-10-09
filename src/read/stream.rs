@@ -236,7 +236,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
-    options: ZipReadOptions<'a>,
+    mut options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
     // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
@@ -288,6 +288,9 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     }
     if let Some(uncomp_size) = options.force_uncompressed_size {
         data.uncompressed_size = uncomp_size;
+    } else if data.is_using_data_descriptor() {
+        // The local header doesn't carry the size; it follows the data.
+        options.size_unknown = true;
     }
     if let Some(crc) = options.force_crc {
         data.crc32 = crc;

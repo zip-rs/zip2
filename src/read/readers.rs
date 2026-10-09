@@ -237,6 +237,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
 pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
     uncompressed_size: u64,
+    size_limit: Option<u64>,
     crc32: Option<u32>,
     aes_vendor_version: Option<crate::format::aes::AesVendorVersion>,
     reader: CryptoReader<'_, R>,
@@ -252,24 +253,25 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
         (true, 0)
     };
     if compression_method == CompressionMethod::Stored {
-        return Ok(ZipFileReader::Stored(Box::new(Crc32Reader::new(
-            reader,
-            crc32,
-            should_disable,
-        ))));
+        return Ok(ZipFileReader::Stored(Box::new(
+            Crc32Reader::new(reader, crc32, should_disable).with_size_limit(size_limit),
+        )));
     }
     #[cfg(not(feature = "legacy-zip"))]
     let flags = 0;
-    Ok(ZipFileReader::Compressed(Box::new(Crc32Reader::new(
-        Decompressor::new(
-            io::BufReader::new(reader),
-            compression_method,
-            uncompressed_size,
-            flags,
-        )?,
-        crc32,
-        should_disable,
-    ))))
+    Ok(ZipFileReader::Compressed(Box::new(
+        Crc32Reader::new(
+            Decompressor::new(
+                io::BufReader::new(reader),
+                compression_method,
+                uncompressed_size,
+                flags,
+            )?,
+            crc32,
+            should_disable,
+        )
+        .with_size_limit(size_limit),
+    )))
 }
 
 #[cfg(test)]
