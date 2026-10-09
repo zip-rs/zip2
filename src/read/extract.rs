@@ -237,12 +237,11 @@ struct UnixFileModes {
 
 #[cfg(unix)]
 impl UnixFileModes {
-    #[cfg_attr(not(debug_assertions), allow(unused))]
     pub fn add_mode(&mut self, path: std::path::PathBuf, mode: u32) {
         // We don't print a warning or consider it remotely out of the ordinary to receive two
-        // separate modes for the same path: just take the later one.
-        let old_entry = self.map.insert(path, mode);
-        debug_assert_eq!(old_entry, None);
+        // separate modes for the same path (e.g. entries named `a` and `./a`): just take the
+        // later one, as the later file's contents are what's on disk.
+        self.map.insert(path, mode);
     }
 
     // Child nodes will be sorted later lexicographically, so reversing the order puts them first.

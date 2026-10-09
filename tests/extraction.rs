@@ -59,3 +59,35 @@ fn test_extract_with_zip_stream() {
     assert!(!dest.path().join("symlink/").exists());
     assert!(!dest.path().join("symlink/").is_dir());
 }
+
+/// Two entries that resolve to the same output path ("a" and "./a"), both with a unix mode:
+/// extraction keeps the later one, as Info-ZIP does. The mode bookkeeping used to
+/// `debug_assert` that each path was seen once, so debug builds panicked here.
+#[test]
+#[cfg(all(
+    unix,
+    not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))
+))]
+fn extract_two_entries_with_the_same_path() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use zip::write::SimpleFileOptions;
+
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    w.start_file("a", SimpleFileOptions::default().unix_permissions(0o600))
+        .unwrap();
+    w.write_all(b"one").unwrap();
+    w.start_file("./a", SimpleFileOptions::default().unix_permissions(0o640))
+        .unwrap();
+    w.write_all(b"two").unwrap();
+    let mut archive = zip::ZipArchive::new(w.finish().unwrap()).unwrap();
+
+    let dest = tempfile::TempDir::with_prefix("extract_same_path").unwrap();
+    archive.extract(dest.path()).unwrap();
+    let path = dest.path().join("a");
+    assert_eq!(std::fs::read(&path).unwrap(), b"two");
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+}
