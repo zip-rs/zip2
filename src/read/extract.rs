@@ -16,6 +16,46 @@ use indexmap::IndexMap;
 /// so entries above this bound are rejected rather than pre-allocated.
 pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
+/// Symlink extract action
+#[derive(Debug, Default, Copy, Clone)]
+pub enum SymlinkExtractAction {
+    ///  Omit symlinks.
+    NoExtract,
+    /// Convert symlinks to text file
+    ExtractAsFile,
+    /// Convert symlinks to text file as utf8
+    #[cfg_attr(not(any(unix, windows)), default)]
+    ExtractAsFileUtf8,
+    /// Extract symlinks if the recursive target is in the destination folder (default on Unix and Windows, but not possible on other platforms).
+    #[cfg(any(unix, windows))]
+    #[default]
+    ExtractRecursiveInFolder,
+    /// Extract symlinks if the _direct_ target is in the destination folder (i.e. it can point to a pre-existing symlink that in turn points outside the folder).
+    #[cfg(any(unix, windows))]
+    ExtractInFolder,
+    /// Extract symlinks with no restrictions.
+    #[cfg(any(unix, windows))]
+    ExtractNoRestrictions,
+}
+
+/// Extract options
+#[derive(Debug, Default)]
+#[non_exhaustive]
+pub struct ExtractOptions {
+    pub(crate) symlink_action: SymlinkExtractAction,
+}
+
+impl ExtractOptions {
+    /// Set the symlink action
+    #[must_use]
+    pub fn symlink_action(self, symlink_action: SymlinkExtractAction) -> Self {
+        Self {
+            symlink_action,
+            ..self
+        }
+    }
+}
+
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
     use std::fs;
     fs::create_dir_all(outpath.as_ref())?;
@@ -74,6 +114,7 @@ pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
+    symlink_action: SymlinkExtractAction,
 ) -> ZipResult<()> {
     let Ok(target_str) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
@@ -84,9 +125,11 @@ pub(crate) fn make_symlink<T>(
     let target_path = Path::new(target_str);
     let (start, rest) = if target_path.is_absolute() {
         let Some(rest) = crate::path::strip_base_prefix(base, target_path) else {
-            return Err(invalid!("Symlink target escapes the destination directory"));
+            return Err(invalid!(
+                "make_symlink: Symlink target escapes the destination directory"
+            ));
         };
-        (base.to_path_buf(), rest.to_path_buf())
+        (base, rest)
     } else {
         // A Windows target such as `C:foo` (relative to the current directory of a
         // drive) or `\foo` (relative to the root of the current drive) is neither
@@ -100,24 +143,62 @@ pub(crate) fn make_symlink<T>(
         }) {
             return Err(invalid!("Invalid symlink target path"));
         }
-
         let parent = outpath.parent().unwrap_or(base);
         if !parent.starts_with(base) {
             return Err(invalid!("Symlink is not inside the destination directory"));
         }
-        (parent.to_path_buf(), target_path.to_path_buf())
+        (parent, target_path)
     };
 
-    crate::path::resolve_enclosed(
-        base,
-        &start,
-        rest.components().map(|c| c.as_os_str().to_os_string()),
-        false, // only checking here, so nothing is created
-    )?;
+    // ExtractNoRestrictions is allowed outside (no restrictions) - but it uses
+    // [`make_symlink_impl`] directly
+    // ExtractRecursiveInFolder is allowed outside (it will be checked that the symlink fall in the
+    // folder)
+    #[cfg(any(windows, unix))]
+    let allow_outside = matches!(
+        symlink_action,
+        SymlinkExtractAction::ExtractNoRestrictions
+            | SymlinkExtractAction::ExtractRecursiveInFolder
+    );
+    #[cfg(not(any(windows, unix)))]
+    let allow_outside = false;
+    if allow_outside {
+        // For ExtractRecursiveInFolder: the literal path may leave `base` (e.g.
+        // `../sibling`), but it must canonicalize (following real filesystem symlinks) back into `base`.
+        #[cfg(any(unix, windows))]
+        if matches!(
+            symlink_action,
+            SymlinkExtractAction::ExtractRecursiveInFolder
+        ) {
+            // Try to canonicalize the resolved path so that symlinks in the filesystem
+            // that point back inside `base` are followed.
+            let abs_to_canonicalize = if target_path.is_absolute() {
+                target_path
+            } else {
+                &base.join(target_path)
+            };
+            let canonical = if let Ok(p) = std::fs::canonicalize(abs_to_canonicalize) {
+                p
+            } else {
+                abs_to_canonicalize.to_path_buf()
+            };
+            if !canonical.starts_with(base) {
+                return Err(invalid!("Path escapes the destination directory"));
+            }
+        }
+    } else {
+        crate::path::resolve_enclosed(
+            base,
+            start,
+            rest.components().map(|c| c.as_os_str().to_os_string()),
+            false, // only checking here, so nothing is created
+        )?;
+    }
 
     make_symlink_impl(outpath, target_str, existing_files)
 }
 
+/// Wasm and others
 #[cfg(not(any(windows, unix)))]
 pub(crate) fn make_symlink<T>(
     // No symlink is created on these targets, so there is nothing to contain.
@@ -125,12 +206,23 @@ pub(crate) fn make_symlink<T>(
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
+    _symlink_action: SymlinkExtractAction,
 ) -> ZipResult<()> {
-    use std::fs::File;
-    use std::io::Write;
+    make_symlink_as_file_utf8(outpath, target)?;
+    Ok(())
+}
+
+pub(crate) fn make_symlink_as_file_utf8(outpath: &Path, target: &[u8]) -> ZipResult<()> {
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
+    make_symlink_as_file(outpath, target)?;
+    Ok(())
+}
+
+pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Result<()> {
+    use std::fs::File;
+    use std::io::Write;
     let output = File::create(outpath);
     output?.write_all(target)?;
     Ok(())
@@ -185,7 +277,19 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
     /// containing the target path in UTF-8.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
-        self.extract_internal(directory, None::<fn(&Path) -> bool>)
+        self.extract_internal(
+            directory,
+            None::<fn(&Path) -> bool>,
+            ExtractOptions::default(),
+        )
+    }
+    /// Same as extract but with options
+    pub fn extract_with_options<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        extract_options: ExtractOptions,
+    ) -> ZipResult<()> {
+        self.extract_internal(directory, None::<fn(&Path) -> bool>, extract_options)
     }
 
     /// Extracts a Zip archive into a directory in the same fashion as
@@ -251,13 +355,14 @@ impl<R: Read + Seek> ZipArchive<R> {
         directory: P,
         root_dir_filter: impl RootDirFilter,
     ) -> ZipResult<()> {
-        self.extract_internal(directory, Some(root_dir_filter))
+        self.extract_internal(directory, Some(root_dir_filter), ExtractOptions::default())
     }
 
     fn extract_internal<P: AsRef<Path>>(
         &mut self,
         directory: P,
         root_dir_filter: Option<impl RootDirFilter>,
+        extract_options: ExtractOptions,
     ) -> ZipResult<()> {
         use std::fs;
 
@@ -301,7 +406,6 @@ impl<R: Read + Seek> ZipArchive<R> {
              *       accept two arguments that point to the same directory path, one mutable? */
             file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
 
-            #[cfg(any(unix, windows))]
             if file.is_symlink() {
                 // `file.size()` is the uncompressed size declared in the central
                 // directory, i.e. attacker-controlled. A symlink target is a
@@ -317,11 +421,47 @@ impl<R: Read + Seek> ZipArchive<R> {
                         MAX_SYMLINK_TARGET_LEN
                     ));
                 }
-
                 let mut target = Vec::with_capacity(declared_len as usize);
                 file.read_to_end(&mut target)?;
                 drop(file);
-                make_symlink(directory.as_ref(), &outpath, &target, &self.shared.files)?;
+                match extract_options.symlink_action {
+                    SymlinkExtractAction::NoExtract => {
+                        // do nothing
+                    }
+                    SymlinkExtractAction::ExtractAsFile => {
+                        make_symlink_as_file(&outpath, &target)?;
+                    }
+                    SymlinkExtractAction::ExtractAsFileUtf8 => {
+                        make_symlink_as_file_utf8(&outpath, &target)?;
+                    }
+                    #[cfg(any(unix, windows))]
+                    SymlinkExtractAction::ExtractRecursiveInFolder => {
+                        make_symlink(
+                            directory.as_ref(),
+                            &outpath,
+                            &target,
+                            &self.shared.files,
+                            extract_options.symlink_action,
+                        )?;
+                    }
+                    #[cfg(any(unix, windows))]
+                    SymlinkExtractAction::ExtractInFolder => {
+                        make_symlink(
+                            directory.as_ref(),
+                            &outpath,
+                            &target,
+                            &self.shared.files,
+                            extract_options.symlink_action,
+                        )?;
+                    }
+                    #[cfg(any(unix, windows))]
+                    SymlinkExtractAction::ExtractNoRestrictions => {
+                        let Ok(target_str) = std::str::from_utf8(&target) else {
+                            return Err(invalid!("Invalid UTF-8 as symlink target"));
+                        };
+                        make_symlink_impl(&outpath, target_str, &self.shared.files)?;
+                    }
+                }
                 continue;
             } else if file.is_dir() {
                 make_writable_dir_all(&outpath)?;

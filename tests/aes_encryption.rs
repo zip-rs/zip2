@@ -484,3 +484,27 @@ fn hmac_is_never_checked_for_a_zero_length_entry() {
     // corrupt authentication code was detected
     assert!(read_result.is_err());
 }
+
+/// Reading an empty AES entry again after it returned Ok(0) must keep returning Ok(0), like a
+/// non-empty entry. The HMAC of an empty entry was verified on every read, so the second read
+/// failed with "Tried to use an already finalized HMAC" (and hit a debug_assert in debug builds).
+#[test]
+fn aes_empty_entry_reread_at_eof() {
+    for data in [&b""[..], SECRET_CONTENT.as_bytes()] {
+        let mut w = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let opts = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .with_aes_encryption_bytes(AesMode::Aes256, PASSWORD);
+        w.start_file("f", opts).unwrap();
+        w.write_all(data).unwrap();
+        let mut archive = ZipArchive::new(w.finish().unwrap()).unwrap();
+        let mut file = archive.by_index_decrypt(0, PASSWORD).unwrap();
+
+        let mut out = Vec::new();
+        file.read_to_end(&mut out).unwrap();
+        assert_eq!(out, data);
+        let mut buf = [0u8; 16];
+        assert_eq!(file.read(&mut buf).unwrap(), 0);
+        assert_eq!(file.read(&mut buf).unwrap(), 0);
+    }
+}
