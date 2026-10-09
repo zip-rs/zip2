@@ -478,7 +478,7 @@ pub(crate) fn victim_mode_after_central_only_name<
     central_name: &str,
     local_name: &str,
     extract: F,
-) -> u32 {
+) -> zip::result::ZipResult<u32> {
     use std::io::{Cursor, Write};
     use std::os::unix::fs::PermissionsExt;
     use zip::write::SimpleFileOptions;
@@ -522,7 +522,7 @@ pub(crate) fn victim_mode_after_central_only_name<
         .permissions()
         .mode();
 
-    extract(Cursor::new(archive), &dest).unwrap();
+    extract(Cursor::new(archive), &dest)?;
     assert!(
         dest.join(local_name).is_file(),
         "the local entry was not written"
@@ -555,7 +555,7 @@ pub(crate) fn victim_mode_after_central_only_name<
         );
     }
 
-    std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777
+    Ok(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777)
 }
 
 /// A central-directory-only name that goes through a symlink already in the destination, to a
@@ -570,7 +570,8 @@ fn extract_ignores_modes_for_names_it_did_not_write() {
         "a/b.txt",
         "c_d.txt",
         |archive, dest| ZipStreamReader::new(archive).extract(dest),
-    );
+    )
+    .unwrap();
     assert_eq!(mode, 0o600, "a mode was applied through the symlink");
 }
 
@@ -580,7 +581,7 @@ fn extract_ignores_modes_for_names_it_did_not_write() {
 fn ziparchive_extract_does_not_set_symlink_target_mode() {
     use zip::ZipArchive;
     use zip::read::{ExtractOptions, SymlinkExtractAction};
-    let mode = victim_mode_after_central_only_name(
+    let err = victim_mode_after_central_only_name(
         "a",
         "outside/b.txt",
         "a/b.txt",
@@ -592,8 +593,10 @@ fn ziparchive_extract_does_not_set_symlink_target_mode() {
                     .symlink_action(SymlinkExtractAction::ExtractNoRestrictions),
             )
         },
-    );
-    assert_eq!(mode, 0o600, "a mode was applied through the symlink");
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("escapes the destination"), "{err}");
 }
 
 /// The same when the central-directory-only name is the symlink itself: `set_permissions` would
@@ -608,6 +611,7 @@ fn extract_ignores_modes_for_a_name_that_is_a_symlink_it_did_not_write() {
         "e.txt",
         "f.txt",
         |archive, dest| ZipStreamReader::new(archive).extract(dest),
-    );
+    )
+    .unwrap();
     assert_eq!(mode, 0o600, "a mode was applied through the symlink");
 }

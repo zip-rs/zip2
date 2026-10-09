@@ -136,7 +136,6 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
         Ok(())
     }
 
-
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> io::Take<&'a mut R> {
         match self {
