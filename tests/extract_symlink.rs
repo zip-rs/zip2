@@ -1,5 +1,3 @@
-use zip::ZipArchive;
-
 /// Only on little endian because we cannot use fs with miri CI
 #[cfg(all(target_endian = "little", not(miri)))]
 #[test]
@@ -472,7 +470,7 @@ fn test_cannot_symlink_outside_destination_zip_stream() {
 /// name is `central_name` with mode 777 while its local header says `local_name` (same length),
 /// and returns the mode of `outside/b.txt` afterwards.
 #[cfg(all(unix, not(miri)))]
-pub(crate) fn victim_mode_after_central_only_name<F: FnOnce() -> Result<()>>(
+pub(crate) fn victim_mode_after_central_only_name<F: FnOnce(Vec<u8>) -> Result<()>>(
     link: &str,
     link_target: &str,
     central_name: &str,
@@ -481,7 +479,6 @@ pub(crate) fn victim_mode_after_central_only_name<F: FnOnce() -> Result<()>>(
 ) -> u32 {
     use std::io::{Cursor, Write};
     use std::os::unix::fs::PermissionsExt;
-    use zip::unstable::stream::ZipStreamReader;
     use zip::write::SimpleFileOptions;
 
     let base = tempfile::TempDir::new().unwrap();
@@ -564,7 +561,8 @@ pub(crate) fn victim_mode_after_central_only_name<F: FnOnce() -> Result<()>>(
 #[cfg(all(unix, not(miri)))]
 #[test]
 fn extract_ignores_modes_for_names_it_did_not_write() {
-    let mode = victim_mode_after_central_only_name("a", "outside", "a/b.txt", "c_d.txt", || {
+    use zip::unstable::stream::ZipStreamReader;
+    let mode = victim_mode_after_central_only_name("a", "outside", "a/b.txt", "c_d.txt", |archive| {
         ZipStreamReader::new(Cursor::new(archive)).extract(&dest)
     });
     assert_eq!(mode, 0o600, "a mode was applied through the symlink");
@@ -574,7 +572,8 @@ fn extract_ignores_modes_for_names_it_did_not_write() {
 #[cfg(all(unix, not(miri)))]
 #[test]
 fn ziparchive_extract_does_not_set_symlink_target_mode() {
-    let mode = victim_mode_after_central_only_name("a", "outside", "a/b.txt", "c_d.txt", || {
+    use zip::ZipArchive;
+    let mode = victim_mode_after_central_only_name("a", "outside", "a/b.txt", "c_d.txt", |archive| {
         ZipArchive::new(Cursor::new(archive))?.extract(&dest)
     });
     assert_eq!(mode, 0o600, "a mode was applied through the symlink");
@@ -585,8 +584,9 @@ fn ziparchive_extract_does_not_set_symlink_target_mode() {
 #[cfg(all(unix, not(miri)))]
 #[test]
 fn extract_ignores_modes_for_a_name_that_is_a_symlink_it_did_not_write() {
+    use zip::unstable::stream::ZipStreamReader;
     let mode =
-        victim_mode_after_central_only_name("e.txt", "outside/b.txt", "e.txt", "f.txt", || {
+        victim_mode_after_central_only_name("e.txt", "outside/b.txt", "e.txt", "f.txt", |archive| {
             ZipStreamReader::new(Cursor::new(archive)).extract(&dest)
         });
     assert_eq!(mode, 0o600, "a mode was applied through the symlink");
