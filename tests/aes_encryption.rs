@@ -704,10 +704,15 @@ mod early_eof {
                     let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
                     let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
                     let r = read_all(&mut f, how).map(|v| v.len());
-                    let e = r.expect_err(&format!("AE-{vendor} len={len} {how:?}: forged entry accepted"));
+                    let e = r.expect_err(&format!(
+                        "AE-{vendor} len={len} {how:?}: forged entry accepted"
+                    ));
                     assert_auth_error(&e);
                     // The failure must be sticky: a retry must not report a clean EOF.
-                    assert!(f.read(&mut [0u8; 16]).is_err(), "AE-{vendor} {how:?}: error not sticky");
+                    assert!(
+                        f.read(&mut [0u8; 16]).is_err(),
+                        "AE-{vendor} {how:?}: error not sticky"
+                    );
                 }
             }
         }
@@ -736,9 +741,9 @@ mod early_eof {
                 let b = trailing_garbage_archive(n);
                 let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
                 let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
-                let e = read_all(&mut f, how)
-                    .map(|v| v.len())
-                    .expect_err(&format!("n={n} {how:?}: unauthenticated trailing data accepted"));
+                let e = read_all(&mut f, how).map(|v| v.len()).expect_err(&format!(
+                    "n={n} {how:?}: unauthenticated trailing data accepted"
+                ));
                 assert_auth_error(&e);
             }
         }
