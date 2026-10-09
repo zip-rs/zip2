@@ -18,7 +18,7 @@ jobs:
           egress-policy: audit
 
       - name: Size Labeler
-        uses: codelytv/pr-size-labeler@4e3aa0f77f348c8066513d453515316ffa01a607
+        uses: codelytv/pr-size-labeler@19c335e7695ba922de938806dd129f0a9b992644
         with:
           xs_label: 'size: tiny'
           xs_max_size: '25'
