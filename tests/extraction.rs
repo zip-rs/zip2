@@ -64,7 +64,10 @@ fn test_extract_with_zip_stream() {
 /// extraction keeps the later one, as Info-ZIP does. The mode bookkeeping used to
 /// `debug_assert` that each path was seen once, so debug builds panicked here.
 #[test]
-#[cfg(all(unix, not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))))]
+#[cfg(all(
+    unix,
+    not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))
+))]
 fn extract_two_entries_with_the_same_path() {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
