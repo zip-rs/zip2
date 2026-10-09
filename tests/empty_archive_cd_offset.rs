@@ -4,7 +4,7 @@
 
 use std::io::{Cursor, Write};
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipWriter};
 
 /// A 22-byte EOCD with no entries, an empty central directory and the given CD offset.
 fn empty_eocd(cd_offset: u32) -> Vec<u8> {
