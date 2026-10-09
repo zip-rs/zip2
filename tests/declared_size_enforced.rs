@@ -39,7 +39,7 @@ fn methods() -> Vec<CompressionMethod> {
         #[cfg(feature = "_bzip2_any")]
         CompressionMethod::Bzip2,
         #[cfg(feature = "zstd")]
-        CompressionMethod::ZStandard,
+        CompressionMethod::Zstd,
         #[cfg(feature = "xz")]
         CompressionMethod::Xz,
         #[cfg(feature = "ppmd")]
