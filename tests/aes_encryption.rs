@@ -508,3 +508,321 @@ fn aes_empty_entry_reread_at_eof() {
         assert_eq!(file.read(&mut buf).unwrap(), 0);
     }
 }
+
+/// GHSA-c9rm-qm35-rhqf: the HMAC must be verified even when the decompressor
+/// reports end-of-stream before all the AES ciphertext has been consumed.
+mod early_eof {
+    use super::PASSWORD;
+    use std::io::{self, Cursor, Read, Write};
+    use zip::write::SimpleFileOptions;
+    use zip::{AesMode, CompressionMethod, ZipArchive, ZipWriter};
+
+    const KNOWN: &[u8] = b"KNOWN-PLAINTEXT\n";
+    const FORGED: &[u8] = b"FORGED: attacker-chosen content, written without the password\n";
+
+    fn known_plaintext(len: usize) -> Vec<u8> {
+        (0..len).map(|i| KNOWN[i % KNOWN.len()]).collect()
+    }
+
+    fn pseudo_random(len: usize) -> Vec<u8> {
+        let mut x: u32 = 0x1234_5678;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                x as u8
+            })
+            .collect()
+    }
+
+    fn u16le(b: &[u8], off: usize) -> usize {
+        u16::from_le_bytes([b[off], b[off + 1]]) as usize
+    }
+
+    fn u32le(b: &[u8], off: usize) -> usize {
+        u32::from_le_bytes(b[off..off + 4].try_into().unwrap()) as usize
+    }
+
+    fn put_u32(b: &mut [u8], off: usize, v: usize) {
+        b[off..off + 4].copy_from_slice(&(v as u32).to_le_bytes());
+    }
+
+    /// Single-entry archive written by the crate itself.
+    fn aes_archive(plaintext: &[u8], method: CompressionMethod) -> Vec<u8> {
+        let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+        let opts = SimpleFileOptions::default()
+            .compression_method(method)
+            .with_aes_encryption_bytes(AesMode::Aes256, PASSWORD);
+        w.start_file("doc.txt", opts).unwrap();
+        w.write_all(plaintext).unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    /// Offset of the (single) central directory header, taken from the EOCD.
+    fn cd_offset(b: &[u8]) -> usize {
+        u32le(b, b.len() - 22 + 16)
+    }
+
+    fn payload_start(b: &[u8]) -> usize {
+        30 + u16le(b, 26) + u16le(b, 28)
+    }
+
+    /// Visit the AES extra field (0x9901) in both the local and central headers.
+    fn for_each_aes_extra(b: &mut [u8], mut f: impl FnMut(&mut [u8])) {
+        let cd = cd_offset(b);
+        let regions = [
+            (30 + u16le(b, 26), u16le(b, 28)),
+            (cd + 46 + u16le(b, cd + 28), u16le(b, cd + 30)),
+        ];
+        for (start, len) in regions {
+            let mut p = start;
+            while p + 4 <= start + len {
+                let (id, size) = (u16le(b, p), u16le(b, p + 2));
+                if id == 0x9901 {
+                    f(&mut b[p + 4..p + 4 + size]);
+                }
+                p += 4 + size;
+            }
+        }
+    }
+
+    /// Rewrite AES vendor version (1 = AE-1, 2 = AE-2) and/or the real
+    /// compression method stored in the AES extra field. For AE-1 the CRC of
+    /// `crc_of` is written to both headers.
+    fn set_aes(b: &mut [u8], vendor: Option<u16>, method: Option<u16>, crc_of: &[u8]) {
+        for_each_aes_extra(b, |e| {
+            if let Some(v) = vendor {
+                e[0..2].copy_from_slice(&v.to_le_bytes());
+            }
+            if let Some(m) = method {
+                e[5..7].copy_from_slice(&m.to_le_bytes());
+            }
+        });
+        if vendor == Some(1) {
+            let crc = crc32fast::hash(crc_of) as usize;
+            let cd = cd_offset(b);
+            put_u32(b, 14, crc);
+            put_u32(b, cd + 16, crc);
+        }
+    }
+
+    fn set_uncompressed_size(b: &mut [u8], size: usize) {
+        let cd = cd_offset(b);
+        put_u32(b, 22, size);
+        put_u32(b, cd + 24, size);
+    }
+
+    /// The attack from the advisory: no password is used. Starting from a
+    /// genuine Stored AES entry with known plaintext, XOR a tiny raw-deflate
+    /// stream over the start of the ciphertext and relabel the entry as
+    /// Deflate. The deflate decoder stops after the forged block, leaving most
+    /// of the (unmodified) ciphertext unread.
+    fn forged_archive(entry_len: usize, vendor: u16) -> Vec<u8> {
+        let p = known_plaintext(entry_len);
+        let mut b = aes_archive(&p, CompressionMethod::Stored);
+        let mut d = vec![0x01, FORGED.len() as u8, 0, !(FORGED.len() as u8), 0xff];
+        d.extend_from_slice(FORGED);
+        let ct = payload_start(&b) + 16 + 2; // salt + password verifier
+        for i in 0..d.len() {
+            b[ct + i] ^= p[i] ^ d[i];
+        }
+        set_aes(&mut b, Some(vendor), Some(8), FORGED);
+        set_uncompressed_size(&mut b, FORGED.len());
+        b
+    }
+
+    /// Genuine Deflate AES entry with `n` extra bytes inserted between the
+    /// end of the deflate stream and the authentication code (sizes and
+    /// offsets adjusted, HMAC not recomputed).
+    fn trailing_garbage_archive(n: usize) -> Vec<u8> {
+        let p = known_plaintext(4096);
+        let b = aes_archive(&p, CompressionMethod::Deflated);
+        let ps = payload_start(&b);
+        let cs = u32le(&b, 18);
+        let tag = ps + cs - 10;
+        let cd = cd_offset(&b);
+        let mut out = Vec::with_capacity(b.len() + n);
+        out.extend_from_slice(&b[..tag]);
+        out.extend(pseudo_random(n));
+        out.extend_from_slice(&b[tag..]);
+        put_u32(&mut out, 18, cs + n);
+        let cd = cd + n;
+        put_u32(&mut out, cd + 20, cs + n);
+        let eocd = out.len() - 22;
+        put_u32(&mut out, eocd + 16, cd);
+        out
+    }
+
+    fn assert_auth_error(e: &io::Error) {
+        assert_eq!(e.kind(), io::ErrorKind::InvalidData, "{e}");
+        assert!(e.to_string().contains("Invalid authentication code"), "{e}");
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum How {
+        ReadToEnd,
+        ReadToString,
+        ReadLoop,
+    }
+
+    fn read_all(r: &mut impl Read, how: How) -> io::Result<Vec<u8>> {
+        match how {
+            How::ReadToEnd => {
+                let mut v = Vec::new();
+                r.read_to_end(&mut v)?;
+                Ok(v)
+            }
+            How::ReadToString => {
+                let mut s = String::new();
+                r.read_to_string(&mut s)?;
+                Ok(s.into_bytes())
+            }
+            How::ReadLoop => {
+                // small buffer to exercise many `read` calls (like io::copy)
+                let mut v = Vec::new();
+                let mut buf = [0u8; 100];
+                loop {
+                    let n = r.read(&mut buf)?;
+                    if n == 0 {
+                        return Ok(v);
+                    }
+                    v.extend_from_slice(&buf[..n]);
+                }
+            }
+        }
+    }
+
+    const ALL: [How; 3] = [How::ReadToEnd, How::ReadToString, How::ReadLoop];
+
+    #[test]
+    fn forged_deflate_stream_is_rejected() {
+        for vendor in [1, 2] {
+            for len in [12 * 1024, 64 * 1024] {
+                for how in ALL {
+                    let b = forged_archive(len, vendor);
+                    let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                    let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                    let r = read_all(&mut f, how).map(|v| v.len());
+                    let e = r.expect_err(&format!("AE-{vendor} len={len} {how:?}: forged entry accepted"));
+                    assert_auth_error(&e);
+                    // The failure must be sticky: a retry must not report a clean EOF.
+                    assert!(f.read(&mut [0u8; 16]).is_err(), "AE-{vendor} {how:?}: error not sticky");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn forged_deflate_stream_is_rejected_when_streaming() {
+        for vendor in [1, 2] {
+            let b = forged_archive(64 * 1024, vendor);
+            let mut cur = Cursor::new(b);
+            let opts = zip::ZipReadOptions::new().password(Some(PASSWORD));
+            let mut f = zip::read::read_zipfile_from_stream_with_options(&mut cur, opts)
+                .unwrap()
+                .unwrap();
+            let e = read_all(&mut f, How::ReadToEnd)
+                .map(|v| v.len())
+                .expect_err("forged entry accepted");
+            assert_auth_error(&e);
+        }
+    }
+
+    #[test]
+    fn trailing_data_inside_compressed_size_is_authenticated() {
+        for n in [16, 20 * 1024] {
+            for how in ALL {
+                let b = trailing_garbage_archive(n);
+                let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                let e = read_all(&mut f, how)
+                    .map(|v| v.len())
+                    .expect_err(&format!("n={n} {how:?}: unauthenticated trailing data accepted"));
+                assert_auth_error(&e);
+            }
+        }
+    }
+
+    #[test]
+    fn valid_aes_entries_still_read() {
+        let contents: [Vec<u8>; 5] = [
+            Vec::new(),
+            b"asdf\n".to_vec(),
+            known_plaintext(64 * 1024),
+            pseudo_random(64 * 1024),
+            pseudo_random(5000),
+        ];
+        #[allow(unused_mut)]
+        let mut methods = vec![CompressionMethod::Stored, CompressionMethod::Deflated];
+        #[cfg(feature = "bzip2")]
+        methods.push(CompressionMethod::Bzip2);
+        #[cfg(feature = "zstd")]
+        methods.push(CompressionMethod::Zstd);
+        #[cfg(feature = "xz")]
+        methods.push(CompressionMethod::Xz);
+        #[cfg(feature = "ppmd")]
+        methods.push(CompressionMethod::Ppmd);
+        for method in methods {
+            for vendor in [1u16, 2] {
+                for p in &contents {
+                    for how in [How::ReadToEnd, How::ReadLoop] {
+                        let mut b = aes_archive(p, method);
+                        set_aes(&mut b, Some(vendor), None, p);
+                        let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                        let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                        let out = read_all(&mut f, how).unwrap_or_else(|e| {
+                            panic!("{method:?} AE-{vendor} len={} {how:?}: {e}", p.len())
+                        });
+                        assert_eq!(&out, p);
+                        // reading again after EOF keeps returning Ok(0)
+                        assert_eq!(f.read(&mut [0u8; 16]).unwrap(), 0);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn valid_aes_entries_still_read_when_streaming() {
+        for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+            let p1 = pseudo_random(40 * 1024);
+            let p2 = known_plaintext(30 * 1024);
+            let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+            let opts = SimpleFileOptions::default()
+                .compression_method(method)
+                .with_aes_encryption_bytes(AesMode::Aes256, PASSWORD);
+            w.start_file("a", opts).unwrap();
+            w.write_all(&p1).unwrap();
+            w.start_file("b", opts).unwrap();
+            w.write_all(&p2).unwrap();
+            let mut cur = Cursor::new(w.finish().unwrap().into_inner());
+            for expected in [&p1, &p2] {
+                let opts = zip::ZipReadOptions::new().password(Some(PASSWORD));
+                let mut f = zip::read::read_zipfile_from_stream_with_options(&mut cur, opts)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(&read_all(&mut f, How::ReadToEnd).unwrap(), expected);
+            }
+        }
+    }
+
+    /// Callers that stop early are not penalised: no HMAC check, no error,
+    /// and the next entry in a stream is still reachable.
+    #[test]
+    fn early_drop_is_not_an_error() {
+        let p = pseudo_random(64 * 1024);
+        for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+            let b = aes_archive(&p, method);
+            let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+            let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+            let mut buf = [0u8; 1000];
+            f.read_exact(&mut buf).unwrap();
+            assert_eq!(&buf[..], &p[..1000]);
+            drop(f);
+            // a fresh handle reads the whole entry fine
+            let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+            assert_eq!(read_all(&mut f, How::ReadToEnd).unwrap(), p);
+        }
+    }
+}
