@@ -470,7 +470,9 @@ fn test_cannot_symlink_outside_destination_zip_stream() {
 /// name is `central_name` with mode 777 while its local header says `local_name` (same length),
 /// and returns the mode of `outside/b.txt` afterwards.
 #[cfg(all(unix, not(miri)))]
-pub(crate) fn victim_mode_after_central_only_name<F: FnOnce(Vec<u8>) -> zip::result::ZipResult<()>>(
+pub(crate) fn victim_mode_after_central_only_name<
+    F: FnOnce(Vec<u8>) -> zip::result::ZipResult<()>,
+>(
     link: &str,
     link_target: &str,
     central_name: &str,
