@@ -520,7 +520,7 @@ pub(crate) fn victim_mode_after_central_only_name<F: FnOnce(Vec<u8>) -> Result<(
         .permissions()
         .mode();
 
-    extract().unwrap();
+    extract(archive).unwrap();
     assert!(
         dest.join(local_name).is_file(),
         "the local entry was not written"
