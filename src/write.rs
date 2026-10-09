@@ -25,6 +25,7 @@ use core::mem::{self, offset_of, size_of};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
+use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
@@ -1119,6 +1120,18 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
+        for one_extra in file.extra_data_fields() {
+            let mut buff = Cursor::new(Vec::new());
+            one_extra.write(&mut buff, false)?;
+            let buff = buff.into_inner();
+            if buff.len() >= 4 {
+                options.add_extra_field(
+                    u16::from_le_bytes([buff[0], buff[1]]),
+                    &buff[4..],
+                    false,
+                )?;
+            }
+        }
         let file_name = name.to_string();
         self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options)
     }
@@ -1347,6 +1360,69 @@ impl<W: Write + Seek> ZipWriter<W> {
         let path = path_to_string(path)?;
         let target = path_to_string(target)?;
         self.add_symlink(path, target, options)
+    }
+
+    /// Add a file whose contents were already compressed by a [`ZipFileBuilder`].
+    ///
+    /// The compressed data is copied into the archive verbatim, so the compression work can be
+    /// done ahead of time, possibly on another thread. See [`ZipFileBuilder`] for an example of
+    /// parallelizing compression this way. The file must not have the same name as a file already
+    /// in the archive.
+    pub fn add_prepared_file(&mut self, file: PreparedZipFile) -> ZipResult<()> {
+        let PreparedZipFile {
+            file_name,
+            options,
+            crc32,
+            uncompressed_size,
+            compressed_size,
+            data,
+        } = file;
+        let raw_values = ZipRawValues {
+            crc32,
+            compressed_size,
+            uncompressed_size,
+        };
+
+        self.start_entry(&file_name, options, Some(raw_values))?;
+        self.writing_raw = true;
+
+        // start_entry leaves the inner writer as a bare Storer (a compression encoder is only
+        // installed by start_file*), so the already-compressed bytes pass through unchanged.
+        // Write directly to the inner writer rather than through ZipWriter::write, whose stats
+        // bookkeeping (CRC-32 hashing and the large-file size check) is redundant here: the CRC
+        // and sizes are already known, and large_file was set from them in finish().
+        let result = self
+            .inner
+            .try_inner_mut()
+            .and_then(|writer| writer.write_all(&data));
+        self.ok_or_abort_file(result)?;
+
+        // The local file header was written from the raw values, but for large files it contains
+        // a ZIP64 extra field with placeholder sizes; go back and patch it now. When the
+        // underlying writer doesn't support seeking, the entry uses a data descriptor instead,
+        // which finish_file() skips for raw entries, so write it here.
+        let auto_large_file = self.auto_large_file;
+        let result = (|| -> ZipResult<()> {
+            let writer = self.inner.try_inner_mut()?;
+            let Some((file_name_raw, file)) = self.files.last_mut() else {
+                debug_assert!(
+                    false,
+                    "Newly added file not found while finishing it in add_prepared_file"
+                );
+                return Err(ZipError::FileNotFound);
+            };
+            if file.is_using_data_descriptor() {
+                file.write_data_descriptor(writer, auto_large_file)?;
+            } else if file.large_file {
+                let file_end = writer.stream_position()?;
+                file.update_local_file_header(writer, file_name_raw)?;
+                writer.seek(SeekFrom::Start(file_end))?;
+            }
+            Ok(())
+        })();
+        self.ok_or_abort_file(result)?;
+
+        self.finish_file()
     }
 
     fn finalize(&mut self) -> ZipResult<u64> {
@@ -1836,6 +1912,212 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     }
 }
 
+/// Compresses the contents of a single file entry independently of any [`ZipWriter`], so that
+/// the CPU-intensive part of adding files to an archive can be parallelized.
+///
+/// The builder compresses the data written to it into memory as it arrives, while tracking the
+/// metadata (CRC-32 and sizes) that the archive will need. Once [`ZipFileBuilder::finish`] has
+/// been called, the resulting [`PreparedZipFile`] can be appended to an archive with
+/// [`ZipWriter::add_prepared_file`], which copies the already-compressed bytes without
+/// recompressing them.
+///
+/// Builders are self-contained: they can be created, written to and finished on other threads
+/// while a `ZipWriter` is in use, and the prepared files appended to the archive as they become
+/// ready.
+///
+/// Encryption is not supported; pass options without encryption or creation will fail.
+///
+/// ```
+/// use std::io::{Cursor, Write};
+/// use zip::ZipWriter;
+/// use zip::write::{SimpleFileOptions, ZipFileBuilder};
+///
+/// # fn main() -> zip::result::ZipResult<()> {
+/// let options = SimpleFileOptions::default();
+///
+/// // Compress each file on its own thread...
+/// let handles = ["first.txt", "second.txt"].map(|name| {
+///     std::thread::spawn(move || -> zip::result::ZipResult<_> {
+///         let mut builder = ZipFileBuilder::new(name, options)?;
+///         builder.write_all(b"Contents compressed off-thread")?;
+///         builder.finish()
+///     })
+/// });
+///
+/// // ...then append them to the archive serially.
+/// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+/// for handle in handles {
+///     zip.add_prepared_file(handle.join().unwrap()?)?;
+/// }
+/// let zip_bytes = zip.finish()?.into_inner();
+/// # let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes))?;
+/// # assert_eq!(archive.len(), 2);
+/// # Ok(())
+/// # }
+/// ```
+pub struct ZipFileBuilder {
+    compressor: GenericZipWriter<Cursor<Vec<u8>>>,
+    file_name: Box<[u8]>,
+    options: FullFileOptions<'static, 'static>,
+    hasher: Hasher,
+    uncompressed_size: u64,
+}
+
+impl Debug for ZipFileBuilder {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "ZipFileBuilder {{file_name: {:?}, uncompressed_size: {}}}",
+            self.file_name.escape_ascii().to_string(),
+            self.uncompressed_size
+        ))
+    }
+}
+
+impl ZipFileBuilder {
+    /// Creates a builder that compresses a file's contents using the compression settings from
+    /// `options`.
+    ///
+    /// Fails if `options` requests encryption or an unsupported compression method or level.
+    pub fn new<N: AsRef<str>, T: FileOptionExtension>(
+        name: N,
+        mut options: FileOptions<'_, '_, T>,
+    ) -> ZipResult<Self> {
+        if options.encrypt_with.is_some() {
+            return Err(UnsupportedArchive(
+                "Encrypted files cannot be compressed outside of a ZipWriter",
+            ));
+        }
+        options.normalize();
+        let owned_options = FullFileOptions {
+            compression_method: options.compression_method,
+            compression_level: options.compression_level,
+            external_attributes: options.external_attributes,
+            last_modified_time: options.last_modified_time,
+            permissions: options.permissions,
+            large_file: options.large_file,
+            encrypt_with: None,
+            extended_options: ExtendedFileOptions {
+                extra_fields: options
+                    .extended_options
+                    .extra_fields()
+                    .cloned()
+                    .unwrap_or_default(),
+                file_comment: options.extended_options.take_file_comment(),
+            },
+            alignment: options.alignment,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: options.zopfli_buffer_size,
+            system: options.system,
+            name: None,
+        };
+        let mut compressor =
+            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(Cursor::new(Vec::new())));
+        let make_compressor = compressor.prepare_next_writer(
+            owned_options.compression_method,
+            owned_options.compression_level,
+            #[cfg(feature = "deflate-zopfli")]
+            owned_options.zopfli_buffer_size,
+        )?;
+        compressor.switch_to(make_compressor)?;
+        Ok(Self {
+            compressor,
+            file_name: name.as_ref().as_bytes().into(),
+            options: owned_options,
+            hasher: Hasher::new(),
+            uncompressed_size: 0,
+        })
+    }
+
+    /// Like [`ZipFileBuilder::new`], but takes a [`Path`] as the file name.
+    ///
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
+    pub fn new_from_path<T: FileOptionExtension, P: AsRef<Path>>(
+        path: P,
+        options: FileOptions<'_, '_, T>,
+    ) -> ZipResult<Self> {
+        Self::new(path_to_string(path)?, options)
+    }
+
+    /// Finishes compressing the file, and returns a [`PreparedZipFile`] that can be appended to
+    /// an archive with [`ZipWriter::add_prepared_file`].
+    pub fn finish(mut self) -> ZipResult<PreparedZipFile> {
+        self.compressor
+            .switch_to(Box::new(|bare| Ok(GenericZipWriter::Storer(bare))))?;
+        let GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(cursor)) = self.compressor else {
+            return Err(ZipError::Io(io::Error::other(
+                "Compressor was in an unexpected state",
+            )));
+        };
+        let data = cursor.into_inner().into_boxed_slice();
+        let compressed_size = data.len() as u64;
+        let mut options = self.options;
+        if compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
+            options.large_file = true;
+        }
+        Ok(PreparedZipFile {
+            file_name: self.file_name,
+            options,
+            crc32: self.hasher.finalize(),
+            uncompressed_size: self.uncompressed_size,
+            compressed_size,
+            data,
+        })
+    }
+}
+
+impl Write for ZipFileBuilder {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let Some(w) = self.compressor.ref_mut() else {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "write(): ZipFileBuilder was already closed",
+            ));
+        };
+        let count = w.write(buf)?;
+        self.hasher.update(&buf[..count]);
+        self.uncompressed_size += count as u64;
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self.compressor.ref_mut() {
+            Some(w) => w.flush(),
+            None => Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "flush(): ZipFileBuilder was already closed",
+            )),
+        }
+    }
+}
+
+/// A file entry whose contents have already been compressed by a [`ZipFileBuilder`], ready to be
+/// appended to an archive with [`ZipWriter::add_prepared_file`].
+pub struct PreparedZipFile {
+    file_name: Box<[u8]>,
+    options: FullFileOptions<'static, 'static>,
+    crc32: u32,
+    uncompressed_size: u64,
+    compressed_size: u64,
+    data: Box<[u8]>,
+}
+
+impl Debug for PreparedZipFile {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "PreparedZipFile {{file_name: {:?}, crc32: {}, uncompressed_size: {}, compressed_size: {}}}",
+            self.file_name.escape_ascii().to_string(),
+            self.crc32,
+            self.uncompressed_size,
+            self.compressed_size
+        ))
+    }
+}
+
 #[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<u32> {
     #[cfg(not(any(feature = "deflate-zopfli", feature = "deflate-flate2")))]
@@ -2006,39 +2288,40 @@ impl ZipFileData {
         writer: &mut T,
         file_name_raw: &[u8],
     ) -> ZipResult<()> {
-        let mut zip64_field_is_present = false;
-        for one_extra_field in self.extra_fields.inner.iter_mut() {
-            if let ExtraField::Zip64ExtendedInformation(zip64_block) = one_extra_field {
-                zip64_block.sizes = Some(Zip64Sizes {
-                    uncompressed_size: self.uncompressed_size,
-                    compressed_size: self.compressed_size,
-                });
-                if self.header_start >= ZIP64_BYTES_THR {
-                    zip64_block.header_start = Some(self.header_start);
-                }
-                zip64_field_is_present = true;
-            }
+        // Rebuild the ZIP64 extra field from the entry's current sizes and offset so it carries
+        // exactly the values the central header marks with the 0xFFFFFFFF sentinel (APPNOTE
+        // 4.5.3), and nothing more. The previous code edited an existing field in place and set
+        // both sizes unconditionally, so an entry whose offset alone needed ZIP64 got a field
+        // with size values the header did not mark; a reader that follows the spec then takes the
+        // first stored value (a size) as the offset. Recomputing (instead of editing in place)
+        // also makes repeated writes of this header identical, which `finalize` relies on when it
+        // writes the central directory and then rewrites it at the end of the file.
+        self.extra_fields
+            .inner
+            .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation(_)));
+        if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
+            self.large_file,
+            self.uncompressed_size,
+            self.compressed_size,
+            self.header_start,
+        ) {
+            self.extra_fields
+                .inner
+                .insert(0, ExtraField::Zip64ExtendedInformation(zip64_block));
         }
-        if !zip64_field_is_present {
-            // check if needed and add it
-            if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
-                self.large_file,
-                self.uncompressed_size,
-                self.compressed_size,
-                self.header_start,
-            ) {
-                self.extra_fields
-                    .inner
-                    .insert(0, ExtraField::Zip64ExtendedInformation(zip64_block));
-            }
-        }
+        // The ZIP64 field stores the two sizes together, so when it carries them both size
+        // fields of the header must hold the sentinel, not only the one that overflowed;
+        // otherwise the field has one more value than the header marks.
+        let sizes_in_zip64 = self.extra_fields.inner.iter().any(
+            |field| matches!(field, ExtraField::Zip64ExtendedInformation(z) if z.sizes.is_some()),
+        );
         let central_extra_fields = self.extra_fields.central_extra_fields();
         let extra_field_len: usize = self
             .extra_fields
             .central_extra_fields()
             .map(|x| x.size(false))
             .sum();
-        let compressed_size = if self.large_file {
+        let compressed_size = if self.large_file || sizes_in_zip64 {
             ZIP64_BYTES_THR as u32
         } else {
             self.compressed_size
@@ -2046,7 +2329,7 @@ impl ZipFileData {
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
-        let uncompressed_size = if self.large_file {
+        let uncompressed_size = if self.large_file || sizes_in_zip64 {
             ZIP64_BYTES_THR as u32
         } else {
             self.uncompressed_size

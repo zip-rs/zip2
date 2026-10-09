@@ -6,7 +6,7 @@
 
 use crate::aes_ctr::AesCipher;
 use crate::format::aes::AesMode;
-use crate::result::ZipResult;
+use crate::result::{ZipResult, invalid};
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{KeyInit, Mac, SimpleHmacReset};
@@ -140,15 +140,18 @@ pub struct AesReader<R> {
 }
 
 impl<R: Read> AesReader<R> {
-    pub const fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> AesReader<R> {
-        let data_length = compressed_size
-            - (PWD_VERIFY_LENGTH + AUTH_CODE_LENGTH + aes_mode.salt_length()) as u64;
-
-        Self {
+    pub fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> ZipResult<AesReader<R>> {
+        let metadata_len = (PWD_VERIFY_LENGTH + AUTH_CODE_LENGTH + aes_mode.salt_length()) as u64;
+        // we accept 0 size data
+        if compressed_size < metadata_len {
+            return Err(invalid!("Compressed size of AES data is invalid"));
+        }
+        let data_length = compressed_size - metadata_len;
+        Ok(Self {
             reader,
             aes_mode,
             data_length,
-        }
+        })
     }
 
     /// Read the AES header bytes and validate the password.
@@ -196,6 +199,7 @@ impl<R: Read> AesReader<R> {
             cipher,
             hmac,
             finalized: false,
+            authenticated: false,
         })
     }
 
@@ -231,6 +235,15 @@ pub struct AesReaderValid<R: Read> {
     cipher: Cipher,
     hmac: SimpleHmacReset<Sha1>,
     finalized: bool,
+    /// Set once the authentication code has been checked and matched.
+    authenticated: bool,
+}
+
+fn auth_error() -> Error {
+    Error::new(
+        ErrorKind::InvalidData,
+        "Invalid authentication code, this could be due to an invalid password or errors in the data",
+    )
 }
 
 impl<R: Read> Read for AesReaderValid<R> {
@@ -245,7 +258,15 @@ impl<R: Read> Read for AesReaderValid<R> {
     /// practically unusable, since its position after the error is not known.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.data_remaining == 0 {
-            return Ok(0);
+            if !self.finalized {
+                // handle case where payload is empty
+                self.verify_hmac()?;
+            } else if !self.authenticated {
+                // keep failing after an authentication error instead of reporting a clean EOF
+                return Err(auth_error());
+            } else {
+                return Ok(0);
+            }
         }
 
         // get the number of bytes to read, compare as u64 to make sure we can read more than
@@ -261,32 +282,13 @@ impl<R: Read> Read for AesReaderValid<R> {
         self.cipher.crypt_in_place(&mut buf[0..read]);
 
         // if there is no data left to read, check the integrity of the data
-        if self.data_remaining == 0 {
-            debug_assert!(
-                !self.finalized,
-                "Tried to use an already finalized HMAC. This is a bug!"
-            );
-            if self.finalized {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "Tried to use an already finalized HMAC",
-                ));
-            }
-            self.finalized = true;
-
-            // Zip uses HMAC-Sha1-80, which only uses the first half of the hash
-            // see https://www.winzip.com/win/en/aes_info.html#auth-faq
-            let mut read_auth_code = [0; AUTH_CODE_LENGTH];
-            self.reader.read_exact(&mut read_auth_code)?;
-            let computed_auth_code = &self.hmac.finalize_reset().into_bytes()[0..AUTH_CODE_LENGTH];
-
-            // use constant time comparison to mitigate timing attacks
-            if !constant_time_eq(computed_auth_code, &read_auth_code) {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "Invalid authentication code, this could be due to an invalid password or errors in the data",
-                ));
-            }
+        if self.data_remaining == 0 && !self.finalized {
+            self.verify_hmac()?;
+        } else if read == 0 && self.data_remaining > 0 {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "Read 0 bytes of AES data but still contains remaining data",
+            ));
         }
 
         Ok(read)
@@ -294,6 +296,48 @@ impl<R: Read> Read for AesReaderValid<R> {
 }
 
 impl<R: Read> AesReaderValid<R> {
+    fn verify_hmac(&mut self) -> io::Result<()> {
+        debug_assert!(
+            !self.finalized,
+            "Tried to use an already finalized HMAC. This is a bug!"
+        );
+        if self.finalized {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Tried to use an already finalized HMAC",
+            ));
+        }
+        self.finalized = true;
+
+        // Zip uses HMAC-Sha1-80, which only uses the first half of the hash
+        // see https://www.winzip.com/win/en/aes_info.html#auth-faq
+        let mut read_auth_code = [0; AUTH_CODE_LENGTH];
+        self.reader.read_exact(&mut read_auth_code)?;
+        let computed_auth_code = &self.hmac.finalize_reset().into_bytes()[0..AUTH_CODE_LENGTH];
+
+        // use constant time comparison to mitigate timing attacks
+        if !constant_time_eq(computed_auth_code, &read_auth_code) {
+            return Err(auth_error());
+        }
+        self.authenticated = true;
+        Ok(())
+    }
+
+    /// Authenticate the entry once the consumer has reached the end of the
+    /// decompressed data.
+    ///
+    /// A decompressor (e.g. Deflate) can report end-of-stream before it has
+    /// pulled all of the ciphertext through this reader, so `data_remaining`
+    /// never reaches 0 and the HMAC would never be checked. This reads (and
+    /// MACs) whatever ciphertext is left, bounded by the entry's compressed
+    /// size, and then verifies the authentication code.
+    pub(crate) fn finish(&mut self) -> io::Result<()> {
+        // `read` only returns `Ok(0)` once the HMAC has been verified successfully.
+        io::copy(self, &mut io::sink())?;
+        debug_assert!(self.finalized && self.authenticated);
+        Ok(())
+    }
+
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> R {
         self.reader
@@ -452,7 +496,7 @@ mod tests {
         {
             let compressed_length = buf.get_ref().len() as u64;
             let mut reader =
-                AesReader::new(&mut buf, aes_mode, compressed_length).validate(password)?;
+                AesReader::new(&mut buf, aes_mode, compressed_length)?.validate(password)?;
             reader.read_to_end(&mut read_buffer)?;
         }
 

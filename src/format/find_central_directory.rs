@@ -89,6 +89,13 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
 
             // If the archive is empty, there is nothing more to be checked, the archive is correct.
             if eocd.number_of_files == 0 {
+                // Consistency check: an empty CD ends where the EOCD starts, so its offset cannot
+                // be past the EOCD. Otherwise `ZipWriter::new_append` writes the next entry at
+                // that offset, growing the output to the declared size.
+                if relative_cd_offset > eocd_offset {
+                    parsing_error = Some(invalid!("Invalid CDFH offset in EOCD"));
+                    continue;
+                }
                 return Ok(CentralDirectoryEndInfo {
                     eocd: (eocd, eocd_offset).into(),
                     eocd64: None,

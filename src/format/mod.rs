@@ -3,6 +3,7 @@
 pub mod aes;
 pub mod blocks;
 pub mod compression;
+pub mod data_descriptor;
 pub mod extra_fields;
 pub(crate) mod find_central_directory;
 pub mod flags;
