@@ -366,7 +366,9 @@ pub(crate) enum LazyDecompressor<R: BufRead> {
         instantiator: DecompressorInstantiator<R>,
     },
     Initialized(Decompressor<R>),
-    FailedToInitialize,
+    /// The attempt to initialize the decompressor returned an error or panicked, or a previous read
+    /// from the decompressor panicked.
+    Failed,
 }
 
 impl<R: BufRead> Debug for LazyDecompressor<R> {
@@ -374,22 +376,22 @@ impl<R: BufRead> Debug for LazyDecompressor<R> {
         match self {
             LazyDecompressor::Uninitialized { .. } => f.write_str("Uninitialized"),
             LazyDecompressor::Initialized(r) => f.write_fmt(format_args!("Initialized({r:?})")),
-            LazyDecompressor::FailedToInitialize => f.write_str("FailedToInitialize"),
+            LazyDecompressor::Failed => f.write_str("FailedToInitialize"),
         }
     }
 }
 
 impl<R: BufRead> Read for LazyDecompressor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut decompressor = match replace(self, LazyDecompressor::FailedToInitialize) {
+        let mut decompressor = match replace(self, LazyDecompressor::Failed) {
             LazyDecompressor::Initialized(decompressor) => decompressor,
             LazyDecompressor::Uninitialized {
                 inner,
                 instantiator,
             } => instantiator(inner)?,
-            LazyDecompressor::FailedToInitialize => {
+            LazyDecompressor::Failed => {
                 return Err(io::Error::other(
-                    "Previously failed to initialize decompressor",
+                    "Decompressor previously failed to initialize or panicked while reading",
                 ));
             }
         };
@@ -626,7 +628,7 @@ impl<R: io::BufRead> LazyDecompressor<R> {
     pub fn into_inner(self) -> io::Result<R> {
         match self {
             LazyDecompressor::Uninitialized { inner, .. } => Ok(inner),
-            LazyDecompressor::FailedToInitialize => {
+            LazyDecompressor::Failed => {
                 Err(io::Error::other("Failed to initialize Decompressor"))
             }
             LazyDecompressor::Initialized(d) => Ok(match d {
