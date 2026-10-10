@@ -1,9 +1,8 @@
 //! Possible ZIP compression methods.
 
+use crate::format::compression::Compression;
 use core::fmt;
 use std::{fmt::Debug, io};
-
-use crate::format::compression::Compression;
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -352,6 +351,13 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     CompressionMethod::Ppmd,
 ];
 
+#[cfg(feature = "zstd")]
+pub(crate) enum LazyDecoder<R: io::BufRead> {
+    Started(zstd::Decoder<'static, R>),
+    NotStarted(R),
+    FailedToStart,
+}
+
 pub(crate) enum Decompressor<R: io::BufRead> {
     Stored(R),
     #[cfg(feature = "deflate-flate2")]
@@ -361,7 +367,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "_bzip2_any")]
     Bzip2(bzip2::bufread::BzDecoder<R>),
     #[cfg(feature = "zstd")]
-    Zstd(zstd::Decoder<'static, R>),
+    Zstd(LazyDecoder<R>),
     #[cfg(feature = "lzma")]
     Lzma(Lzma<R>),
     #[cfg(feature = "legacy-zip")]
@@ -421,6 +427,9 @@ pub(crate) enum Ppmd<R: io::BufRead> {
 
 impl<R: io::BufRead> io::Read for Decompressor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
         match self {
             Decompressor::Stored(r) => r.read(buf),
             #[cfg(feature = "deflate-flate2")]
@@ -430,7 +439,21 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             #[cfg(feature = "_bzip2_any")]
             Decompressor::Bzip2(r) => r.read(buf),
             #[cfg(feature = "zstd")]
-            Decompressor::Zstd(r) => r.read(buf),
+            Decompressor::Zstd(r) => replace_with::replace_with_and_return(
+                r,
+                || panic!("LazyDecoder replace_with panicked"),
+                |old_r| match old_r {
+                    LazyDecoder::Started(mut r) => (r.read(buf), LazyDecoder::Started(r)),
+                    LazyDecoder::NotStarted(inner) => match zstd::Decoder::with_buffer(inner) {
+                        Ok(mut decoder) => (decoder.read(buf), LazyDecoder::Started(decoder)),
+                        Err(e) => (Err(e), LazyDecoder::FailedToStart),
+                    },
+                    LazyDecoder::FailedToStart => (
+                        Err(io::Error::other("Failed to start Zstd decoder")),
+                        LazyDecoder::FailedToStart,
+                    ),
+                },
+            ),
             #[cfg(feature = "lzma")]
             Decompressor::Lzma(r) => match r {
                 Lzma::Uninitialized {
@@ -561,7 +584,7 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "_bzip2_any")]
             CompressionMethod::Bzip2 => Decompressor::Bzip2(bzip2::bufread::BzDecoder::new(reader)),
             #[cfg(feature = "zstd")]
-            CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
+            CompressionMethod::Zstd => Decompressor::Zstd(LazyDecoder::NotStarted(reader)),
             #[cfg(feature = "lzma")]
             CompressionMethod::Lzma => Decompressor::Lzma(Lzma::Uninitialized {
                 reader: Some(reader),
@@ -606,7 +629,13 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "_bzip2_any")]
             Decompressor::Bzip2(r) => r.into_inner(),
             #[cfg(feature = "zstd")]
-            Decompressor::Zstd(r) => r.finish(),
+            Decompressor::Zstd(LazyDecoder::Started(r)) => r.finish(),
+            #[cfg(feature = "zstd")]
+            Decompressor::Zstd(LazyDecoder::NotStarted(r)) => r,
+            #[cfg(feature = "zstd")]
+            Decompressor::Zstd(LazyDecoder::FailedToStart) => {
+                return Err(io::Error::other("Failed to start Zstd decoder"));
+            }
             #[cfg(feature = "lzma")]
             Decompressor::Lzma(r) => match r {
                 Lzma::Uninitialized { mut reader, .. } => reader

@@ -45,6 +45,7 @@ deflate64 = { version = "^0.1.10", optional = true }
 lzma-rust2 = { version = "^0.21.0", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.9", optional = true }
 typed-path = "0.12"
+replace_with = { version = "0.1.8", optional = true }
 
 [target.'cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
 nix = { version = "^0.31.3", features = ["fs"], default-features = false }
@@ -112,6 +113,7 @@ default = [
     "zstd",
     "xz",
 ]
+zstd = ["dep:zstd", "dep:replace_with"]
 
 # The following features are not supported on wasm
 bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
