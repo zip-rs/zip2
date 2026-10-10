@@ -441,7 +441,7 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => replace_with::replace_with_and_return(
                 r,
-                || panic!("LazyDecoder replace_with panicked"),
+                || LazyDecoder::FailedToStart,
                 |old_r| match old_r {
                     LazyDecoder::Started(mut r) => (r.read(buf), LazyDecoder::Started(r)),
                     LazyDecoder::NotStarted(inner) => match zstd::Decoder::with_buffer(inner) {
