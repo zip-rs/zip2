@@ -56,3 +56,8 @@ updates:
         patterns:
           - github/codeql-action/init
           - github/codeql-action/analyze
+
+  - package-ecosystem: docker
+    directory: /.devcontainer
+    schedule:
+      interval: daily
