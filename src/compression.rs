@@ -378,7 +378,7 @@ pub(crate) enum LazyDecompressor<R: BufRead> {
 }
 
 /// Because LazyDecompressor::read changes the state to Failed(None) initially and then changes it
-/// back after returning, it is unwind-safe.
+/// back when returning, it is unwind-safe.
 impl<R: BufRead> UnwindSafe for LazyDecompressor<R> {}
 impl<R: BufRead> RefUnwindSafe for LazyDecompressor<R> {}
 
