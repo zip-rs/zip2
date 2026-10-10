@@ -8,6 +8,7 @@ use core::mem::replace;
 use std::fmt::Formatter;
 use std::io;
 use std::io::{BufRead, Read};
+use std::panic::RefUnwindSafe;
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -357,7 +358,7 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
 ];
 
 pub(crate) type DecompressorInstantiator<R> =
-    Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>> + Send + Sync + 'static>;
+    Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>> + Send + Sync + RefUnwindSafe + 'static>;
 
 pub(crate) enum LazyDecompressor<R: BufRead> {
     Uninitialized {
