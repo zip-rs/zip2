@@ -1,13 +1,13 @@
 //! Possible ZIP compression methods.
 
 use crate::format::compression::Compression;
-use crate::result::{ZipError, ZipResult, invalid};
 use core::fmt;
 use core::fmt::Debug;
 use core::mem::replace;
 use std::fmt::Formatter;
 use std::io;
 use std::io::{BufRead, Read};
+use crate::result::ZipResult;
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -525,7 +525,7 @@ impl<R: io::BufRead> LazyDecompressor<R> {
                                 ))
                             })?);
                         if properties_size != 5 {
-                            return Err(invalid!(
+                            return Err(crate::result::invalid!(
                                 "unexpected LZMA properties size of {properties_size}"
                             ));
                         }
@@ -560,6 +560,7 @@ impl<R: io::BufRead> LazyDecompressor<R> {
                 }),
                 #[cfg(feature = "ppmd")]
                 CompressionMethod::Ppmd => Box::new(|mut reader| {
+                    use crate::result::{ZipError, invalid};
                     let mut buffer = [0; 2];
                     reader.read_exact(&mut buffer)?;
                     let parameters = u16::from_le_bytes(buffer);
