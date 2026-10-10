@@ -4,11 +4,11 @@ use crate::format::compression::Compression;
 use crate::result::ZipResult;
 use core::fmt;
 use core::fmt::Debug;
+use core::fmt::Formatter;
 use core::mem::replace;
-use std::fmt::Formatter;
+use core::panic::RefUnwindSafe;
 use std::io;
 use std::io::{BufRead, Read};
-use std::panic::RefUnwindSafe;
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
