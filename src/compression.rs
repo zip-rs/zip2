@@ -9,6 +9,7 @@ use core::mem::replace;
 use core::panic::RefUnwindSafe;
 use std::io;
 use std::io::{BufRead, Read};
+use std::panic::UnwindSafe;
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -375,6 +376,11 @@ pub(crate) enum LazyDecompressor<R: BufRead> {
     /// from the decompressor panicked.
     Failed(Option<R>),
 }
+
+/// Because LazyDecompressor::read changes the state to Failed(None) initially and then changes it
+/// back after returning, it is unwind-safe.
+impl<R: BufRead> UnwindSafe for LazyDecompressor<R> {}
+impl<R: BufRead> RefUnwindSafe for LazyDecompressor<R> {}
 
 impl<R: BufRead> Debug for LazyDecompressor<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
