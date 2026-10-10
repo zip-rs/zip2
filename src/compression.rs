@@ -628,9 +628,7 @@ impl<R: io::BufRead> LazyDecompressor<R> {
     pub fn into_inner(self) -> io::Result<R> {
         match self {
             LazyDecompressor::Uninitialized { inner, .. } => Ok(inner),
-            LazyDecompressor::Failed => {
-                Err(io::Error::other("Failed to initialize Decompressor"))
-            }
+            LazyDecompressor::Failed => Err(io::Error::other("Failed to initialize Decompressor")),
             LazyDecompressor::Initialized(d) => Ok(match d {
                 Decompressor::Stored(r) => r,
                 #[cfg(feature = "deflate-flate2")]
