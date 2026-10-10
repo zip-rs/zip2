@@ -483,7 +483,7 @@ impl<R: io::BufRead> LazyDecompressor<R> {
         uncompressed_size: u64,
         #[cfg_attr(not(feature = "legacy-zip"), allow(unused))] flags: u16,
     ) -> Self {
-        let instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>>> =
+        let instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>> + Send + Sync + 'static> =
             match compression_method {
                 CompressionMethod::Stored => Box::new(|reader| Ok(Decompressor::Stored(reader))),
                 #[cfg(feature = "deflate-flate2")]
