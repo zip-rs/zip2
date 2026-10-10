@@ -398,7 +398,8 @@ impl<R: BufRead> Read for LazyDecompressor<R> {
                 *self = LazyDecompressor::Failed(inner);
                 error
             })?,
-            LazyDecompressor::Failed(_) => {
+            LazyDecompressor::Failed(inner) => {
+                *self = LazyDecompressor::Failed(inner);
                 return Err(io::Error::other(
                     "Decompressor previously failed to initialize or panicked while reading",
                 ));
