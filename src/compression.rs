@@ -359,7 +359,7 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
 pub(crate) enum LazyDecompressor<R: BufRead> {
     Uninitialized {
         inner: R,
-        instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>>>,
+        instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>> + Send + Sync + 'static>,
     },
     Initialized(Decompressor<R>),
     FailedToInitialize,
