@@ -592,19 +592,19 @@ impl<R: io::BufRead> LazyDecompressor<R> {
                     )))
                 }),
                 #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Shrink => Box::new(|reader| {
+                CompressionMethod::Shrink => Box::new(move |reader| {
                     Ok(Decompressor::Shrink(
                         crate::legacy::shrink::ShrinkDecoder::new(reader, uncompressed_size),
                     ))
                 }),
                 #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Reduce(n) => Box::new(|reader| {
+                CompressionMethod::Reduce(n) => Box::new(move |reader| {
                     Ok(Decompressor::Reduce(
                         crate::legacy::reduce::ReduceDecoder::new(reader, uncompressed_size, n),
                     ))
                 }),
                 #[cfg(feature = "legacy-zip")]
-                CompressionMethod::Implode => Box::new(|reader| {
+                CompressionMethod::Implode => Box::new(move |reader| {
                     Ok(Decompressor::Implode(
                         crate::legacy::implode::ImplodeDecoder::new(
                             reader,
