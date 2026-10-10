@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.1](https://github.com/zip-rs/zip2/compare/v9.0.0...v9.0.1) - 2026-10-10
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- set_permissions was still following symlinks in non-streaming extraction ([#1038](https://github.com/zip-rs/zip2/pull/1038))
+- two arithmetic overflows in the implode decoder ([#1028](https://github.com/zip-rs/zip2/pull/1028))
+- reject an empty archive whose central directory offset is past the EOCD ([#1025](https://github.com/zip-rs/zip2/pull/1025))
+- don't panic when two entries extract to the same path ([#1023](https://github.com/zip-rs/zip2/pull/1023))
+- fail reads that exceed the declared uncompressed size ([#1022](https://github.com/zip-rs/zip2/pull/1022))
+- shrink decoder skipped LZW code 8191 ([#1029](https://github.com/zip-rs/zip2/pull/1029))
+- write only the sentinel-marked values in a central ZIP64 field ([#1027](https://github.com/zip-rs/zip2/pull/1027))
+
 ## [9.0.0](https://github.com/zip-rs/zip2/compare/v9.0.0-pre3...v9.0.0) - 2026-10-08
 
 ### <!-- 0 -->🚀 Features
