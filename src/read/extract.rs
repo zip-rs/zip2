@@ -43,6 +43,7 @@ pub enum SymlinkExtractAction {
 #[non_exhaustive]
 pub struct ExtractOptions {
     pub(crate) symlink_action: SymlinkExtractAction,
+    pub(crate) size_limit: Option<u64>,
 }
 
 impl ExtractOptions {
@@ -51,6 +52,15 @@ impl ExtractOptions {
     pub fn symlink_action(self, symlink_action: SymlinkExtractAction) -> Self {
         Self {
             symlink_action,
+            ..self
+        }
+    }
+
+    /// Set the maximum declared uncompressed size accepted for extraction.
+    #[must_use]
+    pub fn with_size_limit(self, size_limit: u64) -> Self {
+        Self {
+            size_limit: Some(size_limit),
             ..self
         }
     }
@@ -396,6 +406,16 @@ impl<R: Read + Seek> ZipArchive<R> {
         extract_options: ExtractOptions,
     ) -> ZipResult<()> {
         use std::fs;
+
+        if let Some(limit) = extract_options.size_limit {
+            match self.decompressed_size() {
+                Some(size) if size > u128::from(limit) => {
+                    return Err(ZipError::DecompressedSizeLimitExceeded { size, limit });
+                }
+                None => return Err(ZipError::DecompressedSizeUnknown),
+                Some(_) => {}
+            }
+        }
 
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
