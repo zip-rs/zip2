@@ -352,10 +352,11 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
 ];
 
 #[cfg(feature = "zstd")]
+#[derive(Default)]
 pub(crate) enum LazyDecoder<R: io::BufRead> {
     Started(zstd::Decoder<'static, R>),
     NotStarted(R),
-    FailedToStart,
+    #[default] FailedToStart,
 }
 
 pub(crate) enum Decompressor<R: io::BufRead> {
@@ -439,21 +440,17 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             #[cfg(feature = "_bzip2_any")]
             Decompressor::Bzip2(r) => r.read(buf),
             #[cfg(feature = "zstd")]
-            Decompressor::Zstd(r) => replace_with::replace_with_and_return(
-                r,
-                || LazyDecoder::FailedToStart,
-                |old_r| match old_r {
-                    LazyDecoder::Started(mut r) => (r.read(buf), LazyDecoder::Started(r)),
-                    LazyDecoder::NotStarted(inner) => match zstd::Decoder::with_buffer(inner) {
-                        Ok(mut decoder) => (decoder.read(buf), LazyDecoder::Started(decoder)),
-                        Err(e) => (Err(e), LazyDecoder::FailedToStart),
-                    },
-                    LazyDecoder::FailedToStart => (
-                        Err(io::Error::other("Failed to start Zstd decoder")),
-                        LazyDecoder::FailedToStart,
-                    ),
-                },
-            ),
+            Decompressor::Zstd(r) => {
+                let mut decoder = match core::mem::take(r) {
+                    LazyDecoder::Started(decoder) => decoder,
+                    LazyDecoder::NotStarted(inner) => zstd::Decoder::with_buffer(inner)?,
+                    LazyDecoder::FailedToStart =>
+                        return Err(io::Error::other("Failed to start Zstd decoder")),
+                };
+                let result = decoder.read(buf);
+                *r = LazyDecoder::Started(decoder);
+                result
+            },
             #[cfg(feature = "lzma")]
             Decompressor::Lzma(r) => match r {
                 Lzma::Uninitialized {
