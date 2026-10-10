@@ -243,6 +243,10 @@ impl<R: std::io::Read> ZipCryptoReaderValid<R> {
     pub fn into_inner(self) -> R {
         self.reader.file
     }
+    /// Return the underlying reader.
+    pub fn inner(&self) -> &R {
+        &self.reader.file
+    }
 }
 
 /// Standard CRC-32 lookup table used by the `ZipCrypto` encryption algorithm
