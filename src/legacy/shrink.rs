@@ -26,7 +26,10 @@ struct CodeQueue {
 impl CodeQueue {
     fn new() -> Self {
         let mut codes = [None; FREE_CODE_QUEUE_SIZE];
-        for (i, code) in ((CONTROL_CODE as u16 + 1)..=(MAX_CODE as u16 - 1)).enumerate() {
+        // All free codes, CONTROL_CODE + 1 ..= MAX_CODE (8191 included), as in hwzip's
+        // code_queue_init and PKZIP's encoder. Leaving MAX_CODE out made every code the
+        // encoder assigns after it one off from the decoder's table.
+        for (i, code) in ((CONTROL_CODE as u16 + 1)..=(MAX_CODE as u16)).enumerate() {
             codes[i] = Some(code);
         }
         Self { next_idx: 0, codes }
@@ -88,14 +91,17 @@ fn unshrink_partial_clear(codetab: &mut [Codetab], queue: &mut CodeQueue) {
 
     // Clear "non-prefix" codes in the table; populate the code queue.
     let mut code_queue_size = 0;
-    for i in (CONTROL_CODE + 1)..MAX_CODE {
+    for i in (CONTROL_CODE + 1)..=MAX_CODE {
         if !is_prefix[i] {
             codetab[i].prefix_code = None;
             queue.codes[code_queue_size] = Some(i as u16);
             code_queue_size += 1;
         }
     }
-    queue.codes[code_queue_size] = None; // End-of-queue marker.
+    // End-of-queue marker, unless every free code went back into the queue (it is then full).
+    if let Some(end) = queue.codes.get_mut(code_queue_size) {
+        *end = None;
+    }
     queue.next_idx = 0;
 }
 

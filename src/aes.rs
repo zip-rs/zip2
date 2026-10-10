@@ -195,11 +195,11 @@ impl<R: Read> AesReader<R> {
 
         Ok(AesReaderValid {
             reader: self.reader,
-            data_length: self.data_length,
             data_remaining: self.data_length,
             cipher,
             hmac,
             finalized: false,
+            authenticated: false,
         })
     }
 
@@ -231,11 +231,19 @@ impl<R: Read> AesReader<R> {
 #[derive(Debug)]
 pub struct AesReaderValid<R: Read> {
     reader: R,
-    data_length: u64,
     data_remaining: u64,
     cipher: Cipher,
     hmac: SimpleHmacReset<Sha1>,
     finalized: bool,
+    /// Set once the authentication code has been checked and matched.
+    authenticated: bool,
+}
+
+fn auth_error() -> Error {
+    Error::new(
+        ErrorKind::InvalidData,
+        "Invalid authentication code, this could be due to an invalid password or errors in the data",
+    )
 }
 
 impl<R: Read> Read for AesReaderValid<R> {
@@ -250,11 +258,15 @@ impl<R: Read> Read for AesReaderValid<R> {
     /// practically unusable, since its position after the error is not known.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.data_remaining == 0 {
-            // handle case were payload is empty
-            if self.data_length == 0 {
+            if !self.finalized {
+                // handle case where payload is empty
                 self.verify_hmac()?;
+            } else if !self.authenticated {
+                // keep failing after an authentication error instead of reporting a clean EOF
+                return Err(auth_error());
+            } else {
+                return Ok(0);
             }
-            return Ok(0);
         }
 
         // get the number of bytes to read, compare as u64 to make sure we can read more than
@@ -270,7 +282,7 @@ impl<R: Read> Read for AesReaderValid<R> {
         self.cipher.crypt_in_place(&mut buf[0..read]);
 
         // if there is no data left to read, check the integrity of the data
-        if self.data_remaining == 0 {
+        if self.data_remaining == 0 && !self.finalized {
             self.verify_hmac()?;
         } else if read == 0 && self.data_remaining > 0 {
             return Err(Error::new(
@@ -305,11 +317,24 @@ impl<R: Read> AesReaderValid<R> {
 
         // use constant time comparison to mitigate timing attacks
         if !constant_time_eq(computed_auth_code, &read_auth_code) {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "Invalid authentication code, this could be due to an invalid password or errors in the data",
-            ));
+            return Err(auth_error());
         }
+        self.authenticated = true;
+        Ok(())
+    }
+
+    /// Authenticate the entry once the consumer has reached the end of the
+    /// decompressed data.
+    ///
+    /// A decompressor (e.g. Deflate) can report end-of-stream before it has
+    /// pulled all of the ciphertext through this reader, so `data_remaining`
+    /// never reaches 0 and the HMAC would never be checked. This reads (and
+    /// MACs) whatever ciphertext is left, bounded by the entry's compressed
+    /// size, and then verifies the authentication code.
+    pub(crate) fn finish(&mut self) -> io::Result<()> {
+        // `read` only returns `Ok(0)` once the HMAC has been verified successfully.
+        io::copy(self, &mut io::sink())?;
+        debug_assert!(self.finalized && self.authenticated);
         Ok(())
     }
 

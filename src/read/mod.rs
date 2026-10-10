@@ -16,10 +16,11 @@ use std::sync::OnceLock;
 mod config;
 pub use config::{ArchiveOffset, Config};
 
-/// Provides high level API for reading from a stream.
 pub(crate) mod extract;
+pub use extract::{ExtractOptions, RootDirFilter, SymlinkExtractAction, root_dir_common_filter};
+
+/// Provides high level API for reading from a stream.
 pub(crate) mod stream;
-pub use extract::{RootDirFilter, root_dir_common_filter};
 pub use stream::{
     read_zipfile_from_stream, read_zipfile_from_stream_with_compressed_size,
     read_zipfile_from_stream_with_options,
@@ -29,7 +30,7 @@ pub(crate) mod magic_finder;
 pub(crate) mod readers;
 
 pub(crate) mod zipfile;
-pub use zipfile::{ZipFile, ZipFileEntry, ZipFileSeek};
+pub use zipfile::{ZipFile, ZipFileEntry, ZipFileEntryWithDataDescriptor, ZipFileSeek};
 
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
@@ -262,6 +263,9 @@ pub struct ZipReadOptions<'a> {
     force_uncompressed_size: Option<u64>,
     /// override the checksum for stream read
     force_crc: Option<u32>,
+    /// The uncompressed size is not known (streamed entry with a data descriptor), so it
+    /// can't bound the output.
+    pub(crate) size_unknown: bool,
 }
 
 impl<'a> ZipReadOptions<'a> {
