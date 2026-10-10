@@ -356,7 +356,8 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
 pub(crate) enum LazyDecoder<R: io::BufRead> {
     Started(zstd::Decoder<'static, R>),
     NotStarted(R),
-    #[default] FailedToStart,
+    #[default]
+    FailedToStart,
 }
 
 pub(crate) enum Decompressor<R: io::BufRead> {
@@ -444,13 +445,14 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
                 let mut decoder = match core::mem::take(r) {
                     LazyDecoder::Started(decoder) => decoder,
                     LazyDecoder::NotStarted(inner) => zstd::Decoder::with_buffer(inner)?,
-                    LazyDecoder::FailedToStart =>
-                        return Err(io::Error::other("Failed to start Zstd decoder")),
+                    LazyDecoder::FailedToStart => {
+                        return Err(io::Error::other("Failed to start Zstd decoder"));
+                    }
                 };
                 let result = decoder.read(buf);
                 *r = LazyDecoder::Started(decoder);
                 result
-            },
+            }
             #[cfg(feature = "lzma")]
             Decompressor::Lzma(r) => match r {
                 Lzma::Uninitialized {
