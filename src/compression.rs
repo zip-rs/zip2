@@ -1,9 +1,13 @@
 //! Possible ZIP compression methods.
 
-use core::fmt;
-use std::{fmt::Debug, io};
-
 use crate::format::compression::Compression;
+use crate::result::{ZipError, ZipResult, invalid};
+use core::fmt;
+use core::fmt::Debug;
+use core::mem::replace;
+use std::fmt::Formatter;
+use std::io;
+use std::io::{BufRead, Read};
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -352,6 +356,45 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     CompressionMethod::Ppmd,
 ];
 
+pub(crate) enum LazyDecompressor<R: BufRead> {
+    Uninitialized {
+        inner: R,
+        instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>>>,
+    },
+    Initialized(Decompressor<R>),
+    FailedToInitialize,
+}
+
+impl<R: BufRead> Debug for LazyDecompressor<R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LazyDecompressor::Uninitialized { .. } => f.write_str("Uninitialized"),
+            LazyDecompressor::Initialized(r) => f.write_fmt(format_args!("Initialized({r:?})")),
+            LazyDecompressor::FailedToInitialize => f.write_str("FailedToInitialize"),
+        }
+    }
+}
+
+impl<R: BufRead> Read for LazyDecompressor<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut decompressor = match replace(self, LazyDecompressor::FailedToInitialize) {
+            LazyDecompressor::Initialized(decompressor) => decompressor,
+            LazyDecompressor::Uninitialized {
+                inner,
+                instantiator,
+            } => instantiator(inner)?,
+            LazyDecompressor::FailedToInitialize => {
+                return Err(io::Error::other(
+                    "Previously failed to initialize decompressor",
+                ));
+            }
+        };
+        let result = decompressor.read(buf);
+        *self = LazyDecompressor::Initialized(decompressor);
+        result
+    }
+}
+
 pub(crate) enum Decompressor<R: io::BufRead> {
     Stored(R),
     #[cfg(feature = "deflate-flate2")]
@@ -363,7 +406,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "zstd")]
     Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
-    Lzma(Lzma<R>),
+    Lzma(Box<lzma_rust2::LzmaReader<R>>),
     #[cfg(feature = "legacy-zip")]
     Shrink(crate::legacy::shrink::ShrinkDecoder<R>),
     #[cfg(feature = "legacy-zip")]
@@ -373,7 +416,7 @@ pub(crate) enum Decompressor<R: io::BufRead> {
     #[cfg(feature = "xz")]
     Xz(Box<lzma_rust2::XzReader<R>>),
     #[cfg(feature = "ppmd")]
-    Ppmd(Ppmd<R>),
+    Ppmd(Box<ppmd_rust::Ppmd8Decoder<R>>),
 }
 
 impl<R: io::BufRead> Debug for Decompressor<R> {
@@ -404,21 +447,6 @@ impl<R: io::BufRead> Debug for Decompressor<R> {
     }
 }
 
-#[cfg(feature = "lzma")]
-pub(crate) enum Lzma<R: io::BufRead> {
-    Uninitialized {
-        reader: Option<R>,
-        uncompressed_size: u64,
-    },
-    Initialized(Box<lzma_rust2::LzmaReader<R>>),
-}
-
-#[cfg(feature = "ppmd")]
-pub(crate) enum Ppmd<R: io::BufRead> {
-    Uninitialized(Option<R>),
-    Initialized(Box<ppmd_rust::Ppmd8Decoder<R>>),
-}
-
 impl<R: io::BufRead> io::Read for Decompressor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
@@ -432,104 +460,11 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
             #[cfg(feature = "zstd")]
             Decompressor::Zstd(r) => r.read(buf),
             #[cfg(feature = "lzma")]
-            Decompressor::Lzma(r) => match r {
-                Lzma::Uninitialized {
-                    reader,
-                    uncompressed_size,
-                } => {
-                    let mut reader = reader.take().ok_or_else(|| {
-                        io::Error::other("Reader was not set while reading LZMA data")
-                    })?;
-
-                    // 5.8.8.1 LZMA Version Information & 5.8.8.2 LZMA Properties Size
-                    let mut header = [0; 4];
-                    reader.read_exact(&mut header)?;
-                    let _version_information =
-                        u16::from_le_bytes(header[0..2].try_into().map_err(|e| {
-                            std::io::Error::other(format!("Cannot transform header to u16: {e}"))
-                        })?);
-                    let properties_size =
-                        u16::from_le_bytes(header[2..4].try_into().map_err(|e| {
-                            std::io::Error::other(format!("Cannot transform header to u16: {e}"))
-                        })?);
-                    if properties_size != 5 {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            format!("unexpected LZMA properties size of {properties_size}"),
-                        ));
-                    }
-
-                    let mut props_data = [0; 5];
-                    reader.read_exact(&mut props_data)?;
-                    let props = props_data[0];
-                    let dict_size =
-                        u32::from_le_bytes(props_data[1..5].try_into().map_err(|e| {
-                            std::io::Error::other(format!("Cannot transform header to u32: {e}"))
-                        })?);
-
-                    // We don't need to handle the end-of-stream marker here, since the LZMA reader
-                    // stops at the end-of-stream marker OR when it has decoded uncompressed_size bytes, whichever comes first.
-                    let mut decompressor = lzma_rust2::LzmaReader::new_with_props(
-                        reader,
-                        *uncompressed_size,
-                        props,
-                        dict_size,
-                        None,
-                    )?;
-
-                    let read = decompressor.read(buf)?;
-
-                    *r = Lzma::Initialized(Box::new(decompressor));
-
-                    Ok(read)
-                }
-                Lzma::Initialized(decompressor) => decompressor.read(buf),
-            },
+            Decompressor::Lzma(r) => r.read(buf),
             #[cfg(feature = "xz")]
             Decompressor::Xz(r) => r.read(buf),
             #[cfg(feature = "ppmd")]
-            Decompressor::Ppmd(r) => match r {
-                Ppmd::Uninitialized(reader) => {
-                    let mut reader = reader.take().ok_or_else(|| {
-                        io::Error::other("Reader was not set while reading PPMd data")
-                    })?;
-
-                    let mut buffer = [0; 2];
-                    reader.read_exact(&mut buffer)?;
-                    let parameters = u16::from_le_bytes(buffer);
-
-                    let order = u32::from((parameters & 0x0F) + 1);
-                    let memory_size = 1024 * 1024 * u32::from(((parameters >> 4) & 0xFF) + 1);
-                    let restoration_method = (parameters >> 12) & 0x0F;
-
-                    let mut decompressor = ppmd_rust::Ppmd8Decoder::new(
-                        reader,
-                        order,
-                        memory_size,
-                        restoration_method.into(),
-                    )
-                    .map_err(|error| match error {
-                        ppmd_rust::Error::RangeDecoderInitialization => io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "PPMd range coder initialization failed",
-                        ),
-                        ppmd_rust::Error::InvalidParameter => {
-                            io::Error::new(io::ErrorKind::InvalidInput, "Invalid PPMd parameter")
-                        }
-                        ppmd_rust::Error::IoError(io_error) => io_error,
-                        ppmd_rust::Error::MemoryAllocation => {
-                            io::Error::new(io::ErrorKind::OutOfMemory, "Memory allocation failed")
-                        }
-                    })?;
-
-                    let read = decompressor.read(buf)?;
-
-                    *r = Ppmd::Initialized(Box::new(decompressor));
-
-                    Ok(read)
-                }
-                Ppmd::Initialized(decompressor) => decompressor.read(buf),
-            },
+            Decompressor::Ppmd(r) => r.read(buf),
             #[cfg(feature = "legacy-zip")]
             Decompressor::Shrink(r) => r.read(buf),
             #[cfg(feature = "legacy-zip")]
@@ -540,97 +475,190 @@ impl<R: io::BufRead> io::Read for Decompressor<R> {
     }
 }
 
-impl<R: io::BufRead> Decompressor<R> {
+impl<R: io::BufRead> LazyDecompressor<R> {
     pub fn new(
         reader: R,
         compression_method: CompressionMethod,
         #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
         uncompressed_size: u64,
         #[cfg_attr(not(feature = "legacy-zip"), allow(unused))] flags: u16,
-    ) -> crate::result::ZipResult<Self> {
-        Ok(match compression_method {
-            CompressionMethod::Stored => Decompressor::Stored(reader),
-            #[cfg(feature = "deflate-flate2")]
-            CompressionMethod::Deflated => {
-                Decompressor::Deflated(flate2::bufread::DeflateDecoder::new(reader))
-            }
-            #[cfg(feature = "deflate64")]
-            CompressionMethod::Deflate64 => {
-                Decompressor::Deflate64(deflate64::Deflate64Decoder::with_buffer(reader))
-            }
-            #[cfg(feature = "_bzip2_any")]
-            CompressionMethod::Bzip2 => Decompressor::Bzip2(bzip2::bufread::BzDecoder::new(reader)),
-            #[cfg(feature = "zstd")]
-            CompressionMethod::Zstd => Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?),
-            #[cfg(feature = "lzma")]
-            CompressionMethod::Lzma => Decompressor::Lzma(Lzma::Uninitialized {
-                reader: Some(reader),
-                uncompressed_size,
-            }),
-            #[cfg(feature = "xz")]
-            CompressionMethod::Xz => {
-                Decompressor::Xz(Box::new(lzma_rust2::XzReader::new(reader, false)))
-            }
-            #[cfg(feature = "ppmd")]
-            CompressionMethod::Ppmd => Decompressor::Ppmd(Ppmd::Uninitialized(Some(reader))),
-            #[cfg(feature = "legacy-zip")]
-            CompressionMethod::Shrink => Decompressor::Shrink(
-                crate::legacy::shrink::ShrinkDecoder::new(reader, uncompressed_size),
-            ),
-            #[cfg(feature = "legacy-zip")]
-            CompressionMethod::Reduce(n) => Decompressor::Reduce(
-                crate::legacy::reduce::ReduceDecoder::new(reader, uncompressed_size, n),
-            ),
-            #[cfg(feature = "legacy-zip")]
-            CompressionMethod::Implode => Decompressor::Implode(
-                crate::legacy::implode::ImplodeDecoder::new(reader, uncompressed_size, flags),
-            ),
-            method => {
-                let method = method.serialize_to_u16();
-                return Err(crate::result::ZipError::CompressionMethodNotSupported(
-                    method,
-                ));
-            }
-        })
+    ) -> Self {
+        let instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>>> =
+            match compression_method {
+                CompressionMethod::Stored => Box::new(|reader| Ok(Decompressor::Stored(reader))),
+                #[cfg(feature = "deflate-flate2")]
+                CompressionMethod::Deflated => Box::new(|reader| {
+                    Ok(Decompressor::Deflated(
+                        flate2::bufread::DeflateDecoder::new(reader),
+                    ))
+                }),
+                #[cfg(feature = "deflate64")]
+                CompressionMethod::Deflate64 => Box::new(|reader| {
+                    Ok(Decompressor::Deflate64(
+                        deflate64::Deflate64Decoder::with_buffer(reader),
+                    ))
+                }),
+                #[cfg(feature = "_bzip2_any")]
+                CompressionMethod::Bzip2 => Box::new(|reader| {
+                    Ok(Decompressor::Bzip2(bzip2::bufread::BzDecoder::new(reader)))
+                }),
+                #[cfg(feature = "zstd")]
+                CompressionMethod::Zstd => {
+                    Box::new(|reader| Ok(Decompressor::Zstd(zstd::Decoder::with_buffer(reader)?)))
+                }
+                #[cfg(feature = "lzma")]
+                CompressionMethod::Lzma => {
+                    Box::new(move |mut reader| {
+                        // 5.8.8.1 LZMA Version Information & 5.8.8.2 LZMA Properties Size
+                        let mut header = [0; 4];
+                        reader.read_exact(&mut header)?;
+                        let _version_information =
+                            u16::from_le_bytes(header[0..2].try_into().map_err(|e| {
+                                std::io::Error::other(format!(
+                                    "Cannot transform header to u16: {e}"
+                                ))
+                            })?);
+                        let properties_size =
+                            u16::from_le_bytes(header[2..4].try_into().map_err(|e| {
+                                std::io::Error::other(format!(
+                                    "Cannot transform header to u16: {e}"
+                                ))
+                            })?);
+                        if properties_size != 5 {
+                            return Err(invalid!(
+                                "unexpected LZMA properties size of {properties_size}"
+                            ));
+                        }
+
+                        let mut props_data = [0; 5];
+                        reader.read_exact(&mut props_data)?;
+                        let props = props_data[0];
+                        let dict_size =
+                            u32::from_le_bytes(props_data[1..5].try_into().map_err(|e| {
+                                std::io::Error::other(format!(
+                                    "Cannot transform header to u32: {e}"
+                                ))
+                            })?);
+                        // We don't need to handle the end-of-stream marker here, since the LZMA reader
+                        // stops at the end-of-stream marker OR when it has decoded uncompressed_size bytes, whichever comes first.
+                        Ok(Decompressor::Lzma(Box::new(
+                            lzma_rust2::LzmaReader::new_with_props(
+                                reader,
+                                uncompressed_size,
+                                props,
+                                dict_size,
+                                None,
+                            )?,
+                        )))
+                    })
+                }
+                #[cfg(feature = "xz")]
+                CompressionMethod::Xz => Box::new(|reader| {
+                    Ok(Decompressor::Xz(Box::new(lzma_rust2::XzReader::new(
+                        reader, false,
+                    ))))
+                }),
+                #[cfg(feature = "ppmd")]
+                CompressionMethod::Ppmd => Box::new(|mut reader| {
+                    let mut buffer = [0; 2];
+                    reader.read_exact(&mut buffer)?;
+                    let parameters = u16::from_le_bytes(buffer);
+
+                    let order = u32::from((parameters & 0x0F) + 1);
+                    let memory_size = 1024 * 1024 * u32::from(((parameters >> 4) & 0xFF) + 1);
+                    let restoration_method = (parameters >> 12) & 0x0F;
+
+                    Ok(Decompressor::Ppmd(Box::new(
+                        ppmd_rust::Ppmd8Decoder::new(
+                            reader,
+                            order,
+                            memory_size,
+                            restoration_method.into(),
+                        )
+                        .map_err(|error| match error {
+                            ppmd_rust::Error::RangeDecoderInitialization => {
+                                invalid!("PPMd range coder initialization failed")
+                            }
+                            ppmd_rust::Error::InvalidParameter => {
+                                invalid!("Invalid PPMd parameter")
+                            }
+                            ppmd_rust::Error::IoError(io_error) => ZipError::Io(io_error),
+                            ppmd_rust::Error::MemoryAllocation => ZipError::Io(io::Error::new(
+                                io::ErrorKind::OutOfMemory,
+                                "Memory allocation failed",
+                            )),
+                        })?,
+                    )))
+                }),
+                #[cfg(feature = "legacy-zip")]
+                CompressionMethod::Shrink => Box::new(|reader| {
+                    Ok(Decompressor::Shrink(
+                        crate::legacy::shrink::ShrinkDecoder::new(reader, uncompressed_size),
+                    ))
+                }),
+                #[cfg(feature = "legacy-zip")]
+                CompressionMethod::Reduce(n) => Box::new(|reader| {
+                    Ok(Decompressor::Reduce(
+                        crate::legacy::reduce::ReduceDecoder::new(reader, uncompressed_size, n),
+                    ))
+                }),
+                #[cfg(feature = "legacy-zip")]
+                CompressionMethod::Implode => Box::new(|reader| {
+                    Ok(Decompressor::Implode(
+                        crate::legacy::implode::ImplodeDecoder::new(
+                            reader,
+                            uncompressed_size,
+                            flags,
+                        ),
+                    ))
+                }),
+                method => {
+                    let method = method.serialize_to_u16();
+                    Box::new(move |_reader| {
+                        Err(crate::result::ZipError::CompressionMethodNotSupported(
+                            method,
+                        ))
+                    })
+                }
+            };
+        LazyDecompressor::Uninitialized {
+            inner: reader,
+            instantiator,
+        }
     }
 
     /// Consumes this decoder, returning the underlying reader.
     #[allow(clippy::infallible_destructuring_match)]
     pub fn into_inner(self) -> io::Result<R> {
-        let inner = match self {
-            Decompressor::Stored(r) => r,
-            #[cfg(feature = "deflate-flate2")]
-            Decompressor::Deflated(r) => r.into_inner(),
-            #[cfg(feature = "deflate64")]
-            Decompressor::Deflate64(r) => r.into_inner(),
-            #[cfg(feature = "_bzip2_any")]
-            Decompressor::Bzip2(r) => r.into_inner(),
-            #[cfg(feature = "zstd")]
-            Decompressor::Zstd(r) => r.finish(),
-            #[cfg(feature = "lzma")]
-            Decompressor::Lzma(r) => match r {
-                Lzma::Uninitialized { mut reader, .. } => reader
-                    .take()
-                    .ok_or_else(|| io::Error::other("Reader was not set"))?,
-                Lzma::Initialized(decoder) => decoder.into_inner(),
-            },
-            #[cfg(feature = "legacy-zip")]
-            Decompressor::Shrink(r) => r.into_inner(),
-            #[cfg(feature = "legacy-zip")]
-            Decompressor::Reduce(r) => r.into_inner(),
-            #[cfg(feature = "legacy-zip")]
-            Decompressor::Implode(r) => r.into_inner(),
-            #[cfg(feature = "xz")]
-            Decompressor::Xz(r) => r.into_inner(),
-            #[cfg(feature = "ppmd")]
-            Decompressor::Ppmd(r) => match r {
-                Ppmd::Uninitialized(mut reader) => reader
-                    .take()
-                    .ok_or_else(|| io::Error::other("Reader was not set"))?,
-                Ppmd::Initialized(decoder) => decoder.into_inner(),
-            },
-        };
-        Ok(inner)
+        match self {
+            LazyDecompressor::Uninitialized { inner, .. } => Ok(inner),
+            LazyDecompressor::FailedToInitialize => {
+                Err(io::Error::other("Failed to initialize Decompressor"))
+            }
+            LazyDecompressor::Initialized(d) => Ok(match d {
+                Decompressor::Stored(r) => r,
+                #[cfg(feature = "deflate-flate2")]
+                Decompressor::Deflated(r) => r.into_inner(),
+                #[cfg(feature = "deflate64")]
+                Decompressor::Deflate64(r) => r.into_inner(),
+                #[cfg(feature = "_bzip2_any")]
+                Decompressor::Bzip2(r) => r.into_inner(),
+                #[cfg(feature = "zstd")]
+                Decompressor::Zstd(r) => r.finish(),
+                #[cfg(feature = "lzma")]
+                Decompressor::Lzma(r) => r.into_inner(),
+                #[cfg(feature = "legacy-zip")]
+                Decompressor::Shrink(r) => r.into_inner(),
+                #[cfg(feature = "legacy-zip")]
+                Decompressor::Reduce(r) => r.into_inner(),
+                #[cfg(feature = "legacy-zip")]
+                Decompressor::Implode(r) => r.into_inner(),
+                #[cfg(feature = "xz")]
+                Decompressor::Xz(r) => r.into_inner(),
+                #[cfg(feature = "ppmd")]
+                Decompressor::Ppmd(r) => r.into_inner(),
+            }),
+        }
     }
 }
 
