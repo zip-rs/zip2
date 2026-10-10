@@ -242,6 +242,10 @@ impl<R: Read> ReduceDecoder<R> {
     pub fn into_inner(self) -> R {
         self.compressed_reader
     }
+
+    pub fn inner(&self) -> &R {
+        &self.compressed_reader
+    }
 }
 
 impl<R: Read> Read for ReduceDecoder<R> {

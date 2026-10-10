@@ -56,6 +56,10 @@ impl<R> Crc32Reader<R> {
         self.check == computed_value
     }
 
+    pub fn inner(&self) -> &R {
+        &self.inner
+    }
+
     pub fn into_inner(self) -> R {
         self.inner
     }
