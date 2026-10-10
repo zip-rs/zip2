@@ -1,7 +1,6 @@
 name: CI
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: ci-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
@@ -103,6 +102,8 @@ jobs:
       matrix:
         workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag: ["--all-features", "--no-default-features", ""]
+    permissions:
+      security-events: write # for SARIF upload
     name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
     runs-on: ubuntu-latest
     steps:
