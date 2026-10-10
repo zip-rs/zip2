@@ -356,10 +356,12 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     CompressionMethod::Ppmd,
 ];
 
+pub(crate) type DecompressorInstantiator<R> = Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>> + Send + Sync + 'static>;
+
 pub(crate) enum LazyDecompressor<R: BufRead> {
     Uninitialized {
         inner: R,
-        instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>> + Send + Sync + 'static>,
+        instantiator: DecompressorInstantiator<R>,
     },
     Initialized(Decompressor<R>),
     FailedToInitialize,
@@ -483,7 +485,7 @@ impl<R: io::BufRead> LazyDecompressor<R> {
         uncompressed_size: u64,
         #[cfg_attr(not(feature = "legacy-zip"), allow(unused))] flags: u16,
     ) -> Self {
-        let instantiator: Box<dyn FnOnce(R) -> ZipResult<Decompressor<R>> + Send + Sync + 'static> =
+        let instantiator: DecompressorInstantiator<R> =
             match compression_method {
                 CompressionMethod::Stored => Box::new(|reader| Ok(Decompressor::Stored(reader))),
                 #[cfg(feature = "deflate-flate2")]
