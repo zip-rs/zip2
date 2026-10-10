@@ -463,3 +463,155 @@ fn test_cannot_symlink_outside_destination_zip_stream() {
     assert!(reader.extract(dest).is_err());
     assert!(!dest_sibling.join("dest-file").exists());
 }
+
+/// The central directory is not checked against the local headers, so it can name a path that no
+/// local entry wrote. Sets up `dest/<link>` as a symlink to `link_target` (relative to the base,
+/// which also holds `outside/b.txt` with mode 600), extracts one entry whose central directory
+/// name is `central_name` with mode 777 while its local header says `local_name` (same length),
+/// and returns the mode of `outside/b.txt` afterwards.
+#[cfg(all(unix, not(miri)))]
+pub(crate) fn victim_mode_after_central_only_name<
+    F: FnOnce(std::io::Cursor<Vec<u8>>, &std::path::Path) -> zip::result::ZipResult<()>,
+>(
+    link: &str,
+    link_target: &str,
+    central_name: &str,
+    local_name: &str,
+    extract: F,
+) -> zip::result::ZipResult<u32> {
+    use std::io::{Cursor, Write};
+    use std::os::unix::fs::PermissionsExt;
+    use zip::write::SimpleFileOptions;
+
+    let base = tempfile::TempDir::new().unwrap();
+    let outside = base.path().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    let victim = outside.join("b.txt");
+    std::fs::write(&victim, b"keep").unwrap();
+    std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let dest = base.path().join("dest");
+    std::fs::create_dir(&dest).unwrap();
+    std::os::unix::fs::symlink(base.path().join(link_target), dest.join(link)).unwrap();
+
+    let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .unix_permissions(0o777);
+    w.start_file(central_name, opts).unwrap();
+    w.write_all(b"x").unwrap();
+    w.add_symlink("new_link", dest.join(link).to_str().unwrap(), opts)
+        .unwrap();
+    let mut archive = w.finish().unwrap().into_inner();
+    // Rename the entry in its local header only, so the stream writes `local_name` while the
+    // central directory still gives `central_name` mode 777.
+    let at = 30;
+    let len = central_name.len();
+    assert_eq!(local_name.len(), len);
+    assert_eq!(&archive[at..at + len], central_name.as_bytes());
+    archive[at..at + len].copy_from_slice(local_name.as_bytes());
+
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    let link_mode_before = std::fs::symlink_metadata(dest.join(link))
+        .unwrap()
+        .permissions()
+        .mode();
+
+    extract(Cursor::new(archive), &dest)?;
+    assert!(
+        dest.join(local_name).is_file(),
+        "the local entry was not written"
+    );
+
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    {
+        assert_eq!(
+            std::fs::symlink_metadata(dest.join(link))
+                .unwrap()
+                .permissions()
+                .mode(),
+            link_mode_before,
+            "a mode was applied to a symlink that extraction did not write"
+        );
+        let symlink_mode = std::fs::symlink_metadata(dest.join("new_link"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(
+            symlink_mode & 0o777,
+            0o777,
+            "symlink permissions were not preserved"
+        );
+    }
+
+    Ok(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777)
+}
+
+/// A central-directory-only name that goes through a symlink already in the destination, to a
+/// file outside it, must get no mode.
+#[cfg(all(unix, not(miri)))]
+#[test]
+fn extract_ignores_modes_for_names_it_did_not_write() {
+    use zip::unstable::stream::ZipStreamReader;
+    let mode = victim_mode_after_central_only_name(
+        "a",
+        "outside",
+        "a/b.txt",
+        "c_d.txt",
+        |archive, dest| ZipStreamReader::new(archive).extract(dest),
+    )
+    .unwrap();
+    assert_eq!(mode, 0o600, "a mode was applied through the symlink");
+}
+
+/// Same when using a ZipArchive.
+#[cfg(all(unix, not(miri)))]
+#[test]
+fn ziparchive_extract_does_not_set_symlink_target_mode() {
+    use zip::ZipArchive;
+    use zip::read::{ExtractOptions, SymlinkExtractAction};
+    let err = victim_mode_after_central_only_name(
+        "a",
+        "outside/b.txt",
+        "a/b.txt",
+        "c_d.txt",
+        |archive, dest| {
+            ZipArchive::new(archive)?.extract_with_options(
+                dest,
+                ExtractOptions::default()
+                    .symlink_action(SymlinkExtractAction::ExtractNoRestrictions),
+            )
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("escapes the destination"), "{err}");
+}
+
+/// The same when the central-directory-only name is the symlink itself: `set_permissions` would
+/// follow it to the file outside.
+#[cfg(all(unix, not(miri)))]
+#[test]
+fn extract_ignores_modes_for_a_name_that_is_a_symlink_it_did_not_write() {
+    use zip::unstable::stream::ZipStreamReader;
+    let mode = victim_mode_after_central_only_name(
+        "e.txt",
+        "outside/b.txt",
+        "e.txt",
+        "f.txt",
+        |archive, dest| ZipStreamReader::new(archive).extract(dest),
+    )
+    .unwrap();
+    assert_eq!(mode, 0o600, "a mode was applied through the symlink");
+}
