@@ -23,6 +23,9 @@ These are our requirements for PRs, in addition to the usual functionality and r
   - Unit tests, run with `--no-default-features` AND with `--all-features` AND with the default features, each run
     against the MSRV (see README.md) AND the latest stable Rust version AND the latest nightly Rust version, on Windows, MacOS 
     AND Ubuntu (yes, that's a 3-dimensional matrix).
+  - Unit tests also run with `--no-default-features --feature deflate-zopfli`. With Zopfli and without Bzip2, Deflate is
+    write-only and so round-trip tests can't use the default compression method; and since many apps only need to write ZIP files
+    and not read them, it's a common enough configuration to test.
   - `cargo clippy --all-targets` and `cargo doc --no-deps` must pass with `--no-default-features` AND with `--all-features` 
     AND with the default features.
   - `cargo fmt --check --all` must pass.

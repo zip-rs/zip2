@@ -4,9 +4,11 @@ use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::magic::Magic;
+use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
+use crate::read::extract::{make_symlink, make_symlink_as_file_utf8};
 use crate::read::{
-    MAX_SYMLINK_TARGET_LEN, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
-    central_header_to_zip_file_inner, make_symlink,
+    SymlinkExtractAction, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
+    central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, invalid};
 
@@ -26,27 +28,23 @@ impl<R> ZipStreamReader<R> {
     }
 }
 
+fn parse_central_directory<R: Read>(reader: &mut R) -> ZipResult<ZipFileEntry<'static>> {
+    // Give archive_offset and central_header_start dummy value 0, since
+    // they are not used in the output.
+    let archive_offset = 0;
+    let central_header_start = 0;
+
+    // Parse central header
+    let block = ZipCentralEntryBlock::parse(reader)?;
+    let (file, file_name_raw) =
+        central_header_to_zip_file_inner(reader, archive_offset, central_header_start, block)?;
+    Ok(ZipFileEntry {
+        file_name_raw: Cow::Owned(file_name_raw),
+        data: Cow::Owned(file),
+    })
+}
+
 impl<R: Read> ZipStreamReader<R> {
-    fn parse_central_directory(&mut self) -> ZipResult<ZipFileEntry<'_>> {
-        // Give archive_offset and central_header_start dummy value 0, since
-        // they are not used in the output.
-        let archive_offset = 0;
-        let central_header_start = 0;
-
-        // Parse central header
-        let block = ZipCentralEntryBlock::parse(&mut self.0)?;
-        let (file, file_name_raw) = central_header_to_zip_file_inner(
-            &mut self.0,
-            archive_offset,
-            central_header_start,
-            block,
-        )?;
-        Ok(ZipFileEntry {
-            file_name_raw: Cow::Owned(file_name_raw),
-            data: Cow::Owned(file),
-        })
-    }
-
     /// Iterate over the stream and extract all file and their
     /// metadata.
     pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
@@ -54,7 +52,12 @@ impl<R: Read> ZipStreamReader<R> {
             visitor.visit_file(&mut file)?;
         }
 
-        while let Ok(metadata) = self.parse_central_directory() {
+        // `read_zipfile_from_stream` returned `None` because it read the signature of the
+        // first central directory header, so the stream is now 4 bytes into that header. Put
+        // the signature back in front so every header, the first one included, parses whole.
+        let signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
+        let mut central_directory = (&signature[..]).chain(&mut self.0);
+        while let Ok(metadata) = parse_central_directory(&mut central_directory) {
             visitor.visit_additional_metadata(&metadata)?;
         }
 
@@ -71,12 +74,25 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction of symlink is not possible since we don't have access to the
     /// external attributes in the local headers of the entries
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        struct Extractor(PathBuf, IndexMap<Box<[u8]>, ()>);
+        /// Destination, every entry written in this pass (raw local name -> the checked output
+        /// path `visit_file` wrote it to), and the modes the central directory gives them.
+        struct Extractor {
+            outpath: PathBuf,
+            resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
+            #[cfg(unix)]
+            file_permissions: std::collections::BTreeMap<PathBuf, u32>,
+        }
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-                self.1.insert(file.name_raw().into(), ());
-                let mut outpath = self.0.clone();
-                file.safe_prepare_path(&self.0, &mut outpath, None::<&(_, fn(&Path) -> bool)>)?;
+                let extract_options = crate::read::extract::ExtractOptions::default();
+                let mut outpath = self.outpath.clone();
+                file.safe_prepare_path(
+                    &self.outpath,
+                    &mut outpath,
+                    None::<&(_, fn(&Path) -> bool)>,
+                )?;
+                self.resolved_paths
+                    .insert(file.name_raw().into(), outpath.clone());
 
                 if file.is_symlink() {
                     // Same bound as `ZipArchive::extract`: the declared
@@ -98,7 +114,23 @@ impl<R: Read> ZipStreamReader<R> {
 
                     let mut target = Vec::with_capacity(declared_len as usize);
                     file.read_to_end(&mut target)?;
-                    make_symlink(&outpath, &target, &self.1)?;
+                    match extract_options.symlink_action {
+                        SymlinkExtractAction::ExtractAsFile => {
+                            make_symlink_as_file(&outpath, &target)?;
+                        }
+                        SymlinkExtractAction::ExtractAsFileUtf8 => {
+                            make_symlink_as_file_utf8(&outpath, &target)?;
+                        }
+                        _ => {
+                            make_symlink(
+                                &self.outpath,
+                                &outpath,
+                                &target,
+                                &self.resolved_paths,
+                                extract_options.symlink_action,
+                            )?;
+                        }
+                    }
                     return Ok(());
                 }
                 if file.is_dir() {
@@ -113,21 +145,17 @@ impl<R: Read> ZipStreamReader<R> {
 
             #[allow(unused)]
             fn visit_additional_metadata(&mut self, metadata: &ZipFileEntry<'_>) -> ZipResult<()> {
+                // The central directory is not checked against the local headers, so its
+                // names only select entries this pass already wrote: a name that wasn't
+                // written gets no mode, and the mode goes to the path `visit_file` checked,
+                // never to a path rebuilt from the central directory.
                 #[cfg(unix)]
-                {
-                    use super::ZipError;
-                    use std::os::unix::fs::PermissionsExt;
-                    let filepath = metadata
-                        .enclosed_name()
-                        .ok_or(crate::result::invalid!("Invalid file path"))?;
-
-                    let outpath = self.0.join(filepath);
-
-                    if let Some(mode) = metadata.unix_mode() {
-                        fs::set_permissions(outpath, fs::Permissions::from_mode(mode))?;
-                    }
+                if let (Some(outpath), Some(mode)) = (
+                    self.resolved_paths.get(metadata.name_raw()),
+                    metadata.unix_mode(),
+                ) {
+                    self.file_permissions.insert(outpath.clone(), mode);
                 }
-
                 Ok(())
             }
         }
@@ -135,7 +163,27 @@ impl<R: Read> ZipStreamReader<R> {
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
-        self.visit(&mut Extractor(directory, IndexMap::new()))
+        let mut extractor = Extractor {
+            outpath: directory,
+            resolved_paths: IndexMap::new(),
+            #[cfg(unix)]
+            file_permissions: Default::default(),
+        };
+        self.visit(&mut extractor)?;
+
+        // As `ZipArchive::extract`: children before parents, so a read-only directory does not
+        // block setting its contents. Never through a symlink: `set_permissions` follows them.
+        #[cfg(unix)]
+        {
+            for (path, mode) in extractor.file_permissions.into_iter().rev() {
+                use std::os::unix::fs::PermissionsExt;
+                crate::read::extract::set_permissions_no_follow_symlink(
+                    &path,
+                    std::fs::Permissions::from_mode(mode),
+                )?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -176,10 +224,10 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
 /// given compressed size and don't read any further ahead than that.
-pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
-    reader: &'a mut R,
+pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
+    reader: &mut R,
     compressed_size: u64,
-) -> ZipResult<Option<ZipFile<'a, R>>> {
+) -> ZipResult<Option<ZipFile<'_, R>>> {
     let options = ZipReadOptions::default().override_compressed_size(compressed_size);
     read_zipfile_from_stream_with_options(reader, options)
 }
@@ -188,7 +236,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<'a, R: Read>(
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
-    options: ZipReadOptions<'a>,
+    mut options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
     // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
@@ -226,7 +274,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
         return Err(e.into());
     }
     // parse extra fields
-    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block)?;
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, true)?;
     let mut data = ZipFileData::from_local_block(block, extra_fields)?;
     data.apply_extra_fields(&mut file_name_raw)?;
     if data.is_using_data_descriptor() {
@@ -240,6 +288,9 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     }
     if let Some(uncomp_size) = options.force_uncompressed_size {
         data.uncompressed_size = uncomp_size;
+    } else if data.is_using_data_descriptor() {
+        // The local header doesn't carry the size; it follows the data.
+        options.size_unknown = true;
     }
     if let Some(crc) = options.force_crc {
         data.crc32 = crc;

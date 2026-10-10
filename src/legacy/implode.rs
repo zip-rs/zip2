@@ -26,7 +26,8 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
 
     // Number of bytes representing the Huffman code.
     let byte = is.read::<8, u8>()?;
-    let num_bytes = (byte + 1) as usize;
+    // Widen before adding: a header byte of 0xff means 256 code-length bytes.
+    let num_bytes = usize::from(byte) + 1;
 
     let mut codeword_idx = 0;
     for _byte_idx in 0..num_bytes {
@@ -94,7 +95,7 @@ fn hwexplode(
     dst: &mut Vec<u8>,
 ) -> std::io::Result<()> {
     // Pre-allocate capacity
-    dst.reserve(uncomp_len);
+    dst.reserve(uncomp_len.min(crate::legacy::MAX_PREALLOC));
 
     let bit_length = src.len() as u64 * 8;
     let mut is = BitReader::endian(Cursor::new(&src), LittleEndian);
@@ -211,7 +212,8 @@ impl<R: Read> Read for ImplodeDecoder<R> {
             self.compressed_reader.read_to_end(&mut compressed_bytes)?;
 
             // Pre-allocate stream buffer
-            self.stream.reserve(self.uncompressed_size as usize);
+            self.stream
+                .reserve((self.uncompressed_size as usize).min(crate::legacy::MAX_PREALLOC));
 
             hwexplode(
                 &compressed_bytes,
@@ -246,5 +248,51 @@ mod tests {
         hwexplode(HAMLET_256, 256, false, false, false, &mut dst).unwrap();
         assert_eq!(dst.len(), 256);
         assert_eq!(&dst, &HAMLET_256_OUT);
+    }
+
+    /// A Huffman table header byte of 0xff means 256 code-length bytes, which is valid. The count
+    /// was computed as `byte + 1` in u8, which overflows (a panic in debug builds).
+    #[test]
+    fn code_length_table_with_256_bytes() {
+        use bitstream_io::{BitWrite, BitWriter, LittleEndian};
+
+        // 256 one-byte runs of length 8 (0x07: run 1, length 7 + 1) describe 256 codewords of
+        // 8 bits each: a full tree for the literal table.
+        let mut src = Vec::new();
+        {
+            let mut w = BitWriter::endian(&mut src, LittleEndian);
+            w.write::<8, u8>(0xff).unwrap();
+            for _ in 0..256 {
+                w.write::<8, u8>(0x07).unwrap();
+            }
+            w.byte_align().unwrap();
+        }
+        let mut is = super::BitReader::endian(super::Cursor::new(&src), super::LittleEndian);
+        super::read_huffman_code(&mut is, 256).expect("a 256-entry code is valid");
+    }
+
+    /// Truncating a valid stream anywhere must give an error, never a panic: the Huffman decoder
+    /// computed the bits left as `length - position`, which underflowed once a symbol had moved
+    /// the reader past the end of the data.
+    #[test]
+    fn truncated_stream_is_an_error() {
+        for cut in 0..HAMLET_256.len() {
+            let r = std::panic::catch_unwind(|| {
+                let mut dst = Vec::new();
+                let r = hwexplode(&HAMLET_256[..cut], 256, false, false, false, &mut dst);
+                (r.is_ok(), dst)
+            });
+            assert!(
+                r.is_ok(),
+                "hwexplode panicked on {cut} of {} bytes",
+                HAMLET_256.len()
+            );
+            let Ok((ok, dst)) = r else { continue };
+            // A prefix can only decode to a prefix of the output.
+            assert!(
+                !ok || HAMLET_256_OUT.starts_with(&dst),
+                "cut {cut}: wrong output"
+            );
+        }
     }
 }

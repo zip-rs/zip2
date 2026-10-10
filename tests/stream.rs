@@ -17,7 +17,6 @@ impl ZipStreamVisitor for DummyVisitor {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Default, Debug, Eq, PartialEq)]
 struct CounterVisitor(u64, u64);
 
@@ -45,6 +44,50 @@ fn invalid_offset2() {
     ZipStreamReader::new(Cursor::new(include_bytes!("data/invalid_offset2.zip")))
         .visit(&mut DummyVisitor)
         .unwrap_err();
+}
+
+fn three_files_with_modes() -> Vec<u8> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    // Stored: the stream reader must decode these, and a zopfli-only build can't inflate.
+    let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, mode) in [("a.sh", 0o751), ("b.txt", 0o600), ("c.txt", 0o644)] {
+        w.start_file(name, opts.unix_permissions(mode)).unwrap();
+        w.write_all(name.as_bytes()).unwrap();
+    }
+    w.finish().unwrap().into_inner()
+}
+
+/// `visit` reads every central directory header after the local entries. The local-entry loop
+/// stops on the central directory signature, so the first header must still parse.
+#[test]
+fn visit_sees_every_central_directory_entry() {
+    let mut counter = CounterVisitor::default();
+    ZipStreamReader::new(Cursor::new(three_files_with_modes()))
+        .visit(&mut counter)
+        .unwrap();
+    assert_eq!(counter, CounterVisitor(3, 3));
+}
+
+/// `extract` applies the unix modes from the central directory, as `ZipArchive::extract` does.
+// These tests use the file system, which miri's isolation does not allow.
+#[cfg(all(unix, not(miri)))]
+#[test]
+fn extract_applies_unix_modes() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::TempDir::new().unwrap();
+    ZipStreamReader::new(Cursor::new(three_files_with_modes()))
+        .extract(dir.path())
+        .unwrap();
+    for (name, mode) in [("a.sh", 0o751), ("b.txt", 0o600), ("c.txt", 0o644)] {
+        let got = std::fs::metadata(dir.path().join(name))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(got, mode, "{name}");
+    }
 }
 
 /// test case to ensure we don't preemptively over allocate based on the
