@@ -377,7 +377,9 @@ impl<R: BufRead> RefUnwindSafe for LazyDecompressor<R> {}
 impl<R: BufRead> Debug for LazyDecompressor<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            LazyDecompressor::Uninitialized { .. } => f.write_str("Uninitialized"),
+            LazyDecompressor::Uninitialized { parameters, .. } => {
+                f.write_fmt(format_args!("Uninitialized({parameters:?}"))
+            }
             LazyDecompressor::Initialized(r) => f.write_fmt(format_args!("Initialized({r:?})")),
             LazyDecompressor::Failed(None) => f.write_str("Failed (inner writer lost)"),
             LazyDecompressor::Failed(Some(_)) => f.write_str("Failed (inner writer held)"),
