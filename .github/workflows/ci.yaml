@@ -82,6 +82,24 @@ jobs:
       - run: rustup target add x86_64-unknown-netbsd
       # only checks no-default-features for now beause some deps needs a c compiler
       - run: cargo check --no-default-features --target x86_64-unknown-netbsd --all --lib --bins --tests --examples
+  endianness_miri:
+    name: "Test endianness platform"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
+      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
+      - run: cargo +nightly miri test --target aarch64_be-unknown-linux-gnu --all --no-default-features
   check_minimal_versions:
     needs:
       - cargo_semver
@@ -179,6 +197,7 @@ jobs:
       - check_minimal_versions
       - cargo_semver
       - dependency_review
+      - endianness_miri
     strategy:
       matrix:
         os: [windows-latest, macOS-latest, ubuntu-latest]
