@@ -709,7 +709,7 @@ fn ordering_bypass_default() {
 }
 
 /// `ExtractInFolder`, which still checks with `resolve_enclosed`, is also affected.
-#[cfg(not(miri))]
+#[cfg(all(any(unix,windows),not(miri)))]
 #[test]
 fn ordering_bypass_extract_in_folder() {
     ordering_bypass(Some(
