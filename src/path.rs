@@ -174,11 +174,21 @@ pub(crate) fn resolve_enclosed(
     let mut queue: VecDeque<OsString> = components.into_iter().collect();
     let mut hops = 0usize;
 
+    // Set once a component does not exist (and is not created). A later entry may create it as a
+    // symlink, which would change the meaning of any subsequent `..` to the unknown
+    // target's parent rather than the symlink's parent.
+    let mut missing = false;
+
     while let Some(component) = queue.pop_front() {
         if component.is_empty() || component == OsStr::new(".") {
             continue;
         }
         if component == OsStr::new("..") {
+            if missing {
+                return Err(invalid!(
+                    "Path may escape the destination directory through a future symlink - '..' after a missing component"
+                ));
+            }
             // Never walk above `base`: `..` is rejected once we are back at `base`.
             if current == base {
                 return Err(invalid!(
@@ -198,6 +208,8 @@ pub(crate) fn resolve_enclosed(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 if create_dirs && !queue.is_empty() {
                     make_writable_dir_all(&current)?;
+                } else {
+                    missing = true;
                 }
                 continue;
             }

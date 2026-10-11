@@ -615,3 +615,105 @@ fn extract_ignores_modes_for_a_name_that_is_a_symlink_it_did_not_write() {
     .unwrap();
     assert_eq!(mode, 0o600, "a mode was applied through the symlink");
 }
+
+#[cfg(not(miri))]
+use std::fs;
+#[cfg(not(miri))]
+use std::io::Cursor;
+#[cfg(not(miri))]
+use std::path::PathBuf;
+#[cfg(not(miri))]
+use tempfile::TempDir;
+#[cfg(not(miri))]
+use zip::read::ExtractOptions;
+
+/// Create `<tmp>/dest` (extraction destination) and `<tmp>/outside` (outside the extraction destination)
+#[cfg(not(miri))]
+fn setup() -> (TempDir, PathBuf, PathBuf) {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let dest = root.join("dest");
+    let outside = root.join("outside");
+    fs::create_dir(&dest).unwrap();
+    fs::create_dir(&outside).unwrap();
+    (tmp, dest, outside)
+}
+
+/// Create a ZIP file containing only symlinks
+fn archive(links: &[(&str, &str)]) -> zip::ZipArchive<Cursor<Vec<u8>>> {
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
+
+    let opt = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, target) in links {
+        zip.add_symlink(*name, *target, opt).unwrap();
+    }
+    zip.finish_into_readable().unwrap()
+}
+
+/// Non-existent target: A dangling symlink pointing outside the extraction directory is not created
+#[cfg(not(miri))]
+#[test]
+fn dangling_outward_symlink_is_not_created() {
+    let (_tmp, dest, _outside) = setup();
+
+    let res = archive(&[("l", "../outside/missing")]).extract(&dest);
+    assert!(res.unwrap_err().to_string().contains("Path escapes"));
+}
+
+/// Symlinks in subdirectories: Symlinks pointing to directories outside the existing extraction
+/// destination are not created.
+#[cfg(not(miri))]
+#[test]
+fn subdir_symlink_to_existing_outside_dir_is_not_created() {
+    let (_tmp, dest, _outside) = setup();
+
+    let res = archive(&[("a/b/c/l", "../../../../outside")]).extract(&dest);
+    assert!(res.unwrap_err().to_string().contains("Path escapes"));
+}
+
+/// Since `extract_unwrapped_root_dir` also uses the default options, the same applies.
+#[cfg(not(miri))]
+#[test]
+fn extract_unwrapped_root_dir_is_affected() {
+    use zip::read::root_dir_common_filter;
+    let (_tmp, dest, _outside) = setup();
+
+    let res = archive(&[("root/a/b/c/l", "../../../../outside")])
+        .extract_unwrapped_root_dir(&dest, root_dir_common_filter);
+    assert!(res.unwrap_err().to_string().contains("Path escapes"));
+}
+
+/// Ordering bypass: `l -> x/../outside` is checked while `x` does not exist yet, so `x/..` is
+/// cancelled lexically. A later entry then creates `x -> .`, and the OS resolves `x/..` to the
+/// parent of the extraction directory.
+#[cfg(not(miri))]
+fn ordering_bypass(options: Option<ExtractOptions>) {
+    let (_tmp, dest, _outside) = setup();
+
+    let mut zip = archive(&[("l", "x/../outside"), ("x", ".")]);
+    assert!(
+        match options {
+            None => zip.extract(&dest),
+            Some(options) => zip.extract_with_options(&dest, options),
+        }
+        .is_err()
+    );
+}
+
+/// The default `ExtractRecursiveInFolder` is affected by the ordering bypass.
+#[cfg(not(miri))]
+#[test]
+fn ordering_bypass_default() {
+    ordering_bypass(None);
+}
+
+/// `ExtractInFolder`, which still checks with `resolve_enclosed`, is also affected.
+#[cfg(not(miri))]
+#[test]
+fn ordering_bypass_extract_in_folder() {
+    ordering_bypass(Some(
+        ExtractOptions::default().symlink_action(zip::read::SymlinkExtractAction::ExtractInFolder),
+    ));
+}
