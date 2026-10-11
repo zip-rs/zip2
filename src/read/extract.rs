@@ -16,15 +16,20 @@ use indexmap::IndexMap;
 /// so entries above this bound are rejected rather than pre-allocated.
 pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
+pub struct CreatedFile<TFileRef> {
+    pub file_ref: TFileRef,
+    pub ancestors: Box<[TFileRef]>,
+}
+
 pub trait Filesystem<'a, TFileRef: 'a> {
-    fn make_writable_dir_all<T: AsRef<Path>>(&mut self, outpath: T) -> ZipResult<TFileRef>;
+    fn make_writable_dir_all<T: AsRef<Path>>(&mut self, outpath: T) -> ZipResult<CreatedFile<TFileRef>>;
     fn make_symlink<T: AsRef<Path>>(
         &mut self,
         outpath: &Path,
         target: &[u8],
-    ) -> ZipResult<TFileRef>;
+    ) -> ZipResult<CreatedFile<TFileRef>>;
     fn set_permissions_no_follow_symlink(&mut self, target: TFileRef, unix_mode: u16) -> ZipResult<()>;
-    fn create(&mut self, path: &Path) -> ZipResult<(TFileRef, impl Write + 'a)>;
+    fn create(&mut self, path: &Path) -> ZipResult<(CreatedFile<TFileRef>, impl Write + 'a)>;
 }
 
 /// Symlink extract action
