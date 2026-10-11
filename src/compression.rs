@@ -361,11 +361,7 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
 pub(crate) enum LazyDecompressor<R: BufRead> {
     Uninitialized {
         inner: R,
-        compression_method: CompressionMethod,
-        #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
-        uncompressed_size: u64,
-        #[cfg_attr(not(feature = "legacy-zip"), allow(unused))]
-        flags: u16,
+        parameters: InstantiationParameters,
     },
     Initialized(Decompressor<R>),
     /// The attempt to initialize the decompressor returned an error or panicked, or a previous read
@@ -389,14 +385,20 @@ impl<R: BufRead> Debug for LazyDecompressor<R> {
     }
 }
 
+#[derive(Default, Copy, Clone, Debug)]
+pub(crate) struct InstantiationParameters {
+    pub(crate) compression_method: CompressionMethod,
+    #[cfg(any(feature = "lzma", feature = "legacy-zip"))]
+    pub(crate) uncompressed_size: u64,
+    #[cfg(feature = "legacy-zip")]
+    pub(crate) flags: u16,
+}
+
 fn instantiate<R: BufRead>(
     mut reader: R,
-    compression_method: CompressionMethod,
-    #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
-    uncompressed_size: u64,
-    #[cfg_attr(not(feature = "legacy-zip"), allow(unused))] flags: u16,
+    parameters: InstantiationParameters,
 ) -> Result<Decompressor<R>, (ZipError, Option<R>)> {
-    match compression_method {
+    match parameters.compression_method {
         CompressionMethod::Stored => Ok(Decompressor::Stored(reader)),
         #[cfg(feature = "deflate-flate2")]
         CompressionMethod::Deflated => Ok(Decompressor::Deflated(
@@ -447,7 +449,7 @@ fn instantiate<R: BufRead>(
                 Ok((props, dict_size)) => Ok(Decompressor::Lzma(Box::new(
                     lzma_rust2::LzmaReader::new_with_props(
                         reader,
-                        uncompressed_size,
+                        parameters.uncompressed_size,
                         props,
                         dict_size,
                         None,
@@ -533,19 +535,9 @@ impl<R: BufRead> Read for LazyDecompressor<R> {
         let mut decompressor = match replace(self, LazyDecompressor::Failed(None)) {
             LazyDecompressor::Initialized(decompressor) => decompressor,
             LazyDecompressor::Uninitialized {
-                inner,
-                compression_method,
-                #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
-                uncompressed_size,
-                #[cfg_attr(not(feature = "legacy-zip"), allow(unused))]
-                flags,
+                inner, parameters
             } => instantiate(
-                inner,
-                compression_method,
-                #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
-                uncompressed_size,
-                #[cfg_attr(not(feature = "legacy-zip"), allow(unused))]
-                flags,
+                inner, parameters
             )
             .map_err(|(error, inner)| {
                 *self = LazyDecompressor::Failed(inner);
@@ -661,18 +653,11 @@ impl<R: BufRead> Read for Decompressor<R> {
 impl<R: BufRead> LazyDecompressor<R> {
     pub fn new(
         reader: R,
-        compression_method: CompressionMethod,
-        #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
-        uncompressed_size: u64,
-        #[cfg_attr(not(feature = "legacy-zip"), allow(unused))] flags: u16,
+        parameters: InstantiationParameters,
     ) -> Self {
         LazyDecompressor::Uninitialized {
             inner: reader,
-            compression_method,
-            #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
-            uncompressed_size,
-            #[cfg_attr(not(feature = "legacy-zip"), allow(unused))]
-            flags,
+            parameters
         }
     }
 

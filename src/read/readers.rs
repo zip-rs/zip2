@@ -1,6 +1,6 @@
 //! Code related to reader
 
-use crate::compression::{CompressionMethod, LazyDecompressor};
+use crate::compression::{CompressionMethod, InstantiationParameters, LazyDecompressor};
 use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
 use crate::types::ZipFileData;
@@ -297,6 +297,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
 
 pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
+    #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
     uncompressed_size: u64,
     size_limit: Option<u64>,
     crc32: Option<u32>,
@@ -318,16 +319,18 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
             Crc32Reader::new(reader, crc32, should_disable).with_size_limit(size_limit),
         )));
     }
-    #[cfg(not(feature = "legacy-zip"))]
-    let flags = 0;
     let is_aes = reader.is_aes();
     let reader = Box::new(
         Crc32Reader::new(
             LazyDecompressor::new(
                 io::BufReader::new(reader),
-                compression_method,
-                uncompressed_size,
-                flags,
+                InstantiationParameters {
+                    compression_method,
+                    #[cfg(any(feature = "lzma", feature = "legacy-zip"))]
+                    uncompressed_size,
+                    #[cfg(feature = "legacy-zip")]
+                    flags,
+                }
             ),
             crc32,
             should_disable,
