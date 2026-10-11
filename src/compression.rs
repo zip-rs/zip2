@@ -671,7 +671,11 @@ impl<R: io::BufRead> Decompressor<R> {
             #[cfg(feature = "_bzip2_any")]
             Decompressor::Bzip2(r) => r.get_ref(),
             #[cfg(feature = "zstd")]
-            Decompressor::Zstd(r) => r.get_ref(),
+            Decompressor::Zstd(r) => match r {
+                Zstd::Uninitialized(r) => return Some(r),
+                Zstd::Initialized(r) => return Some(r.get_ref()),
+                Zstd::FailedToInitialize => return None,
+            },
             #[cfg(feature = "lzma")]
             Decompressor::Lzma(r) => match r {
                 Lzma::Uninitialized { reader, .. } => return reader.as_ref(),
