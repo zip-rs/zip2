@@ -77,6 +77,8 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: sudo apt update
+      - run: sudo apt install crossbuild-essential-arm64
       - run: rustup target add x86_64-unknown-netbsd
       # only checks no-default-features for now beause some deps needs a c compiler
       - run: cargo check --no-default-features --target x86_64-unknown-netbsd --all --lib --bins --tests --examples
