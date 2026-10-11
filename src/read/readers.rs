@@ -330,7 +330,7 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
                     uncompressed_size,
                     #[cfg(feature = "legacy-zip")]
                     flags,
-                }
+                },
             ),
             crc32,
             should_disable,

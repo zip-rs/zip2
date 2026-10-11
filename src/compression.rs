@@ -468,7 +468,9 @@ fn instantiate<R: BufRead>(
         #[cfg(feature = "ppmd")]
         CompressionMethod::Ppmd => {
             use crate::result::{ZipError, invalid};
-            fn parameters_from_headers(reader: &mut impl BufRead) -> crate::result::ZipResult<(u32, u32, u16)> {
+            fn parameters_from_headers(
+                reader: &mut impl BufRead,
+            ) -> crate::result::ZipResult<(u32, u32, u16)> {
                 let mut buffer = [0; 2];
                 reader.read_exact(&mut buffer)?;
                 let parameters = u16::from_le_bytes(buffer);
@@ -534,15 +536,11 @@ impl<R: BufRead> Read for LazyDecompressor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut decompressor = match replace(self, LazyDecompressor::Failed(None)) {
             LazyDecompressor::Initialized(decompressor) => decompressor,
-            LazyDecompressor::Uninitialized {
-                inner, parameters
-            } => instantiate(
-                inner, parameters
-            )
-            .map_err(|(error, inner)| {
-                *self = LazyDecompressor::Failed(inner);
-                error
-            })?,
+            LazyDecompressor::Uninitialized { inner, parameters } => instantiate(inner, parameters)
+                .map_err(|(error, inner)| {
+                    *self = LazyDecompressor::Failed(inner);
+                    error
+                })?,
             LazyDecompressor::Failed(inner) => {
                 *self = LazyDecompressor::Failed(inner);
                 return Err(io::Error::other(
@@ -651,13 +649,10 @@ impl<R: BufRead> Read for Decompressor<R> {
 }
 
 impl<R: BufRead> LazyDecompressor<R> {
-    pub fn new(
-        reader: R,
-        parameters: InstantiationParameters,
-    ) -> Self {
+    pub fn new(reader: R, parameters: InstantiationParameters) -> Self {
         LazyDecompressor::Uninitialized {
             inner: reader,
-            parameters
+            parameters,
         }
     }
 
