@@ -3,7 +3,7 @@
 use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
-use std::io::{self, Read, Seek};
+use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 
 use indexmap::IndexMap;
@@ -15,6 +15,17 @@ use indexmap::IndexMap;
 /// uncompressed size stored in the central directory is attacker-controlled,
 /// so entries above this bound are rejected rather than pre-allocated.
 pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
+
+pub trait Filesystem<TFileRef> {
+    fn make_writable_dir_all<T: AsRef<Path>>(&mut self, outpath: T) -> ZipResult<TFileRef>;
+    fn make_symlink<T: AsRef<Path>>(
+        &mut self,
+        outpath: &Path,
+        target: &[u8],
+    ) -> ZipResult<TFileRef>;
+    fn set_permissions_no_follow_symlink(&mut self, target: TFileRef, unix_mode: u16) -> ZipResult<()>;
+    fn create(&mut self, path: &Path) -> ZipResult<(TFileRef, impl Write)>;
+}
 
 /// Symlink extract action
 #[derive(Debug, Default, Copy, Clone)]
