@@ -568,7 +568,7 @@ pub(crate) enum Decompressor<R: BufRead> {
     #[cfg(feature = "_bzip2_any")]
     Bzip2(bzip2::bufread::BzDecoder<R>),
     #[cfg(feature = "zstd")]
-    Zstd(Zstd<R>),
+    Zstd(zstd::Decoder<'static, R>),
     #[cfg(feature = "lzma")]
     Lzma(Box<lzma_rust2::LzmaReader<R>>),
     #[cfg(feature = "legacy-zip")]
@@ -625,18 +625,7 @@ impl<R: BufRead> Read for Decompressor<R> {
             #[cfg(feature = "_bzip2_any")]
             Decompressor::Bzip2(r) => r.read(buf),
             #[cfg(feature = "zstd")]
-            Decompressor::Zstd(r) => {
-                let mut decoder = match core::mem::replace(r, Zstd::FailedToInitialize) {
-                    Zstd::Initialized(decoder) => decoder,
-                    Zstd::Uninitialized(inner) => zstd::Decoder::with_buffer(inner)?,
-                    Zstd::FailedToInitialize => {
-                        return Err(io::Error::other("Failed to start Zstd decoder"));
-                    }
-                };
-                let result = decoder.read(buf);
-                *r = Zstd::Initialized(decoder);
-                result
-            }
+            Decompressor::Zstd(r) => r.read(buf),
             #[cfg(feature = "lzma")]
             Decompressor::Lzma(r) => r.read(buf),
             #[cfg(feature = "xz")]
@@ -679,13 +668,7 @@ impl<R: BufRead> LazyDecompressor<R> {
                 #[cfg(feature = "_bzip2_any")]
                 Decompressor::Bzip2(r) => r.into_inner(),
                 #[cfg(feature = "zstd")]
-                Decompressor::Zstd(Zstd::Initialized(r)) => r.finish(),
-            #[cfg(feature = "zstd")]
-            Decompressor::Zstd(Zstd::Uninitialized(r)) => r,
-            #[cfg(feature = "zstd")]
-            Decompressor::Zstd(Zstd::FailedToInitialize) => {
-                return Err(io::Error::other("Failed to start Zstd decoder"));
-            }
+                Decompressor::Zstd(r) => r.finish(),
                 #[cfg(feature = "lzma")]
                 Decompressor::Lzma(r) => r.into_inner(),
                 #[cfg(feature = "legacy-zip")]
