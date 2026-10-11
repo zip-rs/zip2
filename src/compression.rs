@@ -395,8 +395,7 @@ pub(crate) struct InstantiationParameters {
 }
 
 fn instantiate<R: BufRead>(
-    #[cfg_attr(not(any(feature = "lzma", feature = "ppmd")), allow(unused_mut))]
-    mut reader: R,
+    #[cfg_attr(not(any(feature = "lzma", feature = "ppmd")), allow(unused_mut))] mut reader: R,
     parameters: InstantiationParameters,
 ) -> Result<Decompressor<R>, (ZipError, Option<R>)> {
     match parameters.compression_method {
