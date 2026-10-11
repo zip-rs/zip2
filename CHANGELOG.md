@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 
+
+- additional bug fixes for symlink extraction
+
 ## [9.0.1](https://github.com/zip-rs/zip2/compare/v9.0.0...v9.0.1) - 2026-10-10
 
 ### <!-- 1 -->🐛 Bug Fixes
