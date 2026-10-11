@@ -617,10 +617,6 @@ fn extract_ignores_modes_for_a_name_that_is_a_symlink_it_did_not_write() {
 }
 
 #[cfg(not(miri))]
-use std::fs;
-#[cfg(not(miri))]
-use std::io::Cursor;
-#[cfg(not(miri))]
 use std::path::PathBuf;
 #[cfg(not(miri))]
 use tempfile::TempDir;
@@ -630,6 +626,8 @@ use zip::read::ExtractOptions;
 /// Create `<tmp>/dest` (extraction destination) and `<tmp>/outside` (outside the extraction destination)
 #[cfg(not(miri))]
 fn setup() -> (TempDir, PathBuf, PathBuf) {
+    use std::fs;
+
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     let dest = root.join("dest");
@@ -640,12 +638,13 @@ fn setup() -> (TempDir, PathBuf, PathBuf) {
 }
 
 /// Create a ZIP file containing only symlinks
-fn archive(links: &[(&str, &str)]) -> zip::ZipArchive<Cursor<Vec<u8>>> {
+#[cfg(not(miri))]
+fn archive_with_symlinks(links: &[(&str, &str)]) -> zip::ZipArchive<std::io::Cursor<Vec<u8>>> {
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
 
     let opt = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::new()));
     for (name, target) in links {
         zip.add_symlink(*name, *target, opt).unwrap();
     }
@@ -658,7 +657,7 @@ fn archive(links: &[(&str, &str)]) -> zip::ZipArchive<Cursor<Vec<u8>>> {
 fn dangling_outward_symlink_is_not_created() {
     let (_tmp, dest, _outside) = setup();
 
-    let res = archive(&[("l", "../outside/missing")]).extract(&dest);
+    let res = archive_with_symlinks(&[("l", "../outside/missing")]).extract(&dest);
     assert!(res.unwrap_err().to_string().contains("Path escapes"));
 }
 
@@ -669,7 +668,7 @@ fn dangling_outward_symlink_is_not_created() {
 fn subdir_symlink_to_existing_outside_dir_is_not_created() {
     let (_tmp, dest, _outside) = setup();
 
-    let res = archive(&[("a/b/c/l", "../../../../outside")]).extract(&dest);
+    let res = archive_with_symlinks(&[("a/b/c/l", "../../../../outside")]).extract(&dest);
     assert!(res.unwrap_err().to_string().contains("Path escapes"));
 }
 
@@ -680,7 +679,7 @@ fn extract_unwrapped_root_dir_is_affected() {
     use zip::read::root_dir_common_filter;
     let (_tmp, dest, _outside) = setup();
 
-    let res = archive(&[("root/a/b/c/l", "../../../../outside")])
+    let res = archive_with_symlinks(&[("root/a/b/c/l", "../../../../outside")])
         .extract_unwrapped_root_dir(&dest, root_dir_common_filter);
     assert!(res.unwrap_err().to_string().contains("Path escapes"));
 }
@@ -692,7 +691,7 @@ fn extract_unwrapped_root_dir_is_affected() {
 fn ordering_bypass(options: Option<ExtractOptions>) {
     let (_tmp, dest, _outside) = setup();
 
-    let mut zip = archive(&[("l", "x/../outside"), ("x", ".")]);
+    let mut zip = archive_with_symlinks(&[("l", "x/../outside"), ("x", ".")]);
     assert!(
         match options {
             None => zip.extract(&dest),
