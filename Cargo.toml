@@ -143,3 +143,4 @@ harness = false
 [[bench]]
 name = "deflate_alloc"
 harness = false
+required-features = ["deflate-flate2"]
