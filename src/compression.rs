@@ -468,7 +468,7 @@ fn instantiate<R: BufRead>(
         #[cfg(feature = "ppmd")]
         CompressionMethod::Ppmd => {
             use crate::result::{ZipError, invalid};
-            fn parameters(reader: &mut impl BufRead) -> crate::result::ZipResult<(u32, u32, u16)> {
+            fn parameters_from_headers(reader: &mut impl BufRead) -> crate::result::ZipResult<(u32, u32, u16)> {
                 let mut buffer = [0; 2];
                 reader.read_exact(&mut buffer)?;
                 let parameters = u16::from_le_bytes(buffer);
@@ -478,7 +478,7 @@ fn instantiate<R: BufRead>(
                 let restoration_method = (parameters >> 12) & 0x0F;
                 Ok((order, memory_size, restoration_method))
             }
-            match parameters(&mut reader) {
+            match parameters_from_headers(&mut reader) {
                 Ok((order, memory_size, restoration_method)) => Ok(Decompressor::Ppmd(Box::new(
                     ppmd_rust::Ppmd8Decoder::new(
                         reader,
