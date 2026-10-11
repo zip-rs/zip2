@@ -596,6 +596,7 @@ impl<R: io::BufRead> Decompressor<R> {
 
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> io::Result<R> {
+        #[allow(clippy::infallible_destructuring_match)]
         let inner = match self {
             Decompressor::Stored(r) => r,
             #[cfg(feature = "deflate-flate2")]
@@ -634,6 +635,7 @@ impl<R: io::BufRead> Decompressor<R> {
 
     /// Consumes this decoder, returning the underlying reader.
     pub fn inner(&self) -> Option<&R> {
+        #[allow(clippy::infallible_destructuring_match)]
         let inner = match self {
             Decompressor::Stored(r) => r,
             #[cfg(feature = "deflate-flate2")]
