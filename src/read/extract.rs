@@ -29,7 +29,7 @@ pub trait Filesystem<'a, TFileRef: 'a> {
         target: &[u8],
     ) -> ZipResult<CreatedFile<TFileRef>>;
     fn set_permissions_no_follow_symlink(&mut self, target: TFileRef, unix_mode: u16) -> ZipResult<()>;
-    fn create(&mut self, path: &Path) -> ZipResult<(CreatedFile<TFileRef>, impl Write + 'a)>;
+    fn extract_normal_file(&mut self, reader: &mut impl Read, path: &Path) -> ZipResult<CreatedFile<TFileRef>>;
 }
 
 /// Symlink extract action
