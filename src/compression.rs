@@ -512,15 +512,15 @@ fn instantiate<R: BufRead>(
         }
         #[cfg(feature = "legacy-zip")]
         CompressionMethod::Shrink => Ok(Decompressor::Shrink(
-            crate::legacy::shrink::ShrinkDecoder::new(reader, uncompressed_size),
+            crate::legacy::shrink::ShrinkDecoder::new(reader, parameters.uncompressed_size),
         )),
         #[cfg(feature = "legacy-zip")]
         CompressionMethod::Reduce(n) => Ok(Decompressor::Reduce(
-            crate::legacy::reduce::ReduceDecoder::new(reader, uncompressed_size, n),
+            crate::legacy::reduce::ReduceDecoder::new(reader, parameters.uncompressed_size, n),
         )),
         #[cfg(feature = "legacy-zip")]
         CompressionMethod::Implode => Ok(Decompressor::Implode(
-            crate::legacy::implode::ImplodeDecoder::new(reader, uncompressed_size, flags),
+            crate::legacy::implode::ImplodeDecoder::new(reader, parameters.uncompressed_size, parameters.flags),
         )),
         method => {
             let method = method.serialize_to_u16();
