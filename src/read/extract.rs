@@ -3,6 +3,7 @@
 use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
+use std::fs::set_permissions;
 use std::io::{self, Read, Seek};
 use std::path::Path;
 
@@ -268,21 +269,30 @@ pub(crate) fn set_permissions_no_follow_symlink(
 }
 
 /// Store all entries which specify a numeric "mode" which is familiar to POSIX operating systems.
-#[cfg(unix)]
 #[derive(Default, Debug)]
 struct UnixFileModes {
+    #[cfg(unix)]
     map: std::collections::BTreeMap<std::path::PathBuf, u32>,
+    #[cfg(not(unix))]
+    read_only_set: std::collections::BTreeSet<std::path::PathBuf>,
 }
 
-#[cfg(unix)]
 impl UnixFileModes {
     pub fn add_mode(&mut self, path: std::path::PathBuf, mode: u32) {
         // We don't print a warning or consider it remotely out of the ordinary to receive two
         // separate modes for the same path (e.g. entries named `a` and `./a`): just take the
         // later one, as the later file's contents are what's on disk.
+        #[cfg(unix)]
         self.map.insert(path, mode);
+        #[cfg(not(unix))]
+        if mode & 0o222 == 0 {
+            self.read_only_set.insert(path);
+        } else {
+            self.read_only_set.remove(&path);
+        }
     }
 
+    #[cfg(unix)]
     // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
     pub fn all_perms_with_children_first(
         self,
@@ -292,6 +302,16 @@ impl UnixFileModes {
             .into_iter()
             .rev()
             .map(|(p, m)| (p, std::fs::Permissions::from_mode(m)))
+    }
+
+    #[cfg(not(unix))]
+    // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
+    pub fn all_read_only_with_children_first(
+        self,
+    ) -> impl IntoIterator<Item = std::path::PathBuf> {
+        self.read_only_set
+            .into_iter()
+            .rev()
     }
 }
 
@@ -431,7 +451,6 @@ impl<R: Read + Seek> ZipArchive<R> {
             })
             .transpose()?;
 
-        #[cfg(unix)]
         let mut files_by_unix_mode = UnixFileModes::default();
 
         for i in 0..self.len() {
@@ -500,26 +519,33 @@ impl<R: Read + Seek> ZipArchive<R> {
                         make_symlink_impl(&outpath, target_str, &self.shared.files)?;
                     }
                 }
-                continue;
             } else if file.is_dir() {
                 make_writable_dir_all(&outpath)?;
-                continue;
-            }
-            let mut outfile = fs::File::create(&outpath)?;
-            io::copy(&mut file, &mut outfile)?;
-
-            // Check for real permissions, which we'll set in a second pass.
-            #[cfg(unix)]
-            if let Some(mode) = file.unix_mode() {
-                files_by_unix_mode.add_mode(outpath, mode);
-            }
-
-            // Set original timestamp.
-            #[cfg(feature = "chrono")]
-            if let Some(last_modified) = file.last_modified()
-                && let Some(t) = last_modified.datetime_to_systemtime()
-            {
-                outfile.set_modified(t)?;
+                // Check for real permissions, which we'll set in a second pass.
+                if let Some(mode) = file.unix_mode() {
+                    files_by_unix_mode.add_mode(outpath, mode);
+                }
+            } else {
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
+                // Set original timestamp.
+                #[cfg(feature = "chrono")]
+                if let Some(last_modified) = file.last_modified()
+                    && let Some(t) = last_modified.datetime_to_systemtime()
+                {
+                    outfile.set_modified(t)?;
+                }
+                #[cfg(not(unix))]
+                if file.is_read_only() {
+                    let mut permissions = outfile.metadata()?.permissions();
+                    permissions.set_readonly(true);
+                    outfile.set_permissions(permissions)?;
+                }
+                #[cfg(unix)]
+                if let Some(mode) = file.unix_mode() {
+                    use std::os::unix::fs::PermissionsExt;
+                    outfile.set_permissions(Permissions::from_mode(mode))?;
+                }
             }
         }
 
@@ -527,6 +553,15 @@ impl<R: Read + Seek> ZipArchive<R> {
         #[cfg(unix)]
         for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
             set_permissions_no_follow_symlink(&path, perms)?;
+        }
+        #[cfg(not(unix))]
+        for path in files_by_unix_mode.all_read_only_with_children_first() {
+            let metadata = fs::symlink_metadata(&path)?;
+            if metadata.is_dir() {
+                let mut permissions = metadata.permissions();
+            permissions.set_readonly(true);
+                set_permissions(path, permissions)?;
+            }
         }
 
         Ok(())
