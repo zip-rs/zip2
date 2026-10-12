@@ -157,6 +157,7 @@ pub(crate) mod zip_writer {
     use core::fmt::{Debug, Formatter};
     use indexmap::IndexMap;
     use std::io::{Seek, Write};
+    use crate::write::MaybeEncrypted;
 
     /// ZIP archive generator
     ///
@@ -202,6 +203,10 @@ pub(crate) mod zip_writer {
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
+        #[cfg(feature = "deflate-flate2")]
+        pub(crate) cached_deflater: Option<flate2::write::DeflateEncoder<MaybeEncrypted<W>>>,
+        #[cfg(feature = "deflate-flate2")]
+        pub(crate) cached_deflater_level: u32,
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
@@ -373,6 +378,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
+            cached_deflater: None,
+            #[cfg(feature = "deflate-flate2")]
+            cached_deflater_level: 0,
         })
     }
 
@@ -520,6 +528,10 @@ impl<W: Write + Seek> ZipWriter<W> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
+            #[cfg(feature = "deflate-flate2")]
+            cached_deflater: None,
+            #[cfg(feature = "deflate-flate2")]
+            cached_deflater_level: 0,
         }
     }
 
@@ -795,7 +807,12 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !self.writing_to_file {
             return Ok(());
         }
-
+        #[cfg(feature = "deflate-flate2")]
+        {
+            if let GenericZipWriter::Deflater(encoder) = self.inner {
+                self.cached_deflater = Some(encoder.finish()?);
+            }
+        }
         let make_plain_writer = self.inner.prepare_next_writer(
             Stored,
             None,
@@ -1599,6 +1616,10 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             flush_on_finish_file: false,
             seek_possible: false,
             auto_large_file: false,
+            #[cfg(feature = "deflate-flate2")]
+            cached_deflater: None,
+            #[cfg(feature = "deflate-flate2")]
+            cached_deflater_level: 0,
         }
     }
 }
