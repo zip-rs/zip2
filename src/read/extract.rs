@@ -175,15 +175,22 @@ pub(crate) fn make_symlink<T>(
             let abs_to_canonicalize = if target_path.is_absolute() {
                 target_path
             } else {
-                &base.join(target_path)
+                &start.join(target_path)
             };
-            let canonical = if let Ok(p) = std::fs::canonicalize(abs_to_canonicalize) {
-                p
-            } else {
-                abs_to_canonicalize.to_path_buf()
-            };
-            if !canonical.starts_with(base) {
-                return Err(invalid!("Path escapes the destination directory"));
+            match std::fs::canonicalize(abs_to_canonicalize) {
+                Ok(canonical) => {
+                    if !canonical.starts_with(base) {
+                        return Err(invalid!("Path escapes the destination directory"));
+                    }
+                }
+                Err(_) => {
+                    crate::path::resolve_enclosed(
+                        base,
+                        start,
+                        rest.components().map(|c| c.as_os_str().to_os_string()),
+                        false,
+                    )?;
+                }
             }
         }
     } else {

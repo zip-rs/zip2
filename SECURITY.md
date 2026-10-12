@@ -8,7 +8,7 @@ Only the latest released version is supported.
 
 To report a vulnerability, please go to https://github.com/zip-rs/zip2/security/advisories/new. We'll attempt to:
 
-* Close the report within 7 days if it's invalid, or if a fix has already been released but some old versions needed to be yanked.
+* Close the report within 7 days if it's invalid, or if a fix has already been released but some old versions needed to be yanked, or if it's a duplicate of another report we've already accepted as a triaged draft (we want each draft to correspond to a separate issue).
 * Provide progress reports at least every 7 days to the original reporter.
 * Aim to provide a fix within 30 days of the initial report. If a complete fix is not feasible in that timeframe (for example, due to complexity or external dependencies), we will communicate this to the reporter, share any available mitigations or workarounds, and adjust the expected timeline accordingly.
 
