@@ -65,7 +65,6 @@ fn check_eocd_more_than_total() {
     // total number of entries in the central directory
     data[eocd_start + 10] = 0xFF;
     data[eocd_start + 11] = 0xFE;
-    eprintln!("{:x?}", data);
 
     let archive_res = ZipArchive::new(Cursor::new(data));
     assert!(archive_res.is_err()); // more entries, the archive try to parse a ZipCentralBlock
@@ -103,7 +102,6 @@ fn check_eocd_less_than_total() {
     // total number of entries in the central directory
     data[eocd_start + 10] = 0x01;
     data[eocd_start + 11] = 0x00;
-    eprintln!("{:x?}", data);
 
     let mut archive = ZipArchive::new(Cursor::new(data)).unwrap();
     assert_eq!(archive.len(), 1);
