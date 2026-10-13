@@ -228,7 +228,7 @@ fn test_extract_without_root_dir_with_ds_store() {
 }
 
 #[test]
-#[cfg(feature = "deflate-flate2")]
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
 fn test_custom_root_dir_filter() {
     let zip_data = create_zip_with_root_dir();
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data)).unwrap();
