@@ -175,9 +175,13 @@ impl ZipFileData {
                 let variable_fields_len =
                     u64::from(block.file_name_length) + u64::from(block.extra_field_length);
                 // Calculate the end of the local header from the fields we just parsed.
-                let data_start = self.header_start
-                    + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-                    + variable_fields_len;
+                let data_start = self
+                    .header_start
+                    .checked_add((size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64)
+                    .and_then(|v| v.checked_add(variable_fields_len))
+                    .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                        "Local header end offset overflows u64",
+                    )))?;
 
                 // Set the value so we don't have to read it again.
                 match self.data_start.set(data_start) {

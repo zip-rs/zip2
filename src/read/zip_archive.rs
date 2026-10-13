@@ -400,27 +400,48 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
     /// doesn't make the archive invalid, but some programs will refuse to decompress it because the
     /// copies would take up space independently in the destination.
+    ///
+    /// This will return true on an archive where `zip::write::shallow_copy_file` has been used,
+    /// unless the file being copied has a compressed size of zero.
+    ///
+    /// Doesn't count cases where one file entry's header overlaps with another's header or data.
+    /// To include those cases, use [ZipArchive::has_overlapping_entries] instead.
     pub fn has_overlapping_files(&mut self) -> ZipResult<bool> {
+        self.has_overlap(false)
+    }
+
+    /// Returns Ok(true) if any byte in this archive belongs to more than one file entry, including
+    /// the header. Similar to [ZipArchive::has_overlapping_files] except that it also checks for
+    /// header-with-header and header-with-data overlaps.
+    ///
+    /// This will return true on an archive where `zip::write::shallow_copy_file` has been used,
+    /// even when the file being copied has a size of zero.
+    pub fn has_overlapping_entries(&mut self) -> ZipResult<bool> {
+        self.has_overlap(true)
+    }
+
+    fn has_overlap(&mut self, include_header: bool) -> ZipResult<bool> {
         let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
         for file in self.shared.files.values() {
-            if file.compressed_size == 0 {
+            if !include_header && file.compressed_size == 0 {
                 continue;
             }
-            let start = file.data_start(&mut self.reader)?;
-            let end = start
-                .checked_add(file.compressed_size)
-                .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
-                    "File data end offset overflows u64",
-                )))?;
-            if ranges
-                .iter()
-                .any(|range| range.start <= end && start <= range.end)
-            {
-                return Ok(true);
-            }
+            let data_start = file.data_start(&mut self.reader)?;
+            let start = if include_header {
+                file.header_start
+            } else {
+                data_start
+            };
+            let end =
+                data_start
+                    .checked_add(file.compressed_size)
+                    .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                        "File data end offset overflows u64",
+                    )))?;
             ranges.push(start..end);
         }
-        Ok(false)
+        ranges.sort_unstable_by_key(|r| (r.start, r.end));
+        Ok(ranges.windows(2).any(|w| w[0].end > w[1].start))
     }
 
     /// Search for a file entry by name, decrypt with given password
