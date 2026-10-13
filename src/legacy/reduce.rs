@@ -100,88 +100,128 @@ fn lsb(x: u8, n: u8) -> u8 {
     x & ((1 << n) - 1)
 }
 
-fn hwexpand(src: &[u8], uncomp_len: usize, comp_factor: u8, dst: &mut Vec<u8>) -> io::Result<()> {
-    debug_assert!((1..=4).contains(&comp_factor));
+struct ReduceState<T> {
+    bit_reader: BitReader<T, LittleEndian>,
+    fsets: Box<FollowerSetArray>,
+    curr_byte: u8,
+    uncomp_len: usize,
+    comp_factor: u8,
+}
 
-    // Pre-allocate to avoid reallocations
-    dst.reserve(uncomp_len.min(crate::legacy::MAX_PREALLOC));
-
-    let mut is = BitReader::endian(src, LittleEndian);
-    let mut fsets = read_follower_sets(&mut is)?;
-
-    // Number of bits in V used for backref length.
-    let v_len_bits = 8 - comp_factor;
-
-    let mut curr_byte = 0; // The first "previous byte" is implicitly zero.
-
-    while dst.len() < uncomp_len {
-        // Read a literal byte or DLE marker.
-        curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
-        if curr_byte != DLE_BYTE {
-            // Output a literal byte.
-            dst.push(curr_byte);
-            continue;
-        }
-
-        // Read the V byte which determines the length.
-        curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
-        if curr_byte == 0 {
-            // Output a literal DLE byte.
-            dst.push(DLE_BYTE);
-            continue;
-        }
-        let v = curr_byte;
-        let mut len = lsb(v, v_len_bits) as usize;
-        if len == (1 << v_len_bits) - 1 {
-            // Read an extra length byte.
-            curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
-            len += curr_byte as usize;
-        }
-        len += 3;
-
-        // Read the W byte, which together with V gives the distance.
-        curr_byte = read_next_byte(&mut is, curr_byte, &mut fsets)?;
-        let dist = (((v as usize) >> v_len_bits) << 8) + curr_byte as usize + 1;
-
-        debug_assert!(len <= max_len(comp_factor));
-        debug_assert!(dist <= max_dist(comp_factor));
-
-        // Output the back reference.
-        if dist <= dst.len() {
-            // Optimize for non-overlapping copies
-            if dist >= len {
-                // No overlap, can use extend_from_within
-                let start = dst.len() - dist;
-                dst.extend_from_within(start..start + len.min(uncomp_len - dst.len()));
-            } else {
-                // Overlapping copy
-                let copy_len = len.min(uncomp_len - dst.len());
-                for _ in 0..copy_len {
-                    let byte = dst[dst.len() - dist];
-                    dst.push(byte);
-                }
-            }
-        } else {
-            // Copy with implicit zeros
-            let copy_len = len.min(uncomp_len - dst.len());
-            for _ in 0..copy_len {
-                if dist > dst.len() {
-                    dst.push(0);
-                } else {
-                    let byte = dst[dst.len() - dist];
-                    dst.push(byte);
-                }
-            }
-        }
+impl<T> std::fmt::Debug for ReduceState<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReduceState")
+            .field("curr_byte", &self.curr_byte)
+            .field("uncomp_len", &self.uncomp_len)
+            .field("comp_factor", &self.comp_factor)
+            .finish_non_exhaustive()
     }
-    Ok(())
+}
+
+impl<T: Read> ReduceState<T> {
+    fn new(src: T, uncomp_len: usize, comp_factor: u8) -> io::Result<Self> {
+        let mut is = BitReader::endian(src, LittleEndian);
+        let fsets = Box::new(read_follower_sets(&mut is)?);
+        Ok(Self {
+            bit_reader: is,
+            fsets,
+            curr_byte: 0, // The first "previous byte" is implicitly zero.
+            uncomp_len,
+            comp_factor,
+        })
+    }
+
+    fn expand_until(&mut self, target_len: usize, dst: &mut Vec<u8>) -> io::Result<()> {
+        debug_assert!((1..=4).contains(&self.comp_factor));
+        let target_len = target_len.min(self.uncomp_len);
+        if dst.len() < target_len {
+            dst.try_reserve(
+                target_len
+                    .saturating_sub(dst.len())
+                    .min(crate::legacy::MAX_PREALLOC),
+            )
+            .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, e))?;
+        }
+
+        // Number of bits in V used for backref length.
+        let v_len_bits = 8 - self.comp_factor;
+
+        while dst.len() < target_len {
+            // Read a literal byte or DLE marker.
+            self.curr_byte = read_next_byte(&mut self.bit_reader, self.curr_byte, &mut self.fsets)?;
+            if self.curr_byte != DLE_BYTE {
+                // Output a literal byte.
+                dst.push(self.curr_byte);
+                continue;
+            }
+
+            // Read the V byte which determines the length.
+            self.curr_byte = read_next_byte(&mut self.bit_reader, self.curr_byte, &mut self.fsets)?;
+            if self.curr_byte == 0 {
+                // Output a literal DLE byte.
+                dst.push(DLE_BYTE);
+                continue;
+            }
+            let v = self.curr_byte;
+            let mut len = lsb(v, v_len_bits) as usize;
+            if len == (1 << v_len_bits) - 1 {
+                // Read an extra length byte.
+                self.curr_byte =
+                    read_next_byte(&mut self.bit_reader, self.curr_byte, &mut self.fsets)?;
+                len += self.curr_byte as usize;
+            }
+            len += 3;
+
+            // Read the W byte, which together with V gives the distance.
+            self.curr_byte = read_next_byte(&mut self.bit_reader, self.curr_byte, &mut self.fsets)?;
+            let dist = (((v as usize) >> v_len_bits) << 8) + self.curr_byte as usize + 1;
+
+            debug_assert!(len <= max_len(self.comp_factor));
+            debug_assert!(dist <= max_dist(self.comp_factor));
+
+            // Output the back reference.
+            if dist <= dst.len() {
+                // Optimize for non-overlapping copies
+                if dist >= len {
+                    // No overlap, can use extend_from_within
+                    let start = dst.len() - dist;
+                    dst.extend_from_within(start..start + len.min(self.uncomp_len - dst.len()));
+                } else {
+                    // Overlapping copy
+                    let copy_len = len.min(self.uncomp_len - dst.len());
+                    for _ in 0..copy_len {
+                        let byte = dst[dst.len() - dist];
+                        dst.push(byte);
+                    }
+                }
+            } else {
+                // Copy with implicit zeros
+                let copy_len = len.min(self.uncomp_len - dst.len());
+                for _ in 0..copy_len {
+                    if dist > dst.len() {
+                        dst.push(0);
+                    } else {
+                        let byte = dst[dst.len() - dist];
+                        dst.push(byte);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn hwexpand(src: &[u8], uncomp_len: usize, comp_factor: u8, dst: &mut Vec<u8>) -> io::Result<()> {
+    let mut state = ReduceState::new(src, uncomp_len, comp_factor)?;
+    state.expand_until(uncomp_len, dst)
 }
 
 #[derive(Debug)]
 pub struct ReduceDecoder<R> {
     compressed_reader: R,
     uncompressed_size: u64,
-    stream_read: bool,
+    state: Option<ReduceState<io::Cursor<Vec<u8>>>>,
     comp_factor: u8,
     stream: Vec<u8>,
     read_pos: usize, // Add read position tracker
@@ -192,7 +232,7 @@ impl<R: Read> ReduceDecoder<R> {
         ReduceDecoder {
             compressed_reader: inner,
             uncompressed_size,
-            stream_read: false,
+            state: None,
             comp_factor,
             stream: Vec::new(),
             read_pos: 0,
@@ -206,16 +246,31 @@ impl<R: Read> ReduceDecoder<R> {
 
 impl<R: Read> Read for ReduceDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        if !self.stream_read {
-            self.stream_read = true;
-            let mut compressed_bytes = Vec::new();
-            self.compressed_reader.read_to_end(&mut compressed_bytes)?;
-            hwexpand(
-                &compressed_bytes,
-                self.uncompressed_size as usize,
-                self.comp_factor,
-                &mut self.stream,
-            )?;
+        let state = match &mut self.state {
+            Some(state) => state,
+            None => {
+                let uncomp_len = usize::try_from(self.uncompressed_size).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "uncompressed size exceeds usize::MAX",
+                    )
+                })?;
+                let mut compressed_bytes = Vec::new();
+                self.compressed_reader.read_to_end(&mut compressed_bytes)?;
+                self.state.insert(ReduceState::new(
+                    io::Cursor::new(compressed_bytes),
+                    uncomp_len,
+                    self.comp_factor,
+                )?)
+            }
+        };
+
+        let target_len = self
+            .read_pos
+            .saturating_add(buf.len())
+            .min(state.uncomp_len);
+        if self.stream.len() < target_len {
+            state.expand_until(target_len, &mut self.stream)?;
         }
 
         let available = self.stream.len() - self.read_pos;
@@ -309,5 +364,23 @@ mod tests {
             let c = 1 << (v_dist_bits + 8);
             assert_eq!(max_dist(i), c);
         }
+    }
+
+    #[test]
+    fn test_reduce_decoder_incremental_take() {
+        use super::ReduceDecoder;
+        use std::io::Read;
+
+        let mut decoder = ReduceDecoder::new(HAMLET_2048.as_slice(), 2048, 4);
+        let mut prefix = Vec::new();
+        (&mut decoder).take(16).read_to_end(&mut prefix).unwrap();
+        assert_eq!(prefix, &HAMLET_2048_OUT[..16]);
+        // Only the bytes needed to satisfy the 16-byte read should be buffered so far:
+        assert!(decoder.stream.len() < 512);
+
+        let mut rest = Vec::new();
+        decoder.read_to_end(&mut rest).unwrap();
+        prefix.extend_from_slice(&rest);
+        assert_eq!(prefix.as_slice(), HAMLET_2048_OUT);
     }
 }
