@@ -1,10 +1,13 @@
 //! Code related to `ZipArchive`
 
 use crate::compression::CompressionMethod;
+use crate::format::MagicPositionCache;
 use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
 use crate::format::find_central_directory_end;
+use crate::format::magic::Magic;
 use crate::read::config::Config;
 use crate::read::extract::RootDirFilter;
+use crate::read::magic_finder::MagicFinder;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::{ZipFileEntry, ZipFileEntryWithDataDescriptor};
 use crate::read::{
@@ -18,8 +21,10 @@ use core::ops::Range;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{Read, Seek, SeekFrom};
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
@@ -153,22 +158,42 @@ impl<R> ZipArchive<R> {
     }
 }
 
+use crate::result::invalid;
+
+#[derive(Debug)]
+struct CentralDirectoryChain {
+    entries: Vec<(Box<[u8]>, ZipFileData)>,
+    next_offset: u64,
+    terminal_error: Option<ZipError>,
+}
+
 impl<R: Read + Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
     pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<ZipArchiveMetadata> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(SeekFrom::End(0))?;
-        let mut end_exclusive = file_len;
         let mut last_err = None;
+        let mut cd_chains = std::collections::HashMap::<u64, CentralDirectoryChain>::new();
 
+        const EOCD_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+            Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        const EOCD64_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+            Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        const CDFH_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
+            Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
+        let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, 0, file_len);
+        let mut cdfh_cache = MagicPositionCache::new(CDFH_SIG_BYTES);
+        let mut eocd64_cache = MagicPositionCache::new(EOCD64_SIG_BYTES);
         loop {
             // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
             let cde = match find_central_directory_end(
                 reader,
                 config.archive_offset,
-                end_exclusive,
                 file_len,
+                &mut eocd_finder,
+                &mut cdfh_cache,
+                &mut eocd64_cache,
             ) {
                 Ok(cde) => cde,
                 Err(e) => {
@@ -179,7 +204,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
             // Turn EOCD into internal representation.
             match CentralDirectoryInfo::try_from(&cde)
-                .and_then(|info| Self::read_central_header(&info, config, reader))
+                .and_then(|info| Self::read_central_header(&info, config, reader, &mut cd_chains))
             {
                 Ok(shared) => {
                     let zip64_extensible_data_sector = if let Some(eocd64) = cde.eocd64 {
@@ -196,7 +221,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                 }
             }
             // Something went wrong while decoding the cde, try to find a new one
-            end_exclusive = cde.eocd.position;
             continue;
         }
     }
@@ -205,6 +229,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         dir_info: &CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
+        cd_chains: &mut std::collections::HashMap<u64, CentralDirectoryChain>,
     ) -> Result<SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
@@ -224,21 +249,58 @@ impl<R: Read + Seek> ZipArchive<R> {
             return Err(ZipError::UnsupportedArchive("Oversized central directory"));
         }
 
-        let mut files = Vec::with_capacity(file_capacity);
-        reader.seek(SeekFrom::Start(dir_info.directory_start))?;
-        for _ in 0..dir_info.number_of_files {
-            let central_header_start = reader.stream_position()?;
+        let chain = cd_chains
+            .entry(dir_info.directory_start)
+            .or_insert_with(|| CentralDirectoryChain {
+                entries: Vec::new(),
+                next_offset: dir_info.directory_start,
+                terminal_error: None,
+            });
 
-            // Parse central header
-            let block = ZipCentralEntryBlock::parse(reader)?;
+        if chain.entries.len() < dir_info.number_of_files {
+            if let Some(ref err) = chain.terminal_error {
+                return Err(err.clone());
+            }
 
-            let (file, file_name_raw) = central_header_to_zip_file_inner(
-                reader,
-                dir_info.archive_offset,
-                central_header_start,
-                block,
-            )?;
-            files.push((file_name_raw.into(), file));
+            reader.seek(SeekFrom::Start(chain.next_offset))?;
+            while chain.entries.len() < dir_info.number_of_files {
+                let central_header_start = reader.stream_position()?;
+                // Parse central header
+                let block = match ZipCentralEntryBlock::parse(reader) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        chain.terminal_error = Some(e.clone());
+                        chain.next_offset = central_header_start;
+                        return Err(e);
+                    }
+                };
+
+                let (file, file_name_raw) = match central_header_to_zip_file_inner(
+                    reader,
+                    0,
+                    central_header_start,
+                    block,
+                ) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        chain.terminal_error = Some(e.clone());
+                        chain.next_offset = central_header_start;
+                        return Err(e);
+                    }
+                };
+
+                chain.entries.push((file_name_raw.into(), file));
+                chain.next_offset = reader.stream_position()?;
+            }
+        }
+
+        let mut files = Vec::with_capacity(chain.entries.len().min(dir_info.number_of_files));
+        for (file_name_raw, mut file) in chain.entries.drain(..dir_info.number_of_files) {
+            file.header_start = file
+                .header_start
+                .checked_add(dir_info.archive_offset)
+                .ok_or_else(|| invalid!("Archive header is too large"))?;
+            files.push((file_name_raw, file));
         }
 
         Ok(SharedBuilder {
@@ -739,6 +801,12 @@ impl<R: Read + Seek> ZipArchive<R> {
 
 #[cfg(test)]
 mod tests {
+    use crate::format::magic::Magic;
+    use crate::format::{MagicPositionCache, find_central_directory_end};
+    use crate::read::ArchiveOffset;
+    use crate::read::magic_finder::{Backwards, MagicFinder};
+    use std::io::{Cursor, Write};
+
     #[test]
     fn invalid_offset() {
         use super::ZipArchive;
@@ -1032,5 +1100,65 @@ mod tests {
         assert!(file.encrypted());
         file.read_to_string(&mut contents).unwrap(); // ensures valid UTF-8
         assert_eq!(contents, "This file is not encrypted.\n");
+    }
+
+    #[test]
+    fn test_zip32_with_false_positive_eocd64_locator() {
+        let mut data = Vec::new();
+
+        // 1. Write some garbage
+        data.extend_from_slice(b"Some junk at the beginning");
+        let archive_start = data.len() as u64;
+
+        // 2. Write a Central Directory File Header (CDFH)
+        let cdfh_pos = data.len() as u64;
+        data.extend_from_slice(&Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes());
+        data.extend_from_slice(&[0u8; 42]); // Rest of CDFH (fixed size 46)
+
+        // 3. Write something that LOOKS like an EOCD64 locator but is NOT valid
+        // This will be at eocd_offset - 20
+        // We'll place it just before the EOCD.
+        data.extend_from_slice(&Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE.to_le_bytes());
+        data.extend_from_slice(&[0u8; 16]); // Rest of locator
+
+        // 4. Write the Zip32 EOCD
+        data.extend_from_slice(&Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes());
+        data.write_all(&0u16.to_le_bytes()).unwrap(); // disk number
+        data.write_all(&0u16.to_le_bytes()).unwrap(); // disk with CD
+        data.write_all(&1u16.to_le_bytes()).unwrap(); // number of files on this disk
+        data.write_all(&1u16.to_le_bytes()).unwrap(); // number of files
+        data.write_all(&(46u32).to_le_bytes()).unwrap(); // CD size
+        data.write_all(&((cdfh_pos - archive_start) as u32).to_le_bytes())
+            .unwrap(); // CD offset relative to archive start
+        data.write_all(&0u16.to_le_bytes()).unwrap(); // comment length
+
+        let file_len = data.len() as u64;
+        let mut reader = Cursor::new(data);
+
+        const CDE_SIG_BYTES: [u8; size_of::<Magic>()] =
+            Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        const CDFH_SIG_BYTES: [u8; size_of::<Magic>()] =
+            Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
+
+        let mut eocd_finder = MagicFinder::<Backwards<'static>>::new(&CDE_SIG_BYTES, 0, file_len);
+        let mut cdfh_cache = MagicPositionCache::new(CDFH_SIG_BYTES);
+        let mut eocd64_cache =
+            MagicPositionCache::new(Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes());
+
+        let result = find_central_directory_end(
+            &mut reader,
+            ArchiveOffset::Detect,
+            file_len,
+            &mut eocd_finder,
+            &mut cdfh_cache,
+            &mut eocd64_cache,
+        );
+
+        // This should succeed because even though there's a fake locator, it should fall back to Zip32
+        // But current implementation might fail if it finds the locator and then fails to find EOCD64.
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result.err());
+        let info = result.unwrap();
+        assert_eq!(info.archive_offset, archive_start);
+        assert!(info.eocd64.is_none());
     }
 }

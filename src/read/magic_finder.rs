@@ -11,7 +11,6 @@ pub(crate) trait FinderDirection<'a, B> {
     fn new(needle: &'a B) -> Self;
     fn reset_cursor(bounds: (u64, u64), window_size: usize) -> u64;
     fn scope_window(window: &[u8], mid_window_offset: usize) -> (&[u8], usize);
-    fn needle(&self) -> &[u8];
     fn find(&self, haystack: &[u8]) -> Option<usize>;
     fn move_cursor(&self, cursor: u64, bounds: (u64, u64), window_size: usize) -> Option<u64>;
     fn move_scope(&self, offset: usize) -> usize;
@@ -35,10 +34,6 @@ impl<'a> FinderDirection<'a, MagicLengthByteArray> for Forward<'a> {
 
     fn find(&self, haystack: &[u8]) -> Option<usize> {
         self.0.find(haystack)
-    }
-
-    fn needle(&self) -> &[u8] {
-        self.0.needle()
     }
 
     fn move_cursor(&self, cursor: u64, bounds: (u64, u64), window_size: usize) -> Option<u64> {
@@ -74,10 +69,6 @@ impl<'a> FinderDirection<'a, MagicLengthByteArray> for Backwards<'a> {
 
     fn find(&self, haystack: &[u8]) -> Option<usize> {
         self.0.rfind(haystack)
-    }
-
-    fn needle(&self) -> &[u8] {
-        self.0.needle()
     }
 
     fn move_cursor(&self, cursor: u64, bounds: (u64, u64), window_size: usize) -> Option<u64> {
@@ -129,22 +120,6 @@ impl<'a, T: FinderDirection<'a, MagicLengthByteArray>> MagicFinder<T> {
             mid_buffer_offset: None,
             bounds: (start_inclusive, end_exclusive),
         }
-    }
-
-    /// Repurpose the finder for different bytes or bounds.
-    pub(crate) fn repurpose(
-        &mut self,
-        magic_bytes: &'a MagicLengthByteArray,
-        bounds: (u64, u64),
-    ) -> &mut Self {
-        self.finder = T::new(magic_bytes);
-        self.cursor = T::reset_cursor(bounds, self.buffer.len());
-        self.bounds = bounds;
-
-        // Reset the mid-buffer offset, to invalidate buffer content.
-        self.mid_buffer_offset = None;
-
-        self
     }
 
     /// Find the next magic bytes in the direction specified in the type.
@@ -212,82 +187,5 @@ impl<'a, T: FinderDirection<'a, MagicLengthByteArray>> MagicFinder<T> {
         }
 
         Ok(None)
-    }
-}
-
-/// A magic bytes finder with an optimistic guess that is tried before
-/// the inner finder begins searching from end. This enables much faster
-/// lookup in files without appended junk, because the magic bytes will be
-/// found directly.
-///
-/// The guess can be marked as mandatory to produce an error. This is useful
-/// if the `ArchiveOffset` is known and auto-detection is not desired.
-#[derive(Debug)]
-pub(crate) struct OptimisticMagicFinder<Direction> {
-    inner: MagicFinder<Direction>,
-    initial_guess: Option<(u64, bool)>,
-}
-
-impl<'a, Direction: FinderDirection<'a, MagicLengthByteArray>> OptimisticMagicFinder<Direction> {
-    /// Create a new empty optimistic magic bytes finder.
-    pub(crate) fn new_empty() -> Self {
-        Self {
-            inner: MagicFinder::new(&[0, 0, 0, 0], 0, 0),
-            initial_guess: None,
-        }
-    }
-
-    /// Repurpose the finder for different bytes, bounds and initial guesses.
-    pub(crate) fn repurpose(
-        &mut self,
-        magic_bytes: &'a MagicLengthByteArray,
-        bounds: (u64, u64),
-        initial_guess: Option<(u64, bool)>,
-    ) -> &mut Self {
-        self.inner.repurpose(magic_bytes, bounds);
-        self.initial_guess = initial_guess;
-
-        self
-    }
-
-    /// Equivalent to `next_back`, with an optional initial guess attempted before
-    /// proceeding with reading from the back of the reader.
-    pub(crate) fn next<R: Read + Seek + ?Sized>(
-        &mut self,
-        reader: &mut R,
-    ) -> ZipResult<Option<u64>> {
-        if let Some((v, mandatory)) = self.initial_guess {
-            reader.seek(SeekFrom::Start(v))?;
-
-            let mut buffer = MagicLengthByteArray::default();
-
-            // Attempt to match only if there's enough space for the needle
-            if v.saturating_add(buffer.len() as u64) <= self.inner.bounds.1 {
-                if let Err(e) = reader.read_exact(&mut buffer) {
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                        if mandatory {
-                            return Ok(None);
-                        }
-                    } else {
-                        return Err(e.into());
-                    }
-                } else if self.inner.finder.needle() == buffer {
-                    // If a match is found, yield it.
-                    self.initial_guess.take();
-                    reader.seek(SeekFrom::Start(v))?;
-                    return Ok(Some(v));
-                }
-            }
-
-            // If a match is not found, but the initial guess was mandatory, return an error.
-            if mandatory {
-                return Ok(None);
-            }
-
-            // If the initial guess was not mandatory, remove it, as it was not found.
-            self.initial_guess.take();
-        }
-
-        self.inner.next(reader)
     }
 }

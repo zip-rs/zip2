@@ -408,6 +408,7 @@ impl FixedSizeBlock for Zip64CDELocatorBlock {
 }
 
 #[allow(missing_docs)]
+#[derive(Copy, Clone)]
 pub struct Zip64CentralDirectoryEndLocator {
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
