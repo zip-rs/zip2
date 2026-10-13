@@ -665,4 +665,20 @@ mod tests {
         assert!(read_zipfile_from_stream(&mut stream)?.is_none());
         Ok(())
     }
+
+    #[test]
+    fn test_write_and_reopen_empty_archive_with_comment() -> ZipResult<()> {
+        use std::io::{Seek, SeekFrom};
+        use crate::read::read_zipfile_from_stream;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+writer.set_raw_comment(Box::new([255, 255]))?;
+let mut writer = ZipWriter::new_append(writer.finish()?)?;
+writer.set_raw_comment(Box::new([213, 255, 127, 255, 255, 255, 255, 0, 255, 7]))?;
+writer.set_raw_comment(Box::new([0]))?;
+let mut stream = writer.finish()?;
+stream.seek(SeekFrom::Start(0))?;
+        assert!(read_zipfile_from_stream(&mut stream)?.is_none());
+        Ok(())
+    }
 }
