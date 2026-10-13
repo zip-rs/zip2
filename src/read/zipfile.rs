@@ -198,6 +198,12 @@ macro_rules! zip_file_methods {
             !self.is_dir() && !self.is_symlink()
         }
 
+        /// Returns whether the file is read-only. (On Unix, this means it's not readable by
+        /// *anyone*.)
+        pub fn is_read_only(&self) -> bool {
+            self.unix_mode().is_some_and(|mode| mode & 0o222 == 0)
+        }
+
         /// Get unix mode for the file
         pub fn unix_mode(&self) -> Option<u32> {
             self.get_metadata().unix_mode()
