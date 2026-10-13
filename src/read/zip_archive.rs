@@ -398,8 +398,9 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
-    /// doesn't make the archive invalid, but some programs will refuse to decompress it because the
-    /// copies would take up space independently in the destination.
+    /// doesn't make the archive invalid, but some programs will refuse to decompress it because m
+    /// copies of a block that decompresses to length n would occupy `m*n` bytes in the destination
+    /// but require only an archive size of O(m + n) bytes.
     ///
     /// This will return true on an archive where `zip::write::shallow_copy_file` has been used,
     /// unless the file being copied has a compressed size of zero.
@@ -412,7 +413,10 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Returns Ok(true) if any byte in this archive belongs to more than one file entry, including
     /// the header. Similar to [ZipArchive::has_overlapping_files] except that it also checks for
-    /// header-with-header and header-with-data overlaps.
+    /// header-with-header and header-with-data overlaps. These can be used to increase the number
+    /// of files in a ZIP archive so that the extracted files' metadata takes up a larger multiple
+    /// of the archive's size (but still a constant multiple, since seeking readers require a
+    /// central-directory entry for each file and streaming readers process one entry at a time).
     ///
     /// This will return true on an archive where `zip::write::shallow_copy_file` has been used,
     /// even when the file being copied has a size of zero.
