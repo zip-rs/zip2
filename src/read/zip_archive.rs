@@ -184,7 +184,9 @@ impl<R: Read + Seek> ZipArchive<R> {
             Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
         // Archive-comment limit is 64 KiB.
-        let min_eocd_position = file_len.saturating_sub(size_of::<Zip32CentralDirectoryEnd>() as u64 + size_of::<Magic>() as u64 + 1 << 16);
+        let min_eocd_position = file_len.saturating_sub(
+            size_of::<Zip32CentralDirectoryEnd>() as u64 + size_of::<Magic>() as u64 + 1 << 16,
+        );
 
         let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, min_eocd_position, file_len);
         let mut cdfh_cache = MagicPositionCache::new(CDFH_SIG_BYTES);
@@ -278,7 +280,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                         return Err(e);
                     }
                 };
-                chain.next_offset = reader.seek(SeekFrom::Current(block.file_name_length as i64 + block.extra_field_length as i64 + block.file_comment_length as i64))?;
+                chain.next_offset = reader.seek(SeekFrom::Current(
+                    block.file_name_length as i64
+                        + block.extra_field_length as i64
+                        + block.file_comment_length as i64,
+                ))?;
 
                 chain.entries.push((central_header_start, block));
             }

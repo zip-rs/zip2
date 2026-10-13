@@ -308,7 +308,9 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
 
         // Try the optimistic guess first
         if let Some(guess_pos) = guess_result {
-            if let Some((eocd64, archive_offset)) = try_candidate(reader, guess_pos, locator64, locator64_offset)? {
+            if let Some((eocd64, archive_offset)) =
+                try_candidate(reader, guess_pos, locator64, locator64_offset)?
+            {
                 return Ok(CentralDirectoryEndInfo {
                     eocd: (eocd, guess_pos).into(),
                     eocd64: Some(eocd64),
