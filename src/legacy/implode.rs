@@ -86,6 +86,138 @@ fn read_huffman_code<T: std::io::Read, E: Endianness>(
     Ok(d)
 }
 
+struct ImplodeState<T> {
+    bit_length: u64,
+    bit_reader: BitReader<T, LittleEndian>,
+    lit_decoder_opt: Option<Box<HuffmanDecoder>>,
+    len_decoder: Box<HuffmanDecoder>,
+    dist_decoder: Box<HuffmanDecoder>,
+    min_len: u16,
+    dist_low_bits: u32,
+    uncomp_len: usize,
+}
+
+impl<T> std::fmt::Debug for ImplodeState<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImplodeState")
+            .field("bit_length", &self.bit_length)
+            .field("uncomp_len", &self.uncomp_len)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: std::io::Read + std::io::Seek> ImplodeState<T> {
+    fn new(
+        src: T,
+        bit_length: u64,
+        uncomp_len: usize,
+        large_wnd: bool,
+        lit_tree: bool,
+        pk101_bug_compat: bool,
+    ) -> std::io::Result<Self> {
+        let mut bit_reader = BitReader::endian(src, LittleEndian);
+        let lit_decoder_opt = if lit_tree {
+            Some(read_huffman_code(&mut bit_reader, 256)?)
+        } else {
+            None
+        };
+        let len_decoder = read_huffman_code(&mut bit_reader, 64)?;
+        let dist_decoder = read_huffman_code(&mut bit_reader, 64)?;
+        let min_len = if (pk101_bug_compat && large_wnd) || (!pk101_bug_compat && lit_tree) {
+            3
+        } else {
+            2
+        };
+        let dist_low_bits = if large_wnd { 7 } else { 6 };
+
+        Ok(Self {
+            bit_length,
+            bit_reader,
+            lit_decoder_opt,
+            len_decoder,
+            dist_decoder,
+            min_len,
+            dist_low_bits,
+            uncomp_len,
+        })
+    }
+
+    fn explode_until(&mut self, target_len: usize, dst: &mut Vec<u8>) -> std::io::Result<()> {
+        let target_len = target_len.min(self.uncomp_len);
+        if dst.len() < target_len {
+            dst.try_reserve(
+                target_len
+                    .saturating_sub(dst.len())
+                    .min(crate::legacy::MAX_PREALLOC),
+            )
+            .map_err(|e| Error::new(io::ErrorKind::OutOfMemory, e))?;
+        }
+
+        while dst.len() < target_len {
+            let is_literal = self.bit_reader.read_bit()?;
+            if is_literal {
+                // Literal.
+                let sym = if let Some(lit_decoder) = &mut self.lit_decoder_opt {
+                    lit_decoder.huffman_decode(self.bit_length, &mut self.bit_reader)?
+                } else {
+                    u16::from(self.bit_reader.read::<8, u8>()?)
+                };
+                debug_assert!(sym <= u16::from(u8::MAX));
+                dst.push(sym as u8);
+                continue;
+            }
+
+            // Read the low dist bits.
+            let mut dist = self.bit_reader.read_var::<u16>(self.dist_low_bits)?;
+            // Read the Huffman-encoded high dist bits.
+            let sym = self
+                .dist_decoder
+                .huffman_decode(self.bit_length, &mut self.bit_reader)?;
+            dist |= sym << self.dist_low_bits;
+            dist += 1;
+
+            // Read the Huffman-encoded len.
+            let sym = self
+                .len_decoder
+                .huffman_decode(self.bit_length, &mut self.bit_reader)?;
+            let mut len = (sym + self.min_len) as usize;
+
+            if sym == MAX_LEN_SYMBOL {
+                // Read an extra len byte.
+                len += self.bit_reader.read::<8, u16>()? as usize;
+            }
+            let len = len.min(self.uncomp_len - dst.len());
+
+            // Optimize the copy loop using extend_from_within when possible
+            if dist as usize <= dst.len() {
+                if dist as usize >= len {
+                    // No overlap in copy, can use extend_from_within
+                    let start = dst.len() - dist as usize;
+                    dst.extend_from_within(start..start + len);
+                } else {
+                    // Overlapping copy
+                    for _ in 0..len {
+                        let byte = dst[dst.len() - dist as usize];
+                        dst.push(byte);
+                    }
+                }
+            } else {
+                // Copy with implicit zeros
+                for _ in 0..len {
+                    if dist as usize > dst.len() {
+                        dst.push(0);
+                    } else {
+                        let byte = dst[dst.len() - dist as usize];
+                        dst.push(byte);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 fn hwexplode(
     src: &[u8],
     uncomp_len: usize,
@@ -94,90 +226,22 @@ fn hwexplode(
     pk101_bug_compat: bool,
     dst: &mut Vec<u8>,
 ) -> std::io::Result<()> {
-    // Pre-allocate capacity
-    dst.reserve(uncomp_len.min(crate::legacy::MAX_PREALLOC));
-
-    let bit_length = src.len() as u64 * 8;
-    let mut is = BitReader::endian(Cursor::new(&src), LittleEndian);
-    let mut lit_decoder_opt = if lit_tree {
-        Some(read_huffman_code(&mut is, 256)?)
-    } else {
-        None
-    };
-    let mut len_decoder = read_huffman_code(&mut is, 64)?;
-    let mut dist_decoder = read_huffman_code(&mut is, 64)?;
-    let min_len = if (pk101_bug_compat && large_wnd) || (!pk101_bug_compat && lit_tree) {
-        3
-    } else {
-        2
-    };
-    let dist_low_bits = if large_wnd { 7 } else { 6 };
-
-    while dst.len() < uncomp_len {
-        let is_literal = is.read_bit()?;
-        if is_literal {
-            // Literal.
-            let sym;
-            if let Some(lit_decoder) = &mut lit_decoder_opt {
-                sym = lit_decoder.huffman_decode(bit_length, &mut is)?;
-            } else {
-                sym = u16::from(is.read::<8, u8>()?);
-            }
-            debug_assert!(sym <= u16::from(u8::MAX));
-            dst.push(sym as u8);
-            continue;
-        }
-
-        // Read the low dist bits.
-        let mut dist = is.read_var::<u16>(dist_low_bits)?;
-        // Read the Huffman-encoded high dist bits.
-        let sym = dist_decoder.huffman_decode(bit_length, &mut is)?;
-        dist |= (sym as u16) << dist_low_bits;
-        dist += 1;
-
-        // Read the Huffman-encoded len.
-        let sym = len_decoder.huffman_decode(bit_length, &mut is)?;
-        let mut len = (sym + min_len) as usize;
-
-        if sym == MAX_LEN_SYMBOL {
-            // Read an extra len byte.
-            len += is.read::<8, u16>()? as usize;
-        }
-        let len = len.min(uncomp_len - dst.len());
-
-        // Optimize the copy loop using extend_from_within when possible
-        if dist as usize <= dst.len() {
-            if dist as usize >= len {
-                // No overlap in copy, can use extend_from_within
-                let start = dst.len() - dist as usize;
-                dst.extend_from_within(start..start + len);
-            } else {
-                // Overlapping copy
-                for _ in 0..len {
-                    let byte = dst[dst.len() - dist as usize];
-                    dst.push(byte);
-                }
-            }
-        } else {
-            // Copy with implicit zeros
-            for _ in 0..len {
-                if dist as usize > dst.len() {
-                    dst.push(0);
-                } else {
-                    let byte = dst[dst.len() - dist as usize];
-                    dst.push(byte);
-                }
-            }
-        }
-    }
-    Ok(())
+    let mut state = ImplodeState::new(
+        Cursor::new(&src),
+        src.len() as u64 * 8,
+        uncomp_len,
+        large_wnd,
+        lit_tree,
+        pk101_bug_compat,
+    )?;
+    state.explode_until(uncomp_len, dst)
 }
 
 #[derive(Debug)]
 pub struct ImplodeDecoder<R> {
     compressed_reader: R,
     uncompressed_size: u64,
-    stream_read: bool,
+    state: Option<ImplodeState<Cursor<Vec<u8>>>>,
     large_wnd: bool,
     lit_tree: bool,
     stream: Vec<u8>,
@@ -191,7 +255,7 @@ impl<R: Read> ImplodeDecoder<R> {
         ImplodeDecoder {
             compressed_reader: inner,
             uncompressed_size,
-            stream_read: false,
+            state: None,
             large_wnd,
             lit_tree,
             stream: Vec::new(),
@@ -206,23 +270,36 @@ impl<R: Read> ImplodeDecoder<R> {
 
 impl<R: Read> Read for ImplodeDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        if !self.stream_read {
-            self.stream_read = true;
-            let mut compressed_bytes = Vec::new();
-            self.compressed_reader.read_to_end(&mut compressed_bytes)?;
+        let state = match &mut self.state {
+            Some(state) => state,
+            None => {
+                let uncomp_len = usize::try_from(self.uncompressed_size).map_err(|_| {
+                    Error::new(
+                        io::ErrorKind::InvalidData,
+                        "uncompressed size exceeds usize::MAX",
+                    )
+                })?;
+                let mut compressed_bytes = Vec::new();
+                self.compressed_reader.read_to_end(&mut compressed_bytes)?;
 
-            // Pre-allocate stream buffer
-            self.stream
-                .reserve((self.uncompressed_size as usize).min(crate::legacy::MAX_PREALLOC));
+                let bit_length = compressed_bytes.len() as u64 * 8;
+                self.state.insert(ImplodeState::new(
+                    Cursor::new(compressed_bytes),
+                    bit_length,
+                    uncomp_len,
+                    self.large_wnd,
+                    self.lit_tree,
+                    false,
+                )?)
+            }
+        };
 
-            hwexplode(
-                &compressed_bytes,
-                self.uncompressed_size as usize,
-                self.large_wnd,
-                self.lit_tree,
-                false,
-                &mut self.stream,
-            )?;
+        let target_len = self
+            .read_pos
+            .saturating_add(buf.len())
+            .min(state.uncomp_len);
+        if self.stream.len() < target_len {
+            state.explode_until(target_len, &mut self.stream)?;
         }
 
         let available = self.stream.len() - self.read_pos;
@@ -294,5 +371,18 @@ mod tests {
                 "cut {cut}: wrong output"
             );
         }
+    }
+
+    #[test]
+    fn test_implode_decoder_incremental_take() {
+        use super::ImplodeDecoder;
+        use std::io::Read;
+
+        let decoder = ImplodeDecoder::new(HAMLET_256.as_slice(), 256, 0);
+        let mut limited = decoder.take(16);
+        let mut out = Vec::new();
+        limited.read_to_end(&mut out).unwrap();
+        assert_eq!(out, &HAMLET_256_OUT[..16]);
+        assert!(limited.get_ref().stream.len() <= 32);
     }
 }
