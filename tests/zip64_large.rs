@@ -687,7 +687,7 @@ fn force_large_file() {
 // See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
 #[test]
 fn zip64_extensible_data_sector() {
-    use rand::{rng, RngExt};
+    use rand::{RngExt, rng};
     use std::io::{Cursor, Write};
     use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 

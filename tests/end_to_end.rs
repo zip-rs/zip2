@@ -415,7 +415,7 @@ fn test_extra_field_mapping_contains_expected_values() {
 
 #[test]
 fn test_long_comment_is_cut() {
-    use rand::{rng, RngExt};
+    use rand::{RngExt, rng};
     use std::io::{Cursor, Write};
     use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
