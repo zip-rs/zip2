@@ -21,6 +21,7 @@ impl Seek for ReadCountingCursor<'_> {
     }
 }
 
+#[cfg(not(miri))]
 #[test]
 fn test_complexity() {
     println!("l,m,n,input_bytes,bytes_read,ratio,time_ns,ns_per_byte");
