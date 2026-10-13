@@ -305,12 +305,8 @@ impl UnixFileModes {
 
     #[cfg(not(unix))]
     // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
-    pub fn all_read_only_with_children_first(
-        self,
-    ) -> impl IntoIterator<Item = std::path::PathBuf> {
-        self.read_only_set
-            .into_iter()
-            .rev()
+    pub fn all_read_only_with_children_first(self) -> impl IntoIterator<Item = std::path::PathBuf> {
+        self.read_only_set.into_iter().rev()
     }
 }
 
