@@ -1,13 +1,11 @@
-// Cargo.toml: zip = "=8.6.0"
-use std::io::{Cursor, Read, Seek, SeekFrom};
-use std::time::Instant;
-
+#[cfg(not(miri))]
 struct ReadCountingCursor<'a> {
-    inner: Cursor<&'a [u8]>,
+    inner: std::io::Cursor<&'a [u8]>,
     bytes_read: &'a mut u64,
 }
 
-impl Read for ReadCountingCursor<'_> {
+#[cfg(not(miri))]
+impl std::io::Read for ReadCountingCursor<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let n = self.inner.read(buf)?;
         *self.bytes_read += n as u64;
@@ -15,8 +13,9 @@ impl Read for ReadCountingCursor<'_> {
     }
 }
 
-impl Seek for ReadCountingCursor<'_> {
-    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+#[cfg(not(miri))]
+impl std::io::Seek for ReadCountingCursor<'_> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
         self.inner.seek(pos)
     }
 }
@@ -24,6 +23,9 @@ impl Seek for ReadCountingCursor<'_> {
 #[cfg(not(miri))]
 #[test]
 fn test_complexity() {
+    use std::io::Cursor;
+    use std::time::Instant;
+
     println!("l,m,n,input_bytes,bytes_read,ratio,time_ns,ns_per_byte");
     for l in [1, 2, 4, 8] {
         for m in [0, 1, 2, 3, 4000, 8000, 16000, 32000, 64000] {
