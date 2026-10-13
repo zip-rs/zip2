@@ -18,7 +18,6 @@ fn check_eocd_large_fields() {
     writer.write_all(b"aaa").unwrap();
     writer.finish().unwrap();
 
-    eprintln!("{:x?}", data);
     let eocd_start = data.len() - 22;
     assert_eq!(
         data[eocd_start..eocd_start + 4],
@@ -54,7 +53,6 @@ fn check_eocd_more_than_total() {
     writer.write_all(b"bbb").unwrap();
     writer.finish().unwrap();
 
-    eprintln!("{:x?}", data);
     let eocd_start = data.len() - 22;
     assert_eq!(
         data[eocd_start..eocd_start + 4],
@@ -93,7 +91,6 @@ fn check_eocd_less_than_total() {
     writer.write_all(b"bbb").unwrap();
     writer.finish().unwrap();
 
-    eprintln!("{:x?}", data);
     let eocd_start = data.len() - 22;
     assert_eq!(
         data[eocd_start..eocd_start + 4],
