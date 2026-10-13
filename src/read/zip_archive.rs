@@ -278,7 +278,9 @@ impl<R: Read + Seek> ZipArchive<R> {
                         return Err(e);
                     }
                 };
-                chain.next_offset = reader.seek(SeekFrom::Current(block.file_name_length as i64 + block.extra_field_length as i64 + block.file_comment_length as i64))?;
+                chain.next_offset = reader.seek(SeekFrom::Current(
+                    i64::from(block.file_name_length) + i64::from(block.extra_field_length) + i64::from(block.file_comment_length)
+                ))?;
 
                 chain.entries.push((central_header_start, block));
             }
