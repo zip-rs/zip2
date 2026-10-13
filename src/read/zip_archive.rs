@@ -2,7 +2,7 @@
 
 use crate::compression::CompressionMethod;
 use crate::format::MagicPositionCache;
-use crate::format::blocks::{FixedSizeBlock, ZipCentralEntryBlock};
+use crate::format::blocks::{FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock};
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::config::Config;
@@ -162,7 +162,7 @@ use crate::result::invalid;
 
 #[derive(Debug)]
 struct CentralDirectoryChain {
-    entries: Vec<(Box<[u8]>, ZipFileData)>,
+    entries: Vec<(u64, ZipCentralEntryBlock)>,
     next_offset: u64,
     terminal_error: Option<ZipError>,
 }
@@ -182,7 +182,11 @@ impl<R: Read + Seek> ZipArchive<R> {
             Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
         const CDFH_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
             Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
-        let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, 0, file_len);
+
+        // Archive-comment limit is 64 KiB.
+        let min_eocd_position = file_len.saturating_sub(size_of::<Zip32CentralDirectoryEnd>() as u64 + size_of::<Magic>() as u64 + 1 << 16);
+
+        let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, min_eocd_position, file_len);
         let mut cdfh_cache = MagicPositionCache::new(CDFH_SIG_BYTES);
         let mut eocd64_cache = MagicPositionCache::new(EOCD64_SIG_BYTES);
         loop {
@@ -274,13 +278,19 @@ impl<R: Read + Seek> ZipArchive<R> {
                         return Err(e);
                     }
                 };
+                chain.next_offset = reader.seek(SeekFrom::Current(block.file_name_length as i64 + block.extra_field_length as i64 + block.file_comment_length as i64))?;
 
-                let (file, file_name_raw) = match central_header_to_zip_file_inner(
-                    reader,
-                    0,
-                    central_header_start,
-                    block,
-                ) {
+                chain.entries.push((central_header_start, block));
+            }
+        }
+
+        let mut files = Vec::with_capacity(chain.entries.len().min(dir_info.number_of_files));
+        for (central_header_start, block) in chain.entries.drain(..dir_info.number_of_files) {
+            let variable_fields_start = central_header_start
+                + (size_of::<Magic>() + size_of::<ZipCentralEntryBlock>()) as u64;
+            reader.seek(SeekFrom::Start(variable_fields_start))?;
+            let (mut file, file_name_raw) =
+                match central_header_to_zip_file_inner(reader, 0, central_header_start, block) {
                     Ok(f) => f,
                     Err(e) => {
                         chain.terminal_error = Some(e.clone());
@@ -288,19 +298,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                         return Err(e);
                     }
                 };
-
-                chain.entries.push((file_name_raw.into(), file));
-                chain.next_offset = reader.stream_position()?;
-            }
-        }
-
-        let mut files = Vec::with_capacity(chain.entries.len().min(dir_info.number_of_files));
-        for (file_name_raw, mut file) in chain.entries.drain(..dir_info.number_of_files) {
             file.header_start = file
                 .header_start
                 .checked_add(dir_info.archive_offset)
                 .ok_or_else(|| invalid!("Archive header is too large"))?;
-            files.push((file_name_raw, file));
+            files.push((file_name_raw.into_boxed_slice(), file));
         }
 
         Ok(SharedBuilder {
