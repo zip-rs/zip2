@@ -34,7 +34,7 @@ jobs:
           - "--no-default-features --features zip/deflate-flate2,flate2/rust_backend"
           - "--no-default-features --features zip/deflate-zopfli"
         exclude:
-          - feature_flag: "--no-default-features --features zip/deflate-zopfli"
+          - feature_flag: "--no-default-features --features zip/deflate-flate2,flate2/rust_backend"
             workspace: "fuzz/Cargo.toml"
     name: "Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
     runs-on: ubuntu-latest
