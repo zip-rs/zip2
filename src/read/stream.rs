@@ -12,6 +12,9 @@ use crate::read::{
 };
 use crate::result::{ZipError, invalid};
 
+use crate::read::stream::ReadFromStreamResult::{
+    CentralDirectoryHeader, EndOfCentralDirectory, File,
+};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
@@ -48,17 +51,24 @@ impl<R: Read> ZipStreamReader<R> {
     /// Iterate over the stream and extract all file and their
     /// metadata.
     pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
-        while let Some(mut file) = read_zipfile_from_stream(&mut self.0)? {
-            visitor.visit_file(&mut file)?;
-        }
+        let has_central_directory = loop {
+            let read_from_stream_result =
+                read_zipfile_from_stream_with_options_internal(&mut self.0, Default::default())?;
+            match read_from_stream_result {
+                File(mut file) => visitor.visit_file(&mut file)?,
+                CentralDirectoryHeader => break true,
+                EndOfCentralDirectory => break false,
+            }
+        };
 
-        // `read_zipfile_from_stream` returned `None` because it read the signature of the
-        // first central directory header, so the stream is now 4 bytes into that header. Put
+        // If we found a central directory signature, put
         // the signature back in front so every header, the first one included, parses whole.
-        let signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
-        let mut central_directory = (&signature[..]).chain(&mut self.0);
-        while let Ok(metadata) = parse_central_directory(&mut central_directory) {
-            visitor.visit_additional_metadata(&metadata)?;
+        if has_central_directory {
+            let signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
+            let mut central_directory = (&signature[..]).chain(&mut self.0);
+            while let Ok(metadata) = parse_central_directory(&mut central_directory) {
+                visitor.visit_additional_metadata(&metadata)?;
+            }
         }
 
         Ok(())
@@ -236,8 +246,28 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
-    mut options: ZipReadOptions<'a>,
+    options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
+    let result = read_zipfile_from_stream_with_options_internal(reader, options)?;
+    match result {
+        ReadFromStreamResult::File(file) => Ok(Some(file)),
+        ReadFromStreamResult::CentralDirectoryHeader => Ok(None),
+        ReadFromStreamResult::EndOfCentralDirectory => Ok(None),
+    }
+}
+
+enum ReadFromStreamResult<'a, R: Read> {
+    File(ZipFile<'a, R>),
+    CentralDirectoryHeader,
+    EndOfCentralDirectory,
+}
+
+/// Returns Ok(Ok(file)) if a file was read, Ok(Err(true)) if a central directory entry signature was found,
+/// and Err(false) if an EOCD signature was found.
+fn read_zipfile_from_stream_with_options_internal<'a, R: Read>(
+    reader: &'a mut R,
+    mut options: ZipReadOptions<'a>,
+) -> ZipResult<ReadFromStreamResult<'a, R>> {
     // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
@@ -246,8 +276,8 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
 
     match Magic::from_le_bytes(magic_buf) {
         Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
-        Magic::CENTRAL_DIRECTORY_END_SIGNATURE => return Ok(None), // Empty archive may have no CENTRAL_DIRECTORY_HEADER_SIGNATURE
+        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(CentralDirectoryHeader),
+        Magic::CENTRAL_DIRECTORY_END_SIGNATURE => return Ok(EndOfCentralDirectory), // Empty archive may have no CENTRAL_DIRECTORY_HEADER_SIGNATURE
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
 
@@ -299,7 +329,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
 
     let limit_reader = reader.take(data.compressed_size);
     let reader = data.make_reader(limit_reader, options)?;
-    Ok(Some(ZipFile {
+    Ok(File(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(data),
         reader,
