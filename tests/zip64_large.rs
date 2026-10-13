@@ -687,6 +687,7 @@ fn force_large_file() {
 // See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
 #[test]
 fn zip64_extensible_data_sector() {
+    use rand::{rng, RngExt};
     use std::io::{Cursor, Write};
     use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -696,9 +697,7 @@ fn zip64_extensible_data_sector() {
         .compression_method(CompressionMethod::Stored)
         .large_file(true);
     let mut bytes = vec![0u8; extensible_data_length];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))
-        .unwrap();
+    rng().fill(&mut bytes);
 
     let mut writer = ZipWriter::new(Cursor::new(data));
     writer.set_raw_zip64_extensible_data_sector(bytes.clone().into_boxed_slice());
