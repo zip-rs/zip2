@@ -3,7 +3,6 @@
 use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
-use std::fs::set_permissions;
 use std::io::{self, Read, Seek};
 use std::path::Path;
 
@@ -544,7 +543,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 #[cfg(unix)]
                 if let Some(mode) = file.unix_mode() {
                     use std::os::unix::fs::PermissionsExt;
-                    outfile.set_permissions(Permissions::from_mode(mode))?;
+                    outfile.set_permissions(fs::Permissions::from_mode(mode))?;
                 }
             }
         }
@@ -560,7 +559,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             if metadata.is_dir() {
                 let mut permissions = metadata.permissions();
                 permissions.set_readonly(true);
-                set_permissions(path, permissions)?;
+                fs::set_permissions(path, permissions)?;
             }
         }
 
