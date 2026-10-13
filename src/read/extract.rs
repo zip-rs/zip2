@@ -559,7 +559,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             let metadata = fs::symlink_metadata(&path)?;
             if metadata.is_dir() {
                 let mut permissions = metadata.permissions();
-            permissions.set_readonly(true);
+                permissions.set_readonly(true);
                 set_permissions(path, permissions)?;
             }
         }
