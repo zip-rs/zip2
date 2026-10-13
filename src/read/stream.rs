@@ -247,6 +247,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     match Magic::from_le_bytes(magic_buf) {
         Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        Magic::CENTRAL_DIRECTORY_END_SIGNATURE => return Ok(None), // Empty archive may have no CENTRAL_DIRECTORY_HEADER_SIGNATURE
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
 
@@ -313,6 +314,7 @@ mod tests {
     use crate::result::ZipResult;
     use std::collections::BTreeSet;
     use std::io::{Cursor, Read};
+    use crate::ZipWriter;
 
     #[test]
     fn zip_read_streaming_visitor() {
@@ -649,5 +651,18 @@ mod tests {
             assert!(read_result.is_ok());
             assert_eq!(content, b"test");
         }
+    }
+
+
+    #[test]
+    fn test_write_and_reopen_empty_archive() -> ZipResult<()> {
+        use std::io::{Seek, SeekFrom};
+        use crate::read::read_zipfile_from_stream;
+
+        let writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let mut stream = writer.finish()?;
+        stream.seek(SeekFrom::Start(0))?;
+        assert!(read_zipfile_from_stream(&mut stream)?.is_none());
+        Ok(())
     }
 }
