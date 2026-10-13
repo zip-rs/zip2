@@ -403,8 +403,9 @@ fn main() {
     let mut w = String::new();
     if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
         for test_case in it.flatten() {
+            w.clear();
             let result = test_case.execute(&mut w, true);
-            assert!(result.is_ok(), "Test case failed:\n{}\n{}", w, result.unwrap_err());
+            assert!(result.is_ok(), "Test case failed:\n{}\n{}", w, result.err().unwrap());
         }
     }
 }
