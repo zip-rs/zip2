@@ -12,8 +12,15 @@ fn generate_random_archive(size: usize) -> Result<Vec<u8>, std::io::Error> {
 
     writer.start_file("random.dat", options)?;
     let mut bytes = vec![0u8; size];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rand::{RngExt, rng};
+        rng().fill(&mut bytes);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+    }
     writer.write_all(&bytes)?;
 
     let w = writer.finish()?;

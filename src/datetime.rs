@@ -184,7 +184,11 @@ impl DateTime {
     #[cfg(feature = "time")]
     #[must_use]
     pub fn default_for_write() -> Self {
+        #[cfg(not(miri))]
         let now = time::OffsetDateTime::now_utc();
+        #[cfg(miri)]
+        let now = time::OffsetDateTime::from_unix_timestamp(1791941812).unwrap();
+
         time::PrimitiveDateTime::new(now.date(), now.time())
             .try_into()
             .unwrap_or_else(|_| DateTime::default())
