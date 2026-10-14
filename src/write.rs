@@ -3004,9 +3004,20 @@ mod tests {
 
     #[test]
     fn duplicate_filenames() {
+        #[cfg(not(all(miri, feature = "deflate-flate2-zlib-rs")))]
+        let options = SimpleFileOptions::default();
+        // Compression is disabled on Miri with zlib because when it's enabled,
+        // flate2::Decompress::new makes a C
+        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
+        #[cfg(all(miri, feature = "deflate-flate2-zlib-rs"))]
+        let options = SimpleFileOptions {
+            compression_method: CompressionMethod::Stored,
+            ..Default::default()
+        };
+
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
-            .start_file("foo/bar/test", SimpleFileOptions::default())
+            .start_file("foo/bar/test", options)
             .unwrap();
         writer
             .write_all("The quick brown 🦊 jumps over the lazy 🐕".as_bytes())
