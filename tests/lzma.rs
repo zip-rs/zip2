@@ -1,12 +1,9 @@
-#![cfg(feature = "lzma")]
-
-use std::io::{self, Read};
-use zip::ZipArchive;
-
-// Disabled in Miri on ISAs where lzma_rust2 uses inline assembly
-#[cfg(not(all(miri, any(target_arch = "x86_64", target_arch = "aarch64"))))]
+#[cfg(all(lzma, not(all(miri, any(target_arch = "x86_64", target_arch = "aarch64")))))]
 #[test]
 pub fn decompress_lzma() {
+
+    use std::io::{self, Read};
+    use zip::ZipArchive;
     let v = include_bytes!("data/lzma.zip");
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
@@ -30,7 +27,7 @@ pub fn decompress_lzma() {
         file.read(&mut content)
             .expect("couldn't read encrypted and compressed file");
         assert_eq!(
-            include_bytes!("data/folder/binary.wmv")[0..1024],
+            &include_bytes!("data/folder/binary.wmv")[0..1024],
             &content[..]
         );
     }
