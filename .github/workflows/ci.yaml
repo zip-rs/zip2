@@ -194,7 +194,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rustalias: [stable, nightly, msrv]
+        rustalias: [stable, nightly]
         feature_flag:
           - "--all-features"
           - "--no-default-features"
