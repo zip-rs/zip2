@@ -275,16 +275,17 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
         // Helper closure to try a single EOCD64 candidate
         fn try_candidate<R: Read + Seek + ?Sized>(
             reader: &mut R,
+            eocd_offset: u64,
             eocd64_offset: u64,
-            locator64: Zip64CentralDirectoryEndLocator,
+            disk_with_central_directory: u32,
             locator64_offset: u64,
         ) -> ZipResult<Option<(DataAndPosition<Zip64CentralDirectoryEnd>, u64)>> {
-            let archive_offset = eocd64_offset - locator64.end_of_central_directory_offset;
+            let archive_offset = eocd64_offset - eocd_offset;
             reader.seek(SeekFrom::Start(eocd64_offset))?;
 
             match try_read_eocd64(
                 reader,
-                locator64.disk_with_central_directory,
+                disk_with_central_directory,
                 locator64_offset.saturating_sub(eocd64_offset),
             ) {
                 Ok(eocd64) => {
@@ -308,7 +309,13 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
 
         // Try the optimistic guess first
         if let Some(guess_pos) = guess_result {
-            if let Some((eocd64, archive_offset)) = try_candidate(reader, guess_pos, locator64, locator64_offset)? {
+            if let Some((eocd64, archive_offset)) = try_candidate(
+                reader,
+                locator64.end_of_central_directory_offset,
+                guess_pos,
+                locator64.disk_with_central_directory,
+                locator64_offset,
+            )? {
                 return Ok(CentralDirectoryEndInfo {
                     eocd: (eocd, guess_pos).into(),
                     eocd64: Some(eocd64),
@@ -331,7 +338,13 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
             let end_idx = eocd64_cache.positions.partition_point(|&p| p < search_end);
 
             for &eocd64_offset in &eocd64_cache.positions[start_idx..end_idx] {
-                match try_candidate(reader, eocd64_offset, locator64, locator64_offset) {
+                match try_candidate(
+                    reader,
+                    locator64.end_of_central_directory_offset,
+                    eocd64_offset,
+                    locator64.disk_with_central_directory,
+                    locator64_offset,
+                ) {
                     Ok(Some((eocd64, archive_offset))) => {
                         return Ok(CentralDirectoryEndInfo {
                             eocd: (eocd, eocd64_offset).into(),
