@@ -1,6 +1,4 @@
 #[cfg(feature = "deflate-flate2")]
-use std::fs;
-#[cfg(feature = "deflate-flate2")]
 use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
@@ -175,7 +173,7 @@ fn test_extract_without_root_dir() {
 
     // Check file contents
     let mut content = String::new();
-    fs::File::open(temp_dir.path().join("file1.txt"))
+    std::fs::File::open(temp_dir.path().join("file1.txt"))
         .unwrap()
         .read_to_string(&mut content)
         .unwrap();
