@@ -3,8 +3,6 @@ use std::fs;
 #[cfg(feature = "deflate-flate2")]
 use std::io::Read;
 use std::io::Write;
-#[cfg(feature = "deflate-flate2")]
-use std::path::Path;
 use std::path::PathBuf;
 #[cfg(feature = "deflate-flate2")]
 use tempfile::TempDir;
@@ -187,7 +185,7 @@ fn test_extract_without_root_dir() {
 }
 
 #[test]
-#[cfg(feature = "deflate-flate2")]
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
 fn test_extract_without_root_dir_but_no_root_found() {
     let zip_data = create_zip_without_root_dir();
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data)).unwrap();
@@ -230,6 +228,7 @@ fn test_extract_without_root_dir_with_ds_store() {
 #[test]
 #[cfg(all(not(miri), feature = "deflate-flate2"))]
 fn test_custom_root_dir_filter() {
+    use std::path::Path;
     let zip_data = create_zip_with_root_dir();
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data)).unwrap();
 
