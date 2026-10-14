@@ -2957,17 +2957,14 @@ mod tests {
 
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = FileOptions {
+            compression_method: CompressionMethod::default(),
+            compression_level: None,
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
             extended_options: (),
             alignment: 0,
-            // Compression is disabled on Miri with zlib because when it's enabled,
-            // flate2::Decompress::new makes a C
-            // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-            #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-            compression_method: CompressionMethod::Stored,
             ..FileOptions::default()
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -3007,20 +3004,9 @@ mod tests {
 
     #[test]
     fn duplicate_filenames() {
-        #[cfg(not(all(miri, feature = "deflate-flate2-zlib-rs")))]
-        let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, feature = "deflate-flate2-zlib-rs"))]
-        let options = SimpleFileOptions {
-            compression_method: CompressionMethod::Stored,
-            ..Default::default()
-        };
-
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
-            .start_file("foo/bar/test", options)
+            .start_file("foo/bar/test", SimpleFileOptions::default())
             .unwrap();
         writer
             .write_all("The quick brown 🦊 jumps over the lazy 🐕".as_bytes())
@@ -3058,18 +3044,11 @@ mod tests {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_2a() {
-                        #[cfg(not(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib"))))]
-        let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file(
                 "PK\u{6}\u{6}PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-                options,
+                SimpleFileOptions::default(),
             )
             .unwrap();
         let zip = writer.finish().unwrap();
@@ -3078,16 +3057,9 @@ mod tests {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_3() {
-        #[cfg(not(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib"))))]
-        let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
-            .start_file("\0PK\u{6}\u{6}", options)
+            .start_file("\0PK\u{6}\u{6}", SimpleFileOptions::default())
             .unwrap();
         writer
             .start_file(
@@ -3101,31 +3073,24 @@ mod tests {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_4() {
-                #[cfg(not(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib"))))]
-        let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
-            .start_file("PK\u{6}\u{6}", options)
+            .start_file("PK\u{6}\u{6}", SimpleFileOptions::default())
             .unwrap();
         writer
-            .start_file("\0\0\0\0\0\0", options)
+            .start_file("\0\0\0\0\0\0", SimpleFileOptions::default())
             .unwrap();
         writer
-            .start_file("\0", options)
+            .start_file("\0", SimpleFileOptions::default())
             .unwrap();
-        writer.start_file("", options).unwrap();
+        writer.start_file("", SimpleFileOptions::default()).unwrap();
         writer
-            .start_file("\0\0", options)
+            .start_file("\0\0", SimpleFileOptions::default())
             .unwrap();
         writer
             .start_file(
                 "\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-                options,
+                SimpleFileOptions::default(),
             )
             .unwrap();
         let zip = writer.finish().unwrap();
@@ -3134,16 +3099,9 @@ mod tests {
 
     #[test]
     fn test_filename_looks_like_zip64_locator_5() -> ZipResult<()> {
-        #[cfg(not(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib"))))]
-        let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
-            .add_directory("", options.with_alignment(21))
+            .add_directory("", SimpleFileOptions::default().with_alignment(21))
             .unwrap();
         let mut writer = ZipWriter::new_append(writer.finish().unwrap()).unwrap();
         writer.shallow_copy_file("/", "").unwrap();
@@ -3151,13 +3109,13 @@ mod tests {
         writer.shallow_copy_file("\0", "PK\u{6}\u{6}").unwrap();
         let mut writer = ZipWriter::new_append(writer.finish().unwrap()).unwrap();
         writer
-            .start_file("\0\0\0\0\0\0", options)
+            .start_file("\0\0\0\0\0\0", SimpleFileOptions::default())
             .unwrap();
         let mut writer = ZipWriter::new_append(writer.finish().unwrap()).unwrap();
         writer
             .start_file(
                 "#PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-                options,
+                SimpleFileOptions::default(),
             )
             .unwrap();
         let zip = writer.finish().unwrap();
@@ -3168,16 +3126,9 @@ mod tests {
     #[test]
     #[cfg(feature = "deflate-flate2")]
     fn remove_shallow_copy_keeps_original() -> ZipResult<()> {
-        #[cfg(not(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib"))))]
-        let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer
-            .start_file("original", options)
+            .start_file("original", SimpleFileOptions::default())
             .unwrap();
         writer.write_all(RT_TEST_TEXT.as_bytes()).unwrap();
         writer
@@ -3195,41 +3146,28 @@ mod tests {
     #[test]
     fn remove_encrypted_file() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        #[cfg(not(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib"))))]
-        let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        let first_file_options = options
+        let first_file_options = SimpleFileOptions::default()
             .with_alignment(0xFFFF)
             .with_deprecated_encryption(b"Password");
         writer.start_file("", first_file_options).unwrap();
         writer.abort_file().unwrap();
         let zip = writer.finish().unwrap();
         let mut writer = ZipWriter::new(zip);
-        writer.start_file("", options).unwrap();
+        writer.start_file("", SimpleFileOptions::default()).unwrap();
         Ok(())
     }
 
     #[test]
     fn remove_encrypted_aligned_symlink() -> ZipResult<()> {
         let mut options = SimpleFileOptions::default();
-      // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
-        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
-        {
-            options = options.compression_method(CompressionMethod::Stored);
-        }
+        options = options.with_deprecated_encryption(b"Password");
+        options.alignment = 0xFFFF;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.add_symlink("", "s\t\0\0ggggg\0\0",
-                           options.with_deprecated_encryption(b"Password").with_alignment(u16::MAX)).unwrap();
+        writer.add_symlink("", "s\t\0\0ggggg\0\0", options).unwrap();
         writer.abort_file().unwrap();
         let zip = writer.finish().unwrap();
         let mut writer = ZipWriter::new_append(zip).unwrap();
-        writer.start_file("", options).unwrap();
+        writer.start_file("", SimpleFileOptions::default()).unwrap();
         Ok(())
     }
 

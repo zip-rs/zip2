@@ -10,7 +10,6 @@ const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 const PASSWORD: &[u8] = b"helloworld";
 const SOME_PASSWORD: &[u8] = b"some password";
 
-#[cfg(not(miri))]
 #[test]
 pub fn aes256_encrypted_uncompressed_file() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
@@ -28,7 +27,6 @@ pub fn aes256_encrypted_uncompressed_file() {
     assert_eq!(SECRET_CONTENT, decrypted_content);
 }
 
-#[cfg(not(miri))]
 #[test]
 fn aes256_encrypted_file() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
@@ -46,7 +44,6 @@ fn aes256_encrypted_file() {
     assert_eq!(SECRET_CONTENT, content);
 }
 
-#[cfg(not(miri))]
 #[test]
 fn aes192_encrypted_file() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
@@ -64,7 +61,6 @@ fn aes192_encrypted_file() {
     assert_eq!(SECRET_CONTENT, content);
 }
 
-#[cfg(not(miri))]
 #[test]
 fn aes128_encrypted_file() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!("data/aes_archive.zip")))
@@ -82,7 +78,6 @@ fn aes128_encrypted_file() {
     assert_eq!(SECRET_CONTENT, content);
 }
 
-#[cfg(not(miri))]
 #[test]
 fn aes128_stored_roundtrip() {
     let cursor = {
@@ -103,7 +98,7 @@ fn aes128_stored_roundtrip() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(feature = "deflate-flate2")]
 fn aes256_deflated_roundtrip() {
     use zip::CompressionMethod::Deflated;
     let cursor = {
@@ -245,7 +240,6 @@ fn raw_copy_from_aes_zip() {
     }
 }
 
-#[cfg(not(miri))]
 #[test]
 fn aes_custom_salt_for_reproducible_zip() {
     use zip::AesSalt;
@@ -435,7 +429,6 @@ fn payload_start(a: &[u8]) -> usize {
 }
 
 /// Control: on a well-formed archive the HMAC does reject forged ciphertext.
-#[cfg(not(miri))]
 #[test]
 fn tampering_is_detected_when_the_declared_size_is_honest() {
     let mut a = genuine_archive(GENUINE);
@@ -448,7 +441,6 @@ fn tampering_is_detected_when_the_declared_size_is_honest() {
 }
 
 /// The bypass: chosen plaintext is delivered verbatim, without the password.
-#[cfg(not(miri))]
 #[test]
 fn hmac_is_bypassed_when_the_entry_ends_early() {
     let genuine = genuine_archive(GENUINE);
@@ -483,7 +475,6 @@ fn hmac_is_bypassed_when_the_entry_ends_early() {
 }
 
 /// Second path: an entry with no payload bytes is never authenticated at all.
-#[cfg(not(miri))]
 #[test]
 fn hmac_is_never_checked_for_a_zero_length_entry() {
     let mut a = genuine_archive(b"");
@@ -497,7 +488,6 @@ fn hmac_is_never_checked_for_a_zero_length_entry() {
 /// Reading an empty AES entry again after it returned Ok(0) must keep returning Ok(0), like a
 /// non-empty entry. The HMAC of an empty entry was verified on every read, so the second read
 /// failed with "Tried to use an already finalized HMAC" (and hit a debug_assert in debug builds).
-#[cfg(not(miri))]
 #[test]
 fn aes_empty_entry_reread_at_eof() {
     for data in [&b""[..], SECRET_CONTENT.as_bytes()] {
@@ -521,7 +511,6 @@ fn aes_empty_entry_reread_at_eof() {
 
 /// GHSA-c9rm-qm35-rhqf: the HMAC must be verified even when the decompressor
 /// reports end-of-stream before all the AES ciphertext has been consumed.
-#[cfg(not(miri))]
 mod early_eof {
     use super::PASSWORD;
     use std::io::{self, Cursor, Read, Write};

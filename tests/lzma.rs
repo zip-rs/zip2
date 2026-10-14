@@ -3,6 +3,8 @@
 use std::io::{self, Read};
 use zip::ZipArchive;
 
+// Disabled in Miri on ISAs where lzma_rust2 uses inline assembly
+#[cfg(not(all(miri, any(target_arch = "x86_64", target_arch = "aarch64"))))]
 #[test]
 pub fn decompress_lzma() {
     let v = include_bytes!("data/lzma.zip");

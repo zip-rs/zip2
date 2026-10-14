@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(not(miri), feature = "aes-crypto"))]
+    #[cfg(feature = "aes-crypto")]
     fn zip_read_streaming_compressed_and_aes() {
         use super::read_zipfile_from_stream_with_options;
         use crate::ZipReadOptions;
@@ -548,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(not(miri), feature = "aes-crypto"))]
+    #[cfg(feature = "aes-crypto")]
     fn zip_read_streaming_compressed_and_aes_without_size() {
         use super::read_zipfile_from_stream_with_options;
         use crate::ZipReadOptions;

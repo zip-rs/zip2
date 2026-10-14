@@ -28,11 +28,8 @@ jobs:
       matrix:
         workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag:
-          - "--all-features"
           - "--no-default-features"
-          - ""
-          - "--no-default-features --features zip/deflate-flate2,flate2/rust_backend"
-          - "--no-default-features --features zip/deflate-zopfli"
+          - "--no-default-features --features zip/_miri_compatible_features"
         exclude:
           - feature_flag: "--no-default-features --features zip/deflate-flate2,flate2/rust_backend"
             workspace: "fuzz/Cargo.toml"

@@ -112,6 +112,23 @@ default = [
     "xz",
 ]
 zstd = ["dep:zstd"]
+_miri_compatible_features = [
+    # Not "aes-crypto" (too slow),
+    "bzip2",
+    "chrono",
+    "deflate-flate2",
+    "flate2/rust_backend",
+    "deflate-zopfli",
+    "jiff-02",
+    "legacy-zip",
+    "lzma",
+    "nt-time",
+    "ppmd",
+    "unreserved",
+    "xz",
+    "time",
+    # Not "zstd" (uses C functions),
+]
 
 # The following features are not supported on wasm
 bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
