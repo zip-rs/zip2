@@ -5,7 +5,7 @@
 pub mod tests {
     use std::io::Write;
     use zip::write::SimpleFileOptions;
-    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+    use zip::{ZipArchive, ZipWriter};
 
     /// Create a ZIP file with entries that have absolute paths (starting with /)
     /// This simulates the problematic ZIP file mentioned in the bug report

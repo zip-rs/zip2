@@ -3,8 +3,6 @@ use std::fs;
 #[cfg(feature = "deflate-flate2")]
 use std::io::Read;
 use std::io::Write;
-#[cfg(feature = "deflate-flate2")]
-use std::path::Path;
 use std::path::PathBuf;
 #[cfg(all(not(miri), feature = "deflate-flate2"))]
 use tempfile::TempDir;
