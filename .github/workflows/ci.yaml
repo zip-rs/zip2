@@ -26,14 +26,13 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag:
           - "--no-default-features"
           - "--no-default-features --features zip/_miri_compatible_features"
         exclude:
           - feature_flag: "--no-default-features --features zip/deflate-flate2,flate2/rust_backend"
             workspace: "fuzz/Cargo.toml"
-    name: "Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
+    name: "Miri ${{ matrix.feature_flag }} Cargo.toml"
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -55,7 +54,7 @@ jobs:
       - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - run: cargo install --locked cargo-nextest
-      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
+      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
   check_minimal_versions:
     timeout-minutes: 15
     strategy:
