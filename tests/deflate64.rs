@@ -24,7 +24,11 @@ pub fn decompress_deflate64() {
     #[cfg(miri)]
     {
         let mut buf = [0u8; 128];
-        assert_eq!(file.read(&mut buf).expect("couldn't read encrypted and compressed file"), 128);
+        assert_eq!(
+            file.read(&mut buf)
+                .expect("couldn't read encrypted and compressed file"),
+            128
+        );
         assert_eq!(include_bytes!("data/folder/binary.wmv")[0..128], buf[..]);
     }
 }
