@@ -29,9 +29,6 @@ jobs:
         feature_flag:
           - "--no-default-features"
           - "--no-default-features --features zip/_miri_compatible_features"
-        exclude:
-          - feature_flag: "--no-default-features --features zip/deflate-flate2,flate2/rust_backend"
-            workspace: "fuzz/Cargo.toml"
     name: "Miri ${{ matrix.feature_flag }} Cargo.toml"
     runs-on: ubuntu-latest
     steps:
