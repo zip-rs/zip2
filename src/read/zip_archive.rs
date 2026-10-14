@@ -1039,7 +1039,9 @@ mod tests {
         .expect_err("Invalid file");
     }
 
-    #[cfg(feature = "deflate-flate2")]
+    /// Disabled on Miri with zlib because when it's enabled, flate2::Decompress::new makes a C
+    /// function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
+    #[cfg(all(feature = "deflate-flate2", not(all(miri, feature = "deflate-flate2-zlib"))))]
     #[test]
     fn test_read_with_data_descriptor() {
         use super::ZipArchive;
