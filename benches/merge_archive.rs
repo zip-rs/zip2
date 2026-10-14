@@ -17,8 +17,15 @@ fn generate_random_archive(
     for i in 0..num_entries {
         let name = format!("random{i}.dat");
         zip.start_file(name, options)?;
-        getrandom::fill(&mut bytes)
-            .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use rand::{RngExt, rng};
+            rng().fill(&mut bytes);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+        }
         zip.write_all(&bytes)?;
     }
 
