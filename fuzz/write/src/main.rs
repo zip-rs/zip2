@@ -405,7 +405,12 @@ fn main() {
         for test_case in it.flatten() {
             w.clear();
             let result = test_case.execute(&mut w, true);
-            assert!(result.is_ok(), "Test case failed:\n{}\n{}", w, result.err().unwrap());
+            assert!(
+                result.is_ok(),
+                "Test case failed:\n{}\n{}",
+                w,
+                result.err().unwrap()
+            );
         }
     }
 }
