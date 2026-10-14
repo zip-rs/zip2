@@ -180,8 +180,7 @@ jobs:
       - name: Check that the benches can be built
         run: cargo build --benches
       - run: cargo check --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
-      - run: cargo install --locked ${{ matrix.nextest_flag }} cargo-nextest
-      - run: cargo nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }}
+      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }}
   check_fuzz:
     timeout-minutes: 20
     needs:
