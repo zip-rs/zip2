@@ -159,10 +159,13 @@ jobs:
         include:
           - rustalias: stable
             rust: stable
+            nextest_flag: ""
           - rustalias: msrv
             rust: "1.88.0"
+            nextest_flag: "--version 0.9.114"
           - rustalias: nightly
             rust: nightly
+            nextest_flag: ""
         exclude:
           - rustalias: msrv
             workspace: "fuzz/Cargo.toml"
@@ -181,7 +184,7 @@ jobs:
       - name: Check that the benches can be built
         run: cargo build --benches
       - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
-      - run: cargo install --locked cargo-nextest
+      - run: cargo install --locked ${{ matrix.nextest_flag }} cargo-nextest
       - run: cargo nextest run --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   wasm:
     timeout-minutes: 10
