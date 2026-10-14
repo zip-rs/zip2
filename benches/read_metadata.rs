@@ -4,7 +4,6 @@ use std::fs;
 use std::io::{Cursor, Write};
 
 use bencher::Bencher;
-use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult};
 
@@ -22,8 +21,15 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> ZipResult<Ve
         let name =
             format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{file_index}.dat");
         writer.start_file(name, options)?;
-        getrandom::fill(&mut bytes)
-            .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use rand::{RngExt, rng};
+            rng().fill(&mut bytes);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+        }
         writer.write_all(&bytes)?;
     }
 
@@ -43,13 +49,13 @@ fn read_metadata(bench: &mut Bencher) {
 const COMMENT_SIZE: usize = 50_000;
 
 fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResult<Vec<u8>> {
+    use rand::{RngExt, rng};
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+    rng().fill(&mut bytes);
     writer.set_raw_comment(bytes.into_boxed_slice())?;
 
     writer.start_file("asdf.txt", options)?;
@@ -71,6 +77,7 @@ fn parse_archive_with_comment(bench: &mut Bencher) {
 const COMMENT_SIZE_64: usize = 500_000;
 
 fn generate_zip64_archive_with_random_extensible_data(comment_length: usize) -> ZipResult<Vec<u8>> {
+    use rand::{RngExt, rng};
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default()
@@ -78,8 +85,7 @@ fn generate_zip64_archive_with_random_extensible_data(comment_length: usize) -> 
         .large_file(true);
 
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))?;
+    rng().fill(&mut bytes);
     writer.set_raw_zip64_extensible_data_sector(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
@@ -98,7 +104,9 @@ fn parse_zip64_archive_with_comment(bench: &mut Bencher) {
     bench.bytes = bytes.len() as u64;
 }
 
+#[cfg(not(miri))]
 fn parse_stream_archive(bench: &mut Bencher) {
+    use tempfile::TempDir;
     const STREAM_ZIP_ENTRIES: usize = 5;
     const STREAM_FILE_SIZE: usize = 5;
 
@@ -119,7 +127,9 @@ fn parse_stream_archive(bench: &mut Bencher) {
     bench.bytes = bytes.len() as u64;
 }
 
+#[cfg(not(miri))]
 fn parse_large_non_zip(bench: &mut Bencher) {
+    use tempfile::TempDir;
     const LARGE_FILE_SIZE: usize = 17_000_000;
 
     // Create a large file that doesn't have a zip header (generating random data _might_ make a zip magic
@@ -134,6 +144,7 @@ fn parse_large_non_zip(bench: &mut Bencher) {
     })
 }
 
+#[cfg(not(miri))]
 benchmark_group!(
     benches,
     read_metadata,
@@ -141,5 +152,12 @@ benchmark_group!(
     parse_zip64_archive_with_comment,
     parse_stream_archive,
     parse_large_non_zip,
+);
+#[cfg(miri)]
+benchmark_group!(
+    benches,
+    read_metadata,
+    parse_archive_with_comment,
+    parse_zip64_archive_with_comment,
 );
 benchmark_main!(benches);
