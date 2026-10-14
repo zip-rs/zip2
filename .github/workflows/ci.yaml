@@ -206,9 +206,6 @@ jobs:
             rust: stable
           - rustalias: nightly
             rust: nightly
-        exclude:
-          - rustalias: msrv
-            workspace: "fuzz/Cargo.toml"
     name: "Build and test ${{ matrix.feature_flag }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
