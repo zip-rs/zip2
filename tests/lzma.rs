@@ -1,7 +1,9 @@
-#[cfg(all(lzma, not(all(miri, any(target_arch = "x86_64", target_arch = "aarch64")))))]
+#[cfg(all(
+    lzma,
+    not(all(miri, any(target_arch = "x86_64", target_arch = "aarch64")))
+))]
 #[test]
 pub fn decompress_lzma() {
-
     use std::io::{self, Read};
     use zip::ZipArchive;
     let v = include_bytes!("data/lzma.zip");
