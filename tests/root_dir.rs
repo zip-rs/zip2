@@ -4,8 +4,6 @@ use std::fs;
 use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
-#[cfg(feature = "deflate-flate2")]
-use tempfile::TempDir;
 use zip::read::root_dir_common_filter;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
@@ -162,7 +160,7 @@ fn test_extract_without_root_dir() {
     let zip_data = create_zip_with_root_dir();
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data)).unwrap();
 
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = tempfile::TempDir::new().unwrap();
     archive
         .extract_unwrapped_root_dir(temp_dir.path(), root_dir_common_filter)
         .unwrap();
@@ -190,7 +188,7 @@ fn test_extract_without_root_dir_but_no_root_found() {
     let zip_data = create_zip_without_root_dir();
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data)).unwrap();
 
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = tempfile::TempDir::new().unwrap();
     archive
         .extract_unwrapped_root_dir(temp_dir.path(), root_dir_common_filter)
         .unwrap();
@@ -208,7 +206,7 @@ fn test_extract_without_root_dir_with_ds_store() {
     let zip_data = create_zip_with_root_dir_and_ds_store();
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data)).unwrap();
 
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = tempfile::TempDir::new().unwrap();
     archive
         .extract_unwrapped_root_dir(temp_dir.path(), root_dir_common_filter)
         .unwrap();
@@ -242,7 +240,7 @@ fn test_custom_root_dir_filter() {
     assert_eq!(root_dir.unwrap(), PathBuf::from("root"));
 
     // Extract with our custom filter
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = tempfile::TempDir::new().unwrap();
     archive
         .extract_unwrapped_root_dir(temp_dir.path(), custom_filter)
         .unwrap();
