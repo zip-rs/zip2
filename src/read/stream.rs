@@ -478,8 +478,10 @@ mod tests {
         }
     }
 
+    /// Disabled on Miri with zlib because zlib-rs's <zlib_rs::stable::Deflate as Drop>::drop raises
+    /// a stacked-borrow error.
     #[test]
-    #[cfg(feature = "deflate")]
+    #[cfg(all(feature = "deflate", not(all(miri, feature = "deflate-flate2-zlib"))))]
     fn zip_read_streaming_compressed() {
         use super::read_zipfile_from_stream_with_compressed_size;
         use crate::ZipWriter;
