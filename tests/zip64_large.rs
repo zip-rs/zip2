@@ -710,7 +710,6 @@ fn force_large_file() {
 // See 4.3.14.3, 4.3.14.4, 4.4.27 and APPENDIX C of the specification
 #[test]
 fn zip64_extensible_data_sector() {
-    use rand::{RngExt, rng};
     use std::io::{Cursor, Write};
     use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -720,7 +719,16 @@ fn zip64_extensible_data_sector() {
         .compression_method(CompressionMethod::Stored)
         .large_file(true);
     let mut bytes = vec![0u8; extensible_data_length];
-    rng().fill(&mut bytes);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rand::{RngExt, rng};
+        rng().fill(&mut bytes);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+    }
 
     let mut writer = ZipWriter::new(Cursor::new(data));
     writer.set_raw_zip64_extensible_data_sector(bytes.clone().into_boxed_slice());

@@ -420,7 +420,6 @@ fn test_extra_field_mapping_contains_expected_values() {
 
 #[test]
 fn test_long_comment_is_cut() {
-    use rand::{RngExt, rng};
     use std::io::{Cursor, Write};
     use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -430,7 +429,15 @@ fn test_long_comment_is_cut() {
         .compression_method(CompressionMethod::Stored)
         .large_file(true);
     let mut bytes = vec![0u8; comment_length];
-    rng().fill(&mut bytes);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rand::{RngExt, rng};
+        rng().fill(&mut bytes);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+    }
 
     let mut writer = ZipWriter::new(Cursor::new(data));
     let res = writer.set_raw_comment(bytes.clone().into_boxed_slice());

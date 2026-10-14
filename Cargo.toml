@@ -64,6 +64,10 @@ time = { version = "^0.3.47", default-features = false, optional = true, feature
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "^0.3.56"
+getrandom = { version = "0.4", default-features = false, features = ["wasm_js"]}
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+rand = "0.10.3"
 
 [target.'cfg(not(miri))'.dev-dependencies]
 tempfile = "3.15"
@@ -74,7 +78,6 @@ walkdir = "2.5"
 time = { version = "^0.3.47", features = ["formatting", "macros"] }
 clap = { version = "^4.4.18", features = ["derive"] }
 rayon = "1.11"
-rand = "0.10.3"
 
 [features]
 _arbitrary = ["dep:arbitrary"]
