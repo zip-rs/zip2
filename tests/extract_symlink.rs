@@ -15,7 +15,7 @@ fn test_is_symlink() -> std::io::Result<()> {
 }
 
 #[test]
-#[cfg(all(unix, feature = "deflate-flate2"))]
+#[cfg(all(unix, feature = "deflate-flate2", not(miri)))]
 fn extract_should_respect_links() {
     use std::{fs, io, path::PathBuf, str::FromStr};
     use tempfile::TempDir;
