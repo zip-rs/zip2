@@ -209,7 +209,7 @@ fn raw_copy_from_aes_zip() {
         assert_eq!(s_comp, d_comp, "compression method differs for {name}");
 
         // For files, verify content bytes match. For encrypted entries, use the shared fixture password
-        if !is_dir {
+        if !is_dir && !cfg!(miri) {
             let mut s_buf = Vec::new();
             let mut d_buf = Vec::new();
             if s_encrypted {
