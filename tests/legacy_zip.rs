@@ -34,12 +34,13 @@ fn decompress_shrink_full_code_table() {
     .expect("couldn't open test zip file");
     let mut file = archive.by_index(0).expect("couldn't find file in archive");
 
-    let mut content = Vec::new();
+    const EXPECTED_SIZE: usize = 26001;
+    let mut content = Vec::with_capacity(EXPECTED_SIZE);
     file.read_to_end(&mut content)
         .expect("couldn't read shrunk file");
 
     let content = String::from_utf8(content).expect("invalid UTF-8");
-    assert_eq!(content.len(), 26001);
+    assert_eq!(content.len(), EXPECTED_SIZE);
     for (n, line) in content.lines().take(5421).enumerate() {
         assert_eq!(n + 1, line.parse::<usize>().unwrap(), "line {}: {}", n + 1, line);
     }
