@@ -333,6 +333,8 @@ jobs:
       - name: compile fuzz
         run: cargo afl build --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
+        env:
+          AFL_BENCH_UNTIL_CRASH: 1
         timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - name: Minimize corpus
@@ -392,6 +394,8 @@ jobs:
       - name: compile fuzz
         run: cargo afl build -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
+        env:
+          AFL_BENCH_UNTIL_CRASH: 1
         timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - name: Report coverage
