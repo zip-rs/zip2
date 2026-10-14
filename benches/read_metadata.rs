@@ -4,7 +4,6 @@ use std::fs;
 use std::io::{Cursor, Write};
 
 use bencher::Bencher;
-use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult};
 
@@ -98,7 +97,9 @@ fn parse_zip64_archive_with_comment(bench: &mut Bencher) {
     bench.bytes = bytes.len() as u64;
 }
 
+#[cfg(not(miri))]
 fn parse_stream_archive(bench: &mut Bencher) {
+    use tempfile::TempDir;
     const STREAM_ZIP_ENTRIES: usize = 5;
     const STREAM_FILE_SIZE: usize = 5;
 
@@ -119,7 +120,9 @@ fn parse_stream_archive(bench: &mut Bencher) {
     bench.bytes = bytes.len() as u64;
 }
 
+#[cfg(not(miri))]
 fn parse_large_non_zip(bench: &mut Bencher) {
+    use tempfile::TempDir;
     const LARGE_FILE_SIZE: usize = 17_000_000;
 
     // Create a large file that doesn't have a zip header (generating random data _might_ make a zip magic
@@ -134,6 +137,7 @@ fn parse_large_non_zip(bench: &mut Bencher) {
     })
 }
 
+#[cfg(not(miri))]
 benchmark_group!(
     benches,
     read_metadata,
@@ -141,5 +145,12 @@ benchmark_group!(
     parse_zip64_archive_with_comment,
     parse_stream_archive,
     parse_large_non_zip,
+);
+#[cfg(miri)]
+benchmark_group!(
+    benches,
+    read_metadata,
+    parse_archive_with_comment,
+    parse_zip64_archive_with_comment,
 );
 benchmark_main!(benches);
