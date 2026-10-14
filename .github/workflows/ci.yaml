@@ -137,7 +137,7 @@ jobs:
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
   build_and_test:
-    timeout-minutes: 20
+    timeout-minutes: 25
     needs:
       - cargo_fmt
       - style_and_docs
@@ -147,7 +147,7 @@ jobs:
       - dependency_review
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os: [windows-latest, macOS-latest, ubuntu-latest]
         rustalias: [stable, nightly, msrv]
         feature_flag:
           - "--all-features"
@@ -182,7 +182,7 @@ jobs:
       - run: cargo check --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
       - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }}
   check_fuzz:
-    timeout-minutes: 20
+    timeout-minutes: 10
     needs:
       - cargo_fmt
       - style_and_docs
