@@ -1,3 +1,4 @@
+// Disabled on Miri platforms where lzma_rust2 uses inline assembly.
 #[cfg(all(
     feature = "lzma",
     not(all(miri, any(target_arch = "x86_64", target_arch = "aarch64")))
