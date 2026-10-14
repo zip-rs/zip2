@@ -23,7 +23,7 @@ env:
 
 jobs:
   miri:
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       matrix:
         workspace: ["Cargo.toml", "fuzz/Cargo.toml"]

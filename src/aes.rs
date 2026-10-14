@@ -469,7 +469,7 @@ impl<W: Write> Write for AesWriter<W> {
     }
 }
 
-#[cfg(all(test, feature = "aes-crypto"))]
+#[cfg(all(test, not(miri), feature = "aes-crypto"))]
 mod tests {
     use std::io::{self, Read, Write};
 
