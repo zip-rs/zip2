@@ -5,7 +5,7 @@
 #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
 fn test_prepared_file_roundtrip() {
     use std::io::{Cursor, Read, Write};
-    use zip::ZipWriter;
+    use zip::write::ZipWriter;
     use zip::write::ZipFileBuilder;
     use zip::write::{FullFileOptions, SimpleFileOptions};
 

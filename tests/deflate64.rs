@@ -14,8 +14,17 @@ pub fn decompress_deflate64() {
     let file_name = file.name().unwrap();
     assert_eq!("binary.wmv", file_name);
 
-    let mut content = Vec::new();
-    file.read_to_end(&mut content)
-        .expect("couldn't read encrypted and compressed file");
-    assert_eq!(include_bytes!("data/folder/binary.wmv"), &content[..]);
+    #[cfg(not(miri))]
+    {
+        let mut content = Vec::new();
+        file.read_to_end(&mut content)
+            .expect("couldn't read encrypted and compressed file");
+        assert_eq!(include_bytes!("data/folder/binary.wmv"), &content[..]);
+    }
+    #[cfg(miri)]
+    {
+        let mut buf = [0u8; 128];
+        assert_eq!(file.read(&mut buf).expect("couldn't read encrypted and compressed file"), 128);
+        assert_eq!(include_bytes!("data/folder/binary.wmv")[0..128], buf[..]);
+    }
 }

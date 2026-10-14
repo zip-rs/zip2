@@ -1,5 +1,5 @@
 use std::io;
-use zip::{ZipArchive, write::FileOptions};
+use zip::ZipArchive;
 
 fn generate_file_with_padding(padding_local_header: u16, padding_central_header: u16) -> Vec<u8> {
     let local_header = [
@@ -148,6 +148,7 @@ fn test_crc32_extra_field_comment() {
 fn test_extra_field_too_long() {
     use std::io::Cursor;
     use zip::ZipWriter;
+    use zip::write::FullFileOptions;
     // u16::MAX = 65535
     // Size of extra field header and length = 4
     // Magic = 4
@@ -164,7 +165,13 @@ fn test_extra_field_too_long() {
     for (extra_field, should_fail) in tests {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.set_flush_on_finish_file(false);
-        let mut options = FileOptions::default();
+        #[cfg(not(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib"))))]
+        let mut options = FullFileOptions::default();
+        // Compression is disabled on Miri with zlib because when it's enabled,
+        // flate2::Decompress::new makes a C
+        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
+        #[cfg(all(miri, any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")))]
+        let mut options = FullFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         eprintln!(
             "Extra_field_len = {}, total = {}",
             extra_field.len(),
