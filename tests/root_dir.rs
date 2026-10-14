@@ -1,5 +1,3 @@
-#[cfg(feature = "deflate-flate2")]
-use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
 use zip::read::root_dir_common_filter;
@@ -155,6 +153,7 @@ fn test_root_dir_with_multiple_root_dirs() {
 #[test]
 #[cfg(all(not(miri), feature = "deflate-flate2"))]
 fn test_extract_without_root_dir() {
+    use std::io::Read;
     let zip_data = create_zip_with_root_dir();
     let mut archive = ZipArchive::new(std::io::Cursor::new(zip_data)).unwrap();
 
