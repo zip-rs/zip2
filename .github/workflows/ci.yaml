@@ -23,7 +23,7 @@ env:
 
 jobs:
   miri:
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       matrix:
         workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
@@ -54,7 +54,7 @@ jobs:
       - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
       - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-      - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --all-targets
+      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
   check_minimal_versions:
     timeout-minutes: 15
     strategy:
@@ -79,7 +79,7 @@ jobs:
       - name: check
         run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: test
-        run: cargo +nightly test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   style_and_docs:
     timeout-minutes: 10
@@ -184,7 +184,7 @@ jobs:
       - name: Check that the benches can be built
         run: cargo build --benches
       - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
-      - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
+      - run: cargo nextest run --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
   wasm:
     timeout-minutes: 10
     needs: build_and_test
