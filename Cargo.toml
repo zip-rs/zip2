@@ -63,7 +63,11 @@ time = { version = "^0.3.47", default-features = false, optional = true, feature
 ] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
 wasm-bindgen-test = "^0.3.56"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+getrandom = "0.4.3"
 
 [target.'cfg(not(miri))'.dev-dependencies]
 tempfile = "3.15"
