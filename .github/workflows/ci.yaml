@@ -149,7 +149,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
-        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag:
           - "--all-features"
           - "--no-default-features"
@@ -166,10 +165,7 @@ jobs:
           - rustalias: nightly
             rust: nightly
             nextest_flag: ""
-        exclude:
-          - rustalias: msrv
-            workspace: "fuzz/Cargo.toml"
-    name: "Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+    name: "Build and test ${{ matrix.feature_flag }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -183,12 +179,54 @@ jobs:
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - name: Check that the benches can be built
         run: cargo build --benches
-      - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
+      - run: cargo check --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
       - run: cargo install --locked ${{ matrix.nextest_flag }} cargo-nextest
-      - run: cargo nextest run --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
+      - run: cargo nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }}
+  check_fuzz:
+    timeout-minutes: 20
+    needs:
+      - cargo_fmt
+      - style_and_docs
+      - miri
+      - check_minimal_versions
+      - cargo_semver
+      - dependency_review
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        rustalias: [stable, nightly, msrv]
+        feature_flag:
+          - "--all-features"
+          - "--no-default-features"
+          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+          - "--no-default-features --features zip/deflate-zopfli"
+          - ""
+        include:
+          - rustalias: stable
+            rust: stable
+          - rustalias: nightly
+            rust: nightly
+        exclude:
+          - rustalias: msrv
+            workspace: "fuzz/Cargo.toml"
+    name: "Build and test ${{ matrix.feature_flag }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: cargo check --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
+      - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
   wasm:
     timeout-minutes: 10
-    needs: build_and_test
+    needs:
+      - build_and_test
+      - check_fuzz
     strategy:
       matrix:
         browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
@@ -272,6 +310,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
