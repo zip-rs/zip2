@@ -29,6 +29,9 @@ pub fn decompress_lzma() {
         let mut content = [0; 1024];
         file.read(&mut content)
             .expect("couldn't read encrypted and compressed file");
-        assert_eq!(include_bytes!("data/folder/binary.wmv")[0..1024], &content[..]);
+        assert_eq!(
+            include_bytes!("data/folder/binary.wmv")[0..1024],
+            &content[..]
+        );
     }
 }

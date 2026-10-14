@@ -28,9 +28,9 @@ fn decompress_shrink() {
 /// the smallest prefix whose stream needs code 8191.
 #[test]
 fn decompress_shrink_full_code_table() {
-    let mut archive = ZipArchive::new(io::Cursor::new(
-        include_bytes!("data/legacy/shrink_full_table.zip"),
-    ))
+    let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!(
+        "data/legacy/shrink_full_table.zip"
+    )))
     .expect("couldn't open test zip file");
     let mut file = archive.by_index(0).expect("couldn't find file in archive");
 
@@ -42,7 +42,13 @@ fn decompress_shrink_full_code_table() {
     let content = String::from_utf8(content).expect("invalid UTF-8");
     assert_eq!(content.len(), EXPECTED_SIZE);
     for (n, line) in content.lines().take(5421).enumerate() {
-        assert_eq!(n + 1, line.parse::<usize>().unwrap(), "line {}: {}", n + 1, line);
+        assert_eq!(
+            n + 1,
+            line.parse::<usize>().unwrap(),
+            "line {}: {}",
+            n + 1,
+            line
+        );
     }
 }
 
