@@ -23,6 +23,10 @@ env:
 
 jobs:
   miri:
+    needs:
+    - cargo_semver
+    - style_and_docs
+    - cargo_fmt
     timeout-minutes: 20
     strategy:
       matrix:
@@ -53,6 +57,10 @@ jobs:
       - run: cargo install --locked cargo-nextest
       - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
   check_minimal_versions:
+    needs:
+      - cargo_semver
+      - style_and_docs
+      - cargo_fmt
     timeout-minutes: 15
     strategy:
       matrix:
@@ -186,8 +194,6 @@ jobs:
     needs:
       - cargo_fmt
       - style_and_docs
-      - miri
-      - check_minimal_versions
       - cargo_semver
       - dependency_review
     strategy:
