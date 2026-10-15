@@ -1431,7 +1431,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let (central_start, is_zip64) = self.write_central_and_footer()?;
         let writer = self.inner.try_inner_mut()?;
         let footer_end = writer.stream_position()?;
-        let archive_end = writer.seek(SeekFrom::End(0))?;
+        let archive_end = writer.seek(SeekFrom::End(-(self.comment.len() as i64)))?;
         if footer_end < archive_end {
             // Data from an aborted file is past the end of the footer.
 
@@ -1540,7 +1540,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             central_directory_size,
             central_directory_offset: central_start.min(ZIP64_BYTES_THR) as u32,
         };
-
         footer.write(writer)?;
         Ok((central_start, is64))
     }
