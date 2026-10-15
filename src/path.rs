@@ -30,7 +30,14 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
             Utf8WindowsComponent::ParentDir => {
                 out.pop()?;
             }
-            Utf8WindowsComponent::Normal(s) => out.push(OsStr::new(s)),
+            Utf8WindowsComponent::Normal(s) => {
+                // As in `enclosed_name`: a separator inside one component means the name is
+                // split differently when it is written.
+                if s.contains(['/', '\\']) {
+                    return None;
+                }
+                out.push(OsStr::new(s));
+            }
             Utf8WindowsComponent::CurDir => (),
         }
     }
@@ -62,6 +69,12 @@ pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
                 out_path.pop();
             }
             Utf8WindowsComponent::Normal(s) => {
+                // Inside a verbatim (`\\?\`) path `/` is not a separator, so `../b` comes back
+                // as one component; joined onto an ordinary path it is split again. The check
+                // here and the eventual write must agree on where a component ends.
+                if s.contains(['/', '\\']) {
+                    return None;
+                }
                 depth += 1;
                 out_path.push(s);
             }
@@ -380,6 +393,25 @@ mod tests {
         }
 
         assert_eq!(enclosed_name(r"\\?\C:\..\..\etc\passwd"), None);
+    }
+
+    /// Inside a verbatim path `/` is not a separator, so the parser hands `../b` back as one
+    /// `Normal` component. Once the result is joined onto an ordinary destination path, `/` is
+    /// a separator again, so a caller would write one level above the destination. A name
+    /// whose component holds a separator is not enclosed, as `\\?\C:\..\b` and `../b` are not.
+    #[test]
+    fn test_enclosed_name_verbatim_prefix_with_a_separator_inside_a_component() {
+        for name in [
+            r"\\?\C:\../b",
+            r"\\?\C:\a/../../b",
+            r"\\?\UNC\server\share\../b",
+            r"\\?\C:\a\..\../b",
+            r"\\?\C:\..\b",
+            "../b",
+        ] {
+            assert_eq!(enclosed_name(name), None, "{name}");
+            assert_eq!(simplified_components(Path::new(name)), None, "{name}");
+        }
     }
 
     /// `base` is canonicalized, so on Windows it is spelled in the verbatim form. A
