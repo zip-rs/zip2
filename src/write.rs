@@ -280,6 +280,26 @@ pub struct FileOptions<'k, T: FileOptionExtension> {
 pub type SimpleFileOptions = FileOptions<'static, ()>;
 /// Adds Extra Data and Central Extra Data. It does not implement copy.
 pub type FullFileOptions<'k> = FileOptions<'k, ExtendedFileOptions>;
+
+impl<'k> FileOptions<'k, ()> {
+    /// Convert into full file options supporting extra data fields.
+    pub fn into_full_options(self) -> FullFileOptions<'k> {
+        FileOptions {
+            compression_method: self.compression_method,
+            compression_level: self.compression_level,
+            last_modified_time: self.last_modified_time,
+            permissions: self.permissions,
+            large_file: self.large_file,
+            encrypt_with: self.encrypt_with,
+            extended_options: ExtendedFileOptions::default(),
+            alignment: self.alignment,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: self.zopfli_buffer_size,
+            #[cfg(feature = "aes-crypto")]
+            aes_mode: self.aes_mode,
+        }
+    }
+}
 /// The Extension for Extra Data and Central Extra Data
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
@@ -313,7 +333,7 @@ impl ExtendedFileOptions {
                 }
             };
             Self::add_extra_data_unchecked(vec, header_id, data)?;
-            Self::validate_extra_data(vec, true)?;
+            Self::validate_extra_data(vec, true, None)?;
             Ok(())
         }
     }
@@ -330,7 +350,11 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
+    fn validate_extra_data(
+        data: &[u8],
+        disallow_zip64: bool,
+        file_name: Option<&[u8]>,
+    ) -> ZipResult<()> {
         let len = data.len() as u64;
         if len == 0 {
             return Ok(());
@@ -361,7 +385,25 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, disallow_zip64)?;
+            let mut file = ZipFileData::default();
+            if let Some(name) = file_name {
+                file.file_name_raw = Box::from(name);
+                parse_single_extra_field(&mut file, &mut data, pos, disallow_zip64)?;
+            } else {
+                use crate::unstable::LittleEndianReadExt;
+                let id = data.read_u16_le()?;
+                data.seek(SeekFrom::Current(-2))?;
+                if id == 0x7075 || id == 0x6375 {
+                    let _id = data.read_u16_le()?;
+                    let field_len = data.read_u16_le()? as usize;
+                    if len - data.position() < field_len as u64 {
+                        return Err(invalid!("Extra field content truncated"));
+                    }
+                    data.seek(SeekFrom::Current(field_len as i64))?;
+                } else {
+                    parse_single_extra_field(&mut file, &mut data, pos, disallow_zip64)?;
+                }
+            }
             pos = data.position();
         }
         Ok(())
@@ -540,6 +582,28 @@ impl FileOptions<'_, ExtendedFileOptions> {
     ) -> ZipResult<()> {
         self.extended_options
             .add_extra_data(header_id, data, central_only)
+    }
+
+    /// Adds an extra data field. Alias for [`Self::add_extra_data`].
+    #[inline]
+    pub fn add_extra_field<D: AsRef<[u8]>>(
+        &mut self,
+        header_id: u16,
+        data: D,
+        central_only: bool,
+    ) -> ZipResult<()> {
+        self.add_extra_data(
+            header_id,
+            data.as_ref().to_vec().into_boxed_slice(),
+            central_only,
+        )
+    }
+
+    /// Converts into full options (identity conversion on 5.x for compatibility).
+    #[inline]
+    #[must_use]
+    pub fn into_full_options(self) -> Self {
+        self
     }
 
     /// Removes the extra data fields.
@@ -986,6 +1050,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 debug_assert_eq!((extra_data.len() as u64 + header_end) % align, 0);
             }
         }
+        let name_str = name.to_string();
+        let name_bytes = name_str.as_bytes();
         let extra_data_len = extra_data.len();
         if let Some(data) = central_extra_data {
             if extra_data_len + data.len() > u16::MAX as usize {
@@ -993,7 +1059,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     "Extra data and central extra data must be less than 64KiB when combined"
                 ));
             }
-            ExtendedFileOptions::validate_extra_data(data, true)?;
+            ExtendedFileOptions::validate_extra_data(data, true, Some(name_bytes))?;
         }
         let mut file = ZipFileData::initialize_local_block(
             name,
@@ -1012,7 +1078,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let index = self.insert_file_data(file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = (|| {
-            ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
+            ExtendedFileOptions::validate_extra_data(&extra_data, false, Some(name_bytes))?;
             let file = &mut self.files[index];
             let block = file.local_block()?;
             let writer = self.inner.get_plain();
@@ -2074,9 +2140,6 @@ fn update_local_file_header<T: Write + Seek>(
         writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
 
         update_local_zip64_extra_field(writer, file)?;
-
-        file.compressed_size = spec::ZIP64_BYTES_THR;
-        file.uncompressed_size = spec::ZIP64_BYTES_THR;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
@@ -2092,13 +2155,31 @@ fn update_local_file_header<T: Write + Seek>(
 }
 
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    let block = file.block()?;
+    let mut block = file.block()?;
+    let stripped_extra = if let Some(extra) = &file.extra_field {
+        strip_alignment_extra_field(extra, true)
+    } else {
+        Vec::new()
+    };
+    let central_len = file.central_extra_field_len();
+    let zip64_len = if let Some(zip64) = file.zip64_extra_field_block() {
+        zip64.full_size()
+    } else {
+        0
+    };
+    block.extra_field_length = (zip64_len + stripped_extra.len() + central_len)
+        .try_into()
+        .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
+
     block.write(writer)?;
     // file name
     writer.write_all(&file.file_name_raw)?;
     // extra field
-    if let Some(extra_field) = &file.extra_field {
-        writer.write_all(extra_field)?;
+    if let Some(zip64_extra_field) = &file.zip64_extra_field_block() {
+        writer.write_all(&zip64_extra_field.serialize())?;
+    }
+    if !stripped_extra.is_empty() {
+        writer.write_all(&stripped_extra)?;
     }
     if let Some(central_extra_field) = &file.central_extra_field {
         writer.write_all(central_extra_field)?;
@@ -2109,6 +2190,27 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
+fn strip_alignment_extra_field(extra_field: &[u8], remove_zip64: bool) -> Vec<u8> {
+    let mut new_extra = Vec::with_capacity(extra_field.len());
+    let mut cursor = 0;
+    while cursor + 4 <= extra_field.len() {
+        let tag = u16::from_le_bytes([extra_field[cursor], extra_field[cursor + 1]]);
+        let len = u16::from_le_bytes([extra_field[cursor + 2], extra_field[cursor + 3]]) as usize;
+        if cursor + 4 + len > extra_field.len() {
+            new_extra.extend_from_slice(&extra_field[cursor..]);
+            break;
+        }
+
+        if tag != 0xa11e && !(tag == 0x0001 && remove_zip64) {
+            new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
+        }
+        cursor += 4 + len;
+    }
+    if cursor < extra_field.len() {
+        new_extra.extend_from_slice(&extra_field[cursor..]);
+    }
+    new_extra
+}
 fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &mut ZipFileData,
