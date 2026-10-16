@@ -42,5 +42,5 @@ the delay before full public disclosure will be determined as follows:
 
 Versions with vulnerabilities will be yanked from crates.io 14 days after the vulnerability is published, if they're
 the latest version of their major version, and otherwise immediately. Backports may
-be available for older major versions, but this is strictly best-effort; all users should update to the latest vesrion
+be available for older major versions, but this is strictly best-effort; all users should update to the latest version
 as soon as possible.
