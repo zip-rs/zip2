@@ -85,26 +85,25 @@ impl<R: Read> ZipStreamReader<R> {
 
         let mut local_entries = Vec::new();
 
-        let has_central_directory = loop {
+        let mut has_central_directory = false;
+        loop {
             let offset_before_read = reader.count;
-            let read_from_stream_result = read_zipfile_from_stream_internal(&mut reader)?;
-            match read_from_stream_result {
-                ReadFromStreamResult::File(mut file) => {
-                    if self.enforce_header_consistency {
-                        local_entries.push(LocalEntryMetadata {
-                            metadata: file
-                                .data
-                                .consistency_metadata(file.name_raw(), true)
-                                .into_owned(),
-                            stream_offset: offset_before_read,
-                        });
-                    }
-                    visitor.visit_file(&mut file)?;
-                }
-                ReadFromStreamResult::CentralDirectoryHeader => break true,
-                ReadFromStreamResult::EndOfCentralDirectory => break false,
+            let Some(mut file) =
+                read_zipfile_from_stream_internal(&mut reader, &mut has_central_directory)?
+            else {
+                break;
+            };
+            if self.enforce_header_consistency {
+                local_entries.push(LocalEntryMetadata {
+                    metadata: file
+                        .data
+                        .consistency_metadata(file.name_raw(), true)
+                        .into_owned(),
+                    stream_offset: offset_before_read,
+                });
             }
-        };
+            visitor.visit_file(&mut file)?;
+        }
 
         let mut central_entries = Vec::new();
 
@@ -334,25 +333,22 @@ impl ZipStreamFileMetadata {
     }
 }
 
-enum ReadFromStreamResult<'a, R: Read> {
-    File(ZipFile<'a, R>),
-    CentralDirectoryHeader,
-    EndOfCentralDirectory,
-}
-
 fn read_zipfile_from_stream_internal<'a, R: Read>(
     reader: &'a mut R,
-) -> ZipResult<ReadFromStreamResult<'a, R>> {
+    has_central_directory: &mut bool,
+) -> ZipResult<Option<ZipFile<'a, R>>> {
     let mut magic_buf = [0; size_of::<u32>()];
     reader.read_exact(&mut magic_buf)?;
 
     match Magic::from_le_bytes(magic_buf) {
         Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => {
-            return Ok(ReadFromStreamResult::CentralDirectoryHeader);
+            *has_central_directory = true;
+            return Ok(None);
         }
         Magic::CENTRAL_DIRECTORY_END_SIGNATURE => {
-            return Ok(ReadFromStreamResult::EndOfCentralDirectory);
+            *has_central_directory = false;
+            return Ok(None);
         }
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
@@ -392,7 +388,7 @@ fn read_zipfile_from_stream_internal<'a, R: Read>(
         ..
     } = result;
 
-    Ok(ReadFromStreamResult::File(ZipFile {
+    Ok(Some(ZipFile {
         data: Cow::Owned(result),
         reader: make_reader(
             compression_method,
@@ -422,11 +418,8 @@ fn read_zipfile_from_stream_internal<'a, R: Read>(
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
-    match read_zipfile_from_stream_internal(reader)? {
-        ReadFromStreamResult::File(file) => Ok(Some(file)),
-        ReadFromStreamResult::CentralDirectoryHeader
-        | ReadFromStreamResult::EndOfCentralDirectory => Ok(None),
-    }
+    let mut has_central_directory = false;
+    read_zipfile_from_stream_internal(reader, &mut has_central_directory)
 }
 
 /// Read `ZipFile` from a non-seekable reader like [`read_zipfile_from_stream`] does, but assume the
