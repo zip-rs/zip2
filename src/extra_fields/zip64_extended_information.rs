@@ -152,8 +152,11 @@ impl Zip64ExtendedInformation {
         consumed_len: &mut usize,
         is_zip64: bool,
     ) -> ZipResult<Option<u64>> {
-        if len < 24 && !is_zip64 {
+        if !is_zip64 {
             return Ok(None);
+        }
+        if *consumed_len + mem::size_of::<u64>() > len as usize {
+            return Err(invalid!("ZIP64 extra field truncated"));
         }
         let value = match reader.read_u64_le() {
             Ok(value) => value,
@@ -163,7 +166,7 @@ impl Zip64ExtendedInformation {
             Err(e) => return Err(e.into()),
         };
         *consumed_len += mem::size_of::<u64>();
-        Ok(is_zip64.then_some(value))
+        Ok(Some(value))
     }
 
     /// Reads the block, keeping only the values the entry actually asked for.

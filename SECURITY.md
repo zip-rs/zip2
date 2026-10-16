@@ -2,26 +2,38 @@
 
 ## Supported Versions
 
-Only the latest released version is supported.
+Only the latest released version (and, when a prerelease is newer than the latest stable release, that prerelease to a 
+limited extent) are supported.
 
 ## Reporting a Vulnerability
 
-To report a vulnerability, please go to https://github.com/zip-rs/zip2/security/advisories/new. We'll attempt to:
+To report a vulnerability in a release or prerelease on crates.io, please go to 
+https://github.com/zip-rs/zip2/security/advisories/new. We'll attempt to:
 
-* Close the report within 7 days if it's invalid, or if a fix has already been released but some old versions needed to be yanked, or if it's a duplicate of another report we've already accepted as a triaged draft (we want each draft to correspond to a separate issue).
+* Close the report within 7 days without publishing it if:
+  * It's invalid.
+  * It's a duplicate of another report we've already accepted as a triaged draft (we want each draft to correspond to a
+    separate issue).
+  * It's an issue in a dependency (in which case it should be reported to the dependency's maintainers; we don't want to
+    duplicate the report they'll publish), unless that dependency is unmaintained.
+* Accept the report as a draft within 7 days if none of those are the case.
 * Provide progress reports at least every 7 days to the original reporter.
-* Aim to provide a fix within 30 days of the initial report. If a complete fix is not feasible in that timeframe (for example, due to complexity or external dependencies), we will communicate this to the reporter, share any available mitigations or workarounds, and adjust the expected timeline accordingly.
+* Aim to provide a fix within 30 days of the initial report. If a complete fix is not feasible in that timeframe (for
+  example, due to complexity or external dependencies), we will communicate this to the reporter, share any available 
+  mitigations or workarounds, and adjust the expected timeline accordingly.
 
 ## Disclosure
 
 A vulnerability that affects a published version will only be publicly disclosed once a version without the vulnerability has 
-been published, which is not a prerelease unless all affected versions were prereleases, and the affected versions have been 
-yanked. Once that's done, the delay before full public disclosure will be determined as follows:
+been published, which is not a prerelease unless all affected published versions were also prereleases, and the affected
+versions have been yanked. Once that's done, the delay before full public disclosure will be determined as follows:
 
 * If the proof-of-concept is very simple, or an exploit is already in the wild (whether or not it specifically targets `zip`),
   all details will be made public right away.
 * If the vulnerability is specific to `zip` and cannot easily be reverse-engineered from the code history, then the
-  proof-of-concept and most of the details will be withheld for another 14 days.
+  advisory will be withheld for another 14 days, although broad information such as "an algorithmic-complexity attack
+  that will be published on 20XX-YY-ZZ was fixed in version x.y.z, and it affects certain users who only read ZIP files
+  from untrusted sources into memory if they use an uncommon configuration of feature flags" may be shared.
 * If a potential victim at credible risk requests more time to deploy a fix, then the withholding of details can
   be extended up to 30 days. This may be extended to 90 days for high-value government and nonprofit targets, when
   truly extraordinary circumstances are delaying the deployment.

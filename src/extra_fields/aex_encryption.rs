@@ -11,7 +11,7 @@ use crate::result::{ZipError, ZipResult, invalid, invalid_archive_const};
 use crate::unstable::LittleEndianReadExt;
 
 /// AeX Encryption extra field
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq)]
 pub struct AexEncryption {
     /// aes vendor
     pub(crate) aes_vendor_version: AesVendorVersion,
@@ -19,8 +19,16 @@ pub struct AexEncryption {
     pub(crate) aes_mode: AesMode,
     /// inner compression
     pub(crate) compression_method: CompressionMethod,
-    /// aes extra field start index
+    /// aes extra field start index (not written to the archive, therefore ignored by PartialEq)
     pub(crate) aes_extra_field_start: Option<usize>,
+}
+
+impl PartialEq for AexEncryption {
+    fn eq(&self, other: &Self) -> bool {
+        self.aes_vendor_version == other.aes_vendor_version
+            && self.aes_mode == other.aes_mode
+            && self.compression_method == other.compression_method
+    }
 }
 
 impl AexEncryption {

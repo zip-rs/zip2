@@ -29,6 +29,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
     pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) has_duplicate_names: bool,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -77,12 +78,15 @@ impl SharedBuilder {
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
     ) -> ZipArchiveMetadata {
-        let mut index_map = IndexMap::with_capacity(self.files.len());
+        let raw_file_count = self.files.len();
+        let mut index_map = IndexMap::with_capacity(raw_file_count);
         self.files.into_iter().for_each(|(file_name_raw, file)| {
             index_map.insert(file_name_raw, file);
         });
+        let has_duplicate_names = index_map.len() != raw_file_count;
         ZipArchiveMetadata {
             files: index_map,
+            has_duplicate_names,
             offset: self.offset,
             dir_start: self.dir_start,
             config: self.config,
@@ -133,6 +137,7 @@ impl<R> ZipArchive<R> {
         };
         let shared = Arc::new(ZipArchiveMetadata {
             files,
+            has_duplicate_names: false,
             offset: initial_offset,
             dir_start: central_start,
             config: Config {
@@ -515,7 +520,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             ranges.push(start..end);
         }
         ranges.sort_unstable_by_key(|r| (r.start, r.end));
-        Ok(ranges.windows(2).any(|w| w[0].end > w[1].start))
+        let overlaps_central_directory = ranges.iter().any(|r| r.end > self.shared.dir_start);
+        Ok(overlaps_central_directory || ranges.windows(2).any(|w| w[0].end > w[1].start))
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -704,6 +710,18 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
+    /// Search for a file entry by name with options.
+    pub fn by_name_with_options<'a>(
+        &'a mut self,
+        name: &str,
+        options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFile<'a, R>> {
+        let Some(index) = self.shared.files.get_index_of(name.as_bytes()) else {
+            return Err(ZipError::FileNotFound);
+        };
+        self.by_index_with_options(index, options)
+    }
+
     /// Get a contained file by index with options.
     pub fn by_index_with_options(
         &mut self,
@@ -715,6 +733,14 @@ impl<R: Read + Seek> ZipArchive<R> {
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
+        if options.enforce_header_consistency {
+            if self.shared.has_duplicate_names {
+                return Err(invalid!(
+                    "header inconsistency detected: duplicate file names in central directory"
+                ));
+            }
+            data.validate_header_consistency(&mut self.reader, file_name_raw)?;
+        }
         let limit_reader = data.find_content(&mut self.reader)?;
         let reader = data.make_reader(limit_reader, options)?;
         Ok(ZipFile {
@@ -722,6 +748,24 @@ impl<R: Read + Seek> ZipArchive<R> {
             data: Cow::Borrowed(data),
             reader,
         })
+    }
+
+    /// Validates that all local file headers in the archive match their corresponding central directory headers.
+    pub fn validate_header_consistency(&mut self) -> ZipResult<()> {
+        if self.shared.has_duplicate_names {
+            return Err(invalid!(
+                "header inconsistency detected: duplicate file names in central directory"
+            ));
+        }
+        for (file_name_raw, data) in &self.shared.files {
+            data.validate_header_consistency(&mut self.reader, file_name_raw)?;
+        }
+        if self.has_overlapping_entries()? {
+            return Err(invalid!(
+                "header inconsistency detected: archive contains overlapping entries"
+            ));
+        }
+        Ok(())
     }
 
     /// Find the "root directory" of an archive if it exists, filtering out
