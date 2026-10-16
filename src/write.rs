@@ -1125,11 +1125,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             one_extra.write(&mut buff, false)?;
             let buff = buff.into_inner();
             if buff.len() >= 4 {
-                options.add_extra_field(
-                    u16::from_le_bytes([buff[0], buff[1]]),
-                    &buff[4..],
-                    false,
-                )?;
+                let header_id = u16::from_le_bytes([buff[0], buff[1]]);
+                #[cfg(feature = "aes-crypto")]
+                if header_id == 0x9901 {
+                    continue;
+                }
+                options.add_extra_field(header_id, &buff[4..], false)?;
             }
         }
         let file_name = name.to_string();
