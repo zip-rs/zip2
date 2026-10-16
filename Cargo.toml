@@ -68,6 +68,9 @@ time = { version = "0.3.47", default-features = false, optional = true, features
 getrandom = { version = "0.4", default-features = false, features = ["wasm_js"] }
 wasm-bindgen-test = "^0.3.56"
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+count_instructions = "0.2"
+
 [dev-dependencies]
 bencher = "0.1"
 getrandom = { version = "0.4", default-features = false }
