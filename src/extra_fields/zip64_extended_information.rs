@@ -179,7 +179,10 @@ impl Zip64ExtendedInformation {
         header_start: &mut u64,
     ) -> ZipResult<()> {
         let mut consumed_len = 0;
-        if len >= 24 || *uncompressed_size == ZIP64_BYTES_THR {
+        if *uncompressed_size == ZIP64_BYTES_THR {
+            if consumed_len + mem::size_of::<u64>() > len as usize {
+                return Err(invalid!("ZIP64 extra field truncated"));
+            }
             *uncompressed_size = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -190,7 +193,10 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
         }
 
-        if len >= 24 || *compressed_size == ZIP64_BYTES_THR {
+        if *compressed_size == ZIP64_BYTES_THR {
+            if consumed_len + mem::size_of::<u64>() > len as usize {
+                return Err(invalid!("ZIP64 extra field truncated"));
+            }
             *compressed_size = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -201,7 +207,10 @@ impl Zip64ExtendedInformation {
             consumed_len += mem::size_of::<u64>();
         }
 
-        if len >= 24 || *header_start == ZIP64_BYTES_THR {
+        if *header_start == ZIP64_BYTES_THR {
+            if consumed_len + mem::size_of::<u64>() > len as usize {
+                return Err(invalid!("ZIP64 extra field truncated"));
+            }
             *header_start = match reader.read_u64_le() {
                 Ok(v) => v,
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof => {

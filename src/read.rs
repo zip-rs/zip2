@@ -700,7 +700,7 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                     .unwrap_valid(file.file_comment.as_bytes())?
                     .into_vec(),
             )?
-            .into();
+            .into_boxed_str();
         }
         Ok(UsedExtraField::UnicodePath) => {
             // Info-ZIP Unicode Path Extra Field
@@ -741,6 +741,9 @@ pub struct ZipReadOptions<'a> {
 
     /// Ignore the crc32 of the file
     ignore_crc: bool,
+
+    /// Enforce consistency between the local file header and central directory header.
+    pub(crate) enforce_header_consistency: bool,
 }
 
 impl<'a> ZipReadOptions<'a> {
@@ -769,6 +772,198 @@ impl<'a> ZipReadOptions<'a> {
     pub fn ignore_crc32(mut self, should_ignore: bool) -> Self {
         self.ignore_crc = should_ignore;
         self
+    }
+
+    /// Enforces that the local file header (LFH) matches the central directory header (CDFH).
+    #[must_use]
+    pub fn enforce_header_consistency(mut self, enforce: bool) -> Self {
+        self.enforce_header_consistency = enforce;
+        self
+    }
+}
+
+/// Helper to extract Info-ZIP UnicodePath (0x7075) extra field content and CRC32 from raw extra bytes.
+pub(crate) fn get_upath_from_extra(extra: Option<&[u8]>) -> (Option<&[u8]>, Option<u32>) {
+    let Some(mut extra) = extra else {
+        return (None, None);
+    };
+    let mut last_upath = None;
+    while extra.len() >= 4 {
+        let id = u16::from_le_bytes([extra[0], extra[1]]);
+        let len = u16::from_le_bytes([extra[2], extra[3]]) as usize;
+        extra = &extra[4..];
+        if extra.len() < len {
+            break;
+        }
+        let field_data = &extra[..len];
+        extra = &extra[len..];
+        if id == crate::extra_fields::UsedExtraField::UnicodePath.as_u16() && field_data.len() >= 5
+        {
+            let crc =
+                u32::from_le_bytes([field_data[1], field_data[2], field_data[3], field_data[4]]);
+            let name = &field_data[5..];
+            last_upath = Some((name, crc));
+        }
+    }
+    match last_upath {
+        Some((name, crc)) => (Some(name), Some(crc)),
+        None => (None, None),
+    }
+}
+
+/// Data descriptor / payload metadata (CRC32 and sizes) that can be verified either
+/// immediately or after reading a data descriptor.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) struct HeaderDataDescriptorMetadata {
+    pub(crate) crc32: u32,
+    pub(crate) compressed_size: u64,
+    pub(crate) uncompressed_size: u64,
+    pub(crate) is_pending_data_descriptor: bool,
+}
+
+impl HeaderDataDescriptorMetadata {
+    /// Validates data descriptor fields between local and central headers.
+    pub(crate) fn validate_matches(&self, central: &Self) -> ZipResult<()> {
+        if self.crc32 != central.crc32 && (!self.is_pending_data_descriptor || self.crc32 != 0) {
+            return Err(invalid!(
+                "header inconsistency detected: CRC32 checksum mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.compressed_size != central.compressed_size
+            && (!self.is_pending_data_descriptor || self.compressed_size != 0)
+        {
+            return Err(invalid!(
+                "header inconsistency detected: compressed size mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.uncompressed_size != central.uncompressed_size
+            && (!self.is_pending_data_descriptor || self.uncompressed_size != 0)
+        {
+            return Err(invalid!(
+                "header inconsistency detected: uncompressed size mismatch (does not match central directory)"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// Unified header metadata used to validate consistency between Local and Central headers.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct HeaderConsistencyMetadata<T: AsRef<[u8]>, U: AsRef<[u8]> = T> {
+    pub(crate) name: T,
+    pub(crate) upath: Option<U>,
+    pub(crate) upath_crc32: Option<u32>,
+    pub(crate) compression_method: u16,
+    pub(crate) is_encrypted: bool,
+    pub(crate) is_using_data_descriptor: bool,
+    pub(crate) last_modified_time: Option<DateTime>,
+    pub(crate) data: HeaderDataDescriptorMetadata,
+    pub(crate) aes: Option<(
+        crate::AesMode,
+        crate::types::AesVendorVersion,
+        crate::CompressionMethod,
+    )>,
+}
+
+impl HeaderConsistencyMetadata<&[u8]> {
+    pub(crate) fn into_owned(self) -> HeaderConsistencyMetadata<Box<[u8]>> {
+        HeaderConsistencyMetadata {
+            name: self.name.into(),
+            upath: self.upath.map(Into::into),
+            upath_crc32: self.upath_crc32,
+            compression_method: self.compression_method,
+            is_encrypted: self.is_encrypted,
+            is_using_data_descriptor: self.is_using_data_descriptor,
+            last_modified_time: self.last_modified_time,
+            data: self.data,
+            aes: self.aes,
+        }
+    }
+}
+
+impl<T: AsRef<[u8]>, U: AsRef<[u8]>> HeaderConsistencyMetadata<T, U> {
+    /// Validates header identity (filename, UnicodePath, compression method, and flags).
+    pub(crate) fn validate_identity_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+        &self,
+        central: &HeaderConsistencyMetadata<T2, U2>,
+    ) -> ZipResult<()> {
+        let local_effective = self
+            .upath
+            .as_ref()
+            .map(AsRef::as_ref)
+            .unwrap_or_else(|| self.name.as_ref());
+
+        if self.upath.as_ref().map(AsRef::as_ref) != central.upath.as_ref().map(AsRef::as_ref)
+            || self.upath_crc32 != central.upath_crc32
+        {
+            return Err(invalid!(
+                "header inconsistency detected: UnicodePath (0x7075) extra field mismatch for '{}'",
+                String::from_utf8_lossy(local_effective)
+            ));
+        }
+
+        if self.name.as_ref() != central.name.as_ref() {
+            return Err(invalid!(
+                "header inconsistency detected: Local file header filename mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.compression_method != central.compression_method {
+            return Err(invalid!(
+                "header inconsistency detected: compression method mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.is_encrypted != central.is_encrypted {
+            return Err(invalid!(
+                "header inconsistency detected: encryption flag mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        if self.is_using_data_descriptor != central.is_using_data_descriptor {
+            return Err(invalid!(
+                "header inconsistency detected: data descriptor flag mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        if self.last_modified_time != central.last_modified_time {
+            return Err(invalid!(
+                "header inconsistency detected: last modified time mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        if self.aes != central.aes {
+            return Err(invalid!(
+                "header inconsistency detected: AES encryption metadata mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates data descriptor and payload consistency.
+    pub(crate) fn validate_data_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+        &self,
+        central: &HeaderConsistencyMetadata<T2, U2>,
+    ) -> ZipResult<()> {
+        self.data.validate_matches(&central.data)
+    }
+
+    /// Validates that local header metadata matches central directory metadata.
+    pub(crate) fn validate_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+        &self,
+        central: &HeaderConsistencyMetadata<T2, U2>,
+    ) -> ZipResult<()> {
+        self.validate_identity_matches(central)?;
+        self.validate_data_matches(central)?;
+        Ok(())
     }
 }
 

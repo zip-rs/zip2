@@ -16,6 +16,7 @@ use crate::write::FileOptionExtension;
 use crate::zipcrypto::EncryptWith;
 use core::fmt::Debug;
 use core::fmt::Display;
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
@@ -242,14 +243,17 @@ impl ZipFileData {
         // Parse static-sized fields and check the magic value.
         let block = ZipLocalEntryBlock::parse(reader)?;
 
-        // Calculate the end of the local header from the fields we just parsed.
-        let variable_fields_len =
         // Each of these fields must be converted to u64 before adding, as the result may
         // easily overflow a u16.
-        u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-        let data_start = self.header_start
-            + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-            + variable_fields_len;
+        let variable_fields_len =
+            u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+        let data_start = self
+            .header_start
+            .checked_add((size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64)
+            .and_then(|v| v.checked_add(variable_fields_len))
+            .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                "Local header end offset overflows u64",
+            )))?;
 
         // Set the value so we don't have to read it again.
         match self.data_start.set(data_start) {
@@ -285,6 +289,93 @@ impl ZipFileData {
 
         // Explicit Ok and ? are needed to convert io::Error to ZipError
         Ok(SeekableTake::new(reader, self.compressed_size)?)
+    }
+
+    pub(crate) fn consistency_metadata<'a>(
+        &'a self,
+        name: &'a [u8],
+        is_local: bool,
+    ) -> crate::read::HeaderConsistencyMetadata<&'a [u8]> {
+        let (upath, upath_crc32) = crate::read::get_upath_from_extra(
+            self.extra_field
+                .as_deref()
+                .or(self.central_extra_field.as_deref()),
+        );
+        let compression_method = if self.aes_mode.is_some() {
+            99
+        } else {
+            self.compression_method.serialize_to_u16()
+        };
+        crate::read::HeaderConsistencyMetadata {
+            name,
+            upath,
+            upath_crc32,
+            compression_method,
+            is_encrypted: self.encrypted,
+            is_using_data_descriptor: self.using_data_descriptor,
+            last_modified_time: self.last_modified_time,
+            data: crate::read::HeaderDataDescriptorMetadata {
+                crc32: self.crc32,
+                compressed_size: self.compressed_size,
+                uncompressed_size: self.uncompressed_size,
+                is_pending_data_descriptor: is_local && self.using_data_descriptor,
+            },
+            aes: self.aes_mode,
+        }
+    }
+
+    /// Validates that the local file header matches this central directory entry.
+    pub(crate) fn validate_header_consistency<R: Read + Seek + ?Sized>(
+        &self,
+        reader: &mut R,
+        expected_name: &[u8],
+    ) -> ZipResult<()> {
+        let current_pos = reader.stream_position()?;
+        reader.seek(SeekFrom::Start(self.header_start))?;
+
+        let block = match ZipLocalEntryBlock::parse(reader) {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = reader.seek(SeekFrom::Start(current_pos));
+                return Err(e);
+            }
+        };
+
+        let mut local_name = vec![0u8; block.file_name_length as usize];
+        if let Err(e) = reader.read_exact(&mut local_name) {
+            let _ = reader.seek(SeekFrom::Start(current_pos));
+            return Err(e.into());
+        }
+
+        let mut local_extra = vec![0u8; block.extra_field_length as usize];
+        if let Err(e) = reader.read_exact(&mut local_extra) {
+            let _ = reader.seek(SeekFrom::Start(current_pos));
+            return Err(e.into());
+        }
+
+        // Restore reader position
+        reader.seek(SeekFrom::Start(current_pos))?;
+
+        let variable_fields_len =
+            u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+        let data_start = self
+            .header_start
+            .checked_add((size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64)
+            .and_then(|v| v.checked_add(variable_fields_len))
+            .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                "Local header end offset overflows u64",
+            )))?;
+        let _ = self.data_start.set(data_start);
+
+        let local_raw_compression_method = block.compression_method;
+        let mut local_data = Self::from_local_block_raw(block, local_name, local_extra)?;
+        crate::read::parse_extra_field(&mut local_data)?;
+
+        let mut local_meta = local_data.consistency_metadata(&local_data.file_name_raw, true);
+        local_meta.compression_method = local_raw_compression_method;
+        let central_meta = self.consistency_metadata(expected_name, false);
+
+        local_meta.validate_matches(&central_meta)
     }
 
     pub fn is_dir(&self) -> bool {
@@ -483,9 +574,10 @@ impl ZipFileData {
         local_block
     }
 
-    pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
+    pub(crate) fn from_local_block_raw(
         block: ZipLocalEntryBlock,
-        reader: &mut R,
+        file_name_raw: Vec<u8>,
+        extra_field: Vec<u8>,
     ) -> ZipResult<Self> {
         let ZipLocalEntryBlock {
             version_made_by,
@@ -496,45 +588,13 @@ impl ZipFileData {
             crc32,
             compressed_size,
             uncompressed_size,
-            file_name_length,
-            extra_field_length,
             ..
         } = block;
 
         let encrypted: bool = ZipFlags::matching(flags, ZipFlags::Encrypted);
-        if encrypted {
-            return Err(ZipError::UnsupportedArchive(
-                "Encrypted files are not supported",
-            ));
-        }
-
-        /* FIXME: these were previously incorrect: add testing! */
         let using_data_descriptor: bool = ZipFlags::matching(flags, ZipFlags::UsingDataDescriptor);
-        if using_data_descriptor {
-            return Err(ZipError::UnsupportedArchive(
-                "The file length is not available in the local header",
-            ));
-        }
-
         let is_utf8: bool = ZipFlags::matching(flags, ZipFlags::LanguageEncoding);
         let compression_method = crate::CompressionMethod::parse_from_u16(compression_method);
-        let file_name_length: usize = file_name_length.into();
-        let extra_field_length: usize = extra_field_length.into();
-
-        let mut file_name_raw = vec![0u8; file_name_length];
-        if let Err(e) = reader.read_exact(&mut file_name_raw) {
-            if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Err(invalid!("File name extends beyond file boundary"));
-            }
-            return Err(e.into());
-        }
-        let mut extra_field = vec![0u8; extra_field_length];
-        if let Err(e) = reader.read_exact(&mut extra_field) {
-            if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Err(invalid!("Extra field extends beyond file boundary"));
-            }
-            return Err(e.into());
-        }
 
         let file_name: Box<str> = if is_utf8 {
             String::from_utf8_lossy(&file_name_raw).into()
@@ -560,18 +620,13 @@ impl ZipFileData {
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
             file_name,
-            file_name_raw: file_name_raw.into(),
+            file_name_raw: file_name_raw.into_boxed_slice(),
             extra_field: Some(Arc::from(extra_field.into_boxed_slice())),
             central_extra_field: None,
-            file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
-            // header_start and data start are not available, but also don't matter, since seeking is
-            // not available.
+            file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
             data_start: OnceLock::new(),
             central_header_start: 0,
-            // The external_attributes field is only available in the central directory.
-            // We set this to zero, which should be valid as the docs state 'If input came
-            // from standard input, this field is set to zero.'
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
@@ -579,6 +634,31 @@ impl ZipFileData {
             extra_data_start: None,
             aes_extra_data_start: 0,
         })
+    }
+
+    pub(crate) fn from_local_block<R: std::io::Read + ?Sized>(
+        block: ZipLocalEntryBlock,
+        reader: &mut R,
+    ) -> ZipResult<Self> {
+        let file_name_length: usize = block.file_name_length.into();
+        let extra_field_length: usize = block.extra_field_length.into();
+
+        let mut file_name_raw = vec![0u8; file_name_length];
+        if let Err(e) = reader.read_exact(&mut file_name_raw) {
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Err(invalid!("File name extends beyond file boundary"));
+            }
+            return Err(e.into());
+        }
+        let mut extra_field = vec![0u8; extra_field_length];
+        if let Err(e) = reader.read_exact(&mut extra_field) {
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Err(invalid!("Extra field extends beyond file boundary"));
+            }
+            return Err(e.into());
+        }
+
+        Self::from_local_block_raw(block, file_name_raw, extra_field)
     }
 
     fn is_utf8(&self) -> bool {

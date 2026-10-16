@@ -54,6 +54,9 @@ time = { version = "^0.3.47", default-features = false, optional = true, feature
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 getrandom = { version = "0.4", default-features = false }
 
+[target.'cfg(not(miri))'.dev-dependencies]
+count_instructions = "0.2"
+
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", default-features = false, features = ["wasm_js"], optional = true }
