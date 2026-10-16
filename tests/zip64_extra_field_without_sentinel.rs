@@ -291,3 +291,72 @@ fn central_directory_zip64_blocks(archive: &[u8]) -> Vec<(String, Vec<u8>)> {
     }
     blocks
 }
+
+/// An archive entry whose uncompressed size has no sentinel, but carries a 24-byte ZIP64 block
+/// (representing compressed size + offset + disk number) must not have its compressed size
+/// consumed as an uncompressed size, nor desynchronize any subsequent entries.
+#[test]
+#[cfg(feature = "deflate-flate2")]
+fn test_zip64_mixed_sentinel_desync_mitigated() {
+    use std::io::Write;
+    use zip::write::{ExtendedFileOptions, FileOptions};
+
+    const PLACEHOLDER_ID: u16 = 0x7b7b;
+    let mut payload = Vec::with_capacity(24);
+    payload.extend_from_slice(&u64::to_le_bytes(CONTENT.len() as u64));
+    payload.extend_from_slice(&u64::to_le_bytes(0));
+    payload.extend_from_slice(&u64::to_le_bytes(0));
+
+    let mut options: FileOptions<ExtendedFileOptions> = FileOptions::default();
+    options
+        .add_extra_field(PLACEHOLDER_ID, &payload, false)
+        .expect("extra field should be accepted");
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer.start_file("mixed_sentinel.txt", options).unwrap();
+    writer.write_all(CONTENT).unwrap();
+
+    // Subsequent entry to verify that subsequent entries in the central directory
+    // and archive are completely unaffected by the mixed-sentinel ZIP64 block.
+    const SUBSEQUENT_CONTENT: &[u8] = b"data after mixed sentinel";
+    writer
+        .start_file(
+            "subsequent.txt",
+            FileOptions::<ExtendedFileOptions>::default(),
+        )
+        .unwrap();
+    writer.write_all(SUBSEQUENT_CONTENT).unwrap();
+
+    let mut archive = writer.finish().unwrap().into_inner();
+
+    let payload_len = u16::try_from(payload.len()).unwrap();
+    let mut needle = Vec::with_capacity(4);
+    needle.extend_from_slice(&PLACEHOLDER_ID.to_le_bytes());
+    needle.extend_from_slice(&payload_len.to_le_bytes());
+    for start in 0..archive.len().saturating_sub(needle.len()) {
+        if &archive[start..start + needle.len()] == needle.as_slice() {
+            archive[start..start + 2].copy_from_slice(&ZIP64_ID.to_le_bytes());
+        }
+    }
+
+    let mut zip = ZipArchive::new(Cursor::new(archive)).expect("archive should open cleanly");
+    assert_eq!(zip.len(), 2);
+
+    let mut entry = zip
+        .by_name("mixed_sentinel.txt")
+        .expect("entry should be found");
+    assert_eq!(entry.size(), CONTENT.len() as u64);
+    let mut out = Vec::new();
+    entry.read_to_end(&mut out).unwrap();
+    assert_eq!(out, CONTENT);
+    drop(entry);
+
+    // Verify the entry following mixed_sentinel.txt reads cleanly and is unaffected
+    let mut sub_entry = zip
+        .by_name("subsequent.txt")
+        .expect("subsequent entry should be found");
+    assert_eq!(sub_entry.size(), SUBSEQUENT_CONTENT.len() as u64);
+    let mut sub_out = Vec::new();
+    sub_entry.read_to_end(&mut sub_out).unwrap();
+    assert_eq!(sub_out, SUBSEQUENT_CONTENT);
+}

@@ -364,3 +364,66 @@ fn test_has_overlapping_files_detects_local_header_offset_overflow() {
         Err(ZipError::InvalidArchive(msg)) if msg == "Local header end offset overflows u64"
     ));
 }
+
+/// Verifies that `has_overlapping_files()` and `has_overlapping_entries()` detect when a file's
+/// declared payload overlaps with or extends into the Central Directory.
+#[test]
+fn test_has_overlap_detects_file_overlapping_with_central_directory() {
+    let mut zip_bytes = Vec::new();
+
+    let name = b"payload.bin";
+    // Entry 1 LFH at offset 0 (30 + 11 = 41 bytes)
+    zip_bytes.extend_from_slice(&[0x50, 0x4b, 0x03, 0x04]);
+    zip_bytes.extend_from_slice(&20u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes()); // Stored
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0x21u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u32.to_le_bytes()); // crc32
+    // Claim compressed_size = 100, which extends far past the CD offset!
+    zip_bytes.extend_from_slice(&100u32.to_le_bytes());
+    zip_bytes.extend_from_slice(&100u32.to_le_bytes());
+    zip_bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(name);
+
+    // Actual bytes in file is small (10 bytes) before Central Directory starts
+    zip_bytes.extend_from_slice(b"1234567890");
+
+    let cd_offset = zip_bytes.len() as u32;
+
+    // Central Directory Entry: points to offset 0, claims compressed_size = 100
+    zip_bytes.extend_from_slice(&[0x50, 0x4b, 0x01, 0x02]);
+    zip_bytes.extend_from_slice(&20u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&20u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0x21u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u32.to_le_bytes());
+    zip_bytes.extend_from_slice(&100u32.to_le_bytes());
+    zip_bytes.extend_from_slice(&100u32.to_le_bytes());
+    zip_bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u32.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u32.to_le_bytes()); // header_start = 0
+    zip_bytes.extend_from_slice(name);
+
+    let cd_size = (zip_bytes.len() as u32) - cd_offset;
+
+    // EOCD
+    zip_bytes.extend_from_slice(&[0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0]);
+    zip_bytes.extend_from_slice(&1u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&1u16.to_le_bytes());
+    zip_bytes.extend_from_slice(&cd_size.to_le_bytes());
+    zip_bytes.extend_from_slice(&cd_offset.to_le_bytes());
+    zip_bytes.extend_from_slice(&0u16.to_le_bytes());
+
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+    // Because data_start (41) + 100 = 141 > cd_offset (51), it overlaps with the central directory!
+    assert!(archive.has_overlapping_files().unwrap());
+    assert!(archive.has_overlapping_entries().unwrap());
+}

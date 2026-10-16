@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "9.0.3"
+version = "9.0.4"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -71,6 +71,7 @@ rand = "0.10.3"
 
 [target.'cfg(not(miri))'.dev-dependencies]
 tempfile = "3.15"
+count_instructions = "0.2"
 
 [dev-dependencies]
 bencher = "0.1"

@@ -183,8 +183,8 @@ impl<R: Read> AesReader<R> {
         let hmac_key = &derived_key[key_length..key_length * 2];
         let pwd_verify = &derived_key[derived_key_len - 2..];
 
-        // the last 2 bytes should equal the password verification value
-        if pwd_verification_value != pwd_verify {
+        // the last 2 bytes should equal the password verification value (constant-time to mitigate timing attacks)
+        if !constant_time_eq(&pwd_verification_value, pwd_verify) {
             // wrong password
             return Err(ZipError::InvalidPassword);
         }
@@ -570,5 +570,50 @@ mod tests {
         assert!(
             roundtrip(AesMode::Aes256, password, plaintext).expect("could encrypt and decrypt")
         );
+    }
+
+    #[test]
+    fn test_aes_password_verification_constant_time() {
+        let plaintext = b"constant-time verification test payload";
+        let correct_password = b"correct_master_key_123!";
+        let wrong_password_diff_byte0 = b"xorrect_master_key_123!";
+        let wrong_password_diff_byte1 = b"corvect_master_key_123!";
+
+        let mut buf = io::Cursor::new(vec![]);
+        {
+            let mut writer =
+                AesWriter::new_with_options(&mut buf, AesMode::Aes256, correct_password, None)
+                    .unwrap();
+            writer.write_all(plaintext).unwrap();
+            writer.finish().unwrap();
+        }
+
+        let compressed_length = buf.get_ref().len() as u64;
+
+        // Byte 0 mismatch must be rejected cleanly
+        buf.set_position(0);
+        let reader1 = AesReader::new(&mut buf, AesMode::Aes256, compressed_length).unwrap();
+        assert!(matches!(
+            reader1.validate(wrong_password_diff_byte0),
+            Err(ZipError::InvalidPassword)
+        ));
+
+        // Byte 1 mismatch must be rejected cleanly
+        buf.set_position(0);
+        let reader2 = AesReader::new(&mut buf, AesMode::Aes256, compressed_length).unwrap();
+        assert!(matches!(
+            reader2.validate(wrong_password_diff_byte1),
+            Err(ZipError::InvalidPassword)
+        ));
+
+        // Correct password succeeds
+        buf.set_position(0);
+        let mut reader3 = AesReader::new(&mut buf, AesMode::Aes256, compressed_length)
+            .unwrap()
+            .validate(correct_password)
+            .unwrap();
+        let mut decrypted = Vec::new();
+        reader3.read_to_end(&mut decrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
     }
 }
