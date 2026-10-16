@@ -271,7 +271,7 @@ impl ExtendedFileOptions {
             };
             let vec = Arc::make_mut(field);
             Self::add_extra_data_unchecked(vec, header_id, data)?;
-            Self::validate_extra_data(vec, true)?;
+            Self::validate_extra_data(vec, true, None)?;
             Ok(())
         }
     }
@@ -288,7 +288,11 @@ impl ExtendedFileOptions {
         Ok(())
     }
 
-    fn validate_extra_data(data: &[u8], disallow_zip64: bool) -> ZipResult<()> {
+    fn validate_extra_data(
+        data: &[u8],
+        disallow_zip64: bool,
+        file_name: Option<&[u8]>,
+    ) -> ZipResult<()> {
         let len = data.len() as u64;
         if len == 0 {
             return Ok(());
@@ -325,7 +329,27 @@ impl ExtendedFileOptions {
                 }
                 data.seek(SeekFrom::Current(-2))?;
             }
-            parse_single_extra_field(&mut ZipFileData::default(), &mut data, pos, disallow_zip64)?;
+            let mut file = ZipFileData::default();
+            if let Some(name) = file_name {
+                file.file_name_raw = Box::from(name);
+                parse_single_extra_field(&mut file, &mut data, pos, disallow_zip64)?;
+            } else {
+                use crate::{extra_fields::UsedExtraField, unstable::LittleEndianReadExt};
+                let id = data.read_u16_le()?;
+                data.seek(SeekFrom::Current(-2))?;
+                if id == UsedExtraField::UnicodePath as u16
+                    || id == UsedExtraField::UnicodeComment as u16
+                {
+                    let _id = data.read_u16_le()?;
+                    let field_len = data.read_u16_le()? as usize;
+                    if len - data.position() < field_len as u64 {
+                        return Err(invalid!("Extra field content truncated"));
+                    }
+                    data.seek(SeekFrom::Current(field_len as i64))?;
+                } else {
+                    parse_single_extra_field(&mut file, &mut data, pos, disallow_zip64)?;
+                }
+            }
             pos = data.position();
         }
         Ok(())
@@ -525,6 +549,17 @@ impl FileOptions<'_, ExtendedFileOptions> {
     ) -> ZipResult<()> {
         self.extended_options
             .add_extra_data(header_id, data, central_only)
+    }
+
+    /// Adds an extra data field. Alias for [`Self::add_extra_data`].
+    #[inline]
+    pub fn add_extra_field<D: AsRef<[u8]>>(
+        &mut self,
+        header_id: u16,
+        data: D,
+        central_only: bool,
+    ) -> ZipResult<()> {
+        self.add_extra_data(header_id, data, central_only)
     }
 
     /// Removes the extra data fields.
@@ -743,7 +778,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             + new_data.file_name_raw.len() as u64;
         new_data.extra_data_start = Some(extra_data_start);
         if let Some(extra) = &src_data.extra_field {
-            let stripped = strip_alignment_extra_field(extra);
+            let stripped = strip_alignment_extra_field(extra, false);
             if !stripped.is_empty() {
                 new_data.extra_field = Some(stripped.into());
             } else {
@@ -1056,6 +1091,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
             }
         }
+        let name_str = name.to_string();
+        let name_bytes = name_str.as_bytes();
         let extra_data_len = extra_data.len();
         if let Some(data) = central_extra_data {
             if extra_data_len + data.len() > u16::MAX as usize {
@@ -1063,7 +1100,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     "Extra data and central extra data must be less than 64KiB when combined"
                 ));
             }
-            ExtendedFileOptions::validate_extra_data(data, true)?;
+            ExtendedFileOptions::validate_extra_data(data, true, Some(name_bytes))?;
         }
         let mut file = ZipFileData::initialize_local_block(
             name,
@@ -1092,7 +1129,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let index = self.insert_file_data(file)?;
         self.writing_to_file = true;
         let result: ZipResult<()> = {
-            ExtendedFileOptions::validate_extra_data(&extra_data, false)?;
+            ExtendedFileOptions::validate_extra_data(&extra_data, false, Some(name_bytes))?;
             let file = &mut self.files[index];
             let block = file.local_block()?;
             let writer = self.inner.try_inner_mut()?;
@@ -2207,9 +2244,6 @@ fn update_local_file_header<T: Write + Seek>(
         writer.write_u32_le(spec::ZIP64_BYTES_THR as u32)?;
 
         update_local_zip64_extra_field(writer, file)?;
-
-        file.compressed_size = spec::ZIP64_BYTES_THR;
-        file.uncompressed_size = spec::ZIP64_BYTES_THR;
     } else {
         // check compressed size as well as it can also be slightly larger than uncompressed size
         if file.compressed_size > spec::ZIP64_BYTES_THR {
@@ -2227,7 +2261,7 @@ fn update_local_file_header<T: Write + Seek>(
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     let mut block = file.block()?;
     let stripped_extra = if let Some(extra) = &file.extra_field {
-        strip_alignment_extra_field(extra)
+        strip_alignment_extra_field(extra, true)
     } else {
         Vec::new()
     };
@@ -2260,7 +2294,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
+fn strip_alignment_extra_field(extra_field: &[u8], remove_zip64: bool) -> Vec<u8> {
     let mut new_extra = Vec::with_capacity(extra_field.len());
     let mut cursor = 0;
     while cursor + 4 <= extra_field.len() {
@@ -2271,7 +2305,9 @@ fn strip_alignment_extra_field(extra_field: &[u8]) -> Vec<u8> {
             break;
         }
 
-        if tag != UsedExtraField::DataStreamAlignement as u16 {
+        if tag != UsedExtraField::DataStreamAlignement as u16
+            && !(tag == UsedExtraField::Zip64ExtendedInfo as u16 && remove_zip64)
+        {
             new_extra.extend_from_slice(&extra_field[cursor..cursor + 4 + len]);
         }
         cursor += 4 + len;

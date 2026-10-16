@@ -36,6 +36,7 @@ pub(crate) mod magic_finder;
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
     pub(crate) files: IndexMap<Box<str>, ZipFileData>,
+    pub(crate) has_duplicate_names: bool,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -66,12 +67,15 @@ pub(crate) mod zip_archive {
             comment: Box<[u8]>,
             zip64_comment: Option<Box<[u8]>>,
         ) -> ZipArchiveMetadata {
-            let mut index_map = IndexMap::with_capacity(self.files.len());
+            let raw_file_count = self.files.len();
+            let mut index_map = IndexMap::with_capacity(raw_file_count);
             self.files.into_iter().for_each(|file| {
                 index_map.insert(file.file_name.clone(), file);
             });
+            let has_duplicate_names = index_map.len() != raw_file_count;
             ZipArchiveMetadata {
                 files: index_map,
+                has_duplicate_names,
                 offset: self.offset,
                 dir_start: self.dir_start,
                 config: self.config,
@@ -368,8 +372,11 @@ pub(crate) fn find_data_start(
         // Each of these fields must be converted to u64 before adding, as the result may
         // easily overflow a u16.
         u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-    let data_start =
-        data.header_start + size_of::<ZipLocalEntryBlock>() as u64 + variable_fields_len;
+    let data_start = data
+        .header_start
+        .checked_add(size_of::<ZipLocalEntryBlock>() as u64)
+        .and_then(|v| v.checked_add(variable_fields_len))
+        .ok_or(invalid!("Local header end offset overflows u64"))?;
 
     // Set the value so we don't have to read it again.
     match data.data_start.set(data_start) {
@@ -579,6 +586,7 @@ impl<R> ZipArchive<R> {
         };
         let shared = Arc::new(ZipArchiveMetadata {
             files,
+            has_duplicate_names: false,
             offset: initial_offset,
             dir_start: central_start,
             config: Config {
@@ -1067,23 +1075,40 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
     /// doesn't make the archive invalid, but some programs will refuse to decompress it because the
     /// copies would take up space independently in the destination.
+    ///
+    /// Doesn't count cases where one file entry's header overlaps with another's header or data.
+    /// To include those cases, use [`ZipArchive::has_overlapping_entries`] instead.
     pub fn has_overlapping_files(&mut self) -> ZipResult<bool> {
+        self.has_overlap(false)
+    }
+
+    /// Returns Ok(true) if any byte in this archive belongs to more than one file entry, including
+    /// the header. Similar to [`ZipArchive::has_overlapping_files`] except that it also checks for
+    /// header-with-header and header-with-data overlaps.
+    pub fn has_overlapping_entries(&mut self) -> ZipResult<bool> {
+        self.has_overlap(true)
+    }
+
+    fn has_overlap(&mut self, include_header: bool) -> ZipResult<bool> {
         let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
         for file in self.shared.files.values() {
-            if file.compressed_size == 0 {
+            if !include_header && file.compressed_size == 0 {
                 continue;
             }
-            let start = file.data_start(&mut self.reader)?;
-            let end = start + file.compressed_size;
-            if ranges
-                .iter()
-                .any(|range| range.start <= end && start <= range.end)
-            {
-                return Ok(true);
-            }
+            let data_start = file.data_start(&mut self.reader)?;
+            let start = if include_header {
+                file.header_start
+            } else {
+                data_start
+            };
+            let end = data_start
+                .checked_add(file.compressed_size)
+                .ok_or(invalid!("File data end offset overflows u64"))?;
             ranges.push(start..end);
         }
-        Ok(false)
+        ranges.sort_unstable_by_key(|r| (r.start, r.end));
+        let overlaps_central_directory = ranges.iter().any(|r| r.end > self.shared.dir_start);
+        Ok(overlaps_central_directory || ranges.windows(2).any(|w| w[0].end > w[1].start))
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -1243,6 +1268,18 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
+    /// Search for a file entry by name with options.
+    pub fn by_name_with_options<'a>(
+        &'a mut self,
+        name: &str,
+        options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFile<'a, R>> {
+        let Some(index) = self.shared.files.get_index_of(name) else {
+            return Err(ZipError::FileNotFound);
+        };
+        self.by_index_with_options(index, options)
+    }
+
     /// Get a contained file by index with options.
     pub fn by_index_with_options(
         &mut self,
@@ -1254,6 +1291,15 @@ impl<R: Read + Seek> ZipArchive<R> {
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
+
+        if options.enforce_header_consistency {
+            if self.shared.has_duplicate_names {
+                return Err(invalid!(
+                    "header inconsistency detected: duplicate file names in central directory"
+                ));
+            }
+            data.validate_header_consistency(&mut self.reader, &data.file_name_raw)?;
+        }
 
         if options.ignore_encryption_flag {
             // Always use no password when we're ignoring the encryption flag.
@@ -1285,6 +1331,24 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.flags,
             )?,
         })
+    }
+
+    /// Validates that all local file headers in the archive match their corresponding central directory headers.
+    pub fn validate_header_consistency(&mut self) -> ZipResult<()> {
+        if self.shared.has_duplicate_names {
+            return Err(invalid!(
+                "header inconsistency detected: duplicate file names in central directory"
+            ));
+        }
+        for data in self.shared.files.values() {
+            data.validate_header_consistency(&mut self.reader, &data.file_name_raw)?;
+        }
+        if self.has_overlapping_entries()? {
+            return Err(invalid!(
+                "header inconsistency detected: archive contains overlapping entries"
+            ));
+        }
+        Ok(())
     }
 
     /// Find the "root directory" of an archive if it exists, filtering out
@@ -1581,7 +1645,10 @@ pub(crate) fn parse_single_extra_field<R: Read>(
             }
             file.large_file = true;
             let mut consumed_len = 0;
-            if len >= 24 || file.uncompressed_size == spec::ZIP64_BYTES_THR {
+            if file.uncompressed_size == spec::ZIP64_BYTES_THR {
+                if consumed_len + size_of::<u64>() > len as usize {
+                    return Err(invalid!("ZIP64 extra field truncated"));
+                }
                 file.uncompressed_size = match reader.read_u64_le() {
                     Ok(v) => v,
                     Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
@@ -1591,7 +1658,10 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 };
                 consumed_len += size_of::<u64>();
             }
-            if len >= 24 || file.compressed_size == spec::ZIP64_BYTES_THR {
+            if file.compressed_size == spec::ZIP64_BYTES_THR {
+                if consumed_len + size_of::<u64>() > len as usize {
+                    return Err(invalid!("ZIP64 extra field truncated"));
+                }
                 file.compressed_size = match reader.read_u64_le() {
                     Ok(v) => v,
                     Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
@@ -1601,7 +1671,10 @@ pub(crate) fn parse_single_extra_field<R: Read>(
                 };
                 consumed_len += size_of::<u64>();
             }
-            if len >= 24 || file.header_start == spec::ZIP64_BYTES_THR {
+            if file.header_start == spec::ZIP64_BYTES_THR {
+                if consumed_len + size_of::<u64>() > len as usize {
+                    return Err(invalid!("ZIP64 extra field truncated"));
+                }
                 file.header_start = match reader.read_u64_le() {
                     Ok(v) => v,
                     Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
@@ -1714,6 +1787,9 @@ pub struct ZipReadOptions<'a> {
 
     /// Ignore the value of the encryption flag and proceed as if the file were plaintext.
     ignore_encryption_flag: bool,
+
+    /// Enforce consistency between the local file header and central directory header.
+    pub(crate) enforce_header_consistency: bool,
 }
 
 impl<'a> ZipReadOptions<'a> {
@@ -1735,6 +1811,197 @@ impl<'a> ZipReadOptions<'a> {
     pub fn ignore_encryption_flag(mut self, ignore: bool) -> Self {
         self.ignore_encryption_flag = ignore;
         self
+    }
+
+    /// Enforces that the local file header (LFH) matches the central directory header (CDFH).
+    #[must_use]
+    pub fn enforce_header_consistency(mut self, enforce: bool) -> Self {
+        self.enforce_header_consistency = enforce;
+        self
+    }
+}
+
+/// Helper to extract Info-ZIP UnicodePath (0x7075) extra field content and CRC32 from raw extra bytes.
+pub(crate) fn get_upath_from_extra(extra: Option<&[u8]>) -> (Option<&[u8]>, Option<u32>) {
+    let Some(mut extra) = extra else {
+        return (None, None);
+    };
+    let mut last_upath = None;
+    while extra.len() >= 4 {
+        let id = u16::from_le_bytes([extra[0], extra[1]]);
+        let len = u16::from_le_bytes([extra[2], extra[3]]) as usize;
+        extra = &extra[4..];
+        if extra.len() < len {
+            break;
+        }
+        let field_data = &extra[..len];
+        extra = &extra[len..];
+        if id == crate::extra_fields::UsedExtraField::UnicodePath as u16 && field_data.len() >= 5 {
+            let crc =
+                u32::from_le_bytes([field_data[1], field_data[2], field_data[3], field_data[4]]);
+            let name = &field_data[5..];
+            last_upath = Some((name, crc));
+        }
+    }
+    match last_upath {
+        Some((name, crc)) => (Some(name), Some(crc)),
+        None => (None, None),
+    }
+}
+
+/// Data descriptor / payload metadata (CRC32 and sizes) that can be verified either
+/// immediately or after reading a data descriptor.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) struct HeaderDataDescriptorMetadata {
+    pub(crate) crc32: u32,
+    pub(crate) compressed_size: u64,
+    pub(crate) uncompressed_size: u64,
+    pub(crate) is_pending_data_descriptor: bool,
+}
+
+impl HeaderDataDescriptorMetadata {
+    /// Validates data descriptor fields between local and central headers.
+    pub(crate) fn validate_matches(&self, central: &Self) -> ZipResult<()> {
+        if self.crc32 != central.crc32 && (!self.is_pending_data_descriptor || self.crc32 != 0) {
+            return Err(invalid!(
+                "header inconsistency detected: CRC32 checksum mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.compressed_size != central.compressed_size
+            && (!self.is_pending_data_descriptor || self.compressed_size != 0)
+        {
+            return Err(invalid!(
+                "header inconsistency detected: compressed size mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.uncompressed_size != central.uncompressed_size
+            && (!self.is_pending_data_descriptor || self.uncompressed_size != 0)
+        {
+            return Err(invalid!(
+                "header inconsistency detected: uncompressed size mismatch (does not match central directory)"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// Unified header metadata used to validate consistency between Local and Central headers.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct HeaderConsistencyMetadata<T: AsRef<[u8]>, U: AsRef<[u8]> = T> {
+    pub(crate) name: T,
+    pub(crate) upath: Option<U>,
+    pub(crate) upath_crc32: Option<u32>,
+    pub(crate) compression_method: u16,
+    pub(crate) is_encrypted: bool,
+    pub(crate) is_using_data_descriptor: bool,
+    pub(crate) last_modified_time: Option<DateTime>,
+    pub(crate) data: HeaderDataDescriptorMetadata,
+    pub(crate) aes: Option<(
+        crate::AesMode,
+        crate::types::AesVendorVersion,
+        crate::CompressionMethod,
+    )>,
+}
+
+impl HeaderConsistencyMetadata<&[u8]> {
+    pub(crate) fn into_owned(self) -> HeaderConsistencyMetadata<Box<[u8]>> {
+        HeaderConsistencyMetadata {
+            name: self.name.into(),
+            upath: self.upath.map(Into::into),
+            upath_crc32: self.upath_crc32,
+            compression_method: self.compression_method,
+            is_encrypted: self.is_encrypted,
+            is_using_data_descriptor: self.is_using_data_descriptor,
+            last_modified_time: self.last_modified_time,
+            data: self.data,
+            aes: self.aes,
+        }
+    }
+}
+
+impl<T: AsRef<[u8]>, U: AsRef<[u8]>> HeaderConsistencyMetadata<T, U> {
+    /// Validates header identity (filename, UnicodePath, compression method, and flags).
+    pub(crate) fn validate_identity_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+        &self,
+        central: &HeaderConsistencyMetadata<T2, U2>,
+    ) -> ZipResult<()> {
+        let local_effective = self
+            .upath
+            .as_ref()
+            .map(AsRef::as_ref)
+            .unwrap_or_else(|| self.name.as_ref());
+
+        if self.upath.as_ref().map(AsRef::as_ref) != central.upath.as_ref().map(AsRef::as_ref)
+            || self.upath_crc32 != central.upath_crc32
+        {
+            return Err(invalid!(
+                "header inconsistency detected: UnicodePath (0x7075) extra field mismatch for '{}'",
+                String::from_utf8_lossy(local_effective)
+            ));
+        }
+
+        if self.name.as_ref() != central.name.as_ref() {
+            return Err(invalid!(
+                "header inconsistency detected: Local file header filename mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.compression_method != central.compression_method {
+            return Err(invalid!(
+                "header inconsistency detected: compression method mismatch (does not match central directory)"
+            ));
+        }
+
+        if self.is_encrypted != central.is_encrypted {
+            return Err(invalid!(
+                "header inconsistency detected: encryption flag mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        if self.is_using_data_descriptor != central.is_using_data_descriptor {
+            return Err(invalid!(
+                "header inconsistency detected: data descriptor flag mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        if self.last_modified_time != central.last_modified_time {
+            return Err(invalid!(
+                "header inconsistency detected: last modified time mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        if self.aes != central.aes {
+            return Err(invalid!(
+                "header inconsistency detected: AES encryption metadata mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates data descriptor and payload consistency.
+    pub(crate) fn validate_data_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+        &self,
+        central: &HeaderConsistencyMetadata<T2, U2>,
+    ) -> ZipResult<()> {
+        self.data.validate_matches(&central.data)
+    }
+
+    /// Validates that local header metadata matches central directory metadata.
+    pub(crate) fn validate_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+        &self,
+        central: &HeaderConsistencyMetadata<T2, U2>,
+    ) -> ZipResult<()> {
+        self.validate_identity_matches(central)?;
+        self.validate_data_matches(central)?;
+        Ok(())
     }
 }
 
@@ -2101,36 +2368,34 @@ impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {
     }
 }
 
-/// Read `ZipFile` structures from a non-seekable reader.
-///
-/// This is an alternative method to read a zip file. If possible, use the `ZipArchive` functions
-/// as some information will be missing when reading this manner.
-///
-/// Reads a file header from the start of the stream. Will return `Ok(Some(..))` if a file is
-/// present at the start of the stream. Returns `Ok(None)` if the start of the central directory
-/// is encountered. No more files should be read after this.
-///
-/// The Drop implementation of `ZipFile` ensures that the reader will be correctly positioned after
-/// the structure is done.
-///
-/// Missing fields are:
-/// * `comment`: set to an empty string
-/// * `data_start`: set to 0
-/// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
+pub(crate) fn read_zipfile_from_stream_internal<'a, R: Read>(
+    reader: &'a mut R,
+    has_central_directory: &mut bool,
+) -> ZipResult<Option<ZipFile<'a, R>>> {
     // We can't use the typical ::parse() method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
     /* TODO: smallvec? */
 
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
+    let mut magic_buf = [0u8; size_of::<u32>()];
+    reader.read_exact(&mut magic_buf)?;
 
-    match block.magic().from_le() {
+    match spec::Magic::from_le_bytes(magic_buf) {
         spec::Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        spec::Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => {
+            *has_central_directory = true;
+            return Ok(None);
+        }
+        spec::Magic::CENTRAL_DIRECTORY_END_SIGNATURE => {
+            *has_central_directory = false;
+            return Ok(None);
+        }
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
+
+    let mut block = ZipLocalEntryBlock::zeroed();
+    block.as_bytes_mut()[..size_of::<u32>()].copy_from_slice(&magic_buf);
+    reader.read_exact(&mut block.as_bytes_mut()[size_of::<u32>()..])?;
 
     let block = block.from_le();
 
@@ -2139,6 +2404,18 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
     match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
+    }
+
+    if result.encrypted {
+        return Err(ZipError::UnsupportedArchive(
+            "Encrypted files are not supported",
+        ));
+    }
+
+    if result.using_data_descriptor {
+        return Err(ZipError::UnsupportedArchive(
+            "The file length is not available in the local header",
+        ));
     }
 
     let limit_reader = reader.take(result.compressed_size);
@@ -2163,6 +2440,27 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
             flags,
         )?,
     }))
+}
+
+/// Read `ZipFile` structures from a non-seekable reader.
+///
+/// This is an alternative method to read a zip file. If possible, use the `ZipArchive` functions
+/// as some information will be missing when reading this manner.
+///
+/// Reads a file header from the start of the stream. Will return `Ok(Some(..))` if a file is
+/// present at the start of the stream. Returns `Ok(None)` if the start of the central directory
+/// is encountered. No more files should be read after this.
+///
+/// The Drop implementation of `ZipFile` ensures that the reader will be correctly positioned after
+/// the structure is done.
+///
+/// Missing fields are:
+/// * `comment`: set to an empty string
+/// * `data_start`: set to 0
+/// * `external_attributes`: `unix_mode()`: will return None
+pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
+    let mut has_central_directory = false;
+    read_zipfile_from_stream_internal(reader, &mut has_central_directory)
 }
 
 /// A filter that determines whether an entry should be ignored when searching

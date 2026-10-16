@@ -234,3 +234,39 @@ fn raw_copy_from_aes_zip() {
         }
     }
 }
+
+#[cfg(not(miri))]
+#[test]
+fn test_aes_password_verification_instruction_count_is_constant() {
+    #[cfg(target_os = "linux")]
+    {
+        use count_instructions::count_instructions;
+
+        let target = [0x5A, 0xA5];
+        let mismatch_byte_0 = [0x00, 0xA5];
+        let mismatch_byte_1 = [0x5A, 0x00];
+
+        #[inline(never)]
+        fn verify(a: &[u8; 2], b: &[u8]) -> bool {
+            constant_time_eq::constant_time_eq(a, b)
+        }
+
+        let mut count_0 = 0;
+        let res_0 = count_instructions(|| verify(&target, &mismatch_byte_0), |_| count_0 += 1);
+
+        let mut count_1 = 0;
+        let res_1 = count_instructions(|| verify(&target, &mismatch_byte_1), |_| count_1 += 1);
+
+        match (res_0, res_1) {
+            (Ok(_), Ok(_)) => {
+                assert_eq!(
+                    count_0, count_1,
+                    "instruction counts must be equal: byte 0 mismatch ({count_0}) vs byte 1 mismatch ({count_1})"
+                );
+            }
+            (Err(e0), _) if e0.kind() == std::io::ErrorKind::Unsupported => {}
+            (Err(e0), _) => panic!("count_instructions failed: {e0}"),
+            (_, Err(e1)) => panic!("count_instructions failed: {e1}"),
+        }
+    }
+}
