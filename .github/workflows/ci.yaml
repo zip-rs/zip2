@@ -56,6 +56,30 @@ jobs:
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - run: cargo install --locked cargo-nextest
       - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
+  bsd_platform:
+    needs:
+    - cargo_semver
+    - style_and_docs
+    - cargo_fmt
+    timeout-minutes: 20
+    name: "BSD checks"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: rustup target add x86_64-unknown-netbsd
+      # only checks no-default-features for now beause some deps needs a c compiler
+      - run: cargo check --no-default-features --target x86_64-unknown-netbsd --all --no-defaul-features --lib --bins --tests --examples
   check_minimal_versions:
     needs:
       - cargo_semver
