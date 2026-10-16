@@ -473,11 +473,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Returns an iterator over all the raw file and directory names in this archive.
-    pub fn file_names_raw(&self) -> impl Iterator<Item = &Box<[u8]>> {
+    pub fn file_names_raw(&self) -> impl Iterator<Item = &[u8]> {
         self.shared
             .files
             .iter()
-            .map(|(file_name_raw, _data)| file_name_raw)
+            .map(|(file_name_raw, _data)| file_name_raw.as_ref())
     }
 
     /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
