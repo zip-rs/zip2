@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.0.4](https://github.com/zip-rs/zip2/compare/v9.0.3...v9.0.4) - 2026-10-16
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- enclosed_name rejects a separator inside one verbatim path component ([#1066](https://github.com/zip-rs/zip2/pull/1066))
+- return `Ok(None)` when read_zipfile_from_stream is called on an empty archive ([#1063](https://github.com/zip-rs/zip2/pull/1063))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Revert impl Copy for Zip64CentralDirectoryEndLocator due to failing semver check, fix CI where most Miri tests weren't running, and other fixes so other PRs can pass CI ([#1065](https://github.com/zip-rs/zip2/pull/1065))
+- update lzma-rust2 and ppmd-rust dependencies ([#1060](https://github.com/zip-rs/zip2/pull/1060))
+
 ## [9.0.3](https://github.com/zip-rs/zip2/compare/v9.0.2...v9.0.3) - 2026-10-13
 
 ### <!-- 1 -->🐛 Bug Fixes
