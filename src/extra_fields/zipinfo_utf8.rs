@@ -7,8 +7,8 @@ use std::io::Read;
 /// specified in APPNOTE 4.6.8 and 4.6.9
 #[derive(Clone, Debug)]
 pub struct UnicodeExtraField {
-    crc32: u32,
-    content: Box<[u8]>,
+    pub(crate) crc32: u32,
+    pub(crate) content: Box<[u8]>,
 }
 
 impl UnicodeExtraField {

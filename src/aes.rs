@@ -214,8 +214,8 @@ impl<R: Read> AesReader<R> {
         let hmac_key = &derived_key[key_length..key_length * 2];
         let pwd_verify = &derived_key[derived_key_len - 2..];
 
-        // the last 2 bytes should equal the password verification value
-        if pwd_verification_value != pwd_verify {
+        // the last 2 bytes should equal the password verification value (constant-time to mitigate timing attacks)
+        if !constant_time_eq(&pwd_verification_value, pwd_verify) {
             // wrong password
             return Err(ZipError::InvalidPassword);
         }

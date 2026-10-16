@@ -7,7 +7,7 @@ use crate::read::{
     ArchiveOffset, CentralDirectoryInfo, RootDirFilter, ZipFile, ZipFileSeek, ZipReadOptions,
     central_header_to_zip_file,
 };
-use crate::result::{ZipError, ZipResult};
+use crate::result::{ZipError, ZipResult, invalid};
 use crate::spec;
 use crate::types::ZipFileData;
 use crate::unstable::path_to_string;
@@ -21,6 +21,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
     pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) has_duplicate_names: bool,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -46,12 +47,15 @@ impl SharedBuilder {
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
     ) -> ZipArchiveMetadata {
-        let mut index_map = IndexMap::with_capacity(self.files.len());
+        let raw_file_count = self.files.len();
+        let mut index_map = IndexMap::with_capacity(raw_file_count);
         self.files.into_iter().for_each(|file| {
             index_map.insert(file.file_name_raw.clone(), file);
         });
+        let has_duplicate_names = index_map.len() != raw_file_count;
         ZipArchiveMetadata {
             files: index_map,
+            has_duplicate_names,
             offset: self.offset,
             dir_start: self.dir_start,
             config: self.config,
@@ -101,6 +105,7 @@ impl<R> ZipArchive<R> {
         };
         let shared = Arc::new(ZipArchiveMetadata {
             files,
+            has_duplicate_names: false,
             offset: initial_offset,
             dir_start: central_start,
             config: Config {
@@ -369,23 +374,43 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
     /// doesn't make the archive invalid, but some programs will refuse to decompress it because the
     /// copies would take up space independently in the destination.
+    ///
+    /// Doesn't count cases where one file entry's header overlaps with another's header or data.
+    /// To include those cases, use [`ZipArchive::has_overlapping_entries`] instead.
     pub fn has_overlapping_files(&mut self) -> ZipResult<bool> {
+        self.has_overlap(false)
+    }
+
+    /// Returns Ok(true) if any byte in this archive belongs to more than one file entry, including
+    /// the header. Similar to [`ZipArchive::has_overlapping_files`] except that it also checks for
+    /// header-with-header and header-with-data overlaps.
+    pub fn has_overlapping_entries(&mut self) -> ZipResult<bool> {
+        self.has_overlap(true)
+    }
+
+    fn has_overlap(&mut self, include_header: bool) -> ZipResult<bool> {
         let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
         for file in self.shared.files.values() {
-            if file.compressed_size == 0 {
+            if !include_header && file.compressed_size == 0 {
                 continue;
             }
-            let start = file.data_start(&mut self.reader)?;
-            let end = start + file.compressed_size;
-            if ranges
-                .iter()
-                .any(|range| range.start <= end && start <= range.end)
-            {
-                return Ok(true);
-            }
+            let data_start = file.data_start(&mut self.reader)?;
+            let start = if include_header {
+                file.header_start
+            } else {
+                data_start
+            };
+            let end =
+                data_start
+                    .checked_add(file.compressed_size)
+                    .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                        "File data end offset overflows u64",
+                    )))?;
             ranges.push(start..end);
         }
-        Ok(false)
+        ranges.sort_unstable_by_key(|r| (r.start, r.end));
+        let overlaps_central_directory = ranges.iter().any(|r| r.end > self.shared.dir_start);
+        Ok(overlaps_central_directory || ranges.windows(2).any(|w| w[0].end > w[1].start))
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -545,17 +570,38 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
+    /// Search for a file entry by name with options.
+    pub fn by_name_with_options<'a>(
+        &'a mut self,
+        name: &str,
+        options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFile<'a, R>> {
+        let Some(index) = self.shared.files.get_index_of(name.as_bytes()) else {
+            return Err(ZipError::FileNotFound);
+        };
+        self.by_index_with_options(index, options)
+    }
+
     /// Get a contained file by index with options.
     pub fn by_index_with_options(
         &mut self,
         file_number: usize,
         mut options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'_, R>> {
-        let (_, data) = self
+        let (file_name_raw, data) = self
             .shared
             .files
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
+
+        if options.enforce_header_consistency {
+            if self.shared.has_duplicate_names {
+                return Err(invalid!(
+                    "header inconsistency detected: duplicate file names in central directory"
+                ));
+            }
+            data.validate_header_consistency(&mut self.reader, file_name_raw)?;
+        }
 
         if options.ignore_encryption_flag {
             // Always use no password when we're ignoring the encryption flag.
@@ -593,6 +639,24 @@ impl<R: Read + Seek> ZipArchive<R> {
                 data.flags,
             )?,
         })
+    }
+
+    /// Validates that all local file headers in the archive match their corresponding central directory headers.
+    pub fn validate_header_consistency(&mut self) -> ZipResult<()> {
+        if self.shared.has_duplicate_names {
+            return Err(invalid!(
+                "header inconsistency detected: duplicate file names in central directory"
+            ));
+        }
+        for (file_name_raw, data) in &self.shared.files {
+            data.validate_header_consistency(&mut self.reader, file_name_raw)?;
+        }
+        if self.has_overlapping_entries()? {
+            return Err(invalid!(
+                "header inconsistency detected: archive contains overlapping entries"
+            ));
+        }
+        Ok(())
     }
 
     /// Find the "root directory" of an archive if it exists, filtering out
