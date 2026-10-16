@@ -25,8 +25,8 @@ https://github.com/zip-rs/zip2/security/advisories/new. We'll attempt to:
 ## Disclosure
 
 A vulnerability that affects a published version will only be publicly disclosed once a version without the vulnerability has 
-been published, which is not a prerelease unless all affected published versions were also prereleases, and the affected
-versions have been yanked. Once that's done, the delay before full public disclosure will be determined as follows:
+been published, which is not a prerelease unless all affected published versions were also prereleases. Once that's done, 
+the delay before full public disclosure will be determined as follows:
 
 * If the proof-of-concept is very simple, or an exploit is already in the wild (whether or not it specifically targets `zip`),
   all details will be made public right away.
@@ -37,3 +37,10 @@ versions have been yanked. Once that's done, the delay before full public disclo
 * If a potential victim at credible risk requests more time to deploy a fix, then the withholding of details can
   be extended up to 30 days. This may be extended to 90 days for high-value government and nonprofit targets, when
   truly extraordinary circumstances are delaying the deployment.
+
+## Yanking versions and backporting
+
+Versions with vulnerabilities will be yanked from crates.io 14 days after the vulnerability is published, if they're
+the latest version of their major version, and otherwise immediately. Backports may
+be available for older major versions, but this is strictly best-effort; all users should update to the latest vesrion
+as soon as possible.
