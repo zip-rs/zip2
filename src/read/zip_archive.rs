@@ -549,7 +549,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the index of a file entry by name, if it's present.
     #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
-        self.shared.files.get_index_of(name.as_bytes())
+        self.shared.files.get_index_of(name.as_bytes()).or_else(|| {
+            self.shared
+                .files
+                .iter()
+                .position(|(raw, data)| data.name(raw).is_ok_and(|decoded| decoded == name))
+        })
     }
 
     /// Get data and the data descriptor of the file
@@ -658,7 +663,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'a, R>> {
-        let Some(index) = self.shared.files.get_index_of(name.as_bytes()) else {
+        let Some(index) = self.index_for_name(name) else {
             return Err(ZipError::FileNotFound);
         };
         self.by_index_with_options(index, ZipReadOptions::new().password(password))
@@ -716,7 +721,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         name: &str,
         options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'a, R>> {
-        let Some(index) = self.shared.files.get_index_of(name.as_bytes()) else {
+        let Some(index) = self.index_for_name(name) else {
             return Err(ZipError::FileNotFound);
         };
         self.by_index_with_options(index, options)
