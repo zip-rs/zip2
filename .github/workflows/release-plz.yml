@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - backport/*
 
 permissions:  # added using https://github.com/step-security/secure-repo
   contents: read
