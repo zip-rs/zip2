@@ -472,6 +472,14 @@ impl<R: Read + Seek> ZipArchive<R> {
             .map(|(file_name_raw, data)| data.name(file_name_raw))
     }
 
+    /// Returns an iterator over all the raw file and directory names in this archive.
+    pub fn file_names_raw(&self) -> impl Iterator<Item = &[u8]> {
+        self.shared
+            .files
+            .iter()
+            .map(|(file_name_raw, _data)| file_name_raw.as_ref())
+    }
+
     /// Returns Ok(true) if any compressed data in this archive belongs to more than one file. This
     /// doesn't make the archive invalid, but some programs will refuse to decompress it because m
     /// copies of a block that decompresses to length n would occupy `m*n` bytes in the destination
