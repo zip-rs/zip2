@@ -277,8 +277,8 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
 
     /// Set the compression method for the new file
     ///
-    /// The default is [`CompressionMethod::Deflated`] if it is enabled. If not,
-    /// [`CompressionMethod::Bzip2`] is the default if it is enabled. If neither `bzip2` nor `deflate`
+    /// The default is `CompressionMethod::Deflated` if it is enabled. If not,
+    /// `CompressionMethod::Bzip2` is the default if it is enabled. If neither `bzip2` nor `deflate`
     /// is enabled, [`CompressionMethod::Stored`] becomes the default and files are written uncompressed.
     #[must_use]
     pub const fn compression_method(mut self, method: CompressionMethod) -> Self {
