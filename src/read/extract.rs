@@ -256,7 +256,8 @@ pub(crate) fn set_permissions_no_follow_symlink(
             use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
             use std::os::unix::fs::PermissionsExt;
 
-            let mode = Mode::from_bits_truncate(mode.mode() as u16);
+            // `mode_t` is `u16` on macOS, FreeBSD and DragonFly, but `u32` on NetBSD and OpenBSD.
+            let mode = Mode::from_bits_truncate(mode.mode() as nix::libc::mode_t);
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
             fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink)?;
