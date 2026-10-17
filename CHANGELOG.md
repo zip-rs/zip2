@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.0.5](https://github.com/zip-rs/zip2/compare/v9.0.4...v9.0.5) - 2026-10-17
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- use mode_t for fchmodat's mode, which is u32 on NetBSD and OpenBSD ([#1076](https://github.com/zip-rs/zip2/pull/1076))
+- *(write)* prevent duplicate 0x9901 AES extra field in raw_copy_file ([#1078](https://github.com/zip-rs/zip2/pull/1078))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Enable release-plz on backport branches in future ([#1079](https://github.com/zip-rs/zip2/pull/1079))
+
 ## [9.0.4](https://github.com/zip-rs/zip2/compare/v9.0.3...v9.0.4) - 2026-10-16
 
 ### <!-- 1 -->🐛 Bug Fixes
