@@ -38,9 +38,15 @@ the delay before full public disclosure will be determined as follows:
   be extended up to 30 days. This may be extended to 90 days for high-value government and nonprofit targets, when
   truly extraordinary circumstances are delaying the deployment.
 
-## Yanking versions and backporting
+## Backporting
 
-Versions with vulnerabilities will be yanked from crates.io 14 days after the vulnerability is published, if they're
-the latest version of their major version and less than a year old, and otherwise immediately. Backports may
-be available for older major versions, but this is strictly best-effort; all users should update to the latest version
-as soon as possible.
+Backports of security fixes to older major versions are strictly best-effort; all users should update to the latest 
+version as soon as possible.
+
+## No yanked versions
+
+Previous versions of this policy called for yanking affected versions from crates.io. However, this proved to be too
+disruptive in the case of https://github.com/zip-rs/zip2/security/advisories/GHSA-vv5m-jxxh-4627 and
+https://github.com/zip-rs/zip2/security/advisories/GHSA-4v9h-p7m9-rh26 because those vulnerabilities affected a wide range
+of versions, and is not recommended by https://doc.rust-lang.org/cargo/commands/cargo-yank.html. Thus, versions will no 
+longer be yanked based on security vulnerabilities.
