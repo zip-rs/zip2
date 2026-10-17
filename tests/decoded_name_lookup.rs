@@ -11,17 +11,18 @@ const PAYLOAD: &[u8] = b"synthetic-content\n";
 const PASSWORD_LENGTH: usize = 32;
 
 fn fixture_password() -> [u8; PASSWORD_LENGTH] {
-    let mut password = [0; PASSWORD_LENGTH];
     #[cfg(not(target_arch = "wasm32"))]
     {
-        use rand::{RngExt, rng};
-        rng().fill(&mut password);
+        rand::random::<[u8; PASSWORD_LENGTH]>()
     }
     #[cfg(target_arch = "wasm32")]
     {
-        getrandom::fill(&mut password).expect("Failed to generate fixture password");
+        std::array::from_fn(|_| {
+            getrandom::u32()
+                .expect("Failed to generate fixture password")
+                .to_le_bytes()[0]
+        })
     }
-    password
 }
 
 fn archive(
