@@ -5,11 +5,11 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-afl.workspace = true
 zip.workspace = true
 
 [target.'cfg(fuzzing)'.dependencies]
 tikv-jemallocator.workspace = true
+afl.workspace = true
 
 [features]
 zip-default = ["zip/default"]
