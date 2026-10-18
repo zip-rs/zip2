@@ -357,10 +357,8 @@ impl FuzzTestCase<'_, '_> {
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
         for (operation, abort) in self.operations.into_vec().into_iter() {
-            if streamable {
-                if !operation.is_streamable() {
-                    streamable = false;
-                }
+            if streamable && !operation.is_streamable() {
+                streamable = false;
             }
             if let BasicFileOperation::SetArchiveComment(ref comment) = operation.basic && !comment.is_empty() {
                 comment_len = comment.len();
