@@ -654,7 +654,9 @@ impl FuzzTestCase<'_, '_> {
 
 fn main() {
     #[cfg(fuzzing)]
-    unsafe { backtrace_on_stack_overflow::enable() };
+    unsafe {
+        backtrace_on_stack_overflow::enable()
+    };
 
     use std::io::Read;
     let mut v = Vec::new();
