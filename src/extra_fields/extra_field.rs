@@ -239,6 +239,11 @@ impl ExtraField {
 
 impl ZipFileData {
     pub(crate) fn apply_extra_fields(&mut self, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
+        #[cfg(feature = "aes-crypto")]
+        let mut has_aes = false;
+        let mut orig_name_crc = None;
+        let mut orig_comment_crc = None;
+
         for one_extra_field in &self.extra_fields.inner {
             match one_extra_field {
                 // Zip64 extended information extra field
@@ -260,6 +265,12 @@ impl ZipFileData {
                 ExtraField::AeXEncryption(AexEncryption {
                     compression_method, ..
                 }) => {
+                    if has_aes || self.compression_method != crate::CompressionMethod::Aes {
+                        return Err(invalid!(
+                            "AES extra field present without AES compression method (99)"
+                        ));
+                    }
+                    has_aes = true;
                     self.compression_method = *compression_method;
                 }
                 ExtraField::UnicodeComment(unicode) => {
@@ -268,7 +279,9 @@ impl ZipFileData {
                     // If the CRC check fails, this Unicode Comment extra field SHOULD be ignored and
                     // the File Comment field in the header SHOULD be used instead.
                     // Check if the comment is UTF-8
-                    if unicode.is_crc32_valid(self.file_comment.as_bytes())
+                    let crc = *orig_comment_crc
+                        .get_or_insert_with(|| crc32fast::hash(self.file_comment.as_bytes()));
+                    if unicode.crc32 == crc
                         && let Ok(comment) = String::from_utf8(unicode.content.to_vec())
                     {
                         self.file_comment = comment.into_boxed_str();
@@ -280,9 +293,8 @@ impl ZipFileData {
                     // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
                     // If the CRC check fails, this UTF-8 Path Extra Field SHOULD be ignored and
                     // the File Name field in the header SHOULD be used instead.
-                    if unicode.is_crc32_valid(file_name_raw)
-                        && std::str::from_utf8(&unicode.content).is_ok()
-                    {
+                    let crc = *orig_name_crc.get_or_insert_with(|| crc32fast::hash(file_name_raw));
+                    if unicode.crc32 == crc && std::str::from_utf8(&unicode.content).is_ok() {
                         *file_name_raw = unicode.content.to_vec();
                         self.flags |= ZipFlags::LanguageEncoding.as_u16();
                     }

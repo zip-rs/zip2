@@ -22,6 +22,7 @@ pub mod ffi {
 }
 
 // re-export
+pub(crate) use find_central_directory::MagicPositionCache;
 pub(crate) use find_central_directory::find_central_directory_end;
 
 /// The file size at which a ZIP64 record becomes necessary.

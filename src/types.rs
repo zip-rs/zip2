@@ -16,7 +16,8 @@ use crate::format::system::System;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::{SeekableTake, ZipFileReader, make_crypto_reader, make_reader};
-use crate::result::{ZipError, ZipResult};
+use crate::read::{HeaderConsistencyMetadata, HeaderDataDescriptorMetadata};
+use crate::result::{ZipError, ZipResult, invalid};
 use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
 use crate::{CompressionMethod, ExtraField, ZipReadOptions};
@@ -175,9 +176,13 @@ impl ZipFileData {
                 let variable_fields_len =
                     u64::from(block.file_name_length) + u64::from(block.extra_field_length);
                 // Calculate the end of the local header from the fields we just parsed.
-                let data_start = self.header_start
-                    + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
-                    + variable_fields_len;
+                let data_start = self
+                    .header_start
+                    .checked_add((size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64)
+                    .and_then(|v| v.checked_add(variable_fields_len))
+                    .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                        "Local header end offset overflows u64",
+                    )))?;
 
                 // Set the value so we don't have to read it again.
                 match self.data_start.set(data_start) {
@@ -200,6 +205,7 @@ impl ZipFileData {
     ) -> ZipResult<Take<&'a mut R>> {
         // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
         let data_start = self.data_start(reader)?;
+        self.check_data_end(data_start)?;
         reader.seek(SeekFrom::Start(data_start))?;
 
         Ok(reader.take(self.compressed_size))
@@ -211,10 +217,108 @@ impl ZipFileData {
     ) -> ZipResult<SeekableTake<'a, R>> {
         // Parse local header
         let data_start = self.data_start(reader)?;
+        self.check_data_end(data_start)?;
         reader.seek(SeekFrom::Start(data_start))?;
 
         // Explicit Ok and ? are needed to convert io::Error to ZipError
         Ok(SeekableTake::new(reader, self.compressed_size)?)
+    }
+
+    /// Checks that `data_start + compressed_size` fits in u64 (ZIP64 sizes can be any u64).
+    fn check_data_end(&self, data_start: u64) -> ZipResult<u64> {
+        data_start
+            .checked_add(self.compressed_size)
+            .ok_or(invalid!("File data end offset overflows u64"))
+    }
+
+    pub(crate) fn consistency_metadata<'a>(
+        &'a self,
+        name: &'a [u8],
+        is_local: bool,
+    ) -> HeaderConsistencyMetadata<&'a [u8]> {
+        let is_using_data_descriptor = self.is_using_data_descriptor();
+        let (upath, upath_crc32) = crate::read::get_upath(&self.extra_fields);
+        // Only the flag bits that change how the data is decoded.
+        let decoder_flags = if self.compression_method == CompressionMethod::IMPLODE {
+            self.flags.as_u16()
+                & (ZipFlags::CompressionSetting.as_u16() | ZipFlags::CompressionSetting2.as_u16())
+        } else {
+            0
+        };
+        HeaderConsistencyMetadata {
+            name,
+            upath,
+            upath_crc32,
+            compression_method: self.compression_method.serialize_to_u16(),
+            is_encrypted: self.is_encrypted(),
+            is_using_data_descriptor,
+            decoder_flags,
+            last_modified_time: self.last_modified_time,
+            data: HeaderDataDescriptorMetadata {
+                crc32: self.crc32,
+                compressed_size: self.compressed_size,
+                uncompressed_size: self.uncompressed_size,
+                is_pending_data_descriptor: is_local && is_using_data_descriptor,
+            },
+            #[cfg(feature = "aes-crypto")]
+            aes: self.extra_fields.inner.iter().rev().find_map(|f| match f {
+                ExtraField::AeXEncryption(aes) => Some(*aes),
+                _ => None,
+            }),
+        }
+    }
+
+    /// Validates that the local file header matches this central directory entry.
+    pub(crate) fn validate_header_consistency<R: Read + Seek + ?Sized>(
+        &self,
+        reader: &mut R,
+        expected_name: &[u8],
+    ) -> ZipResult<()> {
+        let current_pos = reader.stream_position()?;
+        reader.seek(SeekFrom::Start(self.header_start))?;
+
+        let block = match ZipLocalEntryBlock::parse(reader) {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = reader.seek(SeekFrom::Start(current_pos));
+                return Err(e);
+            }
+        };
+
+        let mut local_name = vec![0u8; block.file_name_length as usize];
+        if let Err(e) = reader.read_exact(&mut local_name) {
+            let _ = reader.seek(SeekFrom::Start(current_pos));
+            return Err(e.into());
+        }
+
+        let mut local_extra = vec![0u8; block.extra_field_length as usize];
+        if let Err(e) = reader.read_exact(&mut local_extra) {
+            let _ = reader.seek(SeekFrom::Start(current_pos));
+            return Err(e.into());
+        }
+
+        // Restore reader position
+        reader.seek(SeekFrom::Start(current_pos))?;
+
+        let variable_fields_len =
+            u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+        let data_start = self
+            .header_start
+            .checked_add((size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64)
+            .and_then(|v| v.checked_add(variable_fields_len))
+            .ok_or(ZipError::InvalidArchive(Cow::Borrowed(
+                "Local header end offset overflows u64",
+            )))?;
+        let _ = self.data_start.set(data_start);
+
+        let local_extra_fields = ExtraFields::parse(&local_extra, &block, true)?;
+        let mut local_data = Self::from_local_block(block, local_extra_fields)?;
+        local_data.apply_extra_fields(&mut local_name)?;
+
+        let local_meta = local_data.consistency_metadata(&local_name, true);
+        let central_meta = self.consistency_metadata(expected_name, false);
+
+        local_meta.validate_matches(&central_meta)
     }
 
     /// Check if the file is a directory based on the file name.

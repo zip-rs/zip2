@@ -21,6 +21,13 @@ pub(crate) struct SeekableTake<'a, R: ?Sized> {
 impl<'a, R: Seek + ?Sized> SeekableTake<'a, R> {
     pub fn new(inner: &'a mut R, length: u64) -> io::Result<Self> {
         let inner_starting_offset = inner.stream_position()?;
+        // Every inner offset `seek` computes lies in `inner_starting_offset..=end`.
+        if inner_starting_offset.checked_add(length).is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "end of seekable range overflows u64",
+            ));
+        }
         Ok(Self {
             inner,
             inner_starting_offset,
@@ -44,10 +51,10 @@ impl<R: Seek + ?Sized> Seek for SeekableTake<'_, R> {
             )),
             Some(offset) => {
                 let clamped_offset = std::cmp::min(self.length, offset);
-                let new_inner_offset = self
-                    .inner
+                // `new` checked that `inner_starting_offset + length` fits.
+                self.inner
                     .seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
-                self.current_offset = new_inner_offset - self.inner_starting_offset;
+                self.current_offset = clamped_offset;
                 Ok(self.current_offset)
             }
         }
@@ -58,7 +65,7 @@ impl<R: Read + ?Sized> Read for SeekableTake<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let written = self
             .inner
-            .take(self.length - self.current_offset)
+            .take(self.length.saturating_sub(self.current_offset))
             .read(buf)?;
         self.current_offset += written as u64;
         Ok(written)

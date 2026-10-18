@@ -34,6 +34,12 @@ pub enum SymlinkExtractAction {
     #[cfg(any(unix, windows))]
     ExtractInFolder,
     /// Extract symlinks with no restrictions.
+    ///
+    /// On Windows, creating a symlink requires that we know whether the target is a file or directory.
+    /// To determine that, this option will open the file metadata of the target path, which will
+    /// cause NTLMv2 authentication to be sent if the target is on an SMB network share. This may be a security risk,
+    /// because it allows relay attacks and offline cracking. WebDAV is also vulnerable, but only when a file
+    /// host in the Intranet Zone is already compromised.
     #[cfg(any(unix, windows))]
     ExtractNoRestrictions,
 }
@@ -175,15 +181,22 @@ pub(crate) fn make_symlink<T>(
             let abs_to_canonicalize = if target_path.is_absolute() {
                 target_path
             } else {
-                &base.join(target_path)
+                &start.join(target_path)
             };
-            let canonical = if let Ok(p) = std::fs::canonicalize(abs_to_canonicalize) {
-                p
-            } else {
-                abs_to_canonicalize.to_path_buf()
-            };
-            if !canonical.starts_with(base) {
-                return Err(invalid!("Path escapes the destination directory"));
+            match std::fs::canonicalize(abs_to_canonicalize) {
+                Ok(canonical) => {
+                    if !canonical.starts_with(base) {
+                        return Err(invalid!("Path escapes the destination directory"));
+                    }
+                }
+                Err(_) => {
+                    crate::path::resolve_enclosed(
+                        base,
+                        start,
+                        rest.components().map(|c| c.as_os_str().to_os_string()),
+                        false,
+                    )?;
+                }
             }
         }
     } else {
@@ -249,7 +262,8 @@ pub(crate) fn set_permissions_no_follow_symlink(
             use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
             use std::os::unix::fs::PermissionsExt;
 
-            let mode = Mode::from_bits_truncate(mode.mode() as u16);
+            // `mode_t` is `u16` on macOS, FreeBSD and DragonFly, but `u32` on NetBSD and OpenBSD.
+            let mode = Mode::from_bits_truncate(mode.mode() as nix::libc::mode_t);
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
             fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink)?;
@@ -261,21 +275,30 @@ pub(crate) fn set_permissions_no_follow_symlink(
 }
 
 /// Store all entries which specify a numeric "mode" which is familiar to POSIX operating systems.
-#[cfg(unix)]
 #[derive(Default, Debug)]
 struct UnixFileModes {
+    #[cfg(unix)]
     map: std::collections::BTreeMap<std::path::PathBuf, u32>,
+    #[cfg(not(unix))]
+    read_only_set: std::collections::BTreeSet<std::path::PathBuf>,
 }
 
-#[cfg(unix)]
 impl UnixFileModes {
     pub fn add_mode(&mut self, path: std::path::PathBuf, mode: u32) {
         // We don't print a warning or consider it remotely out of the ordinary to receive two
         // separate modes for the same path (e.g. entries named `a` and `./a`): just take the
         // later one, as the later file's contents are what's on disk.
+        #[cfg(unix)]
         self.map.insert(path, mode);
+        #[cfg(not(unix))]
+        if mode & 0o222 == 0 {
+            self.read_only_set.insert(path);
+        } else {
+            self.read_only_set.remove(&path);
+        }
     }
 
+    #[cfg(unix)]
     // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
     pub fn all_perms_with_children_first(
         self,
@@ -285,6 +308,12 @@ impl UnixFileModes {
             .into_iter()
             .rev()
             .map(|(p, m)| (p, std::fs::Permissions::from_mode(m)))
+    }
+
+    #[cfg(not(unix))]
+    // Child nodes will be sorted later lexicographically, so reversing the order puts them first.
+    pub fn all_read_only_with_children_first(self) -> impl IntoIterator<Item = std::path::PathBuf> {
+        self.read_only_set.into_iter().rev()
     }
 }
 
@@ -424,7 +453,6 @@ impl<R: Read + Seek> ZipArchive<R> {
             })
             .transpose()?;
 
-        #[cfg(unix)]
         let mut files_by_unix_mode = UnixFileModes::default();
 
         for i in 0..self.len() {
@@ -493,26 +521,33 @@ impl<R: Read + Seek> ZipArchive<R> {
                         make_symlink_impl(&outpath, target_str, &self.shared.files)?;
                     }
                 }
-                continue;
             } else if file.is_dir() {
                 make_writable_dir_all(&outpath)?;
-                continue;
-            }
-            let mut outfile = fs::File::create(&outpath)?;
-            io::copy(&mut file, &mut outfile)?;
-
-            // Check for real permissions, which we'll set in a second pass.
-            #[cfg(unix)]
-            if let Some(mode) = file.unix_mode() {
-                files_by_unix_mode.add_mode(outpath, mode);
-            }
-
-            // Set original timestamp.
-            #[cfg(feature = "chrono")]
-            if let Some(last_modified) = file.last_modified()
-                && let Some(t) = last_modified.datetime_to_systemtime()
-            {
-                outfile.set_modified(t)?;
+                // Check for real permissions, which we'll set in a second pass.
+                if let Some(mode) = file.unix_mode() {
+                    files_by_unix_mode.add_mode(outpath, mode);
+                }
+            } else {
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
+                // Set original timestamp.
+                #[cfg(feature = "chrono")]
+                if let Some(last_modified) = file.last_modified()
+                    && let Some(t) = last_modified.datetime_to_systemtime()
+                {
+                    outfile.set_modified(t)?;
+                }
+                #[cfg(not(unix))]
+                if file.is_read_only() {
+                    let mut permissions = outfile.metadata()?.permissions();
+                    permissions.set_readonly(true);
+                    outfile.set_permissions(permissions)?;
+                }
+                #[cfg(unix)]
+                if let Some(mode) = file.unix_mode() {
+                    use std::os::unix::fs::PermissionsExt;
+                    outfile.set_permissions(fs::Permissions::from_mode(mode))?;
+                }
             }
         }
 
@@ -520,6 +555,15 @@ impl<R: Read + Seek> ZipArchive<R> {
         #[cfg(unix)]
         for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
             set_permissions_no_follow_symlink(&path, perms)?;
+        }
+        #[cfg(not(unix))]
+        for path in files_by_unix_mode.all_read_only_with_children_first() {
+            let metadata = fs::symlink_metadata(&path)?;
+            if metadata.is_dir() {
+                let mut permissions = metadata.permissions();
+                permissions.set_readonly(true);
+                fs::set_permissions(path, permissions)?;
+            }
         }
 
         Ok(())

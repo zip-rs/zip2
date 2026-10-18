@@ -209,7 +209,7 @@ fn raw_copy_from_aes_zip() {
         assert_eq!(s_comp, d_comp, "compression method differs for {name}");
 
         // For files, verify content bytes match. For encrypted entries, use the shared fixture password
-        if !is_dir {
+        if !is_dir && !cfg!(miri) {
             let mut s_buf = Vec::new();
             let mut d_buf = Vec::new();
             if s_encrypted {
@@ -661,24 +661,24 @@ mod early_eof {
 
     #[derive(Clone, Copy, Debug)]
     enum How {
-        ReadToEnd,
-        ReadToString,
-        ReadLoop,
+        ToEnd,
+        ToString,
+        Loop,
     }
 
     fn read_all(r: &mut impl Read, how: How) -> io::Result<Vec<u8>> {
         match how {
-            How::ReadToEnd => {
+            How::ToEnd => {
                 let mut v = Vec::new();
                 r.read_to_end(&mut v)?;
                 Ok(v)
             }
-            How::ReadToString => {
+            How::ToString => {
                 let mut s = String::new();
                 r.read_to_string(&mut s)?;
                 Ok(s.into_bytes())
             }
-            How::ReadLoop => {
+            How::Loop => {
                 // small buffer to exercise many `read` calls (like io::copy)
                 let mut v = Vec::new();
                 let mut buf = [0u8; 100];
@@ -693,7 +693,7 @@ mod early_eof {
         }
     }
 
-    const ALL: [How; 3] = [How::ReadToEnd, How::ReadToString, How::ReadLoop];
+    const ALL: [How; 3] = [How::ToEnd, How::ToString, How::Loop];
 
     #[test]
     fn forged_deflate_stream_is_rejected() {
@@ -727,7 +727,7 @@ mod early_eof {
             let mut f = zip::read::read_zipfile_from_stream_with_options(&mut cur, opts)
                 .unwrap()
                 .unwrap();
-            let e = read_all(&mut f, How::ReadToEnd)
+            let e = read_all(&mut f, How::ToEnd)
                 .map(|v| v.len())
                 .expect_err("forged entry accepted");
             assert_auth_error(&e);
@@ -771,7 +771,7 @@ mod early_eof {
         for method in methods {
             for vendor in [1u16, 2] {
                 for p in &contents {
-                    for how in [How::ReadToEnd, How::ReadLoop] {
+                    for how in [How::ToEnd, How::Loop] {
                         let mut b = aes_archive(p, method);
                         set_aes(&mut b, Some(vendor), None, p);
                         let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
@@ -807,7 +807,7 @@ mod early_eof {
                 let mut f = zip::read::read_zipfile_from_stream_with_options(&mut cur, opts)
                     .unwrap()
                     .unwrap();
-                assert_eq!(&read_all(&mut f, How::ReadToEnd).unwrap(), expected);
+                assert_eq!(&read_all(&mut f, How::ToEnd).unwrap(), expected);
             }
         }
     }
@@ -827,7 +827,45 @@ mod early_eof {
             drop(f);
             // a fresh handle reads the whole entry fine
             let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
-            assert_eq!(read_all(&mut f, How::ReadToEnd).unwrap(), p);
+            assert_eq!(read_all(&mut f, How::ToEnd).unwrap(), p);
+        }
+    }
+}
+
+/// Verifies that AES password verification executes the exact same number of instructions
+/// regardless of whether byte 0 or byte 1 differs (mitigating timing side-channels).
+#[cfg(not(miri))]
+#[test]
+fn test_aes_password_verification_instruction_count_is_constant() {
+    #[cfg(target_os = "linux")]
+    {
+        use count_instructions::count_instructions;
+
+        let target = [0x5A, 0xA5];
+        let mismatch_byte_0 = [0x00, 0xA5];
+        let mismatch_byte_1 = [0x5A, 0x00];
+
+        #[inline(never)]
+        fn verify(a: &[u8; 2], b: &[u8]) -> bool {
+            constant_time_eq::constant_time_eq(a, b)
+        }
+
+        let mut count_0 = 0;
+        let res_0 = count_instructions(|| verify(&target, &mismatch_byte_0), |_| count_0 += 1);
+
+        let mut count_1 = 0;
+        let res_1 = count_instructions(|| verify(&target, &mismatch_byte_1), |_| count_1 += 1);
+
+        match (res_0, res_1) {
+            (Ok(_), Ok(_)) => {
+                assert_eq!(
+                    count_0, count_1,
+                    "instruction counts must be equal: byte 0 mismatch ({count_0}) vs byte 1 mismatch ({count_1})"
+                );
+            }
+            (Err(e0), _) if e0.kind() == std::io::ErrorKind::Unsupported => {}
+            (Err(e0), _) => panic!("count_instructions failed: {e0}"),
+            (_, Err(e1)) => panic!("count_instructions failed: {e1}"),
         }
     }
 }

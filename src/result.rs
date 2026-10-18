@@ -47,6 +47,22 @@ impl ZipError {
     pub const PASSWORD_REQUIRED: &'static str = "Password required to decrypt file";
 }
 
+// Can't be derived because std::io::Error doesn't implement Clone
+impl Clone for ZipError {
+    fn clone(&self) -> Self {
+        match self {
+            ZipError::Io(io_err) => ZipError::Io(io::Error::new(io_err.kind(), io_err.to_string())),
+            ZipError::InvalidArchive(msg) => ZipError::InvalidArchive(msg.clone()),
+            ZipError::UnsupportedArchive(msg) => ZipError::UnsupportedArchive(msg),
+            ZipError::FileNotFound => ZipError::FileNotFound,
+            ZipError::InvalidPassword => ZipError::InvalidPassword,
+            ZipError::CompressionMethodNotSupported(id) => {
+                ZipError::CompressionMethodNotSupported(*id)
+            }
+        }
+    }
+}
+
 impl Display for ZipError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {

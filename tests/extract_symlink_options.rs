@@ -242,7 +242,7 @@ fn test_extract_options_recursive_in_folder() {
     #[cfg(windows)]
     {
         std::os::windows::fs::symlink_file(
-            &final_dest.join("file_test"),
+            final_dest.join("file_test"),
             dest.path().join("file_test"),
         )
         .unwrap();

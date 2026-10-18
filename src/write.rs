@@ -1125,11 +1125,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             one_extra.write(&mut buff, false)?;
             let buff = buff.into_inner();
             if buff.len() >= 4 {
-                options.add_extra_field(
-                    u16::from_le_bytes([buff[0], buff[1]]),
-                    &buff[4..],
-                    false,
-                )?;
+                let header_id = u16::from_le_bytes([buff[0], buff[1]]);
+                #[cfg(feature = "aes-crypto")]
+                if header_id == 0x9901 {
+                    continue;
+                }
+                options.add_extra_field(header_id, &buff[4..], false)?;
             }
         }
         let file_name = name.to_string();
@@ -1431,7 +1432,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let (central_start, is_zip64) = self.write_central_and_footer()?;
         let writer = self.inner.try_inner_mut()?;
         let footer_end = writer.stream_position()?;
-        let archive_end = writer.seek(SeekFrom::End(0))?;
+        let archive_end = writer.seek(SeekFrom::End(-(self.comment.len() as i64)))?;
         if footer_end < archive_end {
             // Data from an aborted file is past the end of the footer.
 
@@ -1540,7 +1541,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             central_directory_size,
             central_directory_offset: central_start.min(ZIP64_BYTES_THR) as u32,
         };
-
         footer.write(writer)?;
         Ok((central_start, is64))
     }

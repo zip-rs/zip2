@@ -1,7 +1,6 @@
 name: CI
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: ci-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
@@ -24,20 +23,21 @@ env:
 
 jobs:
   miri:
+    needs:
+    - cargo_semver
+    - style_and_docs
+    - cargo_fmt
+    timeout-minutes: 20
     strategy:
       matrix:
-        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag:
-          - "--all-features"
           - "--no-default-features"
-          - ""
-          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-          - "--no-default-features --features zip/deflate-zopfli"
-    name: "Miri ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
+          - "--no-default-features --features zip/_miri_compatible_features"
+    name: "Miri ${{ matrix.feature_flag }} Cargo.toml"
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -54,26 +54,14 @@ jobs:
       - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
       - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-      - run: cargo +nightly miri test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --bins --examples
-  endianness_miri:
-    name: "Test endianness platform"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
-      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
-      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-      - run: cargo +nightly miri test --target aarch64_be-unknown-linux-gnu --all --no-default-features
+      - run: cargo install --locked cargo-nextest
+      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
   check_minimal_versions:
+    needs:
+      - cargo_semver
+      - style_and_docs
+      - cargo_fmt
+    timeout-minutes: 15
     strategy:
       matrix:
         # Only check minimal versions for the released library.
@@ -82,7 +70,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -90,24 +78,27 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
-
       - name: resolve minimal versions
         run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
         run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+      - run: cargo install --locked cargo-nextest
       - name: test
-        run: cargo +nightly test --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
 
   style_and_docs:
+    timeout-minutes: 10
     strategy:
       matrix:
         workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag: ["--all-features", "--no-default-features", ""]
+    permissions:
+      security-events: write # for SARIF upload
     name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -120,15 +111,16 @@ jobs:
       - name: Run clippy - inside bash for pipefail
         shell: bash
         # allow warnings but not errors
-        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        run: cargo +nightly clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload analysis results to GitHub
         if: always()
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
       - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
   dependency_review:
+    timeout-minutes: 20
     name: 'Dependency Review'
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     permissions:
@@ -136,7 +128,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -153,6 +145,7 @@ jobs:
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
   build_and_test:
+    timeout-minutes: 25
     needs:
       - cargo_fmt
       - style_and_docs
@@ -160,12 +153,10 @@ jobs:
       - check_minimal_versions
       - cargo_semver
       - dependency_review
-      - endianness_miri
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os: [windows-latest, macOS-latest, ubuntu-latest]
         rustalias: [stable, nightly, msrv]
-        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
         feature_flag:
           - "--all-features"
           - "--no-default-features"
@@ -175,18 +166,18 @@ jobs:
         include:
           - rustalias: stable
             rust: stable
+            nextest_flag: ""
           - rustalias: msrv
             rust: "1.88.0"
+            nextest_flag: "--version 0.9.114"
           - rustalias: nightly
             rust: nightly
-        exclude:
-          - rustalias: msrv
-            workspace: "fuzz/Cargo.toml"
-    name: "Build and test ${{ matrix.feature_flag }} ${{ matrix.workspace }}: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+            nextest_flag: ""
+    name: "Build and test ${{ matrix.feature_flag }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -196,10 +187,48 @@ jobs:
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - name: Check that the benches can be built
         run: cargo build --benches
-      - run: cargo check --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }} --bins --examples
-      - run: cargo test --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --all ${{ matrix.feature_flag }}
+      - run: cargo check --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
+      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }}
+  check_fuzz:
+    timeout-minutes: 10
+    needs:
+      - cargo_fmt
+      - style_and_docs
+      - cargo_semver
+      - dependency_review
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        rustalias: [stable, nightly]
+        feature_flag:
+          - "--all-features"
+          - "--no-default-features"
+          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
+          - "--no-default-features --features zip/deflate-zopfli"
+          - ""
+        include:
+          - rustalias: stable
+            rust: stable
+          - rustalias: nightly
+            rust: nightly
+    name: "Build and test ${{ matrix.feature_flag }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: cargo check --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
+      - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
   wasm:
-    needs: build_and_test
+    timeout-minutes: 10
+    needs:
+      - build_and_test
+      - check_fuzz
     strategy:
       matrix:
         browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
@@ -217,7 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
       - name: Conditionally set env
@@ -235,6 +264,7 @@ jobs:
       - run: cargo install wasm-pack --locked
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
   cargo_semver:
+    timeout-minutes: 10
     strategy:
       matrix:
         # Only do semver checks on the released library.
@@ -245,7 +275,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -258,9 +288,10 @@ jobs:
           feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -281,9 +312,10 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -301,6 +333,8 @@ jobs:
       - name: compile fuzz
         run: cargo afl build --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
+        env:
+          AFL_BENCH_UNTIL_CRASH: 1
         timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - name: Minimize corpus
@@ -316,20 +350,20 @@ jobs:
           find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_read_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_read_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_read_coverage
           path: map
@@ -339,9 +373,10 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -359,6 +394,8 @@ jobs:
       - name: compile fuzz
         run: cargo afl build -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
+        env:
+          AFL_BENCH_UNTIL_CRASH: 1
         timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
       - name: Report coverage
@@ -372,14 +409,14 @@ jobs:
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_read_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_read_coverage_no_features
           path: map
@@ -389,9 +426,10 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -424,20 +462,20 @@ jobs:
           find out_cmin -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload updated corpus
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_write_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_write_bad_inputs
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_write_coverage
           path: map
@@ -447,9 +485,10 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -480,14 +519,14 @@ jobs:
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_write_bad_inputs_no_features
           path: out/default/crashes/*
           if-no-files-found: ignore
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_write_coverage_no_features
           path: map

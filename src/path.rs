@@ -13,6 +13,41 @@ use crate::{
     result::{ZipResult, invalid},
 };
 
+/// Parse an entry name with Windows rules on every host. A drive prefix at the start of a
+/// later component (`c:x` in `/c:x`) is split off as a [`Utf8WindowsComponent::Prefix`], since
+/// on Windows pushing `c:x` replaces the path.
+fn components(name: &str) -> impl Iterator<Item = Utf8WindowsComponent<'_>> {
+    Utf8WindowsPath::new(name)
+        .components()
+        .flat_map(|component| match component {
+            Utf8WindowsComponent::Normal(s) => split_drive_prefix(s),
+            component => [Some(component), None],
+        })
+        .flatten()
+}
+
+/// Split drive prefixes off one component: `c:x` becomes `Prefix(c:)` and `Normal("x")`.
+fn split_drive_prefix(component: &str) -> [Option<Utf8WindowsComponent<'_>>; 2] {
+    let mut rest = component;
+    // `c:d:x` is `c:` followed by `d:x`, which is a drive prefix again.
+    while let [drive, b':', ..] = rest.as_bytes()
+        && drive.is_ascii_alphabetic()
+    {
+        rest = &rest[2..];
+    }
+    // `c:d:` parses as `Prefix(c:)` then `Normal("d:")`; one `Prefix` is enough.
+    let prefix = Utf8WindowsPath::new(&component[..component.len() - rest.len()])
+        .components()
+        .next();
+    let rest = match rest {
+        "" => None,
+        "." => Some(Utf8WindowsComponent::CurDir),
+        ".." => Some(Utf8WindowsComponent::ParentDir),
+        rest => Some(Utf8WindowsComponent::Normal(rest)),
+    };
+    [prefix, rest]
+}
+
 /// Simplify an archive entry name into components to be resolved *under*
 /// the destination directory.
 ///
@@ -22,7 +57,7 @@ use crate::{
 pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
     let mut out = Vec::new();
     let input_str = input.to_str()?;
-    for component in Utf8WindowsPath::new(input_str).components() {
+    for component in components(input_str) {
         match component {
             // Skip prefix and root directory components instead of rejecting the entire path
             // This allows extraction of ZIP files with absolute paths, similar to other ZIP tools
@@ -30,7 +65,14 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
             Utf8WindowsComponent::ParentDir => {
                 out.pop()?;
             }
-            Utf8WindowsComponent::Normal(s) => out.push(OsStr::new(s)),
+            Utf8WindowsComponent::Normal(s) => {
+                // As in `enclosed_name`: a separator inside one component means the name is
+                // split differently when it is written.
+                if s.contains(['/', '\\']) {
+                    return None;
+                }
+                out.push(OsStr::new(s));
+            }
             Utf8WindowsComponent::CurDir => (),
         }
     }
@@ -38,10 +80,17 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
 }
 
 pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
-    Utf8WindowsPath::new(no_null_filename)
-        .components()
+    components(no_null_filename)
         .filter_map(|component| match component {
             Utf8WindowsComponent::Normal(s) => Some(s),
+            _ => None,
+        })
+        // In verbatim paths `/` isn't a separator, so a component can still contain `..` or a
+        // drive prefix.
+        .flat_map(|s| s.split(['/', '\\']))
+        .flat_map(split_drive_prefix)
+        .filter_map(|component| match component {
+            Some(Utf8WindowsComponent::Normal(s)) => Some(s),
             _ => None,
         })
         .collect()
@@ -50,7 +99,7 @@ pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
 pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
     let mut depth = 0usize;
     let mut out_path = PathBuf::new();
-    for component in Utf8WindowsPath::new(file_name).components() {
+    for component in components(file_name) {
         match component {
             Utf8WindowsComponent::Prefix(_) | Utf8WindowsComponent::RootDir => {
                 if depth > 0 {
@@ -62,6 +111,12 @@ pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
                 out_path.pop();
             }
             Utf8WindowsComponent::Normal(s) => {
+                // Inside a verbatim (`\\?\`) path `/` is not a separator, so `../b` comes back
+                // as one component; joined onto an ordinary path it is split again. The check
+                // here and the eventual write must agree on where a component ends.
+                if s.contains(['/', '\\']) {
+                    return None;
+                }
                 depth += 1;
                 out_path.push(s);
             }
@@ -174,11 +229,21 @@ pub(crate) fn resolve_enclosed(
     let mut queue: VecDeque<OsString> = components.into_iter().collect();
     let mut hops = 0usize;
 
+    // Set once a component does not exist (and is not created). A later entry may create it as a
+    // symlink, which would change the meaning of any subsequent `..` to the unknown
+    // target's parent rather than the symlink's parent.
+    let mut missing = false;
+
     while let Some(component) = queue.pop_front() {
         if component.is_empty() || component == OsStr::new(".") {
             continue;
         }
         if component == OsStr::new("..") {
+            if missing {
+                return Err(invalid!(
+                    "Path may escape the destination directory through a future symlink - '..' after a missing component"
+                ));
+            }
             // Never walk above `base`: `..` is rejected once we are back at `base`.
             if current == base {
                 return Err(invalid!(
@@ -190,6 +255,12 @@ pub(crate) fn resolve_enclosed(
         }
 
         current.push(&component);
+        // Pushing a prefixed component replaces `current` on Windows; check before creating dirs.
+        if !current.starts_with(base) {
+            return Err(invalid!(
+                "Path escapes the destination directory - component is not a plain name"
+            ));
+        }
 
         let meta = match fs::symlink_metadata(&current) {
             Ok(meta) => meta,
@@ -198,6 +269,8 @@ pub(crate) fn resolve_enclosed(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 if create_dirs && !queue.is_empty() {
                     make_writable_dir_all(&current)?;
+                } else {
+                    missing = true;
                 }
                 continue;
             }
@@ -252,8 +325,30 @@ pub(crate) fn resolve_enclosed(
 
 #[cfg(test)]
 mod tests {
-    use super::{enclosed_name, simplified_components};
-    use std::path::{Path, PathBuf};
+    use super::{enclosed_name, file_name_sanitized, simplified_components};
+    use std::ffi::OsStr;
+    use std::path::{Component, Path, PathBuf};
+
+    #[test]
+    fn test_file_name_sanitized_splits_verbatim_component() {
+        for (name, expected) in [
+            (r"\\?\C:\../b", "b"),
+            (r"\\?\C:\a/../../b", "a/b"),
+            (r"\\?\C:\a\..\..\b", "a/b"),
+            (r"\\?\C:\a/./b", "a/b"),
+            ("../../b", "b"),
+            ("a/b", "a/b"),
+        ] {
+            let sanitized = file_name_sanitized(name);
+            assert_eq!(sanitized, PathBuf::from(expected), "{name}");
+            assert!(
+                sanitized
+                    .components()
+                    .all(|c| matches!(c, Component::Normal(_))),
+                "{name} -> {sanitized:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_simplified_components_relative_path() {
@@ -370,6 +465,25 @@ mod tests {
         assert_eq!(enclosed_name(r"\\?\C:\..\..\etc\passwd"), None);
     }
 
+    /// Inside a verbatim path `/` is not a separator, so the parser hands `../b` back as one
+    /// `Normal` component. Once the result is joined onto an ordinary destination path, `/` is
+    /// a separator again, so a caller would write one level above the destination. A name
+    /// whose component holds a separator is not enclosed, as `\\?\C:\..\b` and `../b` are not.
+    #[test]
+    fn test_enclosed_name_verbatim_prefix_with_a_separator_inside_a_component() {
+        for name in [
+            r"\\?\C:\../b",
+            r"\\?\C:\a/../../b",
+            r"\\?\UNC\server\share\../b",
+            r"\\?\C:\a\..\../b",
+            r"\\?\C:\..\b",
+            "../b",
+        ] {
+            assert_eq!(enclosed_name(name), None, "{name}");
+            assert_eq!(simplified_components(Path::new(name)), None, "{name}");
+        }
+    }
+
     /// `base` is canonicalized, so on Windows it is spelled in the verbatim form. A
     /// target coming from an archive or from `read_link` usually is not, and must still
     /// be recognized as being inside `base`.
@@ -420,6 +534,104 @@ mod tests {
                 "{path} should not be inside {}",
                 base.display()
             );
+        }
+    }
+
+    /// Each component a name is reduced to must parse as one normal component under Windows rules.
+    fn assert_each_is_one_windows_normal_component<'a>(
+        name: &str,
+        components: impl IntoIterator<Item = &'a OsStr>,
+    ) {
+        use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
+        for component in components {
+            let component = component.to_str().unwrap();
+            let parsed: Vec<_> = Utf8WindowsPath::new(component).components().collect();
+            assert_eq!(
+                parsed,
+                [Utf8WindowsComponent::Normal(component)],
+                "{name:?} yields {component:?}, which Windows parses as {parsed:?}"
+            );
+        }
+    }
+
+    /// On Windows `c:x` is drive-relative, so `dest.join(enclosed_name)` must never see one.
+    const NAMES_WITH_A_DRIVE_PREFIX_INSIDE: &[&str] = &[
+        "/c:x",
+        r"\c:x",
+        "./c:x",
+        "a/../c:x",
+        "/c:",
+        "/c:x/y",
+        "b/c:x",
+        "b/c:",
+        "b/C:/y",
+        "/c:d:x",
+        "/c:.",
+        "/c:..",
+        "b/c:..",
+        r"\\?\C:\b\c:x",
+        r"\\?\C:\a/c:x",
+        r"\\?\C:\a/c:../b",
+    ];
+
+    #[test]
+    fn test_enclosed_name_drive_prefix_inside_the_name() {
+        for name in NAMES_WITH_A_DRIVE_PREFIX_INSIDE {
+            if let Some(path) = enclosed_name(name) {
+                assert_each_is_one_windows_normal_component(name, path.iter());
+            }
+        }
+        // A leading drive prefix is dropped, as for `c:x`.
+        assert_eq!(enclosed_name("c:x"), Some(PathBuf::from("x")));
+        assert_eq!(enclosed_name("/c:x"), Some(PathBuf::from("x")));
+        assert_eq!(enclosed_name("./c:x"), Some(PathBuf::from("x")));
+        assert_eq!(enclosed_name("a/../c:x"), Some(PathBuf::from("x")));
+        assert_eq!(
+            enclosed_name("/c:x/y"),
+            Some(PathBuf::from_iter(["x", "y"]))
+        );
+        assert_eq!(enclosed_name("/c:"), Some(PathBuf::new()));
+        // After a normal component it's rejected, like a `Prefix` or `RootDir` there.
+        assert_eq!(enclosed_name("b/c:x"), None);
+        assert_eq!(enclosed_name("b/C:/y"), None);
+        assert_eq!(enclosed_name("/c:.."), None);
+    }
+
+    #[test]
+    fn test_simplified_components_drive_prefix_inside_the_name() {
+        for name in NAMES_WITH_A_DRIVE_PREFIX_INSIDE {
+            if let Some(components) = simplified_components(Path::new(name)) {
+                assert_each_is_one_windows_normal_component(name, components);
+            }
+        }
+        // Dropped wherever it is, as a leading prefix or root already is.
+        assert_eq!(simplified_components(Path::new("/c:x")).unwrap(), ["x"]);
+        assert_eq!(
+            simplified_components(Path::new("b/c:x")).unwrap(),
+            ["b", "x"]
+        );
+        assert_eq!(simplified_components(Path::new("/c:d:x")).unwrap(), ["x"]);
+        assert_eq!(simplified_components(Path::new("b/c:..")).unwrap(), [""; 0]);
+        assert_eq!(simplified_components(Path::new("/c:..")), None);
+    }
+
+    #[test]
+    fn test_file_name_sanitized_drive_prefix_inside_the_name() {
+        use super::file_name_sanitized;
+        for name in NAMES_WITH_A_DRIVE_PREFIX_INSIDE {
+            let path = file_name_sanitized(name);
+            assert_each_is_one_windows_normal_component(name, path.iter());
+        }
+        assert_eq!(file_name_sanitized("b/c:x"), PathBuf::from_iter(["b", "x"]));
+    }
+
+    /// Only a letter and `:` at the start of a component is a drive; other colons are kept.
+    #[test]
+    fn test_colon_that_is_not_a_drive_prefix_is_kept() {
+        for name in ["foo:bar", "b/ab:c", "b/1:x", "b/:x", "b/a.b:c:d"] {
+            let enclosed = enclosed_name(name).unwrap();
+            assert_eq!(enclosed, Path::new(name), "{name}");
+            assert_each_is_one_windows_normal_component(name, enclosed.iter());
         }
     }
 

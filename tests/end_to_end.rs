@@ -372,11 +372,16 @@ fn check_archive_file_contents<R: Read + Seek>(
     assert_eq!(file_contents.as_bytes(), expected);
 }
 
+#[cfg(not(miri))]
 const LOREM_IPSUM: &[u8] = br#"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
 molestie. Proin blandit ornare dui, a tempor nisl accumsan in. Praesent a consequat felis. Morbi metus diam, auctor in auctor vel, feugiat id odio. Curabitur ex ex,
 dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim vehicula, porta tristique augue tincidunt. Vivamus ut gravida est. Sed pellentesque, dolor
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
 inceptos himenaeos. Maecenas feugiat velit in ex ultrices scelerisque id id neque.
+"#;
+
+#[cfg(miri)]
+const LOREM_IPSUM: &[u8] = br#"Lorem ipsum dolor sit amet.
 "#;
 
 const EXTRA_DATA: &[u8] = b"Extra Data";
@@ -424,9 +429,15 @@ fn test_long_comment_is_cut() {
         .compression_method(CompressionMethod::Stored)
         .large_file(true);
     let mut bytes = vec![0u8; comment_length];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| std::io::Error::other(format!("getrandom error: {}", e)))
-        .unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rand::{RngExt, rng};
+        rng().fill(&mut bytes);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+    }
 
     let mut writer = ZipWriter::new(Cursor::new(data));
     let res = writer.set_raw_comment(bytes.clone().into_boxed_slice());

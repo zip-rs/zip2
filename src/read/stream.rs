@@ -7,11 +7,14 @@ use crate::format::magic::Magic;
 use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
 use crate::read::extract::{make_symlink, make_symlink_as_file_utf8};
 use crate::read::{
-    SymlinkExtractAction, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
+    HeaderConsistencyMetadata, SymlinkExtractAction, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
     central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, invalid};
 
+use crate::read::stream::ReadFromStreamResult::{
+    CentralDirectoryHeader, EndOfCentralDirectory, File,
+};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
@@ -19,12 +22,32 @@ use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.
 #[derive(Debug)]
-pub struct ZipStreamReader<R>(R);
+pub struct ZipStreamReader<R> {
+    reader: R,
+    enforce_header_consistency: bool,
+}
 
 impl<R> ZipStreamReader<R> {
-    /// Create a new `ZipStreamReader`
+    /// Create a new `ZipStreamReader` with default settings. For backward-compatibility,
+    /// this doesn't check that the local headers match the central directory.
     pub const fn new(reader: R) -> Self {
-        Self(reader)
+        Self {
+            reader,
+            enforce_header_consistency: false,
+        }
+    }
+
+    /// Configure whether to validate consistency between Local File Headers (LFH)
+    /// and Central Directory File Headers (CDFH).
+    ///
+    /// When enabled, any discrepancy (such as Zip Cloaking / Dual-Header Smuggling attacks
+    /// where an attacker provides different names or hidden files across headers) will cause
+    /// the extraction to abort with [`ZipError::InvalidArchive`], and any files written during
+    /// this pass will be rolled back.
+    #[must_use]
+    pub const fn enforce_header_consistency(mut self, enforce: bool) -> Self {
+        self.enforce_header_consistency = enforce;
+        self
     }
 }
 
@@ -47,18 +70,129 @@ fn parse_central_directory<R: Read>(reader: &mut R) -> ZipResult<ZipFileEntry<'s
 impl<R: Read> ZipStreamReader<R> {
     /// Iterate over the stream and extract all file and their
     /// metadata.
-    pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
-        while let Some(mut file) = read_zipfile_from_stream(&mut self.0)? {
-            visitor.visit_file(&mut file)?;
+    pub fn visit<V: ZipStreamVisitor>(self, visitor: &mut V) -> ZipResult<()> {
+        struct CountingReader<R> {
+            reader: R,
+            count: u64,
         }
 
-        // `read_zipfile_from_stream` returned `None` because it read the signature of the
-        // first central directory header, so the stream is now 4 bytes into that header. Put
-        // the signature back in front so every header, the first one included, parses whole.
-        let signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
-        let mut central_directory = (&signature[..]).chain(&mut self.0);
-        while let Ok(metadata) = parse_central_directory(&mut central_directory) {
-            visitor.visit_additional_metadata(&metadata)?;
+        impl<R: Read> Read for CountingReader<R> {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                let n = self.reader.read(buf)?;
+                self.count += n as u64;
+                Ok(n)
+            }
+        }
+
+        struct LocalEntryMetadata {
+            metadata: HeaderConsistencyMetadata<Box<[u8]>>,
+            stream_offset: u64,
+        }
+
+        struct CentralEntryMetadata {
+            metadata: HeaderConsistencyMetadata<Box<[u8]>>,
+            header_start: u64,
+        }
+
+        let mut reader = CountingReader {
+            reader: self.reader,
+            count: 0,
+        };
+
+        let mut local_entries = Vec::new();
+
+        let has_central_directory = loop {
+            let offset_before_read = reader.count;
+            let read_from_stream_result =
+                read_zipfile_from_stream_with_options_internal(&mut reader, Default::default())?;
+            match read_from_stream_result {
+                File(mut file) => {
+                    if self.enforce_header_consistency {
+                        local_entries.push(LocalEntryMetadata {
+                            metadata: file
+                                .data
+                                .consistency_metadata(file.name_raw(), true)
+                                .into_owned(),
+                            stream_offset: offset_before_read,
+                        });
+                    }
+                    visitor.visit_file(&mut file)?;
+                }
+                CentralDirectoryHeader => break true,
+                EndOfCentralDirectory => break false,
+            }
+        };
+
+        let mut central_entries = Vec::new();
+
+        if has_central_directory {
+            let signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
+            let mut central_directory = (&signature[..]).chain(&mut reader);
+            while let Ok(metadata) = parse_central_directory(&mut central_directory) {
+                if self.enforce_header_consistency {
+                    central_entries.push(CentralEntryMetadata {
+                        metadata: metadata
+                            .data
+                            .consistency_metadata(metadata.name_raw(), false)
+                            .into_owned(),
+                        header_start: metadata.header_start(),
+                    });
+                }
+                visitor.visit_additional_metadata(&metadata)?;
+            }
+        }
+
+        if self.enforce_header_consistency {
+            if local_entries.len() != central_entries.len() {
+                return Err(invalid!(
+                    "header inconsistency detected: entry count mismatch ({} local vs {} central)",
+                    local_entries.len(),
+                    central_entries.len()
+                ));
+            }
+
+            // Sort central directory entries by their local header offset (header_start)
+            // to align with the sequential physical stream order of the local headers.
+            central_entries.sort_by_key(|e| e.header_start);
+
+            let base_offset = central_entries.first().map_or(0, |e| e.header_start);
+            let mut seen_names = std::collections::HashSet::with_capacity(central_entries.len());
+
+            for (i, (local, central)) in
+                local_entries.iter().zip(central_entries.iter()).enumerate()
+            {
+                // Ensure strictly monotonic local header offsets in central directory
+                if i > 0 && central.header_start <= central_entries[i - 1].header_start {
+                    return Err(invalid!(
+                        "header inconsistency detected: two central directory entries for same file"
+                    ));
+                }
+
+                // Verify that the local header offset matches the physical stream offset exactly
+                let expected_offset =
+                    base_offset
+                        .checked_add(local.stream_offset)
+                        .ok_or(invalid!(
+                            "header inconsistency detected: local header offset overflow"
+                        ))?;
+                if central.header_start != expected_offset {
+                    return Err(invalid!(
+                        "header inconsistency detected: local header offset mismatch for '{}' (expected {}, central claims {})",
+                        String::from_utf8_lossy(&local.metadata.name),
+                        expected_offset,
+                        central.header_start
+                    ));
+                }
+
+                local.metadata.validate_matches(&central.metadata)?;
+
+                if !seen_names.insert(&central.metadata.name) {
+                    return Err(invalid!(
+                        "header inconsistency detected: duplicate file name '{}'",
+                        String::from_utf8_lossy(&central.metadata.name)
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -236,8 +370,28 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
 /// Since LZMA decoding requires the uncompressed length, you will need to override it
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
-    mut options: ZipReadOptions<'a>,
+    options: ZipReadOptions<'a>,
 ) -> ZipResult<Option<ZipFile<'a, R>>> {
+    let result = read_zipfile_from_stream_with_options_internal(reader, options)?;
+    match result {
+        ReadFromStreamResult::File(file) => Ok(Some(file)),
+        ReadFromStreamResult::CentralDirectoryHeader => Ok(None),
+        ReadFromStreamResult::EndOfCentralDirectory => Ok(None),
+    }
+}
+
+enum ReadFromStreamResult<'a, R: Read> {
+    File(ZipFile<'a, R>),
+    CentralDirectoryHeader,
+    EndOfCentralDirectory,
+}
+
+/// Returns Ok(Ok(file)) if a file was read, Ok(Err(true)) if a central directory entry signature was found,
+/// and Err(false) if an EOCD signature was found.
+fn read_zipfile_from_stream_with_options_internal<'a, R: Read>(
+    reader: &'a mut R,
+    mut options: ZipReadOptions<'a>,
+) -> ZipResult<ReadFromStreamResult<'a, R>> {
     // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).
@@ -246,7 +400,8 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
 
     match Magic::from_le_bytes(magic_buf) {
         Magic::LOCAL_FILE_HEADER_SIGNATURE => (),
-        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(CentralDirectoryHeader),
+        Magic::CENTRAL_DIRECTORY_END_SIGNATURE => return Ok(EndOfCentralDirectory), // Empty archive may have no CENTRAL_DIRECTORY_HEADER_SIGNATURE
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
 
@@ -298,7 +453,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
 
     let limit_reader = reader.take(data.compressed_size);
     let reader = data.make_reader(limit_reader, options)?;
-    Ok(Some(ZipFile {
+    Ok(File(ZipFile {
         file_name_raw: Cow::Owned(file_name_raw),
         data: Cow::Owned(data),
         reader,
@@ -307,6 +462,7 @@ pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
 
 #[cfg(test)]
 mod tests {
+    use crate::ZipWriter;
     use crate::read::ZipFile;
     use crate::read::ZipFileEntry;
     use crate::read::stream::{ZipStreamReader, ZipStreamVisitor};
@@ -649,5 +805,33 @@ mod tests {
             assert!(read_result.is_ok());
             assert_eq!(content, b"test");
         }
+    }
+
+    #[test]
+    fn test_write_and_reopen_empty_archive() -> ZipResult<()> {
+        use crate::read::read_zipfile_from_stream;
+        use std::io::{Seek, SeekFrom};
+
+        let writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let mut stream = writer.finish()?;
+        stream.seek(SeekFrom::Start(0))?;
+        assert!(read_zipfile_from_stream(&mut stream)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_and_reopen_empty_archive_with_comment() -> ZipResult<()> {
+        use crate::read::read_zipfile_from_stream;
+        use std::io::{Seek, SeekFrom};
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_raw_comment(Box::new([255, 255]))?;
+        let mut writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.set_raw_comment(Box::new([213, 255, 127, 255, 255, 255, 255, 0, 255, 7]))?;
+        writer.set_raw_comment(Box::new([0]))?;
+        let mut stream = writer.finish()?;
+        stream.seek(SeekFrom::Start(0))?;
+        assert!(read_zipfile_from_stream(&mut stream)?.is_none());
+        Ok(())
     }
 }

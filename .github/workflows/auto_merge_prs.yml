@@ -2,16 +2,17 @@ name: Auto-merge PRs from trusted bots
 on: pull_request
 
 permissions:
-  contents: write
-  pull-requests: write
-
+  contents: read
 jobs:
   auto-merge:
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || github.actor == 'github-actions' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
