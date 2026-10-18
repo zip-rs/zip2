@@ -387,10 +387,8 @@ impl FuzzTestCase<'_, '_> {
                         comment_contains_signature = true;
                     }
                 }
-                if streamable {
-                    if comment_len_at_reopen > comment_len {
-                        streamable = false;
-                    }
+                if streamable && comment_len_at_reopen > comment_len {
+                    streamable = false;
                 }
             }
             if operation.reopen != ReopenOption::DoNotReopen {
