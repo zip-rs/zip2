@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - backport/*
 
 jobs:
   release-plz-release:
