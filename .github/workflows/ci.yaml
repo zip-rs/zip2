@@ -78,10 +78,10 @@ jobs:
           path: target
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
       - run: sudo apt update
-      - run: sudo apt install crossbuild-essential-arm64
-      - run: rustup target add x86_64-unknown-netbsd
-      # only checks no-default-features for now beause some deps needs a c compiler
-      - run: cargo check --no-default-features --target x86_64-unknown-netbsd --all --lib --bins --tests --examples
+      - run: sudo snap install --beta zig --classic
+      - run: cargo install cargo-zigbuild
+      - run: rustup target add x86_64-unknown-freebsd
+      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples
   check_minimal_versions:
     needs:
       - cargo_semver
