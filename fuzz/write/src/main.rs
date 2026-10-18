@@ -10,7 +10,7 @@ use std::ops;
 use std::path::PathBuf;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
-use zip::ZipArchive;
+use zip::{ZipArchive, ZipWriter};
 use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
@@ -40,7 +40,7 @@ pub enum BasicFileOperation<'k, 'n> {
     SetArchiveComment(Box<[u8]>),
 }
 
-#[derive(Arbitrary, Clone, Debug, Eq, PartialEq)]
+#[derive(Arbitrary, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ReopenOption {
     DoNotReopen,
     ViaFinish,
@@ -123,7 +123,6 @@ fn do_operation(
     flush_on_finish_file: bool,
     files_added: &mut usize,
     stringifier: &mut impl Write,
-    panic_on_error: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     writer.set_flush_on_finish_file(flush_on_finish_file);
     let FileOperation {
@@ -187,7 +186,6 @@ fn do_operation(
                 flush_on_finish_file,
                 files_added,
                 stringifier,
-                panic_on_error,
             )?;
             writeln!(
                 stringifier,
@@ -208,7 +206,6 @@ fn do_operation(
                 flush_on_finish_file,
                 files_added,
                 stringifier,
-                panic_on_error,
             )?;
             writeln!(
                 stringifier,
@@ -251,7 +248,6 @@ fn do_operation(
                         false,
                         &mut inner_files_added,
                         stringifier,
-                        panic_on_error,
                     );
                 });
             writeln!(
@@ -290,16 +286,20 @@ fn do_operation(
                 stringifier,
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
-            replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
-                try_into_new_writer(old_writer).unwrap_or_else(|e| {
-                    if panic_on_error {
-                        panic!("Failed to create new ZipWriter: {e}")
+            let mut failed_replace = None;
+            replace_with_or_abort(writer,
+                         |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
+                match try_into_new_writer(old_writer) {
+                    Ok(writer) => writer,
+                    Err(e) => {
+                        failed_replace = Some(e);
+                        zip::ZipWriter::new(Cursor::new(Vec::new()))
                     }
-                    zip::ZipWriter::new(Cursor::new(Vec::new()))
-                })
+                }
             });
-            if panic_on_error {
-                assert!(writer.get_raw_comment().starts_with(&old_comment));
+            if let Some(e) = failed_replace { return Err(e.into()); }
+            if !writer.get_raw_comment().starts_with(&old_comment) {
+                return Err(ZipError::InvalidArchive("Comment unexpectedly changed after reopening".into()).into());
             }
         }
         ReopenOption::ViaFinishIntoReadable => {
@@ -308,13 +308,16 @@ fn do_operation(
                 stringifier,
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
-            replace_with_or_abort(writer, |old_writer| {
-                try_into_new_writer(old_writer).unwrap_or_else(|e| {
-                    if panic_on_error {
-                        panic!("Failed to create new ZipWriter: {e}")
+            let mut failed_replace = None;
+            replace_with_or_abort(writer,
+                         |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
+                match old_writer.finish_into_readable().map(|archive| ZipWriter::new(archive.into_inner())) {
+                    Ok(writer) => writer,
+                    Err(e) => {
+                        failed_replace = Some(e);
+                        zip::ZipWriter::new(Cursor::new(Vec::new()))
                     }
-                    zip::ZipWriter::new(Cursor::new(Vec::new()))
-                })
+                }
             });
             debug_assert!(writer.get_raw_comment().starts_with(&old_comment));
         }
@@ -326,7 +329,6 @@ impl FuzzTestCase<'_, '_> {
     fn execute<W: Write>(
         self,
         mut stringifier: impl ops::DerefMut<Target = W>,
-        mut panic_on_error: bool,
     ) -> ZipResult<()> {
         // Indicates the starting position if we use read_zipfile_from_stream at the end.
         let junk_len = self.initial_junk.len();
@@ -391,11 +393,9 @@ impl FuzzTestCase<'_, '_> {
                     streamable = false;
                 }
             }
-            if operation.reopen != ReopenOption::DoNotReopen {
+            let reopen = operation.reopen;
+            if reopen != ReopenOption::DoNotReopen {
                 comment_len_at_reopen = comment_len;
-            }
-            if comment_contains_signature && operation.reopen == ReopenOption::ViaFinish {
-                panic_on_error = false;
             }
             let result = do_operation(
                 &mut writer,
@@ -404,9 +404,8 @@ impl FuzzTestCase<'_, '_> {
                 self.flush_on_finish_file,
                 &mut files_added,
                 stringifier.deref_mut(),
-                panic_on_error,
             );
-            if comment_contains_signature && result.is_err() {
+            if comment_contains_signature && result.is_err() && reopen == ReopenOption::ViaFinish {
                 return Ok(());
             }
         }
@@ -444,9 +443,6 @@ impl FuzzTestCase<'_, '_> {
                     }
                     Err(e) => {
                         if streamable {
-                            if panic_on_error {
-                                panic!("Failed to read from stream: {e:?}");
-                            }
                             return Err(e);
                         } else {
                             break;
@@ -456,12 +452,7 @@ impl FuzzTestCase<'_, '_> {
             }
             if !comment_contains_signature {
                 writeln!(stringifier, "let _ = ZipArchive::new(stream)?\n").unwrap();
-                let _ = ZipArchive::new(stream).map_err(|e| {
-                    if panic_on_error {
-                        panic!("Failed to open archive: {e:?}");
-                    }
-                    e
-                })?;
+                let _ = ZipArchive::new(stream)?;
             }
         }
         Ok(())
@@ -484,7 +475,7 @@ impl Debug for FuzzTestCase<'_, '_> {
                 self.initial_junk
             )?;
         }
-        let _ = self.clone().execute(f, false);
+        let _ = self.clone().execute(f);
         Ok(())
     }
 }
@@ -498,7 +489,7 @@ fn main() {
     if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
         for test_case in it.flatten() {
             w.clear();
-            let result = test_case.execute(&mut w, true);
+            let result = test_case.execute(&mut w);
             assert!(
                 result.is_ok(),
                 "Test case failed:\n{}\n{}",
