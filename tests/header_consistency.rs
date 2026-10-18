@@ -823,3 +823,47 @@ fn test_duplicate_filename_shadowing_blocked() {
     let reader = ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
     assert!(reader.extract(dest_dir).is_err());
 }
+
+/// Implode flag bits 1-2 set the window size and tree count; a local/central mismatch makes
+/// `ZipArchive` and the stream reader decode different bytes.
+#[test]
+fn test_enforce_header_consistency_blocks_implode_flag_mismatch() {
+    use std::io::Read;
+
+    let temp_env = tempdir().unwrap();
+
+    for mask in [0x0002u16, 0x0004] {
+        let mut archive_bytes = include_bytes!("data/legacy/implode.zip").to_vec();
+        let cdh = archive_bytes
+            .windows(4)
+            .position(|s| s == b"PK\x01\x02")
+            .expect("CDFH signature must exist");
+        // Central directory flags only; the local header keeps the original bits.
+        let flags = u16::from_le_bytes(archive_bytes[cdh + 8..cdh + 10].try_into().unwrap());
+        archive_bytes[cdh + 8..cdh + 10].copy_from_slice(&(flags ^ mask).to_le_bytes());
+
+        let mut archive = ZipArchive::new(Cursor::new(&archive_bytes)).unwrap();
+        assert!(
+            archive.validate_header_consistency().is_err(),
+            "Implode flag mismatch {mask:#06x} MUST be rejected by validate_header_consistency"
+        );
+        let opt = zip::ZipReadOptions::new().enforce_header_consistency(true);
+        let read = archive.by_index_with_options(0, opt).map(|mut f| {
+            let mut v = Vec::new();
+            f.read_to_end(&mut v).map(|_| v.len())
+        });
+        assert!(
+            read.is_err(),
+            "Implode flag mismatch {mask:#06x} MUST be rejected before decoding, got {read:?}"
+        );
+
+        let reader =
+            ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
+        assert!(
+            reader
+                .extract(temp_env.path().join(mask.to_string()))
+                .is_err(),
+            "Implode flag mismatch {mask:#06x} MUST be rejected by ZipStreamReader"
+        );
+    }
+}

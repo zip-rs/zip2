@@ -388,6 +388,8 @@ pub(crate) struct HeaderConsistencyMetadata<T: AsRef<[u8]>, U: AsRef<[u8]> = T> 
     pub(crate) compression_method: u16,
     pub(crate) is_encrypted: bool,
     pub(crate) is_using_data_descriptor: bool,
+    /// Flag bits the decompressor reads (bits 1-2 for Implode), zero for other methods.
+    pub(crate) decoder_flags: u16,
     pub(crate) last_modified_time: Option<DateTime>,
     pub(crate) data: HeaderDataDescriptorMetadata,
     #[cfg(feature = "aes-crypto")]
@@ -403,6 +405,7 @@ impl HeaderConsistencyMetadata<&[u8]> {
             compression_method: self.compression_method,
             is_encrypted: self.is_encrypted,
             is_using_data_descriptor: self.is_using_data_descriptor,
+            decoder_flags: self.decoder_flags,
             last_modified_time: self.last_modified_time,
             data: self.data,
             #[cfg(feature = "aes-crypto")]
@@ -454,6 +457,13 @@ impl<T: AsRef<[u8]>, U: AsRef<[u8]>> HeaderConsistencyMetadata<T, U> {
         if self.is_using_data_descriptor != central.is_using_data_descriptor {
             return Err(invalid!(
                 "header inconsistency detected: data descriptor flag mismatch for '{}'",
+                String::from_utf8_lossy(self.name.as_ref())
+            ));
+        }
+
+        if self.decoder_flags != central.decoder_flags {
+            return Err(invalid!(
+                "header inconsistency detected: compression flags mismatch for '{}'",
                 String::from_utf8_lossy(self.name.as_ref())
             ));
         }
