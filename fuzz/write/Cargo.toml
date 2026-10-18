@@ -8,10 +8,10 @@ publish = false
 arbitrary.workspace = true
 replace_with = "^0.1.8"
 zip.workspace = true
-backtrace-on-stack-overflow = "0.3.0"
 
 [target.'cfg(fuzzing)'.dependencies]
 tikv-jemallocator.workspace = true
+backtrace-on-stack-overflow = "0.3.0"
 
 [features]
 zip-default = ["zip/default"]
