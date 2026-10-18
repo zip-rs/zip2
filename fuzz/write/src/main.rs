@@ -14,6 +14,7 @@ use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
+use zip::ZipArchive;
 
 #[cfg(fuzzing)]
 #[global_allocator]
@@ -325,7 +326,7 @@ impl FuzzTestCase<'_, '_> {
     fn execute<W: Write>(
         self,
         mut stringifier: impl ops::DerefMut<Target = W>,
-        panic_on_error: bool,
+        mut panic_on_error: bool,
     ) -> ZipResult<()> {
         // Indicates the starting position if we use read_zipfile_from_stream at the end.
         let junk_len = self.initial_junk.len();
@@ -340,11 +341,54 @@ impl FuzzTestCase<'_, '_> {
         {
             final_reopen = true;
         }
-        let streamable = self.operations.iter().all(|(op, _)| op.is_streamable());
+        let mut streamable = true;
+
+        // If the comment is set, the archive is reopened and then a smaller comment is set, there
+        // may be more leading junk than planned, so streaming reading may produce an error. But it
+        // still shouldn't panic, and ZipArchive::new should still work.
+        let mut comment_len = 0;
+        let mut comment_len_at_reopen = 0;
+
+
+        // If the comment contains an EOCD or EOCD64, opening the archive for read may return an error,
+        // but still shouldn't panic.
+        let mut comment_contains_signature = false;
+
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
         for (operation, abort) in self.operations.into_vec().into_iter() {
-            let _ = do_operation(
+            if streamable {
+                if !operation.is_streamable() {
+                    streamable = false;
+                }
+            }
+            if let BasicFileOperation::SetArchiveComment(ref comment) = operation.basic && !comment.is_empty() {
+                comment_len = comment.len();
+                if !comment_contains_signature {
+                    if comment_len >= 22 && comment[0..=(comment_len - 18)].windows(4).any(|w| w == b"PK\x05\x06") {
+                        // ZIP32 EOCD
+                        comment_contains_signature = true;
+                    } else if comment_len >= 56 && comment[0..=(comment_len - 52)].windows(4).any(|w| w == b"PK\x06\x06") {
+                        // ZIP64 EOCD
+                        comment_contains_signature = true;
+                    } else if comment_len >= 20 && comment[0..=(comment_len - 16)].windows(4).any(|w| w == b"PK\x06\x07") {
+                        // ZIP64 EOCD locator
+                        comment_contains_signature = true;
+                    }
+                }
+                if streamable {
+                    if comment_len_at_reopen > comment_len {
+                        streamable = false;
+                    }
+                }
+            }
+            if operation.reopen != ReopenOption::DoNotReopen {
+                comment_len_at_reopen = comment_len;
+            }
+            if comment_contains_signature && operation.reopen == ReopenOption::ViaFinish {
+                panic_on_error = false;
+            }
+            let result = do_operation(
                 &mut writer,
                 operation,
                 abort,
@@ -353,22 +397,52 @@ impl FuzzTestCase<'_, '_> {
                 stringifier.deref_mut(),
                 panic_on_error,
             );
+            if comment_contains_signature && result.is_err() {
+                return Ok(());
+            }
         }
-        if streamable {
-            writeln!(
-                stringifier,
-                "let mut stream = writer.finish()?;\n\
-                    stream.seek(SeekFrom::Start({junk_len}))?;\n\
-                    while read_zipfile_from_stream(&mut stream)?.is_some() {{}}"
-            )
-            .map_err(|_| ZipError::InvalidArchive("Failed to read from stream".into()))?;
-            let mut stream = writer.finish()?;
-            stream.seek(SeekFrom::Start(junk_len as u64))?;
-            while read_zipfile_from_stream(&mut stream)?.is_some() {}
-        } else if final_reopen {
+        if final_reopen {
             writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
                 .map_err(|_| ZipError::InvalidArchive("".into()))?;
             let _ = writer.finish_into_readable()?;
+        } else {
+            writeln!(
+                stringifier,
+                "let mut stream = writer.finish()?;\n\
+                    stream.seek(SeekFrom::Start({junk_len}))?;\n"
+            ).unwrap();
+            if streamable {
+                writeln!(stringifier, "while read_zipfile_from_stream(&mut stream)?.is_some() {{}}\n").unwrap();
+            } else {
+                writeln!(stringifier, "while matches!(read_zipfile_from_stream(&mut stream), Ok(Some(_))) {{}}\n").unwrap();
+            }
+            let mut stream = writer.finish()?;
+            stream.seek(SeekFrom::Start(junk_len as u64))?;
+            loop {
+                match read_zipfile_from_stream(&mut stream) {
+                    Ok(None) => break,
+                    Ok(Some(_)) => {}
+                    Err(e) => {
+                        if streamable {
+                            if panic_on_error {
+                                panic!("Failed to read from stream: {e:?}");
+                            }
+                            return Err(e);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            if !comment_contains_signature {
+                writeln!(stringifier, "let _ = ZipArchive::new(stream)?\n").unwrap();
+                let _ = ZipArchive::new(stream).map_err(|e| {
+                    if panic_on_error {
+                        panic!("Failed to open archive: {e:?}");
+                    }
+                    e
+                })?;
+            }
         }
         Ok(())
     }
