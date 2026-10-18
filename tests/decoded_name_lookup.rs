@@ -17,11 +17,9 @@ fn fixture_password() -> [u8; PASSWORD_LENGTH] {
     }
     #[cfg(target_arch = "wasm32")]
     {
-        std::array::from_fn(|_| {
-            getrandom::u32()
-                .expect("Failed to generate fixture password")
-                .to_le_bytes()[0]
-        })
+        let mut password = [0u8; PASSWORD_LENGTH]();
+        getrandom::fill(&mut password);
+        password
     }
 }
 
