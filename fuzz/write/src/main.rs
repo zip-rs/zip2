@@ -116,6 +116,8 @@ fn deduplicate_paths(
     Ok(())
 }
 
+/// Returns Ok(true) if everything went okay, Ok(false) if an allowed reopen failure occurred, or
+/// Err if any other failure occurred.
 fn do_operation(
     writer: &mut zip::ZipWriter<Cursor<Vec<u8>>>,
     operation: FileOperation<'_, '_>,
@@ -123,7 +125,8 @@ fn do_operation(
     flush_on_finish_file: bool,
     files_added: &mut usize,
     stringifier: &mut impl Write,
-) -> Result<(), Box<dyn std::error::Error>> {
+    allow_reopen_failure: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
     writer.set_flush_on_finish_file(flush_on_finish_file);
     let FileOperation {
         basic,
@@ -176,17 +179,20 @@ fn do_operation(
         }
         BasicFileOperation::ShallowCopy(base) => {
             let Some(base_path) = base.get_path() else {
-                return Ok(());
+                return Ok(true);
             };
             deduplicate_paths(&mut path, &base_path)?;
-            do_operation(
+            if !do_operation(
                 writer,
                 *base,
                 false,
                 flush_on_finish_file,
                 files_added,
                 stringifier,
-            )?;
+                allow_reopen_failure,
+            )? {
+                return Ok(false);
+            }
             writeln!(
                 stringifier,
                 "writer.shallow_copy_file_from_path({base_path:?}, {path:?});",
@@ -196,17 +202,20 @@ fn do_operation(
         }
         BasicFileOperation::DeepCopy(base) => {
             let Some(base_path) = base.get_path() else {
-                return Ok(());
+                return Ok(true);
             };
             deduplicate_paths(&mut path, &base_path)?;
-            do_operation(
+            if !do_operation(
                 writer,
                 *base,
                 false,
                 flush_on_finish_file,
                 files_added,
                 stringifier,
-            )?;
+                allow_reopen_failure,
+            )? {
+                return Ok(false);
+            }
             writeln!(
                 stringifier,
                 "writer.deep_copy_file_from_path({base_path:?}, {path:?});",
@@ -237,19 +246,20 @@ fn do_operation(
             initial_junk.seek(SeekFrom::End(0))?;
             let mut other_writer = zip::ZipWriter::new(initial_junk);
             let mut inner_files_added = 0;
-            operations
-                .into_vec()
-                .into_iter()
-                .for_each(|(operation, abort)| {
-                    let _ = do_operation(
+            for (operation, abort) in operations {
+                let completed = do_operation(
                         &mut other_writer,
                         operation,
                         abort,
                         false,
                         &mut inner_files_added,
                         stringifier,
-                    );
-                });
+                        allow_reopen_failure,
+                    )?;
+                if !completed {
+                    return Ok(false);
+                }
+            }
             writeln!(
                 stringifier,
                 "writer\n}};\nwriter.merge_archive(sub_writer.finish_into_readable()?)?;"
@@ -278,7 +288,7 @@ fn do_operation(
     match reopen {
         ReopenOption::DoNotReopen => {
             writeln!(stringifier, "writer")?;
-            return Ok(());
+            return Ok(true);
         }
         ReopenOption::ViaFinish => {
             let old_comment = writer.get_raw_comment().to_owned();
@@ -296,7 +306,7 @@ fn do_operation(
                     }
                 }
             });
-            if let Some(e) = failed_replace {
+            if !allow_reopen_failure && let Some(e) = failed_replace {
                 return Err(e.into());
             }
             if !writer.get_raw_comment().starts_with(&old_comment) {
@@ -325,10 +335,13 @@ fn do_operation(
                     }
                 }
             });
+            if !allow_reopen_failure && let Some(e) = failed_replace {
+                return Err(e.into());
+            }
             debug_assert!(writer.get_raw_comment().starts_with(&old_comment));
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 impl FuzzTestCase<'_, '_> {
@@ -400,15 +413,17 @@ impl FuzzTestCase<'_, '_> {
             if reopen != ReopenOption::DoNotReopen {
                 comment_len_at_reopen = comment_len;
             }
-            let result = do_operation(
+            let allow_reopen_failure = comment_contains_signature && reopen == ReopenOption::ViaFinish;
+            let completed = do_operation(
                 &mut writer,
                 operation,
                 abort,
                 self.flush_on_finish_file,
                 &mut files_added,
                 stringifier.deref_mut(),
-            );
-            if comment_contains_signature && result.is_err() && reopen == ReopenOption::ViaFinish {
+                allow_reopen_failure
+            ).map_err(|e| ZipError::InvalidArchive(format!("Error during operation: {e}").into()))?;
+            if !completed {
                 return Ok(());
             }
         }
