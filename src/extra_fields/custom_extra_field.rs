@@ -71,10 +71,23 @@ impl CustomExtraField {
 #[cfg(feature = "_arbitrary")]
 impl arbitrary::Arbitrary<'_> for CustomExtraField {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        Ok(CustomExtraField {
+        use crate::ExtraField;
+        use crate::format::blocks::{Pod, ZipLocalEntryBlock};
+        use std::io::Cursor;
+        let extra_field = CustomExtraField {
             central_only: u.arbitrary()?,
             header_id: u.arbitrary()?,
             data: u.arbitrary()?,
-        })
+        };
+        let mut serialized_extra_field = Vec::with_capacity(extra_field.data.len() + 4);
+        extra_field
+            .write(&mut serialized_extra_field, true)
+            .unwrap();
+        let block = ZipLocalEntryBlock::zeroed();
+        if ExtraField::parse(&mut Cursor::new(&serialized_extra_field), &block, true).is_err() {
+            Err(arbitrary::Error::IncorrectFormat)
+        } else {
+            Ok(extra_field)
+        }
     }
 }

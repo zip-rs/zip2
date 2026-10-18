@@ -291,9 +291,9 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
-                try_into_new_writer(old_writer).unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|e| {
                     if panic_on_error {
-                        panic!("Failed to create new ZipWriter")
+                        panic!("Failed to create new ZipWriter: {e}")
                     }
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
@@ -309,9 +309,9 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             replace_with_or_abort(writer, |old_writer| {
-                try_into_new_writer(old_writer).unwrap_or_else(|_| {
+                try_into_new_writer(old_writer).unwrap_or_else(|e| {
                     if panic_on_error {
-                        panic!("Failed to create new ZipWriter")
+                        panic!("Failed to create new ZipWriter: {e}")
                     }
                     zip::ZipWriter::new(Cursor::new(Vec::new()))
                 })
