@@ -34,6 +34,12 @@ pub enum SymlinkExtractAction {
     #[cfg(any(unix, windows))]
     ExtractInFolder,
     /// Extract symlinks with no restrictions.
+    ///
+    /// On Windows, creating a symlink requires that we know whether the target is a file or directory.
+    /// To determine that, this option will open the file metadata of the target path, which will
+    /// cause NTLMv2 authentication to be sent if the target is on an SMB network share. This may be a security risk,
+    /// because it allows relay attacks and offline cracking. WebDAV is also vulnerable, but only when a file
+    /// host in the Intranet Zone is already compromised.
     #[cfg(any(unix, windows))]
     ExtractNoRestrictions,
 }
