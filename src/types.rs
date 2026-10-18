@@ -17,7 +17,7 @@ use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
 use crate::path::{enclosed_name, file_name_sanitized};
 use crate::read::readers::{SeekableTake, ZipFileReader, make_crypto_reader, make_reader};
 use crate::read::{HeaderConsistencyMetadata, HeaderDataDescriptorMetadata};
-use crate::result::{ZipError, ZipResult};
+use crate::result::{ZipError, ZipResult, invalid};
 use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
 use crate::{CompressionMethod, ExtraField, ZipReadOptions};
@@ -205,6 +205,7 @@ impl ZipFileData {
     ) -> ZipResult<Take<&'a mut R>> {
         // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
         let data_start = self.data_start(reader)?;
+        self.check_data_end(data_start)?;
         reader.seek(SeekFrom::Start(data_start))?;
 
         Ok(reader.take(self.compressed_size))
@@ -216,10 +217,18 @@ impl ZipFileData {
     ) -> ZipResult<SeekableTake<'a, R>> {
         // Parse local header
         let data_start = self.data_start(reader)?;
+        self.check_data_end(data_start)?;
         reader.seek(SeekFrom::Start(data_start))?;
 
         // Explicit Ok and ? are needed to convert io::Error to ZipError
         Ok(SeekableTake::new(reader, self.compressed_size)?)
+    }
+
+    /// Checks that `data_start + compressed_size` fits in u64 (ZIP64 sizes can be any u64).
+    fn check_data_end(&self, data_start: u64) -> ZipResult<u64> {
+        data_start
+            .checked_add(self.compressed_size)
+            .ok_or(invalid!("File data end offset overflows u64"))
     }
 
     pub(crate) fn consistency_metadata<'a>(

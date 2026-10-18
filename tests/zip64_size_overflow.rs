@@ -90,3 +90,27 @@ fn data_descriptor_lookup_rejects_overflowing_compressed_size() {
         Err(ZipError::InvalidArchive(_))
     ));
 }
+
+/// A compressed size whose data end overflows u64 used to panic or wrap in `by_index_seek`.
+#[test]
+fn by_index_seek_rejects_overflowing_compressed_size() {
+    let mut archive = ZipArchive::new(Cursor::new(zip64_huge_compressed_size())).unwrap();
+    assert!(matches!(
+        archive.by_index_seek(0),
+        Err(ZipError::InvalidArchive(_))
+    ));
+}
+
+/// The non-seeking readers take the same range, so they reject the entry the same way.
+#[test]
+fn by_index_rejects_overflowing_compressed_size() {
+    let mut archive = ZipArchive::new(Cursor::new(zip64_huge_compressed_size())).unwrap();
+    assert!(matches!(
+        archive.by_index(0),
+        Err(ZipError::InvalidArchive(_))
+    ));
+    assert!(matches!(
+        archive.by_index_raw(0),
+        Err(ZipError::InvalidArchive(_))
+    ));
+}
