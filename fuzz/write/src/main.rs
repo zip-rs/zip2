@@ -248,14 +248,14 @@ fn do_operation(
             let mut inner_files_added = 0;
             for (operation, abort) in operations {
                 let completed = do_operation(
-                        &mut other_writer,
-                        operation,
-                        abort,
-                        false,
-                        &mut inner_files_added,
-                        stringifier,
-                        allow_reopen_failure,
-                    )?;
+                    &mut other_writer,
+                    operation,
+                    abort,
+                    false,
+                    &mut inner_files_added,
+                    stringifier,
+                    allow_reopen_failure,
+                )?;
                 if !completed {
                     return Ok(false);
                 }
@@ -413,7 +413,8 @@ impl FuzzTestCase<'_, '_> {
             if reopen != ReopenOption::DoNotReopen {
                 comment_len_at_reopen = comment_len;
             }
-            let allow_reopen_failure = comment_contains_signature && reopen == ReopenOption::ViaFinish;
+            let allow_reopen_failure =
+                comment_contains_signature && reopen == ReopenOption::ViaFinish;
             let completed = do_operation(
                 &mut writer,
                 operation,
@@ -421,8 +422,9 @@ impl FuzzTestCase<'_, '_> {
                 self.flush_on_finish_file,
                 &mut files_added,
                 stringifier.deref_mut(),
-                allow_reopen_failure
-            ).map_err(|e| ZipError::InvalidArchive(format!("Error during operation: {e}").into()))?;
+                allow_reopen_failure,
+            )
+            .map_err(|e| ZipError::InvalidArchive(format!("Error during operation: {e}").into()))?;
             if !completed {
                 return Ok(());
             }
