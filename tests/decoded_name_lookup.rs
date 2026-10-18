@@ -17,7 +17,7 @@ fn fixture_password() -> [u8; PASSWORD_LENGTH] {
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let mut password = [0u8; PASSWORD_LENGTH]();
+        let mut password = [0u8; PASSWORD_LENGTH];
         getrandom::fill(&mut password);
         password
     }
