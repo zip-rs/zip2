@@ -1471,12 +1471,16 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let new_size = (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
                         as u64
                         + zip64_extensible_len
-                        + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>()) as u64;
+                        + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
+                            as u64;
                     archive_end + new_size
                 } else {
                     archive_end
                 };
-                debug_assert!(self.inner.try_inner_mut()?.stream_position()? == archive_end + self.comment.len() as u64);
+                debug_assert!(
+                    self.inner.try_inner_mut()?.stream_position()?
+                        == archive_end + self.comment.len() as u64
+                );
             }
         }
 
@@ -4560,8 +4564,15 @@ mod tests {
     #[test]
     fn test_set_archive_comment_then_reopen() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.start_file_from_path("", SimpleFileOptions { name: Some(&[37, 37, 255, 255, 41, 47, 213]), compression_method: Stored, ..Default::default() })?;
-    writer.abort_file()?;
+        writer.start_file_from_path(
+            "",
+            SimpleFileOptions {
+                name: Some(&[37, 37, 255, 255, 41, 47, 213]),
+                compression_method: Stored,
+                ..Default::default()
+            },
+        )?;
+        writer.abort_file()?;
         writer.set_raw_comment(Box::new([255]))?;
         let _ = ZipWriter::new_append(writer.finish()?)?;
         Ok(())
