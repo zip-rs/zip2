@@ -10,11 +10,11 @@ use std::ops;
 use std::path::PathBuf;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
-use zip::{ZipArchive, ZipWriter};
 use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
+use zip::{ZipArchive, ZipWriter};
 
 #[cfg(fuzzing)]
 #[global_allocator]
@@ -287,8 +287,7 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             let mut failed_replace = None;
-            replace_with_or_abort(writer,
-                         |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
+            replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
                 match try_into_new_writer(old_writer) {
                     Ok(writer) => writer,
                     Err(e) => {
@@ -297,9 +296,14 @@ fn do_operation(
                     }
                 }
             });
-            if let Some(e) = failed_replace { return Err(e.into()); }
+            if let Some(e) = failed_replace {
+                return Err(e.into());
+            }
             if !writer.get_raw_comment().starts_with(&old_comment) {
-                return Err(ZipError::InvalidArchive("Comment unexpectedly changed after reopening".into()).into());
+                return Err(ZipError::InvalidArchive(
+                    "Comment unexpectedly changed after reopening".into(),
+                )
+                .into());
             }
         }
         ReopenOption::ViaFinishIntoReadable => {
@@ -309,9 +313,11 @@ fn do_operation(
                 "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
             )?;
             let mut failed_replace = None;
-            replace_with_or_abort(writer,
-                         |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
-                match old_writer.finish_into_readable().map(|archive| ZipWriter::new(archive.into_inner())) {
+            replace_with_or_abort(writer, |old_writer: zip::ZipWriter<Cursor<Vec<u8>>>| {
+                match old_writer
+                    .finish_into_readable()
+                    .map(|archive| ZipWriter::new(archive.into_inner()))
+                {
                     Ok(writer) => writer,
                     Err(e) => {
                         failed_replace = Some(e);
@@ -326,10 +332,7 @@ fn do_operation(
 }
 
 impl FuzzTestCase<'_, '_> {
-    fn execute<W: Write>(
-        self,
-        mut stringifier: impl ops::DerefMut<Target = W>,
-    ) -> ZipResult<()> {
+    fn execute<W: Write>(self, mut stringifier: impl ops::DerefMut<Target = W>) -> ZipResult<()> {
         // Indicates the starting position if we use read_zipfile_from_stream at the end.
         let junk_len = self.initial_junk.len();
 
