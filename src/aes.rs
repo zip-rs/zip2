@@ -107,7 +107,7 @@ impl<R: Read> AesReader<R> {
         let pwd_verify = &derived_key[derived_key_len - 2..];
 
         // the last 2 bytes should equal the password verification value
-        if pwd_verification_value != pwd_verify {
+        if !constant_time_eq(&pwd_verification_value, pwd_verify) {
             // wrong password
             return Err(ZipError::InvalidPassword);
         }
