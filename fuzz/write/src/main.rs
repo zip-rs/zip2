@@ -4,17 +4,17 @@ use arbitrary::{Arbitrary, Unstructured};
 use core::fmt::Debug;
 use replace_with::replace_with_or_abort;
 use std::fmt::{Formatter, Write};
-use std::io::{copy, sink, Write as IoWrite};
 use std::io::{Cursor, Seek, SeekFrom};
+use std::io::{Write as IoWrite, copy, sink};
 use std::ops;
 use std::path::PathBuf;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
+use zip::ZipArchive;
 use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
-use zip::ZipArchive;
 
 #[cfg(fuzzing)]
 #[global_allocator]
@@ -349,7 +349,6 @@ impl FuzzTestCase<'_, '_> {
         let mut comment_len = 0;
         let mut comment_len_at_reopen = 0;
 
-
         // If the comment contains an EOCD or EOCD64, opening the archive for read may return an error,
         // but still shouldn't panic.
         let mut comment_contains_signature = false;
@@ -360,16 +359,30 @@ impl FuzzTestCase<'_, '_> {
             if streamable && !operation.is_streamable() {
                 streamable = false;
             }
-            if let BasicFileOperation::SetArchiveComment(ref comment) = operation.basic && !comment.is_empty() {
+            if let BasicFileOperation::SetArchiveComment(ref comment) = operation.basic
+                && !comment.is_empty()
+            {
                 comment_len = comment.len();
                 if !comment_contains_signature {
-                    if comment_len >= 22 && comment[0..=(comment_len - 18)].windows(4).any(|w| w == b"PK\x05\x06") {
+                    if comment_len >= 22
+                        && comment[0..=(comment_len - 18)]
+                            .windows(4)
+                            .any(|w| w == b"PK\x05\x06")
+                    {
                         // ZIP32 EOCD
                         comment_contains_signature = true;
-                    } else if comment_len >= 56 && comment[0..=(comment_len - 52)].windows(4).any(|w| w == b"PK\x06\x06") {
+                    } else if comment_len >= 56
+                        && comment[0..=(comment_len - 52)]
+                            .windows(4)
+                            .any(|w| w == b"PK\x06\x06")
+                    {
                         // ZIP64 EOCD
                         comment_contains_signature = true;
-                    } else if comment_len >= 20 && comment[0..=(comment_len - 16)].windows(4).any(|w| w == b"PK\x06\x07") {
+                    } else if comment_len >= 20
+                        && comment[0..=(comment_len - 16)]
+                            .windows(4)
+                            .any(|w| w == b"PK\x06\x07")
+                    {
                         // ZIP64 EOCD locator
                         comment_contains_signature = true;
                     }
@@ -408,11 +421,20 @@ impl FuzzTestCase<'_, '_> {
                 stringifier,
                 "let mut stream = writer.finish()?;\n\
                     stream.seek(SeekFrom::Start({junk_len}))?;\n"
-            ).unwrap();
+            )
+            .unwrap();
             if streamable {
-                writeln!(stringifier, "while read_zipfile_from_stream(&mut stream)?.is_some() {{}}\n").unwrap();
+                writeln!(
+                    stringifier,
+                    "while read_zipfile_from_stream(&mut stream)?.is_some() {{}}\n"
+                )
+                .unwrap();
             } else {
-                writeln!(stringifier, "while matches!(read_zipfile_from_stream(&mut stream), Ok(Some(_))) {{}}\n").unwrap();
+                writeln!(
+                    stringifier,
+                    "while matches!(read_zipfile_from_stream(&mut stream), Ok(Some(_))) {{}}\n"
+                )
+                .unwrap();
             }
             let mut stream = writer.finish()?;
             stream.seek(SeekFrom::Start(junk_len as u64))?;
@@ -421,7 +443,7 @@ impl FuzzTestCase<'_, '_> {
                     Ok(None) => break,
                     Ok(Some(mut file)) => {
                         let _ = copy(&mut file, &mut sink())?;
-                    },
+                    }
                     Err(e) => {
                         if streamable {
                             if panic_on_error {
