@@ -74,6 +74,10 @@ impl Clone for ZipError {
             ZipError::CompressionMethodNotSupported(id) => {
                 ZipError::CompressionMethodNotSupported(*id)
             }
+            ZipError::DecompressedSizeLimitExceeded { size, limit } => {
+                ZipError::DecompressedSizeLimitExceeded { size: *size, limit: *limit }
+            }
+            ZipError::DecompressedSizeUnknown => ZipError::DecompressedSizeUnknown,
         }
     }
 }
