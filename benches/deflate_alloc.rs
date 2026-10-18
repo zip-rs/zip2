@@ -9,9 +9,7 @@ fn bench_many_small_files(c: &mut criterion::Criterion) {
     let mut group = c.benchmark_group("deflate_many_small");
     for n in [10, 100, 500].iter() {
         let data = vec![b'x'; 1024];
-        let filenames: Vec<String> = (0..*n)
-            .map(|i| format!("file_{:04}.txt", i))
-            .collect();
+        let filenames: Vec<String> = (0..*n).map(|i| format!("file_{:04}.txt", i)).collect();
         group.throughput(Throughput::Bytes((*n as u64) * 1024));
         group.bench_with_input(BenchmarkId::new("deflate", n), n, |b, &_n| {
             b.iter(|| {
