@@ -80,9 +80,9 @@ impl arbitrary::Arbitrary<'_> for CustomExtraField {
             data: u.arbitrary()?,
         };
         let mut serialized_extra_field = Vec::with_capacity(extra_field.data.len() + 4);
-        extra_field
-            .write(&mut serialized_extra_field, true)
-            .unwrap();
+        if extra_field.write(&mut serialized_extra_field, true).is_err() {
+            return Err(arbitrary::Error::IncorrectFormat);
+        }
         let block = ZipLocalEntryBlock::zeroed();
         if ExtraField::parse(&mut Cursor::new(&serialized_extra_field), &block, true).is_err() {
             Err(arbitrary::Error::IncorrectFormat)
