@@ -255,6 +255,7 @@ jobs:
     needs:
       - build_and_test
       - check_fuzz
+      - bsd_platform
     strategy:
       matrix:
         browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
