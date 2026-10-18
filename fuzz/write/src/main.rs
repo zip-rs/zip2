@@ -302,7 +302,10 @@ fn do_operation(
                     mut path,
                     reopen,
                 } = operation;
-                let copy = matches!(&basic, BasicFileOperation::DeepCopy(_) | BasicFileOperation::ShallowCopy(_));
+                let copy = matches!(
+                    &basic,
+                    BasicFileOperation::DeepCopy(_) | BasicFileOperation::ShallowCopy(_)
+                );
 
                 match basic {
                     BasicFileOperation::ShallowCopy(base) | BasicFileOperation::DeepCopy(base) => {
@@ -783,7 +786,7 @@ mod tests {
         assert_eq!(archive.len(), 0);
     }
 
-        #[test]
+    #[test]
     fn shallow_copy_skips_operations_that_do_not_write_a_file() {
         let operation = file_operation(
             BasicFileOperation::ShallowCopy(Box::new(file_operation(
