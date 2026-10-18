@@ -4556,4 +4556,12 @@ mod tests {
         assert_eq!(std::mem::size_of::<Magic>(), 4);
         assert_eq!(std::mem::size_of::<ZipLocalEntryBlock>(), 26);
     }
+
+    #[test]
+    fn test_set_archive_comment_then_reopen() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_raw_comment(Box::new([255]))?;
+        let _ = ZipWriter::new_append(writer.finish()?)?;
+        Ok(())
+    }
 }
