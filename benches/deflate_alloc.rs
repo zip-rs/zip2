@@ -9,28 +9,31 @@ fn bench_many_small_files(c: &mut criterion::Criterion) {
     let mut group = c.benchmark_group("deflate_many_small");
     for n in [10, 100, 500].iter() {
         let data = vec![b'x'; 1024];
+        let filenames: Vec<String> = (0..*n)
+            .map(|i| format!("file_{:04}.txt", i))
+            .collect();
         group.throughput(Throughput::Bytes((*n as u64) * 1024));
-        group.bench_with_input(BenchmarkId::new("deflate", n), n, |b, &n| {
+        group.bench_with_input(BenchmarkId::new("deflate", n), n, |b, &_n| {
             b.iter(|| {
                 let buf = Cursor::new(Vec::new());
                 let mut zip = ZipWriter::new(buf);
                 let opts =
                     SimpleFileOptions::default().compression_method(CompressionMethod::DEFLATE);
-                for i in 0..n {
-                    zip.start_file(format!("file_{:04}.txt", i), opts).unwrap();
+                for filename in &filenames {
+                    zip.start_file(filename, opts).unwrap();
                     zip.write_all(&data).unwrap();
                 }
                 zip.finish().unwrap()
             })
         });
-        group.bench_with_input(BenchmarkId::new("stored", n), n, |b, &n| {
+        group.bench_with_input(BenchmarkId::new("stored", n), n, |b, &_n| {
             b.iter(|| {
                 let buf = Cursor::new(Vec::new());
                 let mut zip = ZipWriter::new(buf);
                 let opts =
                     SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-                for i in 0..n {
-                    zip.start_file(format!("file_{:04}.txt", i), opts).unwrap();
+                for filename in &filenames {
+                    zip.start_file(filename, opts).unwrap();
                     zip.write_all(&data).unwrap();
                 }
                 zip.finish().unwrap()
