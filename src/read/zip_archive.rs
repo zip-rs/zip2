@@ -165,11 +165,31 @@ impl<R> ZipArchive<R> {
 
 use crate::result::invalid;
 
-#[derive(Debug)]
-struct CentralDirectoryChain {
-    entries: Vec<(u64, ZipCentralEntryBlock)>,
-    next_offset: u64,
-    terminal_error: Option<ZipError>,
+/// The next `valid` headers decode, then the one after them fails with `error`.
+#[derive(Debug, Clone)]
+struct FailedRun {
+    valid: usize,
+    error: ZipError,
+}
+
+/// Headers walked by rejected EOCD candidates, keyed by position and shared by all of them.
+#[derive(Debug, Default)]
+struct CentralDirectoryChains {
+    runs: std::collections::HashMap<u64, FailedRun>,
+}
+
+impl CentralDirectoryChains {
+    /// Marks the headers in `files` as followed by `tail` and returns its error.
+    fn fail(&mut self, files: &[(Box<[u8]>, ZipFileData)], tail: FailedRun) -> ZipError {
+        for (i, (_, file)) in files.iter().enumerate() {
+            let run = FailedRun {
+                valid: files.len() - i + tail.valid,
+                error: tail.error.clone(),
+            };
+            self.runs.insert(file.central_header_start, run);
+        }
+        tail.error
+    }
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
@@ -179,7 +199,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(SeekFrom::End(0))?;
         let mut last_err = None;
-        let mut cd_chains = std::collections::HashMap::<u64, CentralDirectoryChain>::new();
+        let mut cd_chains = CentralDirectoryChains::default();
 
         const EOCD_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
             Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
@@ -236,11 +256,36 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
     }
 
+    /// Decodes the header at `central_header_start`, where `reader` must be positioned. The
+    /// returned entry's local header offset isn't shifted by the archive offset yet.
+    fn read_one_central_header(
+        reader: &mut R,
+        central_header_start: u64,
+    ) -> ZipResult<(Box<[u8]>, ZipFileData, u64)> {
+        let block = ZipCentralEntryBlock::parse(reader)?;
+        let next = central_header_start
+            + (size_of::<Magic>() + size_of::<ZipCentralEntryBlock>()) as u64
+            + u64::from(block.file_name_length)
+            + u64::from(block.extra_field_length)
+            + u64::from(block.file_comment_length);
+        let (file, file_name_raw) =
+            central_header_to_zip_file_inner(reader, 0, central_header_start, block)?;
+        // Check against this header's position so the result is the same for every candidate.
+        if file
+            .header_start
+            .checked_add(central_header_start)
+            .is_none()
+        {
+            return Err(invalid!("Archive header is too large"));
+        }
+        Ok((file_name_raw.into_boxed_slice(), file, next))
+    }
+
     fn read_central_header(
         dir_info: &CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
-        cd_chains: &mut std::collections::HashMap<u64, CentralDirectoryChain>,
+        cd_chains: &mut CentralDirectoryChains,
     ) -> Result<SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
@@ -260,60 +305,38 @@ impl<R: Read + Seek> ZipArchive<R> {
             return Err(ZipError::UnsupportedArchive("Oversized central directory"));
         }
 
-        let chain = cd_chains
-            .entry(dir_info.directory_start)
-            .or_insert_with(|| CentralDirectoryChain {
-                entries: Vec::new(),
-                next_offset: dir_info.directory_start,
-                terminal_error: None,
-            });
-
-        if chain.entries.len() < dir_info.number_of_files {
-            if let Some(ref err) = chain.terminal_error {
-                return Err(err.clone());
+        // Decode independently of the candidate so later candidates can reuse `cd_chains`.
+        let mut files = Vec::new();
+        let mut central_header_start = dir_info.directory_start;
+        reader.seek(SeekFrom::Start(central_header_start))?;
+        while files.len() < dir_info.number_of_files {
+            // An earlier candidate dropped these headers; decode them again for this last one.
+            if let Some(run) = cd_chains.runs.get(&central_header_start)
+                && files.len() + run.valid < dir_info.number_of_files
+            {
+                let run = run.clone();
+                return Err(cd_chains.fail(&files, run));
             }
-
-            reader.seek(SeekFrom::Start(chain.next_offset))?;
-            while chain.entries.len() < dir_info.number_of_files {
-                let central_header_start = reader.stream_position()?;
-                // Parse central header
-                let block = match ZipCentralEntryBlock::parse(reader) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        chain.terminal_error = Some(e.clone());
-                        chain.next_offset = central_header_start;
-                        return Err(e);
-                    }
-                };
-                chain.next_offset = reader.seek(SeekFrom::Current(
-                    i64::from(block.file_name_length)
-                        + i64::from(block.extra_field_length)
-                        + i64::from(block.file_comment_length),
-                ))?;
-
-                chain.entries.push((central_header_start, block));
+            match Self::read_one_central_header(reader, central_header_start) {
+                Ok((file_name_raw, file, next)) => {
+                    files.push((file_name_raw, file));
+                    central_header_start = next;
+                }
+                Err(e) => {
+                    let failed_here = FailedRun { valid: 0, error: e };
+                    cd_chains
+                        .runs
+                        .insert(central_header_start, failed_here.clone());
+                    return Err(cd_chains.fail(&files, failed_here));
+                }
             }
         }
 
-        let mut files = Vec::with_capacity(chain.entries.len().min(dir_info.number_of_files));
-        for (central_header_start, block) in chain.entries.drain(..dir_info.number_of_files) {
-            let variable_fields_start = central_header_start
-                + (size_of::<Magic>() + size_of::<ZipCentralEntryBlock>()) as u64;
-            reader.seek(SeekFrom::Start(variable_fields_start))?;
-            let (mut file, file_name_raw) =
-                match central_header_to_zip_file_inner(reader, 0, central_header_start, block) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        chain.terminal_error = Some(e.clone());
-                        chain.next_offset = central_header_start;
-                        return Err(e);
-                    }
-                };
+        for (_, file) in &mut files {
             file.header_start = file
                 .header_start
                 .checked_add(dir_info.archive_offset)
                 .ok_or_else(|| invalid!("Archive header is too large"))?;
-            files.push((file_name_raw.into_boxed_slice(), file));
         }
 
         Ok(SharedBuilder {
