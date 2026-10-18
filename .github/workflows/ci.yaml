@@ -387,6 +387,7 @@ jobs:
           path: |
             out/default/crashes/*
             out/default/hangs/*
+          if-no-files-found: error
         continue-on-error: true
       - name: Fail if there are any crashes
         if: steps.upload_failures.outcome == 'success'
@@ -446,6 +447,7 @@ jobs:
           path: |
             out/default/crashes/*
             out/default/hangs/*
+          if-no-files-found: error
         continue-on-error: true
       - name: Fail if there are any crashes
         if: steps.upload_failures.outcome == 'success'
@@ -513,6 +515,7 @@ jobs:
           path: |
             out/default/crashes/*
             out/default/hangs/*
+          if-no-files-found: error
         continue-on-error: true
       - name: Fail if there are any crashes
         if: steps.upload_failures.outcome == 'success'
@@ -572,6 +575,7 @@ jobs:
           path: |
             out/default/crashes/*
             out/default/hangs/*
+          if-no-files-found: error
         continue-on-error: true
       - name: Fail if there are any crashes
         if: steps.upload_failures.outcome == 'success'
