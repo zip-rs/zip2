@@ -25,8 +25,8 @@ https://github.com/zip-rs/zip2/security/advisories/new. We'll attempt to:
 ## Disclosure
 
 A vulnerability that affects a published version will only be publicly disclosed once a version without the vulnerability has 
-been published, which is not a prerelease unless all affected published versions were also prereleases, and the affected
-versions have been yanked. Once that's done, the delay before full public disclosure will be determined as follows:
+been published, which is not a prerelease unless all affected published versions were also prereleases. Once that's done, 
+the delay before full public disclosure will be determined as follows:
 
 * If the proof-of-concept is very simple, or an exploit is already in the wild (whether or not it specifically targets `zip`),
   all details will be made public right away.
@@ -37,3 +37,16 @@ versions have been yanked. Once that's done, the delay before full public disclo
 * If a potential victim at credible risk requests more time to deploy a fix, then the withholding of details can
   be extended up to 30 days. This may be extended to 90 days for high-value government and nonprofit targets, when
   truly extraordinary circumstances are delaying the deployment.
+
+## Backporting
+
+Backports of security fixes to older major versions are strictly best-effort; all users should update to the latest 
+version as soon as possible.
+
+## No yanked versions
+
+Previous versions of this policy called for yanking affected versions from crates.io. However, this proved to be too
+disruptive in the case of https://github.com/zip-rs/zip2/security/advisories/GHSA-vv5m-jxxh-4627 and
+https://github.com/zip-rs/zip2/security/advisories/GHSA-4v9h-p7m9-rh26 because those vulnerabilities affected a wide range
+of versions, and is not recommended by https://doc.rust-lang.org/cargo/commands/cargo-yank.html. Thus, versions will no 
+longer be yanked based on security vulnerabilities.

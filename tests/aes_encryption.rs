@@ -661,24 +661,24 @@ mod early_eof {
 
     #[derive(Clone, Copy, Debug)]
     enum How {
-        ReadToEnd,
-        ReadToString,
-        ReadLoop,
+        ToEnd,
+        ToString,
+        Loop,
     }
 
     fn read_all(r: &mut impl Read, how: How) -> io::Result<Vec<u8>> {
         match how {
-            How::ReadToEnd => {
+            How::ToEnd => {
                 let mut v = Vec::new();
                 r.read_to_end(&mut v)?;
                 Ok(v)
             }
-            How::ReadToString => {
+            How::ToString => {
                 let mut s = String::new();
                 r.read_to_string(&mut s)?;
                 Ok(s.into_bytes())
             }
-            How::ReadLoop => {
+            How::Loop => {
                 // small buffer to exercise many `read` calls (like io::copy)
                 let mut v = Vec::new();
                 let mut buf = [0u8; 100];
@@ -693,7 +693,7 @@ mod early_eof {
         }
     }
 
-    const ALL: [How; 3] = [How::ReadToEnd, How::ReadToString, How::ReadLoop];
+    const ALL: [How; 3] = [How::ToEnd, How::ToString, How::Loop];
 
     #[test]
     fn forged_deflate_stream_is_rejected() {
@@ -727,7 +727,7 @@ mod early_eof {
             let mut f = zip::read::read_zipfile_from_stream_with_options(&mut cur, opts)
                 .unwrap()
                 .unwrap();
-            let e = read_all(&mut f, How::ReadToEnd)
+            let e = read_all(&mut f, How::ToEnd)
                 .map(|v| v.len())
                 .expect_err("forged entry accepted");
             assert_auth_error(&e);
@@ -771,7 +771,7 @@ mod early_eof {
         for method in methods {
             for vendor in [1u16, 2] {
                 for p in &contents {
-                    for how in [How::ReadToEnd, How::ReadLoop] {
+                    for how in [How::ToEnd, How::Loop] {
                         let mut b = aes_archive(p, method);
                         set_aes(&mut b, Some(vendor), None, p);
                         let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
@@ -807,7 +807,7 @@ mod early_eof {
                 let mut f = zip::read::read_zipfile_from_stream_with_options(&mut cur, opts)
                     .unwrap()
                     .unwrap();
-                assert_eq!(&read_all(&mut f, How::ReadToEnd).unwrap(), expected);
+                assert_eq!(&read_all(&mut f, How::ToEnd).unwrap(), expected);
             }
         }
     }
@@ -827,7 +827,7 @@ mod early_eof {
             drop(f);
             // a fresh handle reads the whole entry fine
             let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
-            assert_eq!(read_all(&mut f, How::ReadToEnd).unwrap(), p);
+            assert_eq!(read_all(&mut f, How::ToEnd).unwrap(), p);
         }
     }
 }

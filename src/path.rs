@@ -51,6 +51,9 @@ pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
             Utf8WindowsComponent::Normal(s) => Some(s),
             _ => None,
         })
+        // In verbatim paths `/` isn't a separator, so a component can still contain `..`.
+        .flat_map(|s| s.split(['/', '\\']))
+        .filter(|s| !matches!(*s, "" | "." | ".."))
         .collect()
 }
 
@@ -277,8 +280,29 @@ pub(crate) fn resolve_enclosed(
 
 #[cfg(test)]
 mod tests {
-    use super::{enclosed_name, simplified_components};
-    use std::path::{Path, PathBuf};
+    use super::{enclosed_name, file_name_sanitized, simplified_components};
+    use std::path::{Component, Path, PathBuf};
+
+    #[test]
+    fn test_file_name_sanitized_splits_verbatim_component() {
+        for (name, expected) in [
+            (r"\\?\C:\../b", "b"),
+            (r"\\?\C:\a/../../b", "a/b"),
+            (r"\\?\C:\a\..\..\b", "a/b"),
+            (r"\\?\C:\a/./b", "a/b"),
+            ("../../b", "b"),
+            ("a/b", "a/b"),
+        ] {
+            let sanitized = file_name_sanitized(name);
+            assert_eq!(sanitized, PathBuf::from(expected), "{name}");
+            assert!(
+                sanitized
+                    .components()
+                    .all(|c| matches!(c, Component::Normal(_))),
+                "{name} -> {sanitized:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_simplified_components_relative_path() {
