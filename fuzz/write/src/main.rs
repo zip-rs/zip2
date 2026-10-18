@@ -4,7 +4,7 @@ use arbitrary::{Arbitrary, Unstructured};
 use core::fmt::Debug;
 use replace_with::replace_with_or_abort;
 use std::fmt::{Formatter, Write};
-use std::io::{copy, sink, Read, Write as IoWrite};
+use std::io::{copy, sink, Write as IoWrite};
 use std::io::{Cursor, Seek, SeekFrom};
 use std::ops;
 use std::path::PathBuf;
