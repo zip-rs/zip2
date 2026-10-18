@@ -1465,15 +1465,22 @@ impl<W: Write + Seek> ZipWriter<W> {
             let central_and_footer_size = footer_end - central_start;
             writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
             let (_, new_is_zip64) = self.write_central_and_footer()?;
-            if new_is_zip64 && new_is_zip64 != is_zip64 {
-                let new_size = (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
-                    as u64
-                    + zip64_extensible_len
-                    + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>()) as u64;
-                let new_archive_end = archive_end + new_size;
-                debug_assert!(self.inner.try_inner_mut()?.stream_position()? == new_archive_end);
-            } else {
-                debug_assert!(self.inner.try_inner_mut()?.stream_position()? == archive_end);
+            #[cfg(debug_assertions)]
+            {
+                let archive_end = if new_is_zip64 && new_is_zip64 != is_zip64 {
+                    let new_size = (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
+                        as u64
+                        + zip64_extensible_len
+                        + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
+                            as u64;
+                    archive_end + new_size
+                } else {
+                    archive_end
+                };
+                debug_assert!(
+                    self.inner.try_inner_mut()?.stream_position()?
+                        == archive_end + self.comment.len() as u64
+                );
             }
         }
 
@@ -4552,5 +4559,22 @@ mod tests {
         use crate::format::magic::Magic;
         assert_eq!(std::mem::size_of::<Magic>(), 4);
         assert_eq!(std::mem::size_of::<ZipLocalEntryBlock>(), 26);
+    }
+
+    #[test]
+    fn test_set_archive_comment_then_reopen() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file_from_path(
+            "",
+            SimpleFileOptions {
+                name: Some(&[37, 37, 255, 255, 41, 47, 213]),
+                compression_method: Stored,
+                ..Default::default()
+            },
+        )?;
+        writer.abort_file()?;
+        writer.set_raw_comment(Box::new([255]))?;
+        let _ = ZipWriter::new_append(writer.finish()?)?;
+        Ok(())
     }
 }
