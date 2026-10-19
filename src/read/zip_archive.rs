@@ -573,11 +573,17 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by name
+    /// First try to get the index by the name as a binary representation of the name. If not found,
+    /// try to find the name with the decoded version of the name. This is a fallback for name
+    /// encoded with CP437.
     pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile<'_, R>> {
         self.by_name_with_optional_password(name, None)
     }
 
     /// Get the index of a file entry by name, if it's present.
+    /// First try to get the index by the name as a binary representation of the name. If not found,
+    /// try to find the name with the decoded version of the name. This is a fallback for name
+    /// encoded with CP437.
     #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
         self.shared.files.get_index_of(name.as_bytes()).or_else(|| {
