@@ -128,30 +128,32 @@ fn memory_benchmarks(c: &mut Criterion) {
     });
 
     #[cfg(not(miri))]
-    c.bench_function("read_metadata_in_memory", |b| {
-        let archive_bytes = generate_random_archive_meta(15_000, 1024).unwrap();
-        b.iter(|| {
-            black_box(
-                ZipArchive::new(Cursor::new(archive_bytes.as_slice()))
-                    .unwrap()
-                    .len(),
-            )
+    {
+        c.bench_function("read_metadata_in_memory", |b| {
+            let archive_bytes = generate_random_archive_meta(15_000, 1024).unwrap();
+            b.iter(|| {
+                black_box(
+                    ZipArchive::new(Cursor::new(archive_bytes.as_slice()))
+                        .unwrap()
+                        .len(),
+                )
+            });
         });
-    });
 
-    let many_entries = generate_random_archive_meta(100, 1024 * 1024).unwrap();
-    let mut many_entries_group = c.benchmark_group("read_many_entries_memory");
-    many_entries_group.throughput(criterion::Throughput::Bytes(100 * 1024 * 1024));
-    many_entries_group.bench_function("read_all", |b| {
-        b.iter(|| {
-            let mut archive = ZipArchive::new(Cursor::new(many_entries.as_slice())).unwrap();
-            for idx in 0..archive.len() {
-                let mut entry = archive.by_index(idx).unwrap();
-                io::copy(&mut entry, &mut io::sink()).unwrap();
-            }
+        let many_entries = generate_random_archive_meta(100, 1024 * 1024).unwrap();
+        let mut many_entries_group = c.benchmark_group("read_many_entries_memory");
+        many_entries_group.throughput(criterion::Throughput::Bytes(100 * 1024 * 1024));
+        many_entries_group.bench_function("read_all", |b| {
+            b.iter(|| {
+                let mut archive = ZipArchive::new(Cursor::new(many_entries.as_slice())).unwrap();
+                for idx in 0..archive.len() {
+                    let mut entry = archive.by_index(idx).unwrap();
+                    io::copy(&mut entry, &mut io::sink()).unwrap();
+                }
+            });
         });
-    });
-    many_entries_group.finish();
+        many_entries_group.finish();
+    }
 
     let comment_archive = generate_archive_with_comment(50_000).unwrap();
     c.bench_function("parse_archive_with_comment_in_memory", |b| {
