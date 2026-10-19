@@ -13,9 +13,10 @@
 //!
 //! Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
 
+
 #[cfg(not(any(miri, target_arch = "wasm32")))]
 mod benches {
-    use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+    use criterion::{BatchSize, Criterion, criterion_group};
     use std::fs;
     use std::hint::black_box;
     use std::io::{self, Cursor, Read, Seek, Write};
@@ -478,8 +479,9 @@ mod benches {
         targets = merge_archive_benchmarks
     }
     criterion_group!(benches, criterion_benchmark);
-    criterion_main!(merge_archive_benches, benches);
 }
+#[cfg(not(any(miri, target_arch = "wasm32")))]
+criterion::criterion_main!(benches::merge_archive_benches, benches::benches);
 #[cfg(any(miri, target_arch = "wasm32"))]
 fn main() {
     eprintln!("criterion_bench.rs does not compile on miri or wasm32 targets; skipping it");
