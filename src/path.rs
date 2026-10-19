@@ -68,7 +68,10 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
             Utf8WindowsComponent::Normal(s) => {
                 // As in `enclosed_name`: a separator inside one component means the name is
                 // split differently when it is written.
-                if s.contains(['/', '\\']) {
+                // Colons inside a component (not a leading drive prefix) indicate Windows
+                // Alternate Data Streams (ADS) or invalid filename characters.
+                // On Unix, colons are permitted in filenames (e.g. cargo-afl outputs).
+                if s.contains(['/', '\\']) || (cfg!(windows) && s.contains(':')) {
                     return None;
                 }
                 out.push(OsStr::new(s));
@@ -114,7 +117,11 @@ pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
                 // Inside a verbatim (`\\?\`) path `/` is not a separator, so `../b` comes back
                 // as one component; joined onto an ordinary path it is split again. The check
                 // here and the eventual write must agree on where a component ends.
-                if s.contains(['/', '\\']) {
+                // Colons inside a component indicate Windows Alternate Data Streams (ADS)
+                // (e.g. `file:Zone.Identifier` or `file:stream`), which bypass security
+                // policies or access hidden file streams.
+                // On Unix, colons are permitted in filenames (e.g. cargo-afl outputs).
+                if s.contains(['/', '\\']) || (cfg!(windows) && s.contains(':')) {
                     return None;
                 }
                 depth += 1;
@@ -625,13 +632,35 @@ mod tests {
         assert_eq!(file_name_sanitized("b/c:x"), PathBuf::from_iter(["b", "x"]));
     }
 
-    /// Only a letter and `:` at the start of a component is a drive; other colons are kept.
+    /// Colons inside a component (not a leading drive prefix) represent Windows Alternate Data
+    /// Streams (ADS) and must be rejected on Windows to prevent MotW bypass or arbitrary stream writes.
     #[test]
-    fn test_colon_that_is_not_a_drive_prefix_is_kept() {
-        for name in ["foo:bar", "b/ab:c", "b/1:x", "b/:x", "b/a.b:c:d"] {
-            let enclosed = enclosed_name(name).unwrap();
-            assert_eq!(enclosed, Path::new(name), "{name}");
-            assert_each_is_one_windows_normal_component(name, enclosed.iter());
+    fn test_colon_that_is_not_a_drive_prefix_is_rejected() {
+        if !cfg!(windows) {
+            // On Unix, colons are permitted in filenames (e.g. cargo-afl outputs).
+            return;
+        }
+        for name in [
+            "foo:bar",
+            "b/ab:c",
+            "b/1:x",
+            "b/:x",
+            "b/a.b:c:d",
+            "target.exe:Zone.Identifier",
+            "foo::$DATA",
+        ] {
+            assert_eq!(enclosed_name(name), None, "{name}");
+            assert_eq!(simplified_components(Path::new(name)), None, "{name}");
+        }
+    }
+
+    /// On Unix, colons inside filenames are legitimate and must be accepted.
+    #[test]
+    #[cfg(not(windows))]
+    fn test_colon_permitted_on_unix() {
+        for name in ["foo:bar", "b/ab:c", "id:000000,sig:11"] {
+            assert!(enclosed_name(name).is_some(), "{name}");
+            assert!(simplified_components(Path::new(name)).is_some(), "{name}");
         }
     }
 
