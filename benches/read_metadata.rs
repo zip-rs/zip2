@@ -49,19 +49,31 @@ fn read_metadata(bench: &mut Bencher) {
 const COMMENT_SIZE: usize = 50_000;
 
 fn generate_zip32_archive_with_random_comment(comment_length: usize) -> ZipResult<Vec<u8>> {
-    use rand::{RngExt, rng};
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
-    let mut bytes = vec![0u8; comment_length];
-    rng().fill(&mut bytes);
+    let bytes = random_comment(comment_length);
     writer.set_raw_comment(bytes.into_boxed_slice())?;
 
     writer.start_file("asdf.txt", options)?;
     writer.write_all(b"asdf")?;
 
     Ok(writer.finish()?.into_inner())
+}
+
+fn random_comment(comment_length: usize) -> Vec<u8> {
+    let mut bytes = vec![0u8; comment_length];
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rand::{RngExt, rng};
+        rng().fill(&mut bytes);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+    }
+    bytes
 }
 
 fn parse_archive_with_comment(bench: &mut Bencher) {
@@ -77,15 +89,13 @@ fn parse_archive_with_comment(bench: &mut Bencher) {
 const COMMENT_SIZE_64: usize = 500_000;
 
 fn generate_zip64_archive_with_random_extensible_data(comment_length: usize) -> ZipResult<Vec<u8>> {
-    use rand::{RngExt, rng};
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
         .large_file(true);
 
-    let mut bytes = vec![0u8; comment_length];
-    rng().fill(&mut bytes);
+    let bytes = random_comment(comment_length);
     writer.set_raw_zip64_extensible_data_sector(bytes.into_boxed_slice());
 
     writer.start_file("asdf.txt", options)?;
