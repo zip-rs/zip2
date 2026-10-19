@@ -55,7 +55,7 @@ jobs:
       - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - run: cargo install --locked cargo-nextest
-      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
+      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples --benches
   bsd_platform:
     needs:
     - cargo_semver
@@ -81,7 +81,7 @@ jobs:
       - run: sudo snap install --beta zig --classic
       - run: cargo install cargo-zigbuild
       - run: rustup target add x86_64-unknown-freebsd
-      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples
+      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
   check_minimal_versions:
     needs:
       - cargo_semver
@@ -213,7 +213,7 @@ jobs:
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - name: Check that the benches can be built
         run: cargo build --benches
-      - run: cargo check --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
+      - run: cargo check --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples --benches
       - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }}
   check_fuzz:
     timeout-minutes: 10
@@ -290,6 +290,36 @@ jobs:
       - run: rustup target add wasm32-unknown-unknown
       - run: cargo install wasm-pack --locked
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
+  wasm_build_benches:
+    timeout-minutes: 10
+    name: "Check WASM builds"
+    needs:
+      - build_and_test
+      - check_fuzz
+      - bsd_platform
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rustalias: stable
+            rust: stable
+          - rustalias: nightly
+            rust: nightly
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo build --benches --manifest-path ${{ github.workspace }}/Cargo.toml --no-default-features --features _wasm_compatible_features
   cargo_semver:
     timeout-minutes: 10
     strategy:
@@ -339,6 +369,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - wasm_build_benches
       - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -407,6 +438,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - wasm_build_benches
       - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -467,6 +499,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - wasm_build_benches
       - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -535,6 +568,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - wasm_build_benches
       - check_fuzz
     steps:
       - name: Harden the runner (Audit all outbound calls)
