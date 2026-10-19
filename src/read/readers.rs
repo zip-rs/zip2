@@ -152,6 +152,16 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
             CryptoReader::Aes { reader: r, .. } => r.into_inner(),
         }
     }
+
+    /// Return the underlying reader.
+    pub fn inner(&self) -> &io::Take<&'a mut R> {
+        match self {
+            CryptoReader::Plaintext(r) => r,
+            CryptoReader::ZipCrypto(r) => r.inner(),
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader: r, .. } => r.inner(),
+        }
+    }
 }
 
 macro_rules! invalid_state {
@@ -236,6 +246,25 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
             ZipFileReader::Stored(r) => Ok(r.into_inner().into_inner()),
             ZipFileReader::Compressed(r) | ZipFileReader::CompressedAes(r) => {
                 Ok(r.into_inner().into_inner()?.into_inner().into_inner())
+            }
+        }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn inner(&self) -> io::Result<&io::Take<&'a mut R>> {
+        match self {
+            ZipFileReader::NoReader => invalid_state!(),
+            ZipFileReader::Raw(r) => Ok(r),
+            ZipFileReader::Stored(r) => Ok(r.inner().inner()),
+            ZipFileReader::Compressed(r) | ZipFileReader::CompressedAes(r) => {
+                if let Some(buf) = r.inner().inner() {
+                    Ok(buf.get_ref().inner())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Not initialized reader",
+                    ))
+                }
             }
         }
     }
