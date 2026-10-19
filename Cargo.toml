@@ -63,10 +63,12 @@ time = { version = "^0.3.47", default-features = false, optional = true, feature
 ] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["html_reports"] }
 wasm-bindgen-test = "^0.3.56"
 getrandom = { version = "0.4", default-features = false, features = ["wasm_js"]}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
 rand = "0.10.3"
 
 [target.'cfg(not(miri))'.dev-dependencies]
@@ -157,3 +159,8 @@ harness = false
 [[bench]]
 name = "merge_archive"
 harness = false
+
+[[bench]]
+name = "deflate_alloc"
+harness = false
+required-features = ["_deflate-any"]
