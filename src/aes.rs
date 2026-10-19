@@ -296,6 +296,9 @@ impl<R: Read> Read for AesReaderValid<R> {
 }
 
 impl<R: Read> AesReaderValid<R> {
+    pub fn inner(&self) -> &R {
+        &self.reader
+    }
     fn verify_hmac(&mut self) -> io::Result<()> {
         debug_assert!(
             !self.finalized,

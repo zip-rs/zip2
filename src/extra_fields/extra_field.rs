@@ -310,9 +310,12 @@ impl ZipFileData {
 
 #[cfg(test)]
 mod tests {
-    use crate::extra_fields::ExtraField;
     use crate::extra_fields::ExtraFields;
+    use crate::extra_fields::{CustomExtraField, ExtraField};
     use crate::format::blocks::ZipEntryBlock;
+    use crate::write::FullFileOptions;
+    use crate::{ZipArchive, ZipWriter};
+    use std::io::Cursor;
 
     struct PlaceHolderBlock;
 
@@ -338,6 +341,25 @@ mod tests {
             extra_fields.inner[0],
             ExtraField::AeXEncryption(..)
         ));
+    }
+
+    #[test]
+    fn ntfs_extra_field() {
+        let mut ntfs_extra_field = [0; 32];
+        ntfs_extra_field[4] = 1;
+        ntfs_extra_field[6] = 24;
+        let mut options = FullFileOptions::default();
+        options.name = Some(b"test.txt");
+        options.extended_options.extra_fields = vec![CustomExtraField {
+            central_only: false,
+            header_id: 0x000A,
+            data: Box::new(ntfs_extra_field),
+        }]
+        .into();
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file_with_options(options).unwrap();
+        let archive = writer.finish().unwrap();
+        ZipArchive::new(archive).unwrap();
     }
 
     #[test]

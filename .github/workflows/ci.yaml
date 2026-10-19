@@ -382,12 +382,19 @@ jobs:
           name: fuzz_read_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
+        id: upload_failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_read_bad_inputs
-          path: out/default/crashes/*
-          if-no-files-found: ignore
+          path: |
+            out/default/crashes/*
+            out/default/hangs/*
+          if-no-files-found: error
+        continue-on-error: true
+      - name: Fail if there are any crashes
+        if: steps.upload_failures.outcome == 'success'
+        run: exit 1
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -435,12 +442,19 @@ jobs:
           find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
+        id: upload_failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_read_bad_inputs_no_features
-          path: out/default/crashes/*
-          if-no-files-found: ignore
+          path: |
+            out/default/crashes/*
+            out/default/hangs/*
+          if-no-files-found: error
+        continue-on-error: true
+      - name: Fail if there are any crashes
+        if: steps.upload_failures.outcome == 'success'
+        run: exit 1
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -474,6 +488,8 @@ jobs:
       - name: compile fuzz
         run: cargo afl build --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
+        env:
+          AFL_BENCH_UNTIL_CRASH: 1
         timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
       - name: Minimize corpus
@@ -494,12 +510,19 @@ jobs:
           name: fuzz_write_corpus
           path: out_cmin/*
       - name: Upload any failure inputs
+        id: upload_failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_write_bad_inputs
-          path: out/default/crashes/*
-          if-no-files-found: ignore
+          path: |
+            out/default/crashes/*
+            out/default/hangs/*
+          if-no-files-found: error
+        continue-on-error: true
+      - name: Fail if there are any crashes
+        if: steps.upload_failures.outcome == 'success'
+        run: exit 1
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -531,8 +554,10 @@ jobs:
       - name: clippy
         run: cargo afl clippy --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
+        run: cargo afl build --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
+        env:
+          AFL_BENCH_UNTIL_CRASH: 1
         timeout-minutes: 130
         run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
       - name: Report coverage
@@ -545,12 +570,19 @@ jobs:
           find out -type f -name '*:*' -exec rename 's/:/-/g' {} \+
           find map -type f -name '*:*' -exec rename 's/:/-/g' {} \+
       - name: Upload any failure inputs
+        id: upload_failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz_write_bad_inputs_no_features
-          path: out/default/crashes/*
-          if-no-files-found: ignore
+          path: |
+            out/default/crashes/*
+            out/default/hangs/*
+          if-no-files-found: error
+        continue-on-error: true
+      - name: Fail if there are any crashes
+        if: steps.upload_failures.outcome == 'success'
+        run: exit 1
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
