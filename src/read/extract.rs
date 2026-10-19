@@ -4,7 +4,6 @@ use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use indexmap::IndexMap;
@@ -553,6 +552,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 options.create(true).write(true).truncate(true); // Default for `fs::File::create`
                 #[cfg(unix)]
                 if let Some(mode) = file.unix_mode() {
+                    use std::os::unix::fs::OpenOptionsExt;
                     options.mode(mode);
                 }
                 let mut outfile = options.open(&outpath)?;
