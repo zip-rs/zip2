@@ -54,12 +54,6 @@ nix = { version = "^0.31.3", features = ["fs"], default-features = false }
 getrandom = { version = "0.4", default-features = false, optional = true }
 time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
 
-# native dev-dependencies
-
-# native dev-dependencies - criterion does not compile on big endian
-[target.'cfg(all(not(target_arch = "wasm32"), not(target_endian = "big")))'.dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
-
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", default-features = false, features = ["wasm_js"], optional = true }
@@ -159,13 +153,13 @@ name = "read_metadata"
 harness = false
 
 [[bench]]
-name = "read_many_entries"
-harness = false
-
-[[bench]]
 name = "deflate_alloc"
 harness = false
 required-features = ["_deflate-any"]
+
+[[bench]]
+name = "read_many_entries"
+harness = false
 
 [[bench]]
 name = "merge_archive"
