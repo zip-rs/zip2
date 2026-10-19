@@ -2251,7 +2251,10 @@ impl ZipFileData {
         ))?;
         writer.write_all(&self.crc32.to_le_bytes())?;
         if self.large_file {
-            debug_assert!(matches!(self.extra_fields.local_extra_fields().next(), Some(ExtraField::Zip64ExtendedInformation(_))));
+            debug_assert!(matches!(
+                self.extra_fields.local_extra_fields().next(),
+                Some(ExtraField::Zip64ExtendedInformation(_))
+            ));
             writer.write_all(&ZIP64_BYTES_THR_U32.to_le_bytes())?;
             writer.write_all(&ZIP64_BYTES_THR_U32.to_le_bytes())?;
             self.update_local_zip64_extra_field(writer, file_name_raw)?;
@@ -2262,7 +2265,12 @@ impl ZipFileData {
                     "large_file(true) option has not been set",
                 )));
             }
-            debug_assert!(!self.extra_fields.local_extra_fields().any(|field| matches!(field, ExtraField::Zip64ExtendedInformation(_))));
+            debug_assert!(
+                !self
+                    .extra_fields
+                    .local_extra_fields()
+                    .any(|field| matches!(field, ExtraField::Zip64ExtendedInformation(_)))
+            );
             writer.write_all(&(self.compressed_size as u32).to_le_bytes())?;
             // uncompressed size is already checked on write to catch it as soon as possible
             writer.write_all(&(self.uncompressed_size as u32).to_le_bytes())?;
