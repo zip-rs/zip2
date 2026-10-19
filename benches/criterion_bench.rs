@@ -13,8 +13,7 @@
 //!
 //! Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
 
-// Does not compile on big endian
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(miri, target_arch = "wasm32")))]
 mod benches {
     use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
     use std::fs;
@@ -52,7 +51,7 @@ mod benches {
 
     fn generate_random_archive(size: usize) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         writer.start_file("random.dat", options).unwrap();
 
         // generate deterministic seeded random data
@@ -157,7 +156,7 @@ mod benches {
         let p = |name: &str| bench_dir.path().join(name);
 
         let merge_options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let path_merge_src = p("merge_src.zip");
         let path_merge_out = p("merge_out.zip");
         let (len, src_bytes) =
@@ -477,9 +476,9 @@ mod benches {
     criterion_group!(benches, criterion_benchmark);
     criterion_main!(merge_archive_benches, benches);
 }
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(miri, target_arch = "wasm32"))]
 fn main() {
     eprintln!(
-        "criterion_bench.rs does not compile on big-endian or wasm32 targets; skipping it"
+        "criterion_bench.rs does not compile on miri or wasm32 targets; skipping it"
     );
 }

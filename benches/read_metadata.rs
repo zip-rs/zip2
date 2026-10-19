@@ -1,6 +1,5 @@
 use bencher::{benchmark_group, benchmark_main};
 
-use std::fs;
 use std::io::{Cursor, Write};
 
 use bencher::Bencher;
@@ -116,6 +115,7 @@ fn parse_zip64_archive_with_comment(bench: &mut Bencher) {
 
 #[cfg(not(miri))]
 fn parse_stream_archive(bench: &mut Bencher) {
+    use std::fs;
     use tempfile::TempDir;
     const STREAM_ZIP_ENTRIES: usize = 5;
     const STREAM_FILE_SIZE: usize = 5;
@@ -139,6 +139,7 @@ fn parse_stream_archive(bench: &mut Bencher) {
 
 #[cfg(not(miri))]
 fn parse_large_non_zip(bench: &mut Bencher) {
+    use std::fs;
     use tempfile::TempDir;
     const LARGE_FILE_SIZE: usize = 17_000_000;
 

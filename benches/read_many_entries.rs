@@ -1,6 +1,5 @@
 use bencher::{benchmark_group, benchmark_main};
 
-use std::fs::File;
 use std::io::{Cursor, Write};
 
 use bencher::Bencher;
@@ -32,14 +31,18 @@ fn generate_random_archive(size: usize) -> Result<Vec<u8>, std::io::Error> {
     Ok(w.into_inner())
 }
 
+#[cfg(not(miri))]
 fn generate_random_archive_to_file(size: usize) -> Result<(), std::io::Error> {
+    use std::fs::File;
     let bytes = generate_random_archive(size)?;
     let mut file = File::create(FILENAME)?;
     file.write_all(&bytes)?;
     Ok(())
 }
 
+#[cfg(not(miri))]
 fn read_many_entries_as_file(bench: &mut Bencher) {
+    use std::fs::File;
     let size = 1024 * 1024;
     generate_random_archive_to_file(size)
         .expect("Failed to create a random archive for the bench read_entry()");
@@ -57,7 +60,9 @@ fn read_many_entries_as_file(bench: &mut Bencher) {
     std::fs::remove_file(FILENAME).unwrap();
 }
 
+#[cfg(not(miri))]
 fn read_many_entries_as_file_buf(bench: &mut Bencher) {
+    use std::fs::File;
     let size = 1024 * 1024;
     generate_random_archive_to_file(size)
         .expect("Failed to create a random archive for the bench read_entry()");
@@ -92,10 +97,16 @@ fn read_many_entries(bench: &mut Bencher) {
     bench.bytes = (size * NB_FILES) as u64;
 }
 
+#[cfg(not(miri))]
 benchmark_group!(
     benches,
     read_many_entries,
     read_many_entries_as_file,
     read_many_entries_as_file_buf
+);
+#[cfg(miri)]
+benchmark_group!(
+    benches,
+    read_many_entries,
 );
 benchmark_main!(benches);
