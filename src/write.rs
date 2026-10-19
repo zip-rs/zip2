@@ -423,6 +423,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let dest_name_raw = dest_name.as_bytes();
         new_data.header_start = write_position;
         new_data.central_header_start = 0;
+        new_data.set_language_encoding_for(dest_name_raw);
         let index = self.insert_file_data(dest_name_raw, new_data)?;
         let new_data = &mut self.files[index];
         let result: io::Result<()> = {
@@ -647,6 +648,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
+            language_encoding: None,
         });
         #[cfg(not(feature = "unreserved"))]
         {
@@ -698,6 +700,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                 file.flags |= ZipFlags::LanguageEncoding.as_u16();
             }
             file.file_comment = comment;
+        }
+        if let Some(language_encoding) = raw_values.language_encoding {
+            file.flags
+                .set(ZipFlags::LanguageEncoding, language_encoding);
         }
         if (!self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..))))
             && file
@@ -1116,6 +1122,15 @@ impl<W: Write + Seek> ZipWriter<W> {
         file: ZipFile<'_, R>,
         name: S,
     ) -> ZipResult<()> {
+        let options = Self::raw_copy_options(&file)?;
+        let file_name = name.to_string();
+        self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options, None)
+    }
+
+    /// The options a raw copy writes `file` with: its own, plus its comment and extra fields.
+    fn raw_copy_options<R: Read>(
+        file: &ZipFile<'_, R>,
+    ) -> ZipResult<FullFileOptions<'static, 'static>> {
         let mut options = file.options().into_full_options();
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
@@ -1133,20 +1148,23 @@ impl<W: Write + Seek> ZipWriter<W> {
                 options.add_extra_field(header_id, &buff[4..], false)?;
             }
         }
-        let file_name = name.to_string();
-        self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options)
+        Ok(options)
     }
 
+    /// `language_encoding` is the copied entry's own flag when `name` is its
+    /// stored name, or `None` for a new name, which derives the flag from it.
     fn raw_copy_file_rename_internal<R: Read, T: FileOptionExtension>(
         &mut self,
         mut file: ZipFile<'_, R>,
         name: &[u8],
         options: FileOptions<'_, '_, T>,
+        language_encoding: Option<bool>,
     ) -> ZipResult<()> {
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
             compressed_size: file.compressed_size(),
             uncompressed_size: file.size(),
+            language_encoding,
         };
 
         self.start_entry(name, options, Some(raw_values))?;
@@ -1174,6 +1192,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// copies of the `ZipFile` since there is no need to decompress and compress it again. Any `ZipFile`
     /// metadata is copied and not checked, for example the file CRC.
     ///
+    /// The name is copied as stored: the same bytes, under the same language encoding flag. So a
+    /// name in a legacy code page (Shift-JIS, GBK, CP866, ...) stays readable by tools that decode
+    /// it, where re-encoding the CP437 reading of [`ZipFile::name`] as UTF-8 would garble it.
+    ///
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
@@ -1194,8 +1216,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// }
     /// ```
     pub fn raw_copy_file<R: Read>(&mut self, file: ZipFile<'_, R>) -> ZipResult<()> {
-        let file_name = file.name()?.into_owned();
-        self.raw_copy_file_rename(file, file_name)
+        let options = Self::raw_copy_options(&file)?;
+        let file_name_raw = file.name_raw().to_owned();
+        let language_encoding = file.flags().matching(ZipFlags::LanguageEncoding);
+        self.raw_copy_file_rename_internal(file, &file_name_raw, options, Some(language_encoding))
     }
 
     /// Add a new file using the already compressed data from a ZIP file being read and set the last
@@ -1242,7 +1266,8 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         options.normalize();
         let file_name_raw = file.name_raw().to_owned();
-        self.raw_copy_file_rename_internal(file, &file_name_raw, options)
+        let language_encoding = file.flags().matching(ZipFlags::LanguageEncoding);
+        self.raw_copy_file_rename_internal(file, &file_name_raw, options, Some(language_encoding))
     }
 
     /// Add a directory entry.
@@ -1382,6 +1407,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             crc32,
             compressed_size,
             uncompressed_size,
+            language_encoding: None,
         };
 
         self.start_entry(&file_name, options, Some(raw_values))?;
@@ -1570,6 +1596,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut dest_data = self.files[src_index].clone();
         let file_name_raw = dest_name.as_bytes();
         dest_data.central_header_start = 0;
+        dest_data.set_language_encoding_for(file_name_raw);
         self.insert_file_data(file_name_raw, dest_data)?;
         Ok(())
     }
@@ -2360,7 +2387,7 @@ impl ZipFileData {
         let block = ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
-            flags: self.flags(file_name_raw),
+            flags: self.flags(),
             compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
@@ -2492,7 +2519,7 @@ impl ZipFileData {
         self.data_start.get_or_init(|| data_start);
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
-            flags: self.flags(file_name_raw),
+            flags: self.flags(),
             compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
@@ -4575,6 +4602,163 @@ mod tests {
         writer.abort_file()?;
         writer.set_raw_comment(Box::new([255]))?;
         let _ = ZipWriter::new_append(writer.finish()?)?;
+        Ok(())
+    }
+
+    /// `表示写真.txt` in Shift-JIS, as Japanese Windows tools store it: no
+    /// language encoding flag, and not valid UTF-8, so [`ZipFile::name`] reads it
+    /// as CP437.
+    const SHIFT_JIS_NAME: &[u8] = b"\x95\x5c\x8e\xa6\x8e\xca\x90\x5e.txt";
+
+    /// One stored entry named `name_raw` with the language encoding flag clear,
+    /// made by patching an ASCII placeholder of the same length in both headers.
+    fn archive_with_unflagged_name(name_raw: &[u8]) -> ZipResult<ZipArchive<Cursor<Vec<u8>>>> {
+        let placeholder = "x".repeat(name_raw.len());
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(
+            &*placeholder,
+            SimpleFileOptions::default().compression_method(Stored),
+        )?;
+        writer.write_all(b"data")?;
+        let mut bytes = writer.finish()?.into_inner();
+        let mut patched = 0;
+        for start in 0..=bytes.len() - name_raw.len() {
+            if &bytes[start..start + name_raw.len()] == placeholder.as_bytes() {
+                bytes[start..start + name_raw.len()].copy_from_slice(name_raw);
+                patched += 1;
+            }
+        }
+        assert_eq!(
+            patched, 2,
+            "the name sits in the local header and the central directory"
+        );
+        ZipArchive::new(Cursor::new(bytes))
+    }
+
+    fn copied(
+        mut source: ZipArchive<Cursor<Vec<u8>>>,
+        copy: impl FnOnce(
+            &mut ZipWriter<Cursor<Vec<u8>>>,
+            crate::read::ZipFile<'_, Cursor<Vec<u8>>>,
+        ) -> ZipResult<()>,
+    ) -> ZipResult<Vec<u8>> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        copy(&mut writer, source.by_index_raw(0)?)?;
+        Ok(writer.finish()?.into_inner())
+    }
+
+    fn name_and_language_encoding(bytes: Vec<u8>) -> ZipResult<(Vec<u8>, bool)> {
+        let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+        let file = archive.by_index_raw(0)?;
+        let language_encoding = file
+            .flags()
+            .matching(crate::format::flags::ZipFlags::LanguageEncoding);
+        Ok((file.name_raw().to_vec(), language_encoding))
+    }
+
+    #[test]
+    fn raw_copy_file_keeps_a_legacy_code_page_name_as_stored() -> ZipResult<()> {
+        let bytes = copied(
+            archive_with_unflagged_name(SHIFT_JIS_NAME)?,
+            |writer, file| writer.raw_copy_file(file),
+        )?;
+        let in_both_headers = bytes
+            .windows(SHIFT_JIS_NAME.len())
+            .filter(|window| *window == SHIFT_JIS_NAME)
+            .count();
+        assert_eq!(in_both_headers, 2);
+        assert_eq!(
+            name_and_language_encoding(bytes)?,
+            (SHIFT_JIS_NAME.to_vec(), false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn raw_copy_file_keeps_an_unflagged_utf8_name_unflagged() -> ZipResult<()> {
+        // Valid UTF-8 without the flag, as older Info-ZIP on Linux writes. A Shift-JIS
+        // or GBK name can be valid UTF-8 by accident too, so the flag must not be guessed.
+        let name = "café.txt".as_bytes();
+        let bytes = copied(archive_with_unflagged_name(name)?, |writer, file| {
+            writer.raw_copy_file(file)
+        })?;
+        assert_eq!(name_and_language_encoding(bytes)?, (name.to_vec(), false));
+        Ok(())
+    }
+
+    #[test]
+    fn raw_copy_file_keeps_a_flagged_utf8_name_flagged() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(
+            "café.txt",
+            SimpleFileOptions::default().compression_method(Stored),
+        )?;
+        writer.write_all(b"data")?;
+        let source = ZipArchive::new(Cursor::new(writer.finish()?.into_inner()))?;
+        let bytes = copied(source, |writer, file| writer.raw_copy_file(file))?;
+        assert_eq!(
+            name_and_language_encoding(bytes)?,
+            ("café.txt".as_bytes().to_vec(), true)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn raw_copy_file_rename_flags_a_new_utf8_name() -> ZipResult<()> {
+        let bytes = copied(
+            archive_with_unflagged_name(SHIFT_JIS_NAME)?,
+            |writer, file| writer.raw_copy_file_rename(file, "写真.txt"),
+        )?;
+        assert_eq!(
+            name_and_language_encoding(bytes)?,
+            ("写真.txt".as_bytes().to_vec(), true)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn raw_copy_file_touch_keeps_the_name_as_stored() -> ZipResult<()> {
+        let bytes = copied(
+            archive_with_unflagged_name(SHIFT_JIS_NAME)?,
+            |writer, file| writer.raw_copy_file_touch(file, DateTime::default(), None),
+        )?;
+        assert_eq!(
+            name_and_language_encoding(bytes)?,
+            (SHIFT_JIS_NAME.to_vec(), false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_copy_under_a_new_name_takes_that_names_language_encoding() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(
+            "plain.txt",
+            SimpleFileOptions::default().compression_method(Stored),
+        )?;
+        writer.write_all(b"data")?;
+        writer.deep_copy_file("plain.txt", "déjà.txt")?;
+        writer.shallow_copy_file("plain.txt", "voilà.txt")?;
+        writer.start_file(
+            "café.txt",
+            SimpleFileOptions::default().compression_method(Stored),
+        )?;
+        writer.write_all(b"data")?;
+        writer.deep_copy_file("café.txt", "cafe.txt")?;
+        let mut archive = ZipArchive::new(Cursor::new(writer.finish()?.into_inner()))?;
+        for (name, language_encoding) in [
+            ("plain.txt", false),
+            ("déjà.txt", true),
+            ("voilà.txt", true),
+            ("café.txt", true),
+            ("cafe.txt", false),
+        ] {
+            let file = archive.by_name(name)?;
+            let flagged = file
+                .flags()
+                .matching(crate::format::flags::ZipFlags::LanguageEncoding);
+            assert_eq!(flagged, language_encoding, "{name}");
+        }
         Ok(())
     }
 }
