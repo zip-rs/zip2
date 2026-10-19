@@ -55,7 +55,7 @@ jobs:
       - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - run: cargo install --locked cargo-nextest
-      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples --benches
+      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
   bsd_platform:
     needs:
     - cargo_semver

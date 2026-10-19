@@ -356,6 +356,14 @@ mod tests {
             data: Box::new(ntfs_extra_field),
         }]
         .into();
+        // Compression is disabled on Miri with zlib because when it's enabled,
+        // flate2::Decompress::new makes a C
+        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
+        #[cfg(all(
+            miri,
+            any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")
+        ))]
+        let options = options.compression_method(crate::CompressionMethod::Stored);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.start_file_with_options(options).unwrap();
         let archive = writer.finish().unwrap();
