@@ -127,6 +127,7 @@ fn memory_benchmarks(c: &mut Criterion) {
         });
     });
 
+    #[cfg(not(miri))]
     c.bench_function("read_metadata_in_memory", |b| {
         let archive_bytes = generate_random_archive_meta(15_000, 1024).unwrap();
         b.iter(|| {
