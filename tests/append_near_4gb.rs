@@ -1,7 +1,7 @@
 //! Tests related to big zip file
 
-// Only on little endian because we cannot use fs with miri CI
-#![cfg(all(target_endian = "little", not(miri)))]
+// Only on native because we cannot use fs with miri CI
+#![cfg(not(miri))]
 
 fn write_data(w: &mut dyn std::io::Write, size: usize) -> Result<(), std::io::Error> {
     let chunks = 1 << 20; // 1MB chunks

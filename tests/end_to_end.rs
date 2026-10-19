@@ -495,8 +495,8 @@ fn test_explicit_system_roundtrip() {
     );
 }
 
-/// Only on little endian because it runs too long with Miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+/// Only on native because it runs too long with Miri CI
+#[cfg(not(miri))]
 #[test]
 fn test_64k_files() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
@@ -531,8 +531,8 @@ fn test_64k_files() -> zip::result::ZipResult<()> {
     Ok(())
 }
 
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+/// Only on native because we cannot use fs with miri CI
+#[cfg(not(miri))]
 #[test]
 fn test_can_create_destination() -> zip::result::ZipResult<()> {
     use tempfile::TempDir;

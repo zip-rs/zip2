@@ -1146,6 +1146,8 @@ mod tests {
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
     }
 
+    /// Cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_central_directory_before_file_data() {
         use super::ZipArchive;

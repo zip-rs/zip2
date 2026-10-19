@@ -37,7 +37,7 @@ pub(crate) use find_central_directory::find_central_directory_end;
 ///```
 /// # fn main() -> Result<(), zip::result::ZipError> {
 /// # #[cfg(target_pointer_width = "64")]
-/// # #[cfg(all(target_endian = "little", not(miri)))] // too long to run on miri
+/// # #[cfg(not(miri))] // too long to run on miri
 /// # {
 /// use std::io::{self, Cursor, Write};
 /// use std::error::Error;
