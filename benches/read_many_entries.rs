@@ -105,8 +105,5 @@ benchmark_group!(
     read_many_entries_as_file_buf
 );
 #[cfg(miri)]
-benchmark_group!(
-    benches,
-    read_many_entries,
-);
+benchmark_group!(benches, read_many_entries,);
 benchmark_main!(benches);

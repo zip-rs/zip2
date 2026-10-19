@@ -20,7 +20,9 @@ mod benches {
     use std::hint::black_box;
     use std::io::{self, Cursor, Read, Seek, Write};
     use std::time::Duration;
-    use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
+    use zip::{
+        CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions,
+    };
 
     // Deterministic seeded randomness helper (SplitMix64; no external dependencies, no syscalls).
     // Why we use this instead of the getrandom crate:
@@ -220,7 +222,8 @@ mod benches {
 
         c.bench_function("read_entry", |b| {
             b.iter(|| {
-                let mut archive = ZipArchive::new(fs::File::open(&path_read_entry).unwrap()).unwrap();
+                let mut archive =
+                    ZipArchive::new(fs::File::open(&path_read_entry).unwrap()).unwrap();
                 let mut file = archive.by_name("random.dat").unwrap();
                 let mut buf = [0u8; 1024];
 
@@ -244,7 +247,7 @@ mod benches {
             &path_meta,
             generate_random_archive_meta(FILE_COUNT, FILE_SIZE_META).unwrap(),
         )
-            .unwrap();
+        .unwrap();
 
         c.bench_function("read_metadata", |b| {
             b.iter(|| {
@@ -265,11 +268,12 @@ mod benches {
             &path_all_entries,
             generate_random_archive_meta(READ_ALL_ENTRIES_FILES, 512).unwrap(),
         )
-            .unwrap();
+        .unwrap();
 
         c.bench_function("read_all_entries", |b| {
             b.iter(|| {
-                let mut archive = ZipArchive::new(fs::File::open(&path_all_entries).unwrap()).unwrap();
+                let mut archive =
+                    ZipArchive::new(fs::File::open(&path_all_entries).unwrap()).unwrap();
                 for i in 0..archive.len() {
                     let mut entry = archive.by_index(i).unwrap();
                     let _ = io::copy(&mut entry, &mut io::sink()).unwrap();
@@ -302,7 +306,7 @@ mod benches {
             &path_comment,
             generate_archive_with_comment(COMMENT_BENCH_LEN).unwrap(),
         )
-            .unwrap();
+        .unwrap();
 
         c.bench_function("parse_archive_with_comment", |b| {
             b.iter(|| {
@@ -320,7 +324,7 @@ mod benches {
             &path_stream,
             generate_random_archive_meta(STREAM_ENTRIES, STREAM_ENTRY_SIZE).unwrap(),
         )
-            .unwrap();
+        .unwrap();
 
         c.bench_function("read_stream_entries", |b| {
             b.iter(|| {
@@ -423,10 +427,10 @@ mod benches {
                     4096,
                     SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
                 )
-                    .unwrap()
-                    .1,
+                .unwrap()
+                .1,
             )
-                .unwrap();
+            .unwrap();
 
             c.bench_function("read_deflated_entry", |b| {
                 b.iter(|| {
@@ -450,8 +454,8 @@ mod benches {
                 b.iter(|| {
                     let mut writer = ZipWriter::new(fs::File::create(&path_deflate_write).unwrap());
 
-                    let options =
-                        SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                    let options = SimpleFileOptions::default()
+                        .compression_method(CompressionMethod::Deflated);
 
                     for i in 0..20 {
                         writer
@@ -478,7 +482,5 @@ mod benches {
 }
 #[cfg(any(miri, target_arch = "wasm32"))]
 fn main() {
-    eprintln!(
-        "criterion_bench.rs does not compile on miri or wasm32 targets; skipping it"
-    );
+    eprintln!("criterion_bench.rs does not compile on miri or wasm32 targets; skipping it");
 }
