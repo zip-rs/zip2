@@ -4,6 +4,7 @@ use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use indexmap::IndexMap;
@@ -548,7 +549,13 @@ impl<R: Read + Seek> ZipArchive<R> {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
-                let mut outfile = fs::File::create(&outpath)?;
+                let mut options = fs::OpenOptions::new();
+                options.create(true).write(true).truncate(true); // Default for `fs::File::create`
+                #[cfg(unix)]
+                if let Some(mode) = file.unix_mode() {
+                    options.mode(mode);
+                }
+                let mut outfile = options.open(&outpath)?;
                 io::copy(&mut file, &mut outfile)?;
                 // Set original timestamp.
                 #[cfg(feature = "chrono")]
