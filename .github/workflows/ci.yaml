@@ -319,7 +319,7 @@ jobs:
           key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - run: rustup target add wasm32-unknown-unknown
-      - run: cargo build --benches --manifest-path ${{ github.workspace }}/Cargo.toml --no-default-features --features _wasm_compatible_features
+      - run: cargo build --benches --manifest-path ${{ github.workspace }}/Cargo.toml --target wasm32-unknown-unknown
   cargo_semver:
     timeout-minutes: 10
     strategy:
