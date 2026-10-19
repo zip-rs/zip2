@@ -13,7 +13,6 @@
 //!
 //! Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
 
-
 #[cfg(not(any(miri, target_arch = "wasm32")))]
 mod benches {
     use criterion::{BatchSize, Criterion, criterion_group};
