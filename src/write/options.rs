@@ -215,7 +215,8 @@ impl Debug for ExtendedFileOptions {
 #[cfg(feature = "_arbitrary")]
 impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, ExtendedFileOptions> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        use crate::write::ZipWriter;
+        use crate::extra_fields::EXTRA_FIELD_MAPPING;
+        use crate::extra_fields::UsedExtraField;
 
         let mut options = FullFileOptions {
             compression_method: CompressionMethod::arbitrary(u)?,
@@ -248,11 +249,16 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
+        for x in options.extended_options.extra_fields.iter() {
+            let header_id = x.header_id;
+            if UsedExtraField::try_from(header_id).is_err()
+                && EXTRA_FIELD_MAPPING.contains(&header_id)
+            {
+                return Err(arbitrary::Error::IncorrectFormat);
+            }
+        }
         let len = u.arbitrary_len::<u8>()?;
         options.name = Some(u.bytes(len)?);
-        ZipWriter::new(std::io::Cursor::new(Vec::new()))
-            .start_file("", options.clone())
-            .map_err(|_| arbitrary::Error::IncorrectFormat)?;
         Ok(options)
     }
 }
