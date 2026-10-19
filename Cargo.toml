@@ -39,10 +39,10 @@ ppmd-rust = { version = "1.5", optional = true }
 pbkdf2 = { version = "0.13", optional = true }
 sha1 = { version = "0.11", optional = true }
 zeroize = { version = "1.8", optional = true }
-zstd = { version = "^0.14.0", optional = true, default-features = false }
+zstd = { version = "^0.14.2", optional = true, default-features = false }
 zopfli = { version = "^0.8.3", optional = true }
 deflate64 = { version = "^0.1.10", optional = true }
-lzma-rust2 = { version = "^0.22.0", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+lzma-rust2 = { version = "^0.23.0", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.9", optional = true }
 typed-path = "0.12"
 
@@ -69,10 +69,12 @@ time = { version = "^0.3.47", default-features = false, optional = true, feature
 ] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["html_reports"] }
 wasm-bindgen-test = "^0.3.56"
 getrandom = { version = "0.4", default-features = false, features = ["wasm_js"]}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
 rand = "0.10.3"
 
 [target.'cfg(not(miri))'.dev-dependencies]
@@ -161,10 +163,14 @@ name = "read_many_entries"
 harness = false
 
 [[bench]]
+name = "deflate_alloc"
+harness = false
+required-features = ["_deflate-any"]
+
+[[bench]]
 name = "merge_archive"
 harness = false
 
 [[bench]]
 name = "criterion_bench"
 harness = false
-

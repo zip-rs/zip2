@@ -1,6 +1,6 @@
 //! Code related to reader
 
-use crate::compression::{CompressionMethod, Decompressor};
+use crate::compression::{CompressionMethod, InstantiationParameters, LazyDecompressor};
 use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
 use crate::types::ZipFileData;
@@ -165,11 +165,11 @@ pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
     NoReader,
     Raw(io::Take<&'a mut R>),
     Stored(Box<Crc32Reader<CryptoReader<'a, R>>>),
-    Compressed(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
+    Compressed(Box<Crc32Reader<LazyDecompressor<io::BufReader<CryptoReader<'a, R>>>>>),
     /// A compressed AES entry. The decompressor may report EOF before all of the
     /// ciphertext has been read (a Deflate stream ends at its final block), so at
     /// EOF the rest of the ciphertext is authenticated via [`Self::finish_aes`].
-    CompressedAes(Box<Crc32Reader<Decompressor<io::BufReader<CryptoReader<'a, R>>>>>),
+    CompressedAes(Box<Crc32Reader<LazyDecompressor<io::BufReader<CryptoReader<'a, R>>>>>),
 }
 
 impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
@@ -304,6 +304,7 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
 
 pub(crate) fn make_reader<R: Read + ?Sized>(
     compression_method: CompressionMethod,
+    #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
     uncompressed_size: u64,
     size_limit: Option<u64>,
     crc32: Option<u32>,
@@ -325,17 +326,19 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
             Crc32Reader::new(reader, crc32, should_disable).with_size_limit(size_limit),
         )));
     }
-    #[cfg(not(feature = "legacy-zip"))]
-    let flags = 0;
     let is_aes = reader.is_aes();
     let reader = Box::new(
         Crc32Reader::new(
-            Decompressor::new(
+            LazyDecompressor::new(
                 io::BufReader::new(reader),
-                compression_method,
-                uncompressed_size,
-                flags,
-            )?,
+                InstantiationParameters {
+                    compression_method,
+                    #[cfg(any(feature = "lzma", feature = "legacy-zip"))]
+                    uncompressed_size,
+                    #[cfg(feature = "legacy-zip")]
+                    flags,
+                },
+            ),
             crc32,
             should_disable,
         )
@@ -350,12 +353,12 @@ pub(crate) fn make_reader<R: Read + ?Sized>(
 
 #[cfg(test)]
 mod tests {
+    use crate::compression::LazyDecompressor;
 
     #[test]
     fn test_size_reader_enum() {
         use super::Crc32Reader;
         use super::CryptoReader;
-        use super::Decompressor;
         use super::ZipFileReader;
         use std::io::BufReader;
         use std::io::Cursor;
@@ -371,7 +374,7 @@ mod tests {
         let raw_reader_size = size_of::<Take<&R>>();
         let stored_reader_size = size_of::<Crc32Reader<CryptoReader<'_, R>>>();
         let compressed_reader_size =
-            size_of::<Crc32Reader<Decompressor<BufReader<CryptoReader<'_, R>>>>>();
+            size_of::<Crc32Reader<LazyDecompressor<BufReader<CryptoReader<'_, R>>>>>();
         let box_size = size_of::<Box<R>>();
         // eprintln!("enum {enum_size}");
         // eprintln!("raw: {raw_reader_size}");
