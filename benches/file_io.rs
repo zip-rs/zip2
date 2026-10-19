@@ -3,12 +3,12 @@
 //! Usage:
 //!
 //! ```sh
-//! cargo bench --bench criterion_bench
+//! cargo bench --bench file_io
 //!
 //! # optional baselines
 //!
-//! cargo bench --bench criterion_bench -- --save-baseline my_version
-//! cargo bench --bench criterion_bench -- --baseline my_version
+//! cargo bench --bench file_io -- --save-baseline my_version
+//! cargo bench --bench file_io -- --baseline my_version
 //! ```
 //!
 //! Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
@@ -150,9 +150,7 @@ mod benches {
         Ok(writer.finish()?.into_inner())
     }
 
-    /// `merge_archive_stored` and `merge_archive_raw_copy_file_stored` only. Uses a
-    /// longer Criterion window than the default (see `merge_archive_benches` group) for
-    /// stable timing on slow hosts.
+    /// Uses a longer Criterion window than the default for stable timing on slow hosts.
     fn merge_archive_benchmarks(c: &mut Criterion) {
         let bench_dir = tempfile::TempDir::with_prefix("criterion_zip_merge").unwrap();
         let p = |name: &str| bench_dir.path().join(name);
@@ -336,6 +334,22 @@ mod benches {
             });
         });
 
+        let path_small_stream = p("small_stream.zip");
+        fs::write(
+            &path_small_stream,
+            generate_random_archive_meta(5, 5).unwrap(),
+        )
+        .unwrap();
+        c.bench_function("parse_stream_archive_small", |b| {
+            b.iter(|| {
+                let mut f = fs::File::open(&path_small_stream).unwrap();
+                while zip::read::read_zipfile_from_stream(&mut f)
+                    .unwrap()
+                    .is_some()
+                {}
+            });
+        });
+
         // ============================================================================
         // parse_large_non_zip_reject
         // Large non-zip blob on disk; ZipArchive::new must fail (reject path).
@@ -483,5 +497,5 @@ mod benches {
 criterion::criterion_main!(benches::merge_archive_benches, benches::benches);
 #[cfg(any(miri, target_arch = "wasm32"))]
 fn main() {
-    eprintln!("criterion_bench.rs does not compile on miri or wasm32 targets; skipping it");
+    eprintln!("file_io does not compile on miri or wasm32 targets; skipping it");
 }
