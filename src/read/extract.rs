@@ -570,11 +570,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                     permissions.set_readonly(true);
                     outfile.set_permissions(permissions)?;
                 }
-                #[cfg(unix)]
-                if let Some(mode) = file.unix_mode() {
-                    use std::os::unix::fs::PermissionsExt;
-                    outfile.set_permissions(fs::Permissions::from_mode(mode))?;
-                }
             }
         }
 
