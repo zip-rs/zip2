@@ -248,11 +248,7 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
             }
             let data = Box::<[u8]>::arbitrary(u)?;
             options
-                .add_extra_field(
-                    header_id,
-                    data,
-                    bool::arbitrary(u)?,
-                )
+                .add_extra_field(header_id, data, bool::arbitrary(u)?)
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
