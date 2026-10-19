@@ -688,40 +688,33 @@ impl<R: BufRead> LazyDecompressor<R> {
     /// Consumes this decoder, returning the underlying reader.
     pub fn inner(&self) -> Option<&R> {
         #[allow(clippy::infallible_destructuring_match)]
-        let inner = match self {
-            Decompressor::Stored(r) => r,
-            #[cfg(feature = "deflate-flate2")]
-            Decompressor::Deflated(r) => r.get_ref(),
-            #[cfg(feature = "deflate64")]
-            Decompressor::Deflate64(r) => r.get_ref(),
-            #[cfg(feature = "_bzip2_any")]
-            Decompressor::Bzip2(r) => r.get_ref(),
-            #[cfg(feature = "zstd")]
-            Decompressor::Zstd(r) => match r {
-                Zstd::Uninitialized(r) => return Some(r),
-                Zstd::Initialized(r) => return Some(r.get_ref()),
-                Zstd::FailedToInitialize => return None,
-            },
-            #[cfg(feature = "lzma")]
-            Decompressor::Lzma(r) => match r {
-                Lzma::Uninitialized { reader, .. } => return reader.as_ref(),
-                Lzma::Initialized(decoder) => return Some(decoder.inner()),
-            },
-            #[cfg(feature = "legacy-zip")]
-            Decompressor::Shrink(r) => r.inner(),
-            #[cfg(feature = "legacy-zip")]
-            Decompressor::Reduce(r) => r.inner(),
-            #[cfg(feature = "legacy-zip")]
-            Decompressor::Implode(r) => r.inner(),
-            #[cfg(feature = "xz")]
-            Decompressor::Xz(r) => r.inner(),
-            #[cfg(feature = "ppmd")]
-            Decompressor::Ppmd(r) => match r {
-                Ppmd::Uninitialized(reader) => return reader.as_ref(),
-                Ppmd::Initialized(decoder) => return Some(decoder.get_ref()),
-            },
-        };
-        Some(inner)
+        match self {
+            LazyDecompressor::Initialized(decompressor) => Some(match decompressor {
+                Decompressor::Stored(r) => r,
+                #[cfg(feature = "deflate-flate2")]
+                Decompressor::Deflated(r) => r.get_ref(),
+                #[cfg(feature = "deflate64")]
+                Decompressor::Deflate64(r) => r.get_ref(),
+                #[cfg(feature = "_bzip2_any")]
+                Decompressor::Bzip2(r) => r.get_ref(),
+                #[cfg(feature = "zstd")]
+                Decompressor::Zstd(r) => r.get_ref(),
+                #[cfg(feature = "lzma")]
+                Decompressor::Lzma(r) => r.inner(),
+                #[cfg(feature = "legacy-zip")]
+                Decompressor::Shrink(r) => r.inner(),
+                #[cfg(feature = "legacy-zip")]
+                Decompressor::Reduce(r) => r.inner(),
+                #[cfg(feature = "legacy-zip")]
+                Decompressor::Implode(r) => r.inner(),
+                #[cfg(feature = "xz")]
+                Decompressor::Xz(r) => r.inner(),
+                #[cfg(feature = "ppmd")]
+                Decompressor::Ppmd(r) => r.get_ref(),
+            }),
+            LazyDecompressor::Uninitialized { inner, .. } => Some(inner),
+            LazyDecompressor::Failed(maybe_inner) => maybe_inner.as_ref(),
+        }
     }
 }
 
