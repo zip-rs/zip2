@@ -76,6 +76,17 @@ impl MagicPositionCache {
             Ok(None)
         }
     }
+
+    /// Whether the magic occurs at `pos`, which must be before `end`.
+    /// Ensures scanning covers `[0, end)` before answering.
+    pub(crate) fn contains<R: Read + Seek + ?Sized>(
+        &mut self,
+        reader: &mut R,
+        pos: u64,
+        end: u64,
+    ) -> ZipResult<bool> {
+        Ok(self.first_in_range(reader, pos, end)? == Some(pos))
+    }
 }
 
 /// Finds the EOCD and possibly the EOCD64 block and determines the archive offset.
@@ -192,8 +203,17 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                     }
                 }
                 _ => {
-                    // Use cache to find first CDFH in [cd_offset_from_eocd, eocd_offset)
-                    cdfh_cache.first_in_range(reader, cd_offset_from_eocd, eocd_offset)?
+                    // Prefer the CD start implied by the CD size, as other readers do.
+                    let abutting = eocd_offset
+                        .checked_sub(u64::from(eocd.central_directory_size))
+                        .filter(|&start| start >= cd_offset_from_eocd);
+                    match abutting {
+                        Some(start) if cdfh_cache.contains(reader, start, eocd_offset)? => {
+                            Some(start)
+                        }
+                        // Otherwise use cache to find first CDFH in [cd_offset_from_eocd, eocd_offset)
+                        _ => cdfh_cache.first_in_range(reader, cd_offset_from_eocd, eocd_offset)?,
+                    }
                 }
             };
 

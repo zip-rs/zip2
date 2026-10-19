@@ -51,12 +51,12 @@ nix = { version = "^0.31.3", features = ["fs"], default-features = false }
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-getrandom = { version = "0.4", default-features = false, optional = true }
+getrandom = { version = "0.4", default-features = false }
 time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
 
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.4", default-features = false, features = ["wasm_js"], optional = true }
+getrandom = { version = "0.4", default-features = false, features = ["wasm_js"] }
 time = { version = "^0.3.47", default-features = false, optional = true, features = [
     "std",
     "wasm-bindgen"

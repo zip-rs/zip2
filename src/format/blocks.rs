@@ -625,6 +625,28 @@ pub(crate) struct CentralDirectoryEndInfo {
     pub archive_offset: u64,
 }
 
+impl CentralDirectoryEndInfo {
+    /// Whether the central directory ends exactly where this record (or its ZIP64 record) begins.
+    pub(crate) fn central_directory_abuts_end(&self) -> bool {
+        let (relative_offset, size, end) = match &self.eocd64 {
+            Some(eocd64) => (
+                eocd64.data.central_directory_offset,
+                eocd64.data.central_directory_size,
+                eocd64.position,
+            ),
+            None => (
+                u64::from(self.eocd.data.central_directory_offset),
+                u64::from(self.eocd.data.central_directory_size),
+                self.eocd.position,
+            ),
+        };
+        relative_offset
+            .checked_add(self.archive_offset)
+            .and_then(|start| start.checked_add(size))
+            == Some(end)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;

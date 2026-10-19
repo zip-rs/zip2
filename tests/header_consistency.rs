@@ -6,12 +6,13 @@
 //! Verifies mitigation for dual-header desynchronization / Zip Cloaking (CWE-436 / CWE-20).
 
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::{self, Cursor, Read, Write};
+use std::path::PathBuf;
 use tempfile::tempdir;
 use zip::result::ZipError;
 use zip::unstable::stream::ZipStreamReader;
 use zip::write::SimpleFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::{System, ZipArchive, ZipWriter};
 
 /// Simulates a security gateway inspection using Central Directory (CDFH).
 fn security_gateway_inspection(archive_bytes: &[u8]) -> Result<(), String> {
@@ -32,6 +33,16 @@ fn security_gateway_inspection(archive_bytes: &[u8]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Names in `dir`, sorted.
+fn dir_entries(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
 }
 
 /// Constructs a dual-header archive where LFH is "cron_worker.sh" and CDFH is "doc_report.pdf".
@@ -126,12 +137,19 @@ fn test_enforce_header_consistency_blocks_dual_header_mismatch() {
         }
         other => panic!("Expected ZipError::InvalidArchive, got: {:?}", other),
     }
+    // Nothing was written before the mismatch was found.
+    assert_eq!(
+        fs::read_to_string(&target_script).unwrap(),
+        "#!/bin/sh\necho 'SERVICE HEALTHY'\n"
+    );
+    assert_eq!(dir_entries(dest_dir), ["cron_worker.sh"]);
 }
 
 #[test]
 fn test_enforce_header_consistency_allows_valid_archive() {
     let temp_env = tempdir().unwrap();
     let dest_dir = temp_env.path();
+    fs::write(dest_dir.join("data.txt"), b"old").unwrap();
 
     let mut payload = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(&mut payload);
@@ -153,6 +171,109 @@ fn test_enforce_header_consistency_allows_valid_archive() {
     let txt_content = fs::read_to_string(dest_dir.join("data.txt")).unwrap();
     assert_eq!(doc_content, "%PDF-1.7 Test Document Content");
     assert_eq!(txt_content, "Sample plain text");
+    assert_eq!(dir_entries(dest_dir), ["data.txt", "document.pdf"]);
+}
+
+#[test]
+fn test_enforce_header_consistency_extracts_nested_entries() {
+    let temp_env = tempdir().unwrap();
+    let dest_dir = temp_env.path();
+
+    let mut payload = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut payload);
+    let options = SimpleFileOptions::default().unix_permissions(0o600);
+    writer.add_directory("empty/", options).unwrap();
+    writer.start_file("a/b/file.txt", options).unwrap();
+    writer.write_all(b"nested").unwrap();
+    writer.finish().unwrap();
+
+    let reader =
+        ZipStreamReader::new(Cursor::new(payload.into_inner())).enforce_header_consistency(true);
+    reader.extract(dest_dir).unwrap();
+
+    assert_eq!(dir_entries(dest_dir), ["a", "empty"]);
+    assert!(dest_dir.join("empty").is_dir());
+    let file = dest_dir.join("a/b/file.txt");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "nested");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+}
+
+#[test]
+fn test_stream_extract_keeps_read_only_flag() {
+    for enforce in [false, true] {
+        let temp_env = tempdir().unwrap();
+        let dest_dir = temp_env.path();
+
+        let mut payload = Cursor::new(Vec::new());
+        let mut writer = ZipWriter::new(&mut payload);
+        let options = SimpleFileOptions::default()
+            .system(System::Unix)
+            .unix_permissions(0o444);
+        writer.start_file("a/file.txt", options).unwrap();
+        writer.write_all(b"read-only").unwrap();
+        writer.finish().unwrap();
+
+        let reader = ZipStreamReader::new(Cursor::new(payload.into_inner()))
+            .enforce_header_consistency(enforce);
+        reader.extract(dest_dir).unwrap();
+
+        let file = dest_dir.join("a/file.txt");
+        assert_eq!(fs::read_to_string(&file).unwrap(), "read-only");
+        assert!(fs::metadata(&file).unwrap().permissions().readonly());
+    }
+}
+
+/// An archive that, when first read, names its entry after the only directory in `dest`: the
+/// staging directory, which `extract` creates before reading.
+struct ArchiveNamedAfterStagingDir {
+    dest: PathBuf,
+    archive: Option<Cursor<Vec<u8>>>,
+}
+
+impl Read for ArchiveNamedAfterStagingDir {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let dest = &self.dest;
+        let archive = self.archive.get_or_insert_with(|| {
+            let [staging] = &dir_entries(dest)[..] else {
+                panic!("expected only the staging directory in {dest:?}");
+            };
+            let mut payload = Cursor::new(Vec::new());
+            let mut writer = ZipWriter::new(&mut payload);
+            writer
+                .start_file(format!("{staging}/file.txt"), SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"collides").unwrap();
+            writer.finish().unwrap();
+            Cursor::new(payload.into_inner())
+        });
+        archive.read(buf)
+    }
+}
+
+#[test]
+fn test_enforce_header_consistency_extracts_entry_named_like_staging_dir() {
+    let temp_env = tempdir().unwrap();
+    let dest_dir = temp_env.path();
+
+    let archive = ArchiveNamedAfterStagingDir {
+        dest: dest_dir.to_owned(),
+        archive: None,
+    };
+    let reader = ZipStreamReader::new(archive).enforce_header_consistency(true);
+    reader.extract(dest_dir).unwrap();
+
+    let [name] = &dir_entries(dest_dir)[..] else {
+        panic!("expected only the entry's directory in {dest_dir:?}");
+    };
+    let file = dest_dir.join(name).join("file.txt");
+    assert_eq!(fs::read_to_string(file).unwrap(), "collides");
 }
 
 /// Adversarial Test: Name Swapping via Offset Swapping in Central Directory
@@ -436,6 +557,7 @@ fn test_enforce_header_consistency_blocks_entry_count_mismatch() {
         }
         other => panic!("Expected ZipError::InvalidArchive, got: {:?}", other),
     }
+    assert_eq!(dir_entries(dest_dir), [""; 0]);
 }
 
 /// Adversarial Test: Central entry offset pointing inside previous entry's filename/payload

@@ -42,8 +42,13 @@ impl<R> ZipStreamReader<R> {
     ///
     /// When enabled, any discrepancy (such as Zip Cloaking / Dual-Header Smuggling attacks
     /// where an attacker provides different names or hidden files across headers) will cause
-    /// the extraction to abort with [`ZipError::InvalidArchive`], and any files written during
-    /// this pass will be rolled back.
+    /// the extraction to abort with [`ZipError::InvalidArchive`].
+    ///
+    /// The headers can only be compared once the central directory, at the end of the stream,
+    /// has been read. [`ZipStreamReader::extract`] therefore extracts into a temporary directory
+    /// inside the destination and moves the entries into place only if the check passes. A
+    /// [`ZipStreamVisitor`] passed to [`ZipStreamReader::visit`] sees every entry before the
+    /// check, so it must not act on them until `visit` returns `Ok`.
     #[must_use]
     pub const fn enforce_header_consistency(mut self, enforce: bool) -> Self {
         self.enforce_header_consistency = enforce;
@@ -213,7 +218,6 @@ impl<R: Read> ZipStreamReader<R> {
         struct Extractor {
             outpath: PathBuf,
             resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
-            #[cfg(unix)]
             file_permissions: std::collections::BTreeMap<PathBuf, u32>,
         }
         impl ZipStreamVisitor for Extractor {
@@ -277,13 +281,11 @@ impl<R: Read> ZipStreamReader<R> {
                 Ok(())
             }
 
-            #[allow(unused)]
             fn visit_additional_metadata(&mut self, metadata: &ZipFileEntry<'_>) -> ZipResult<()> {
                 // The central directory is not checked against the local headers, so its
                 // names only select entries this pass already wrote: a name that wasn't
                 // written gets no mode, and the mode goes to the path `visit_file` checked,
                 // never to a path rebuilt from the central directory.
-                #[cfg(unix)]
                 if let (Some(outpath), Some(mode)) = (
                     self.resolved_paths.get(metadata.name_raw()),
                     metadata.unix_mode(),
@@ -293,31 +295,120 @@ impl<R: Read> ZipStreamReader<R> {
                 Ok(())
             }
         }
+        /// Moves the entries `visit` wrote under `staging` to the same place under `dest`,
+        /// resolving each path again as `visit_file` does.
+        fn move_staged_entries(
+            staging: &mut PathBuf,
+            dest: &Path,
+            extractor: &mut Extractor,
+        ) -> ZipResult<()> {
+            // An entry named like `staging` would be moved into it, so first rename `staging`
+            // to a name no entry has. Ask the filesystem, since it may ignore case.
+            let written_to = staging.clone();
+            let has_entry_named_like = |dir: &Path| {
+                dir.file_name()
+                    .is_some_and(|name| dir.join(name).symlink_metadata().is_ok())
+            };
+            while has_entry_named_like(staging) {
+                let renamed = staging_path(dest)?;
+                fs::rename(&*staging, &renamed)?;
+                *staging = renamed;
+            }
+
+            for staged in extractor.resolved_paths.values_mut() {
+                let relative = staged
+                    .strip_prefix(&written_to)
+                    .map_err(|_| invalid!("Entry was not extracted to the staging directory"))?;
+                let from = staging.join(relative);
+                let components = relative.iter().map(|c| c.to_os_string());
+                let outpath = crate::path::resolve_enclosed(dest, dest, components, true)?;
+                if outpath.starts_with(&*staging) {
+                    return Err(invalid!("Entry would be written to the staging directory"));
+                }
+                if fs::symlink_metadata(&from)?.is_dir() {
+                    fs::create_dir_all(&outpath)?;
+                } else if let Err(e) = fs::rename(&from, &outpath) {
+                    if e.kind() != io::ErrorKind::CrossesDevices {
+                        return Err(e.into());
+                    }
+                    fs::copy(&from, &outpath)?;
+                }
+                if let Some(mode) = extractor.file_permissions.remove(&*staged) {
+                    extractor.file_permissions.insert(outpath.clone(), mode);
+                }
+                *staged = outpath;
+            }
+            Ok(())
+        }
+
         use std::fs;
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
+        // The headers are only checked after the last entry, so write nothing to `directory`
+        // before that.
+        let staging = if self.enforce_header_consistency {
+            Some(create_staging_dir(&directory)?)
+        } else {
+            None
+        };
+
         let mut extractor = Extractor {
-            outpath: directory,
+            outpath: staging.clone().unwrap_or_else(|| directory.clone()),
             resolved_paths: IndexMap::new(),
-            #[cfg(unix)]
             file_permissions: Default::default(),
         };
-        self.visit(&mut extractor)?;
+        let visited = self.visit(&mut extractor);
+        if let Some(mut staging) = staging {
+            let moved = visited
+                .and_then(|()| move_staged_entries(&mut staging, &directory, &mut extractor));
+            let removed = fs::remove_dir_all(&staging);
+            moved?;
+            removed?;
+        } else {
+            visited?;
+        }
 
         // As `ZipArchive::extract`: children before parents, so a read-only directory does not
         // block setting its contents. Never through a symlink: `set_permissions` follows them.
-        #[cfg(unix)]
-        {
-            for (path, mode) in extractor.file_permissions.into_iter().rev() {
+        // Off Unix, only the read-only flag applies.
+        for (path, mode) in extractor.file_permissions.into_iter().rev() {
+            #[cfg(unix)]
+            {
                 use std::os::unix::fs::PermissionsExt;
                 crate::read::extract::set_permissions_no_follow_symlink(
                     &path,
                     std::fs::Permissions::from_mode(mode),
                 )?;
             }
+            #[cfg(not(unix))]
+            if mode & 0o222 == 0 {
+                let metadata = fs::symlink_metadata(&path)?;
+                if !metadata.is_symlink() {
+                    let mut permissions = metadata.permissions();
+                    permissions.set_readonly(true);
+                    fs::set_permissions(&path, permissions)?;
+                }
+            }
         }
         Ok(())
+    }
+}
+
+/// A path in `dest` with a random name.
+fn staging_path(dest: &Path) -> io::Result<PathBuf> {
+    let n = getrandom::u64().map_err(io::Error::other)?;
+    Ok(dest.join(format!(".zip-extract-{n:016x}")))
+}
+
+/// Creates a new, empty directory with a random name in `dest`.
+fn create_staging_dir(dest: &Path) -> io::Result<PathBuf> {
+    loop {
+        let staging = staging_path(dest)?;
+        match std::fs::create_dir(&staging) {
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            result => return result.map(|()| staging),
+        }
     }
 }
 
