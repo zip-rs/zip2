@@ -153,17 +153,17 @@ name = "read_metadata"
 harness = false
 
 [[bench]]
-name = "deflate_alloc"
-harness = false
-required-features = ["_deflate-any"]
-
-[[bench]]
 name = "read_many_entries"
 harness = false
 
 [[bench]]
 name = "merge_archive"
 harness = false
+
+[[bench]]
+name = "deflate_alloc"
+harness = false
+required-features = ["_deflate-any"]
 
 [[bench]]
 name = "criterion_bench"
