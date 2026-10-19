@@ -346,7 +346,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Extraction is also not atomic in term of permissions. Permissions are applied after the
     /// extraction (because some folder have stricter permissions when we cannot access it). That
     /// means, for a moment, a file could be created with default permissions (and then changed
-    /// to the correct one).
+    /// to the correct one). On Unix this only applies to directories and symlinks.
     ///
     /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
     /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
