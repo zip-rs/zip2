@@ -129,6 +129,7 @@ pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
+    #[cfg_attr(feature = "_arbitrary", arbitrary(value = false))]
     pub(crate) skip_extra_fields_check: bool,
     pub(crate) extra_fields: Arc<Vec<CustomExtraField>>,
     pub(crate) file_comment: Option<Box<str>>,
