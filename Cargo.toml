@@ -86,6 +86,7 @@ rayon = "1.11"
 _arbitrary = ["dep:arbitrary"]
 aes-crypto = ["dep:aes", "dep:constant_time_eq", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
 chrono = ["dep:chrono"]
+getrandom = []
 _deflate-any = []
 deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
 # Pull in flate2, but don't choose a backend; useful if you want to choose your own flate2 backend
