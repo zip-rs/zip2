@@ -6,6 +6,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::io::{Cursor, Read, Write};
+use zip::unstable::write::FileOptionsExt;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -142,5 +143,48 @@ fn reused_compressor_output_matches_fresh_encoder() {
             .read_to_end(&mut actual)
             .unwrap();
         assert_eq!(&actual, data, "decompressed entry {i} differs");
+    }
+}
+
+/// Encrypted entries put an encrypting writer *under* the DEFLATE encoder. Reusing the encoder
+/// must swap those writers in and out correctly, interleaved with plain entries.
+#[test]
+fn reused_compressor_with_encrypted_entries_round_trips() {
+    let plain = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .compression_level(Some(6));
+    let zipcrypto = plain.with_deprecated_encryption(b"hunter2").unwrap();
+    #[cfg(feature = "aes-crypto")]
+    let aes = plain.with_aes_encryption(zip::AesMode::Aes256, "hunter2");
+    #[allow(unused_mut)] // only extended when aes-crypto is enabled
+    let mut plan: Vec<(SimpleFileOptions, bool)> = vec![
+        (plain, false),
+        (zipcrypto, true),
+        (zipcrypto, true),
+        (plain, false),
+    ];
+    #[cfg(feature = "aes-crypto")]
+    plan.extend([(aes, true), (plain, false), (aes, true)]);
+
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    for (i, (options, _)) in plan.iter().enumerate() {
+        zip.start_file(format!("{i}"), *options).unwrap();
+        zip.write_all(&entry_data(i, 20_000)).unwrap();
+    }
+    let bytes = zip.finish().unwrap().into_inner();
+
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
+    for (i, (_, encrypted)) in plan.iter().enumerate() {
+        let mut out = Vec::new();
+        if *encrypted {
+            archive
+                .by_index_decrypt(i, b"hunter2")
+                .unwrap()
+                .read_to_end(&mut out)
+                .unwrap();
+        } else {
+            archive.by_index(i).unwrap().read_to_end(&mut out).unwrap();
+        }
+        assert_eq!(out, entry_data(i, 20_000), "entry {i}");
     }
 }

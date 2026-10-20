@@ -31,8 +31,6 @@ use std::io::{self, Read, Seek, Write};
 use std::io::{BufReader, SeekFrom};
 use std::path::Path;
 
-#[cfg(feature = "deflate-flate2")]
-mod deflate;
 pub(crate) mod options;
 
 // re-export from types
@@ -46,15 +44,23 @@ enum MaybeEncrypted<W> {
     #[cfg(feature = "aes-crypto")]
     Aes(crate::aes::AesWriter<W>),
     ZipCrypto(crate::zipcrypto::ZipCryptoWriter<W>),
+    /// Placeholder parked inside an idle, cached `flate2::write::DeflateEncoder` between DEFLATE
+    /// entries (see [`DeflateCache`]). It discards anything written to it; the only bytes it can
+    /// ever receive are the empty final block flate2's `Drop` emits when an idle encoder is
+    /// dropped.
+    // Only constructed by `DeflateCache`, which needs flate2.
+    #[cfg_attr(not(feature = "deflate-flate2"), allow(dead_code))]
+    Closed,
 }
 
 impl<W: Write> MaybeEncrypted<W> {
-    fn get_ref(&self) -> &W {
+    fn get_ref(&self) -> Option<&W> {
         match self {
-            MaybeEncrypted::Unencrypted(w) => w,
+            MaybeEncrypted::Unencrypted(w) => Some(w),
             #[cfg(feature = "aes-crypto")]
-            MaybeEncrypted::Aes(w) => w.get_ref(),
-            MaybeEncrypted::ZipCrypto(w) => w.get_ref(),
+            MaybeEncrypted::Aes(w) => Some(w.get_ref()),
+            MaybeEncrypted::ZipCrypto(w) => Some(w.get_ref()),
+            MaybeEncrypted::Closed => None,
         }
     }
     /// Returns a mutable reference to the underlying writer.
@@ -66,12 +72,13 @@ impl<W: Write> MaybeEncrypted<W> {
     /// - Do not seek/write behind the wrapper's back such that subsequent writes
     ///   produce an invalid archive.
     /// - Ensure normal `&mut` exclusivity guarantees are upheld for the returned reference.
-    unsafe fn get_mut(&mut self) -> &mut W {
+    unsafe fn get_mut(&mut self) -> Option<&mut W> {
         match self {
-            MaybeEncrypted::Unencrypted(w) => w,
+            MaybeEncrypted::Unencrypted(w) => Some(w),
             #[cfg(feature = "aes-crypto")]
-            MaybeEncrypted::Aes(w) => unsafe { w.get_mut() },
-            MaybeEncrypted::ZipCrypto(w) => w.get_mut(),
+            MaybeEncrypted::Aes(w) => Some(unsafe { w.get_mut() }),
+            MaybeEncrypted::ZipCrypto(w) => Some(w.get_mut()),
+            MaybeEncrypted::Closed => None,
         }
     }
 }
@@ -84,6 +91,7 @@ impl<W> Debug for MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(_) => "AES",
             MaybeEncrypted::ZipCrypto(_) => "ZipCrypto",
+            MaybeEncrypted::Closed => "Closed",
         })
     }
 }
@@ -95,6 +103,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(w) => w.write(buf),
             MaybeEncrypted::ZipCrypto(w) => w.write(buf),
+            MaybeEncrypted::Closed => Ok(buf.len()),
         }
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -103,6 +112,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(w) => w.flush(),
             MaybeEncrypted::ZipCrypto(w) => w.flush(),
+            MaybeEncrypted::Closed => Ok(()),
         }
     }
 }
@@ -112,7 +122,7 @@ enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(MaybeEncrypted<W>),
     #[cfg(feature = "deflate-flate2")]
-    Deflater(deflate::ReusableDeflateEncoder<MaybeEncrypted<W>>),
+    Deflater(flate2::write::DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
     ZopfliDeflater(zopfli::DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
@@ -206,7 +216,7 @@ pub(crate) mod zip_writer {
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
         /// Idle DEFLATE compressor kept between entries to avoid reallocating it (#633).
-        pub(super) deflate_cache: DeflateCache,
+        pub(super) deflate_cache: DeflateCache<W>,
     }
 
     impl<W: Write + Seek> Debug for ZipWriter<W> {
@@ -223,23 +233,21 @@ pub(crate) mod zip_writer {
         pub fn get_ref(&self) -> Option<&W> {
             match &self.inner {
                 GenericZipWriter::Closed => None,
-                GenericZipWriter::Storer(w) => Some(w.get_ref()),
+                GenericZipWriter::Storer(w) => w.get_ref(),
                 #[cfg(feature = "deflate-flate2")]
-                GenericZipWriter::Deflater(w) => w.get_ref().map(|w| w.get_ref()),
+                GenericZipWriter::Deflater(w) => w.get_ref().get_ref(),
                 #[cfg(feature = "deflate-zopfli")]
-                GenericZipWriter::ZopfliDeflater(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::ZopfliDeflater(w) => w.get_ref().get_ref(),
                 #[cfg(feature = "deflate-zopfli")]
-                GenericZipWriter::BufferedZopfliDeflater(w) => {
-                    Some(w.get_ref().get_ref().get_ref())
-                }
+                GenericZipWriter::BufferedZopfliDeflater(w) => w.get_ref().get_ref().get_ref(),
                 #[cfg(feature = "_bzip2_any")]
-                GenericZipWriter::Bzip2(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::Bzip2(w) => w.get_ref().get_ref(),
                 #[cfg(feature = "zstd")]
-                GenericZipWriter::Zstd(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::Zstd(w) => w.get_ref().get_ref(),
                 #[cfg(feature = "xz")]
-                GenericZipWriter::Xz(w) => Some(w.inner().get_ref()),
+                GenericZipWriter::Xz(w) => w.inner().get_ref(),
                 #[cfg(feature = "ppmd")]
-                GenericZipWriter::Ppmd(w) => Some(w.get_ref().get_ref()),
+                GenericZipWriter::Ppmd(w) => w.get_ref().get_ref(),
             }
         }
 
@@ -253,23 +261,21 @@ pub(crate) mod zip_writer {
             unsafe {
                 match &mut self.inner {
                     GenericZipWriter::Closed => None,
-                    GenericZipWriter::Storer(w) => Some(w.get_mut()),
+                    GenericZipWriter::Storer(w) => w.get_mut(),
                     #[cfg(feature = "deflate-flate2")]
-                    GenericZipWriter::Deflater(w) => w.get_mut().map(|w| w.get_mut()),
+                    GenericZipWriter::Deflater(w) => w.get_mut().get_mut(),
                     #[cfg(feature = "deflate-zopfli")]
-                    GenericZipWriter::ZopfliDeflater(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::ZopfliDeflater(w) => w.get_mut().get_mut(),
                     #[cfg(feature = "deflate-zopfli")]
-                    GenericZipWriter::BufferedZopfliDeflater(w) => {
-                        Some(w.get_mut().get_mut().get_mut())
-                    }
+                    GenericZipWriter::BufferedZopfliDeflater(w) => w.get_mut().get_mut().get_mut(),
                     #[cfg(feature = "_bzip2_any")]
-                    GenericZipWriter::Bzip2(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::Bzip2(w) => w.get_mut().get_mut(),
                     #[cfg(feature = "zstd")]
-                    GenericZipWriter::Zstd(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::Zstd(w) => w.get_mut().get_mut(),
                     #[cfg(feature = "xz")]
-                    GenericZipWriter::Xz(w) => Some(w.inner_mut().get_mut()),
+                    GenericZipWriter::Xz(w) => w.inner_mut().get_mut(),
                     #[cfg(feature = "ppmd")]
-                    GenericZipWriter::Ppmd(w) => Some(w.get_mut().get_mut()),
+                    GenericZipWriter::Ppmd(w) => w.get_mut().get_mut(),
                 }
             }
         }
@@ -870,6 +876,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
                 GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => {
                     MaybeEncrypted::Unencrypted(w)
+                }
+                GenericZipWriter::Storer(MaybeEncrypted::Closed) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "ZipWriter's inner writer is not available",
+                    )
+                    .into());
                 }
                 _ => unreachable!(
                     "switch_to_non_encrypting_writer called with incompatible GenericZipWriter variant"
@@ -1633,18 +1646,115 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
     }
 }
 
-/// Builds the next writer around the bare inner writer. The [`DeflateCache`] holds a compressor
-/// recycled from the previous DEFLATE entry, if any.
+/// Builds the next writer around the bare inner writer. The [`DeflateCache`] may hold an idle
+/// DEFLATE encoder recycled from the previous entry.
 type SwitchWriterFunction<W> =
-    Box<dyn FnOnce(MaybeEncrypted<W>, &mut DeflateCache) -> ZipResult<GenericZipWriter<W>>>;
+    Box<dyn FnOnce(MaybeEncrypted<W>, &mut DeflateCache<W>) -> ZipResult<GenericZipWriter<W>>>;
+
+/// Keeps the `flate2` DEFLATE encoder alive between entries, so that consecutive Deflated entries
+/// at the same level reuse its compressor state (several hundred KiB) and output buffer instead of
+/// reallocating them (#633).
+///
+/// While idle, the cached encoder wraps [`MaybeEncrypted::Closed`]:
+/// - at the end of an entry, [`DeflateCache::park`] calls `DeflateEncoder::reset(Closed)`,
+///   which finishes the entry's stream into the real writer, resets the `Compress`, clears the
+///   encoder's output buffer and hands the real writer back;
+/// - at the start of the next entry at the same level, [`DeflateCache::encoder`] swaps the real
+///   writer back in through `DeflateEncoder::get_mut`. The compressor is already in its initial
+///   state, so nothing is ever written to `Closed` in normal operation.
+/// - if the cache is dropped while holding an idle encoder, flate2's `Drop` finishes the empty,
+///   reset stream into `Closed`, which discards it.
+#[cfg(feature = "deflate-flate2")]
+pub(crate) struct DeflateCache<W: Write> {
+    /// Level of the encoder most recently handed out. At most one `Deflater` is alive per cache,
+    /// so this is also the level of the encoder handed back to [`DeflateCache::park`].
+    level: u32,
+    idle: Option<flate2::write::DeflateEncoder<MaybeEncrypted<W>>>,
+}
 
 #[cfg(feature = "deflate-flate2")]
-use deflate::DeflateCache;
+impl<W: Write> Default for DeflateCache<W> {
+    fn default() -> Self {
+        Self {
+            level: 0,
+            idle: None,
+        }
+    }
+}
+
+#[cfg(feature = "deflate-flate2")]
+impl<W: Write> Debug for DeflateCache<W> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match &self.idle {
+            Some(_) => write!(f, "DeflateCache(level {})", self.level),
+            None => f.write_str("DeflateCache(empty)"),
+        }
+    }
+}
+
+#[cfg(feature = "deflate-flate2")]
+impl<W: Write> DeflateCache<W> {
+    /// Returns an encoder at `level`, writing to `bare`, in the state of a fresh encoder.
+    fn encoder(
+        &mut self,
+        bare: MaybeEncrypted<W>,
+        level: u32,
+    ) -> io::Result<flate2::write::DeflateEncoder<MaybeEncrypted<W>>> {
+        let cached_level = mem::replace(&mut self.level, level);
+        match self.idle.take() {
+            Some(mut encoder) if cached_level == level => {
+                // `park` already finished the previous stream and reset the compressor (and
+                // cleared the encoder's output buffer), so only the writer needs swapping.
+                // Using `reset(bare)` here instead would "finish" the empty stream into
+                // `Closed` and reset the compressor a second time, which costs more than it
+                // saves (see #1119).
+                match mem::replace(encoder.get_mut(), bare) {
+                    MaybeEncrypted::Closed => Ok(encoder),
+                    other => {
+                        // Unreachable by construction; don't lose the caller's writer.
+                        let bare = mem::replace(encoder.get_mut(), other);
+                        Ok(flate2::write::DeflateEncoder::new(
+                            bare,
+                            flate2::Compression::new(level),
+                        ))
+                    }
+                }
+            }
+            _ => Ok(flate2::write::DeflateEncoder::new(
+                bare,
+                flate2::Compression::new(level),
+            )),
+        }
+    }
+
+    /// Finishes the entry's DEFLATE stream, returns the real writer and keeps the encoder.
+    fn park(
+        &mut self,
+        mut encoder: flate2::write::DeflateEncoder<MaybeEncrypted<W>>,
+    ) -> io::Result<MaybeEncrypted<W>> {
+        let bare = encoder.reset(MaybeEncrypted::Closed)?;
+        self.idle = Some(encoder);
+        Ok(bare)
+    }
+}
 
 /// Stand-in so that signatures don't depend on whether flate2 is enabled.
 #[cfg(not(feature = "deflate-flate2"))]
-#[derive(Debug, Default)]
-pub(crate) struct DeflateCache(());
+pub(crate) struct DeflateCache<W>(core::marker::PhantomData<fn() -> W>);
+
+#[cfg(not(feature = "deflate-flate2"))]
+impl<W> Default for DeflateCache<W> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+#[cfg(not(feature = "deflate-flate2"))]
+impl<W> Debug for DeflateCache<W> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.write_str("DeflateCache")
+    }
+}
 
 impl<W: Write + Seek> GenericZipWriter<W> {
     fn prepare_next_writer(
@@ -1745,10 +1855,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "deflate-flate2")]
                 {
-                    Ok(Box::new(move |bare, cache: &mut DeflateCache| {
-                        Ok(GenericZipWriter::Deflater(
-                            deflate::ReusableDeflateEncoder::new(bare, cache.take(level)),
-                        ))
+                    Ok(Box::new(move |bare, cache: &mut DeflateCache<W>| {
+                        Ok(GenericZipWriter::Deflater(cache.encoder(bare, level)?))
                     }))
                 }
                 #[cfg(not(feature = "deflate-flate2"))]
@@ -1869,17 +1977,13 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
     fn switch_to(
         &mut self,
-        deflate_cache: &mut DeflateCache,
+        deflate_cache: &mut DeflateCache<W>,
         make_new_self: SwitchWriterFunction<W>,
     ) -> ZipResult<()> {
         let bare = match mem::replace(self, GenericZipWriter::Closed) {
             GenericZipWriter::Storer(w) => w,
             #[cfg(feature = "deflate-flate2")]
-            GenericZipWriter::Deflater(w) => {
-                let (bare, state) = w.finish()?;
-                deflate_cache.put(state);
-                bare
-            }
+            GenericZipWriter::Deflater(w) => deflate_cache.park(w)?,
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
