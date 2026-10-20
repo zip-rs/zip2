@@ -81,6 +81,8 @@ pub(crate) mod sealed {
     /// File options Extensions
     #[doc(hidden)]
     pub trait FileOptionExtension: Default + Sealed {
+        /// Skip check
+        fn skip_extra_field_check(&self) -> bool;
         /// Extra Data
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>>;
         /// File Comment
@@ -90,6 +92,9 @@ pub(crate) mod sealed {
     }
     impl Sealed for () {}
     impl FileOptionExtension for () {
+        fn skip_extra_field_check(&self) -> bool {
+            false
+        }
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
             None
         }
@@ -103,6 +108,9 @@ pub(crate) mod sealed {
     impl Sealed for ExtendedFileOptions {}
 
     impl FileOptionExtension for ExtendedFileOptions {
+        fn skip_extra_field_check(&self) -> bool {
+            self.skip_extra_fields_check
+        }
         fn extra_fields(&self) -> Option<&Arc<Vec<CustomExtraField>>> {
             Some(&self.extra_fields)
         }
@@ -121,6 +129,7 @@ pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct ExtendedFileOptions {
+    pub(crate) skip_extra_fields_check: bool,
     pub(crate) extra_fields: Arc<Vec<CustomExtraField>>,
     pub(crate) file_comment: Option<Box<str>>,
 }
