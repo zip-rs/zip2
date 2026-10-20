@@ -762,7 +762,13 @@ fn test_existing_symlink_in_destination_cannot_escape() -> zip::result::ZipResul
     }
 
     let mut archive = ZipArchive::new(Cursor::new(zip_data))?;
-    let _ = archive.extract(&dest);
+    let result = archive.extract(&dest);
+
+    // Extraction must reject writing to an existing symlink pointing outside destination
+    assert!(
+        result.is_err(),
+        "Extraction should fail when path resolves through an escaping symlink"
+    );
 
     // The outside victim file MUST NOT have been overwritten!
     assert_eq!(
@@ -770,10 +776,6 @@ fn test_existing_symlink_in_destination_cannot_escape() -> zip::result::ZipResul
         "ORIGINAL_SECRET_DATA",
         "Extraction followed an existing symlink and overwrote the target outside destination!"
     );
-
-    // The extracted file in dest must now be a regular file with the new content
-    let extracted_content = read_to_string(dest.join("link_to_victim.txt"))?;
-    assert_eq!(extracted_content, "NEW_EXTRACTED_CONTENT");
 
     Ok(())
 }
