@@ -4,7 +4,10 @@ ZIP64_BYTES_THR_U32 = "ZIP64_BYTES_THR_U32"
 ZIP64_ENTRY_THR = "ZIP64_ENTRY_THR"
 flate2 = "flate2"
 "00ba" = "00ba"
+ERROR_FILENAME_EXCED_RANGE = "ERROR_FILENAME_EXCED_RANGE"
 
+[default.extend-words]
+EXCED = "EXCED"
 
 [files]
 extend-exclude = ["tests/data", "fuzz/read/in", "fuzz/write/in"]

@@ -336,6 +336,7 @@ impl ZipFileData {
     }
 
     /// Simplify the file name by removing the prefix and parent directories and only return normal components
+    #[cfg_attr(not(feature = "extract"), allow(dead_code))]
     pub(crate) fn simplified_components<'a>(&self, file_name: &'a str) -> Option<Vec<&'a OsStr>> {
         if file_name.contains('\0') {
             return None;

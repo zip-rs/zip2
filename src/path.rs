@@ -8,10 +8,25 @@ use std::{
 };
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 
-use crate::{
-    read::extract::make_writable_dir_all,
-    result::{ZipResult, invalid},
-};
+use crate::result::{ZipError, ZipResult, invalid};
+
+#[cfg_attr(not(feature = "extract"), allow(dead_code))]
+pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
+    use std::fs;
+    fs::create_dir_all(outpath.as_ref())?;
+    #[cfg(unix)]
+    {
+        // Dirs must be writable until all normal files are extracted
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            outpath.as_ref(),
+            std::fs::Permissions::from_mode(
+                0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
+            ),
+        )?;
+    }
+    Ok(())
+}
 
 /// Parse an entry name with Windows rules on every host. A drive prefix at the start of a
 /// later component (`c:x` in `/c:x`) is split off as a [`Utf8WindowsComponent::Prefix`], since
@@ -113,6 +128,7 @@ pub(crate) fn is_windows_invalid_component(s: &str) -> bool {
 /// NOTE: This intentionally drops absolute-path information (`Prefix` /
 /// `RootDir`). The result MUST NOT be used for containment checks; use
 /// [`resolve_enclosed`] instead.
+#[cfg_attr(not(feature = "extract"), allow(dead_code))]
 pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
     let mut out = Vec::new();
     let input_str = input.to_str()?;
@@ -278,6 +294,7 @@ pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
 /// and therefore uses the verbatim form (`\\?\C:\...`), while a target taken from an
 /// archive or from [`std::fs::read_link`] is usually in the ordinary form (`C:\...`).
 /// Without this, every absolute target would be rejected on Windows.
+#[cfg_attr(not(feature = "extract"), allow(dead_code))]
 pub(crate) fn strip_base_prefix<'p>(base: &Path, path: &'p Path) -> Option<&'p Path> {
     if let Ok(rest) = path.strip_prefix(base) {
         return Some(rest);
@@ -302,6 +319,7 @@ pub(crate) fn strip_base_prefix<'p>(base: &Path, path: &'p Path) -> Option<&'p P
 /// below, and symlink targets by `test_symlink_target_with_verbatim_prefix_cannot_escape`
 /// in `tests/extract_symlink.rs`.
 #[cfg(windows)]
+#[cfg_attr(not(feature = "extract"), allow(dead_code))]
 fn strip_equivalent_prefix<'p>(base: &Path, path: &'p Path) -> Option<&'p Path> {
     use std::path::Prefix;
 
@@ -340,12 +358,14 @@ fn strip_equivalent_prefix<'p>(base: &Path, path: &'p Path) -> Option<&'p Path> 
 }
 
 #[cfg(not(windows))]
+#[cfg_attr(not(feature = "extract"), allow(dead_code))]
 fn strip_equivalent_prefix<'p>(_base: &Path, _path: &'p Path) -> Option<&'p Path> {
     None
 }
 
 /// The maximum number of symlinks that may be followed while resolving a single
 /// path (the equivalent of `MAXSYMLINKS` on Linux).
+#[cfg_attr(not(feature = "extract"), allow(dead_code))]
 const MAX_SYMLINK_HOPS: usize = 40;
 
 /// Resolve `components` into a path that is guaranteed to stay inside `base`.
@@ -361,6 +381,7 @@ const MAX_SYMLINK_HOPS: usize = 40;
 /// intermediate directories are created; the last component is left alone.
 ///
 /// Returns an error if resolution would leave `base`.
+#[cfg_attr(not(feature = "extract"), allow(dead_code))]
 pub(crate) fn resolve_enclosed(
     base: &Path,
     start: &Path,

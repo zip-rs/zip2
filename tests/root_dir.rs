@@ -1,3 +1,5 @@
+#![cfg(feature = "extract")]
+
 use std::io::Write;
 use std::path::PathBuf;
 #[cfg(all(not(miri), feature = "deflate-flate2"))]

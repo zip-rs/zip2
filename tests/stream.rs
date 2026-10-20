@@ -72,7 +72,7 @@ fn visit_sees_every_central_directory_entry() {
 
 /// `extract` applies the unix modes from the central directory, as `ZipArchive::extract` does.
 // These tests use the file system, which miri's isolation does not allow.
-#[cfg(all(unix, not(miri)))]
+#[cfg(all(unix, not(miri), feature = "extract"))]
 #[test]
 fn extract_applies_unix_modes() {
     use std::os::unix::fs::PermissionsExt;

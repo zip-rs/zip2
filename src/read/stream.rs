@@ -4,10 +4,14 @@ use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::magic::Magic;
+#[cfg(feature = "extract")]
+use crate::read::SymlinkExtractAction;
+#[cfg(feature = "extract")]
 use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
+#[cfg(feature = "extract")]
 use crate::read::extract::{make_symlink, make_symlink_as_file_utf8};
 use crate::read::{
-    HeaderConsistencyMetadata, SymlinkExtractAction, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
+    HeaderConsistencyMetadata, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
     central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, invalid};
@@ -15,9 +19,11 @@ use crate::result::{ZipError, invalid};
 use crate::read::stream::ReadFromStreamResult::{
     CentralDirectoryHeader, EndOfCentralDirectory, File,
 };
+#[cfg(feature = "extract")]
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
+#[cfg(feature = "extract")]
 use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.
@@ -212,6 +218,7 @@ impl<R: Read> ZipStreamReader<R> {
     ///
     /// Extraction of symlink is not possible since we don't have access to the
     /// external attributes in the local headers of the entries
+    #[cfg(feature = "extract")]
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         /// Destination, every entry written in this pass (raw local name -> the checked output
         /// path `visit_file` wrote it to), and the modes the central directory gives them.
@@ -396,12 +403,14 @@ impl<R: Read> ZipStreamReader<R> {
 }
 
 /// A path in `dest` with a random name.
+#[cfg(feature = "extract")]
 fn staging_path(dest: &Path) -> io::Result<PathBuf> {
     let n = getrandom::u64().map_err(io::Error::other)?;
     Ok(dest.join(format!(".zip-extract-{n:016x}")))
 }
 
 /// Creates a new, empty directory with a random name in `dest`.
+#[cfg(feature = "extract")]
 fn create_staging_dir(dest: &Path) -> io::Result<PathBuf> {
     loop {
         let staging = staging_path(dest)?;
@@ -647,7 +656,7 @@ mod tests {
 
     /// Symlinks being extracted shouldn't be followed out of the destination directory.
     /// Cannot use fs with miri CI
-    #[cfg(not(miri))]
+    #[cfg(all(not(miri), feature = "extract"))]
     #[test]
     fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
         use crate::ZipWriter;
@@ -700,7 +709,7 @@ mod tests {
     }
 
     /// Cannot use fs with miri CI
-    #[cfg(not(miri))]
+    #[cfg(all(not(miri), feature = "extract"))]
     #[test]
     fn test_can_create_destination() -> ZipResult<()> {
         use tempfile::TempDir;

@@ -10,18 +10,23 @@ use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
 use crate::format::system::System;
 use crate::read::ExtraField;
+#[cfg(feature = "extract")]
 use crate::read::extract::RootDirFilter;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::ZipResult;
+#[cfg(feature = "extract")]
 use crate::result::invalid;
 use crate::types::ZipFileData;
 use crate::write::options::SimpleFileOptions;
 
 use core::mem::replace;
 use std::borrow::Cow;
+#[cfg(feature = "extract")]
 use std::ffi::OsStr;
 use std::io::{self, Cursor, Read, Seek, SeekFrom, copy, sink};
-use std::path::{Path, PathBuf};
+#[cfg(feature = "extract")]
+use std::path::Path;
+use std::path::PathBuf;
 
 /// A struct for reading a zip file
 ///
@@ -267,6 +272,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
     ///
     /// `base_path` parameter is assumed to be canonicalized.
+    #[cfg(feature = "extract")]
     pub(crate) fn safe_prepare_path(
         &self,
         base_path: &Path,

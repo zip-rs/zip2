@@ -6,6 +6,7 @@ use crate::format::blocks::{FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentral
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::config::Config;
+#[cfg(feature = "extract")]
 use crate::read::extract::RootDirFilter;
 use crate::read::magic_finder::MagicFinder;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
@@ -22,7 +23,9 @@ use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{Read, Seek, SeekFrom};
 use std::mem;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "extract")]
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Immutable metadata about a `ZipArchive`.
@@ -819,6 +822,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// For a sensible default filter, you can use [`crate::read::root_dir_common_filter`].
     /// For a custom filter, see [`RootDirFilter`].
+    #[cfg(feature = "extract")]
     pub fn root_dir(&self, filter: impl RootDirFilter) -> ZipResult<Option<PathBuf>> {
         let mut root_dir: Option<PathBuf> = None;
 
