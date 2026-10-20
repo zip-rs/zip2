@@ -83,7 +83,7 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
 }
 
 pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
-    components(no_null_filename)
+    let clean_components = components(no_null_filename)
         .filter_map(|component| match component {
             Utf8WindowsComponent::Normal(s) => Some(s),
             _ => None,
@@ -95,8 +95,17 @@ pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
         .filter_map(|component| match component {
             Some(Utf8WindowsComponent::Normal(s)) => Some(s),
             _ => None,
-        })
-        .collect()
+        });
+    #[cfg(windows)]
+    {
+        clean_components
+            .map(|component| component.replace(":", "-"))
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        clean_components.collect()
+    }
 }
 
 pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
