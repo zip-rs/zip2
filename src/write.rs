@@ -13,7 +13,7 @@ use crate::format::blocks::{
 use crate::format::ffi;
 use crate::format::flags::ZipFlags;
 use crate::format::magic::Magic;
-use crate::format::{ZIP64_BYTES_THRESHOLD, ZIP64_BYTES_THR_U32, ZIP64_ENTRY_THR};
+use crate::format::{ZIP64_BYTES_THRESHOLD, ZIP64_BYTES_THR_U32, ZIP64_ENTRY_THRESHOLD};
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues};
@@ -1497,7 +1497,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             version_needed = version_needed.max(file.version_needed());
         }
         let central_size = writer.stream_position()? - central_start;
-        let is64 = self.files.len() > ZIP64_ENTRY_THR
+        let is64 = self.files.len() > ZIP64_ENTRY_THRESHOLD
             || central_size.max(central_start) > ZIP64_BYTES_THRESHOLD
             || self.zip64_extensible_data_sector.is_some();
 
@@ -1538,7 +1538,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             central_size.min(ZIP64_BYTES_THRESHOLD) as u32
         };
 
-        let number_of_files = self.files.len().min(ZIP64_ENTRY_THR) as u16;
+        let number_of_files = self.files.len().min(ZIP64_ENTRY_THRESHOLD) as u16;
         let footer = Zip32CentralDirectoryEnd {
             disk_number: 0,
             disk_with_central_directory: 0,
