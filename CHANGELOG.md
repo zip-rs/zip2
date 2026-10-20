@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.0.0](https://github.com/zip-rs/zip2/compare/v9.0.5...v10.0.0) - 2026-10-20
+
+### <!-- 0 -->🚀 Features
+
+- Add borrowing `inner` method to reader wrappers ([#1050](https://github.com/zip-rs/zip2/pull/1050))
+- add with_size_limit to ExtractOptions to limit total declared uncompressed size ([#1019](https://github.com/zip-rs/zip2/pull/1019))
+- add file_names_raw iterator ([#1082](https://github.com/zip-rs/zip2/pull/1082))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- resolve decoded CP437 member names ([#1080](https://github.com/zip-rs/zip2/pull/1080)) ([#1085](https://github.com/zip-rs/zip2/pull/1085))
+- Debug assertion doesn't account for length of archive comment ([#1097](https://github.com/zip-rs/zip2/pull/1097))
+
+### <!-- 2 -->🚜 Refactor
+
+- Lazy instantiation for all decompressors ([#1046](https://github.com/zip-rs/zip2/pull/1046)) ([#1047](https://github.com/zip-rs/zip2/pull/1047))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- target lzma-rust2 v0.23 ([#1096](https://github.com/zip-rs/zip2/pull/1096))
+
+### Bench
+
+- add deflate_many_small_files bench for #633 ([#964](https://github.com/zip-rs/zip2/pull/964))
+
 ## [9.0.5](https://github.com/zip-rs/zip2/compare/v9.0.4...v9.0.5) - 2026-10-17
 
 ### <!-- 1 -->🐛 Bug Fixes
