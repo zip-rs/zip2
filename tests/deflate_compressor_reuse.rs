@@ -146,26 +146,10 @@ fn reused_compressor_output_matches_fresh_encoder() {
     }
 }
 
-/// Encrypted entries put an encrypting writer *under* the DEFLATE encoder. Reusing the encoder
-/// must swap those writers in and out correctly, interleaved with plain entries.
-#[test]
-fn reused_compressor_with_encrypted_entries_round_trips() {
-    let plain = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .compression_level(Some(6));
-    let zipcrypto = plain.with_deprecated_encryption(b"hunter2").unwrap();
-    #[cfg(feature = "aes-crypto")]
-    let aes = plain.with_aes_encryption(zip::AesMode::Aes256, "hunter2");
-    #[allow(unused_mut)] // only extended when aes-crypto is enabled
-    let mut plan: Vec<(SimpleFileOptions, bool)> = vec![
-        (plain, false),
-        (zipcrypto, true),
-        (zipcrypto, true),
-        (plain, false),
-    ];
-    #[cfg(feature = "aes-crypto")]
-    plan.extend([(aes, true), (plain, false), (aes, true)]);
-
+/// Writes `plan` (options, is-encrypted) as Deflated entries through one `ZipWriter`, so that the
+/// reused encoder's inner writer is swapped between plain and encrypting writers, then checks
+/// every entry round-trips.
+fn round_trip_mixed_encryption(plan: &[(SimpleFileOptions, bool)]) {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for (i, (options, _)) in plan.iter().enumerate() {
         zip.start_file(format!("{i}"), *options).unwrap();
@@ -187,4 +171,38 @@ fn reused_compressor_with_encrypted_entries_round_trips() {
         }
         assert_eq!(out, entry_data(i, 20_000), "entry {i}");
     }
+}
+
+fn deflated() -> SimpleFileOptions {
+    SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .compression_level(Some(6))
+}
+
+#[test]
+fn reused_compressor_with_zipcrypto_entries_round_trips() {
+    let plain = deflated();
+    let zipcrypto = plain.with_deprecated_encryption(b"hunter2").unwrap();
+    round_trip_mixed_encryption(&[
+        (plain, false),
+        (zipcrypto, true),
+        (zipcrypto, true),
+        (plain, false),
+    ]);
+}
+
+#[cfg(feature = "aes-crypto")]
+#[test]
+fn reused_compressor_with_aes_entries_round_trips() {
+    let plain = deflated();
+    let zipcrypto = plain.with_deprecated_encryption(b"hunter2").unwrap();
+    let aes = plain.with_aes_encryption(zip::AesMode::Aes256, "hunter2");
+    round_trip_mixed_encryption(&[
+        (plain, false),
+        (aes, true),
+        (zipcrypto, true),
+        (aes, true),
+        (plain, false),
+        (aes, true),
+    ]);
 }

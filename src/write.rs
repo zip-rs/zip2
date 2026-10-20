@@ -48,8 +48,7 @@ enum MaybeEncrypted<W> {
     /// entries (see [`DeflateCache`]). It discards anything written to it; the only bytes it can
     /// ever receive are the empty final block flate2's `Drop` emits when an idle encoder is
     /// dropped.
-    // Only constructed by `DeflateCache`, which needs flate2.
-    #[cfg_attr(not(feature = "deflate-flate2"), allow(dead_code))]
+    #[cfg(feature = "deflate-flate2")]
     Closed,
 }
 
@@ -60,6 +59,7 @@ impl<W: Write> MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(w) => Some(w.get_ref()),
             MaybeEncrypted::ZipCrypto(w) => Some(w.get_ref()),
+            #[cfg(feature = "deflate-flate2")]
             MaybeEncrypted::Closed => None,
         }
     }
@@ -78,6 +78,7 @@ impl<W: Write> MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(w) => Some(unsafe { w.get_mut() }),
             MaybeEncrypted::ZipCrypto(w) => Some(w.get_mut()),
+            #[cfg(feature = "deflate-flate2")]
             MaybeEncrypted::Closed => None,
         }
     }
@@ -91,6 +92,7 @@ impl<W> Debug for MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(_) => "AES",
             MaybeEncrypted::ZipCrypto(_) => "ZipCrypto",
+            #[cfg(feature = "deflate-flate2")]
             MaybeEncrypted::Closed => "Closed",
         })
     }
@@ -103,6 +105,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(w) => w.write(buf),
             MaybeEncrypted::ZipCrypto(w) => w.write(buf),
+            #[cfg(feature = "deflate-flate2")]
             MaybeEncrypted::Closed => Ok(buf.len()),
         }
     }
@@ -112,6 +115,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
             #[cfg(feature = "aes-crypto")]
             MaybeEncrypted::Aes(w) => w.flush(),
             MaybeEncrypted::ZipCrypto(w) => w.flush(),
+            #[cfg(feature = "deflate-flate2")]
             MaybeEncrypted::Closed => Ok(()),
         }
     }
@@ -162,6 +166,7 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
+    #[cfg(feature = "deflate-flate2")]
     use super::DeflateCache;
     use crate::{
         types::ZipFileData,
@@ -216,6 +221,7 @@ pub(crate) mod zip_writer {
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
         /// Idle DEFLATE compressor kept between entries to avoid reallocating it (#633).
+        #[cfg(feature = "deflate-flate2")]
         pub(super) deflate_cache: DeflateCache<W>,
     }
 
@@ -384,6 +390,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
+            #[cfg(feature = "deflate-flate2")]
             deflate_cache: DeflateCache::default(),
         })
     }
@@ -532,6 +539,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             flush_on_finish_file: false,
             seek_possible: true,
             auto_large_file: false,
+            #[cfg(feature = "deflate-flate2")]
             deflate_cache: DeflateCache::default(),
         }
     }
@@ -804,6 +812,15 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(index)
     }
 
+    /// [`GenericZipWriter::switch_to`] with this writer's DEFLATE encoder cache.
+    fn switch_inner(&mut self, make_new_self: SwitchWriterFunction<W>) -> ZipResult<()> {
+        #[cfg(feature = "deflate-flate2")]
+        let cache = &mut self.deflate_cache;
+        #[cfg(not(feature = "deflate-flate2"))]
+        let cache = &mut DeflateCache::default();
+        self.inner.switch_to(cache, make_new_self)
+    }
+
     fn finish_file(&mut self) -> ZipResult<()> {
         if !self.writing_to_file {
             return Ok(());
@@ -815,8 +832,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             None,
         )?;
-        self.inner
-            .switch_to(&mut self.deflate_cache, make_plain_writer)?;
+        self.switch_inner(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         let writer = self.inner.try_inner_mut()?;
 
@@ -877,6 +893,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => {
                     MaybeEncrypted::Unencrypted(w)
                 }
+                #[cfg(feature = "deflate-flate2")]
                 GenericZipWriter::Storer(MaybeEncrypted::Closed) => {
                     return Err(io::Error::new(
                         io::ErrorKind::BrokenPipe,
@@ -966,8 +983,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             None,
         )?;
-        self.inner
-            .switch_to(&mut self.deflate_cache, make_plain_writer)?;
+        self.switch_inner(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
         // overwrite a valid file and corrupt the archive
@@ -1024,7 +1040,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             options.zopfli_buffer_size,
         )?;
         self.start_entry(name, options, None)?;
-        let result = self.inner.switch_to(&mut self.deflate_cache, make_new_self);
+        let result = self.switch_inner(make_new_self);
         self.ok_or_abort_file(result)?;
         self.writing_raw = false;
         Ok(())
@@ -1628,6 +1644,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
             flush_on_finish_file: false,
             seek_possible: false,
             auto_large_file: false,
+            #[cfg(feature = "deflate-flate2")]
             deflate_cache: DeflateCache::default(),
         }
     }
