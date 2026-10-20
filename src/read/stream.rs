@@ -274,7 +274,7 @@ impl<R: Read> ZipStreamReader<R> {
                 if file.is_dir() {
                     fs::create_dir_all(&outpath)?;
                 } else {
-                    let mut outfile = fs::File::create(&outpath)?;
+                    let mut outfile = crate::read::extract::create_outfile(&outpath)?;
                     io::copy(file, &mut outfile)?;
                 }
 

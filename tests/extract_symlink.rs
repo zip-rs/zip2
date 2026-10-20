@@ -716,3 +716,64 @@ fn ordering_bypass_extract_in_folder() {
         ExtractOptions::default().symlink_action(zip::read::SymlinkExtractAction::ExtractInFolder),
     ));
 }
+
+/// An existing symbolic link inside the destination directory must not be followed
+/// when an ordinary file entry is extracted at the same path.
+/// The symlink must be removed and replaced by the regular file, leaving its target intact.
+#[test]
+#[cfg(all(any(unix, windows), not(miri)))]
+fn test_existing_symlink_in_destination_cannot_escape() -> zip::result::ZipResult<()> {
+    use std::fs::{create_dir, read_to_string, write};
+    use std::io::{Cursor, Write};
+    use tempfile::TempDir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let tmp = TempDir::with_prefix("test_existing_symlink_in_destination")?;
+    let tmp_path = tmp.path().canonicalize()?;
+    let dest = tmp_path.join("dest");
+    create_dir(&dest)?;
+
+    // An existing file outside the destination directory (the victim)
+    let outside = tmp_path.join("outside");
+    create_dir(&outside)?;
+    let victim = outside.join("victim.txt");
+    write(&victim, b"ORIGINAL_SECRET_DATA")?;
+
+    // Pre-existing symlink inside dest pointing to the outside victim
+    let symlink_path = dest.join("link_to_victim.txt");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&victim, &symlink_path)?;
+    #[cfg(windows)]
+    {
+        if std::os::windows::fs::symlink_file(&victim, &symlink_path).is_err() {
+            return Ok(());
+        }
+    }
+
+    // Build an archive with an entry named "link_to_victim.txt"
+    let mut zip_data = Vec::new();
+    {
+        let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        writer.start_file("link_to_victim.txt", options)?;
+        writer.write_all(b"NEW_EXTRACTED_CONTENT")?;
+        writer.finish()?;
+    }
+
+    let mut archive = ZipArchive::new(Cursor::new(zip_data))?;
+    let _ = archive.extract(&dest);
+
+    // The outside victim file MUST NOT have been overwritten!
+    assert_eq!(
+        read_to_string(&victim)?,
+        "ORIGINAL_SECRET_DATA",
+        "Extraction followed an existing symlink and overwrote the target outside destination!"
+    );
+
+    // The extracted file in dest must now be a regular file with the new content
+    let extracted_content = read_to_string(dest.join("link_to_victim.txt"))?;
+    assert_eq!(extracted_content, "NEW_EXTRACTED_CONTENT");
+
+    Ok(())
+}
