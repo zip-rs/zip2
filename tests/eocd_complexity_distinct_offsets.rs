@@ -47,14 +47,15 @@ impl Seek for ReadCountingCursor<'_> {
 }
 
 /// One junk byte, `m` headers, then `n` EOCDs, the j-th pointing at header `j % m`. With
-/// `bad_last`, chains fail on a bad extra field in the last header instead of at the EOCDs.
+/// `bad_last`, chains fail on a truncated custom extra field in the last header instead of at the
+/// EOCDs.
 fn build(m: usize, n: usize, bad_last: bool) -> Vec<u8> {
-    const BAD_NTFS: &[u8] = b"\x0a\x00\x07\x00\xff\x23\x23\xff\xff\xff\xff";
+    const BAD_EXTRA_FIELD: &[u8] = b"\xff\xff\xff\xff\x00";
     let mut v = vec![0u8];
     let mut offsets = Vec::with_capacity(m);
     for i in 0..m {
         let extra: &[u8] = if bad_last && i == m - 1 {
-            BAD_NTFS
+            BAD_EXTRA_FIELD
         } else {
             b""
         };
