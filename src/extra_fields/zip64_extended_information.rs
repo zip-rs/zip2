@@ -15,7 +15,7 @@ use std::io::{ErrorKind, Read, Write, copy, sink};
 
 use crate::unstable::LittleEndianReadExt;
 use crate::{
-    ZIP64_BYTES_THR,
+    ZIP64_BYTES_THRESHOLD,
     extra_fields::UsedExtraField,
     result::{ZipResult, invalid},
 };
@@ -51,8 +51,8 @@ impl Zip64ExtendedInformation {
     ) -> Option<Self> {
         // here - we force if `is_large_file` is `true`
         let should_add_size = is_large_file
-            || uncompressed_size >= ZIP64_BYTES_THR
-            || compressed_size >= ZIP64_BYTES_THR;
+            || uncompressed_size >= ZIP64_BYTES_THRESHOLD
+            || compressed_size >= ZIP64_BYTES_THRESHOLD;
         if !should_add_size {
             return None;
         }
@@ -73,8 +73,8 @@ impl Zip64ExtendedInformation {
     ) -> Option<Self> {
         let mut size: u16 = 0;
         let sizes = if is_large_file
-            || uncompressed_size >= ZIP64_BYTES_THR
-            || compressed_size >= ZIP64_BYTES_THR
+            || uncompressed_size >= ZIP64_BYTES_THRESHOLD
+            || compressed_size >= ZIP64_BYTES_THRESHOLD
         {
             size += mem::size_of::<u64>() as u16 + mem::size_of::<u64>() as u16;
             Some(Zip64Sizes {
@@ -84,7 +84,7 @@ impl Zip64ExtendedInformation {
         } else {
             None
         };
-        let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THR {
+        let header_start = if header_start != 0 && header_start >= ZIP64_BYTES_THRESHOLD {
             size += mem::size_of::<u64>() as u16;
             Some(header_start)
         } else {
@@ -199,19 +199,19 @@ impl Zip64ExtendedInformation {
             reader,
             len,
             &mut consumed_len,
-            u64::from(entry_uncompressed_size) == ZIP64_BYTES_THR,
+            u64::from(entry_uncompressed_size) == ZIP64_BYTES_THRESHOLD,
         )?;
         let compressed_size = Self::read_field(
             reader,
             len,
             &mut consumed_len,
-            u64::from(entry_compressed_size) == ZIP64_BYTES_THR,
+            u64::from(entry_compressed_size) == ZIP64_BYTES_THRESHOLD,
         )?;
         let header_start = Self::read_field(
             reader,
             len,
             &mut consumed_len,
-            entry_header_start.is_some_and(|start| u64::from(start) == ZIP64_BYTES_THR),
+            entry_header_start.is_some_and(|start| u64::from(start) == ZIP64_BYTES_THRESHOLD),
         )?;
 
         // The two sizes travel together, so one sentinel brings both along. The field that had no
@@ -252,12 +252,12 @@ mod tests {
     fn local_and_central_agree_at_the_threshold() {
         // The two constructors decide the same question, so they must agree for
         // every input; ZIP64_BYTES_THR itself is the only value where they did not.
-        for size in [ZIP64_BYTES_THR - 1, ZIP64_BYTES_THR, ZIP64_BYTES_THR + 1] {
+        for size in [ZIP64_BYTES_THRESHOLD - 1, ZIP64_BYTES_THRESHOLD, ZIP64_BYTES_THRESHOLD + 1] {
             for (uncompressed, compressed) in [(0, size), (size, 0)] {
                 let local = Zip64ExtendedInformation::local_header(false, uncompressed, compressed);
                 let central =
                     Zip64ExtendedInformation::central_header(false, uncompressed, compressed, 0);
-                let want = size >= ZIP64_BYTES_THR;
+                let want = size >= ZIP64_BYTES_THRESHOLD;
                 assert_eq!(
                     local.is_some(),
                     want,
@@ -275,8 +275,8 @@ mod tests {
     #[test]
     fn central_header_treats_both_sizes_alike() {
         let by_uncompressed =
-            Zip64ExtendedInformation::central_header(false, ZIP64_BYTES_THR, 0, 0);
-        let by_compressed = Zip64ExtendedInformation::central_header(false, 0, ZIP64_BYTES_THR, 0);
+            Zip64ExtendedInformation::central_header(false, ZIP64_BYTES_THRESHOLD, 0, 0);
+        let by_compressed = Zip64ExtendedInformation::central_header(false, 0, ZIP64_BYTES_THRESHOLD, 0);
         assert_eq!(
             by_uncompressed.is_some(),
             by_compressed.is_some(),

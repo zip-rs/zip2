@@ -13,7 +13,7 @@ use crate::format::blocks::{
 use crate::format::ffi;
 use crate::format::flags::ZipFlags;
 use crate::format::magic::Magic;
-use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32, ZIP64_ENTRY_THR};
+use crate::format::{ZIP64_BYTES_THRESHOLD, ZIP64_BYTES_THR_U32, ZIP64_ENTRY_THR};
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues};
@@ -299,7 +299,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[..count]);
                     // Only perform the expensive large-file check when we first cross the threshold.
-                    if self.stats.bytes_written >= ZIP64_BYTES_THR {
+                    if self.stats.bytes_written >= ZIP64_BYTES_THRESHOLD {
                         let is_large_file = self
                             .files
                             .last()
@@ -1498,7 +1498,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let central_size = writer.stream_position()? - central_start;
         let is64 = self.files.len() > ZIP64_ENTRY_THR
-            || central_size.max(central_start) > ZIP64_BYTES_THR
+            || central_size.max(central_start) > ZIP64_BYTES_THRESHOLD
             || self.zip64_extensible_data_sector.is_some();
 
         if is64 {
@@ -1535,7 +1535,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let central_directory_size = if is64 {
             ZIP64_BYTES_THR_U32
         } else {
-            central_size.min(ZIP64_BYTES_THR) as u32
+            central_size.min(ZIP64_BYTES_THRESHOLD) as u32
         };
 
         let number_of_files = self.files.len().min(ZIP64_ENTRY_THR) as u16;
@@ -1546,7 +1546,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             number_of_files_on_this_disk: number_of_files,
             number_of_files,
             central_directory_size,
-            central_directory_offset: central_start.min(ZIP64_BYTES_THR) as u32,
+            central_directory_offset: central_start.min(ZIP64_BYTES_THRESHOLD) as u32,
         };
         footer.write(writer)?;
         Ok((central_start, is64))
@@ -2060,7 +2060,7 @@ impl ZipFileBuilder {
         let data = cursor.into_inner().into_boxed_slice();
         let compressed_size = data.len() as u64;
         let mut options = self.options;
-        if compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
+        if compressed_size >= ZIP64_BYTES_THRESHOLD || self.uncompressed_size >= ZIP64_BYTES_THRESHOLD {
             options.large_file = true;
         }
         Ok(PreparedZipFile {
@@ -2255,7 +2255,7 @@ impl ZipFileData {
             self.update_local_zip64_extra_field(writer, file_name_raw)?;
         } else {
             // check compressed size as well as it can also be slightly larger than uncompressed size
-            if self.compressed_size >= ZIP64_BYTES_THR {
+            if self.compressed_size >= ZIP64_BYTES_THRESHOLD {
                 return Err(ZipError::Io(std::io::Error::other(
                     "large_file(true) option has not been set",
                 )));
@@ -2329,24 +2329,24 @@ impl ZipFileData {
             .map(|x| x.size(false))
             .sum();
         let compressed_size = if self.large_file || sizes_in_zip64 {
-            ZIP64_BYTES_THR as u32
+            ZIP64_BYTES_THRESHOLD as u32
         } else {
             self.compressed_size
-                .min(ZIP64_BYTES_THR)
+                .min(ZIP64_BYTES_THRESHOLD)
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
         let uncompressed_size = if self.large_file || sizes_in_zip64 {
-            ZIP64_BYTES_THR as u32
+            ZIP64_BYTES_THRESHOLD as u32
         } else {
             self.uncompressed_size
-                .min(ZIP64_BYTES_THR)
+                .min(ZIP64_BYTES_THRESHOLD)
                 .try_into()
                 .map_err(std::io::Error::other)?
         };
         let offset = self
             .header_start
-            .min(ZIP64_BYTES_THR)
+            .min(ZIP64_BYTES_THRESHOLD)
             .try_into()
             .map_err(std::io::Error::other)?;
         let last_modified_time = self

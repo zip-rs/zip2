@@ -46,7 +46,7 @@ pub(crate) use find_central_directory::find_central_directory_end;
 /// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
 /// // Writing an extremely large file for this test is faster without compression.
 ///
-/// let big_len: usize = (zip::ZIP64_BYTES_THR as usize) + 1;
+/// let big_len: usize = (zip::ZIP64_BYTES_THRESHOLD as usize) + 1;
 /// let big_buf = vec![0u8; big_len];
 /// {
 ///     let options = SimpleFileOptions::default()
@@ -78,7 +78,7 @@ pub(crate) use find_central_directory::find_central_directory_end;
 /// # Ok(())
 /// # }
 ///```
-pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
+pub const ZIP64_BYTES_THRESHOLD: u64 = u32::MAX as u64;
 
 /// Same as `ZIP64_BYTES_THR` but as `u32`
 pub const ZIP64_BYTES_THR_U32: u32 = u32::MAX;

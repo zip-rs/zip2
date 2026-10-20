@@ -3,7 +3,7 @@
 use crate::CompressionMethod;
 use crate::DateTime;
 use crate::HasZipMetadata;
-use crate::ZIP64_BYTES_THR;
+use crate::ZIP64_BYTES_THRESHOLD;
 use crate::ZipReadOptions;
 use crate::format::data_descriptor::ZipDataDescriptor;
 use crate::format::ffi;
@@ -342,7 +342,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     /// a new zip archive.
     pub fn options(&self) -> SimpleFileOptions {
         let mut options = SimpleFileOptions::default()
-            .large_file(self.compressed_size().max(self.size()) >= ZIP64_BYTES_THR)
+            .large_file(self.compressed_size().max(self.size()) >= ZIP64_BYTES_THRESHOLD)
             .compression_method(self.compression())
             .system(self.system())
             .external_attributes(self.external_attributes())
