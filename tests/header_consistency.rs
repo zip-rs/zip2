@@ -9,6 +9,7 @@ use std::fs;
 use std::io::{self, Cursor, Read, Write};
 use std::path::PathBuf;
 use tempfile::tempdir;
+use zip::read::ExtractOptions;
 use zip::result::ZipError;
 use zip::unstable::stream::ZipStreamReader;
 use zip::write::SimpleFileOptions;
@@ -677,6 +678,76 @@ fn test_ziparchive_validate_header_consistency_passes_on_valid_archive() {
     // by_name_with_options passes
     let opt2 = zip::ZipReadOptions::new().enforce_header_consistency(true);
     assert!(archive.by_name_with_options("valid2.txt", opt2).is_ok());
+}
+
+#[test]
+fn test_extract_with_options_enforce_header_consistency_blocks_dual_header_mismatch() {
+    let temp_env = tempdir().unwrap();
+    let dest_dir = temp_env.path();
+
+    let archive_bytes = create_dual_header_archive();
+    let mut archive = ZipArchive::new(Cursor::new(&archive_bytes)).unwrap();
+
+    // With enforce_header_consistency=true, extraction is rejected and nothing is written
+    let extract_opts = ExtractOptions::default().enforce_header_consistency(true);
+    let res = archive.extract_with_options(dest_dir, extract_opts);
+    assert!(
+        res.is_err(),
+        "extract_with_options MUST reject dual-header mismatch when enforce_header_consistency is enabled"
+    );
+    assert_eq!(dir_entries(dest_dir), [""; 0]);
+
+    // Without enforcement, extraction proceeds (backwards compatibility)
+    let extract_opts_lenient = ExtractOptions::default().enforce_header_consistency(false);
+    assert!(
+        archive
+            .extract_with_options(dest_dir, extract_opts_lenient)
+            .is_ok()
+    );
+    assert!(!dir_entries(dest_dir).is_empty());
+}
+
+#[test]
+fn test_has_duplicate_names_detection_and_extraction_rejection() {
+    let temp_env = tempdir().unwrap();
+    let dest_dir = temp_env.path();
+
+    let mut payload = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut payload);
+    let options = SimpleFileOptions::default();
+
+    writer.start_file("worker_script.sh", options).unwrap();
+    writer.write_all(b"#!/bin/sh\necho PWNED\n").unwrap();
+
+    writer.start_file("harmless_doc.pdf", options).unwrap();
+    writer.write_all(b"%PDF HARMLESS\n").unwrap();
+    writer.finish().unwrap();
+
+    let mut archive_bytes = payload.into_inner();
+
+    // Spoof Entry 0's CDFH filename from "worker_script.sh" (16 bytes) to "harmless_doc.pdf" (16 bytes)
+    // so Entry 1 and Entry 0 collide on "harmless_doc.pdf"
+    let cdh0 = archive_bytes
+        .windows(4)
+        .position(|s| s == b"PK\x01\x02")
+        .unwrap();
+    archive_bytes[cdh0 + 46..cdh0 + 46 + 16].copy_from_slice(b"harmless_doc.pdf");
+
+    let mut archive = ZipArchive::new(Cursor::new(&archive_bytes)).unwrap();
+
+    // Verification 1: has_duplicate_names() correctly flags the collision
+    assert!(
+        archive.has_duplicate_names(),
+        "has_duplicate_names() must return true when duplicate names exist in central directory"
+    );
+
+    // Verification 2: extract_with_options rejects extraction when enforce_header_consistency is true
+    let extract_opt = ExtractOptions::default().enforce_header_consistency(true);
+    let extract_res = archive.extract_with_options(dest_dir, extract_opt);
+    assert!(
+        extract_res.is_err(),
+        "extract_with_options must reject archive with duplicate names when enforce_header_consistency is enabled"
+    );
 }
 
 #[test]

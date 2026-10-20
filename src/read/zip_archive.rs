@@ -60,6 +60,12 @@ impl ZipArchiveMetadata {
             data: Cow::Borrowed(data),
         })
     }
+
+    /// Whether the central directory contains duplicate file names.
+    #[must_use]
+    pub fn has_duplicate_names(&self) -> bool {
+        self.has_duplicate_names
+    }
 }
 
 #[derive(Debug)]
@@ -472,6 +478,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Whether this zip archive contains no files
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Whether this zip archive contains duplicate file names in its central directory.
+    #[must_use]
+    pub fn has_duplicate_names(&self) -> bool {
+        self.shared.has_duplicate_names
     }
 
     /// Get the offset from the beginning of the underlying reader that this zip begins at, in bytes.

@@ -50,6 +50,7 @@ pub enum SymlinkExtractAction {
 pub struct ExtractOptions {
     pub(crate) symlink_action: SymlinkExtractAction,
     pub(crate) size_limit: Option<u64>,
+    pub(crate) enforce_header_consistency: bool,
 }
 
 impl ExtractOptions {
@@ -67,6 +68,15 @@ impl ExtractOptions {
     pub fn with_size_limit(self, size_limit: u64) -> Self {
         Self {
             size_limit: Some(size_limit),
+            ..self
+        }
+    }
+
+    /// Enforce consistency between local file headers and central directory headers during extraction.
+    #[must_use]
+    pub fn enforce_header_consistency(self, enforce: bool) -> Self {
+        Self {
+            enforce_header_consistency: enforce,
             ..self
         }
     }
@@ -436,6 +446,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<()> {
         use std::fs;
 
+        if extract_options.enforce_header_consistency {
+            self.validate_header_consistency()?;
+        }
+
         if let Some(limit) = extract_options.size_limit {
             match self.decompressed_size() {
                 Some(size) if size > u128::from(limit) => {
@@ -476,7 +490,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files_by_unix_mode = UnixFileModes::default();
 
         for i in 0..self.len() {
-            let mut file = self.by_index(i)?;
+            let read_options = crate::read::ZipReadOptions::new()
+                .enforce_header_consistency(extract_options.enforce_header_consistency);
+            let mut file = self.by_index_with_options(i, read_options)?;
 
             let mut outpath = directory.clone();
             /* TODO: the control flow of this method call and subsequent expectations about the
