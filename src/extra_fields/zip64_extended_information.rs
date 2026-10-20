@@ -252,7 +252,11 @@ mod tests {
     fn local_and_central_agree_at_the_threshold() {
         // The two constructors decide the same question, so they must agree for
         // every input; ZIP64_BYTES_THR itself is the only value where they did not.
-        for size in [ZIP64_BYTES_THRESHOLD - 1, ZIP64_BYTES_THRESHOLD, ZIP64_BYTES_THRESHOLD + 1] {
+        for size in [
+            ZIP64_BYTES_THRESHOLD - 1,
+            ZIP64_BYTES_THRESHOLD,
+            ZIP64_BYTES_THRESHOLD + 1,
+        ] {
             for (uncompressed, compressed) in [(0, size), (size, 0)] {
                 let local = Zip64ExtendedInformation::local_header(false, uncompressed, compressed);
                 let central =
@@ -276,7 +280,8 @@ mod tests {
     fn central_header_treats_both_sizes_alike() {
         let by_uncompressed =
             Zip64ExtendedInformation::central_header(false, ZIP64_BYTES_THRESHOLD, 0, 0);
-        let by_compressed = Zip64ExtendedInformation::central_header(false, 0, ZIP64_BYTES_THRESHOLD, 0);
+        let by_compressed =
+            Zip64ExtendedInformation::central_header(false, 0, ZIP64_BYTES_THRESHOLD, 0);
         assert_eq!(
             by_uncompressed.is_some(),
             by_compressed.is_some(),

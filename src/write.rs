@@ -13,7 +13,7 @@ use crate::format::blocks::{
 use crate::format::ffi;
 use crate::format::flags::ZipFlags;
 use crate::format::magic::Magic;
-use crate::format::{ZIP64_BYTES_THRESHOLD, ZIP64_BYTES_THR_U32, ZIP64_ENTRY_THRESHOLD};
+use crate::format::{ZIP64_BYTES_THR_U32, ZIP64_BYTES_THRESHOLD, ZIP64_ENTRY_THRESHOLD};
 use crate::read::{Config, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult, invalid};
 use crate::types::{MIN_VERSION, ZipFileData, ZipRawValues};
@@ -2060,7 +2060,9 @@ impl ZipFileBuilder {
         let data = cursor.into_inner().into_boxed_slice();
         let compressed_size = data.len() as u64;
         let mut options = self.options;
-        if compressed_size >= ZIP64_BYTES_THRESHOLD || self.uncompressed_size >= ZIP64_BYTES_THRESHOLD {
+        if compressed_size >= ZIP64_BYTES_THRESHOLD
+            || self.uncompressed_size >= ZIP64_BYTES_THRESHOLD
+        {
             options.large_file = true;
         }
         Ok(PreparedZipFile {
