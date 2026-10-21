@@ -395,5 +395,5 @@ mod benches {
 criterion::criterion_main!(benches::merge_archive_benches, benches::benches);
 #[cfg(any(miri, target_arch = "wasm32"))]
 fn main() {
-    eprintln!("file_io does not compile on miri or wasm32 targets; skipping it");
+    eprintln!("file_io cannot run on miri or wasm32 targets; skipping it");
 }
