@@ -84,7 +84,7 @@ fn perform_raw_copy_file_by_index<R: Read + Seek, W: Write + Seek>(
     mut target: ZipWriter<W>,
 ) -> ZipResult<ZipWriter<W>> {
     for i in 0..src.len() {
-        let entry = src.by_index(i)?;
+        let entry = src.by_index_raw(i)?;
         target.raw_copy_file(entry)?;
     }
     Ok(target)
@@ -164,7 +164,7 @@ fn memory_benchmarks(c: &mut Criterion) {
     });
 
     let zip64_archive = generate_zip64_archive_with_extensible_data(500_000).unwrap();
-    c.bench_function("parse_zip64_archive_with_comment", |b| {
+    c.bench_function("parse_zip64_archive_with_extensible_data", |b| {
         b.iter(|| {
             let archive = ZipArchive::new(Cursor::new(zip64_archive.as_slice())).unwrap();
             black_box(archive.comment().len());
