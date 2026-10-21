@@ -8,12 +8,14 @@
 
 mod common;
 
-use common::seeded_random_bytes;
+use common::{
+    generate_random_archive, generate_random_archive_merge, generate_random_archive_meta,
+    seeded_random_bytes,
+};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::io::{self, Cursor, Read, Seek, Write};
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
-use crate::common::{generate_random_archive, generate_random_archive_merge, generate_random_archive_meta};
 
 fn perform_merge<R: Read + Seek, W: Write + Seek>(
     src: ZipArchive<R>,

@@ -18,7 +18,10 @@ mod common;
 
 #[cfg(not(any(miri, target_arch = "wasm32")))]
 mod benches {
-    use super::common::{generate_random_archive, generate_random_archive_merge, generate_random_archive_meta, seeded_random_bytes};
+    use super::common::{
+        generate_random_archive, generate_random_archive_merge, generate_random_archive_meta,
+        seeded_random_bytes,
+    };
     use criterion::{BatchSize, Criterion, criterion_group};
     use std::fs;
     use std::hint::black_box;
@@ -296,14 +299,16 @@ mod benches {
         // ============================================================================
         let path_write_many = p("write_many.zip");
         let payload_small = seeded_random_bytes(128);
+        let file_names: Vec<_> = (0..WRITE_MANY_FILES)
+            .map(|i| format!("file_{i}.dat"))
+            .collect();
 
         c.bench_function("write_many_small_files", |b| {
             b.iter(|| {
                 let mut writer = ZipWriter::new(fs::File::create(&path_write_many).unwrap());
                 let options =
                     SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-                for i in 0..WRITE_MANY_FILES {
-                    let name = format!("file_{i}.dat");
+                for name in file_names.iter() {
                     writer.start_file(name, options).unwrap();
                     writer.write_all(&payload_small).unwrap();
                 }

@@ -1,7 +1,7 @@
 use std::io::{Cursor, Write};
+use zip::result::ZipResult;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
-use zip::result::ZipResult;
 
 // Deterministic seeded randomness helper (SplitMix64; no external dependencies, no syscalls).
 // Why we use this instead of the getrandom crate:
