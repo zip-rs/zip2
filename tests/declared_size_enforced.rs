@@ -32,19 +32,32 @@ fn lying_archive(method: CompressionMethod) -> Vec<u8> {
 }
 
 fn methods() -> Vec<CompressionMethod> {
-    vec![
-        CompressionMethod::Stored,
-        #[cfg(feature = "deflate-flate2")]
-        CompressionMethod::Deflated,
-        #[cfg(feature = "_bzip2_any")]
-        CompressionMethod::Bzip2,
-        #[cfg(feature = "zstd")]
-        CompressionMethod::Zstd,
-        #[cfg(feature = "xz")]
-        CompressionMethod::Xz,
-        #[cfg(feature = "ppmd")]
-        CompressionMethod::Ppmd,
-    ]
+    // Native CI exercises all enabled codecs; running their encoders under Miri is
+    // disproportionately slow and does not change the size-limit behavior under test.
+    #[cfg(miri)]
+    {
+        vec![
+            CompressionMethod::Stored,
+            #[cfg(feature = "deflate-flate2")]
+            CompressionMethod::Deflated,
+        ]
+    }
+    #[cfg(not(miri))]
+    {
+        vec![
+            CompressionMethod::Stored,
+            #[cfg(feature = "deflate-flate2")]
+            CompressionMethod::Deflated,
+            #[cfg(feature = "_bzip2_any")]
+            CompressionMethod::Bzip2,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd,
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz,
+            #[cfg(feature = "ppmd")]
+            CompressionMethod::Ppmd,
+        ]
+    }
 }
 
 #[test]
