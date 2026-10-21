@@ -369,8 +369,8 @@ mod tests {
         }]
         .into();
         // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
+        // flate2::Decompress::new makes a C function call (zlibVersion via
+        // flate2::ffi::c::c_backend::mz_inflateInit2).
         #[cfg(all(
             miri,
             any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")
