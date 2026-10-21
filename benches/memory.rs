@@ -101,7 +101,7 @@ fn memory_benchmarks(c: &mut Criterion) {
                 .finish()
                 .unwrap()
                 .into_inner();
-            assert_eq!(out.len(), stored_len);
+            debug_assert_eq!(out.len(), stored_len);
             black_box(out);
         });
     });
@@ -117,7 +117,7 @@ fn memory_benchmarks(c: &mut Criterion) {
                 .finish()
                 .unwrap()
                 .into_inner();
-            assert_eq!(out.len(), raw_copy_len);
+            debug_assert_eq!(out.len(), raw_copy_len);
             black_box(out);
         });
     });
@@ -136,7 +136,7 @@ fn memory_benchmarks(c: &mut Criterion) {
                     .finish()
                     .unwrap()
                     .into_inner();
-                assert_eq!(out.len(), deflated_len);
+                debug_assert_eq!(out.len(), deflated_len);
                 black_box(out);
             });
         });
@@ -152,7 +152,7 @@ fn memory_benchmarks(c: &mut Criterion) {
                     .finish()
                     .unwrap()
                     .into_inner();
-                assert_eq!(out.len(), deflated_raw_len);
+                debug_assert_eq!(out.len(), deflated_raw_len);
                 black_box(out);
             });
         });

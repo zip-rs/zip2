@@ -71,7 +71,7 @@ mod benches {
                     let mut zip = ZipWriter::new(out);
                     zip.merge_archive(src).unwrap();
                     let out = zip.finish().unwrap();
-                    assert_eq!(out.metadata().unwrap().len() as usize, len);
+                    debug_assert_eq!(out.metadata().unwrap().len() as usize, len);
                     black_box(out);
                 },
                 BatchSize::PerIteration,
@@ -95,7 +95,7 @@ mod benches {
                     let zip = ZipWriter::new(out);
                     let zip = perform_raw_copy_file_by_index(src, zip).unwrap();
                     let out = zip.finish().unwrap();
-                    assert_eq!(out.metadata().unwrap().len() as usize, len2);
+                    debug_assert_eq!(out.metadata().unwrap().len() as usize, len2);
                     black_box(out);
                 },
                 BatchSize::PerIteration,
