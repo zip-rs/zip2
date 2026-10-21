@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
 use zip::write::ExtendedFileOptions;
@@ -287,19 +286,19 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
 
     // Check archive contains expected file names.
     {
-        let expected_file_names = [
+        let mut expected_file_names = [
             "test/",
             "test/☃.txt",
             "test_with_extra_data/🐢.txt",
             ENTRY_NAME,
             INTERNAL_COPY_ENTRY_NAME,
         ];
-        let expected_file_names: HashSet<String> =
-            expected_file_names.iter().map(|f| f.to_string()).collect();
-        let file_names: HashSet<String> = archive
+        expected_file_names.sort_unstable();
+        let mut file_names: Vec<_> = archive
             .file_names()
             .map(|f| f.unwrap().into_owned())
             .collect();
+        file_names.sort_unstable();
         assert_eq!(file_names, expected_file_names);
     }
     {
