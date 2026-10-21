@@ -746,3 +746,51 @@ fn zip64_extensible_data_sector() {
     assert_eq!(extensible_data.len(), extensible_data_length);
     assert_eq!(extensible_data, bytes);
 }
+
+/// https://github.com/zip-rs/zip2/issues/1122
+#[test]
+fn large_file_check_local_header_zip64_field() {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    fn local_zip64_sizes(bytes: &[u8]) -> (u64, u64) {
+        let name_len = u16::from_le_bytes([bytes[26], bytes[27]]) as usize;
+        let extra = 30 + name_len;
+        assert_eq!(u16::from_le_bytes([bytes[extra], bytes[extra + 1]]), 0x0001);
+        let u = u64::from_le_bytes(bytes[extra + 4..extra + 12].try_into().unwrap());
+        let c = u64::from_le_bytes(bytes[extra + 12..extra + 20].try_into().unwrap());
+        (u, c)
+    }
+
+    let opts = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    w.add_directory("dir/", opts).unwrap();
+    let dir = w.finish().unwrap().into_inner();
+
+    let (u, c) = local_zip64_sizes(&dir);
+    assert_eq!(u, 0x0);
+    assert_eq!(c, 0x0);
+    let mut a = ZipArchive::new(Cursor::new(dir)).unwrap();
+    let f = a.by_index(0).unwrap();
+    assert_eq!(f.size(), 0x0);
+    assert_eq!(f.compressed_size(), 0x0);
+
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    w.start_file("empty.txt", opts).unwrap();
+    w.write_all(b"").unwrap();
+    let file = w.finish().unwrap().into_inner();
+
+    let (u, c) = local_zip64_sizes(&file);
+    assert_eq!(u, 0x0);
+    assert_eq!(c, 0x0);
+    let mut a = ZipArchive::new(Cursor::new(file)).unwrap();
+    let f = a.by_index(0).unwrap();
+    assert_eq!(f.size(), 0x0);
+    assert_eq!(f.compressed_size(), 0x0);
+}
