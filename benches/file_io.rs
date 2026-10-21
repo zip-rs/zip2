@@ -20,8 +20,7 @@ mod common;
 mod benches {
     use super::common::{
         generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
-        generate_random_archive_meta, perform_raw_copy_file_by_index,
-        seeded_random_bytes,
+        generate_random_archive_meta, perform_raw_copy_file_by_index, seeded_random_bytes,
     };
     use criterion::{BatchSize, Criterion, criterion_group};
     use std::fs;

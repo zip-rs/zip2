@@ -10,8 +10,7 @@ mod common;
 
 use common::{
     generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
-    generate_random_archive_meta, perform_raw_copy_file_by_index,
-    seeded_random_bytes,
+    generate_random_archive_meta, perform_raw_copy_file_by_index, seeded_random_bytes,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -97,10 +96,7 @@ fn memory_benchmarks(c: &mut Criterion) {
             let src = ZipArchive::new(Cursor::new(stored_archive.as_slice())).unwrap();
             let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
             zip.merge_archive(src).unwrap();
-            let out = zip
-                .finish()
-                .unwrap()
-                .into_inner();
+            let out = zip.finish().unwrap().into_inner();
             debug_assert_eq!(out.len(), stored_len);
             black_box(out);
         });
@@ -132,10 +128,7 @@ fn memory_benchmarks(c: &mut Criterion) {
                 let src = ZipArchive::new(Cursor::new(deflated_archive.as_slice())).unwrap();
                 let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
                 zip.merge_archive(src).unwrap();
-                let out = zip
-                    .finish()
-                    .unwrap()
-                    .into_inner();
+                let out = zip.finish().unwrap().into_inner();
                 debug_assert_eq!(out.len(), deflated_len);
                 black_box(out);
             });
