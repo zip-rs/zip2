@@ -6,8 +6,6 @@ use crate::format::blocks::{FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentral
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::config::Config;
-#[cfg(feature = "extract")]
-use crate::read::extract::RootDirFilter;
 use crate::read::magic_finder::MagicFinder;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::{ZipFileEntry, ZipFileEntryWithDataDescriptor};
@@ -24,8 +22,6 @@ use std::borrow::Cow;
 use std::io::{Read, Seek, SeekFrom};
 use std::mem;
 use std::path::Path;
-#[cfg(feature = "extract")]
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Immutable metadata about a `ZipArchive`.
@@ -810,82 +806,6 @@ impl<R: Read + Seek> ZipArchive<R> {
             ));
         }
         Ok(())
-    }
-
-    /// Find the "root directory" of an archive if it exists, filtering out
-    /// irrelevant entries when searching.
-    ///
-    /// Our definition of a "root directory" is a single top-level directory
-    /// that contains the rest of the archive's entries. This is useful for
-    /// extracting archives that contain a single top-level directory that
-    /// you want to "unwrap" and extract directly.
-    ///
-    /// For a sensible default filter, you can use [`crate::read::root_dir_common_filter`].
-    /// For a custom filter, see [`RootDirFilter`].
-    #[cfg(feature = "extract")]
-    pub fn root_dir(&self, filter: impl RootDirFilter) -> ZipResult<Option<PathBuf>> {
-        let mut root_dir: Option<PathBuf> = None;
-
-        for i in 0..self.len() {
-            let (file_name_raw, file) = self
-                .shared
-                .files
-                .get_index(i)
-                .ok_or(ZipError::FileNotFound)?;
-            let file_name = match file.name(file_name_raw) {
-                Ok(file_name) => file_name,
-                Err(_) => continue,
-            };
-            let path = match file.enclosed_name(&file_name) {
-                Some(path) => path,
-                None => return Ok(None),
-            };
-
-            if !filter(&path) {
-                continue;
-            }
-
-            macro_rules! replace_root_dir {
-                ($path:ident) => {
-                    match &mut root_dir {
-                        Some(root_dir) => {
-                            if *root_dir != $path {
-                                // We've found multiple root directories,
-                                // abort.
-                                return Ok(None);
-                            }
-                            continue;
-                        }
-
-                        None => {
-                            root_dir = Some($path.into());
-                            continue;
-                        }
-                    }
-                };
-            }
-
-            // If this entry is located at the root of the archive...
-            if path.components().count() == 1 {
-                if file.is_dir(file_name_raw.as_ref()) {
-                    // If it's a directory, it could be the root directory.
-                    replace_root_dir!(path);
-                }
-                // If it's anything else, this archive does not have a
-                // root directory.
-                return Ok(None);
-            }
-
-            // Find the root directory for this entry.
-            let mut path = path.as_path();
-            while let Some(parent) = path.parent().filter(|path| *path != Path::new("")) {
-                path = parent;
-            }
-
-            replace_root_dir!(path);
-        }
-
-        Ok(root_dir)
     }
 
     /// Unwrap and return the inner reader object
