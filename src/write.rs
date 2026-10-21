@@ -1238,7 +1238,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             options.external_attributes = None;
             options = options.unix_permissions(perms);
         }
-
+        options.skip_extra_field_check = true;
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
