@@ -19,41 +19,19 @@ mod common;
 #[cfg(not(any(miri, target_arch = "wasm32")))]
 mod benches {
     use super::common::{
-        generate_random_archive, generate_random_archive_merge, generate_random_archive_meta,
+        generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
+        generate_random_archive_meta, perform_merge, perform_raw_copy_file_by_index,
         seeded_random_bytes,
     };
     use criterion::{BatchSize, Criterion, criterion_group};
     use std::fs;
     use std::hint::black_box;
-    use std::io::{self, Cursor, Read, Seek, Write};
+    use std::io::{self, Read, Write};
     use std::time::Duration;
-    use zip::{
-        CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions,
-    };
+    use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
     const FILE_COUNT: usize = 15_000;
     const FILE_SIZE_META: usize = 1024;
-
-    fn perform_merge<R: Read + Seek, W: Write + Seek>(
-        src: ZipArchive<R>,
-        mut target: ZipWriter<W>,
-    ) -> ZipResult<ZipWriter<W>> {
-        target.merge_archive(src)?;
-        Ok(target)
-    }
-
-    fn perform_raw_copy_file<R: Read + Seek, W: Write + Seek>(
-        mut src: ZipArchive<R>,
-        mut target: ZipWriter<W>,
-    ) -> ZipResult<ZipWriter<W>> {
-        for i in 0..src.len() {
-            // `by_index_raw` matches raw-only repack: no decompress/CRC reader stack; still ends in
-            // the same `raw_copy_file` writer path.
-            let entry = src.by_index_raw(i)?;
-            target.raw_copy_file(entry)?;
-        }
-        Ok(target)
-    }
 
     const NUM_ENTRIES: usize = 100;
     const ENTRY_SIZE: usize = 1024;
@@ -68,16 +46,6 @@ mod benches {
     const STREAM_ENTRY_SIZE: usize = 256;
     const WRITE_LARGE_SIZE: usize = 1024 * 1024;
     const ROUNDTRIP_ENTRIES: usize = 100;
-
-    fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        let comment = seeded_random_bytes(comment_len);
-        writer.set_raw_comment(comment)?;
-        writer.start_file("data.txt", options)?;
-        writer.write_all(b"x")?;
-        Ok(writer.finish()?.into_inner())
-    }
 
     /// Uses a longer Criterion window than the default for stable timing on slow hosts.
     fn merge_archive_benchmarks(c: &mut Criterion) {
@@ -125,7 +93,7 @@ mod benches {
                 },
                 |(src, out)| {
                     let zip = ZipWriter::new(out);
-                    let zip = perform_raw_copy_file(src, zip).unwrap();
+                    let zip = perform_raw_copy_file_by_index(src, zip).unwrap();
                     let out = zip.finish().unwrap();
                     assert_eq!(out.metadata().unwrap().len() as usize, len2);
                     black_box(out);

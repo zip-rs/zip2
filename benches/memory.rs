@@ -9,41 +9,14 @@
 mod common;
 
 use common::{
-    generate_random_archive, generate_random_archive_merge, generate_random_archive_meta,
+    generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
+    generate_random_archive_meta, perform_merge, perform_raw_copy_file_by_index,
     seeded_random_bytes,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use std::io::{self, Cursor, Read, Seek, Write};
+use std::io::{self, Cursor, Read, Write};
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
-
-fn perform_merge<R: Read + Seek, W: Write + Seek>(
-    src: ZipArchive<R>,
-    mut target: ZipWriter<W>,
-) -> ZipResult<ZipWriter<W>> {
-    target.merge_archive(src)?;
-    Ok(target)
-}
-
-fn perform_raw_copy_file_by_index<R: Read + Seek, W: Write + Seek>(
-    mut src: ZipArchive<R>,
-    mut target: ZipWriter<W>,
-) -> ZipResult<ZipWriter<W>> {
-    for i in 0..src.len() {
-        let entry = src.by_index_raw(i)?;
-        target.raw_copy_file(entry)?;
-    }
-    Ok(target)
-}
-
-fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    writer.set_raw_comment(seeded_random_bytes(comment_len))?;
-    writer.start_file("data.txt", options)?;
-    writer.write_all(b"x")?;
-    Ok(writer.finish()?.into_inner())
-}
 
 fn generate_zip64_archive_with_extensible_data(data_len: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));

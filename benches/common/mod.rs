@@ -1,7 +1,7 @@
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 // Deterministic seeded randomness helper (SplitMix64; no external dependencies, no syscalls).
 // Why we use this instead of the getrandom crate:
@@ -66,4 +66,32 @@ pub fn generate_random_archive_merge(
 
     let bytes = writer.finish()?.into_inner();
     Ok((bytes.len(), bytes))
+}
+
+pub fn perform_merge<R: Read + Seek, W: Write + Seek>(
+    src: ZipArchive<R>,
+    mut target: ZipWriter<W>,
+) -> ZipResult<ZipWriter<W>> {
+    target.merge_archive(src)?;
+    Ok(target)
+}
+
+pub fn perform_raw_copy_file_by_index<R: Read + Seek, W: Write + Seek>(
+    mut src: ZipArchive<R>,
+    mut target: ZipWriter<W>,
+) -> ZipResult<ZipWriter<W>> {
+    for i in 0..src.len() {
+        let entry = src.by_index_raw(i)?;
+        target.raw_copy_file(entry)?;
+    }
+    Ok(target)
+}
+
+pub fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.set_raw_comment(seeded_random_bytes(comment_len))?;
+    writer.start_file("data.txt", options)?;
+    writer.write_all(b"x")?;
+    Ok(writer.finish()?.into_inner())
 }
