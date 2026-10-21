@@ -40,6 +40,7 @@ fn main() {
         let mut v = Vec::new();
         std::io::stdin().read_to_end(&mut v).unwrap();
         let reader = std::io::Cursor::new(v);
-        decompress_all(reader).unwrap();
+        // Invalid archives are expected; only panics/hangs are bugs.
+        let _ = decompress_all(reader);
     }
 }
