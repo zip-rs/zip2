@@ -1,5 +1,3 @@
-use zip::result::ZipResult;
-
 #[cfg(not(miri))]
 #[test]
 fn zip64_large() {
@@ -244,6 +242,8 @@ fn zip64_large() {
 #[test]
 fn test_zip64_check_extra_field() {
     use std::{fs::File, io::Cursor, path::Path};
+    use zip::result::ZipResult;
+
     fn zip64_check_extra_field(path: &Path, archive_buffer: &mut Vec<u8>) -> ZipResult<()> {
         use std::{io::Seek, io::SeekFrom};
         use zip::write::SimpleFileOptions;
