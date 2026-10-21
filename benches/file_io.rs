@@ -20,7 +20,7 @@ mod common;
 mod benches {
     use super::common::{
         generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
-        generate_random_archive_meta, perform_merge, perform_raw_copy_file_by_index,
+        generate_random_archive_meta, perform_raw_copy_file_by_index,
         seeded_random_bytes,
     };
     use criterion::{BatchSize, Criterion, criterion_group};
@@ -68,8 +68,8 @@ mod benches {
                     (src, out)
                 },
                 |(src, out)| {
-                    let zip = ZipWriter::new(out);
-                    let zip = perform_merge(src, zip).unwrap();
+                    let mut zip = ZipWriter::new(out);
+                    zip.merge_archive(src).unwrap();
                     let out = zip.finish().unwrap();
                     assert_eq!(out.metadata().unwrap().len() as usize, len);
                     black_box(out);

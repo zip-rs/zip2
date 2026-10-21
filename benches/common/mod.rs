@@ -68,14 +68,6 @@ pub fn generate_random_archive_merge(
     Ok((bytes.len(), bytes))
 }
 
-pub fn perform_merge<R: Read + Seek, W: Write + Seek>(
-    src: ZipArchive<R>,
-    mut target: ZipWriter<W>,
-) -> ZipResult<ZipWriter<W>> {
-    target.merge_archive(src)?;
-    Ok(target)
-}
-
 pub fn perform_raw_copy_file_by_index<R: Read + Seek, W: Write + Seek>(
     mut src: ZipArchive<R>,
     mut target: ZipWriter<W>,

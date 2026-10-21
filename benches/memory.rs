@@ -10,7 +10,7 @@ mod common;
 
 use common::{
     generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
-    generate_random_archive_meta, perform_merge, perform_raw_copy_file_by_index,
+    generate_random_archive_meta, perform_raw_copy_file_by_index,
     seeded_random_bytes,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -95,9 +95,9 @@ fn memory_benchmarks(c: &mut Criterion) {
     c.bench_function("merge_archive_stored_in_memory", |b| {
         b.iter(|| {
             let src = ZipArchive::new(Cursor::new(stored_archive.as_slice())).unwrap();
-            let zip = ZipWriter::new(Cursor::new(Vec::new()));
-            let out = perform_merge(src, zip)
-                .unwrap()
+            let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+            zip.merge_archive(src).unwrap();
+            let out = zip
                 .finish()
                 .unwrap()
                 .into_inner();
@@ -130,9 +130,9 @@ fn memory_benchmarks(c: &mut Criterion) {
         c.bench_function("merge_archive_compressed_in_memory", |b| {
             b.iter(|| {
                 let src = ZipArchive::new(Cursor::new(deflated_archive.as_slice())).unwrap();
-                let zip = ZipWriter::new(Cursor::new(Vec::new()));
-                let out = perform_merge(src, zip)
-                    .unwrap()
+                let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+                zip.merge_archive(src).unwrap();
+                let out = zip
                     .finish()
                     .unwrap()
                     .into_inner();
