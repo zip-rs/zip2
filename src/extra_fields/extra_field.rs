@@ -131,8 +131,20 @@ impl ExtraField {
                 )?)
             }
             Ok(UsedExtraField::Ntfs) => {
-                // NTFS extra field
-                ExtraField::Ntfs(Ntfs::try_from_reader(reader, len)?)
+                let mut data = vec![0; len as usize];
+                reader.read_exact(&mut data)?;
+                // Preserve malformed optional metadata as opaque bytes, as with custom fields.
+                match Ntfs::try_from_reader(&mut Cursor::new(&data), len) {
+                    Ok(ntfs) => ExtraField::Ntfs(ntfs),
+                    Err(crate::result::ZipError::UnsupportedArchive(_)) => {
+                        ExtraField::Custom(CustomExtraField::new(
+                            false,
+                            extra_field_header_id,
+                            data.into_boxed_slice(),
+                        ))
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             #[cfg(feature = "aes-crypto")]
             Ok(UsedExtraField::AeXEncryption) => {
