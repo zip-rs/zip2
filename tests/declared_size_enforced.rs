@@ -8,7 +8,7 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 // Large enough that reading past the declared size would be obvious; smaller under miri,
 // which is slow.
-const REAL_SIZE: usize = if cfg!(miri) { 1 << 12 } else { 1 << 20 };
+const REAL_SIZE: usize = if cfg!(miri) { 1 << 10 } else { 1 << 20 };
 const DECLARED_SIZE: u32 = 10;
 
 /// Build an archive with one entry of `REAL_SIZE` zero bytes, then patch the uncompressed
