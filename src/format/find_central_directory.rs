@@ -76,6 +76,17 @@ impl MagicPositionCache {
             Ok(None)
         }
     }
+
+    /// Whether the magic occurs at `pos`, which must be before `end`.
+    /// Ensures scanning covers `[0, end)` before answering.
+    pub(crate) fn contains<R: Read + Seek + ?Sized>(
+        &mut self,
+        reader: &mut R,
+        pos: u64,
+        end: u64,
+    ) -> ZipResult<bool> {
+        Ok(self.first_in_range(reader, pos, end)? == Some(pos))
+    }
 }
 
 /// Finds the EOCD and possibly the EOCD64 block and determines the archive offset.
@@ -141,6 +152,15 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
         };
 
         let Some((locator64_offset, locator64)) = zip64_metadata else {
+            // Consistency check: multi-disk archives are not supported
+            if eocd.disk_number != 0
+                || eocd.disk_with_central_directory != 0
+                || eocd.number_of_files_on_this_disk != eocd.number_of_files
+            {
+                parsing_error = Some(invalid!("Multi-disk ZIP files are not supported"));
+                continue;
+            }
+
             // Branch out for zip32
             let cd_offset_from_eocd = u64::from(eocd.central_directory_offset);
 
@@ -192,8 +212,17 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                     }
                 }
                 _ => {
-                    // Use cache to find first CDFH in [cd_offset_from_eocd, eocd_offset)
-                    cdfh_cache.first_in_range(reader, cd_offset_from_eocd, eocd_offset)?
+                    // Prefer the CD start implied by the CD size, as other readers do.
+                    let abutting = eocd_offset
+                        .checked_sub(u64::from(eocd.central_directory_size))
+                        .filter(|&start| start >= cd_offset_from_eocd);
+                    match abutting {
+                        Some(start) if cdfh_cache.contains(reader, start, eocd_offset)? => {
+                            Some(start)
+                        }
+                        // Otherwise use cache to find first CDFH in [cd_offset_from_eocd, eocd_offset)
+                        _ => cdfh_cache.first_in_range(reader, cd_offset_from_eocd, eocd_offset)?,
+                    }
                 }
             };
 
@@ -238,6 +267,11 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                 return Err(invalid!("Invalid EOCD64: inconsistency with Locator data"));
             }
 
+            // Consistency check: multi-disk archives are not supported
+            if z64.disk_number != 0 || z64.number_of_files_on_this_disk != z64.number_of_files {
+                return Err(invalid!("Multi-disk ZIP files are not supported"));
+            }
+
             // Consistency check: the EOCD64 must have the expected length
             if z64.record_size + Zip64CentralDirectoryEnd::RECORD_OVERHEAD != expected_length {
                 return Err(invalid!("Invalid EOCD64: inconsistent length"));
@@ -280,51 +314,55 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
             disk_with_central_directory: u32,
             locator64_offset: u64,
         ) -> ZipResult<Option<(DataAndPosition<Zip64CentralDirectoryEnd>, u64)>> {
-            let archive_offset = eocd64_offset - eocd_offset;
+            let Some(archive_offset) = eocd64_offset.checked_sub(eocd_offset) else {
+                return Ok(None);
+            };
             reader.seek(SeekFrom::Start(eocd64_offset))?;
 
-            match try_read_eocd64(
+            let eocd64 = try_read_eocd64(
                 reader,
                 disk_with_central_directory,
                 locator64_offset.saturating_sub(eocd64_offset),
-            ) {
-                Ok(eocd64) => {
-                    if eocd64_offset
-                        < eocd64
-                            .number_of_files
-                            .saturating_mul(
-                                (mem::size_of::<Magic>() + mem::size_of::<ZipCentralEntryBlock>())
-                                    as u64,
-                            )
-                            .saturating_add(eocd64.central_directory_offset)
-                    {
-                        return Ok(None);
-                    }
+            )?;
 
-                    Ok(Some(((eocd64, eocd64_offset).into(), archive_offset)))
-                }
-                Err(_e) => Ok(None),
+            if eocd64_offset
+                < eocd64
+                    .number_of_files
+                    .saturating_mul(
+                        (mem::size_of::<Magic>() + mem::size_of::<ZipCentralEntryBlock>()) as u64,
+                    )
+                    .saturating_add(eocd64.central_directory_offset)
+            {
+                return Ok(None);
             }
+
+            Ok(Some(((eocd64, eocd64_offset).into(), archive_offset)))
         }
 
         // Try the optimistic guess first
         if let Some(guess_pos) = guess_result {
-            if let Some((eocd64, archive_offset)) = try_candidate(
+            match try_candidate(
                 reader,
                 locator64.end_of_central_directory_offset,
                 guess_pos,
                 locator64.disk_with_central_directory,
                 locator64_offset,
-            )? {
-                return Ok(CentralDirectoryEndInfo {
-                    eocd: (eocd, guess_pos).into(),
-                    eocd64: Some(eocd64),
-                    archive_offset,
-                });
+            ) {
+                Ok(Some((eocd64, archive_offset))) => {
+                    return Ok(CentralDirectoryEndInfo {
+                        eocd: (eocd, guess_pos).into(),
+                        eocd64: Some(eocd64),
+                        archive_offset,
+                    });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    local_error = Some(e);
+                }
             }
             // Known offset didn't produce valid EOCD64, don't scan further
             if matches!(archive_offset, ArchiveOffset::Known(_)) {
-                parsing_error = Some(invalid!("Could not find EOCD64"));
+                parsing_error = local_error.or(Some(invalid!("Could not find EOCD64")));
                 continue;
             }
         }
@@ -353,8 +391,10 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                         });
                     }
                     Ok(None) => {
-                        local_error =
-                            Some(invalid!("Invalid EOCD64: inconsistent number of files"));
+                        if local_error.is_none() {
+                            local_error =
+                                Some(invalid!("Invalid EOCD64: inconsistent number of files"));
+                        }
                     }
                     Err(e) => {
                         local_error = Some(e);

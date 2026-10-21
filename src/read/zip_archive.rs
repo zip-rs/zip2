@@ -248,10 +248,15 @@ impl<R: Read + Seek> ZipArchive<R> {
                     );
                 }
                 Err(e) => {
+                    // Other readers use a record whose CD ends at it, so don't fall back past it.
+                    if cde.central_directory_abuts_end() {
+                        return Err(e);
+                    }
                     last_err = Some(e);
                 }
             }
-            // Something went wrong while decoding the cde, try to find a new one
+            // The record is likely a stray signature (e.g. in a comment or trailing garbage),
+            // try to find an earlier one
             continue;
         }
     }
