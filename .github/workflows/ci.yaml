@@ -19,6 +19,8 @@ on:
 
 env:
   RUSTFLAGS: -Dwarnings
+  # Short smoke fuzz for PRs and the merge queue; long campaigns live in fuzz-scheduled.yml
+  FUZZ_SECONDS: 600
   MACOSX_DEPLOYMENT_TARGET: "14.5"
 
 jobs:
@@ -334,6 +336,27 @@ jobs:
         run: cargo fmt --all -- --check
       - name: fmt fuzz
         run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
+  fuzz_regressions:
+    # Fast, deterministic, required: replays seed corpus + known-bad inputs with
+    # a plain (non-AFL) release build. Seconds, not hours.
+    timeout-minutes: 15
+    needs:
+      - check_fuzz
+    strategy:
+      matrix:
+        target: [read, write]
+        feature_flag: ["--all-features", "--no-default-features"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add nightly && rustup default nightly
+      - run: cargo install cargo-afl --version 0.15.19
+      # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
+      - run: cargo afl build --release ${{ matrix.feature_flag }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
+      - run: fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 fuzz/${{ matrix.target }}/in fuzz/${{ matrix.target }}/regressions
+
   fuzz_read:
     runs-on: ubuntu-latest
     needs:
@@ -358,16 +381,18 @@ jobs:
       - name: clippy
         run: cargo afl clippy --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
+        run: cargo afl build --release --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         env:
           AFL_BENCH_UNTIL_CRASH: 1
-        timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
+          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
+          AFL_NO_UI: 1
+        timeout-minutes: 20
+        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/read/in -o out -V ${{ env.FUZZ_SECONDS }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - name: Minimize corpus
-        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
+        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - run: sudo apt install rename
         if: always()
       - name: Rename files
@@ -392,9 +417,17 @@ jobs:
             out/default/hangs/*
           if-no-files-found: error
         continue-on-error: true
-      - name: Fail if there are any crashes
-        if: steps.upload_failures.outcome == 'success'
-        run: exit 1
+      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          crashes=(out/default/crashes/id*)
+          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
+          hangs=(out/default/hangs/id*)
+          [ ${#hangs[@]} -eq 0 ] && exit 0
+          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
+          fuzz/replay.sh fuzz/target/release/fuzz_read 10 out/default/hangs
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -426,14 +459,16 @@ jobs:
       - name: clippy
         run: cargo afl clippy --no-default-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
+        run: cargo afl build --release -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         env:
           AFL_BENCH_UNTIL_CRASH: 1
-        timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/read/in -o out -V 7200 -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
+          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
+          AFL_NO_UI: 1
+        timeout-minutes: 20
+        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/read/in -o out -V ${{ env.FUZZ_SECONDS }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_read
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - run: sudo apt install rename
         if: always()
       - name: Rename files
@@ -452,9 +487,17 @@ jobs:
             out/default/hangs/*
           if-no-files-found: error
         continue-on-error: true
-      - name: Fail if there are any crashes
-        if: steps.upload_failures.outcome == 'success'
-        run: exit 1
+      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          crashes=(out/default/crashes/id*)
+          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
+          hangs=(out/default/hangs/id*)
+          [ ${#hangs[@]} -eq 0 ] && exit 0
+          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
+          fuzz/replay.sh fuzz/target/release/fuzz_read 10 out/default/hangs
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -486,16 +529,18 @@ jobs:
       - name: clippy
         run: cargo afl clippy --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
+        run: cargo afl build --release --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         env:
           AFL_BENCH_UNTIL_CRASH: 1
-        timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
+          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
+          AFL_NO_UI: 1
+        timeout-minutes: 20
+        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/write/in -o out -V ${{ env.FUZZ_SECONDS }} -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - name: Minimize corpus
-        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
+        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - run: sudo apt install rename
         if: always()
       - name: Rename files
@@ -520,9 +565,17 @@ jobs:
             out/default/hangs/*
           if-no-files-found: error
         continue-on-error: true
-      - name: Fail if there are any crashes
-        if: steps.upload_failures.outcome == 'success'
-        run: exit 1
+      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          crashes=(out/default/crashes/id*)
+          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
+          hangs=(out/default/hangs/id*)
+          [ ${#hangs[@]} -eq 0 ] && exit 0
+          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
+          fuzz/replay.sh fuzz/target/release/fuzz_write 10 out/default/hangs
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -554,14 +607,16 @@ jobs:
       - name: clippy
         run: cargo afl clippy --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
       - name: compile fuzz
-        run: cargo afl build --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
+        run: cargo afl build --release --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
       - name: run fuzz
         env:
           AFL_BENCH_UNTIL_CRASH: 1
-        timeout-minutes: 130
-        run: cargo afl fuzz -i ${{ github.workspace }}/fuzz/write/in -o out -V 7200 -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
+          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
+          AFL_NO_UI: 1
+        timeout-minutes: 20
+        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/write/in -o out -V ${{ env.FUZZ_SECONDS }} -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/debug/fuzz_write
+        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - run: sudo apt install rename
         if: always()
       - name: Rename files
@@ -580,9 +635,17 @@ jobs:
             out/default/hangs/*
           if-no-files-found: error
         continue-on-error: true
-      - name: Fail if there are any crashes
-        if: steps.upload_failures.outcome == 'success'
-        run: exit 1
+      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          crashes=(out/default/crashes/id*)
+          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
+          hangs=(out/default/hangs/id*)
+          [ ${#hangs[@]} -eq 0 ] && exit 0
+          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
+          fuzz/replay.sh fuzz/target/release/fuzz_write 10 out/default/hangs
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

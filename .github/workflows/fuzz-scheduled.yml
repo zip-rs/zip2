@@ -1,0 +1,58 @@
+name: Fuzz (scheduled, long)
+permissions:
+  contents: read
+on:
+  schedule:
+    - cron: "17 3 * * *"   # nightly
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Fuzz duration per target"
+        default: "7200"
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: read,  flags: "--all-features" }
+          - { target: read,  flags: "" }
+          - { target: write, flags: "--all-features", dict: "-x fuzz/write/fuzz.dict" }
+          - { target: write, flags: "--no-default-features", dict: "-x fuzz/write/fuzz.dict" }
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add nightly && rustup default nightly
+      - run: cargo install cargo-afl --version 0.15.19
+      - run: cargo afl system-config
+      - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
+      - name: fuzz
+        env:
+          AFL_NO_UI: 1
+        run: >
+          cargo afl fuzz -t 1000 -i fuzz/${{ matrix.target }}/in -o out
+          -V ${{ inputs.seconds || '7200' }} ${{ matrix.dict }}
+          -- fuzz/target/release/fuzz_${{ matrix.target }}
+      - name: Triage (crashes always fail; hangs only if reproducible at 10 s)
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          c=(out/default/crashes/id*); [ ${#c[@]} -gt 0 ] && { echo "::error::${#c[@]} crashes"; exit 1; }
+          fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 out/default/hangs
+      - run: find out -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
+        if: always()
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fuzz_${{ matrix.target }}_${{ strategy.job-index }}_findings
+          path: |
+            out/default/crashes
+            out/default/hangs
+            out/default/queue
+          if-no-files-found: ignore
+      # Findings are triaged by a human (copy into fuzz/<target>/regressions/ with the fix);
+      # never block the merge queue on a nightly result.
