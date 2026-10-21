@@ -502,6 +502,25 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     }
 }
 
+
+#[cfg(not(feature = "unreserved"))]
+fn validate_extra_fields(extra_fields: &[crate::extra_fields::CustomExtraField]) -> ZipResult<()> {
+    use crate::extra_fields::EXTRA_FIELD_MAPPING;
+    use crate::extra_fields::UsedExtraField;
+    for x in extra_fields.iter() {
+        let header_id = x.header_id;
+        if UsedExtraField::try_from(header_id).is_err()
+            && EXTRA_FIELD_MAPPING.contains(&header_id)
+        {
+            return Err(ZipError::Io(io::Error::other(format!(
+                "Extra data header ID {header_id:#06} (0x{header_id:x}) \
+                        requires crate feature \"unreserved\"",
+            ))));
+        }
+    }
+    Ok(())
+}
+
 impl<W: Write + Seek> ZipWriter<W> {
     /// Initializes the archive.
     ///
@@ -645,23 +664,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         let header_start = self.inner.try_inner_mut()?.stream_position()?;
         #[cfg(not(feature = "unreserved"))]
         {
-            use crate::extra_fields::EXTRA_FIELD_MAPPING;
-            use crate::extra_fields::UsedExtraField;
-
             if raw_values.is_none()
                 && let Some(extra_fields) = options.extended_options.extra_fields()
             {
-                for x in extra_fields.iter() {
-                    let header_id = x.header_id;
-                    if UsedExtraField::try_from(header_id).is_err()
-                        && EXTRA_FIELD_MAPPING.contains(&header_id)
-                    {
-                        return Err(ZipError::Io(io::Error::other(format!(
-                            "Extra data header ID {header_id:#06} (0x{header_id:x}) \
-                            requires crate feature \"unreserved\"",
-                        ))));
-                    }
-                }
+                validate_extra_fields(extra_fields)?;
             }
         }
         let raw_values = raw_values.unwrap_or(ZipRawValues {
@@ -1996,6 +2002,13 @@ impl ZipFileBuilder {
             ));
         }
         options.normalize();
+        #[cfg(not(feature = "unreserved"))]
+        {
+            if let Some(extra_fields) = options.extended_options.extra_fields()
+            {
+                validate_extra_fields(extra_fields)?;
+            }
+        }
         let owned_options = FullFileOptions {
             compression_method: options.compression_method,
             compression_level: options.compression_level,
