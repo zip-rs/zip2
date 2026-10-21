@@ -48,6 +48,65 @@ fn split_drive_prefix(component: &str) -> [Option<Utf8WindowsComponent<'_>>; 2] 
     [prefix, rest]
 }
 
+/// Check if a string represents a Windows DOS reserved device name.
+///
+/// Under the Win32 subsystem, the following device names are reserved:
+/// CON, PRN, AUX, NUL, COM1..COM9, LPT1..LPT9, CONIN$, CONOUT$, CLOCK$.
+/// These names cannot be used as files or directories regardless of extension
+/// (e.g. `CON.txt`, `aux.json`, `nul.dat` map to console, null, or hardware ports).
+#[cfg(windows)]
+pub(crate) fn is_windows_reserved_device_name(name: &str) -> bool {
+    let stem = name
+        .split(['.', ':'])
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches([' ', '.']);
+
+    if stem.eq_ignore_ascii_case("CON")
+        || stem.eq_ignore_ascii_case("PRN")
+        || stem.eq_ignore_ascii_case("AUX")
+        || stem.eq_ignore_ascii_case("NUL")
+        || stem.eq_ignore_ascii_case("CONIN$")
+        || stem.eq_ignore_ascii_case("CONOUT$")
+        || stem.eq_ignore_ascii_case("CLOCK$")
+    {
+        return true;
+    }
+
+    if stem.len() >= 4 {
+        let (prefix, rest) = stem.split_at(3);
+        if prefix.eq_ignore_ascii_case("COM") || prefix.eq_ignore_ascii_case("LPT") {
+            let mut chars = rest.chars();
+            if let Some(c) = chars.next()
+                && chars.next().is_none()
+                && ((b'1'..=b'9').contains(&(c as u8)) || matches!(c, '¹' | '²' | '³'))
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Check if a path component is invalid or unsafe under Windows rules.
+///
+/// On Windows:
+/// 1. Reserved characters `< > : " / \ | ? *` and ASCII control characters (0x00..=0x1F, 0x7F)
+///    cause `ERROR_INVALID_NAME` (123) or wildcard query bugs.
+/// 2. Trailing dots (`.`) or spaces (` `) are silently stripped by Win32, causing namespace collisions.
+/// 3. Reserved DOS device names (`CON`, `NUL`, `AUX`, `COM1..9`, `LPT1..9`, etc.) intercept file I/O.
+/// 4. Individual path components exceeding 255 UTF-16 code units trigger `ERROR_FILENAME_EXCED_RANGE` (206).
+#[cfg(windows)]
+pub(crate) fn is_windows_invalid_component(s: &str) -> bool {
+    s.is_empty()
+        || s.encode_utf16().count() > 255
+        || s.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*'])
+        || s.chars().any(|c| c.is_ascii_control())
+        || s.ends_with(['.', ' '])
+        || is_windows_reserved_device_name(s)
+}
+
 /// Simplify an archive entry name into components to be resolved *under*
 /// the destination directory.
 ///
@@ -68,6 +127,16 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
             Utf8WindowsComponent::Normal(s) => {
                 // As in `enclosed_name`: a separator inside one component means the name is
                 // split differently when it is written.
+                // Colons inside a component (not a leading drive prefix) indicate Windows
+                // Alternate Data Streams (ADS) or invalid filename characters.
+                // DOS device names (CON, NUL, AUX, COM1..9, LPT1..9) and trailing dots/spaces
+                // cause Win32 namespace collisions and device interception.
+                // On Unix, these characters and names are permitted in filenames.
+                #[cfg(windows)]
+                if s.contains(['/', '\\']) || is_windows_invalid_component(s) {
+                    return None;
+                }
+                #[cfg(not(windows))]
                 if s.contains(['/', '\\']) {
                     return None;
                 }
@@ -80,7 +149,7 @@ pub(crate) fn simplified_components(input: &Path) -> Option<Vec<&OsStr>> {
 }
 
 pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
-    components(no_null_filename)
+    let clean_components = components(no_null_filename)
         .filter_map(|component| match component {
             Utf8WindowsComponent::Normal(s) => Some(s),
             _ => None,
@@ -92,8 +161,72 @@ pub(crate) fn file_name_sanitized(no_null_filename: &str) -> PathBuf {
         .filter_map(|component| match component {
             Some(Utf8WindowsComponent::Normal(s)) => Some(s),
             _ => None,
-        })
-        .collect()
+        });
+    #[cfg(windows)]
+    {
+        clean_components
+            .map(|component| {
+                // 1. Map Windows reserved characters and control characters to '-'
+                let mut s: String = component
+                    .chars()
+                    .map(|c| {
+                        if matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*')
+                            || c.is_ascii_control()
+                        {
+                            '-'
+                        } else {
+                            c
+                        }
+                    })
+                    .collect();
+
+                // 2. Strip trailing dots and spaces
+                if s.ends_with(['.', ' ']) {
+                    let trimmed = s.trim_end_matches(['.', ' ']);
+                    if trimmed.is_empty() {
+                        s = "_".to_string();
+                    } else {
+                        s = trimmed.to_string();
+                    }
+                }
+
+                // 3. Prevent DOS reserved device names
+                if is_windows_reserved_device_name(&s) {
+                    s = format!("_{s}");
+                }
+
+                // 4. Cap individual component length to 255 UTF-16 code units
+                if s.encode_utf16().count() > 255 {
+                    let mut utf16_len = 0;
+                    let mut byte_limit = 0;
+                    for (idx, ch) in s.char_indices() {
+                        let ch_len = ch.len_utf16();
+                        if utf16_len + ch_len > 255 {
+                            break;
+                        }
+                        utf16_len += ch_len;
+                        byte_limit = idx + ch.len_utf8();
+                    }
+                    s.truncate(byte_limit);
+                    let trimmed = s.trim_end_matches(['.', ' ']);
+                    if trimmed.is_empty() {
+                        s = "_".to_string();
+                    } else {
+                        s = trimmed.to_string();
+                    }
+                    if is_windows_reserved_device_name(&s) {
+                        s = format!("_{s}");
+                    }
+                }
+
+                s
+            })
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        clean_components.collect()
+    }
 }
 
 pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
@@ -114,6 +247,17 @@ pub(crate) fn enclosed_name(file_name: &str) -> Option<PathBuf> {
                 // Inside a verbatim (`\\?\`) path `/` is not a separator, so `../b` comes back
                 // as one component; joined onto an ordinary path it is split again. The check
                 // here and the eventual write must agree on where a component ends.
+                // Colons inside a component indicate Windows Alternate Data Streams (ADS)
+                // (e.g. `file:Zone.Identifier` or `file:stream`), which bypass security
+                // policies or access hidden file streams.
+                // DOS device names (CON, NUL, AUX, COM1..9, LPT1..9) and trailing dots/spaces
+                // cause Win32 namespace collisions and device interception.
+                // On Unix, these characters and names are permitted in filenames.
+                #[cfg(windows)]
+                if s.contains(['/', '\\']) || is_windows_invalid_component(s) {
+                    return None;
+                }
+                #[cfg(not(windows))]
                 if s.contains(['/', '\\']) {
                     return None;
                 }
@@ -252,6 +396,16 @@ pub(crate) fn resolve_enclosed(
             }
             current.pop();
             continue;
+        }
+
+        #[cfg(windows)]
+        if let Some(s) = component.to_str()
+            && is_windows_invalid_component(s)
+        {
+            return Err(invalid!(
+                "Path component is invalid or reserved on Windows: {:?}",
+                s
+            ));
         }
 
         current.push(&component);
@@ -625,13 +779,35 @@ mod tests {
         assert_eq!(file_name_sanitized("b/c:x"), PathBuf::from_iter(["b", "x"]));
     }
 
-    /// Only a letter and `:` at the start of a component is a drive; other colons are kept.
+    /// Colons inside a component (not a leading drive prefix) represent Windows Alternate Data
+    /// Streams (ADS) and must be rejected on Windows to prevent MotW bypass or arbitrary stream writes.
     #[test]
-    fn test_colon_that_is_not_a_drive_prefix_is_kept() {
-        for name in ["foo:bar", "b/ab:c", "b/1:x", "b/:x", "b/a.b:c:d"] {
-            let enclosed = enclosed_name(name).unwrap();
-            assert_eq!(enclosed, Path::new(name), "{name}");
-            assert_each_is_one_windows_normal_component(name, enclosed.iter());
+    fn test_colon_that_is_not_a_drive_prefix_is_rejected() {
+        if !cfg!(windows) {
+            // On Unix, colons are permitted in filenames (e.g. cargo-afl outputs).
+            return;
+        }
+        for name in [
+            "foo:bar",
+            "b/ab:c",
+            "b/1:x",
+            "b/:x",
+            "b/a.b:c:d",
+            "target.exe:Zone.Identifier",
+            "foo::$DATA",
+        ] {
+            assert_eq!(enclosed_name(name), None, "{name}");
+            assert_eq!(simplified_components(Path::new(name)), None, "{name}");
+        }
+    }
+
+    /// On Unix, colons inside filenames are legitimate and must be accepted.
+    #[test]
+    #[cfg(not(windows))]
+    fn test_colon_permitted_on_unix() {
+        for name in ["foo:bar", "b/ab:c", "id:000000,sig:11"] {
+            assert!(enclosed_name(name).is_some(), "{name}");
+            assert!(simplified_components(Path::new(name)).is_some(), "{name}");
         }
     }
 
@@ -642,5 +818,179 @@ mod tests {
         assert_eq!(components.len(), 2);
         assert_eq!(components[0], "foo");
         assert_eq!(components[1], "bar.txt");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_windows_reserved_device_name() {
+        use super::is_windows_reserved_device_name;
+
+        // Base reserved device names (case-insensitive)
+        for name in [
+            "CON", "con", "Con", "PRN", "prn", "AUX", "aux", "NUL", "nul", "CONIN$", "conin$",
+            "CONOUT$", "conout$", "CLOCK$", "clock$", "COM1", "com1", "COM9", "com9", "LPT1",
+            "lpt1", "LPT9", "lpt9", "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³",
+        ] {
+            assert!(
+                is_windows_reserved_device_name(name),
+                "{name} should be recognized as a reserved device name"
+            );
+        }
+
+        // Reserved names with extensions and whitespace traps
+        for name in [
+            "CON.txt",
+            "con.tar.gz",
+            "PRN.log",
+            "aux.json",
+            "nul.dat",
+            "com1.log",
+            "lpt3.bin",
+            "conin$.txt",
+            "CONOUT$.dat",
+            "CLOCK$.txt",
+            "COM¹.dat",
+            "CON .txt",
+            "COM1 .dat",
+            "con...txt",
+            "CON. ",
+        ] {
+            assert!(
+                is_windows_reserved_device_name(name),
+                "{name} with extension should be recognized as a reserved device name"
+            );
+        }
+
+        // Similar but legitimate names that MUST NOT be flagged as reserved
+        for name in [
+            "contact.txt",
+            "content.json",
+            "auxiliary.rs",
+            "nullify.c",
+            "computer.log",
+            "com0.txt",
+            "lpt0.dat",
+            "cone.png",
+            "prnd.log",
+            "aux1.txt",
+            ".con",
+            ".nul",
+        ] {
+            assert!(
+                !is_windows_reserved_device_name(name),
+                "{name} should NOT be recognized as a reserved device name"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_windows_invalid_component() {
+        use super::is_windows_invalid_component;
+
+        // Colons and Alternate Data Streams
+        assert!(is_windows_invalid_component("foo:bar"));
+        assert!(is_windows_invalid_component("a:Zone.Identifier"));
+
+        // Illegal Win32 characters
+        assert!(is_windows_invalid_component("foo<bar"));
+        assert!(is_windows_invalid_component("foo>bar"));
+        assert!(is_windows_invalid_component("foo\"bar"));
+        assert!(is_windows_invalid_component("foo|bar"));
+        assert!(is_windows_invalid_component("foo?bar"));
+        assert!(is_windows_invalid_component("foo*bar"));
+        assert!(is_windows_invalid_component("foo\x01bar"));
+        assert!(is_windows_invalid_component("foo\x1fbar"));
+        assert!(is_windows_invalid_component("foo\x7fbar"));
+
+        // Trailing dots and spaces
+        assert!(is_windows_invalid_component("evil.exe."));
+        assert!(is_windows_invalid_component("secret.txt "));
+        assert!(is_windows_invalid_component("test.txt. . "));
+
+        // Reserved devices
+        assert!(is_windows_invalid_component("CON"));
+        assert!(is_windows_invalid_component("con.txt"));
+        assert!(is_windows_invalid_component("aux.json"));
+        assert!(is_windows_invalid_component("nul"));
+        assert!(is_windows_invalid_component("com1"));
+        assert!(is_windows_invalid_component("CLOCK$"));
+        assert!(is_windows_invalid_component("COM¹"));
+
+        // Length limit (> 255 UTF-16 code units)
+        let long_name = "a".repeat(256);
+        assert!(is_windows_invalid_component(&long_name));
+
+        // Valid components
+        assert!(!is_windows_invalid_component("normal.txt"));
+        assert!(!is_windows_invalid_component("contact.txt"));
+        assert!(!is_windows_invalid_component("auxiliary.rs"));
+        let max_valid_name = "a".repeat(255);
+        assert!(!is_windows_invalid_component(&max_valid_name));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_file_name_sanitized_windows_hardening() {
+        use super::file_name_sanitized;
+
+        assert_eq!(file_name_sanitized("CON.txt"), PathBuf::from("_CON.txt"));
+        assert_eq!(
+            file_name_sanitized("CLOCK$.log"),
+            PathBuf::from("_CLOCK$.log")
+        );
+        assert_eq!(file_name_sanitized("COM¹.dat"), PathBuf::from("_COM¹.dat"));
+        assert_eq!(
+            file_name_sanitized("foo<bar>baz\"pipe|quest?star*.txt"),
+            PathBuf::from("foo-bar-baz-pipe-quest-star-.txt")
+        );
+        assert_eq!(
+            file_name_sanitized("foo\x01bar\x1fbaz\x7f.txt"),
+            PathBuf::from("foo-bar-baz-.txt")
+        );
+        assert_eq!(file_name_sanitized("evil.exe."), PathBuf::from("evil.exe"));
+        assert_eq!(
+            file_name_sanitized("secret.txt "),
+            PathBuf::from("secret.txt")
+        );
+        assert_eq!(file_name_sanitized("... "), PathBuf::from("_"));
+    }
+
+    /// Windows reserved device names and trailing dots/spaces must be rejected on Windows in enclosed_name
+    /// and simplified_components.
+    #[test]
+    #[cfg(windows)]
+    fn test_windows_reserved_device_names_rejected_in_enclosed_name() {
+        for name in [
+            "CON",
+            "con.txt",
+            "PRN",
+            "prn.log",
+            "AUX",
+            "aux.json",
+            "NUL",
+            "nul.dat",
+            "COM1",
+            "com2.txt",
+            "LPT1",
+            "lpt3.bin",
+            "b/con.txt",
+            "a/b/aux.json",
+            "evil.exe.",
+            "secret.txt ",
+        ] {
+            assert_eq!(enclosed_name(name), None, "{name}");
+            assert_eq!(simplified_components(Path::new(name)), None, "{name}");
+        }
+    }
+
+    /// On Unix, filenames like con.txt or aux.c are legitimate and must be accepted.
+    #[test]
+    #[cfg(not(windows))]
+    fn test_windows_reserved_device_names_permitted_on_unix() {
+        for name in ["con.txt", "aux.c", "nul.h", "com1.log", "evil.exe."] {
+            assert!(enclosed_name(name).is_some(), "{name}");
+            assert!(simplified_components(Path::new(name)).is_some(), "{name}");
+        }
     }
 }
