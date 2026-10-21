@@ -256,7 +256,6 @@ jobs:
     timeout-minutes: 10
     needs:
       - build_and_test
-      - check_fuzz
       - bsd_platform
     strategy:
       matrix:
@@ -362,7 +361,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - check_fuzz
+      - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -440,7 +439,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - check_fuzz
+      - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -510,7 +509,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - check_fuzz
+      - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -588,7 +587,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - check_fuzz
+      - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
