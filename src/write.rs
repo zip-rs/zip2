@@ -643,17 +643,12 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         let header_start = self.inner.try_inner_mut()?.stream_position()?;
-        let raw_values = raw_values.unwrap_or(ZipRawValues {
-            crc32: 0,
-            compressed_size: 0,
-            uncompressed_size: 0,
-        });
         #[cfg(not(feature = "unreserved"))]
         {
             use crate::extra_fields::EXTRA_FIELD_MAPPING;
             use crate::extra_fields::UsedExtraField;
 
-            if !options.extended_options.skip_extra_field_check()
+            if raw_values.is_none()
                 && let Some(extra_fields) = options.extended_options.extra_fields()
             {
                 for x in extra_fields.iter() {
@@ -669,6 +664,11 @@ impl<W: Write + Seek> ZipWriter<W> {
                 }
             }
         }
+        let raw_values = raw_values.unwrap_or(ZipRawValues {
+            crc32: 0,
+            compressed_size: 0,
+            uncompressed_size: 0,
+        });
         let extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
@@ -1135,7 +1135,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 options.add_extra_field(header_id, &buff[4..], false)?;
             }
         }
-        options.extended_options.skip_extra_fields_check = true; // Raw copy we skip checks
         let file_name = name.to_string();
         self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options)
     }
@@ -1238,7 +1237,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             options.external_attributes = None;
             options = options.unix_permissions(perms);
         }
-        options.skip_extra_field_check = true;
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
@@ -2007,7 +2005,6 @@ impl ZipFileBuilder {
             large_file: options.large_file,
             encrypt_with: None,
             extended_options: ExtendedFileOptions {
-                skip_extra_fields_check: false,
                 extra_fields: options
                     .extended_options
                     .extra_fields()
@@ -2646,9 +2643,8 @@ mod tests {
         // let options = SimpleFileOptions::default().compression_method(Stored);
         let options = FileOptions {
             extended_options: ExtendedFileOptions {
-                skip_extra_fields_check: false,
-                extra_fields: vec![].into(),
                 file_comment: Some("file comment".into()),
+                ..Default::default()
             },
 
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
