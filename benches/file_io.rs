@@ -14,7 +14,11 @@
 //! Merge / raw_copy benches: longer measurement (10s) so samples complete on slow hosts (e.g. SBCs).
 
 #[cfg(not(any(miri, target_arch = "wasm32")))]
+mod common;
+
+#[cfg(not(any(miri, target_arch = "wasm32")))]
 mod benches {
+    use super::common::seeded_random_bytes;
     use criterion::{BatchSize, Criterion, criterion_group};
     use std::fs;
     use std::hint::black_box;
@@ -23,33 +27,6 @@ mod benches {
     use zip::{
         CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions,
     };
-
-    // Deterministic seeded randomness helper (SplitMix64; no external dependencies, no syscalls).
-    // Why we use this instead of the getrandom crate:
-    // 1. Deterministic — always the same bytes.
-    // 2. No syscalls — the getrandom crate calls the OS/platform RNG.
-    // 3. No dependency here — getrandom is used elsewhere but remains optional and may change.
-    fn seeded_random_bytes(size: usize) -> Vec<u8> {
-        let mut x: u64 = 0xdead_beef_cafe_babe; // seed
-        let mut out = vec![0u8; size];
-
-        for chunk in out.chunks_mut(8) {
-            x = x.wrapping_add(0x9E3779B97F4A7C15);
-
-            let mut z = x;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-            z ^= z >> 31;
-
-            let bytes = z.to_le_bytes();
-
-            for (i, b) in chunk.iter_mut().enumerate() {
-                *b = bytes[i];
-            }
-        }
-
-        out
-    }
 
     fn generate_random_archive(size: usize) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -144,7 +121,7 @@ mod benches {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         let comment = seeded_random_bytes(comment_len);
-        writer.set_raw_comment(comment.into_boxed_slice())?;
+        writer.set_raw_comment(comment)?;
         writer.start_file("data.txt", options)?;
         writer.write_all(b"x")?;
         Ok(writer.finish()?.into_inner())

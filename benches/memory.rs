@@ -6,31 +6,13 @@
 //! cargo bench --bench memory
 //! ```
 
+mod common;
+
+use common::seeded_random_bytes;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::io::{self, Cursor, Read, Seek, Write};
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
-
-fn seeded_random_bytes(size: usize) -> Vec<u8> {
-    let mut x: u64 = 0xdead_beef_cafe_babe;
-    let mut out = vec![0u8; size];
-
-    for chunk in out.chunks_mut(8) {
-        x = x.wrapping_add(0x9E3779B97F4A7C15);
-
-        let mut z = x;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-        z ^= z >> 31;
-
-        let bytes = z.to_le_bytes();
-        for (i, b) in chunk.iter_mut().enumerate() {
-            *b = bytes[i];
-        }
-    }
-
-    out
-}
 
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -93,7 +75,7 @@ fn perform_raw_copy_file_by_index<R: Read + Seek, W: Write + Seek>(
 fn generate_archive_with_comment(comment_len: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    writer.set_raw_comment(seeded_random_bytes(comment_len).into_boxed_slice())?;
+    writer.set_raw_comment(seeded_random_bytes(comment_len))?;
     writer.start_file("data.txt", options)?;
     writer.write_all(b"x")?;
     Ok(writer.finish()?.into_inner())
@@ -104,7 +86,7 @@ fn generate_zip64_archive_with_extensible_data(data_len: usize) -> ZipResult<Vec
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
         .large_file(true);
-    writer.set_raw_zip64_extensible_data_sector(seeded_random_bytes(data_len).into_boxed_slice());
+    writer.set_raw_zip64_extensible_data_sector(seeded_random_bytes(data_len));
     writer.start_file("data.txt", options)?;
     writer.write_all(b"x")?;
     Ok(writer.finish()?.into_inner())
