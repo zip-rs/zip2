@@ -24,7 +24,8 @@ pub mod tests {
             miri,
             any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")
         ))]
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         // Create entries with absolute paths to simulate problematic ZIPs; creation is expected to succeed
         writer
