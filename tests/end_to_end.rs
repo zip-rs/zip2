@@ -10,21 +10,28 @@ where
     F: FnMut(CompressionMethod),
 {
     for &method in SUPPORTED_COMPRESSION_METHODS {
-        if method == CompressionMethod::DEFLATE
-            && cfg!(all(
-                feature = "deflate-zopfli",
-                not(feature = "deflate-flate2")
-            ))
-        {
-            // We do not support DEFLATE decompression without the `flate2` feature.
-            continue;
+        match method {
+            CompressionMethod::Stored => f(method),
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => {
+                if !cfg!(all(
+                    feature = "deflate-zopfli",
+                    not(feature = "deflate-flate2")
+                )) {
+                    // We do not support DEFLATE decompression without the `flate2` feature.
+                    f(method);
+                }
+            }
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => {
+                continue;
+            }
+            _ => {
+                if !cfg!(miri) {
+                    f(method);
+                }
+            }
         }
-
-        if method == CompressionMethod::DEFLATE64 {
-            continue;
-        }
-
-        f(method);
     }
 }
 
