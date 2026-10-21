@@ -562,6 +562,12 @@ impl<R: Read + Seek> ZipArchive<R> {
                 }
                 let mut outfile = options.open(&outpath)?;
                 io::copy(&mut file, &mut outfile)?;
+                #[cfg(unix)]
+                if let Some(mode) = file.unix_mode() {
+                    // OpenOptions::mode only applies when the file is created. Record modes
+                    // for the final pass too, so overwriting an existing path updates them.
+                    files_by_unix_mode.add_mode(outpath, mode);
+                }
                 // Set original timestamp.
                 #[cfg(feature = "chrono")]
                 if let Some(last_modified) = file.last_modified()
