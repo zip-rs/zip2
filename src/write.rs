@@ -49,7 +49,9 @@ enum MaybeEncrypted<W> {
     /// ever receive are the empty final block flate2's `Drop` emits when an idle encoder is
     /// dropped.
     #[cfg(feature = "deflate-flate2")]
-    Closed,
+    Closed {
+        bytes_written: usize,
+    },
 }
 
 impl<W: Write> MaybeEncrypted<W> {
@@ -60,7 +62,7 @@ impl<W: Write> MaybeEncrypted<W> {
             MaybeEncrypted::Aes(w) => Some(w.get_ref()),
             MaybeEncrypted::ZipCrypto(w) => Some(w.get_ref()),
             #[cfg(feature = "deflate-flate2")]
-            MaybeEncrypted::Closed => None,
+            MaybeEncrypted::Closed { .. } => None,
         }
     }
     /// Returns a mutable reference to the underlying writer.
@@ -79,7 +81,7 @@ impl<W: Write> MaybeEncrypted<W> {
             MaybeEncrypted::Aes(w) => Some(unsafe { w.get_mut() }),
             MaybeEncrypted::ZipCrypto(w) => Some(w.get_mut()),
             #[cfg(feature = "deflate-flate2")]
-            MaybeEncrypted::Closed => None,
+            MaybeEncrypted::Closed { .. } => None,
         }
     }
 }
@@ -93,7 +95,7 @@ impl<W> Debug for MaybeEncrypted<W> {
             MaybeEncrypted::Aes(_) => "AES",
             MaybeEncrypted::ZipCrypto(_) => "ZipCrypto",
             #[cfg(feature = "deflate-flate2")]
-            MaybeEncrypted::Closed => "Closed",
+            MaybeEncrypted::Closed { .. } => "Closed",
         })
     }
 }
@@ -106,7 +108,17 @@ impl<W: Write> Write for MaybeEncrypted<W> {
             MaybeEncrypted::Aes(w) => w.write(buf),
             MaybeEncrypted::ZipCrypto(w) => w.write(buf),
             #[cfg(feature = "deflate-flate2")]
-            MaybeEncrypted::Closed => Ok(buf.len()),
+            MaybeEncrypted::Closed { bytes_written } => {
+                *bytes_written = (*bytes_written).saturating_add(buf.len());
+                if *bytes_written > 2 {
+                    Err(io::Error::new(
+                        ErrorKind::FileTooLarge,
+                        "More than 2 bytes unexpectedly written to Deflate encoder's closed internal writer",
+                    ))
+                } else {
+                    Ok(buf.len())
+                }
+            }
         }
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -116,7 +128,7 @@ impl<W: Write> Write for MaybeEncrypted<W> {
             MaybeEncrypted::Aes(w) => w.flush(),
             MaybeEncrypted::ZipCrypto(w) => w.flush(),
             #[cfg(feature = "deflate-flate2")]
-            MaybeEncrypted::Closed => Ok(()),
+            MaybeEncrypted::Closed { .. } => Ok(()),
         }
     }
 }
@@ -894,7 +906,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                     MaybeEncrypted::Unencrypted(w)
                 }
                 #[cfg(feature = "deflate-flate2")]
-                GenericZipWriter::Storer(MaybeEncrypted::Closed) => {
+                GenericZipWriter::Storer(MaybeEncrypted::Closed { .. }) => {
                     return Err(io::Error::new(
                         io::ErrorKind::BrokenPipe,
                         "ZipWriter's inner writer is not available",
@@ -1728,7 +1740,7 @@ impl<W: Write> DeflateCache<W> {
                 // `Closed` and reset the compressor a second time, which costs more than it
                 // saves (see #1119).
                 match mem::replace(encoder.get_mut(), bare) {
-                    MaybeEncrypted::Closed => Ok(encoder),
+                    MaybeEncrypted::Closed { .. } => Ok(encoder),
                     other => {
                         // Unreachable by construction; don't lose the caller's writer.
                         let bare = mem::replace(encoder.get_mut(), other);
@@ -1751,7 +1763,7 @@ impl<W: Write> DeflateCache<W> {
         &mut self,
         mut encoder: flate2::write::DeflateEncoder<MaybeEncrypted<W>>,
     ) -> io::Result<MaybeEncrypted<W>> {
-        let bare = encoder.reset(MaybeEncrypted::Closed)?;
+        let bare = encoder.reset(MaybeEncrypted::Closed { bytes_written: 0 })?;
         self.idle = Some(encoder);
         Ok(bare)
     }
