@@ -111,7 +111,7 @@ fn memory_benchmarks(c: &mut Criterion) {
     c.bench_function("parse_zip64_archive_with_extensible_data", |b| {
         b.iter(|| {
             let archive = ZipArchive::new(Cursor::new(zip64_archive.as_slice())).unwrap();
-            black_box(archive.comment().len());
+            black_box(archive.raw_zip64_extensible_data_sector().unwrap());
         });
     });
 
