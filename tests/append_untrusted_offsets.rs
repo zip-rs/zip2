@@ -25,7 +25,7 @@ fn abort_file_after_append_with_header_offset_past_eof() {
         return;
     };
     let _ = w.abort_file();
-    w.set_raw_comment(Box::new([1, 2]));
+    w.set_raw_comment(Box::new([1, 2])).expect("Error from set_raw_comment");
     if let Ok(out) = w.finish() {
         assert!(
             out.get_ref().len() < 1 << 20,
