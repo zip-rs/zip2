@@ -526,7 +526,7 @@ fn test_64k_files() -> zip::result::ZipResult<()> {
 }
 
 /// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+#[cfg(all(target_endian = "little", not(miri), feature = "extract"))]
 #[test]
 fn test_can_create_destination() -> zip::result::ZipResult<()> {
     use tempfile::TempDir;

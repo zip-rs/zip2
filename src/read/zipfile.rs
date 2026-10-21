@@ -10,18 +10,15 @@ use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
 use crate::format::system::System;
 use crate::read::ExtraField;
-use crate::read::extract::RootDirFilter;
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::result::ZipResult;
-use crate::result::invalid;
 use crate::types::ZipFileData;
 use crate::write::options::SimpleFileOptions;
 
 use core::mem::replace;
 use std::borrow::Cow;
-use std::ffi::OsStr;
 use std::io::{self, Cursor, Read, Seek, SeekFrom, copy, sink};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// A struct for reading a zip file
 ///
@@ -262,59 +259,6 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
         replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
-    }
-
-    /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
-    ///
-    /// `base_path` parameter is assumed to be canonicalized.
-    pub(crate) fn safe_prepare_path(
-        &self,
-        base_path: &Path,
-        outpath: &mut PathBuf,
-        root_dir: Option<&(Vec<&OsStr>, impl RootDirFilter)>,
-    ) -> ZipResult<()> {
-        let file_name = self.name()?;
-        let components = self
-            .data
-            .simplified_components(&file_name)
-            .ok_or(invalid!("Invalid file path"))?;
-
-        let components = match root_dir {
-            Some((root_dir, filter)) => match components.strip_prefix(&**root_dir) {
-                Some(components) => components,
-
-                // In this case, we expect that the file was not in the root
-                // directory, but was filtered out when searching for the
-                // root directory.
-                None => {
-                    // We could technically find ourselves at this code
-                    // path if the user provides an unstable or
-                    // non-deterministic `filter` function.
-                    //
-                    // If debug assertions are on, we should panic here.
-                    // Otherwise, the safest thing to do here is to just
-                    // extract as-is.
-                    debug_assert!(
-                        !filter(&PathBuf::from_iter(components.iter())),
-                        "Root directory filter should not match at this point"
-                    );
-
-                    // Extract as-is.
-                    &components[..]
-                }
-            },
-
-            None => &components[..],
-        };
-
-        *outpath = crate::path::resolve_enclosed(
-            base_path,
-            base_path,
-            components.iter().map(|c| c.to_os_string()),
-            true, // create intermediate directories
-        )?;
-
-        Ok(())
     }
 
     /// Get the extra data of the zip header for this file

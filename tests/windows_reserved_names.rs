@@ -84,7 +84,7 @@ fn test_windows_reserved_device_names_rejected_in_enclosed_name() {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "extract"))]
 #[test]
 fn test_windows_reserved_device_names_extraction_rejected() {
     use std::io::Cursor;
@@ -177,7 +177,7 @@ fn test_windows_reserved_names_mangled_name_sanitized() {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "extract"))]
 #[test]
 fn test_legitimate_similar_names_accepted() {
     use std::io::Cursor;
@@ -225,7 +225,7 @@ fn test_legitimate_similar_names_accepted() {
     );
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "extract"))]
 #[test]
 fn test_cannot_escape_to_windows_startup_directory() {
     use std::io::Cursor;

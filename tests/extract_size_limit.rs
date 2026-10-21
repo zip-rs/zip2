@@ -1,5 +1,5 @@
 //! Native-only because filesystem access is unavailable in Miri CI.
-#![cfg(not(miri))]
+#![cfg(all(not(miri), feature = "extract"))]
 
 use std::io::{Cursor, Write};
 

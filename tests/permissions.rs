@@ -129,7 +129,7 @@ fn test_set_external_attributes() {
 }
 
 /// We cannot use fs with miri CI, and this test reads Unix file permissions
-#[cfg(all(unix, not(miri)))]
+#[cfg(all(unix, not(miri), feature = "extract"))]
 #[test]
 fn test_strip_suid() {
     use std::fs;
@@ -179,7 +179,7 @@ fn test_strip_suid() {
 }
 
 /// We cannot use fs with miri CI, and this test reads Unix file permissions
-#[cfg(all(unix, not(miri)))]
+#[cfg(all(unix, not(miri), feature = "extract"))]
 #[test]
 fn test_strip_sgid() {
     use std::fs;
@@ -229,7 +229,7 @@ fn test_strip_sgid() {
 }
 
 /// We cannot use fs with miri CI, and this test reads Unix file permissions
-#[cfg(all(unix, not(miri)))]
+#[cfg(all(unix, not(miri), feature = "extract"))]
 #[test]
 fn test_strip_sticky_bit() {
     use std::fs;

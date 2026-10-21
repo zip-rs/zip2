@@ -4,10 +4,8 @@ use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::magic::Magic;
-use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
-use crate::read::extract::{make_symlink, make_symlink_as_file_utf8};
 use crate::read::{
-    HeaderConsistencyMetadata, SymlinkExtractAction, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
+    HeaderConsistencyMetadata, ZipFile, ZipFileData, ZipFileEntry, ZipResult,
     central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, invalid};
@@ -15,16 +13,14 @@ use crate::result::{ZipError, invalid};
 use crate::read::stream::ReadFromStreamResult::{
     CentralDirectoryHeader, EndOfCentralDirectory, File,
 };
-use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{self, Read};
-use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.
 #[derive(Debug)]
 pub struct ZipStreamReader<R> {
     reader: R,
-    enforce_header_consistency: bool,
+    pub(crate) enforce_header_consistency: bool,
 }
 
 impl<R> ZipStreamReader<R> {
@@ -201,214 +197,6 @@ impl<R: Read> ZipStreamReader<R> {
         }
 
         Ok(())
-    }
-
-    /// Extract a Zip archive into a directory, overwriting files if they
-    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
-    ///
-    /// Extraction is not atomic; If an error is encountered, some of the files
-    /// may be left on disk. The file(s) and dir(s) are first created, then the
-    /// permissions are applied to them
-    ///
-    /// Extraction of symlink is not possible since we don't have access to the
-    /// external attributes in the local headers of the entries
-    pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        /// Destination, every entry written in this pass (raw local name -> the checked output
-        /// path `visit_file` wrote it to), and the modes the central directory gives them.
-        struct Extractor {
-            outpath: PathBuf,
-            resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
-            file_permissions: std::collections::BTreeMap<PathBuf, u32>,
-        }
-        impl ZipStreamVisitor for Extractor {
-            fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
-                let extract_options = crate::read::extract::ExtractOptions::default();
-                let mut outpath = self.outpath.clone();
-                file.safe_prepare_path(
-                    &self.outpath,
-                    &mut outpath,
-                    None::<&(_, fn(&Path) -> bool)>,
-                )?;
-                self.resolved_paths
-                    .insert(file.name_raw().into(), outpath.clone());
-
-                if file.is_symlink() {
-                    // Same bound as `ZipArchive::extract`: the declared
-                    // uncompressed size is attacker-controlled, so reject
-                    // oversized entries rather than pre-allocating them.
-                    //
-                    // `is_symlink()` is currently always false on this path
-                    // (`from_local_block` has no external attributes to read),
-                    // so this is defence in depth -- see
-                    // `stream_does_not_expose_the_symlink_bit`.
-                    let declared_len = file.size();
-                    if declared_len > MAX_SYMLINK_TARGET_LEN {
-                        return Err(invalid!(
-                            "symlink target declares {} bytes, more than the {} byte limit",
-                            declared_len,
-                            MAX_SYMLINK_TARGET_LEN
-                        ));
-                    }
-
-                    let mut target = Vec::with_capacity(declared_len as usize);
-                    file.read_to_end(&mut target)?;
-                    match extract_options.symlink_action {
-                        SymlinkExtractAction::ExtractAsFile => {
-                            make_symlink_as_file(&outpath, &target)?;
-                        }
-                        SymlinkExtractAction::ExtractAsFileUtf8 => {
-                            make_symlink_as_file_utf8(&outpath, &target)?;
-                        }
-                        _ => {
-                            make_symlink(
-                                &self.outpath,
-                                &outpath,
-                                &target,
-                                &self.resolved_paths,
-                                extract_options.symlink_action,
-                            )?;
-                        }
-                    }
-                    return Ok(());
-                }
-                if file.is_dir() {
-                    fs::create_dir_all(&outpath)?;
-                } else {
-                    let mut outfile = fs::File::create(&outpath)?;
-                    io::copy(file, &mut outfile)?;
-                }
-
-                Ok(())
-            }
-
-            fn visit_additional_metadata(&mut self, metadata: &ZipFileEntry<'_>) -> ZipResult<()> {
-                // The central directory is not checked against the local headers, so its
-                // names only select entries this pass already wrote: a name that wasn't
-                // written gets no mode, and the mode goes to the path `visit_file` checked,
-                // never to a path rebuilt from the central directory.
-                if let (Some(outpath), Some(mode)) = (
-                    self.resolved_paths.get(metadata.name_raw()),
-                    metadata.unix_mode(),
-                ) {
-                    self.file_permissions.insert(outpath.clone(), mode);
-                }
-                Ok(())
-            }
-        }
-        /// Moves the entries `visit` wrote under `staging` to the same place under `dest`,
-        /// resolving each path again as `visit_file` does.
-        fn move_staged_entries(
-            staging: &mut PathBuf,
-            dest: &Path,
-            extractor: &mut Extractor,
-        ) -> ZipResult<()> {
-            // An entry named like `staging` would be moved into it, so first rename `staging`
-            // to a name no entry has. Ask the filesystem, since it may ignore case.
-            let written_to = staging.clone();
-            let has_entry_named_like = |dir: &Path| {
-                dir.file_name()
-                    .is_some_and(|name| dir.join(name).symlink_metadata().is_ok())
-            };
-            while has_entry_named_like(staging) {
-                let renamed = staging_path(dest)?;
-                fs::rename(&*staging, &renamed)?;
-                *staging = renamed;
-            }
-
-            for staged in extractor.resolved_paths.values_mut() {
-                let relative = staged
-                    .strip_prefix(&written_to)
-                    .map_err(|_| invalid!("Entry was not extracted to the staging directory"))?;
-                let from = staging.join(relative);
-                let components = relative.iter().map(|c| c.to_os_string());
-                let outpath = crate::path::resolve_enclosed(dest, dest, components, true)?;
-                if outpath.starts_with(&*staging) {
-                    return Err(invalid!("Entry would be written to the staging directory"));
-                }
-                if fs::symlink_metadata(&from)?.is_dir() {
-                    fs::create_dir_all(&outpath)?;
-                } else if let Err(e) = fs::rename(&from, &outpath) {
-                    if e.kind() != io::ErrorKind::CrossesDevices {
-                        return Err(e.into());
-                    }
-                    fs::copy(&from, &outpath)?;
-                }
-                if let Some(mode) = extractor.file_permissions.remove(&*staged) {
-                    extractor.file_permissions.insert(outpath.clone(), mode);
-                }
-                *staged = outpath;
-            }
-            Ok(())
-        }
-
-        use std::fs;
-        fs::create_dir_all(&directory)?;
-        let directory = directory.as_ref().canonicalize()?;
-
-        // The headers are only checked after the last entry, so write nothing to `directory`
-        // before that.
-        let staging = if self.enforce_header_consistency {
-            Some(create_staging_dir(&directory)?)
-        } else {
-            None
-        };
-
-        let mut extractor = Extractor {
-            outpath: staging.clone().unwrap_or_else(|| directory.clone()),
-            resolved_paths: IndexMap::new(),
-            file_permissions: Default::default(),
-        };
-        let visited = self.visit(&mut extractor);
-        if let Some(mut staging) = staging {
-            let moved = visited
-                .and_then(|()| move_staged_entries(&mut staging, &directory, &mut extractor));
-            let removed = fs::remove_dir_all(&staging);
-            moved?;
-            removed?;
-        } else {
-            visited?;
-        }
-
-        // As `ZipArchive::extract`: children before parents, so a read-only directory does not
-        // block setting its contents. Never through a symlink: `set_permissions` follows them.
-        // Off Unix, only the read-only flag applies.
-        for (path, mode) in extractor.file_permissions.into_iter().rev() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                crate::read::extract::set_permissions_no_follow_symlink(
-                    &path,
-                    std::fs::Permissions::from_mode(mode),
-                )?;
-            }
-            #[cfg(not(unix))]
-            if mode & 0o222 == 0 {
-                let metadata = fs::symlink_metadata(&path)?;
-                if !metadata.is_symlink() {
-                    let mut permissions = metadata.permissions();
-                    permissions.set_readonly(true);
-                    fs::set_permissions(&path, permissions)?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-/// A path in `dest` with a random name.
-fn staging_path(dest: &Path) -> io::Result<PathBuf> {
-    let n = getrandom::u64().map_err(io::Error::other)?;
-    Ok(dest.join(format!(".zip-extract-{n:016x}")))
-}
-
-/// Creates a new, empty directory with a random name in `dest`.
-fn create_staging_dir(dest: &Path) -> io::Result<PathBuf> {
-    loop {
-        let staging = staging_path(dest)?;
-        match std::fs::create_dir(&staging) {
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-            result => return result.map(|()| staging),
-        }
     }
 }
 
@@ -645,30 +433,6 @@ mod tests {
         reader.visit(&mut V::default()).unwrap();
     }
 
-    /// Symlinks being extracted shouldn't be followed out of the destination directory.
-    /// Cannot use fs with miri CI
-    #[cfg(not(miri))]
-    #[test]
-    fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
-        use crate::ZipWriter;
-        use crate::write::SimpleFileOptions;
-        use std::fs::create_dir;
-        use tempfile::TempDir;
-
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
-        writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
-        let reader = ZipStreamReader::new(writer.finish()?);
-        let dest_parent = TempDir::with_prefix("stream__cannot_symlink_outside_destination")?;
-        let dest_sibling = dest_parent.path().join("dest-sibling");
-        create_dir(&dest_sibling)?;
-        let dest = dest_parent.path().join("dest");
-        create_dir(&dest)?;
-        assert!(reader.extract(dest).is_err());
-        assert!(!dest_sibling.join("dest-file").exists());
-        Ok(())
-    }
-
     /// The stream reader builds each entry from the *local* file header, which
     /// has no external-attributes field (`ZipFileData::from_local_block` sets it
     /// to 0), so `is_symlink()` is always false on this path and the symlink
@@ -696,20 +460,6 @@ mod tests {
              guard in `stream.rs` is reachable and needs a regression test"
         );
 
-        Ok(())
-    }
-
-    /// Cannot use fs with miri CI
-    #[cfg(not(miri))]
-    #[test]
-    fn test_can_create_destination() -> ZipResult<()> {
-        use tempfile::TempDir;
-
-        let v = include_bytes!("../../tests/data/mimetype.zip");
-        let reader = ZipStreamReader::new(v.as_ref());
-        let dest = TempDir::with_prefix("stream_test_can_create_destination").unwrap();
-        reader.extract(&dest)?;
-        assert!(dest.path().join("mimetype").exists());
         Ok(())
     }
 

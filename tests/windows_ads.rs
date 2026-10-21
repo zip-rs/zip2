@@ -2,7 +2,7 @@
 //! Verifies that `zip2` currently permits creating Alternate Data Streams (e.g. `Zone.Identifier`)
 //! because colons in component names are treated as valid path characters instead of being rejected.
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "extract"))]
 #[test]
 fn test_windows_ads_stream_creation() -> Result<(), Box<dyn std::error::Error>> {
     use std::fs::File;

@@ -1,10 +1,12 @@
 //! Extraction
 
+use crate::read::stream::{ZipStreamReader, ZipStreamVisitor};
+use crate::read::{ZipFile, ZipFileEntry};
 use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
 use std::io::{self, Read, Seek};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 
@@ -72,22 +74,7 @@ impl ExtractOptions {
     }
 }
 
-pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
-    use std::fs;
-    fs::create_dir_all(outpath.as_ref())?;
-    #[cfg(unix)]
-    {
-        // Dirs must be writable until all normal files are extracted
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            outpath.as_ref(),
-            std::fs::Permissions::from_mode(
-                0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
-            ),
-        )?;
-    }
-    Ok(())
-}
+pub(crate) use crate::path::make_writable_dir_all;
 
 #[cfg(unix)]
 pub(crate) fn make_symlink_impl<T>(
@@ -428,6 +415,81 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.extract_internal(directory, Some(root_dir_filter), ExtractOptions::default())
     }
 
+    /// Find the "root directory" of an archive if it exists, filtering out
+    /// irrelevant entries when searching.
+    ///
+    /// Our definition of a "root directory" is a single top-level directory
+    /// that contains the rest of the archive's entries. This is useful for
+    /// extracting archives that contain a single top-level directory that
+    /// you want to "unwrap" and extract directly.
+    ///
+    /// For a sensible default filter, you can use [`crate::read::root_dir_common_filter`].
+    /// For a custom filter, see [`RootDirFilter`].
+    pub fn root_dir(&self, filter: impl RootDirFilter) -> ZipResult<Option<PathBuf>> {
+        let mut root_dir: Option<PathBuf> = None;
+
+        for i in 0..self.len() {
+            let (file_name_raw, file) = self
+                .shared
+                .files
+                .get_index(i)
+                .ok_or(ZipError::FileNotFound)?;
+            let file_name = match file.name(file_name_raw) {
+                Ok(file_name) => file_name,
+                Err(_) => continue,
+            };
+            let path = match file.enclosed_name(&file_name) {
+                Some(path) => path,
+                None => return Ok(None),
+            };
+
+            if !filter(&path) {
+                continue;
+            }
+
+            macro_rules! replace_root_dir {
+                ($path:ident) => {
+                    match &mut root_dir {
+                        Some(root_dir) => {
+                            if *root_dir != $path {
+                                // We've found multiple root directories,
+                                // abort.
+                                return Ok(None);
+                            }
+                            continue;
+                        }
+
+                        None => {
+                            root_dir = Some($path.into());
+                            continue;
+                        }
+                    }
+                };
+            }
+
+            // If this entry is located at the root of the archive...
+            if path.components().count() == 1 {
+                if file.is_dir(file_name_raw.as_ref()) {
+                    // If it's a directory, it could be the root directory.
+                    replace_root_dir!(path);
+                }
+                // If it's anything else, this archive does not have a
+                // root directory.
+                return Ok(None);
+            }
+
+            // Find the root directory for this entry.
+            let mut path = path.as_path();
+            while let Some(parent) = path.parent().filter(|path| *path != Path::new("")) {
+                path = parent;
+            }
+
+            replace_root_dir!(path);
+        }
+
+        Ok(root_dir)
+    }
+
     fn extract_internal<P: AsRef<Path>>(
         &mut self,
         directory: P,
@@ -642,4 +704,279 @@ pub fn root_dir_common_filter(path: &Path) -> bool {
     }
 
     true
+}
+
+impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
+    /// Prepare the path for extraction by creating necessary missing directories and checking for symlinks to be contained within the base path.
+    ///
+    /// `base_path` parameter is assumed to be canonicalized.
+    pub(crate) fn safe_prepare_path(
+        &self,
+        base_path: &Path,
+        outpath: &mut PathBuf,
+        root_dir: Option<&(Vec<&OsStr>, impl RootDirFilter)>,
+    ) -> ZipResult<()> {
+        let file_name = self.name()?;
+        let components = self
+            .data
+            .simplified_components(&file_name)
+            .ok_or(invalid!("Invalid file path"))?;
+
+        let components = match root_dir {
+            Some((root_dir, filter)) => match components.strip_prefix(&**root_dir) {
+                Some(components) => components,
+
+                None => {
+                    debug_assert!(
+                        !filter(&PathBuf::from_iter(components.iter())),
+                        "Root directory filter should not match at this point"
+                    );
+
+                    &components[..]
+                }
+            },
+
+            None => &components[..],
+        };
+
+        *outpath = crate::path::resolve_enclosed(
+            base_path,
+            base_path,
+            components.iter().map(|c| c.to_os_string()),
+            true, // create intermediate directories
+        )?;
+
+        Ok(())
+    }
+}
+
+impl<R: Read> ZipStreamReader<R> {
+    /// Extract a Zip archive into a directory, overwriting files if they
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
+    ///
+    /// Extraction is not atomic; If an error is encountered, some of the files
+    /// may be left on disk. The file(s) and dir(s) are first created, then the
+    /// permissions are applied to them
+    ///
+    /// Extraction of symlink is not possible since we don't have access to the
+    /// external attributes in the local headers of the entries
+    pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
+        /// Destination, every entry written in this pass (raw local name -> the checked output
+        /// path `visit_file` wrote it to), and the modes the central directory gives them.
+        struct Extractor {
+            outpath: PathBuf,
+            resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
+            file_permissions: std::collections::BTreeMap<PathBuf, u32>,
+        }
+        impl ZipStreamVisitor for Extractor {
+            fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
+                let extract_options = ExtractOptions::default();
+                let mut outpath = self.outpath.clone();
+                file.safe_prepare_path(
+                    &self.outpath,
+                    &mut outpath,
+                    None::<&(_, fn(&Path) -> bool)>,
+                )?;
+                self.resolved_paths
+                    .insert(file.name_raw().into(), outpath.clone());
+
+                if file.is_symlink() {
+                    let declared_len = file.size();
+                    if declared_len > MAX_SYMLINK_TARGET_LEN {
+                        return Err(invalid!(
+                            "symlink target declares {} bytes, more than the {} byte limit",
+                            declared_len,
+                            MAX_SYMLINK_TARGET_LEN
+                        ));
+                    }
+
+                    let mut target = Vec::with_capacity(declared_len as usize);
+                    file.read_to_end(&mut target)?;
+                    match extract_options.symlink_action {
+                        SymlinkExtractAction::ExtractAsFile => {
+                            make_symlink_as_file(&outpath, &target)?;
+                        }
+                        SymlinkExtractAction::ExtractAsFileUtf8 => {
+                            make_symlink_as_file_utf8(&outpath, &target)?;
+                        }
+                        _ => {
+                            make_symlink(
+                                &self.outpath,
+                                &outpath,
+                                &target,
+                                &self.resolved_paths,
+                                extract_options.symlink_action,
+                            )?;
+                        }
+                    }
+                    return Ok(());
+                }
+                if file.is_dir() {
+                    std::fs::create_dir_all(&outpath)?;
+                } else {
+                    let mut outfile = std::fs::File::create(&outpath)?;
+                    io::copy(file, &mut outfile)?;
+                }
+
+                Ok(())
+            }
+
+            fn visit_additional_metadata(&mut self, metadata: &ZipFileEntry<'_>) -> ZipResult<()> {
+                if let (Some(outpath), Some(mode)) = (
+                    self.resolved_paths.get(metadata.name_raw()),
+                    metadata.unix_mode(),
+                ) {
+                    self.file_permissions.insert(outpath.clone(), mode);
+                }
+                Ok(())
+            }
+        }
+        /// Moves the entries `visit` wrote under `staging` to the same place under `dest`,
+        /// resolving each path again as `visit_file` does.
+        fn move_staged_entries(
+            staging: &mut PathBuf,
+            dest: &Path,
+            extractor: &mut Extractor,
+        ) -> ZipResult<()> {
+            let written_to = staging.clone();
+            let has_entry_named_like = |dir: &Path| {
+                dir.file_name()
+                    .is_some_and(|name| dir.join(name).symlink_metadata().is_ok())
+            };
+            while has_entry_named_like(staging) {
+                let renamed = staging_path(dest)?;
+                std::fs::rename(&*staging, &renamed)?;
+                *staging = renamed;
+            }
+
+            for staged in extractor.resolved_paths.values_mut() {
+                let relative = staged
+                    .strip_prefix(&written_to)
+                    .map_err(|_| invalid!("Entry was not extracted to the staging directory"))?;
+                let from = staging.join(relative);
+                let components = relative.iter().map(|c| c.to_os_string());
+                let outpath = crate::path::resolve_enclosed(dest, dest, components, true)?;
+                if outpath.starts_with(&*staging) {
+                    return Err(invalid!("Entry would be written to the staging directory"));
+                }
+                if std::fs::symlink_metadata(&from)?.is_dir() {
+                    std::fs::create_dir_all(&outpath)?;
+                } else if let Err(e) = std::fs::rename(&from, &outpath) {
+                    if e.kind() != io::ErrorKind::CrossesDevices {
+                        return Err(e.into());
+                    }
+                    std::fs::copy(&from, &outpath)?;
+                }
+                if let Some(mode) = extractor.file_permissions.remove(&*staged) {
+                    extractor.file_permissions.insert(outpath.clone(), mode);
+                }
+                *staged = outpath;
+            }
+            Ok(())
+        }
+
+        std::fs::create_dir_all(&directory)?;
+        let directory = directory.as_ref().canonicalize()?;
+
+        let staging = if self.enforce_header_consistency {
+            Some(create_staging_dir(&directory)?)
+        } else {
+            None
+        };
+
+        let mut extractor = Extractor {
+            outpath: staging.clone().unwrap_or_else(|| directory.clone()),
+            resolved_paths: IndexMap::new(),
+            file_permissions: Default::default(),
+        };
+        let visited = self.visit(&mut extractor);
+        if let Some(mut staging) = staging {
+            let moved = visited
+                .and_then(|()| move_staged_entries(&mut staging, &directory, &mut extractor));
+            let removed = std::fs::remove_dir_all(&staging);
+            moved?;
+            removed?;
+        } else {
+            visited?;
+        }
+
+        for (path, mode) in extractor.file_permissions.into_iter().rev() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                set_permissions_no_follow_symlink(&path, std::fs::Permissions::from_mode(mode))?;
+            }
+            #[cfg(not(unix))]
+            if mode & 0o222 == 0 {
+                let metadata = std::fs::symlink_metadata(&path)?;
+                if !metadata.is_symlink() {
+                    let mut permissions = metadata.permissions();
+                    permissions.set_readonly(true);
+                    std::fs::set_permissions(&path, permissions)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A path in `dest` with a random name.
+fn staging_path(dest: &Path) -> io::Result<PathBuf> {
+    let n = getrandom::u64().map_err(io::Error::other)?;
+    Ok(dest.join(format!(".zip-extract-{n:016x}")))
+}
+
+/// Creates a new, empty directory with a random name in `dest`.
+fn create_staging_dir(dest: &Path) -> io::Result<PathBuf> {
+    loop {
+        let staging = staging_path(dest)?;
+        match std::fs::create_dir(&staging) {
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            result => return result.map(|()| staging),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    /// Symlinks being extracted shouldn't be followed out of the destination directory.
+    /// Cannot use fs with miri CI
+    #[cfg(not(miri))]
+    #[test]
+    fn test_cannot_symlink_outside_destination() -> ZipResult<()> {
+        use crate::ZipWriter;
+        use crate::write::SimpleFileOptions;
+        use std::fs::create_dir;
+        use tempfile::TempDir;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_symlink("symlink/", "../dest-sibling/", SimpleFileOptions::default())?;
+        writer.start_file("symlink/dest-file", SimpleFileOptions::default())?;
+        let reader = ZipStreamReader::new(writer.finish()?);
+        let dest_parent = TempDir::with_prefix("stream__cannot_symlink_outside_destination")?;
+        let dest_sibling = dest_parent.path().join("dest-sibling");
+        create_dir(&dest_sibling)?;
+        let dest = dest_parent.path().join("dest");
+        create_dir(&dest)?;
+        assert!(reader.extract(dest).is_err());
+        assert!(!dest_sibling.join("dest-file").exists());
+        Ok(())
+    }
+
+    /// Cannot use fs with miri CI
+    #[cfg(not(miri))]
+    #[test]
+    fn test_can_create_destination() -> ZipResult<()> {
+        use tempfile::TempDir;
+
+        let v = include_bytes!("../../tests/data/mimetype.zip");
+        let reader = ZipStreamReader::new(v.as_ref());
+        let dest = TempDir::with_prefix("stream_test_can_create_destination").unwrap();
+        reader.extract(&dest)?;
+        assert!(dest.path().join("mimetype").exists());
+        Ok(())
+    }
 }

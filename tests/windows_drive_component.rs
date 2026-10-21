@@ -47,7 +47,7 @@ fn enclosed_and_mangled_names_have_no_drive_prefix_inside() {
 }
 
 /// `a/../c:foo/a` used to hit a debug assertion, and `a/../c:/a` extracted to `dest/c:/a`.
-#[cfg(not(miri))]
+#[cfg(all(not(miri), feature = "extract"))]
 #[test]
 fn unwrapped_root_dir_named_like_a_drive() {
     for (name, expected) in [("a/../c:foo/a", "a"), ("a/../c:/a", "a")] {
@@ -83,7 +83,7 @@ fn joined_enclosed_and_mangled_names_stay_under_the_destination() {
 }
 
 /// `extract` must not create anything outside the destination, not even directories.
-#[cfg(not(miri))]
+#[cfg(all(not(miri), feature = "extract"))]
 #[test]
 fn extract_creates_nothing_outside_the_destination() {
     use std::path::{Component, Prefix};

@@ -82,7 +82,7 @@ fn read_fails_past_declared_size() {
 }
 
 // uses the file system, which miri's isolation does not allow
-#[cfg(not(miri))]
+#[cfg(all(not(miri), feature = "extract"))]
 #[test]
 fn extract_fails_past_declared_size() {
     for method in methods() {

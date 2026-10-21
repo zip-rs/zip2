@@ -356,6 +356,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn ntfs_extra_field() {
         let mut ntfs_extra_field = [0; 32];
         ntfs_extra_field[4] = 1;

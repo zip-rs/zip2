@@ -1,3 +1,5 @@
+#![cfg(feature = "extract")]
+
 // Create a ZIP with directory traversal attempts
 // zipfile
 //  - file_test

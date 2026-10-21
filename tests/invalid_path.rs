@@ -49,6 +49,7 @@ pub mod tests {
     ///
     /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
+    #[cfg_attr(not(feature = "extract"), allow(dead_code))]
     fn create_zip_with_windows_absolute_paths() -> Vec<u8> {
         let buf = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
@@ -71,6 +72,7 @@ pub mod tests {
     ///
     /// Only on little endian because we cannot use fs with miri CI
     #[cfg(all(target_endian = "little", not(miri)))]
+    #[cfg_attr(not(feature = "extract"), allow(dead_code))]
     fn create_zip_like_soldeer_issue() -> Vec<u8> {
         let buf = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
@@ -98,7 +100,7 @@ pub mod tests {
     }
 
     /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    #[cfg(all(target_endian = "little", not(miri), feature = "extract"))]
     #[test]
     fn test_extract_zip_with_absolute_paths() {
         let zip_data = create_zip_with_absolute_paths();
@@ -119,7 +121,7 @@ pub mod tests {
     }
 
     /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    #[cfg(all(target_endian = "little", not(miri), feature = "extract"))]
     #[test]
     fn test_extract_zip_with_windows_absolute_paths() {
         let zip_data = create_zip_with_windows_absolute_paths();
@@ -139,7 +141,7 @@ pub mod tests {
     }
 
     /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    #[cfg(all(target_endian = "little", not(miri), feature = "extract"))]
     #[test]
     fn test_extract_soldeer_like_zip() {
         let zip_data = create_zip_like_soldeer_issue();

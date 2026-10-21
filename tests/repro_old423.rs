@@ -1,4 +1,4 @@
-#[cfg(all(unix, feature = "deflate-flate2", not(miri)))]
+#[cfg(all(unix, feature = "deflate-flate2", not(miri), feature = "extract"))]
 #[test]
 fn repro_old423() -> zip::result::ZipResult<()> {
     use std::io;

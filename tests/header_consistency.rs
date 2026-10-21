@@ -1,6 +1,7 @@
 #![cfg(all(
     not(miri),
-    not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))
+    not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))),
+    feature = "extract"
 ))]
 //! Tests for header consistency validation in ZipStreamReader.
 //! Verifies mitigation for dual-header desynchronization / Zip Cloaking (CWE-436 / CWE-20).

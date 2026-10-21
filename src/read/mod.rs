@@ -16,7 +16,9 @@ use std::sync::OnceLock;
 mod config;
 pub use config::{ArchiveOffset, Config};
 
+#[cfg(feature = "extract")]
 pub(crate) mod extract;
+#[cfg(feature = "extract")]
 pub use extract::{ExtractOptions, RootDirFilter, SymlinkExtractAction, root_dir_common_filter};
 
 /// Provides high level API for reading from a stream.
