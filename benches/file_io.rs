@@ -18,7 +18,7 @@ mod common;
 
 #[cfg(not(any(miri, target_arch = "wasm32")))]
 mod benches {
-    use super::common::seeded_random_bytes;
+    use super::common::{generate_random_archive, generate_random_archive_merge, generate_random_archive_meta, seeded_random_bytes};
     use criterion::{BatchSize, Criterion, criterion_group};
     use std::fs;
     use std::hint::black_box;
@@ -28,59 +28,8 @@ mod benches {
         CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions,
     };
 
-    fn generate_random_archive(size: usize) -> Vec<u8> {
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        writer.start_file("random.dat", options).unwrap();
-
-        // generate deterministic seeded random data
-        let bytes = seeded_random_bytes(size);
-
-        writer.write_all(&bytes).unwrap();
-        writer.finish().unwrap().into_inner()
-    }
-
     const FILE_COUNT: usize = 15_000;
     const FILE_SIZE_META: usize = 1024;
-
-    fn generate_random_archive_meta(count_files: usize, file_size: usize) -> ZipResult<Vec<u8>> {
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-
-        // seeded random payload reused across entries
-        let bytes = seeded_random_bytes(file_size);
-
-        for i in 0..count_files {
-            let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
-            writer.start_file(name, options)?;
-            writer.write_all(&bytes)?;
-        }
-
-        Ok(writer.finish()?.into_inner())
-    }
-
-    fn generate_random_archive_merge(
-        num_entries: usize,
-        entry_size: usize,
-        options: SimpleFileOptions,
-    ) -> ZipResult<(usize, Vec<u8>)> {
-        let buf = Cursor::new(Vec::new());
-        let mut zip = ZipWriter::new(buf);
-
-        // seeded random payload reused across entries
-        let bytes = seeded_random_bytes(entry_size);
-
-        for i in 0..num_entries {
-            let name = format!("random{i}.dat");
-            zip.start_file(name, options)?;
-            zip.write_all(&bytes)?;
-        }
-
-        let buf = zip.finish()?.into_inner();
-        let len = buf.len();
-
-        Ok((len, buf))
-    }
 
     fn perform_merge<R: Read + Seek, W: Write + Seek>(
         src: ZipArchive<R>,

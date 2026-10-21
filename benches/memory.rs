@@ -13,45 +13,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::io::{self, Cursor, Read, Seek, Write};
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
-
-fn generate_random_archive(size: usize) -> Vec<u8> {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    writer.start_file("random.dat", options).unwrap();
-    writer.write_all(&seeded_random_bytes(size)).unwrap();
-    writer.finish().unwrap().into_inner()
-}
-
-fn generate_random_archive_meta(count_files: usize, file_size: usize) -> ZipResult<Vec<u8>> {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    let bytes = seeded_random_bytes(file_size);
-
-    for i in 0..count_files {
-        let name = format!("file_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_{i}.dat");
-        writer.start_file(name, options)?;
-        writer.write_all(&bytes)?;
-    }
-
-    Ok(writer.finish()?.into_inner())
-}
-
-fn generate_random_archive_merge(
-    num_entries: usize,
-    entry_size: usize,
-    options: SimpleFileOptions,
-) -> ZipResult<(usize, Vec<u8>)> {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let bytes = seeded_random_bytes(entry_size);
-
-    for i in 0..num_entries {
-        writer.start_file(format!("random{i}.dat"), options)?;
-        writer.write_all(&bytes)?;
-    }
-
-    let bytes = writer.finish()?.into_inner();
-    Ok((bytes.len(), bytes))
-}
+use crate::common::{generate_random_archive, generate_random_archive_merge, generate_random_archive_meta};
 
 fn perform_merge<R: Read + Seek, W: Write + Seek>(
     src: ZipArchive<R>,
