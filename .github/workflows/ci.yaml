@@ -32,10 +32,10 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        feature_flag:
-          - "--no-default-features"
-          - "--no-default-features --features zip/_miri_compatible_features"
-    name: "Miri ${{ matrix.feature_flag }} Cargo.toml"
+        feature:
+          - { key: miri-compatible, flags: "--no-default-features --features zip/_miri_compatible_features" }
+          - { key: no-default-features, flags: "--no-default-features" }
+    name: "Miri ${{ matrix.feature.key }} Cargo.toml"
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -78,10 +78,13 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-miri-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-miri-${{ matrix.feature.key }}-
+            ${{ runner.os }}-cargo-nightly-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
+            ${{ runner.os }}-cargo-nightly-${{ matrix.feature.key }}-
             ${{ runner.os }}-cargo-nightly-
-      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
+      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
   bsd_platform:
     needs:
     - cargo_semver
@@ -107,8 +110,10 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-bsd-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-bsd-
+            ${{ runner.os }}-cargo-nightly-${{ hashFiles('Cargo.toml') }}
             ${{ runner.os }}-cargo-nightly-
       - name: Install zig and cargo-zigbuild in parallel
         shell: bash
@@ -244,12 +249,12 @@ jobs:
       matrix:
         os: [windows-latest, macOS-latest, ubuntu-latest]
         rustalias: [msrv, stable, nightly]
-        feature_flag:
-          - "--all-features"
-          - ""
-          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-          - "--no-default-features --features zip/deflate-zopfli"
-          - "--no-default-features"
+        feature:
+          - { key: all-features, flags: "--all-features" }
+          - { key: default, flags: "" }
+          - { key: zlib-rs, flags: "--no-default-features --features zip/deflate-flate2-zlib-rs" }
+          - { key: zopfli, flags: "--no-default-features --features zip/deflate-zopfli" }
+          - { key: no-default-features, flags: "--no-default-features" }
         include:
           - rustalias: stable
             rust: stable
@@ -257,7 +262,7 @@ jobs:
             rust: "1.88.0"
           - rustalias: nightly
             rust: nightly
-    name: "Build and test ${{ matrix.feature_flag }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+    name: "Build and test ${{ matrix.feature.flags }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -276,10 +281,11 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.feature.key }}-
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
-      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all --all-targets ${{ matrix.feature_flag }}
+      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all --all-targets ${{ matrix.feature.flags }}
   check_fuzz:
     timeout-minutes: 10
     needs:
@@ -291,18 +297,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly]
-        feature_flag:
-          - "--all-features"
-          - "--no-default-features"
-          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-          - "--no-default-features --features zip/deflate-zopfli"
-          - ""
+        feature:
+          - { key: all-features, flags: "--all-features" }
+          - { key: default, flags: "" }
+          - { key: zlib-rs, flags: "--no-default-features --features zip/deflate-flate2-zlib-rs" }
+          - { key: zopfli, flags: "--no-default-features --features zip/deflate-zopfli" }
+          - { key: no-default-features, flags: "--no-default-features" }
         include:
           - rustalias: stable
             rust: stable
           - rustalias: nightly
             rust: nightly
-    name: "Build and test ${{ matrix.feature_flag }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+    name: "Build and test ${{ matrix.feature.flags }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -320,11 +326,11 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}-${{ hashFiles('fuzz/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}-${{ hashFiles('fuzz/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}-
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}-
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
-      - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
+      - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature.flags }} --bins --examples
   setup_wasm_pack:
     timeout-minutes: 10
     needs:
@@ -356,10 +362,10 @@ jobs:
         browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
         rustalias: [stable, nightly]
         manifest: ["Cargo.toml"]
-        feature_flag:
-          - "" # default features
-          - "--no-default-features"
-          - "--features chrono,jiff-02,nt-time,legacy-zip"
+        feature:
+          - { key: optional-dates, flags: "--features chrono,jiff-02,nt-time,legacy-zip" }
+          - { key: default, flags: "" }
+          - { key: no-default-features, flags: "--no-default-features" }
         include:
           - rustalias: stable
             rust: stable
@@ -391,10 +397,11 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.feature.key }}-
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
-      - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
+      - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature.flags }}
   cargo_semver:
     timeout-minutes: 10
     strategy:
@@ -443,7 +450,9 @@ jobs:
     strategy:
       matrix:
         target: [read, write]
-        feature_flag: ["--all-features", "--no-default-features"]
+        feature:
+          - { key: all-features, flags: "--all-features" }
+          - { key: no-default-features, flags: "--no-default-features" }
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -463,12 +472,15 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature_flag }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature_flag }}-
+            ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature.key }}-
+            ${{ runner.os }}-fuzz-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}-
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-
       - run: bash .github/scripts/install-cargo-afl.sh
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
-      - run: cargo afl build --release ${{ matrix.feature_flag }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
+      - run: cargo afl build --release ${{ matrix.feature.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - run: fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 fuzz/${{ matrix.target }}/in fuzz/${{ matrix.target }}/regressions
 
   fuzz_read:
@@ -500,10 +512,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-read---all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-fuzz-read-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-read---all-features-
+            ${{ runner.os }}-fuzz-read-all-features-
             ${{ runner.os }}-fuzz-read-
+            ${{ runner.os }}-cargo-stable-all-features-${{ hashFiles('Cargo.toml') }}
+            ${{ runner.os }}-cargo-stable-all-features-
+            ${{ runner.os }}-cargo-stable-
       - run: bash .github/scripts/install-cargo-afl.sh
 
       - name: cargo afl system-config
@@ -593,10 +608,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-read---no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-fuzz-read-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-read---no-default-features-
+            ${{ runner.os }}-fuzz-read-no-default-features-
             ${{ runner.os }}-fuzz-read-
+            ${{ runner.os }}-cargo-stable-all-features-${{ hashFiles('Cargo.toml') }}
+            ${{ runner.os }}-cargo-stable-all-features-
+            ${{ runner.os }}-cargo-stable-
       - run: bash .github/scripts/install-cargo-afl.sh
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -678,10 +696,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-write---all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-fuzz-write-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-write---all-features-
+            ${{ runner.os }}-fuzz-write-all-features-
             ${{ runner.os }}-fuzz-write-
+            ${{ runner.os }}-cargo-stable-all-features-${{ hashFiles('Cargo.toml') }}
+            ${{ runner.os }}-cargo-stable-all-features-
+            ${{ runner.os }}-cargo-stable-
       - run: bash .github/scripts/install-cargo-afl.sh
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -770,10 +791,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-write---no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-fuzz-write-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-write---no-default-features-
+            ${{ runner.os }}-fuzz-write-no-default-features-
             ${{ runner.os }}-fuzz-write-
+            ${{ runner.os }}-cargo-stable-no-default-features-${{ hashFiles('Cargo.toml') }}
+            ${{ runner.os }}-cargo-stable-no-default-features-
+            ${{ runner.os }}-cargo-stable-
       - run: bash .github/scripts/install-cargo-afl.sh
       - name: cargo afl system-config
         run: cargo afl system-config

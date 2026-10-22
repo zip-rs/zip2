@@ -15,10 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: read,  flags: "--all-features" }
-          - { target: read,  flags: "" }
-          - { target: write, flags: "--all-features", dict: "-x fuzz/write/fuzz.dict" }
-          - { target: write, flags: "--no-default-features", dict: "-x fuzz/write/fuzz.dict" }
+          - { target: read,  feature: all-features, flags: "--all-features" }
+          - { target: read,  feature: default, flags: "" }
+          - { target: write, feature: all-features, flags: "--all-features", dict: "-x fuzz/write/fuzz.dict" }
+          - { target: write, feature: no-default-features, flags: "--no-default-features", dict: "-x fuzz/write/fuzz.dict" }
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -39,9 +39,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature_flag }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature_flag }}-
+            ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature }}-
+            ${{ runner.os }}-fuzz-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-nightly-${{ matrix.feature }}-
+            ${{ runner.os }}-cargo-nightly-
+            ${{ runner.os }}-cargo-
       - run: bash .github/scripts/install-cargo-afl.sh
       - run: cargo afl system-config
       - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
