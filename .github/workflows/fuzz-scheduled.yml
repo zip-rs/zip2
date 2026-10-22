@@ -32,8 +32,13 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            ~/.cargo/bin/cargo-afl
-          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-afl
+          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-afl-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -43,9 +48,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature }}-
             ${{ runner.os }}-fuzz-${{ matrix.target }}-
-            ${{ runner.os }}-cargo-nightly-${{ matrix.feature }}-
-            ${{ runner.os }}-cargo-nightly-
-            ${{ runner.os }}-cargo-
       - run: bash .github/scripts/install-cargo-afl.sh
       - run: cargo afl system-config
       - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
