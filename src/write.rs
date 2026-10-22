@@ -5,7 +5,7 @@ use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::DataStreamAlignment;
 use crate::extra_fields::ExtraFields;
-use crate::extra_fields::{Zip64ExtendedInformation, Zip64Sizes};
+use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::blocks::{
     FixedSizeBlock, Zip32CDEBlock, Zip32CentralDirectoryEnd, Zip64CentralDirectoryEnd,
     Zip64CentralDirectoryEndLocator, ZipCentralEntryBlock, ZipLocalEntryBlock,
@@ -406,10 +406,14 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let src_index = self.index_by_name(src_name.as_bytes())?;
         let src_data = &mut self.files[src_index];
         let src_data_start = src_data.data_start(self.inner.try_inner_mut()?)?;
-        debug_assert!(src_data_start <= write_position);
+        // `src_data_start` comes from the local header, which may be untrusted (e.g. after
+        // `new_append`); it can point past the current end of the archive.
+        let available = write_position
+            .checked_sub(src_data_start)
+            .ok_or(invalid!("File data starts past the end of the archive"))?;
         let mut compressed_size = src_data.compressed_size;
-        if compressed_size > (write_position - src_data_start) {
-            compressed_size = write_position - src_data_start;
+        if compressed_size > available {
+            compressed_size = available;
             src_data.compressed_size = compressed_size;
         }
         let mut reader = BufReader::new(self.inner.try_inner_mut()?);
@@ -955,18 +959,20 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.switch_to_non_encrypting_writer()?;
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
         // overwrite a valid file and corrupt the archive
-        let rewind_safe: bool = match last_file.data_start.get() {
-            None => self.files.is_empty(),
-            Some(last_file_start) => self.files.values().all(|file| {
-                file.data_start
-                    .get()
-                    .is_some_and(|start| start < last_file_start)
-            }),
-        };
+        let last_file_start = last_file
+            .data_start
+            .get()
+            .copied()
+            .unwrap_or(last_file.header_start);
+        let writer = self.inner.try_inner_mut()?;
+        let current_position = writer.stream_position()?;
+        let rewind_safe = last_file.header_start <= current_position
+            && last_file_start <= current_position
+            && self.files.values().all(|file| {
+                file.data_start.get().copied().unwrap_or(file.header_start) < last_file_start
+            });
         if rewind_safe {
-            self.inner
-                .try_inner_mut()?
-                .seek(SeekFrom::Start(last_file.header_start))?;
+            writer.seek(SeekFrom::Start(last_file.header_start))?;
         }
         self.writing_to_file = false;
         Ok(())
@@ -2260,9 +2266,12 @@ impl ZipFileData {
         ))?;
         writer.write_all(&self.crc32.to_le_bytes())?;
         if self.large_file {
+            debug_assert!(matches!(
+                self.extra_fields.local_extra_fields().next(),
+                Some(ExtraField::Zip64ExtendedInformation(_))
+            ));
             writer.write_all(&ZIP64_BYTES_THR_U32.to_le_bytes())?;
             writer.write_all(&ZIP64_BYTES_THR_U32.to_le_bytes())?;
-
             self.update_local_zip64_extra_field(writer, file_name_raw)?;
         } else {
             // check compressed size as well as it can also be slightly larger than uncompressed size
@@ -2271,6 +2280,12 @@ impl ZipFileData {
                     "large_file(true) option has not been set",
                 )));
             }
+            debug_assert!(
+                !self
+                    .extra_fields
+                    .local_extra_fields()
+                    .any(|field| matches!(field, ExtraField::Zip64ExtendedInformation(_)))
+            );
             writer.write_all(&(self.compressed_size as u32).to_le_bytes())?;
             // uncompressed size is already checked on write to catch it as soon as possible
             writer.write_all(&(self.uncompressed_size as u32).to_le_bytes())?;
@@ -2416,19 +2431,14 @@ impl ZipFileData {
         self.extra_fields
             .inner
             .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation { .. }));
-        if self.large_file {
-            // add a zip64 extra field which is going to be edited when we know the size
-            // the update function need the extra field to be at index 0
-            self.extra_fields.inner.insert(
-                0,
-                ExtraField::Zip64ExtendedInformation(Zip64ExtendedInformation {
-                    sizes: Some(Zip64Sizes {
-                        compressed_size: u64::MAX,
-                        uncompressed_size: u64::MAX,
-                    }),
-                    header_start: None,
-                }),
-            );
+        if let Some(zip64) = Zip64ExtendedInformation::local_header(
+            self.large_file,
+            self.uncompressed_size,
+            self.compressed_size,
+        ) {
+            self.extra_fields
+                .inner
+                .insert(0, ExtraField::Zip64ExtendedInformation(zip64));
         }
         let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
             (0, 0)
@@ -4253,6 +4263,82 @@ mod tests {
         assert!(writer.get_raw_comment().starts_with(&[33]));
         let archive = writer.finish_into_readable()?;
         assert!(archive.comment().starts_with(&[33]));
+        Ok(())
+    }
+
+    #[test]
+    fn abort_after_merging_archive_with_zipcrypto_entry() -> ZipResult<()> {
+        use crate::extra_fields::CustomExtraField;
+        use crate::read::read_zipfile_from_stream;
+        use std::io::{Seek, SeekFrom, copy};
+
+        let mut sub_writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let symlink_options = FileOptions::<ExtendedFileOptions> {
+            compression_method: Stored,
+            compression_level: Some(1),
+            last_modified_time: DateTime::from_date_and_time(1986, 6, 1, 0, 0, 10)?,
+            large_file: true,
+            alignment: 33,
+            name: Some(&[0, 9, 0, 75, 76, 5, 1, 0, 0, 0, 71, 0, 0, 84]),
+            ..Default::default()
+        };
+        sub_writer.add_symlink_from_path(
+            "M\u{5}\u{6}\u{12}PK\u{1}\u{2}",
+            "\u{1d}\0KJ\u{6}lllllllllllllllllllllllllllllllllllllllllllllllllllll\u{6}",
+            symlink_options,
+        )?;
+        sub_writer.deep_copy_file_from_path(
+            "M\u{5}\u{6}\u{12}PK\u{1}\u{2}",
+            "\u{1}\0\u{1}PK\u{5}\u{6}$\0\0P\u{1}\u{1}PK\u{5}\u{6}\0\0\0\0",
+        )?;
+        let encrypted_options = FileOptions::<ExtendedFileOptions> {
+            compression_method: Stored,
+            last_modified_time: DateTime::from_date_and_time(2055, 6, 26, 14, 1, 0)?,
+            large_file: true,
+            encrypt_with: Some(ZipCrypto(
+                ZipCryptoKeys::of(0x6054b50, 0, 0x587a37fd),
+                PhantomData,
+            )),
+            extended_options: ExtendedFileOptions {
+                extra_fields: vec![
+                    CustomExtraField::new(true, 40582, [].into()),
+                    CustomExtraField::new(false, 61465, [].into()),
+                    CustomExtraField::new(true, 36850, [229, 229, 76, 214].into()),
+                    CustomExtraField::new(true, 28112, [7].into()),
+                    CustomExtraField::new(false, 45315, [132, 0, 255, 255, 27, 255].into()),
+                    CustomExtraField::new(false, 65282, [40].into()),
+                    CustomExtraField::new(false, 10, [].into()),
+                    CustomExtraField::new(false, 3, [].into()),
+                    CustomExtraField::new(false, 37, [].into()),
+                ]
+                .into(),
+                file_comment: None,
+            },
+            alignment: 90,
+            name: Some(&[]),
+            ..Default::default()
+        };
+        sub_writer.start_file_from_path("", encrypted_options)?;
+        let sub_writer = ZipWriter::new_append(sub_writer.finish()?)?;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.merge_archive(sub_writer.finish_into_readable()?)?;
+        writer.abort_file()?;
+        let writer = ZipWriter::new_append(writer.finish()?)?;
+        let mut stream = writer.finish()?;
+        stream.seek(SeekFrom::Start(0))?;
+
+        let mut files_read = 0;
+        loop {
+            let file = match read_zipfile_from_stream(&mut stream) {
+                Ok(Some(file)) => file,
+                Ok(None) | Err(_) => break,
+            };
+            let mut file = file;
+            copy(&mut file, &mut std::io::sink())?;
+            files_read += 1;
+        }
+        assert_eq!(files_read, 2);
         Ok(())
     }
 
