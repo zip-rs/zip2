@@ -522,7 +522,9 @@ impl<R: Read> ZipStreamReader<R> {
 
 /// Filesystem identity catches aliases on case-insensitive filesystems even when the
 /// archive names and their checked path strings differ.
-fn staged_file_identity(path: &Path) -> io::Result<Option<(u64, u64)>> {
+fn staged_file_identity(
+    #[cfg_attr(not(any(unix, windows)), allow(unused_variables))] path: &Path,
+) -> io::Result<Option<(u64, u64)>> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -563,7 +565,6 @@ fn staged_file_identity(path: &Path) -> io::Result<Option<(u64, u64)>> {
     }
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = metadata;
         Ok(None)
     }
 }
