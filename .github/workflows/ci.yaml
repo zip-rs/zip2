@@ -46,6 +46,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
+      - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
+      - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
+      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -58,10 +62,6 @@ jobs:
             ${{ runner.os }}-cargo-nightly-
       - run: sudo apt update
       - run: sudo apt install crossbuild-essential-s390x
-      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
-      - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
-      - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
-      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       - run: cargo install --locked cargo-nextest
       - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
   bsd_platform:
@@ -81,6 +81,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: cargo install cargo-zigbuild
+      - run: rustup target add x86_64-unknown-freebsd
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -93,8 +95,6 @@ jobs:
             ${{ runner.os }}-cargo-stable-
       - run: sudo apt update
       - run: sudo snap install --beta zig --classic
-      - run: cargo install cargo-zigbuild
-      - run: rustup target add x86_64-unknown-freebsd
       - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples
   check_minimal_versions:
     needs:
@@ -340,6 +340,8 @@ jobs:
           name: wasm-pack
           path: ${{ runner.temp }}/wasm-pack
       - run: mkdir -p "$HOME/.cargo/bin" && cp "$RUNNER_TEMP/wasm-pack/wasm-pack" "$HOME/.cargo/bin/wasm-pack" && chmod +x "$HOME/.cargo/bin/wasm-pack"
+      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: rustup target add wasm32-unknown-unknown
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -350,8 +352,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
-      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
-      - run: rustup target add wasm32-unknown-unknown
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
   cargo_semver:
     timeout-minutes: 10
