@@ -278,8 +278,9 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}-${{ hashFiles('fuzz/Cargo.toml') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}-
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
       - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
   setup_wasm_pack:
