@@ -146,6 +146,79 @@ fn test_enforce_header_consistency_blocks_dual_header_mismatch() {
 }
 
 #[test]
+fn test_stream_extract_rejects_output_path_collision_before_commit() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for name in ["a.txt", "./a.txt"] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(name.as_bytes()).unwrap();
+    }
+    let archive = writer.finish().unwrap().into_inner();
+
+    let dest = tempdir().unwrap();
+    let result = ZipStreamReader::new(Cursor::new(archive))
+        .enforce_header_consistency(true)
+        .extract(dest.path());
+    assert!(result.is_err());
+    assert!(dir_entries(dest.path()).is_empty());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn test_stream_extract_rejects_existing_destination_alias_before_commit() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for name in ["a.txt", "alias/a.txt"] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(name.as_bytes()).unwrap();
+    }
+    let archive = writer.finish().unwrap().into_inner();
+
+    let dest = tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(".", dest.path().join("alias")).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(".", dest.path().join("alias")).unwrap();
+    }
+    let result = ZipStreamReader::new(Cursor::new(archive))
+        .enforce_header_consistency(true)
+        .extract(dest.path());
+    assert!(result.is_err());
+    assert!(!dest.path().join("a.txt").exists());
+    assert!(dest.path().join("alias").is_symlink());
+}
+
+#[test]
+fn test_stream_extract_rejects_case_alias_on_case_insensitive_filesystem() {
+    let dest = tempdir().unwrap();
+    std::fs::write(dest.path().join("case-probe"), b"probe").unwrap();
+    if !dest.path().join("CASE-PROBE").exists() {
+        return;
+    }
+    std::fs::remove_file(dest.path().join("case-probe")).unwrap();
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for name in ["a.txt", "A.txt"] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(name.as_bytes()).unwrap();
+    }
+    let archive = writer.finish().unwrap().into_inner();
+
+    let result = ZipStreamReader::new(Cursor::new(archive))
+        .enforce_header_consistency(true)
+        .extract(dest.path());
+    assert!(result.is_err());
+    assert!(!dest.path().join("a.txt").exists());
+}
+
+#[test]
 fn test_stream_extract_rejects_missing_end_record() {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     writer

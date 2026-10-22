@@ -463,8 +463,30 @@ impl<R: Read> ZipStreamReader<R> {
         };
         let visited = self.visit(&mut extractor);
         if let Some(mut staging) = staging {
-            let moved = visited
-                .and_then(|()| move_staged_entries(&mut staging, &directory, &mut extractor));
+            let moved = visited.and_then(|()| {
+                let mut staged_paths = std::collections::HashSet::new();
+                let mut staged_files = std::collections::HashSet::new();
+                let mut output_paths = std::collections::HashSet::new();
+                for staged in extractor.resolved_paths.values() {
+                    let relative = staged.strip_prefix(&staging).map_err(|_| {
+                        invalid!("Entry was not extracted to the staging directory")
+                    })?;
+                    let output = crate::path::resolve_enclosed(
+                        &directory,
+                        &directory,
+                        relative.iter().map(|component| component.to_os_string()),
+                        false,
+                    )?;
+                    if !staged_paths.insert(staged)
+                        || !output_paths.insert(output)
+                        || staged_file_identity(staged)?
+                            .is_some_and(|identity| !staged_files.insert(identity))
+                    {
+                        return Err(invalid!("Multiple entries resolve to the same output path"));
+                    }
+                }
+                move_staged_entries(&mut staging, &directory, &mut extractor)
+            });
             let removed = fs::remove_dir_all(&staging);
             moved?;
             removed?;
@@ -495,6 +517,54 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
         Ok(())
+    }
+}
+
+/// Filesystem identity catches aliases on case-insensitive filesystems even when the
+/// archive names and their checked path strings differ.
+fn staged_file_identity(path: &Path) -> io::Result<Option<(u64, u64)>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(path)?;
+        Ok(Some((metadata.dev(), metadata.ino())))
+    }
+    #[cfg(windows)]
+    {
+        use std::fs::OpenOptions;
+        use std::io;
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+
+        let file = OpenOptions::new()
+            .access_mode(0) // 0 means no read/write data access needed, just metadata
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        let handle = file.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+        // Safety: We provide a valid file handle and a mutable pointer to a zeroed struct.
+        unsafe {
+            let mut info: BY_HANDLE_FILE_INFORMATION = std::mem::zeroed();
+            let result = GetFileInformationByHandle(handle, &mut info);
+
+            if result == 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            let volume_serial_number = u64::from(info.dwVolumeSerialNumber);
+            // Combine the high and low 32-bit fields into a single 64-bit file index
+            let file_index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+
+            Ok(Some((volume_serial_number, file_index)))
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = metadata;
+        Ok(None)
     }
 }
 
