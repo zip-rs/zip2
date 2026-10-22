@@ -50,6 +50,9 @@ jobs:
       - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
       - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
+      - run: sudo apt update
+      - run: sudo apt install crossbuild-essential-s390x
+      - run: cargo install --locked cargo-nextest
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -60,9 +63,6 @@ jobs:
           key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-nightly-
-      - run: sudo apt update
-      - run: sudo apt install crossbuild-essential-s390x
-      - run: cargo install --locked cargo-nextest
       - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
   bsd_platform:
     needs:
