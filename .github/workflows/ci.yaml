@@ -279,8 +279,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
-      - name: Check that the benches can be built
-        run: cargo build --benches
       - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all --all-targets ${{ matrix.feature_flag }}
   check_fuzz:
     timeout-minutes: 10
