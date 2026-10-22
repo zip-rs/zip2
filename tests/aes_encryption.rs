@@ -861,7 +861,13 @@ fn test_aes_password_verification_instruction_count_is_constant() {
                 "instruction counts must be equal: byte 0 mismatch ({count_0}) vs byte 1 mismatch ({count_1})"
             );
         }
-        (Err(e0), _) if e0.kind() == std::io::ErrorKind::Unsupported => {}
+        // Some VM sandboxes (e.g. Firecracker-based CI runners) reject
+        // ptrace single-stepping with EINVAL; treat that as unsupported.
+        (Err(e0), _)
+            if matches!(
+                e0.kind(),
+                std::io::ErrorKind::Unsupported | std::io::ErrorKind::InvalidInput
+            ) => {}
         (Err(e0), _) => panic!("count_instructions failed: {e0}"),
         (_, Err(e1)) => panic!("count_instructions failed: {e1}"),
     }
