@@ -284,6 +284,7 @@ jobs:
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
       - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
   setup_wasm_pack:
+    timeout-minutes: 10
     needs:
       - cargo_fmt
       - style_and_docs
