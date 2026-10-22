@@ -114,7 +114,8 @@ fn test_zip64_archive_with_prefix_detect_offset() {
             .compression_method(CompressionMethod::Stored)
             .large_file(true);
         writer.start_file("prefixed.bin", opts).unwrap();
-        writer.write_all(b"payload in prefixed zip64").unwrap();
+        let chunk = vec![0xCC; 1024 * 1024]; // 1 MB payload
+        writer.write_all(&chunk).unwrap();
         writer.finish().unwrap();
     }
 
@@ -125,6 +126,11 @@ fn test_zip64_archive_with_prefix_detect_offset() {
     let archive = ZipArchive::new(&mut tracker).unwrap();
     assert_eq!(archive.len(), 1);
     assert_eq!(archive.offset(), 512);
+    drop(archive);
+    println!(
+        "[Prefixed ZIP64] Bytes read: {} across {} calls",
+        tracker.bytes_read, tracker.read_calls
+    );
 }
 
 #[test]
@@ -144,4 +150,40 @@ fn test_many_files_central_directory_parsing() {
     let mut tracker = TrackingReader::new(Cursor::new(zip_data));
     let archive = ZipArchive::new(&mut tracker).unwrap();
     assert_eq!(archive.len(), 2000);
+}
+
+#[test]
+fn test_non_abutting_central_directory_does_not_scan_payload() {
+    let mut zip_data = Vec::new();
+    {
+        let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
+        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        writer.start_file("large_payload.bin", opts).unwrap();
+        let chunk = vec![0xDD; 1024 * 1024]; // 1 MB payload
+        writer.write_all(&chunk).unwrap();
+        writer.finish().unwrap();
+    }
+
+    // Insert 64 bytes of gap between Central Directory and EOCD
+    let eocd_start = zip_data.len() - 22;
+    let mut non_abutting_data = Vec::new();
+    non_abutting_data.extend_from_slice(&zip_data[..eocd_start]);
+    non_abutting_data.extend_from_slice(&[0xEE; 64]); // 64 bytes gap
+    non_abutting_data.extend_from_slice(&zip_data[eocd_start..]);
+
+    let mut tracker = TrackingReader::new(Cursor::new(non_abutting_data));
+    let archive = ZipArchive::new(&mut tracker).unwrap();
+    assert_eq!(archive.len(), 1);
+    drop(archive);
+
+    println!(
+        "[Non-Abutting ZIP] Bytes read: {} across {} calls",
+        tracker.bytes_read, tracker.read_calls
+    );
+
+    assert!(
+        tracker.bytes_read < 10_000,
+        "BYPASS CONFIRMED: Non-abutting CD forced full-file scan of {} bytes!",
+        tracker.bytes_read
+    );
 }
