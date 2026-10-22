@@ -52,7 +52,7 @@ jobs:
           set +e
           (
             sudo apt-get update &&
-            sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu
+            sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu libc6-dev-s390x-cross
           ) &
           (
             rustup toolchain add nightly-x86_64-unknown-linux-gnu &&
