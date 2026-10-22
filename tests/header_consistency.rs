@@ -146,6 +146,87 @@ fn test_enforce_header_consistency_blocks_dual_header_mismatch() {
 }
 
 #[test]
+fn test_stream_extract_rejects_missing_end_record() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file("safe.txt", SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(b"safe").unwrap();
+    let mut archive = writer.finish().unwrap().into_inner();
+    archive.truncate(archive.len() - 22);
+
+    let dest = tempdir().unwrap();
+    let result = ZipStreamReader::new(Cursor::new(archive))
+        .enforce_header_consistency(true)
+        .extract(dest.path());
+    assert!(result.is_err());
+    assert!(dir_entries(dest.path()).is_empty());
+}
+
+#[test]
+fn test_stream_extract_rejects_shifted_local_offset() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file("safe.txt", SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(b"safe").unwrap();
+    let mut archive = writer.finish().unwrap().into_inner();
+    let central = archive.windows(4).position(|s| s == b"PK\x01\x02").unwrap();
+    archive[central + 42..central + 46].copy_from_slice(&1u32.to_le_bytes());
+
+    let dest = tempdir().unwrap();
+    let result = ZipStreamReader::new(Cursor::new(archive))
+        .enforce_header_consistency(true)
+        .extract(dest.path());
+    assert!(result.is_err());
+    assert!(dir_entries(dest.path()).is_empty());
+}
+
+#[test]
+fn test_stream_extract_rejects_shifted_central_directory_offset() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file("safe.txt", SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(b"safe").unwrap();
+    let mut archive = writer.finish().unwrap().into_inner();
+    let end = archive
+        .windows(4)
+        .rposition(|s| s == b"PK\x05\x06")
+        .unwrap();
+    archive[end + 16..end + 20].copy_from_slice(&1u32.to_le_bytes());
+
+    let dest = tempdir().unwrap();
+    let result = ZipStreamReader::new(Cursor::new(archive))
+        .enforce_header_consistency(true)
+        .extract(dest.path());
+    assert!(result.is_err());
+    assert!(dir_entries(dest.path()).is_empty());
+}
+
+#[test]
+fn test_stream_extract_rejects_zip64_offset_without_zip64_footer() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file("safe.txt", SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(b"safe").unwrap();
+    let mut archive = writer.finish().unwrap().into_inner();
+    let end = archive
+        .windows(4)
+        .rposition(|s| s == b"PK\x05\x06")
+        .unwrap();
+    archive[end + 16..end + 20].copy_from_slice(&u32::MAX.to_le_bytes());
+
+    let dest = tempdir().unwrap();
+    let result = ZipStreamReader::new(Cursor::new(archive))
+        .enforce_header_consistency(true)
+        .extract(dest.path());
+    assert!(result.is_err());
+    assert!(dir_entries(dest.path()).is_empty());
+}
+
+#[test]
 fn test_enforce_header_consistency_allows_valid_archive() {
     let temp_env = tempdir().unwrap();
     let dest_dir = temp_env.path();
