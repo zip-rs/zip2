@@ -104,3 +104,44 @@ fn test_verify_issue_1141_zip64_unnecessary_full_file_scan() {
         archive_len
     );
 }
+
+#[test]
+fn test_zip64_archive_with_prefix_detect_offset() {
+    let mut zip_data = Vec::new();
+    {
+        let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
+        let opts = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .large_file(true);
+        writer.start_file("prefixed.bin", opts).unwrap();
+        writer.write_all(b"payload in prefixed zip64").unwrap();
+        writer.finish().unwrap();
+    }
+
+    let mut prefixed_data = vec![0x7F; 512];
+    prefixed_data.extend_from_slice(&zip_data);
+
+    let mut tracker = TrackingReader::new(Cursor::new(prefixed_data));
+    let archive = ZipArchive::new(&mut tracker).unwrap();
+    assert_eq!(archive.len(), 1);
+    assert_eq!(archive.offset(), 512);
+}
+
+#[test]
+fn test_many_files_central_directory_parsing() {
+    let mut zip_data = Vec::new();
+    {
+        let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
+        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for i in 0..2000 {
+            let name = format!("entry_{i}.txt");
+            writer.start_file(name, opts).unwrap();
+            writer.write_all(b"x").unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    let mut tracker = TrackingReader::new(Cursor::new(zip_data));
+    let archive = ZipArchive::new(&mut tracker).unwrap();
+    assert_eq!(archive.len(), 2000);
+}

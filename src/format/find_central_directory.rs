@@ -219,18 +219,10 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
             let cd_result = match archive_offset {
                 ArchiveOffset::Known(n) => {
                     let guess = cd_offset_from_eocd.saturating_add(n).min(eocd_offset);
-                    if guess + MAGIC_LENGTH as u64 <= eocd_offset {
-                        // Quick check at the guessed position
-                        reader.seek(SeekFrom::Start(guess))?;
-                        let mut buf = [0u8; MAGIC_LENGTH];
-                        match reader.read_exact(&mut buf) {
-                            Ok(()) if buf == CDFH_SIG_BYTES => Some(guess),
-                            _ => {
-                                // Known offset didn't work — this is an error
-                                // (don't fall back to scanning when offset is known)
-                                None
-                            }
-                        }
+                    if guess + MAGIC_LENGTH as u64 <= eocd_offset
+                        && probe_magic_at(reader, guess, &CDFH_SIG_BYTES)?
+                    {
+                        Some(guess)
                     } else {
                         None
                     }
@@ -309,22 +301,29 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
         let search_start = locator64.end_of_central_directory_offset;
         let search_end = locator64_offset;
 
-        // Try optimistic guess first for known archive offset
+        // Try optimistic guess first for known archive offset or un-prefixed archives
         let guess_result = match archive_offset {
             ArchiveOffset::Known(n) => {
                 let guess = search_start.saturating_add(n).min(search_end);
-                if guess + MAGIC_LENGTH as u64 <= search_end {
-                    reader.seek(SeekFrom::Start(guess))?;
-                    let mut buf = [0u8; MAGIC_LENGTH];
-                    match reader.read_exact(&mut buf) {
-                        Ok(()) if buf == eocd64_cache.magic_bytes => Some(guess),
-                        _ => None, // Known offset didn't work — don't fall back
-                    }
+                if guess + MAGIC_LENGTH as u64 <= search_end
+                    && probe_magic_at(reader, guess, &eocd64_cache.magic_bytes)?
+                {
+                    Some(guess)
                 } else {
                     None
                 }
             }
-            _ => None,
+            ArchiveOffset::Detect => {
+                // In standard un-prefixed archives, EOCD64 is exactly at search_start.
+                // Probing this first avoids a forward scan from byte 0 across the entire archive.
+                if search_start + MAGIC_LENGTH as u64 <= search_end
+                    && probe_magic_at(reader, search_start, &eocd64_cache.magic_bytes)?
+                {
+                    Some(search_start)
+                } else {
+                    None
+                }
+            }
         };
 
         // Collect candidate EOCD64 positions
