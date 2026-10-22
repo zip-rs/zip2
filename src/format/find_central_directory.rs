@@ -358,28 +358,16 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
         let search_end = locator64_offset;
 
         // Try optimistic guess first for known archive offset or un-prefixed archives
-        let guess_result = match archive_offset {
-            ArchiveOffset::Known(n) => {
-                let guess = search_start.saturating_add(n).min(search_end);
-                if guess + MAGIC_LENGTH as u64 <= search_end
-                    && probe_magic_at(reader, guess, &eocd64_cache.magic_bytes)?
-                {
-                    Some(guess)
-                } else {
-                    None
-                }
-            }
-            ArchiveOffset::Detect => {
-                // In standard un-prefixed archives, EOCD64 is exactly at search_start.
-                // Probing this first avoids a forward scan from byte 0 across the entire archive.
-                if search_start + MAGIC_LENGTH as u64 <= search_end
-                    && probe_magic_at(reader, search_start, &eocd64_cache.magic_bytes)?
-                {
-                    Some(search_start)
-                } else {
-                    None
-                }
-            }
+        let guess = match archive_offset {
+            ArchiveOffset::Known(n) => search_start.saturating_add(n).min(search_end),
+            ArchiveOffset::Detect => search_start,
+        };
+        let guess_result = if guess + MAGIC_LENGTH as u64 <= search_end
+            && probe_magic_at(reader, guess, &eocd64_cache.magic_bytes)?
+        {
+            Some(guess)
+        } else {
+            None
         };
 
         // Collect candidate EOCD64 positions

@@ -48,8 +48,8 @@ fn test_verify_issue_1141_unnecessary_full_file_scan() {
         writer.finish().unwrap();
     }
 
-    let archive_len = zip_data.len();
-    assert!(archive_len > 1024 * 1024);
+    let archive_byte_size = zip_data.len();
+    assert!(archive_byte_size > 1024 * 1024);
 
     // Now open the archive with TrackingReader
     let mut tracker = TrackingReader::new(Cursor::new(zip_data));
@@ -58,16 +58,16 @@ fn test_verify_issue_1141_unnecessary_full_file_scan() {
 
     println!(
         "Archive size: {} bytes. Bytes read during ZipArchive::new: {} bytes (read calls: {})",
-        archive_len, tracker.bytes_read, tracker.read_calls
+        archive_byte_size, tracker.bytes_read, tracker.read_calls
     );
 
-    // If the bug exists, tracker.bytes_read will be approximately equal to archive_len (over 1 MB!)
+    // If the bug exists, tracker.bytes_read will be approximately equal to archive_byte_size (over 1 MB!)
     // If fixed, tracker.bytes_read should only be the Central Directory and EOCD (less than 10 KB).
     assert!(
         tracker.bytes_read < 10_000,
         "BUG REPRODUCED: ZipArchive::new read {} bytes out of {} total bytes!",
         tracker.bytes_read,
-        archive_len
+        archive_byte_size
     );
 }
 
@@ -85,8 +85,8 @@ fn test_verify_issue_1141_zip64_unnecessary_full_file_scan() {
         writer.finish().unwrap();
     }
 
-    let archive_len = zip_data.len();
-    assert!(archive_len > 1024 * 1024);
+    let archive_byte_size = zip_data.len();
+    assert!(archive_byte_size > 1024 * 1024);
 
     let mut tracker = TrackingReader::new(Cursor::new(zip_data));
     let archive = ZipArchive::new(&mut tracker).unwrap();
@@ -94,14 +94,14 @@ fn test_verify_issue_1141_zip64_unnecessary_full_file_scan() {
 
     println!(
         "[ZIP64] Archive size: {} bytes. Bytes read during ZipArchive::new: {} bytes (read calls: {})",
-        archive_len, tracker.bytes_read, tracker.read_calls
+        archive_byte_size, tracker.bytes_read, tracker.read_calls
     );
 
     assert!(
         tracker.bytes_read < 10_000,
         "BUG REPRODUCED ON ZIP64: ZipArchive::new read {} bytes out of {} total bytes!",
         tracker.bytes_read,
-        archive_len
+        archive_byte_size
     );
 }
 
