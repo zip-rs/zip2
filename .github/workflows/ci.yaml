@@ -99,7 +99,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: cargo install cargo-zigbuild
       - run: rustup target add x86_64-unknown-freebsd
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -108,11 +107,29 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-stable-
-      - run: sudo apt update
-      - run: sudo snap install --beta zig --classic
+            ${{ runner.os }}-cargo-nightly-
+      - name: Install zig and cargo-zigbuild in parallel
+        shell: bash
+        run: |
+          set +e
+          (
+            sudo snap install --beta zig --classic
+          ) &
+          (
+            cargo install cargo-zigbuild
+          ) &
+          wait -n
+          first_status=$?
+          if [[ "$first_status" -ne 0 ]]; then
+            exit 1
+          fi
+          wait -n
+          second_status=$?
+          if [[ "$second_status" -ne 0 ]]; then
+            exit 1
+          fi
       - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples
   check_minimal_versions:
     needs:
@@ -136,6 +153,18 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-minver-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-minver-
+            ${{ runner.os }}-cargo-nightly-${{ hashFiles('Cargo.toml') }}
+            ${{ runner.os }}-cargo-nightly-
       - name: resolve minimal versions
         run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
