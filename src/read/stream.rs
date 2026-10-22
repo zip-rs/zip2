@@ -2,7 +2,10 @@
 
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
-use crate::format::blocks::{FixedSizeBlock, Pod, ZipCentralEntryBlock, ZipLocalEntryBlock};
+use crate::format::blocks::{
+    FixedSizeBlock, Pod, Zip32CentralDirectoryEnd, Zip64CDEBlock, Zip64CDELocatorBlock,
+    ZipCentralEntryBlock, ZipLocalEntryBlock,
+};
 use crate::format::magic::Magic;
 use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
 use crate::read::extract::{make_symlink, make_symlink_as_file_utf8};
@@ -72,6 +75,74 @@ fn parse_central_directory<R: Read>(reader: &mut R) -> ZipResult<ZipFileEntry<'s
     })
 }
 
+/// Check the records after the central directory before trusting the streamed entries.
+fn validate_stream_footer<R: Read>(
+    reader: &mut R,
+    mut signature: [u8; 4],
+    entry_count: usize,
+    central_start: u64,
+    central_size: u64,
+    footer_offset: u64,
+) -> ZipResult<()> {
+    let mut zip64_count = None;
+    if Magic::from_le_bytes(signature) == Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
+        let record = Zip64CDEBlock::parse(&mut (&signature[..]).chain(&mut *reader))?;
+        // The record size excludes its signature and size field. The fixed fields after
+        // those two occupy 44 bytes; skip the optional extensible data without allocating.
+        if record.record_size < 44 {
+            return Err(invalid!("Invalid ZIP64 end record size"));
+        }
+        let extra_len = record.record_size - 44;
+        if io::copy(&mut (&mut *reader).take(extra_len), &mut io::sink())? != extra_len {
+            return Err(invalid!("Truncated ZIP64 end record"));
+        }
+        if record.disk_number != 0
+            || record.disk_with_central_directory != 0
+            || record.number_of_files_on_this_disk != record.number_of_files
+            || record.number_of_files != entry_count as u64
+            || record.central_directory_size != central_size
+            || record.central_directory_offset != central_start
+        {
+            return Err(invalid!("Inconsistent ZIP64 end record"));
+        }
+        zip64_count = Some(record.number_of_files);
+
+        reader.read_exact(&mut signature)?;
+        if Magic::from_le_bytes(signature) != Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
+            return Err(invalid!("Missing ZIP64 end record locator"));
+        }
+        let locator = Zip64CDELocatorBlock::parse(&mut (&signature[..]).chain(&mut *reader))?;
+        if locator.disk_with_central_directory != 0 || locator.number_of_disks != 1 {
+            return Err(invalid!("Multi-disk ZIP files are not supported"));
+        }
+        if locator.end_of_central_directory_offset != footer_offset {
+            return Err(invalid!("Inconsistent ZIP64 end record locator offset"));
+        }
+        reader.read_exact(&mut signature)?;
+    }
+
+    if Magic::from_le_bytes(signature) != Magic::CENTRAL_DIRECTORY_END_SIGNATURE {
+        return Err(invalid!("Missing end of central directory record"));
+    }
+    let end = Zip32CentralDirectoryEnd::parse(&mut (&signature[..]).chain(reader))?;
+    if end.disk_number != 0
+        || end.disk_with_central_directory != 0
+        || end.number_of_files_on_this_disk != end.number_of_files
+        || (end.number_of_files != u16::MAX && usize::from(end.number_of_files) != entry_count)
+        || (end.central_directory_size != u32::MAX
+            && u64::from(end.central_directory_size) != central_size)
+        || (end.central_directory_offset != u32::MAX
+            && u64::from(end.central_directory_offset) != central_start)
+        || (zip64_count.is_none()
+            && (end.number_of_files == u16::MAX
+                || end.central_directory_size == u32::MAX
+                || end.central_directory_offset == u32::MAX))
+    {
+        return Err(invalid!("Inconsistent end of central directory record"));
+    }
+    Ok(())
+}
+
 impl<R: Read> ZipStreamReader<R> {
     /// Iterate over the stream and extract all file and their
     /// metadata.
@@ -129,11 +200,18 @@ impl<R: Read> ZipStreamReader<R> {
         };
 
         let mut central_entries = Vec::new();
+        let mut footer = None;
 
         if has_central_directory {
-            let signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
-            let mut central_directory = (&signature[..]).chain(&mut reader);
-            while let Ok(metadata) = parse_central_directory(&mut central_directory) {
+            let central_start = reader.count - 4;
+            let mut signature = Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
+            loop {
+                let mut central_directory = (&signature[..]).chain(&mut reader);
+                let metadata = match parse_central_directory(&mut central_directory) {
+                    Ok(metadata) => metadata,
+                    Err(e) if self.enforce_header_consistency => return Err(e),
+                    Err(_) => break,
+                };
                 if self.enforce_header_consistency {
                     central_entries.push(CentralEntryMetadata {
                         metadata: metadata
@@ -144,7 +222,27 @@ impl<R: Read> ZipStreamReader<R> {
                     });
                 }
                 visitor.visit_additional_metadata(&metadata)?;
+                if let Err(e) = reader.read_exact(&mut signature) {
+                    if self.enforce_header_consistency {
+                        return Err(e.into());
+                    }
+                    break;
+                }
+                if Magic::from_le_bytes(signature) != Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
+                    break;
+                }
             }
+            if self.enforce_header_consistency {
+                let central_size = reader.count - 4 - central_start;
+                footer = Some((signature, central_start, central_size, reader.count - 4));
+            }
+        } else if self.enforce_header_consistency {
+            footer = Some((
+                Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes(),
+                reader.count - 4,
+                0,
+                reader.count - 4,
+            ));
         }
 
         if self.enforce_header_consistency {
@@ -160,7 +258,6 @@ impl<R: Read> ZipStreamReader<R> {
             // to align with the sequential physical stream order of the local headers.
             central_entries.sort_by_key(|e| e.header_start);
 
-            let base_offset = central_entries.first().map_or(0, |e| e.header_start);
             let mut seen_names = std::collections::HashSet::with_capacity(central_entries.len());
 
             for (i, (local, central)) in
@@ -174,17 +271,13 @@ impl<R: Read> ZipStreamReader<R> {
                 }
 
                 // Verify that the local header offset matches the physical stream offset exactly
-                let expected_offset =
-                    base_offset
-                        .checked_add(local.stream_offset)
-                        .ok_or(invalid!(
-                            "header inconsistency detected: local header offset overflow"
-                        ))?;
-                if central.header_start != expected_offset {
+                // The stream starts at its first local header. A common shift in all
+                // central offsets is still an inconsistency, even if their order matches.
+                if central.header_start != local.stream_offset {
                     return Err(invalid!(
                         "header inconsistency detected: local header offset mismatch for '{}' (expected {}, central claims {})",
                         String::from_utf8_lossy(&local.metadata.name),
-                        expected_offset,
+                        local.stream_offset,
                         central.header_start
                     ));
                 }
@@ -198,6 +291,16 @@ impl<R: Read> ZipStreamReader<R> {
                     ));
                 }
             }
+            let (signature, central_start, central_size, footer_offset) =
+                footer.ok_or(invalid!("Missing end of central directory record"))?;
+            validate_stream_footer(
+                &mut reader,
+                signature,
+                central_entries.len(),
+                central_start,
+                central_size,
+                footer_offset,
+            )?;
         }
 
         Ok(())
@@ -360,8 +463,30 @@ impl<R: Read> ZipStreamReader<R> {
         };
         let visited = self.visit(&mut extractor);
         if let Some(mut staging) = staging {
-            let moved = visited
-                .and_then(|()| move_staged_entries(&mut staging, &directory, &mut extractor));
+            let moved = visited.and_then(|()| {
+                let mut staged_paths = std::collections::HashSet::new();
+                let mut staged_files = std::collections::HashSet::new();
+                let mut output_paths = std::collections::HashSet::new();
+                for staged in extractor.resolved_paths.values() {
+                    let relative = staged.strip_prefix(&staging).map_err(|_| {
+                        invalid!("Entry was not extracted to the staging directory")
+                    })?;
+                    let output = crate::path::resolve_enclosed(
+                        &directory,
+                        &directory,
+                        relative.iter().map(|component| component.to_os_string()),
+                        false,
+                    )?;
+                    if !staged_paths.insert(staged)
+                        || !output_paths.insert(output)
+                        || staged_file_identity(staged)?
+                            .is_some_and(|identity| !staged_files.insert(identity))
+                    {
+                        return Err(invalid!("Multiple entries resolve to the same output path"));
+                    }
+                }
+                move_staged_entries(&mut staging, &directory, &mut extractor)
+            });
             let removed = fs::remove_dir_all(&staging);
             moved?;
             removed?;
@@ -392,6 +517,54 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
         Ok(())
+    }
+}
+
+/// Filesystem identity catches aliases on case-insensitive filesystems even when the
+/// archive names and their checked path strings differ.
+fn staged_file_identity(path: &Path) -> io::Result<Option<(u64, u64)>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(path)?;
+        Ok(Some((metadata.dev(), metadata.ino())))
+    }
+    #[cfg(windows)]
+    {
+        use std::fs::OpenOptions;
+        use std::io;
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+
+        let file = OpenOptions::new()
+            .access_mode(0) // 0 means no read/write data access needed, just metadata
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        let handle = file.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+        // Safety: We provide a valid file handle and a mutable pointer to a zeroed struct.
+        unsafe {
+            let mut info: BY_HANDLE_FILE_INFORMATION = std::mem::zeroed();
+            let result = GetFileInformationByHandle(handle, &mut info);
+
+            if result == 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            let volume_serial_number = u64::from(info.dwVolumeSerialNumber);
+            // Combine the high and low 32-bit fields into a single 64-bit file index
+            let file_index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+
+            Ok(Some((volume_serial_number, file_index)))
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = metadata;
+        Ok(None)
     }
 }
 
