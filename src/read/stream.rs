@@ -578,7 +578,16 @@ fn staging_path(dest: &Path) -> io::Result<PathBuf> {
 fn create_staging_dir(dest: &Path) -> io::Result<PathBuf> {
     loop {
         let staging = staging_path(dest)?;
-        match std::fs::create_dir(&staging) {
+        #[cfg(unix)]
+        let created = {
+            use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
+            builder.mode(0o700);
+            builder.create(&staging)
+        };
+        #[cfg(not(unix))]
+        let created = std::fs::create_dir(&staging);
+        match created {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
             result => return result.map(|()| staging),
         }
@@ -733,6 +742,17 @@ mod tests {
     use crate::result::ZipResult;
     use std::collections::BTreeSet;
     use std::io::{Cursor, Read};
+
+    #[cfg(all(unix, not(miri)))]
+    #[test]
+    fn staging_directory_is_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dest = tempfile::tempdir().unwrap();
+        let staging = super::create_staging_dir(dest.path()).unwrap();
+        let mode = std::fs::metadata(&staging).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0);
+    }
 
     #[test]
     fn zip_read_streaming_visitor() {
