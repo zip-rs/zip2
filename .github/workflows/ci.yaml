@@ -48,8 +48,14 @@ jobs:
           persist-credentials: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-nightly-
       - run: sudo apt update
       - run: sudo apt install crossbuild-essential-s390x
       - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
@@ -77,8 +83,14 @@ jobs:
           persist-credentials: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-stable-
       - run: sudo apt update
       - run: sudo snap install --beta zig --classic
       - run: cargo install cargo-zigbuild
@@ -213,6 +225,16 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-
       - name: Check that the benches can be built
         run: cargo build --benches
       - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all --all-targets ${{ matrix.feature_flag }}
@@ -249,12 +271,42 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-
       - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
+  setup_wasm_pack:
+    needs:
+      - cargo_fmt
+      - style_and_docs
+      - cargo_semver
+      - dependency_review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - run: rustup toolchain add stable && cargo +stable install --locked wasm-pack
+      - run: mkdir -p "$RUNNER_TEMP/wasm-pack" && cp "$HOME/.cargo/bin/wasm-pack" "$RUNNER_TEMP/wasm-pack/"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wasm-pack
+          path: ${{ runner.temp }}/wasm-pack/wasm-pack
+          if-no-files-found: error
   wasm:
     timeout-minutes: 10
     needs:
       - build_and_test
       - bsd_platform
+      - setup_wasm_pack
     strategy:
       matrix:
         browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
@@ -281,13 +333,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wasm-pack
+          path: ${{ runner.temp }}/wasm-pack
+      - run: mkdir -p "$HOME/.cargo/bin" && cp "$RUNNER_TEMP/wasm-pack/wasm-pack" "$HOME/.cargo/bin/wasm-pack" && chmod +x "$HOME/.cargo/bin/wasm-pack"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - run: rustup target add wasm32-unknown-unknown
-      - run: cargo install wasm-pack --locked
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
   cargo_semver:
     timeout-minutes: 10
@@ -323,10 +385,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
