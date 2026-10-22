@@ -5,7 +5,11 @@ ZIP64_ENTRY_THR = "ZIP64_ENTRY_THR"
 ERROR_FILENAME_EXCED_RANGE = "ERROR_FILENAME_EXCED_RANGE"
 flate2 = "flate2"
 "00ba" = "00ba"
-"D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" = "D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+
+[default]
+extend-ignore-re = [
+    "D:P\\(A;OICI;FA;;;OW\\)\\(A;OICI;FA;;;SY\\)\\(A;OICI;FA;;;BA\\)"
+]
 
 [files]
 extend-exclude = ["tests/data", "fuzz/read/in", "fuzz/write/in"]
