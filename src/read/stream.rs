@@ -535,7 +535,9 @@ impl<R: Read> ZipStreamReader<R> {
 
 /// Filesystem identity catches aliases on case-insensitive filesystems even when the
 /// archive names and their checked path strings differ.
-fn staged_file_identity(path: &Path) -> io::Result<Option<(u64, u64)>> {
+fn staged_file_identity(
+    #[cfg_attr(not(any(unix, windows)), allow(unused_variables))] path: &Path,
+) -> io::Result<Option<(u64, u64)>> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -576,7 +578,6 @@ fn staged_file_identity(path: &Path) -> io::Result<Option<(u64, u64)>> {
     }
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = metadata;
         Ok(None)
     }
 }
@@ -598,13 +599,63 @@ fn create_staging_dir(dest: &Path) -> io::Result<PathBuf> {
             builder.mode(0o700);
             builder.create(&staging)
         };
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        let created = create_private_staging_dir_windows(&staging);
+        #[cfg(not(any(unix, windows)))]
         let created = std::fs::create_dir(&staging);
         match created {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
             result => return result.map(|()| staging),
         }
     }
+}
+
+#[cfg(windows)]
+fn create_private_staging_dir_windows(path: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+    use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
+
+    // Protect the new directory and its children from inheriting a shared parent's ACL.
+    // Owner Rights, SYSTEM and Administrators can access staged files. The ACL is set
+    // during creation so there is no period when another user can read staged data.
+    let sddl: Vec<u16> = "D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    // SAFETY: The SDDL string is NUL-terminated and descriptor receives an owned allocation.
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let attributes = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor,
+        bInheritHandle: 0,
+    };
+    let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: Both the path and security descriptor remain live for this call.
+    let created = unsafe { CreateDirectoryW(path.as_ptr(), &attributes) };
+    let result = if created == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    };
+    // SAFETY: ConvertStringSecurityDescriptorToSecurityDescriptorW used LocalAlloc.
+    unsafe { LocalFree(descriptor) };
+    result
 }
 
 /// Visitor for `ZipStreamReader`
@@ -765,6 +816,106 @@ mod tests {
         let staging = super::create_staging_dir(dest.path()).unwrap();
         let mode = std::fs::metadata(&staging).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0);
+    }
+
+    #[cfg(all(windows, not(miri)))]
+    #[test]
+    fn staging_directory_does_not_inherit_public_read_access() {
+        use std::ffi::c_void;
+        use std::os::windows::ffi::OsStrExt;
+        use std::process::Command;
+        use windows_sys::Win32::Foundation::LocalFree;
+        use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
+        use windows_sys::Win32::Security::{
+            ACCESS_ALLOWED_ACE, ACL, ACL_SIZE_INFORMATION, AclSizeInformation, CreateWellKnownSid,
+            DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation, PSECURITY_DESCRIPTOR,
+            WinWorldSid,
+        };
+        use windows_sys::Win32::Storage::FileSystem::FILE_LIST_DIRECTORY;
+
+        let dest = tempfile::tempdir().unwrap();
+        // Make the destination readable to other users, as a shared folder might be.
+        let output = Command::new("icacls")
+            .arg(dest.path())
+            .args(["/grant", "*S-1-1-0:(OI)(CI)RX"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "icacls: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let staging = super::create_staging_dir(dest.path()).unwrap();
+        std::fs::write(staging.join("owner-can-write.txt"), b"private").unwrap();
+        let path: Vec<u16> = staging.as_os_str().encode_wide().chain(Some(0)).collect();
+        let mut dacl: *mut ACL = std::ptr::null_mut();
+        let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+        // SAFETY: Windows fills the DACL and descriptor for this NUL-terminated path.
+        let result = unsafe {
+            GetNamedSecurityInfoW(
+                path.as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut dacl,
+                std::ptr::null_mut(),
+                &mut descriptor,
+            )
+        };
+        assert_eq!(result, 0, "could not read staging ACL: {result}");
+        assert!(
+            !dacl.is_null(),
+            "staging directory has an unrestricted DACL"
+        );
+
+        let mut world_sid = [0u8; 68];
+        let mut sid_len = world_sid.len() as u32;
+        // SAFETY: The fixed buffer is large enough for a Windows SID.
+        assert_ne!(
+            unsafe {
+                CreateWellKnownSid(
+                    WinWorldSid,
+                    std::ptr::null_mut(),
+                    world_sid.as_mut_ptr().cast(),
+                    &mut sid_len,
+                )
+            },
+            0
+        );
+        let mut info = ACL_SIZE_INFORMATION::default();
+        // SAFETY: dacl belongs to the live security descriptor.
+        assert_ne!(
+            unsafe {
+                GetAclInformation(
+                    dacl,
+                    (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+                    std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                    AclSizeInformation,
+                )
+            },
+            0
+        );
+
+        let mut world_can_list = false;
+        for index in 0..info.AceCount {
+            let mut ace: *mut c_void = std::ptr::null_mut();
+            // SAFETY: The index is within the ACL's reported ACE count.
+            assert_ne!(unsafe { GetAce(dacl, index, &mut ace) }, 0);
+            let allowed = ace.cast::<ACCESS_ALLOWED_ACE>();
+            // ACCESS_ALLOWED_ACE_TYPE is 0; other ACE types have different layouts.
+            if unsafe { (*allowed).Header.AceType } == 0 {
+                // SAFETY: An access-allowed ACE stores the SID at SidStart.
+                let sid = unsafe { std::ptr::addr_of!((*allowed).SidStart).cast_mut().cast() };
+                let is_world = unsafe { EqualSid(sid, world_sid.as_mut_ptr().cast()) } != 0;
+                let can_list = unsafe { (*allowed).Mask } & FILE_LIST_DIRECTORY != 0;
+                world_can_list |= is_world && can_list;
+            }
+        }
+        // SAFETY: GetNamedSecurityInfoW allocated the descriptor with LocalAlloc.
+        unsafe { LocalFree(descriptor) };
+        assert!(!world_can_list, "Everyone can list the staging directory");
     }
 
     #[test]
