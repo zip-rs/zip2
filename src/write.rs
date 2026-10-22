@@ -27,8 +27,8 @@ use crc32fast::Hasher;
 use indexmap::IndexMap;
 use std::io::Cursor;
 use std::io::ErrorKind;
+use std::io::SeekFrom;
 use std::io::{self, Read, Seek, Write};
-use std::io::{BufReader, SeekFrom};
 use std::path::Path;
 
 pub(crate) mod options;
@@ -416,10 +416,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             compressed_size = available;
             src_data.compressed_size = compressed_size;
         }
-        let mut reader = BufReader::new(self.inner.try_inner_mut()?);
-        reader.seek(SeekFrom::Start(src_data_start))?;
-        let mut copy = vec![0; compressed_size as usize];
-        reader.take(compressed_size).read_exact(&mut copy)?;
         self.inner
             .try_inner_mut()?
             .seek(SeekFrom::Start(write_position))?;
@@ -437,7 +433,28 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
                 Some(&plain_writer.stream_position()?)
             );
             self.writing_to_file = true;
-            plain_writer.write_all(&copy)?;
+            // Both entries live in `self.inner`: `src_name` was resolved from this
+            // writer's file table, including when the writer was opened by `new_append`.
+            // The source ends at or before `write_position`, so a bounded buffer can
+            // copy it into the new entry without overwriting unread source bytes.
+            let mut buffer = [0u8; 64 * 1024];
+            let mut src_pos = src_data_start;
+            let mut dst_pos = plain_writer.stream_position()?;
+            let mut remaining = compressed_size;
+            while remaining != 0 {
+                let n = remaining.min(buffer.len() as u64) as usize;
+                plain_writer.seek(SeekFrom::Start(src_pos))?;
+                plain_writer.read_exact(&mut buffer[..n])?;
+                plain_writer.seek(SeekFrom::Start(dst_pos))?;
+                plain_writer.write_all(&buffer[..n])?;
+                src_pos = src_pos
+                    .checked_add(n as u64)
+                    .ok_or_else(|| io::Error::other("source offset overflows u64"))?;
+                dst_pos = dst_pos
+                    .checked_add(n as u64)
+                    .ok_or_else(|| io::Error::other("destination offset overflows u64"))?;
+                remaining -= n as u64;
+            }
             if self.flush_on_finish_file {
                 plain_writer.flush()?;
             }
