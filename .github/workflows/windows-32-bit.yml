@@ -1,0 +1,28 @@
+name: Windows 32-bit validation
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-32-bit:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install 32-bit Rust target
+        run: rustup target add i686-pc-windows-msvc
+      - name: Test ZIP64 and extraction bounds in 32-bit processes
+        run: cargo test --target i686-pc-windows-msvc --no-default-features --features deflate-flate2-zlib-rs --test zip64_size_overflow --test zip64_extra_field_without_sentinel --test zip64_central_field_follows_markers --test extract_size_limit
