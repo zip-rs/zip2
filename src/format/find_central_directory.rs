@@ -18,6 +18,22 @@ const MAGIC_LENGTH: usize = mem::size_of::<Magic>();
 /// found positions so that repeated overlapping searches run in O(log n) instead of O(n).
 ///
 /// Invariant: `positions` is sorted and all positions are within `[0, scanned_up_to)`.
+/// Probe whether the magic occurs at `pos` by seeking and reading exactly `MAGIC_LENGTH` bytes.
+/// Does not perform full-file scanning.
+fn probe_magic_at<R: Read + Seek + ?Sized>(
+    reader: &mut R,
+    pos: u64,
+    magic: &[u8; MAGIC_LENGTH],
+) -> ZipResult<bool> {
+    reader.seek(SeekFrom::Start(pos))?;
+    let mut buf = [0u8; MAGIC_LENGTH];
+    match reader.read_exact(&mut buf) {
+        Ok(()) => Ok(buf == *magic),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// There are no occurrences of the signature in `[0, scanned_up_to)` other than those in
 /// `positions`.
 #[derive(Debug)]
@@ -77,15 +93,23 @@ impl MagicPositionCache {
         }
     }
 
-    /// Whether the magic occurs at `pos`, which must be before `end`.
-    /// Ensures scanning covers `[0, end)` before answering.
+    /// Whether the magic occurs at `pos`.
+    /// Performs an O(1) probe at `pos` without scanning the entire file.
     pub(crate) fn contains<R: Read + Seek + ?Sized>(
         &mut self,
         reader: &mut R,
         pos: u64,
-        end: u64,
+        _end: u64,
     ) -> ZipResult<bool> {
-        Ok(self.first_in_range(reader, pos, end)? == Some(pos))
+        if self.positions.binary_search(&pos).is_ok() {
+            return Ok(true);
+        }
+        let found = probe_magic_at(reader, pos, &self.magic_bytes)?;
+        if found {
+            let idx = self.positions.partition_point(|&p| p < pos);
+            self.positions.insert(idx, pos);
+        }
+        Ok(found)
     }
 }
 
