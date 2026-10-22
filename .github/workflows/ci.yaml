@@ -180,7 +180,6 @@ jobs:
       - miri
       - check_minimal_versions
       - cargo_semver
-      - dependency_review
     strategy:
       matrix:
         os: [windows-latest, macOS-latest, ubuntu-latest]
@@ -223,7 +222,6 @@ jobs:
       - cargo_fmt
       - style_and_docs
       - cargo_semver
-      - dependency_review
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
