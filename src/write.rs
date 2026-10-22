@@ -406,10 +406,14 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let src_index = self.index_by_name(src_name.as_bytes())?;
         let src_data = &mut self.files[src_index];
         let src_data_start = src_data.data_start(self.inner.try_inner_mut()?)?;
-        debug_assert!(src_data_start <= write_position);
+        // `src_data_start` comes from the local header, which may be untrusted (e.g. after
+        // `new_append`); it can point past the current end of the archive.
+        let available = write_position
+            .checked_sub(src_data_start)
+            .ok_or(invalid!("File data starts past the end of the archive"))?;
         let mut compressed_size = src_data.compressed_size;
-        if compressed_size > (write_position - src_data_start) {
-            compressed_size = write_position - src_data_start;
+        if compressed_size > available {
+            compressed_size = available;
             src_data.compressed_size = compressed_size;
         }
         let mut reader = BufReader::new(self.inner.try_inner_mut()?);

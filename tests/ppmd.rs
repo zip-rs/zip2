@@ -6,6 +6,12 @@ use zip::{CompressionMethod, ZipArchive};
 
 const IPSUM: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n";
 
+#[cfg(not(miri))]
+const LEVEL: i64 = 9;
+
+#[cfg(miri)]
+const LEVEL: i64 = 1;
+
 #[test]
 fn decompress_ppmd() {
     let mut v = Vec::new();
@@ -35,7 +41,7 @@ fn compress_ppmd() {
             file_name,
             SimpleFileOptions::default()
                 .compression_method(CompressionMethod::Ppmd)
-                .compression_level(Some(9)),
+                .compression_level(Some(LEVEL)),
         )
         .unwrap();
         zip.write_all(IPSUM.as_bytes()).unwrap();
