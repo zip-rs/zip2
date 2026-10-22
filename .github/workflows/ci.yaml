@@ -173,7 +173,7 @@ jobs:
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
   build_and_test:
-    timeout-minutes: 25
+    timeout-minutes: ${{ fromJSON('{"windows-latest":{"msrv":30} }')[matrix.os][matrix.rustalias] || 25 }}
     needs:
       - cargo_fmt
       - style_and_docs
@@ -194,13 +194,10 @@ jobs:
         include:
           - rustalias: stable
             rust: stable
-            nextest_flag: ""
           - rustalias: msrv
             rust: "1.88.0"
-            nextest_flag: "--version 0.9.114"
           - rustalias: nightly
             rust: nightly
-            nextest_flag: ""
     name: "Build and test ${{ matrix.feature_flag }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
