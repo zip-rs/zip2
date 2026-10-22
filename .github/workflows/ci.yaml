@@ -43,7 +43,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install cross compiler and Rust toolchains in parallel
@@ -119,7 +119,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup target add x86_64-unknown-freebsd
@@ -185,7 +185,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
@@ -245,7 +245,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -282,7 +282,7 @@ jobs:
             api.deps.dev:443
             api.securityscorecards.dev:443
       - name: 'Checkout Repository'
-        uses: useblacksmith/checkout@v1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: 'Dependency Review'
@@ -465,7 +465,7 @@ jobs:
       - name: Conditionally set env
         if: matrix.browser_flags != '--node' # if browser testing
         run: echo "WASM_BINDGEN_USE_BROWSER=1" >> $GITHUB_ENV
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -514,7 +514,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
@@ -551,7 +551,7 @@ jobs:
           - { key: no-default-features, flags: "--no-default-features" }
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
@@ -603,7 +603,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -711,7 +711,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -810,7 +810,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -917,7 +917,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@v1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
