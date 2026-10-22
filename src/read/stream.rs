@@ -563,7 +563,6 @@ fn staged_file_identity(path: &Path) -> io::Result<Option<(u64, u64)>> {
     }
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = metadata;
         Ok(None)
     }
 }
