@@ -253,13 +253,10 @@ jobs:
         include:
           - rustalias: stable
             rust: stable
-            nextest_flag: ""
           - rustalias: msrv
             rust: "1.88.0"
-            nextest_flag: "--version 0.9.114"
           - rustalias: nightly
             rust: nightly
-            nextest_flag: ""
     name: "Build and test ${{ matrix.feature_flag }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
