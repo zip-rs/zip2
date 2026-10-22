@@ -11,5 +11,6 @@ fi
 
 installed_version="$(cargo-afl --version 2>/dev/null | awk '{print $NF}' || true)"
 if [[ "$installed_version" != "$version" ]]; then
-  cargo install --locked --version "$version" cargo-afl
+  # Need --force to update if an older version is present
+  cargo install --locked --version "$version" --force cargo-afl
 fi
