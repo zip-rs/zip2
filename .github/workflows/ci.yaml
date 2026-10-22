@@ -54,20 +54,21 @@ jobs:
             sudo apt-get update &&
             sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu
           ) &
-          apt_pid=$!
           (
             rustup toolchain add nightly-x86_64-unknown-linux-gnu &&
             rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu &&
             rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu &&
-            rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
+            rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri &&
             cargo install --locked cargo-nextest
           ) &
-          rust_pid=$!
-          wait "$apt_pid"
-          apt_status=$?
-          wait "$rust_pid"
-          rust_status=$?
-          if [[ "$apt_status" -ne 0 || "$rust_status" -ne 0 ]]; then
+          wait -n
+          first_status=$?
+          if [[ "$first_status" -ne 0 ]]; then
+            exit 1
+          fi
+          wait -n
+          second_status=$?
+          if [[ "$second_status" -ne 0 ]]; then
             exit 1
           fi
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
