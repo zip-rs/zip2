@@ -8,7 +8,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || github.actor == 'github-actions' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
