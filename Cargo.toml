@@ -48,7 +48,7 @@ bitstream-io = { version = "4.9", optional = true }
 typed-path = { version = "0.12", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = "0.61.2"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
 nix = { version = "^0.31.3", features = ["fs"], default-features = false }
