@@ -407,7 +407,24 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
-      - run: cargo install cargo-afl --version 0.15.19
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-afl
+          key: ${{ runner.os }}-cargo-afl-0.15.19-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-afl-0.15.19-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-fuzz-regressions-${{ matrix.target }}-${{ matrix.feature_flag }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-regressions-${{ matrix.target }}-${{ matrix.feature_flag }}-
+      - run: if [[ ! -x "$HOME/.cargo/bin/cargo-afl" ]]; then cargo install cargo-afl --version 0.15.19 --locked; fi
+        shell: bash
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
       - run: cargo afl build --release ${{ matrix.feature_flag }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - run: fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 fuzz/${{ matrix.target }}/in fuzz/${{ matrix.target }}/regressions
@@ -428,8 +445,24 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-afl
+          key: ${{ runner.os }}-cargo-afl-0.15.19-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-afl-0.15.19-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-fuzz-read-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-read-
+      - run: if [[ ! -x "$HOME/.cargo/bin/cargo-afl" ]]; then cargo install cargo-afl --version 0.15.19 --locked; fi
+        shell: bash
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -505,10 +538,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-afl
+          key: ${{ runner.os }}-cargo-afl-0.15.19-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-afl-0.15.19-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-fuzz-read-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-read-
+      - run: if [[ ! -x "$HOME/.cargo/bin/cargo-afl" ]]; then cargo install cargo-afl --version 0.15.19 --locked; fi
+        shell: bash
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
@@ -576,9 +623,24 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-afl
+          key: ${{ runner.os }}-cargo-afl-0.15.19-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-afl-0.15.19-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-fuzz-read-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-read-
+      - run: if [[ ! -x "$HOME/.cargo/bin/cargo-afl" ]]; then cargo install cargo-afl --version 0.15.19 --locked; fi
+        shell: bash
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
@@ -653,10 +715,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-afl
+          key: ${{ runner.os }}-cargo-afl-0.15.19-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-afl-0.15.19-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-fuzz-read-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-read-
+      - run: if [[ ! -x "$HOME/.cargo/bin/cargo-afl" ]]; then cargo install cargo-afl --version 0.15.19 --locked; fi
+        shell: bash
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
