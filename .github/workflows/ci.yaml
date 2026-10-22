@@ -301,7 +301,7 @@ jobs:
             ${{ runner.os }}-target-${{ matrix.rust }}-
       - name: Check that the benches can be built
         run: cargo build --benches
-      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all --all-targets ${{ matrix.feature.flags }}
+      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all --lib --bins --tests --examples ${{ matrix.feature.flags }}
   check_fuzz:
     timeout-minutes: 10
     needs:
