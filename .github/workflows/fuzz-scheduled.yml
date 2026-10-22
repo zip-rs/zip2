@@ -26,7 +26,23 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
-      - run: cargo install cargo-afl --version 0.15.19
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-afl
+          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-afl-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-fuzz-regressions-${{ matrix.target }}-${{ matrix.feature_flag }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-regressions-${{ matrix.target }}-${{ matrix.feature_flag }}-
+      - run: bash .github/scripts/install-cargo-afl.sh
       - run: cargo afl system-config
       - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - name: fuzz
