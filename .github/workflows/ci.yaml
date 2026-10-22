@@ -243,13 +243,13 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macOS-latest, ubuntu-latest]
-        rustalias: [stable, nightly, msrv]
+        rustalias: [msrv, stable, nightly]
         feature_flag:
           - "--all-features"
-          - "--no-default-features"
+          - ""
           - "--no-default-features --features zip/deflate-flate2-zlib-rs"
           - "--no-default-features --features zip/deflate-zopfli"
-          - ""
+          - "--no-default-features"
         include:
           - rustalias: stable
             rust: stable
