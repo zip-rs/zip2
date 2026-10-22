@@ -8,7 +8,7 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 // Large enough that reading past the declared size would be obvious; smaller under miri,
 // which is slow.
-const REAL_SIZE: usize = if cfg!(miri) { 1 << 12 } else { 1 << 20 };
+const REAL_SIZE: usize = if cfg!(miri) { 1 << 10 } else { 1 << 20 };
 const DECLARED_SIZE: u32 = 10;
 
 /// Build an archive with one entry of `REAL_SIZE` zero bytes, then patch the uncompressed
@@ -32,19 +32,32 @@ fn lying_archive(method: CompressionMethod) -> Vec<u8> {
 }
 
 fn methods() -> Vec<CompressionMethod> {
-    vec![
-        CompressionMethod::Stored,
-        #[cfg(feature = "deflate-flate2")]
-        CompressionMethod::Deflated,
-        #[cfg(feature = "_bzip2_any")]
-        CompressionMethod::Bzip2,
-        #[cfg(feature = "zstd")]
-        CompressionMethod::Zstd,
-        #[cfg(feature = "xz")]
-        CompressionMethod::Xz,
-        #[cfg(feature = "ppmd")]
-        CompressionMethod::Ppmd,
-    ]
+    // Native CI exercises all enabled codecs; running their encoders under Miri is
+    // disproportionately slow and does not change the size-limit behavior under test.
+    #[cfg(miri)]
+    {
+        vec![
+            CompressionMethod::Stored,
+            #[cfg(feature = "deflate-flate2")]
+            CompressionMethod::Deflated,
+        ]
+    }
+    #[cfg(not(miri))]
+    {
+        vec![
+            CompressionMethod::Stored,
+            #[cfg(feature = "deflate-flate2")]
+            CompressionMethod::Deflated,
+            #[cfg(feature = "_bzip2_any")]
+            CompressionMethod::Bzip2,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd,
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz,
+            #[cfg(feature = "ppmd")]
+            CompressionMethod::Ppmd,
+        ]
+    }
 }
 
 #[test]
