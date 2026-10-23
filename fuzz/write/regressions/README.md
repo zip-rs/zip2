@@ -8,3 +8,7 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   rewind guard). Kept as a seed; no longer reproduces on master.
 - `stack-overflow-deep-copy.bin`: found 2026-10-20 (run 39365893419). SIGABRT on pre-#1095 harness;
   no longer reproduces on master. Kept as a seed.
+- `merge-duplicate-filename.bin`: found 2026-10-23 (PR #1136, --no-default-features). `merge_archive`
+  silently replaced an existing entry with the same name (`IndexMap::extend`), so the harness's file
+  count drifted and a later `abort_file` hit `FileNotFound`. Fixed by rejecting duplicate names in
+  `merge_archive`.
