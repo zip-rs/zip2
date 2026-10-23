@@ -27,7 +27,7 @@ fn decompress_shrink() {
 /// The content is the first 26001 bytes of `seq 1 60000` (the numbers 1, 2, ... one per line):
 /// the smallest prefix whose stream needs code 8191.
 #[test]
-fn decompress_shrink_full_code_table() {
+fn decompress_shrink_full_code_table_slow_in_miri() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!(
         "data/legacy/shrink_full_table.zip"
     )))
