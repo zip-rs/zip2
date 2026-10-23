@@ -60,7 +60,8 @@ fn memory_benchmarks(c: &mut Criterion) {
 
         let many_entries_count: usize = 100;
         let many_entries_size: usize = 1024 * 1024;
-        let many_entries = generate_random_archive_meta(many_entries_count, many_entries_size).unwrap();
+        let many_entries =
+            generate_random_archive_meta(many_entries_count, many_entries_size).unwrap();
         let mut many_entries_group = c.benchmark_group("read_many_entries_memory");
         let many_entries_throughput_bytes: u64 =
             (many_entries_count as u64) * (many_entries_size as u64);
