@@ -243,11 +243,34 @@ pub(crate) fn make_symlink_as_file_utf8(outpath: &Path, target: &[u8]) -> ZipRes
     Ok(())
 }
 
+/// Create an output file for extraction securely.
+///
+/// If `outpath` already exists as a symbolic link, it is removed before creating the regular
+/// file so that extraction will not follow the link and overwrite a target file outside the
+/// destination directory. After creation, the file is verified to ensure it was not swapped
+/// for a symbolic link.
+pub(crate) fn create_outfile(outpath: &Path) -> std::io::Result<std::fs::File> {
+    if let Ok(meta) = std::fs::symlink_metadata(outpath)
+        && meta.file_type().is_symlink()
+    {
+        std::fs::remove_file(outpath)?;
+    }
+    let file = std::fs::File::create(outpath)?;
+    if let Ok(meta) = std::fs::symlink_metadata(outpath)
+        && meta.file_type().is_symlink()
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Extracted file cannot be written through a symbolic link",
+        ));
+    }
+    Ok(file)
+}
+
 pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Result<()> {
-    use std::fs::File;
     use std::io::Write;
-    let output = File::create(outpath);
-    output?.write_all(target)?;
+    let mut output = create_outfile(outpath)?;
+    output.write_all(target)?;
     Ok(())
 }
 
@@ -548,7 +571,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
-                let mut outfile = fs::File::create(&outpath)?;
+                let mut outfile = create_outfile(&outpath)?;
                 io::copy(&mut file, &mut outfile)?;
                 // Set original timestamp.
                 #[cfg(feature = "chrono")]
