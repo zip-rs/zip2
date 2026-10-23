@@ -297,13 +297,13 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macOS-latest, ubuntu-latest]
-        rustalias: [msrv, stable, nightly]
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: default, flags: "" }
           - { key: zlib-rs, flags: "--no-default-features --features zip/deflate-flate2-zlib-rs" }
           - { key: zopfli, flags: "--no-default-features --features zip/deflate-zopfli" }
           - { key: no-default-features, flags: "--no-default-features" }
+        rustalias: [msrv, stable, nightly]
         include:
           - rustalias: stable
             rust: stable
@@ -368,13 +368,13 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rustalias: [stable, nightly]
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: default, flags: "" }
           - { key: zlib-rs, flags: "--no-default-features --features zip/deflate-flate2-zlib-rs" }
           - { key: zopfli, flags: "--no-default-features --features zip/deflate-zopfli" }
           - { key: no-default-features, flags: "--no-default-features" }
+        rustalias: [stable, nightly]
         include:
           - rustalias: stable
             rust: stable
