@@ -35,7 +35,13 @@ impl Seek for BoundedReadCursor {
 
 #[test]
 fn deep_copy_uses_bounded_read_buffer() {
-    let contents = vec![0x5a; 256 * 1024];
+    #[cfg(not(miri))]
+    const CONTENTS_LEN: usize = 256 * 1024;
+
+    #[cfg(miri)]
+    const CONTENTS_LEN: usize = 16 * 1024;
+
+    let contents = vec![0x5a; CONTENTS_LEN];
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     writer
         .start_file(
