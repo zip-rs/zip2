@@ -46,12 +46,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cargo/bin/cargo-nextest*
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-
       - name: Install cross compiler and Rust toolchains in parallel
         shell: bash
         run: |
@@ -65,7 +59,7 @@ jobs:
             rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu &&
             rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu &&
             rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri &&
-            bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+            rustup default nightly-x86_64-unknown-linux-gnu
           ) &
           wait -n
           first_status=$?
@@ -77,6 +71,20 @@ jobs:
           if [[ "$second_status" -ne 0 ]]; then
             exit 1
           fi
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc +nightly -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-nextest*
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -89,9 +97,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-target-miri-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-target-miri-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-target-miri-${{ matrix.feature.key }}-
+            ${{ runner.os }}-${{ runner.arch }}-target-miri-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
       - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
   bsd_platform:
     needs:
@@ -111,6 +119,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup target add x86_64-unknown-freebsd
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -123,9 +138,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-target-bsd-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-target-bsd-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-target-bsd-
+            ${{ runner.os }}-${{ runner.arch }}-target-bsd-${{ steps.rustc-version.outputs.version }}-
       - name: Install zig and cargo-zigbuild in parallel
         shell: bash
         run: |
@@ -169,6 +184,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -183,9 +205,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-target-minver-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-target-minver-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-target-minver-
+            ${{ runner.os }}-${{ runner.arch }}-target-minver-${{ steps.rustc-version.outputs.version }}-
       - name: resolve minimal versions
         run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
@@ -193,9 +215,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-nextest*
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
       - name: test
         run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
@@ -295,6 +317,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -307,18 +336,17 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-target-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-target-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-target-${{ matrix.rust }}-${{ matrix.feature.key }}-
-            ${{ runner.os }}-target-${{ matrix.rust }}-
+            ${{ runner.os }}-${{ runner.arch }}-target-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
       - name: Check that the benches can be built
         run: cargo build --benches
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-nextest*
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
       - run: cargo nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --all --lib --bins --tests --examples ${{ matrix.feature.flags }}
   check_fuzz:
@@ -354,6 +382,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -366,10 +401,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-build-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-build-${{ matrix.rust }}-${{ matrix.feature.key }}-
-            ${{ runner.os }}-fuzz-build-${{ matrix.rust }}-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
       - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature.flags }} --bins --examples
   setup_wasm_pack:
     timeout-minutes: 10
@@ -430,6 +464,13 @@ jobs:
       - run: mkdir -p "$HOME/.cargo/bin" && cp "$RUNNER_TEMP/wasm-pack/wasm-pack" "$HOME/.cargo/bin/wasm-pack" && chmod +x "$HOME/.cargo/bin/wasm-pack"
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - run: rustup target add wasm32-unknown-unknown
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -442,10 +483,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-wasm-${{ matrix.rust }}-${{ matrix.feature.key }}-${{ matrix.browser_flags }}-${{ hashFiles('Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-wasm-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ matrix.browser_flags }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-wasm-${{ matrix.rust }}-${{ matrix.feature.key }}-
-            ${{ runner.os }}-wasm-${{ matrix.rust }}-
+            ${{ runner.os }}-${{ runner.arch }}-wasm-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature.flags }}
   cargo_semver:
     timeout-minutes: 10
@@ -504,6 +544,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -516,16 +563,15 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-afl
-          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-afl-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature.key }}-
-            ${{ runner.os }}-fuzz-${{ matrix.target }}-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
       - run: cargo afl build --release ${{ matrix.feature.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
@@ -547,6 +593,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -559,16 +612,15 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-afl
-          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-afl-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-read-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-read-all-features-
-            ${{ runner.os }}-fuzz-read-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
 
       - name: cargo afl system-config
@@ -645,6 +697,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -657,16 +717,15 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-afl
-          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-afl-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-read-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-read-no-default-features-
-            ${{ runner.os }}-fuzz-read-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -735,6 +794,13 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -747,16 +813,15 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-afl
-          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-afl-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-write-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-write-all-features-
-            ${{ runner.os }}-fuzz-write-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -832,6 +897,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -844,16 +917,15 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-afl
-          key: ${{ runner.os }}-cargo-afl-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-afl-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-fuzz-write-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-fuzz-write-no-default-features-
-            ${{ runner.os }}-fuzz-write-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
