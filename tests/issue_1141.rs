@@ -2,6 +2,16 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+#[cfg(not(miri))]
+const LARGE_PAYLOAD_SIZE: usize = 1024 * 1024;
+#[cfg(miri)]
+const LARGE_PAYLOAD_SIZE: usize = 1024 * 64;
+
+#[cfg(not(miri))]
+const MANY_FILES: usize = 2000;
+#[cfg(miri)]
+const MANY_FILES: usize = 20;
+
 /// A reader wrapper that counts the number of bytes read.
 struct TrackingReader<R> {
     inner: R,
@@ -43,13 +53,13 @@ fn test_verify_issue_1141_unnecessary_full_file_scan() {
         let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         writer.start_file("large_payload.bin", opts).unwrap();
         // 1 MB payload (1,048,576 bytes)
-        let chunk = vec![0xAA; 1024 * 1024];
+        let chunk = vec![0xAA; LARGE_PAYLOAD_SIZE];
         writer.write_all(&chunk).unwrap();
         writer.finish().unwrap();
     }
 
     let archive_byte_size = zip_data.len();
-    assert!(archive_byte_size > 1024 * 1024);
+    assert!(archive_byte_size > LARGE_PAYLOAD_SIZE);
 
     // Now open the archive with TrackingReader
     let mut tracker = TrackingReader::new(Cursor::new(zip_data));
@@ -80,13 +90,13 @@ fn test_verify_issue_1141_zip64_unnecessary_full_file_scan() {
             .compression_method(CompressionMethod::Stored)
             .large_file(true);
         writer.start_file("large_payload_zip64.bin", opts).unwrap();
-        let chunk = vec![0xBB; 1024 * 1024]; // 1 MB payload
+        let chunk = vec![0xBB; LARGE_PAYLOAD_SIZE]; // 1 MB payload
         writer.write_all(&chunk).unwrap();
         writer.finish().unwrap();
     }
 
     let archive_byte_size = zip_data.len();
-    assert!(archive_byte_size > 1024 * 1024);
+    assert!(archive_byte_size > LARGE_PAYLOAD_SIZE);
 
     let mut tracker = TrackingReader::new(Cursor::new(zip_data));
     let archive = ZipArchive::new(&mut tracker).unwrap();
@@ -114,7 +124,7 @@ fn test_zip64_archive_with_prefix_detect_offset() {
             .compression_method(CompressionMethod::Stored)
             .large_file(true);
         writer.start_file("prefixed.bin", opts).unwrap();
-        let chunk = vec![0xCC; 1024 * 1024]; // 1 MB payload
+        let chunk = vec![0xCC; LARGE_PAYLOAD_SIZE]; // 1 MB payload
         writer.write_all(&chunk).unwrap();
         writer.finish().unwrap();
     }
@@ -139,7 +149,7 @@ fn test_many_files_central_directory_parsing() {
     {
         let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
         let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        for i in 0..2000 {
+        for i in 0..MANY_FILES {
             let name = format!("entry_{i}.txt");
             writer.start_file(name, opts).unwrap();
             writer.write_all(b"x").unwrap();
@@ -149,7 +159,7 @@ fn test_many_files_central_directory_parsing() {
 
     let mut tracker = TrackingReader::new(Cursor::new(zip_data));
     let archive = ZipArchive::new(&mut tracker).unwrap();
-    assert_eq!(archive.len(), 2000);
+    assert_eq!(archive.len(), MANY_FILES);
 }
 
 #[test]
@@ -159,7 +169,7 @@ fn test_non_abutting_central_directory_does_not_scan_payload() {
         let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
         let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         writer.start_file("large_payload.bin", opts).unwrap();
-        let chunk = vec![0xDD; 1024 * 1024]; // 1 MB payload
+        let chunk = vec![0xDD; LARGE_PAYLOAD_SIZE]; // 1 MB payload
         writer.write_all(&chunk).unwrap();
         writer.finish().unwrap();
     }
