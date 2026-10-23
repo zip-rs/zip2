@@ -368,7 +368,8 @@ mod tests {
             data: Box::new(ntfs_extra_field),
         }]
         .into();
-        // Compression is disabled on Miri with zlib because when it's enabled,
+        // Compression is disabled on Miri for zlib-backed flate2 backends
+        // (zlib-rs / zlib / zlib-ng / zlib-ng-compat) because when it's enabled,
         // flate2::Decompress::new makes a C function call (zlibVersion via
         // flate2::ffi::c::c_backend::mz_inflateInit2).
         #[cfg(all(
