@@ -343,6 +343,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// not all of their contents extracted will be readable, writable or usable as process working
     /// directories by any non-root user except you.
     ///
+    /// Extraction is also not atomic in term of permissions. Permissions are applied after the
+    /// extraction (because some folder have stricter permissions when we cannot access it). That
+    /// means, for a moment, a file could be created with default permissions (and then changed
+    /// to the correct one). On Unix this only applies to directories and symlinks.
+    ///
     /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
     /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
     /// containing the target path in UTF-8.
@@ -548,8 +553,21 @@ impl<R: Read + Seek> ZipArchive<R> {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
-                let mut outfile = fs::File::create(&outpath)?;
+                let mut options = fs::OpenOptions::new();
+                options.create(true).write(true).truncate(true); // Default for `fs::File::create`
+                #[cfg(unix)]
+                if let Some(mode) = file.unix_mode() {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(mode);
+                }
+                let mut outfile = options.open(&outpath)?;
                 io::copy(&mut file, &mut outfile)?;
+                #[cfg(unix)]
+                if let Some(mode) = file.unix_mode() {
+                    // OpenOptions::mode only applies when the file is created. Record modes
+                    // for the final pass too, so overwriting an existing path updates them.
+                    files_by_unix_mode.add_mode(outpath, mode);
+                }
                 // Set original timestamp.
                 #[cfg(feature = "chrono")]
                 if let Some(last_modified) = file.last_modified()
@@ -562,11 +580,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                     let mut permissions = outfile.metadata()?.permissions();
                     permissions.set_readonly(true);
                     outfile.set_permissions(permissions)?;
-                }
-                #[cfg(unix)]
-                if let Some(mode) = file.unix_mode() {
-                    use std::os::unix::fs::PermissionsExt;
-                    outfile.set_permissions(fs::Permissions::from_mode(mode))?;
                 }
             }
         }
