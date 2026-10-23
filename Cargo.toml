@@ -45,7 +45,7 @@ deflate64 = { version = "^0.1.10", optional = true }
 lzma-rust2 = { version = "^0.23.0", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bitstream-io = { version = "4.9", optional = true }
 # Only the path parsing is used, which doesn't need std.
-typed-path = { version = "0.12", default-features = false }
+typed-path = { version = "0.13", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
