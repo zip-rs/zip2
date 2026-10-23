@@ -23,6 +23,24 @@ fn count(size: usize) {
     let _ = ALLOCATED.try_with(|a| a.set(a.get() + size as u64));
 }
 
+#[cfg(not(miri))]
+const ENTRIES: usize = 100;
+
+#[cfg(miri)]
+const ENTRIES: usize = 10;
+
+#[cfg(not(miri))]
+const RUN_LENGTH: usize = 16384;
+
+#[cfg(miri)]
+const RUN_LENGTH: usize = 128;
+
+#[cfg(not(miri))]
+const DEFAULT_LEVEL: i64 = 6;
+
+#[cfg(miri)]
+const DEFAULT_LEVEL: i64 = 1;
+
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         count(layout.size());
@@ -58,25 +76,23 @@ fn write_archive(entries: usize, options: SimpleFileOptions) -> Vec<u8> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::with_capacity(1 << 20)));
     for i in 0..entries {
         zip.start_file(format!("{i}.txt"), options).unwrap();
-        zip.write_all(&entry_data(i, 1024)).unwrap();
+        zip.write_all(&entry_data(i, RUN_LENGTH)).unwrap();
     }
     zip.finish().unwrap().into_inner()
 }
 
 #[test]
 fn deflate_compressor_is_reused_across_entries() {
-    let options = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .compression_level(Some(6));
+    let options = deflated();
     // Warm up anything lazily initialised, then compare the marginal cost of 100 extra entries.
     let _ = write_archive(2, options);
     let before = allocated();
     let _ = write_archive(2, options);
     let small = allocated() - before;
     let before = allocated();
-    let _ = write_archive(102, options);
+    let _ = write_archive(ENTRIES, options);
     let large = allocated() - before;
-    let per_entry = (large - small) / 100;
+    let per_entry = (large - small) / (ENTRIES as u64 - 2);
     // A fresh zlib-rs/miniz_oxide compressor costs well over 200 KiB; per-entry bookkeeping
     // (names, metadata, central directory growth) is a few KiB.
     assert!(
@@ -89,19 +105,28 @@ fn deflate_compressor_is_reused_across_entries() {
 /// whatever the previous entries' levels and methods were.
 #[test]
 fn reused_compressor_output_matches_fresh_encoder() {
+    #[cfg(not(miri))]
+    const BASE_LEN: usize = 50_000;
+    #[cfg(miri)]
+    const BASE_LEN: usize = 100;
+    #[cfg(not(miri))]
+    const LEN_INCREMENT: usize = 1_000;
+    #[cfg(miri)]
+    const LEN_INCREMENT: usize = 1;
+
     let plan: &[(CompressionMethod, Option<i64>)] = &[
-        (CompressionMethod::Deflated, Some(9)),
-        (CompressionMethod::Deflated, Some(9)),
+        (CompressionMethod::Deflated, Some(3)),
+        (CompressionMethod::Deflated, Some(3)),
         (CompressionMethod::Deflated, Some(1)),
         (CompressionMethod::Stored, None),
         (CompressionMethod::Deflated, None),
         (CompressionMethod::Deflated, Some(1)),
-        (CompressionMethod::Deflated, Some(6)),
+        (CompressionMethod::Deflated, Some(4)),
     ];
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     let mut expected = Vec::new();
     for (i, &(method, level)) in plan.iter().enumerate() {
-        let data = entry_data(i, 50_000 + 1_000 * i);
+        let data = entry_data(i, BASE_LEN + LEN_INCREMENT * i);
         let options = SimpleFileOptions::default()
             .compression_method(method)
             .compression_level(level);
@@ -109,7 +134,7 @@ fn reused_compressor_output_matches_fresh_encoder() {
         zip.write_all(&data).unwrap();
         if i == 2 {
             // An aborted entry leaves the compressor mid-stream; the next one must start clean.
-            zip.write_all(&entry_data(99, 10_000)).unwrap();
+            zip.write_all(&entry_data(99, BASE_LEN)).unwrap();
             zip.abort_file().unwrap();
             zip.start_file(format!("{i}"), options).unwrap();
             zip.write_all(&data).unwrap();
@@ -153,7 +178,7 @@ fn round_trip_mixed_encryption(plan: &[(SimpleFileOptions, bool)]) {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for (i, (options, _)) in plan.iter().enumerate() {
         zip.start_file(format!("{i}"), *options).unwrap();
-        zip.write_all(&entry_data(i, 20_000)).unwrap();
+        zip.write_all(&entry_data(i, RUN_LENGTH)).unwrap();
     }
     let bytes = zip.finish().unwrap().into_inner();
 
@@ -169,14 +194,14 @@ fn round_trip_mixed_encryption(plan: &[(SimpleFileOptions, bool)]) {
         } else {
             archive.by_index(i).unwrap().read_to_end(&mut out).unwrap();
         }
-        assert_eq!(out, entry_data(i, 20_000), "entry {i}");
+        assert_eq!(out, entry_data(i, RUN_LENGTH), "entry {i}");
     }
 }
 
 fn deflated() -> SimpleFileOptions {
     SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
-        .compression_level(Some(6))
+        .compression_level(Some(DEFAULT_LEVEL))
 }
 
 #[test]
