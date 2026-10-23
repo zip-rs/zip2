@@ -19,7 +19,7 @@ jobs:
           - { target: read,  feature: default, flags: "" }
           - { target: write, feature: all-features, flags: "--all-features", dict: "-x fuzz/write/fuzz.dict" }
           - { target: write, feature: no-default-features, flags: "--no-default-features", dict: "-x fuzz/write/fuzz.dict" }
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_FUZZ_SCHEDULED || 'ubuntu-latest' }}
     timeout-minutes: 150
     steps:
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
