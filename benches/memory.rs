@@ -14,9 +14,9 @@ use common::{
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use std::io::{Cursor, Read, Write};
 #[cfg(not(miri))]
 use std::io;
+use std::io::{Cursor, Read, Write};
 use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 fn generate_zip64_archive_with_extensible_data(data_len: usize) -> ZipResult<Vec<u8>> {
