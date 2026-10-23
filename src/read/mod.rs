@@ -159,6 +159,9 @@ impl<R: Read + Seek> ZipArchive<R> {
 
 #[inline]
 fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipResult<Vec<u8>> {
+    if len == 0 {
+        return Ok(Vec::new());
+    }
     let mut data = vec![0; len];
     if let Err(e) = reader.read_exact(&mut data) {
         if e.kind() == io::ErrorKind::UnexpectedEof {
@@ -203,11 +206,16 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_fields_raw = read_variable_length_byte_field(reader, extra_field_length as usize)?;
-    let file_comment_raw = read_variable_length_byte_field(reader, file_comment_length as usize)?;
-    let file_comment: Box<str> = if is_utf8 {
-        String::from_utf8_lossy(&file_comment_raw).into()
+    let file_comment: Box<str> = if file_comment_length == 0 {
+        Box::default()
     } else {
-        file_comment_raw.from_cp437()?.into()
+        let file_comment_raw =
+            read_variable_length_byte_field(reader, file_comment_length as usize)?;
+        if is_utf8 {
+            String::from_utf8_lossy(&file_comment_raw).into()
+        } else {
+            file_comment_raw.from_cp437()?.into()
+        }
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
