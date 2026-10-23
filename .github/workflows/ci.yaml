@@ -32,10 +32,10 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        feature_flag:
-          - "--no-default-features"
-          - "--no-default-features --features zip/_miri_compatible_features"
-    name: "Miri ${{ matrix.feature_flag }} Cargo.toml"
+        feature:
+          - { key: miri-compatible, flags: "--no-default-features --features zip/_miri_compatible_features" }
+          - { key: no-default-features, flags: "--no-default-features" }
+    name: "Miri ${{ matrix.feature.key }} Cargo.toml"
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -46,18 +46,64 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install cross compiler and Rust toolchains in parallel
+        shell: bash
+        run: |
+          set +e
+          (
+            sudo apt-get update &&
+            sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu libc6-dev-s390x-cross
+          ) &
+          (
+            rustup toolchain add nightly-x86_64-unknown-linux-gnu &&
+            rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu &&
+            rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu &&
+            rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri &&
+            rustup default nightly-x86_64-unknown-linux-gnu
+          ) &
+          wait -n
+          first_status=$?
+          if [[ "$first_status" -ne 0 ]]; then
+            exit 1
+          fi
+          wait -n
+          second_status=$?
+          if [[ "$second_status" -ne 0 ]]; then
+            exit 1
+          fi
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc +nightly -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-nextest*
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
-      - run: sudo apt update
-      - run: sudo apt install crossbuild-essential-s390x
-      - run: rustup toolchain add nightly-x86_64-unknown-linux-gnu
-      - run: rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
-      - run: rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu
-      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
-      - run: cargo install --locked cargo-nextest
-      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature_flag }} --lib --bins --tests --examples
+          key: ${{ runner.os }}-${{ runner.arch }}-target-miri-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-target-miri-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
+      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
   bsd_platform:
     needs:
     - cargo_semver
@@ -75,14 +121,49 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: rustup target add x86_64-unknown-freebsd
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
-      - run: sudo apt update
-      - run: sudo snap install --beta zig --classic
-      - run: cargo install cargo-zigbuild
-      - run: rustup target add x86_64-unknown-freebsd
+          key: ${{ runner.os }}-${{ runner.arch }}-target-bsd-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-target-bsd-${{ steps.rustc-version.outputs.version }}-
+      - name: Install zig and cargo-zigbuild in parallel
+        shell: bash
+        run: |
+          set +e
+          (
+            sudo snap install --beta zig --classic
+          ) &
+          (
+            cargo install cargo-zigbuild
+          ) &
+          wait -n
+          first_status=$?
+          if [[ "$first_status" -ne 0 ]]; then
+            exit 1
+          fi
+          wait -n
+          second_status=$?
+          if [[ "$second_status" -ne 0 ]]; then
+            exit 1
+          fi
       - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples
   check_minimal_versions:
     needs:
@@ -106,14 +187,46 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-minver-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-minver-
+            ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ runner.os }}-${{ runner.arch }}-target-minver-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-target-minver-${{ steps.rustc-version.outputs.version }}-
       - name: resolve minimal versions
         run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
         run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-      - run: cargo install --locked cargo-nextest
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-nextest*
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
       - name: test
         run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-
   style_and_docs:
     timeout-minutes: 10
     strategy:
@@ -184,24 +297,21 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macOS-latest, ubuntu-latest]
-        rustalias: [stable, nightly, msrv]
-        feature_flag:
-          - "--all-features"
-          - "--no-default-features"
-          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-          - "--no-default-features --features zip/deflate-zopfli"
-          - ""
+        rustalias: [msrv, stable, nightly]
+        feature:
+          - { key: all-features, flags: "--all-features" }
+          - { key: default, flags: "" }
+          - { key: zlib-rs, flags: "--no-default-features --features zip/deflate-flate2-zlib-rs" }
+          - { key: zopfli, flags: "--no-default-features --features zip/deflate-zopfli" }
+          - { key: no-default-features, flags: "--no-default-features" }
         include:
           - rustalias: stable
             rust: stable
-            nextest_flag: ""
           - rustalias: msrv
             rust: "1.88.0"
-            nextest_flag: "--version 0.9.114"
           - rustalias: nightly
             rust: nightly
-            nextest_flag: ""
-    name: "Build and test ${{ matrix.feature_flag }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+    name: "Build and test ${{ matrix.feature.flags }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -213,10 +323,41 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: ${{ runner.os }}-${{ runner.arch }}-target-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-target-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
       - name: Check that the benches can be built
         run: cargo build --benches
-      - run: cargo check --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
-      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all ${{ matrix.feature_flag }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-nextest*
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+      - run: cargo nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --all --lib --bins --tests --examples ${{ matrix.feature.flags }}
   check_fuzz:
     timeout-minutes: 10
     needs:
@@ -228,18 +369,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly]
-        feature_flag:
-          - "--all-features"
-          - "--no-default-features"
-          - "--no-default-features --features zip/deflate-flate2-zlib-rs"
-          - "--no-default-features --features zip/deflate-zopfli"
-          - ""
+        feature:
+          - { key: all-features, flags: "--all-features" }
+          - { key: default, flags: "" }
+          - { key: zlib-rs, flags: "--no-default-features --features zip/deflate-flate2-zlib-rs" }
+          - { key: zopfli, flags: "--no-default-features --features zip/deflate-zopfli" }
+          - { key: no-default-features, flags: "--no-default-features" }
         include:
           - rustalias: stable
             rust: stable
           - rustalias: nightly
             rust: nightly
-    name: "Build and test ${{ matrix.feature_flag }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
+    name: "Build and test ${{ matrix.feature.flags }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -250,22 +391,64 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
-      - run: cargo check --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
-      - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature_flag }} --bins --examples
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
+      - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature.flags }} --bins --examples
+  setup_wasm_pack:
+    timeout-minutes: 10
+    needs:
+      - cargo_fmt
+      - style_and_docs
+      - cargo_semver
+      - dependency_review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - run: rustup toolchain add stable && cargo +stable install --locked wasm-pack
+      - run: mkdir -p "$RUNNER_TEMP/wasm-pack" && cp "$HOME/.cargo/bin/wasm-pack" "$RUNNER_TEMP/wasm-pack/"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wasm-pack
+          path: ${{ runner.temp }}/wasm-pack/wasm-pack
+          if-no-files-found: error
   wasm:
     timeout-minutes: 10
     needs:
       - build_and_test
       - bsd_platform
+      - setup_wasm_pack
     strategy:
       matrix:
         browser_flags: ["--headless --chrome", "--headless --firefox", "--node"]
         rustalias: [stable, nightly]
         manifest: ["Cargo.toml"]
-        feature_flag:
-          - "" # default features
-          - "--no-default-features"
-          - "--features chrono,jiff-02,nt-time,legacy-zip"
+        feature:
+          - { key: optional-dates, flags: "--features chrono,jiff-02,nt-time,legacy-zip" }
+          - { key: default, flags: "" }
+          - { key: no-default-features, flags: "--no-default-features" }
         include:
           - rustalias: stable
             rust: stable
@@ -283,14 +466,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wasm-pack
+          path: ${{ runner.temp }}/wasm-pack
+      - run: mkdir -p "$HOME/.cargo/bin" && cp "$RUNNER_TEMP/wasm-pack/wasm-pack" "$HOME/.cargo/bin/wasm-pack" && chmod +x "$HOME/.cargo/bin/wasm-pack"
+      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: rustup target add wasm32-unknown-unknown
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
-      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
-      - run: rustup target add wasm32-unknown-unknown
-      - run: cargo install wasm-pack --locked
-      - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature_flag }}
+          key: ${{ runner.os }}-${{ runner.arch }}-wasm-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ matrix.browser_flags }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-wasm-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
+      - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature.flags }}
   cargo_semver:
     timeout-minutes: 10
     strategy:
@@ -322,14 +527,9 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target
-          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.toml') }}
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
@@ -344,16 +544,49 @@ jobs:
     strategy:
       matrix:
         target: [read, write]
-        feature_flag: ["--all-features", "--no-default-features"]
+        feature:
+          - { key: all-features, flags: "--all-features" }
+          - { key: no-default-features, flags: "--no-default-features" }
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
-      - run: cargo install cargo-afl --version 0.15.19
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
-      - run: cargo afl build --release ${{ matrix.feature_flag }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
+      - run: cargo afl build --release ${{ matrix.feature.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - run: fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 fuzz/${{ matrix.target }}/in fuzz/${{ matrix.target }}/regressions
 
   fuzz_read:
@@ -372,8 +605,38 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -392,7 +655,7 @@ jobs:
         run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
@@ -450,9 +713,38 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
-
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
@@ -468,7 +760,7 @@ jobs:
         run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/read/in -o out -V ${{ env.FUZZ_SECONDS }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
@@ -520,9 +812,38 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
-
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
@@ -540,7 +861,7 @@ jobs:
         run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
@@ -598,9 +919,38 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-
-      - run: cargo install cargo-afl --version 0.15.19
-
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
@@ -616,7 +966,7 @@ jobs:
         run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/write/in -o out -V ${{ env.FUZZ_SECONDS }} -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
