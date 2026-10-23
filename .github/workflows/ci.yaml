@@ -79,6 +79,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -130,6 +132,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -196,6 +200,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -332,6 +338,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -400,6 +408,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -412,9 +422,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-${{ matrix.feature.key }}-
       - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature.flags }} --bins --examples
   setup_wasm_pack:
     timeout-minutes: 10
@@ -482,6 +492,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -562,6 +574,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -583,9 +597,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-${{ matrix.target }}-${{ matrix.feature.key }}-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
       - run: cargo afl build --release ${{ matrix.feature.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
@@ -614,6 +628,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -635,9 +651,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-read-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-read-all-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
 
       - name: cargo afl system-config
@@ -722,6 +738,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -743,9 +761,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-read-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-read-no-default-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -821,6 +839,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -842,9 +862,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-write-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-write-all-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -928,6 +948,8 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+          $cpu = if (Test-Path /proc/cpuinfo) { (Get-Content /proc/cpuinfo | Select-String "^model name" | Select-Object -First 1) -replace "^model name\s*:\s*", "" -replace "[^A-Za-z0-9]+", "_" } else { "unknown" }
+          "cpu=$cpu" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -949,9 +971,9 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-write-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.rustc-version.outputs.cpu }}-write-no-default-features-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
