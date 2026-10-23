@@ -71,6 +71,7 @@ jobs:
           if [[ "$second_status" -ne 0 ]]; then
             exit 1
           fi
+          set -e
       - id: rustc-version
         shell: pwsh
         run: |
