@@ -274,7 +274,7 @@ mod benches {
             b.iter(|| {
                 let mut writer = ZipWriter::new(fs::File::create(&path_write_many).unwrap());
                 for name in file_names.iter() {
-                    writer.start_file(name, options.clone()).unwrap();
+                    writer.start_file(name, options).unwrap();
                     writer.write_all(&payload_small).unwrap();
                 }
                 black_box(writer.finish().unwrap());
@@ -291,7 +291,7 @@ mod benches {
         c.bench_function("write_one_large_file", |b| {
             b.iter(|| {
                 let mut writer = ZipWriter::new(fs::File::create(&path_write_large).unwrap());
-                writer.start_file("large.dat", options.clone()).unwrap();
+                writer.start_file("large.dat", options).unwrap();
                 writer.write_all(&payload_large).unwrap();
                 black_box(writer.finish().unwrap());
             });
@@ -309,7 +309,7 @@ mod benches {
                 let mut writer = ZipWriter::new(fs::File::create(&path_roundtrip).unwrap());
                 for i in 0..ROUNDTRIP_ENTRIES {
                     writer
-                        .start_file(format!("entry_{i}.dat"), options.clone())
+                        .start_file(format!("entry_{i}.dat"), options)
                         .unwrap();
                     writer.write_all(&roundtrip_payload).unwrap();
                 }
@@ -363,7 +363,7 @@ mod benches {
 
                     for i in 0..20 {
                         writer
-                            .start_file(format!("deflated_{i}.dat"), options.clone())
+                            .start_file(format!("deflated_{i}.dat"), options)
                             .unwrap();
                         writer.write_all(&deflate_payload).unwrap();
                     }
