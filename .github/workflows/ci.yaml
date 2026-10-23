@@ -571,7 +571,10 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-afl
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
@@ -620,7 +623,10 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-afl
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
@@ -725,7 +731,10 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-afl
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
@@ -821,7 +830,10 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-afl
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
@@ -925,7 +937,10 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-afl
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
