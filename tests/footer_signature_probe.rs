@@ -1,5 +1,7 @@
 //! Private compatibility probe for the optional central-directory digital signature.
 
+#![cfg(not(miri))]
+
 use std::io::{Cursor, Write};
 use zip::unstable::stream::ZipStreamReader;
 use zip::write::SimpleFileOptions;
