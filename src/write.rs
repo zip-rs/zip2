@@ -1537,6 +1537,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             // Rewrite the footer at the actual end.
             let central_and_footer_size = footer_end - central_start;
             writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
+            #[cfg_attr(not(debug_assertions), allow(unused_variables))]
             let (_, new_is_zip64) = self.write_central_and_footer()?;
             #[cfg(debug_assertions)]
             {
