@@ -554,6 +554,23 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     }
 }
 
+#[cfg(not(feature = "unreserved"))]
+fn validate_extra_fields(extra_fields: &[crate::extra_fields::CustomExtraField]) -> ZipResult<()> {
+    use crate::extra_fields::EXTRA_FIELD_MAPPING;
+    use crate::extra_fields::UsedExtraField;
+    for x in extra_fields.iter() {
+        let header_id = x.header_id;
+        if UsedExtraField::try_from(header_id).is_err() && EXTRA_FIELD_MAPPING.contains(&header_id)
+        {
+            return Err(ZipError::Io(io::Error::other(format!(
+                "Extra data header ID {header_id:#06} (0x{header_id:x}) \
+                        requires crate feature \"unreserved\"",
+            ))));
+        }
+    }
+    Ok(())
+}
+
 impl<W: Write + Seek> ZipWriter<W> {
     /// Initializes the archive.
     ///
@@ -697,30 +714,19 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         let header_start = self.inner.try_inner_mut()?.stream_position()?;
+        #[cfg(not(feature = "unreserved"))]
+        {
+            if raw_values.is_none()
+                && let Some(extra_fields) = options.extended_options.extra_fields()
+            {
+                validate_extra_fields(extra_fields)?;
+            }
+        }
         let raw_values = raw_values.unwrap_or(ZipRawValues {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
         });
-        #[cfg(not(feature = "unreserved"))]
-        {
-            use crate::extra_fields::EXTRA_FIELD_MAPPING;
-            use crate::extra_fields::UsedExtraField;
-
-            if let Some(extra_fields) = options.extended_options.extra_fields() {
-                for x in extra_fields.iter() {
-                    let header_id = x.header_id;
-                    if UsedExtraField::try_from(header_id).is_err()
-                        && EXTRA_FIELD_MAPPING.contains(&header_id)
-                    {
-                        return Err(ZipError::Io(io::Error::other(format!(
-                            "Extra data header ID {header_id:#06} (0x{header_id:x}) \
-                            requires crate feature \"unreserved\"",
-                        ))));
-                    }
-                }
-            }
-        }
         let extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
@@ -1308,7 +1314,6 @@ impl<W: Write + Seek> ZipWriter<W> {
             options.external_attributes = None;
             options = options.unix_permissions(perms);
         }
-
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
@@ -2178,6 +2183,12 @@ impl ZipFileBuilder {
             ));
         }
         options.normalize();
+        #[cfg(not(feature = "unreserved"))]
+        {
+            if let Some(extra_fields) = options.extended_options.extra_fields() {
+                validate_extra_fields(extra_fields)?;
+            }
+        }
         let owned_options = FullFileOptions {
             compression_method: options.compression_method,
             compression_level: options.compression_level,
@@ -2831,8 +2842,8 @@ mod tests {
         // let options = SimpleFileOptions::default().compression_method(Stored);
         let options = FileOptions {
             extended_options: ExtendedFileOptions {
-                extra_fields: vec![].into(),
                 file_comment: Some("file comment".into()),
+                ..Default::default()
             },
 
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
@@ -2844,8 +2855,8 @@ mod tests {
         writer.write_all(b"data")?;
         let options2 = FileOptions {
             extended_options: ExtendedFileOptions {
-                extra_fields: vec![].into(),
                 file_comment: Some("file2 comment".into()),
+                ..Default::default()
             },
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
             #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
@@ -3503,10 +3514,7 @@ mod tests {
                 permissions: None,
                 large_file: false,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions {
-                    extra_fields: vec![].into(),
-                    file_comment: None,
-                },
+                extended_options: ExtendedFileOptions::default(),
                 alignment: 2048,
                 ..Default::default()
             };
@@ -3559,7 +3567,7 @@ mod tests {
                     .unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 32787,
             ..Default::default()
@@ -3582,7 +3590,7 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[1, 41, 4, 0, 1, 255, 245, 117]).unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 4103,
             ..Default::default()
@@ -3735,7 +3743,7 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[0, 0, 0, 0]).unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 0xFFFF,
             ..Default::default()
@@ -3814,7 +3822,7 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[38, 251, 0, 0]).unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 0xFFFF,
             ..Default::default()
@@ -3853,7 +3861,7 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[67, 149, 0, 0]).unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 0xFFFF,
             ..Default::default()
@@ -3990,7 +3998,7 @@ mod tests {
                                                     .unwrap(),
                                                 ]
                                                 .into(),
-                                                file_comment: None,
+                                                ..Default::default()
                                             },
                                             alignment: 0xFFFF,
                                             ..Default::default()
@@ -4274,7 +4282,7 @@ mod tests {
                                 CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
                             ]
                             .into(),
-                            file_comment: None,
+                            ..Default::default()
                         },
                         alignment: 1542,
                         ..Default::default()
@@ -4540,7 +4548,7 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 0xFFFF,
             ..Default::default()
@@ -4602,7 +4610,7 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[2, 61, 0, 0])?,
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 0xFFFF,
             ..Default::default()
@@ -4784,7 +4792,7 @@ mod tests {
                         .unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 4103,
             ..Default::default()
@@ -4813,7 +4821,7 @@ mod tests {
                         .unwrap(),
                 ]
                 .into(),
-                file_comment: None,
+                ..Default::default()
             },
             alignment: 4103,
             ..Default::default()
