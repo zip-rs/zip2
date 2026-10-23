@@ -58,9 +58,13 @@ fn memory_benchmarks(c: &mut Criterion) {
             });
         });
 
-        let many_entries = generate_random_archive_meta(100, 1024 * 1024).unwrap();
+        let many_entries_count: usize = 100;
+        let many_entries_size: usize = 1024 * 1024;
+        let many_entries = generate_random_archive_meta(many_entries_count, many_entries_size).unwrap();
         let mut many_entries_group = c.benchmark_group("read_many_entries_memory");
-        many_entries_group.throughput(criterion::Throughput::Bytes(100 * 1024 * 1024));
+        let many_entries_throughput_bytes: u64 =
+            (many_entries_count as u64) * (many_entries_size as u64);
+        many_entries_group.throughput(criterion::Throughput::Bytes(many_entries_throughput_bytes));
         many_entries_group.bench_function("read_all", |b| {
             b.iter(|| {
                 let mut archive = ZipArchive::new(Cursor::new(many_entries.as_slice())).unwrap();
