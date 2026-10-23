@@ -6,7 +6,7 @@ publish = false
 
 # Dependabot tracks this pin; the workflow install script reads it.
 [dev-dependencies]
-cargo-afl = "=0.15.19"
+cargo-afl = "=0.18.2"
 
 [lints.rust]
 unused_crate_dependencies = "allow"
