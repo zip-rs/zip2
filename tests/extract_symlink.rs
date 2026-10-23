@@ -15,24 +15,36 @@ fn test_is_symlink() -> std::io::Result<()> {
 }
 
 #[test]
-#[cfg(all(unix, feature = "deflate-flate2", not(miri)))]
-fn extract_should_respect_links() {
-    use std::{fs, io, path::PathBuf, str::FromStr};
+#[cfg(all(unix, not(miri)))]
+fn extract_should_respect_links() -> zip::result::ZipResult<()> {
+    use std::fs;
+    use std::io::{Cursor, Write};
+    use std::path::Path;
     use tempfile::TempDir;
-    use zip::ZipArchive;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
 
-    let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("data/pandoc_soft_links.zip"));
-    let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
-    let temp_dir = TempDir::with_prefix("pandoc_soft_links").unwrap();
-    archive.extract(&temp_dir).unwrap();
+    // A small package with two links to a sibling file covers the behavior
+    // previously tested by a 35 MiB archive containing an unused executable.
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer.add_directory("package/bin/", options)?;
+    writer.start_file("package/bin/program", options)?;
+    writer.write_all(b"program contents")?;
+    writer.add_symlink("package/bin/program-lua", "program", options)?;
+    writer.add_symlink("package/bin/program-server", "program", options)?;
+    let mut archive = writer.finish_into_readable()?;
 
-    let symlink_path = temp_dir.path().join("pandoc-3.2-arm64/bin/pandoc-lua");
+    let temp_dir = TempDir::with_prefix("extract_should_respect_links")?;
+    archive.extract(&temp_dir)?;
 
-    // Read the target of the symbolic link
-    let target_path = fs::read_link(&symlink_path).unwrap();
+    for name in ["program-lua", "program-server"] {
+        let path = temp_dir.path().join("package/bin").join(name);
+        assert_eq!(fs::read_link(&path)?, Path::new("program"));
+        assert_eq!(fs::read(&path)?, b"program contents");
+    }
 
-    assert_eq!(target_path, PathBuf::from_str("pandoc").unwrap());
+    Ok(())
 }
 
 /// A symlink entry whose central directory declares an absurd uncompressed size
