@@ -164,6 +164,7 @@ jobs:
           if [[ "$second_status" -ne 0 ]]; then
             exit 1
           fi
+          set -e
       - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples
   check_minimal_versions:
     needs:
