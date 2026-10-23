@@ -10,7 +10,7 @@ mod common;
 
 use common::{
     generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
-    generate_random_archive_meta, perform_raw_copy_file_by_index, seeded_random_bytes,
+    perform_raw_copy_file_by_index, seeded_random_bytes,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -49,6 +49,8 @@ fn memory_benchmarks(c: &mut Criterion) {
 
     #[cfg(not(miri))]
     {
+        use common::generate_random_archive_meta;
+        
         c.bench_function("read_metadata_in_memory", |b| {
             let archive_bytes = generate_random_archive_meta(15_000, 1024).unwrap();
             b.iter(|| {
