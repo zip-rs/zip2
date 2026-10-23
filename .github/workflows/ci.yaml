@@ -337,6 +337,7 @@ jobs:
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - run: sudo sysctl -w kernel.yama.ptrace_scope=0
+        if: runner.os == 'Linux'
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
