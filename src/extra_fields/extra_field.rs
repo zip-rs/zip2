@@ -373,7 +373,12 @@ mod tests {
         // flate2::ffi::c::c_backend::mz_inflateInit2).
         #[cfg(all(
             miri,
-            any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")
+            any(
+                feature = "deflate-flate2-zlib-rs",
+                feature = "deflate-flate2-zlib",
+                feature = "deflate-flate2-zlib-ng",
+                feature = "deflate-flate2-zlib-ng-compat"
+            )
         ))]
         let options = options.compression_method(crate::CompressionMethod::Stored);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
