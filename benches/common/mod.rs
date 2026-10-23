@@ -59,7 +59,7 @@ pub fn generate_random_archive_merge(
 
     for (i, file) in bytes.chunks_exact(entry_size).enumerate() {
         writer.start_file(format!("random{i}.dat"), options)?;
-        writer.write_all(&file)?;
+        writer.write_all(file)?;
     }
 
     let bytes = writer.finish()?.into_inner();
