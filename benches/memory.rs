@@ -50,6 +50,20 @@ fn memory_benchmarks(c: &mut Criterion) {
     #[cfg(not(miri))]
     {
         use common::generate_random_archive_meta;
+        struct DecompressionSink(io::Sink);
+        impl Write for DecompressionSink {
+            #[inline(always)]
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                // Enforce that the decompressed buffer contents are "used"
+                let opaque_buf = black_box(buf);
+                self.0.write(opaque_buf)
+            }
+
+            #[inline(always)]
+            fn flush(&mut self) -> io::Result<()> {
+                self.0.flush()
+            }
+        }
 
         c.bench_function("read_metadata_in_memory", |b| {
             let archive_bytes = generate_random_archive_meta(15_000, 1024).unwrap();
@@ -75,7 +89,7 @@ fn memory_benchmarks(c: &mut Criterion) {
                 let mut archive = ZipArchive::new(Cursor::new(many_entries.as_slice())).unwrap();
                 for idx in 0..archive.len() {
                     let mut entry = archive.by_index(idx).unwrap();
-                    io::copy(&mut entry, &mut io::sink()).unwrap();
+                    io::copy(&mut entry, &mut DecompressionSink(io::sink())).unwrap();
                 }
             });
         });
