@@ -36,7 +36,7 @@ jobs:
           - { key: miri-compatible, flags: "--no-default-features --features zip/_miri_compatible_features" }
           - { key: no-default-features, flags: "--no-default-features" }
     name: "Miri ${{ matrix.feature.key }} Cargo.toml"
-    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_MIRI || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -459,7 +459,7 @@ jobs:
             rust: stable
           - rustalias: nightly
             rust: nightly
-    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_WASM || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
