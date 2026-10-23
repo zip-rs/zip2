@@ -269,14 +269,13 @@ mod benches {
         let file_names: Vec<_> = (0..WRITE_MANY_FILES)
             .map(|i| format!("file_{i}.dat"))
             .collect();
-
+        let options =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         c.bench_function("write_many_small_files", |b| {
             b.iter(|| {
                 let mut writer = ZipWriter::new(fs::File::create(&path_write_many).unwrap());
-                let options =
-                    SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
                 for name in file_names.iter() {
-                    writer.start_file(name, options).unwrap();
+                    writer.start_file(name, options.clone()).unwrap();
                     writer.write_all(&payload_small).unwrap();
                 }
                 black_box(writer.finish().unwrap());
@@ -289,13 +288,12 @@ mod benches {
         // ============================================================================
         let path_write_large = p("write_large.zip");
         let payload_large = seeded_random_bytes(WRITE_LARGE_SIZE);
-
+        let options =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         c.bench_function("write_one_large_file", |b| {
             b.iter(|| {
                 let mut writer = ZipWriter::new(fs::File::create(&path_write_large).unwrap());
-                let options =
-                    SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-                writer.start_file("large.dat", options).unwrap();
+                writer.start_file("large.dat", options.clone()).unwrap();
                 writer.write_all(&payload_large).unwrap();
                 black_box(writer.finish().unwrap());
             });
@@ -307,15 +305,14 @@ mod benches {
         // ============================================================================
         let path_roundtrip = p("roundtrip.zip");
         let roundtrip_payload = seeded_random_bytes(256);
-
+        let options =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         c.bench_function("write_then_read_roundtrip", |b| {
             b.iter(|| {
                 let mut writer = ZipWriter::new(fs::File::create(&path_roundtrip).unwrap());
-                let options =
-                    SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
                 for i in 0..ROUNDTRIP_ENTRIES {
                     writer
-                        .start_file(format!("entry_{i}.dat"), options)
+                        .start_file(format!("entry_{i}.dat"), options.clone())
                         .unwrap();
                     writer.write_all(&roundtrip_payload).unwrap();
                 }
@@ -361,17 +358,15 @@ mod benches {
             // ============================================================================
             let path_deflate_write = p("deflate_write.zip");
             let deflate_payload = seeded_random_bytes(2048);
-
+            let options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Deflated);
             c.bench_function("write_deflated_entries", |b| {
                 b.iter(|| {
                     let mut writer = ZipWriter::new(fs::File::create(&path_deflate_write).unwrap());
 
-                    let options = SimpleFileOptions::default()
-                        .compression_method(CompressionMethod::Deflated);
-
                     for i in 0..20 {
                         writer
-                            .start_file(format!("deflated_{i}.dat"), options)
+                            .start_file(format!("deflated_{i}.dat"), options.clone())
                             .unwrap();
                         writer.write_all(&deflate_payload).unwrap();
                     }
