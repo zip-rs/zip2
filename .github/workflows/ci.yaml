@@ -46,6 +46,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-nextest*
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-
       - name: Install cross compiler and Rust toolchains in parallel
         shell: bash
         run: |
@@ -59,7 +65,7 @@ jobs:
             rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu &&
             rustup target add s390x-unknown-linux-gnu --toolchain stable-s390x-unknown-linux-gnu &&
             rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri &&
-            cargo install --locked cargo-nextest
+            bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
           ) &
           wait -n
           first_status=$?
@@ -184,7 +190,13 @@ jobs:
         run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
         run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-      - run: cargo install --locked cargo-nextest
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-nextest*
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
       - name: test
         run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
   style_and_docs:
@@ -301,7 +313,14 @@ jobs:
             ${{ runner.os }}-target-${{ matrix.rust }}-
       - name: Check that the benches can be built
         run: cargo build --benches
-      - run: cargo test --manifest-path ${{ github.workspace }}/Cargo.toml --all --lib --bins --tests --examples ${{ matrix.feature.flags }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-nextest*
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+      - run: cargo nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --all --lib --bins --tests --examples ${{ matrix.feature.flags }}
   check_fuzz:
     timeout-minutes: 10
     needs:
@@ -507,7 +526,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ matrix.feature.key }}-
             ${{ runner.os }}-fuzz-${{ matrix.target }}-
-      - run: bash .github/scripts/install-cargo-afl.sh
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
       - run: cargo afl build --release ${{ matrix.feature.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - run: fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 fuzz/${{ matrix.target }}/in fuzz/${{ matrix.target }}/regressions
@@ -550,7 +569,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-read-all-features-
             ${{ runner.os }}-fuzz-read-
-      - run: bash .github/scripts/install-cargo-afl.sh
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
 
       - name: cargo afl system-config
         run: cargo afl system-config
@@ -648,7 +667,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-read-no-default-features-
             ${{ runner.os }}-fuzz-read-
-      - run: bash .github/scripts/install-cargo-afl.sh
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
@@ -738,7 +757,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-write-all-features-
             ${{ runner.os }}-fuzz-write-
-      - run: bash .github/scripts/install-cargo-afl.sh
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
@@ -835,7 +854,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-write-no-default-features-
             ${{ runner.os }}-fuzz-write-
-      - run: bash .github/scripts/install-cargo-afl.sh
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       - name: cargo afl system-config
         run: cargo afl system-config
       - name: clippy
