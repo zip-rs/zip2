@@ -80,7 +80,10 @@ jobs:
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-nextest*
+          path: |
+            ~/.cargo/bin/cargo-nextest*
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
@@ -214,7 +217,10 @@ jobs:
         run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-nextest*
+          path: |
+            ~/.cargo/bin/cargo-nextest*
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
@@ -343,7 +349,10 @@ jobs:
         run: cargo build --benches
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cargo/bin/cargo-nextest*
+          path: |
+            ~/.cargo/bin/cargo-nextest*
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
