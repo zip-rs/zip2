@@ -372,7 +372,10 @@ jobs:
       - dependency_review
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        runner:
+          - { alias: windows-latest, id: windows-latest }
+          - { alias: macOS-latest, id: macOS-latest }
+          - { alias: ubuntu-latest, id: "${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}" }
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: default, flags: "" }
@@ -385,8 +388,8 @@ jobs:
             rust: stable
           - rustalias: nightly
             rust: nightly
-    name: "Build and test ${{ matrix.feature.flags }} fuzz/Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
-    runs-on: ${{ matrix.os }}
+    name: "Build and test ${{ matrix.feature.flags }} fuzz/Cargo.toml: ${{ matrix.runner.alias }}, ${{ matrix.rustalias }}"
+    runs-on: ${{ matrix.runner.id }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
