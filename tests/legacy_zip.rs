@@ -54,9 +54,10 @@ fn decompress_shrink_full_code_table() {
         content.reserve(EXPECTED_SIZE);
     }
 
-    let amount_read = amount_read as usize + file
-        .read_to_end(&mut content)
-        .expect("couldn't read shrunk file");
+    let amount_read = amount_read as usize
+        + file
+            .read_to_end(&mut content)
+            .expect("couldn't read shrunk file");
     assert_eq!(amount_read, EXPECTED_SIZE);
 
     let content = String::from_utf8(content).expect("invalid UTF-8");
