@@ -177,7 +177,7 @@ jobs:
       matrix:
         # Only check minimal versions for the released library.
         workspace: ["Cargo.toml"]
-    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS_PTRACE || 'ubuntu-latest' }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -196,6 +196,7 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - run: sudo sysctl -w kernel.yama.ptrace_scope=0
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -301,7 +302,7 @@ jobs:
         runner:
           - { alias: windows-latest, id: windows-latest }
           - { alias: macOS-latest, id: macOS-latest }
-          - { alias: ubuntu-latest, id: "${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}" }
+          - { alias: ubuntu-latest, id: "${{ vars.LINUX_RUNNER_CI_UNIT_TESTS_PTRACE || 'ubuntu-latest' }}" }
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: default, flags: "" }
@@ -335,6 +336,7 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - run: sudo sysctl -w kernel.yama.ptrace_scope=0
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
