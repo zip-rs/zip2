@@ -21,9 +21,7 @@ pub fn seeded_random_bytes(size: usize) -> Box<[u8]> {
         z ^= z >> 31;
 
         let bytes = z.to_le_bytes();
-        for (i, b) in chunk.iter_mut().enumerate() {
-            *b = bytes[i];
-        }
+        chunk.copy_from_slice(&bytes);
     }
 
     out
@@ -57,11 +55,11 @@ pub fn generate_random_archive_merge(
     options: SimpleFileOptions,
 ) -> ZipResult<(usize, Vec<u8>)> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let bytes = seeded_random_bytes(entry_size);
+    let bytes = seeded_random_bytes(entry_size * num_entries);
 
-    for i in 0..num_entries {
+    for (i, file) in bytes.chunks_exact(entry_size).enumerate() {
         writer.start_file(format!("random{i}.dat"), options)?;
-        writer.write_all(&bytes)?;
+        writer.write_all(&file)?;
     }
 
     let bytes = writer.finish()?.into_inner();
