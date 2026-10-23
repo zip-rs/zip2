@@ -1,0 +1,9 @@
+[package]
+name = "cargo-nextest-version"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Dependabot tracks this pin; the workflow install script reads it.
+[dev-dependencies]
+cargo-nextest = "=0.9.114"
