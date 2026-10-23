@@ -569,7 +569,7 @@ jobs:
         run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
@@ -664,7 +664,7 @@ jobs:
         run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/read/in -o out -V ${{ env.FUZZ_SECONDS }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
@@ -756,7 +756,7 @@ jobs:
         run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
@@ -851,7 +851,7 @@ jobs:
         run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/write/in -o out -V ${{ env.FUZZ_SECONDS }} -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
       - name: Report coverage
         run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - run: sudo apt install rename
+      - run: sudo apt-get install rename
         if: always()
       - name: Rename files
         if: always()
