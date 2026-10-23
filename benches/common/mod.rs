@@ -21,7 +21,7 @@ pub fn seeded_random_bytes(size: usize) -> Box<[u8]> {
         z ^= z >> 31;
 
         let bytes = z.to_le_bytes();
-        chunk.copy_from_slice(&bytes);
+        chunk.copy_from_slice(&bytes[..chunk.len()]);
     }
 
     out
