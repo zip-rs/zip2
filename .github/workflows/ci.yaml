@@ -112,7 +112,7 @@ jobs:
     - cargo_fmt
     timeout-minutes: 20
     name: "BSD checks"
-    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
