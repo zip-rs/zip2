@@ -24,7 +24,7 @@ permissions:
 jobs:
   analysis:
     name: Scorecard analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
     permissions:
       # Needed to upload the results to code-scanning dashboard.
       security-events: write

@@ -20,7 +20,7 @@ jobs:
     if: |
       startsWith(github.base_ref, 'release-plz-') ||
       contains(join(github.event.pull_request.changed_files, ','), '.github/workflows/cargo_hack.yml')
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1

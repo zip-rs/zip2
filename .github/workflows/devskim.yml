@@ -26,7 +26,7 @@ permissions:  # added using https://github.com/step-security/secure-repo
 jobs:
   lint:
     name: DevSkim
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
     permissions:
       actions: read
       contents: read

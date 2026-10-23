@@ -12,7 +12,7 @@ permissions:  # added using https://github.com/step-security/secure-repo
 jobs:
   release-plz-release:
     name: Release-plz release
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
     if: ${{ github.repository_owner == 'zip-rs' }}
     permissions:
       contents: write
@@ -45,7 +45,7 @@ jobs:
 
   release-plz-pr:
     name: Release-plz PR
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
     if: ${{ github.repository_owner == 'zip-rs' }}
     permissions:
       pull-requests: write
