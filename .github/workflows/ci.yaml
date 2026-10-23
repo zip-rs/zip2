@@ -301,7 +301,7 @@ jobs:
         runner:
           - { alias: windows-latest, id: windows-latest }
           - { alias: macOS-latest, id: macOS-latest }
-          - { alias: ubuntu-latest, id: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }} }
+          - { alias: ubuntu-latest, id: "${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}" }
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: default, flags: "" }
