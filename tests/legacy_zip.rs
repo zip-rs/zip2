@@ -37,17 +37,24 @@ fn decompress_shrink_full_code_table() {
     const EXPECTED_SIZE: usize = 26001;
     let mut content = Vec::new();
     let mut amount_read = 0;
-    #[cfg(miri)] {
+    #[cfg(miri)]
+    {
         const DISCARDED_SIZE: usize = 25393;
         content.reserve(EXPECTED_SIZE - DISCARDED_SIZE);
-        amount_read = std::io::copy(&mut file.by_ref().take(DISCARDED_SIZE as u64), &mut io::sink()).expect("couldn't discard start of file") as usize;
+        amount_read = std::io::copy(
+            &mut file.by_ref().take(DISCARDED_SIZE as u64),
+            &mut io::sink(),
+        )
+        .expect("couldn't discard start of file") as usize;
         assert_eq!(amount_read, DISCARDED_SIZE);
     }
-    #[cfg(not(miri))] {
+    #[cfg(not(miri))]
+    {
         content.reserve(EXPECTED_SIZE);
     }
 
-    amount_read += file.read_to_end(&mut content)
+    amount_read += file
+        .read_to_end(&mut content)
         .expect("couldn't read shrunk file");
     assert_eq!(amount_read, EXPECTED_SIZE);
 
