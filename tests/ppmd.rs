@@ -13,7 +13,7 @@ const LEVEL: i64 = 9;
 const LEVEL: i64 = 1;
 
 #[test]
-fn decompress_ppmd_slow_in_miri() {
+fn decompress_ppmd() {
     let mut v = Vec::new();
     v.extend_from_slice(include_bytes!("data/ppmd.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("could not open test zip file");
@@ -32,7 +32,7 @@ fn decompress_ppmd_slow_in_miri() {
 }
 
 #[test]
-fn compress_ppmd_slow_in_miri() {
+fn compress_ppmd() {
     let file_name: &str = "test.txt";
 
     let cursor = {

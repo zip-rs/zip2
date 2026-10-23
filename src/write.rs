@@ -3370,10 +3370,15 @@ mod tests {
     #[cfg(feature = "deflate-zopfli")]
     #[test]
     fn zopfli_empty_write() -> ZipResult<()> {
+        #[cfg(not(miri))]
+        const LEVEL: i64 = 264;
+        #[cfg(miri)]
+        const LEVEL: i64 = 12;
+
         let mut options = SimpleFileOptions::default();
         options = options
             .compression_method(CompressionMethod::default())
-            .compression_level(Some(264));
+            .compression_level(Some(LEVEL));
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         writer.start_file("", options).unwrap();
         writer.write_all(&[]).unwrap();

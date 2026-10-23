@@ -307,10 +307,10 @@ jobs:
           - { key: no-default-features, flags: "--no-default-features" }
         rustalias: [msrv, stable, nightly]
         include:
-          - rustalias: stable
-            rust: stable
           - rustalias: msrv
             rust: "1.88.0"
+          - rustalias: stable
+            rust: stable
           - rustalias: nightly
             rust: nightly
     name: "Build and test ${{ matrix.feature.flags }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"

@@ -27,7 +27,7 @@ fn decompress_shrink() {
 /// The content is the first 26001 bytes of `seq 1 60000` (the numbers 1, 2, ... one per line):
 /// the smallest prefix whose stream needs code 8191.
 #[test]
-fn decompress_shrink_full_code_table_slow_in_miri() {
+fn decompress_shrink_full_code_table() {
     let mut archive = ZipArchive::new(io::Cursor::new(include_bytes!(
         "data/legacy/shrink_full_table.zip"
     )))
@@ -35,18 +35,35 @@ fn decompress_shrink_full_code_table_slow_in_miri() {
     let mut file = archive.by_index(0).expect("couldn't find file in archive");
 
     const EXPECTED_SIZE: usize = 26001;
-    let mut content = Vec::with_capacity(EXPECTED_SIZE);
-    file.read_to_end(&mut content)
+    let mut content = Vec::new();
+    let mut amount_read = 0;
+    #[cfg(miri)] {
+        const DISCARDED_SIZE: usize = 25393;
+        content.reserve(EXPECTED_SIZE - DISCARDED_SIZE);
+        amount_read = std::io::copy(&mut file.by_ref().take(DISCARDED_SIZE as u64), &mut io::sink()).expect("couldn't discard start of file") as usize;
+        assert_eq!(amount_read, DISCARDED_SIZE);
+    }
+    #[cfg(not(miri))] {
+        content.reserve(EXPECTED_SIZE);
+    }
+
+    amount_read += file.read_to_end(&mut content)
         .expect("couldn't read shrunk file");
+    assert_eq!(amount_read, EXPECTED_SIZE);
 
     let content = String::from_utf8(content).expect("invalid UTF-8");
-    assert_eq!(content.len(), EXPECTED_SIZE);
-    for (n, line) in content.lines().take(5421).enumerate() {
+    #[cfg(miri)]
+    let line_offset = 5300;
+    #[cfg(not(miri))]
+    let line_offset = 0;
+    let lines = content.lines().take(5421 - line_offset).enumerate();
+
+    for (n, line) in lines {
         assert_eq!(
-            n + 1,
+            n + line_offset + 1,
             line.parse::<usize>().unwrap(),
             "line {}: {}",
-            n + 1,
+            n + line_offset + 1,
             line
         );
     }
