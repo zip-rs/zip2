@@ -392,7 +392,9 @@ mod benches {
     criterion_group!(benches, criterion_benchmark);
 }
 #[cfg(not(any(miri, target_arch = "wasm32")))]
-criterion::criterion_main!(benches::merge_archive_benches, benches::benches);
+use benches::{benches, merge_archive_benches};
+#[cfg(not(any(miri, target_arch = "wasm32")))]
+criterion::criterion_main!(merge_archive_benches, benches);
 #[cfg(any(miri, target_arch = "wasm32"))]
 fn main() {
     eprintln!("file_io cannot run on miri or wasm32 targets; skipping it");
