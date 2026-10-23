@@ -36,14 +36,14 @@ jobs:
           - { key: miri-compatible, flags: "--no-default-features --features zip/_miri_compatible_features" }
           - { key: no-default-features, flags: "--no-default-features" }
     name: "Miri ${{ matrix.feature.key }} Cargo.toml"
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - name: Install cross compiler and Rust toolchains in parallel
@@ -112,14 +112,14 @@ jobs:
     - cargo_fmt
     timeout-minutes: 20
     name: "BSD checks"
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup target add x86_64-unknown-freebsd
@@ -177,7 +177,7 @@ jobs:
       matrix:
         # Only check minimal versions for the released library.
         workspace: ["Cargo.toml"]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -185,7 +185,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
@@ -245,7 +245,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -282,7 +282,7 @@ jobs:
             api.deps.dev:443
             api.securityscorecards.dev:443
       - name: 'Checkout Repository'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - name: 'Dependency Review'
@@ -298,7 +298,10 @@ jobs:
       - dependency_review
     strategy:
       matrix:
-        os: [windows-latest, macOS-latest, ubuntu-latest]
+        runner:
+          - { alias: windows-latest, id: windows-latest },
+          - { alias: macOS-latest, id: macOS-latest },
+          - { alias: ubuntu-latest, id: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }} },
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: default, flags: "" }
@@ -313,15 +316,15 @@ jobs:
             rust: "1.88.0"
           - rustalias: nightly
             rust: nightly
-    name: "Build and test ${{ matrix.feature.flags }} Cargo.toml: ${{ matrix.os }}, ${{ matrix.rustalias }}"
-    runs-on: ${{ matrix.os }}
+    name: "Build and test ${{ matrix.feature.flags }} Cargo.toml: ${{ matrix.runner.alias }}, ${{ matrix.rustalias }}"
+    runs-on: ${{ matrix.runner.id }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
@@ -389,7 +392,7 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
@@ -456,7 +459,7 @@ jobs:
             rust: stable
           - rustalias: nightly
             rust: nightly
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -465,7 +468,7 @@ jobs:
       - name: Conditionally set env
         if: matrix.browser_flags != '--node' # if browser testing
         run: echo "WASM_BINDGEN_USE_BROWSER=1" >> $GITHUB_ENV
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -514,7 +517,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
@@ -529,7 +532,7 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
@@ -551,7 +554,7 @@ jobs:
           - { key: no-default-features, flags: "--no-default-features" }
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly
@@ -592,7 +595,7 @@ jobs:
       - run: fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 fuzz/${{ matrix.target }}/in fuzz/${{ matrix.target }}/regressions
 
   fuzz_read:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
     needs:
       - build_and_test
       - wasm
@@ -603,7 +606,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -698,7 +701,7 @@ jobs:
           path: map
 
   fuzz_read_with_no_features:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
     needs:
       - build_and_test
       - wasm
@@ -709,7 +712,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -795,7 +798,7 @@ jobs:
           path: map
 
   fuzz_write:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
     needs:
       - build_and_test
       - wasm
@@ -806,7 +809,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
@@ -900,7 +903,7 @@ jobs:
           path: map
 
   fuzz_write_with_no_features:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
     needs:
       - build_and_test
       - wasm
@@ -911,7 +914,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
       - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
