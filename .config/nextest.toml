@@ -1,0 +1,6 @@
+[profile.default-miri]
+slow-timeout = { period = "1m", terminate-after = 2 }
+
+[[profile.default-miri.overrides]]
+filter = "test(slow_in_miri)"
+slow-timeout = "5m"
