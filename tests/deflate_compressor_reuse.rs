@@ -23,6 +23,18 @@ fn count(size: usize) {
     let _ = ALLOCATED.try_with(|a| a.set(a.get() + size as u64));
 }
 
+#[cfg(not(miri))]
+const ENTRIES: usize = 100;
+
+#[cfg(miri)]
+const ENTRIES: usize = 10;
+
+#[cfg(not(miri))]
+const RUN_LENGTH: usize = 16384;
+
+#[cfg(miri)]
+const RUN_LENGTH: usize = 128;
+
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         count(layout.size());
@@ -58,7 +70,7 @@ fn write_archive(entries: usize, options: SimpleFileOptions) -> Vec<u8> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::with_capacity(1 << 20)));
     for i in 0..entries {
         zip.start_file(format!("{i}.txt"), options).unwrap();
-        zip.write_all(&entry_data(i, 1024)).unwrap();
+        zip.write_all(&entry_data(i, RUN_LENGTH)).unwrap();
     }
     zip.finish().unwrap().into_inner()
 }
@@ -74,9 +86,9 @@ fn deflate_compressor_is_reused_across_entries() {
     let _ = write_archive(2, options);
     let small = allocated() - before;
     let before = allocated();
-    let _ = write_archive(102, options);
+    let _ = write_archive(ENTRIES, options);
     let large = allocated() - before;
-    let per_entry = (large - small) / 100;
+    let per_entry = (large - small) / (ENTRIES as u64 - 2);
     // A fresh zlib-rs/miniz_oxide compressor costs well over 200 KiB; per-entry bookkeeping
     // (names, metadata, central directory growth) is a few KiB.
     assert!(
@@ -153,7 +165,7 @@ fn round_trip_mixed_encryption(plan: &[(SimpleFileOptions, bool)]) {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for (i, (options, _)) in plan.iter().enumerate() {
         zip.start_file(format!("{i}"), *options).unwrap();
-        zip.write_all(&entry_data(i, 20_000)).unwrap();
+        zip.write_all(&entry_data(i, RUN_LENGTH)).unwrap();
     }
     let bytes = zip.finish().unwrap().into_inner();
 
@@ -169,7 +181,7 @@ fn round_trip_mixed_encryption(plan: &[(SimpleFileOptions, bool)]) {
         } else {
             archive.by_index(i).unwrap().read_to_end(&mut out).unwrap();
         }
-        assert_eq!(out, entry_data(i, 20_000), "entry {i}");
+        assert_eq!(out, entry_data(i, RUN_LENGTH), "entry {i}");
     }
 }
 
