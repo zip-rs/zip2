@@ -233,6 +233,19 @@ impl<R: Read> ZipStreamReader<R> {
                 }
             }
             if self.enforce_header_consistency {
+                // The ZIP central directory may end with one optional digital-signature
+                // record. It is part of the declared central-directory size. Skip its
+                // opaque bytes without trusting or allocating from them, then validate
+                // the footer at its actual position.
+                if Magic::from_le_bytes(signature) == Magic::CENTRAL_DIRECTORY_DIGITAL_SIGNATURE {
+                    let mut len = [0u8; 2];
+                    reader.read_exact(&mut len)?;
+                    let len = u64::from(u16::from_le_bytes(len));
+                    if io::copy(&mut (&mut reader).take(len), &mut io::sink())? != len {
+                        return Err(invalid!("Truncated central directory digital signature"));
+                    }
+                    reader.read_exact(&mut signature)?;
+                }
                 let central_size = reader.count - 4 - central_start;
                 footer = Some((signature, central_start, central_size, reader.count - 4));
             }

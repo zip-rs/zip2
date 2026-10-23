@@ -13,6 +13,8 @@ impl Magic {
     pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: Self = Self::literal(0x0201_4b50);
     /// Central directory end signature
     pub const CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0605_4b50);
+    /// Optional central directory digital signature record
+    pub const CENTRAL_DIRECTORY_DIGITAL_SIGNATURE: Self = Self::literal(0x0505_4b50);
     /// Zip64 central directory signature
     pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE: Self = Self::literal(0x0606_4b50);
     /// Zip64 central directory end locator signature
