@@ -5042,6 +5042,13 @@ mod tests {
 
         // A vendor ID the reader doesn't interpret is still stored verbatim.
         validated.add_extra_field(0xbeef, [28], false)?;
+        // Extended timestamps use different parsing rules in local and central headers.
+        validated.add_extra_field(0x5455, [1, 1, 0, 0, 0, 2, 0, 0, 0], true)?;
+        assert!(
+            validated
+                .add_extra_field(0x5455, [1, 1, 0, 0, 0, 2, 0, 0, 0], false)
+                .is_err()
+        );
         writer.start_file("b", validated)?;
         let mut archive = ZipArchive::new(writer.finish()?)?;
         assert_eq!(archive.len(), 1);

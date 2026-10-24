@@ -1,5 +1,6 @@
 //! Write Options
 
+use crate::extra_fields::ExtendedTimestamp;
 use core::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -169,7 +170,7 @@ impl ExtendedFileOptions {
     /// Whether the reader's own extra-field parser accepts this field in every header it will be
     /// written to (local and central, or central only).
     pub(crate) fn extra_field_parses(header_id: u16, data: &[u8], central_only: bool) -> bool {
-        use crate::extra_fields::ExtraField;
+        use crate::extra_fields::{ExtraField, UsedExtraField};
         use crate::format::blocks::{Pod, ZipLocalEntryBlock};
         use std::io::Cursor;
 
@@ -181,9 +182,13 @@ impl ExtendedFileOptions {
         serialized.extend_from_slice(&size.to_le_bytes());
         serialized.extend_from_slice(data);
         let block = ZipLocalEntryBlock::zeroed();
-        ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_ok()
-            && (central_only
-                || ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_ok())
+        if ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_err() {
+            return false;
+        }
+        // Only extended timestamps interpret their payload differently in local and central headers.
+        central_only
+            || header_id != UsedExtraField::ExtendedTimestamp.as_u16()
+            || ExtendedTimestamp::try_from_reader(&mut Cursor::new(data), size, true).is_ok()
     }
 
     /// Adds an extra field, unless we detect that it's invalid.
