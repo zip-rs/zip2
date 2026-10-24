@@ -296,6 +296,7 @@ jobs:
       - check_minimal_versions
       - cargo_semver
       - dependency_review
+    if: needs.dependency_review.result == 'success' || needs.dependency_review.result == 'skipped'
     strategy:
       matrix:
         runner:
@@ -370,6 +371,7 @@ jobs:
       - style_and_docs
       - cargo_semver
       - dependency_review
+    if: needs.dependency_review.result == 'success' || needs.dependency_review.result == 'skipped'
     strategy:
       matrix:
         runner:
