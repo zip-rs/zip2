@@ -1,5 +1,8 @@
 //! Tests related to big zip file
 
+// Only on native because we cannot use fs with miri CI
+#![cfg(not(miri))]
+
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
 const DENSE_SEGMENT_START_INTERVAL: u64 = (1 << 30) - 1024;
@@ -336,8 +339,6 @@ fn test_append_near_4gb_with_1gb_files() {
 }
 
 // A smaller test that doesn't create a 4GB file but still tests the logic
-// Only on native because we cannot use fs with miri CI
-#[cfg(not(miri))]
 #[test]
 fn test_append_with_large_file_flag() {
     use std::fs::File;
