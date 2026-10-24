@@ -1,8 +1,8 @@
 #![cfg(feature = "_deflate-any")]
 use std::io::{Cursor, Write};
+use zip::result::ZipResult;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
-use zip::result::ZipResult;
 
 fn local_zip64_sizes(bytes: &[u8]) -> (u64, u64) {
     let name_len = u16::from_le_bytes([bytes[26], bytes[27]]) as usize;
@@ -27,13 +27,18 @@ fn test_issue1122() -> ZipResult<()> {
     let file = w.finish().unwrap().into_inner();
 
     // Directory entry has no content, but file entry has an empty DEFLATE block.
-    for (label, bytes, expected_compressed_size) in [("directory", dir, 0), ("empty file", file, 2)] {
+    for (label, bytes, expected_compressed_size) in [("directory", dir, 0), ("empty file", file, 2)]
+    {
         let (u, c) = local_zip64_sizes(&bytes);
         println!("{label}: local ZIP64 extra uncompressed={u:#x} compressed={c:#x}");
         let mut a = ZipArchive::new(Cursor::new(bytes)).unwrap();
         let f = a.by_index(0).unwrap();
         assert_eq!(0, f.size(), "{label}: uncompressed size");
-        assert_eq!(expected_compressed_size, f.compressed_size(), "{label}: compressed size");
+        assert_eq!(
+            expected_compressed_size,
+            f.compressed_size(),
+            "{label}: compressed size"
+        );
     }
     Ok(())
 }
