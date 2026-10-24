@@ -729,6 +729,18 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
             language_encoding: None,
         });
+        if options.extended_options.validate_extra_fields()
+            && let Some(extra_fields) = options.extended_options.extra_fields()
+        {
+            for x in extra_fields.iter() {
+                if !ExtendedFileOptions::extra_field_parses(x.header_id, &x.data, x.central_only) {
+                    return Err(invalid!(
+                        "Extra field {:#06x} would not be readable: malformed data",
+                        x.header_id
+                    ));
+                }
+            }
+        }
         let extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
@@ -2237,6 +2249,7 @@ impl ZipFileBuilder {
                     .cloned()
                     .unwrap_or_default(),
                 file_comment: options.extended_options.take_file_comment(),
+                validate_extra_fields: options.extended_options.validate_extra_fields(),
             },
             alignment: options.alignment,
             #[cfg(feature = "deflate-zopfli")]
@@ -2876,6 +2889,7 @@ mod tests {
         let options = FileOptions {
             extended_options: ExtendedFileOptions {
                 file_comment: Some("file comment".into()),
+                validate_extra_fields: false,
                 ..Default::default()
             },
 
@@ -2889,6 +2903,7 @@ mod tests {
         let options2 = FileOptions {
             extended_options: ExtendedFileOptions {
                 file_comment: Some("file2 comment".into()),
+                validate_extra_fields: false,
                 ..Default::default()
             },
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
@@ -3547,7 +3562,11 @@ mod tests {
                 permissions: None,
                 large_file: false,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions::default(),
+                extended_options: ExtendedFileOptions {
+                    extra_fields: vec![].into(),
+                    file_comment: None,
+                    validate_extra_fields: false,
+                },
                 alignment: 2048,
                 ..Default::default()
             };
@@ -3600,6 +3619,8 @@ mod tests {
                     .unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 32787,
@@ -3623,6 +3644,8 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[1, 41, 4, 0, 1, 255, 245, 117]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 4103,
@@ -3776,6 +3799,8 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[0, 0, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -3855,6 +3880,8 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[38, 251, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -3894,6 +3921,8 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[67, 149, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -4031,6 +4060,8 @@ mod tests {
                                                     .unwrap(),
                                                 ]
                                                 .into(),
+                                                file_comment: None,
+                                                validate_extra_fields: false,
                                                 ..Default::default()
                                             },
                                             alignment: 0xFFFF,
@@ -4315,6 +4346,8 @@ mod tests {
                                 CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
                             ]
                             .into(),
+                            file_comment: None,
+                            validate_extra_fields: false,
                             ..Default::default()
                         },
                         alignment: 1542,
@@ -4530,6 +4563,7 @@ mod tests {
                 ]
                 .into(),
                 file_comment: None,
+                validate_extra_fields: false,
             },
             alignment: 90,
             name: Some(&[]),
@@ -4581,6 +4615,8 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -4643,6 +4679,8 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[2, 61, 0, 0])?,
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -4825,6 +4863,8 @@ mod tests {
                         .unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 4103,
@@ -4854,6 +4894,8 @@ mod tests {
                         .unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 4103,
@@ -4889,19 +4931,33 @@ mod tests {
         Ok(())
     }
 
-    /// A malformed Info-ZIP Unicode Path field used to be accepted and written, producing an
-    /// archive that `ZipArchive` and `ZipWriter::new_append` then refused to open.
+    /// A malformed Info-ZIP Unicode Path field is written verbatim by default, as before, so
+    /// nobody relying on that breaks; the archive then can't be read back. With
+    /// `validate_extra_fields(true)` it's rejected before anything is written.
     #[test]
-    fn add_extra_field_rejects_fields_the_reader_cannot_parse() -> ZipResult<()> {
-        let mut options = FullFileOptions::default();
+    fn validate_extra_fields_is_opt_in() -> ZipResult<()> {
         // 0x7075 needs at least a version byte and a CRC-32 (5 bytes).
-        assert!(options.add_extra_field(0x7075, [28], true).is_err());
-        assert!(options.add_extra_field(0x7075, [28], false).is_err());
-        // A vendor ID the reader doesn't interpret is still stored verbatim.
-        options.add_extra_field(0xbeef, [28], false)?;
-
+        let mut options = FullFileOptions::default();
+        options.add_extra_field(0x7075, [28], true)?;
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.start_file("a", options)?;
+        writer.start_file("a", options.clone())?;
+        assert!(ZipArchive::new(writer.finish()?).is_err());
+
+        // Opted in: rejected by add_extra_field ...
+        let mut validated = FullFileOptions::default().validate_extra_fields(true);
+        assert!(validated.add_extra_field(0x7075, [28], true).is_err());
+        assert!(validated.add_extra_field(0x7075, [28], false).is_err());
+        // ... and by start_file, if it was added before opting in.
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        assert!(
+            writer
+                .start_file("a", options.validate_extra_fields(true))
+                .is_err()
+        );
+
+        // A vendor ID the reader doesn't interpret is still stored verbatim.
+        validated.add_extra_field(0xbeef, [28], false)?;
+        writer.start_file("b", validated)?;
         let mut archive = ZipArchive::new(writer.finish()?)?;
         assert_eq!(archive.len(), 1);
         drop(archive.by_index(0)?);
