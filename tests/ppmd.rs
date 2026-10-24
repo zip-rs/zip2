@@ -6,8 +6,14 @@ use zip::{CompressionMethod, ZipArchive};
 
 const IPSUM: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n";
 
+#[cfg(not(miri))]
+const LEVEL: i64 = 9;
+
+#[cfg(miri)]
+const LEVEL: i64 = 1;
+
 #[test]
-fn decompress_ppmd() {
+fn decompress_ppmd_slow_in_miri() {
     let mut v = Vec::new();
     v.extend_from_slice(include_bytes!("data/ppmd.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("could not open test zip file");
@@ -26,7 +32,7 @@ fn decompress_ppmd() {
 }
 
 #[test]
-fn compress_ppmd() {
+fn compress_ppmd_slow_in_miri() {
     let file_name: &str = "test.txt";
 
     let cursor = {
@@ -35,7 +41,7 @@ fn compress_ppmd() {
             file_name,
             SimpleFileOptions::default()
                 .compression_method(CompressionMethod::Ppmd)
-                .compression_level(Some(9)),
+                .compression_level(Some(LEVEL)),
         )
         .unwrap();
         zip.write_all(IPSUM.as_bytes()).unwrap();

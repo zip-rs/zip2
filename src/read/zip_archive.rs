@@ -578,11 +578,17 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by name
+    /// First try to get the index by the name as a binary representation of the name. If not found,
+    /// try to find the name with the decoded version of the name. This is a fallback for name
+    /// encoded with CP437.
     pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile<'_, R>> {
         self.by_name_with_optional_password(name, None)
     }
 
     /// Get the index of a file entry by name, if it's present.
+    /// First try to get the index by the name as a binary representation of the name. If not found,
+    /// try to find the name with the decoded version of the name. This is a fallback for name
+    /// encoded with CP437.
     #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
         self.shared.files.get_index_of(name.as_bytes()).or_else(|| {
@@ -1140,34 +1146,57 @@ mod tests {
         assert_eq!(file.read(&mut decompressed).unwrap(), 12);
     }
 
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
     #[test]
-    fn test_central_directory_not_at_end() {
+    fn test_central_directory_before_file_data() {
         use super::ZipArchive;
+        use crate::CompressionMethod;
+        use crate::read::{ArchiveOffset, Config};
+        use crate::write::{SimpleFileOptions, ZipWriter};
         use std::io::Cursor;
-        use std::io::Read;
+        use std::io::{Read, Write};
 
-        let mut reader =
-            ZipArchive::new(Cursor::new(include_bytes!("../../tests/data/omni.ja"))).unwrap();
-        let mut file = reader.by_name("chrome.manifest").unwrap();
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).unwrap(); // ensures valid UTF-8
-        assert!(!contents.is_empty(), "chrome.manifest should not be empty");
-        drop(file);
-        for i in 0..reader.len() {
-            let mut file = reader.by_index(i).unwrap();
-            // Attempt to read a small portion or all of each file to ensure it's accessible
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).unwrap();
-            let file_name = file.name().unwrap();
-            assert_eq!(
-                buffer.len(),
-                file.size() as usize,
-                "File size mismatch for {}",
-                file_name
-            );
-        }
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "payload.txt",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(b"optimized layout").unwrap();
+        let normal = writer.finish().unwrap().into_inner();
+
+        // Move the central directory before the local header and its data.
+        // The EOCD remains at the end, as in Firefox's optimized ZIP layout.
+        let end_start = normal.len() - 22;
+        let central_start =
+            u32::from_le_bytes(normal[end_start + 16..end_start + 20].try_into().unwrap()) as usize;
+        let mut central = normal[central_start..end_start].to_vec();
+        let local = &normal[..central_start];
+        let mut end = normal[end_start..].to_vec();
+        assert_eq!(&central[..4], b"PK\x01\x02");
+        assert_eq!(&local[..4], b"PK\x03\x04");
+        let central_len = u32::try_from(central.len()).unwrap();
+        central[42..46].copy_from_slice(&central_len.to_le_bytes());
+        end[16..20].copy_from_slice(&0u32.to_le_bytes());
+        let optimized = [central.as_slice(), local, end.as_slice()].concat();
+        assert_eq!(&optimized[..4], b"PK\x01\x02");
+        assert_eq!(&optimized[central.len()..central.len() + 4], b"PK\x03\x04");
+
+        let mut archive = ZipArchive::with_config(
+            Config {
+                archive_offset: ArchiveOffset::Known(0),
+            },
+            Cursor::new(optimized),
+        )
+        .unwrap();
+        assert_eq!(archive.len(), 1);
+        let mut payload = String::new();
+        archive
+            .by_name("payload.txt")
+            .unwrap()
+            .read_to_string(&mut payload)
+            .unwrap();
+        assert_eq!(payload, "optimized layout");
     }
 
     #[test]

@@ -1,0 +1,89 @@
+name: Fuzz (scheduled, long)
+permissions:
+  contents: read
+on:
+  schedule:
+    - cron: "17 3 * * *"   # nightly
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Fuzz duration per target"
+        default: "7200"
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: read,  feature: all-features, flags: "--all-features" }
+          - { target: read,  feature: default, flags: "" }
+          - { target: write, feature: all-features, flags: "--all-features", dict: "-x fuzz/write/fuzz.dict" }
+          - { target: write, feature: no-default-features, flags: "--no-default-features", dict: "-x fuzz/write/fuzz.dict" }
+    runs-on: ${{ vars.LINUX_RUNNER_FUZZ_SCHEDULED || 'ubuntu-latest' }}
+    timeout-minutes: 150
+    steps:
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add nightly && rustup default nightly
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-afl
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature }}-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
+      - run: cargo afl system-config
+      - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
+      - name: fuzz
+        env:
+          AFL_NO_UI: 1
+        run: >
+          cargo afl fuzz -t 1000 -i fuzz/${{ matrix.target }}/in -o out
+          -V ${{ inputs.seconds || '7200' }} ${{ matrix.dict }}
+          -- fuzz/target/release/fuzz_${{ matrix.target }}
+      - name: Triage (crashes always fail; hangs only if reproducible at 10 s)
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          c=(out/default/crashes/id*); [ ${#c[@]} -gt 0 ] && { echo "::error::${#c[@]} crashes"; exit 1; }
+          fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 out/default/hangs
+      - run: find out -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
+        if: always()
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fuzz_${{ matrix.target }}_${{ strategy.job-index }}_findings
+          path: |
+            out/default/crashes
+            out/default/hangs
+            out/default/queue
+          if-no-files-found: ignore
+      # Findings are triaged by a human (copy into fuzz/<target>/regressions/ with the fix);
+      # never block the merge queue on a nightly result.

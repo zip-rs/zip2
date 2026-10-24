@@ -136,14 +136,20 @@ fn test_prepared_files_on_threads() {
     use zip::write::SimpleFileOptions;
     use zip::write::ZipFileBuilder;
 
+    #[cfg(not(miri))]
+    const THREADS: u8 = 8;
+
+    #[cfg(miri)]
+    const THREADS: u8 = 2;
+
     // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
     #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
     let compression_method = CompressionMethod::Stored;
     #[cfg(not(all(feature = "deflate-zopfli", not(feature = "deflate-flate2"))))]
     let compression_method = CompressionMethod::default();
 
-    let entries: Vec<(String, Vec<u8>)> = (0..8)
-        .map(|i| (format!("file{i}.bin"), vec![i as u8; 10_000]))
+    let entries: Vec<(String, Vec<u8>)> = (0..THREADS)
+        .map(|i| (format!("file{i}.bin"), vec![i; 10_000]))
         .collect();
 
     let prepared: Vec<_> = std::thread::scope(|scope| {
