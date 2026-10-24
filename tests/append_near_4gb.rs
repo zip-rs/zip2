@@ -1,6 +1,7 @@
 //! Tests related to big zip file
 
-// Only on native because we cannot use fs with miri CI
+// FIXME: 4 of these 5 tests don't use the filesystem, but they're too slow on Miri because of the
+// rposition call in write_to_sparse_vec.
 #![cfg(not(miri))]
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
