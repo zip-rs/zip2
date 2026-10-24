@@ -14,17 +14,29 @@ pub mod tests {
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
         #[cfg(not(all(
             miri,
-            any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")
+            any(
+                feature = "deflate-flate2-zlib-rs",
+                feature = "deflate-flate2-zlib",
+                feature = "deflate-flate2-zlib-ng",
+                feature = "deflate-flate2-zlib-ng-compat"
+            )
         )))]
         let options = SimpleFileOptions::default();
-        // Compression is disabled on Miri with zlib because when it's enabled,
-        // flate2::Decompress::new makes a C
-        // function call (zlibVersion via flate2::ffi::c::c_backend::mz_inflateInit2).
+        // Compression is disabled on Miri for zlib-backed flate2 backends
+        // (zlib-rs / zlib / zlib-ng / zlib-ng-compat) because when it's enabled,
+        // flate2::Decompress::new makes a C function call (zlibVersion via
+        // flate2::ffi::c::c_backend::mz_inflateInit2).
         #[cfg(all(
             miri,
-            any(feature = "deflate-flate2-zlib-rs", feature = "deflate-flate2-zlib")
+            any(
+                feature = "deflate-flate2-zlib-rs",
+                feature = "deflate-flate2-zlib",
+                feature = "deflate-flate2-zlib-ng",
+                feature = "deflate-flate2-zlib-ng-compat"
+            )
         ))]
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         // Create entries with absolute paths to simulate problematic ZIPs; creation is expected to succeed
         writer

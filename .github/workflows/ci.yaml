@@ -166,7 +166,7 @@ jobs:
             exit 1
           fi
           set -e
-      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples
+      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
   check_minimal_versions:
     needs:
       - cargo_semver

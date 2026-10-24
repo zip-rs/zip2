@@ -1,0 +1,179 @@
+//! Criterion benchmarks for ZIP operations using in-memory buffers only.
+//!
+//! Usage:
+//!
+//! ```sh
+//! cargo bench --bench memory
+//! ```
+
+mod common;
+
+use common::{
+    generate_archive_with_comment, generate_random_archive, generate_random_archive_merge,
+    perform_raw_copy_file_by_index, seeded_random_bytes,
+};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
+#[cfg(not(miri))]
+use std::io;
+use std::io::{Cursor, Read, Write};
+use zip::{CompressionMethod, ZipArchive, ZipWriter, result::ZipResult, write::SimpleFileOptions};
+
+fn generate_zip64_archive_with_extensible_data(data_len: usize) -> ZipResult<Vec<u8>> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+    writer.set_raw_zip64_extensible_data_sector(seeded_random_bytes(data_len));
+    writer.start_file("data.txt", options)?;
+    writer.write_all(b"x")?;
+    Ok(writer.finish()?.into_inner())
+}
+
+fn memory_benchmarks(c: &mut Criterion) {
+    c.bench_function("read_entry_in_memory", |b| {
+        let archive_bytes = generate_random_archive(1024 * 1024);
+        b.iter(|| {
+            let mut archive = ZipArchive::new(Cursor::new(archive_bytes.as_slice())).unwrap();
+            let mut file = archive.by_name("random.dat").unwrap();
+            let mut buf = [0u8; 1024];
+            loop {
+                let n = file.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+            }
+            black_box(buf);
+        });
+    });
+
+    #[cfg(not(miri))]
+    {
+        use common::generate_random_archive_meta;
+        struct DecompressionSink(io::Sink);
+        impl Write for DecompressionSink {
+            #[inline(always)]
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                // Enforce that the decompressed buffer contents are "used"
+                let opaque_buf = black_box(buf);
+                self.0.write(opaque_buf)
+            }
+
+            #[inline(always)]
+            fn flush(&mut self) -> io::Result<()> {
+                self.0.flush()
+            }
+        }
+
+        c.bench_function("read_metadata_in_memory", |b| {
+            let archive_bytes = generate_random_archive_meta(15_000, 1024).unwrap();
+            b.iter(|| {
+                black_box(
+                    ZipArchive::new(Cursor::new(archive_bytes.as_slice()))
+                        .unwrap()
+                        .len(),
+                )
+            });
+        });
+
+        let many_entries_count: usize = 100;
+        let many_entries_size: usize = 1024 * 1024;
+        let many_entries =
+            generate_random_archive_meta(many_entries_count, many_entries_size).unwrap();
+        let mut many_entries_group = c.benchmark_group("read_many_entries_memory");
+        let many_entries_throughput_bytes: u64 =
+            (many_entries_count as u64) * (many_entries_size as u64);
+        many_entries_group.throughput(criterion::Throughput::Bytes(many_entries_throughput_bytes));
+        many_entries_group.bench_function("read_all", |b| {
+            b.iter(|| {
+                let mut archive = ZipArchive::new(Cursor::new(many_entries.as_slice())).unwrap();
+                for idx in 0..archive.len() {
+                    let mut entry = archive.by_index(idx).unwrap();
+                    io::copy(&mut entry, &mut DecompressionSink(io::sink())).unwrap();
+                }
+            });
+        });
+        many_entries_group.finish();
+    }
+
+    let comment_archive = generate_archive_with_comment(50_000).unwrap();
+    c.bench_function("parse_archive_with_comment_in_memory", |b| {
+        b.iter(|| {
+            let archive = ZipArchive::new(Cursor::new(comment_archive.as_slice())).unwrap();
+            black_box(archive.comment().len());
+        });
+    });
+
+    let zip64_archive = generate_zip64_archive_with_extensible_data(500_000).unwrap();
+    c.bench_function("parse_zip64_archive_with_extensible_data", |b| {
+        b.iter(|| {
+            let archive = ZipArchive::new(Cursor::new(zip64_archive.as_slice())).unwrap();
+            black_box(archive.raw_zip64_extensible_data_sector().unwrap());
+        });
+    });
+
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let (stored_len, stored_archive) = generate_random_archive_merge(100, 1024, options).unwrap();
+    c.bench_function("merge_archive_stored_in_memory", |b| {
+        b.iter(|| {
+            let src = ZipArchive::new(Cursor::new(stored_archive.as_slice())).unwrap();
+            let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+            zip.merge_archive(src).unwrap();
+            let out = zip.finish().unwrap().into_inner();
+            debug_assert_eq!(out.len(), stored_len);
+            black_box(out);
+        });
+    });
+
+    let (raw_copy_len, raw_copy_archive) =
+        generate_random_archive_merge(100, 1024, options).unwrap();
+    c.bench_function("merge_archive_raw_copy_file_stored_by_index", |b| {
+        b.iter(|| {
+            let src = ZipArchive::new(Cursor::new(raw_copy_archive.as_slice())).unwrap();
+            let zip = ZipWriter::new(Cursor::new(Vec::new()));
+            let out = perform_raw_copy_file_by_index(src, zip)
+                .unwrap()
+                .finish()
+                .unwrap()
+                .into_inner();
+            debug_assert_eq!(out.len(), raw_copy_len);
+            black_box(out);
+        });
+    });
+
+    #[cfg(feature = "_deflate-any")]
+    {
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let (deflated_len, deflated_archive) =
+            generate_random_archive_merge(100, 1024, options).unwrap();
+        c.bench_function("merge_archive_compressed_in_memory", |b| {
+            b.iter(|| {
+                let src = ZipArchive::new(Cursor::new(deflated_archive.as_slice())).unwrap();
+                let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+                zip.merge_archive(src).unwrap();
+                let out = zip.finish().unwrap().into_inner();
+                debug_assert_eq!(out.len(), deflated_len);
+                black_box(out);
+            });
+        });
+
+        let (deflated_raw_len, deflated_raw_archive) =
+            generate_random_archive_merge(100, 1024, options).unwrap();
+        c.bench_function("merge_archive_raw_copy_file_compressed", |b| {
+            b.iter(|| {
+                let src = ZipArchive::new(Cursor::new(deflated_raw_archive.as_slice())).unwrap();
+                let zip = ZipWriter::new(Cursor::new(Vec::new()));
+                let out = perform_raw_copy_file_by_index(src, zip)
+                    .unwrap()
+                    .finish()
+                    .unwrap()
+                    .into_inner();
+                debug_assert_eq!(out.len(), deflated_raw_len);
+                black_box(out);
+            });
+        });
+    }
+}
+
+criterion_group!(benches, memory_benchmarks);
+criterion_main!(benches);
