@@ -3,10 +3,141 @@
 // Only on native because we cannot use fs with miri CI
 #![cfg(not(miri))]
 
-fn write_data(w: &mut dyn std::io::Write, size: usize) -> Result<(), std::io::Error> {
+use std::io::{self, Read, Seek, SeekFrom, Write};
+
+const FOUR_GIB: u64 = 1 << 32;
+
+fn as_usize_clamped(value: u64) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+/// A cursor that omits zero-filled ranges before 4 GiB.
+struct AddressHoleCursor {
+    before_4gib: Vec<u8>,
+    after_4gib: Vec<u8>,
+    position: u64,
+    len: u64,
+}
+
+impl AddressHoleCursor {
+    fn new_at(position: u64) -> Self {
+        Self {
+            before_4gib: Vec::new(),
+            after_4gib: Vec::new(),
+            position,
+            len: 0,
+        }
+    }
+
+    fn read_from_sparse_vec(vec: &[u8], offset: usize, buf: &mut [u8]) {
+        let copied = vec.len().saturating_sub(offset).min(buf.len());
+        if copied > 0 {
+            buf[..copied].copy_from_slice(&vec[offset..offset + copied]);
+        }
+        buf[copied..].fill(0);
+    }
+
+    fn write_to_sparse_vec(vec: &mut Vec<u8>, offset: usize, buf: &[u8]) {
+        let existing = vec.len().saturating_sub(offset).min(buf.len());
+        if existing > 0 {
+            vec[offset..offset + existing].copy_from_slice(&buf[..existing]);
+        }
+
+        if let Some(last_nonzero) = buf.iter().rposition(|byte| *byte != 0) {
+            let end = offset + last_nonzero + 1;
+            vec.resize(vec.len().max(end), 0);
+            vec[offset..end].copy_from_slice(&buf[..=last_nonzero]);
+        }
+    }
+}
+
+impl Read for AddressHoleCursor {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut read = 0;
+
+        while read < buf.len() && self.position < self.len {
+            let count = if self.position < FOUR_GIB {
+                as_usize_clamped(FOUR_GIB - self.position)
+            } else {
+                buf.len() - read
+            };
+            let count = (buf.len() - read)
+                .min(count)
+                .min(as_usize_clamped(self.len - self.position));
+            let (vec, offset) = if self.position < FOUR_GIB {
+                (&self.before_4gib, self.position as usize)
+            } else {
+                (&self.after_4gib, as_usize_clamped(self.position - FOUR_GIB))
+            };
+            Self::read_from_sparse_vec(vec, offset, &mut buf[read..read + count]);
+            self.position += count as u64;
+            read += count;
+        }
+
+        Ok(read)
+    }
+}
+
+impl Write for AddressHoleCursor {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut written = 0;
+
+        while written < buf.len() {
+            let count = if self.position < FOUR_GIB {
+                as_usize_clamped(FOUR_GIB - self.position)
+            } else {
+                buf.len() - written
+            };
+            let count = (buf.len() - written).min(count);
+            let (vec, offset) = if self.position < FOUR_GIB {
+                (&mut self.before_4gib, self.position as usize)
+            } else {
+                (
+                    &mut self.after_4gib,
+                    as_usize_clamped(self.position - FOUR_GIB),
+                )
+            };
+            Self::write_to_sparse_vec(vec, offset, &buf[written..written + count]);
+            self.position += count as u64;
+            written += count;
+        }
+
+        self.len = self.len.max(self.position);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Seek for AddressHoleCursor {
+    fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+        let position = match from {
+            SeekFrom::Start(position) => i128::from(position),
+            SeekFrom::Current(offset) => i128::from(self.position) + i128::from(offset),
+            SeekFrom::End(offset) => i128::from(self.len) + i128::from(offset),
+        };
+        if !(0..=i128::from(u64::MAX)).contains(&position) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid seek to a negative or overflowing position",
+            ));
+        }
+        self.position = position as u64;
+        Ok(self.position)
+    }
+}
+
+fn read_at<R: Read + Seek>(reader: &mut R, position: u64, buf: &mut [u8]) {
+    reader.seek(SeekFrom::Start(position)).unwrap();
+    reader.read_exact(buf).unwrap();
+}
+
+fn write_data(w: &mut impl Write, size: usize) -> Result<(), io::Error> {
     let chunks = 1 << 20; // 1MB chunks
     let mut written = 0;
-    let buf = vec![0x21; chunks];
+    let buf = vec![0; chunks];
     while written < size {
         let to_write = (size - written).min(chunks);
         w.write_all(&buf[..to_write])?;
@@ -17,19 +148,10 @@ fn write_data(w: &mut dyn std::io::Write, size: usize) -> Result<(), std::io::Er
 
 #[test]
 fn test_append_4gb_without_large_file() {
-    use std::fs::File;
-    use tempfile::tempdir;
-    use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
 
-    let dir = tempdir().unwrap();
-    let path = dir
-        .path()
-        .join("debug_large_without_large_file_options.zip");
-    //let path = std::path::PathBuf::from("debug_large_without_large_file_options.zip");
-
-    let file = File::create(&path).unwrap();
-    let mut writer = ZipWriter::new(file);
+    let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
@@ -46,18 +168,10 @@ fn test_append_4gb_without_large_file() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_append_4gb_with_large_file() {
-    use std::fs::File;
-    use std::io::Read;
-    use tempfile::tempdir;
-    use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
 
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("debug_large_with_large_file_options.zip");
-    //let path = std::path::PathBuf::from("debug_large_with_large_file_options.zip");
-
-    let zipfile = File::create(&path).unwrap();
-    let mut writer = ZipWriter::new(zipfile);
+    let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
     let opts = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
@@ -70,81 +184,81 @@ fn test_append_4gb_with_large_file() {
     let write_result = write_data(&mut writer, size as usize); // check is error
 
     assert!(write_result.is_ok());
-    let mut zip = writer.finish_into_readable().unwrap();
-    let file_res = zip.by_name("4gb_file");
-    assert!(file_res.is_ok());
-    let file = file_res.unwrap();
-    eprintln!("{file:?}");
-
-    let mut file = File::open(&path).unwrap();
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
+    let mut zip = writer.finish().unwrap();
+    let mut local_header = [0; 58];
+    read_at(&mut zip, 0, &mut local_header);
 
     // local header
-    assert_eq!(buffer[18..22], [0xFF, 0xFF, 0xFF, 0xFF]);
-    assert_eq!(buffer[22..26], [0xFF, 0xFF, 0xFF, 0xFF]);
+    assert_eq!(local_header[18..22], [0xFF, 0xFF, 0xFF, 0xFF]);
+    assert_eq!(local_header[22..26], [0xFF, 0xFF, 0xFF, 0xFF]);
 
     // extra field of local header
     let extra_field_start = 38;
-    assert_eq!(buffer[extra_field_start..40], [0x01, 0x00]);
-    assert_eq!(buffer[40..42], [16, 0x00]);
+    assert_eq!(local_header[extra_field_start..40], [0x01, 0x00]);
+    assert_eq!(local_header[40..42], [16, 0x00]);
     assert_eq!(
-        buffer[42..50],
+        local_header[42..50],
         [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
     );
     assert_eq!(
-        buffer[50..58],
+        local_header[50..58],
         [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
     );
 
-    // extra fields of central header
-    let start = extra_field_start + 20 + u32::MAX as usize + 54;
-    assert_eq!(buffer[start..(start + 2)], [0x01, 0x00]);
-    assert_eq!(buffer[(start + 2)..(start + 4)], [16, 0x00]);
+    // extra field of central header
+    let end = zip.seek(SeekFrom::End(0)).unwrap();
+    let mut tail = [0; 256];
+    read_at(&mut zip, end - tail.len() as u64, &mut tail);
+    let central_header = tail
+        .windows(4)
+        .rposition(|bytes| bytes == [0x50, 0x4b, 0x01, 0x02])
+        .unwrap();
+    let extra_field_start = central_header + 54;
+    assert_eq!(tail[extra_field_start..extra_field_start + 2], [0x01, 0x00]);
     assert_eq!(
-        buffer[(start + 4)..(start + 12)],
+        tail[extra_field_start + 2..extra_field_start + 4],
+        [16, 0x00]
+    );
+    assert_eq!(
+        tail[extra_field_start + 4..extra_field_start + 12],
         [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
     );
     assert_eq!(
-        buffer[(start + 12)..(start + 20)],
+        tail[extra_field_start + 12..extra_field_start + 20],
         [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]
     );
+
+    let mut archive = zip::ZipArchive::new(zip).unwrap();
+    let file = archive.by_name("4gb_file").unwrap();
+    assert_eq!(file.size(), u32::MAX as u64);
 }
 
 #[test]
 fn test_append_near_4gb() {
-    use std::fs::File;
-    use tempfile::tempdir;
-    use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
-
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("large-then-small.zip");
+    use zip::ZipWriter;
 
     // Create a new zip file with a large file close to 4GB
-    {
-        let file = File::create(&path).unwrap();
-        let mut writer = ZipWriter::new(file);
+    let cursor = {
+        let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         writer.start_file_from_path("close_to_4gb", opts).unwrap();
 
-        // Write a file that's just under 4GB (4GB - 1 byte)
-        let size = u32::MAX - 1;
-        write_data(&mut writer, size as usize).unwrap();
+        // The zero-filled body takes the archive close to 4 GiB without allocating it.
+        write_data(&mut writer, u32::MAX as usize - 1024).unwrap();
 
         // Add a small file
         writer.start_file_from_path("small_file", opts).unwrap();
         write_data(&mut writer, 1024).unwrap();
 
-        writer.finish().unwrap();
-    }
+        writer.finish().unwrap()
+    };
 
     // Now append to the zip file
-    {
-        let file = File::options().read(true).write(true).open(&path).unwrap();
-        let mut writer = ZipWriter::new_append(file).unwrap();
+    let cursor = {
+        let mut writer = ZipWriter::new_append(cursor).unwrap();
 
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
@@ -152,48 +266,35 @@ fn test_append_near_4gb() {
         writer.start_file_from_path("appended_file", opts).unwrap();
         write_data(&mut writer, 1024).unwrap();
 
-        writer.finish().unwrap();
-    }
+        writer.finish().unwrap()
+    };
 
     // Verify the zip file is valid by reading it
     {
-        let file = File::open(&path).unwrap();
-        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
 
         assert_eq!(archive.len(), 3);
         assert!(!archive.has_overlapping_files().unwrap());
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "close_to_4gb")
-        );
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "small_file")
-        );
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "appended_file")
-        );
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "close_to_4gb"));
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "small_file"));
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "appended_file"));
     }
 }
 
 #[test]
 fn test_append_near_4gb_with_1gb_files() {
-    use std::fs::File;
-    use tempfile::tempdir;
-    use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
-
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("large-then-small.zip");
+    use zip::ZipWriter;
 
     // Create a new zip file with 4 files totaling 1GB
-    {
-        let file = File::create(&path).unwrap();
-        let mut writer = ZipWriter::new(file);
+    let cursor = {
+        let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
@@ -202,22 +303,20 @@ fn test_append_near_4gb_with_1gb_files() {
                 .start_file_from_path(format!("close_to_4gb_{i}"), opts)
                 .unwrap();
 
-            // Write a file that's 1 GB
-            let size = 1u64 << 30;
-            write_data(&mut writer, size as usize).unwrap();
+            // Zero-filled payloads exercise large offsets without allocating their bodies.
+            write_data(&mut writer, 1 << 30).unwrap();
         }
 
         // Add a small file
         writer.start_file_from_path("small_file", opts).unwrap();
         write_data(&mut writer, 1024).unwrap();
 
-        writer.finish().unwrap();
-    }
+        writer.finish().unwrap()
+    };
 
     // Now append to the zip file
-    {
-        let file = File::options().read(true).write(true).open(&path).unwrap();
-        let mut writer = ZipWriter::new_append(file).unwrap();
+    let cursor = {
+        let mut writer = ZipWriter::new_append(cursor).unwrap();
 
         let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
@@ -225,46 +324,33 @@ fn test_append_near_4gb_with_1gb_files() {
         writer.start_file_from_path("appended_file", opts).unwrap();
         write_data(&mut writer, 1024).unwrap();
 
-        writer.finish().unwrap();
-    }
+        writer.finish().unwrap()
+    };
 
     // Verify the zip file is valid by reading it
     {
-        let file = File::open(&path).unwrap();
-        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
 
         assert_eq!(archive.len(), 6);
         assert!(!archive.has_overlapping_files().unwrap());
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "close_to_4gb_0")
-        );
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "close_to_4gb_1")
-        );
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "close_to_4gb_2")
-        );
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "close_to_4gb_3")
-        );
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "small_file")
-        );
-        assert!(
-            archive
-                .file_names()
-                .any(|name| name.unwrap() == "appended_file")
-        );
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "close_to_4gb_0"));
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "close_to_4gb_1"));
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "close_to_4gb_2"));
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "close_to_4gb_3"));
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "small_file"));
+        assert!(archive
+            .file_names()
+            .any(|name| name.unwrap() == "appended_file"));
     }
 }
 
@@ -273,8 +359,8 @@ fn test_append_near_4gb_with_1gb_files() {
 fn test_append_with_large_file_flag() {
     use std::fs::File;
     use tempfile::tempdir;
-    use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
 
     let dir = tempdir().unwrap();
     let path = dir.path().join("test.zip");
