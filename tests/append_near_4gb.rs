@@ -25,7 +25,7 @@ impl AddressHoleCursor {
         Self {
             segments: std::array::from_fn(|_| Vec::new()),
             position,
-            len: 0,
+            len: position,
         }
     }
 
@@ -38,15 +38,18 @@ impl AddressHoleCursor {
     }
 
     fn write_to_sparse_vec(vec: &mut Vec<u8>, offset: usize, buf: &[u8]) {
-        let existing = vec.len().saturating_sub(offset).min(buf.len());
-        if existing > 0 {
-            vec[offset..offset + existing].copy_from_slice(&buf[..existing]);
-        }
-
         if let Some(last_nonzero) = buf.iter().rposition(|byte| *byte != 0) {
             let end = offset + last_nonzero + 1;
-            vec.resize(vec.len().max(end), 0);
+            if end > vec.len() {
+                vec.resize(end, 0);
+            }
             vec[offset..end].copy_from_slice(&buf[..=last_nonzero]);
+        } else {
+            // buf is all zeros; zero out any already-allocated overlap bytes.
+            let existing = vec.len().saturating_sub(offset).min(buf.len());
+            if existing > 0 {
+                vec[offset..offset + existing].fill(0);
+            }
         }
     }
 }
@@ -197,7 +200,7 @@ fn test_append_4gb_with_large_file() {
     // extra field of central header
     let end = zip.seek(SeekFrom::End(0)).unwrap();
     let mut tail = [0; 256];
-    read_at(&mut zip, end - tail.len() as u64, &mut tail);
+    read_at(&mut zip, end.checked_sub(tail.len() as u64).expect("archive smaller than tail buffer"), &mut tail);
     let central_header = tail
         .windows(4)
         .rposition(|bytes| bytes == [0x50, 0x4b, 0x01, 0x02])
@@ -287,7 +290,7 @@ fn test_append_near_4gb_with_1gb_files() {
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
 
-    // Create a new zip file with 4 files totaling 1GB
+    // Create a new zip file with 4 files totaling 4GiB
     let cursor = {
         let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
