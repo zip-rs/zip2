@@ -8,3 +8,11 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   rewind guard). Kept as a seed; no longer reproduces on master.
 - `stack-overflow-deep-copy.bin`: found 2026-10-20 (run 39365893419). SIGABRT on pre-#1095 harness;
   no longer reproduces on master. Kept as a seed.
+- `merge-duplicate-filename.bin`: found 2026-10-23 (PR #1136, --no-default-features). `merge_archive`
+  silently replaced an existing entry with the same name (`IndexMap::extend`), so the harness's file
+  count drifted and a later `abort_file` hit `FileNotFound`. Fixed by rejecting duplicate names in
+  `merge_archive`.
+- `finish-stale-tail-shorter-than-comment.bin`: found 2026-10-24 (run 40062524047, --no-default-features).
+  After `abort_file` rewound, `finalize` only moved the footer when the stale tail was longer than
+  the new comment; a shorter tail was left as is, so the old EOCD in it stayed last and `new_append`
+  failed with "Variable-length field extends beyond file boundary". Fixed by zeroing such a tail.

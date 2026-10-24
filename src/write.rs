@@ -729,6 +729,18 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
             language_encoding: None,
         });
+        if options.extended_options.validate_extra_fields()
+            && let Some(extra_fields) = options.extended_options.extra_fields()
+        {
+            for x in extra_fields.iter() {
+                if !ExtendedFileOptions::extra_field_parses(x.header_id, &x.data, x.central_only) {
+                    return Err(invalid!(
+                        "Extra field {:#06x} would not be readable: malformed data",
+                        x.header_id
+                    ));
+                }
+            }
+        }
         let extra_fields = match options.extended_options.extra_fields() {
             Some(data) => data.iter().map(|x| ExtraField::Custom(x.clone())).collect(),
             None => vec![],
@@ -1142,6 +1154,15 @@ impl<W: Write + Seek> ZipWriter<W> {
     {
         self.finish_file()?;
 
+        /* `self.files` is keyed by name, so a duplicate would silently replace our existing entry
+         * while its data stayed in the archive. Reject it before writing anything. */
+        if let Some(name) = source
+            .file_names_raw()
+            .find(|name| self.files.contains_key(*name))
+        {
+            return Err(invalid!("Duplicate filename: {:?}", name.escape_ascii()));
+        }
+
         /* Ensure we accept the file contents on faith (and avoid overwriting the data).
          * See raw_copy_file_rename(). */
         self.writing_to_file = true;
@@ -1537,8 +1558,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         if self.seek_possible {
             let writer = self.inner.try_inner_mut()?;
             let footer_end = writer.stream_position()?;
-            let archive_end = writer.seek(SeekFrom::End(-(self.comment.len() as i64)))?;
-            if footer_end < archive_end {
+            let stream_end = writer.seek(SeekFrom::End(0))?;
+            let archive_end = stream_end - self.comment.len() as u64;
+            if archive_end <= footer_end && footer_end < stream_end {
+                // Stale bytes no longer than the comment are left after it (we can't truncate), but
+                // blank them: they may hold an old footer that a reader would find instead of ours.
+                writer.seek(SeekFrom::Start(footer_end))?;
+                io::copy(&mut io::repeat(0).take(stream_end - footer_end), writer)?;
+            } else if footer_end < archive_end {
                 // Data from an aborted file is past the end of the footer.
 
                 // Overwrite the magic so the footer is no longer valid.
@@ -2237,6 +2264,7 @@ impl ZipFileBuilder {
                     .cloned()
                     .unwrap_or_default(),
                 file_comment: options.extended_options.take_file_comment(),
+                validate_extra_fields: options.extended_options.validate_extra_fields(),
             },
             alignment: options.alignment,
             #[cfg(feature = "deflate-zopfli")]
@@ -2876,6 +2904,7 @@ mod tests {
         let options = FileOptions {
             extended_options: ExtendedFileOptions {
                 file_comment: Some("file comment".into()),
+                validate_extra_fields: false,
                 ..Default::default()
             },
 
@@ -2889,6 +2918,7 @@ mod tests {
         let options2 = FileOptions {
             extended_options: ExtendedFileOptions {
                 file_comment: Some("file2 comment".into()),
+                validate_extra_fields: false,
                 ..Default::default()
             },
             // won't work with zopfli and no flate2, because DEFLATE is write-only in that cfg
@@ -3136,6 +3166,84 @@ mod tests {
         path.push("system32");
         let path_str = super::path_to_string(&path).unwrap();
         assert_eq!(&*path_str, "system32");
+    }
+
+    /// After an `abort_file` that rewinds, `finish` must not leave an old footer past the new one,
+    /// even when the stale tail is no longer than the (new) archive comment. Otherwise the stale
+    /// EOCD at the end is the one a reader finds.
+    #[test]
+    fn finish_after_abort_leaves_no_stale_footer_in_tail_shorter_than_comment() -> ZipResult<()> {
+        #[cfg(miri)]
+        let options = SimpleFileOptions {
+            compression_method: Stored,
+            ..Default::default()
+        };
+        #[cfg(not(miri))]
+        let options = SimpleFileOptions::default();
+
+        fn build(comment_len: usize, options: SimpleFileOptions) -> ZipResult<Vec<u8>> {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.start_file("a", options)?;
+            writer.write_all(b"aaaa")?;
+            writer.start_file("b", options)?;
+            writer.write_all(b"bbbb")?;
+            let mut writer = ZipWriter::new_append(writer.finish()?)?;
+            writer.set_raw_comment(vec![b'c'; comment_len].into_boxed_slice())?;
+            writer.abort_file()?;
+            Ok(writer.finish()?.into_inner())
+        }
+        let old_len = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.start_file("a", options)?;
+            writer.write_all(b"aaaa")?;
+            writer.start_file("b", options)?;
+            writer.write_all(b"bbbb")?;
+            writer.finish()?.into_inner().len()
+        };
+        let only_a_len = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.start_file("a", options)?;
+            writer.write_all(b"aaaa")?;
+            writer.finish()?.into_inner().len()
+        };
+        let stale = old_len - only_a_len;
+        for comment_len in 1..=stale {
+            let bytes = build(comment_len, options)?;
+            let eocds = bytes.windows(4).filter(|w| *w == b"PK\x05\x06").count();
+            assert_eq!(eocds, 1, "comment_len {comment_len}");
+            let archive = ZipArchive::new(Cursor::new(bytes))?;
+            assert_eq!(archive.len(), 1, "comment_len {comment_len}");
+            assert_eq!(archive.comment().len(), comment_len);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn merge_archive_rejects_duplicate_filename() -> ZipResult<()> {
+        let mut source = ZipWriter::new(Cursor::new(Vec::new()));
+        source.start_file("a.txt", SimpleFileOptions::default())?;
+        source.write_all(b"from source")?;
+        let source = source.finish_into_readable()?;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a.txt", SimpleFileOptions::default())?;
+        writer.write_all(b"original")?;
+        let err = writer.merge_archive(source).unwrap_err();
+        assert!(
+            matches!(err, crate::result::ZipError::InvalidArchive(ref msg) if msg.starts_with("Duplicate filename: "))
+        );
+
+        // The writer is still usable and the original entry is intact.
+        writer.abort_file()?;
+        assert!(matches!(
+            writer.abort_file(),
+            Err(crate::result::ZipError::FileNotFound)
+        ));
+        writer.start_file("b.txt", SimpleFileOptions::default())?;
+        writer.write_all(b"b")?;
+        let archive = writer.finish_into_readable()?;
+        assert_eq!(archive.len(), 1);
+        Ok(())
     }
 
     #[test]
@@ -3547,7 +3655,11 @@ mod tests {
                 permissions: None,
                 large_file: false,
                 encrypt_with: None,
-                extended_options: ExtendedFileOptions::default(),
+                extended_options: ExtendedFileOptions {
+                    extra_fields: vec![].into(),
+                    file_comment: None,
+                    validate_extra_fields: false,
+                },
                 alignment: 2048,
                 ..Default::default()
             };
@@ -3600,6 +3712,8 @@ mod tests {
                     .unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 32787,
@@ -3623,6 +3737,8 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[1, 41, 4, 0, 1, 255, 245, 117]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 4103,
@@ -3776,6 +3892,8 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[0, 0, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -3855,6 +3973,8 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[38, 251, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -3894,6 +4014,8 @@ mod tests {
                     CustomExtraField::new_from_raw(true, &[67, 149, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -4031,6 +4153,8 @@ mod tests {
                                                     .unwrap(),
                                                 ]
                                                 .into(),
+                                                file_comment: None,
+                                                validate_extra_fields: false,
                                                 ..Default::default()
                                             },
                                             alignment: 0xFFFF,
@@ -4315,6 +4439,8 @@ mod tests {
                                 CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
                             ]
                             .into(),
+                            file_comment: None,
+                            validate_extra_fields: false,
                             ..Default::default()
                         },
                         alignment: 1542,
@@ -4530,6 +4656,7 @@ mod tests {
                 ]
                 .into(),
                 file_comment: None,
+                validate_extra_fields: false,
             },
             alignment: 90,
             name: Some(&[]),
@@ -4581,6 +4708,8 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[2, 0, 0, 0]).unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -4643,6 +4772,8 @@ mod tests {
                     CustomExtraField::new_from_raw(false, &[2, 61, 0, 0])?,
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 0xFFFF,
@@ -4825,6 +4956,8 @@ mod tests {
                         .unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 4103,
@@ -4854,6 +4987,8 @@ mod tests {
                         .unwrap(),
                 ]
                 .into(),
+                file_comment: None,
+                validate_extra_fields: false,
                 ..Default::default()
             },
             alignment: 4103,
@@ -4886,6 +5021,46 @@ mod tests {
         writer.abort_file()?;
         writer.set_raw_comment(Box::new([255]))?;
         let _ = ZipWriter::new_append(writer.finish()?)?;
+        Ok(())
+    }
+
+    /// A malformed Info-ZIP Unicode Path field is written verbatim by default, as before, so
+    /// nobody relying on that breaks; the archive then can't be read back. With
+    /// `validate_extra_fields(true)` it's rejected before anything is written.
+    #[test]
+    fn validate_extra_fields_is_opt_in() -> ZipResult<()> {
+        // 0x7075 needs at least a version byte and a CRC-32 (5 bytes).
+        let mut options = FullFileOptions::default();
+        options.add_extra_field(0x7075, [28], true)?;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a", options.clone())?;
+        assert!(ZipArchive::new(writer.finish()?).is_err());
+
+        // Opted in: rejected by add_extra_field ...
+        let mut validated = FullFileOptions::default().validate_extra_fields(true);
+        assert!(validated.add_extra_field(0x7075, [28], true).is_err());
+        assert!(validated.add_extra_field(0x7075, [28], false).is_err());
+        // ... and by start_file, if it was added before opting in.
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        assert!(
+            writer
+                .start_file("a", options.validate_extra_fields(true))
+                .is_err()
+        );
+
+        // A vendor ID the reader doesn't interpret is still stored verbatim.
+        validated.add_extra_field(0xbeef, [28], false)?;
+        // Extended timestamps use different parsing rules in local and central headers.
+        validated.add_extra_field(0x5455, [1, 1, 0, 0, 0, 2, 0, 0, 0], true)?;
+        assert!(
+            validated
+                .add_extra_field(0x5455, [1, 1, 0, 0, 0, 2, 0, 0, 0], false)
+                .is_err()
+        );
+        writer.start_file("b", validated)?;
+        let mut archive = ZipArchive::new(writer.finish()?)?;
+        assert_eq!(archive.len(), 1);
+        drop(archive.by_index(0)?);
         Ok(())
     }
 

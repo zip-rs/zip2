@@ -1,5 +1,6 @@
 //! Write Options
 
+use crate::extra_fields::ExtendedTimestamp;
 use core::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -87,6 +88,10 @@ pub(crate) mod sealed {
         fn file_comment(&self) -> Option<&str>;
         /// Take File Comment (moves ownership)
         fn take_file_comment(&mut self) -> Option<Box<str>>;
+        /// Whether to check the extra fields with the reader's parser before writing
+        fn validate_extra_fields(&self) -> bool {
+            false
+        }
     }
     impl Sealed for () {}
     impl FileOptionExtension for () {
@@ -112,6 +117,9 @@ pub(crate) mod sealed {
         fn take_file_comment(&mut self) -> Option<Box<str>> {
             self.file_comment.take()
         }
+        fn validate_extra_fields(&self) -> bool {
+            self.validate_extra_fields
+        }
     }
 }
 
@@ -123,6 +131,7 @@ pub type FullFileOptions<'k, 'n> = FileOptions<'k, 'n, ExtendedFileOptions>;
 pub struct ExtendedFileOptions {
     pub(crate) extra_fields: Arc<Vec<CustomExtraField>>,
     pub(crate) file_comment: Option<Box<str>>,
+    pub(crate) validate_extra_fields: bool,
 }
 
 impl ExtendedFileOptions {
@@ -158,6 +167,30 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         self.add_extra_field(header_id, data, central_only)
     }
+    /// Whether the reader's own extra-field parser accepts this field in every header it will be
+    /// written to (local and central, or central only).
+    pub(crate) fn extra_field_parses(header_id: u16, data: &[u8], central_only: bool) -> bool {
+        use crate::extra_fields::{ExtraField, UsedExtraField};
+        use crate::format::blocks::{Pod, ZipLocalEntryBlock};
+        use std::io::Cursor;
+
+        let Ok(size) = u16::try_from(data.len()) else {
+            return false;
+        };
+        let mut serialized = Vec::with_capacity(data.len() + 4);
+        serialized.extend_from_slice(&header_id.to_le_bytes());
+        serialized.extend_from_slice(&size.to_le_bytes());
+        serialized.extend_from_slice(data);
+        let block = ZipLocalEntryBlock::zeroed();
+        if ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_err() {
+            return false;
+        }
+        // Only extended timestamps interpret their payload differently in local and central headers.
+        central_only
+            || header_id != UsedExtraField::ExtendedTimestamp.as_u16()
+            || ExtendedTimestamp::try_from_reader(&mut Cursor::new(data), size, true).is_ok()
+    }
+
     /// Adds an extra field, unless we detect that it's invalid.
     ///
     /// # Parameters
@@ -178,9 +211,13 @@ impl ExtendedFileOptions {
     ///     directory, depending on how the ZIP is written.
     ///
     /// The combined size of all extra data (local + central) must not exceed
-    /// `u16::MAX`. If adding this field would exceed that limit or produce an
-    /// invalid extra data structure, an error is returned and no data is
-    /// added.
+    /// `u16::MAX`; if adding this field would exceed that limit, an error is
+    /// returned and no data is added.
+    ///
+    /// By default `data` is otherwise stored verbatim, even for a header ID
+    /// that this crate's reader interprets (such as `0x7075`, Info-ZIP Unicode
+    /// Path) and would reject when the archive is read back. Opt in to
+    /// checking it with [`FileOptions::validate_extra_fields`].
     pub fn add_extra_field<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
@@ -192,6 +229,14 @@ impl ExtendedFileOptions {
         let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.full_size(false)).sum();
         if extra_fields_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
+        } else if self.validate_extra_fields
+            && !Self::extra_field_parses(header_id, data, central_only)
+        {
+            // Otherwise the archive is written, but `ZipArchive` (and `ZipWriter::new_append`)
+            // reject it, e.g. an Info-ZIP Unicode Path field shorter than its 5-byte header.
+            Err(invalid!(
+                "Extra field {header_id:#06x} would not be readable: malformed data"
+            ))
         } else {
             Arc::make_mut(&mut self.extra_fields).push(CustomExtraField::new(
                 central_only,
@@ -208,6 +253,7 @@ impl Debug for ExtendedFileOptions {
         f.debug_struct("ExtendedFileOptions")
             .field("extra_fields", &self.extra_fields)
             .field("file_comment", &self.file_comment)
+            .field("validate_extra_fields", &self.validate_extra_fields)
             .finish()
     }
 }
@@ -440,6 +486,28 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
     }
 }
 impl FileOptions<'_, '_, ExtendedFileOptions> {
+    /// Check every extra field with this crate's own extra-field parser, and
+    /// return an error instead of writing a field that [`ZipArchive`] would
+    /// reject (for example an Info-ZIP Unicode Path field `0x7075` shorter than
+    /// its 5-byte version and CRC-32 header).
+    ///
+    /// Opt-in and off by default, so fields are written verbatim as before:
+    /// the parser rejects some fields that other software may accept. This
+    /// is likely to become the default in 10.0.0.
+    ///
+    /// When enabled, [`Self::add_extra_field`] rejects a malformed field
+    /// immediately, and starting an entry (for example with
+    /// [`ZipWriter::start_file`]) rejects any malformed field added before
+    /// this was enabled.
+    ///
+    /// [`ZipArchive`]: crate::ZipArchive
+    /// [`ZipWriter::start_file`]: crate::ZipWriter::start_file
+    #[must_use]
+    pub fn validate_extra_fields(mut self, validate: bool) -> Self {
+        self.extended_options.validate_extra_fields = validate;
+        self
+    }
+
     /// Set the file comment.
     #[must_use]
     pub fn with_file_comment<S: Into<Box<str>>>(mut self, comment: S) -> Self {
@@ -458,7 +526,8 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
         self.add_extra_field(header_id, data, central_only)
     }
 
-    /// Adds an extra field.
+    /// Adds an extra field; see [`ExtendedFileOptions::add_extra_field`] for
+    /// what is checked.
     pub fn add_extra_field<D: AsRef<[u8]>>(
         &mut self,
         header_id: u16,
