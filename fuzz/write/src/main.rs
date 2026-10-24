@@ -594,8 +594,14 @@ fn do_operation(
                 } else {
                     &mut sub_writers[parent_index - 1]
                 };
-                parent_writer.merge_archive(other_writer.finish_into_readable()?)?;
-                files_added_by_writer[parent_index] += inner_files_added;
+                // Both archives can contain the same (normalized) name.
+                if accept_expected(
+                    parent_writer.merge_archive(other_writer.finish_into_readable()?),
+                    is_expected_new_entry_error,
+                    stringifier,
+                )? {
+                    files_added_by_writer[parent_index] += inner_files_added;
+                }
             }
             OperationWork::Finalize {
                 abort,
