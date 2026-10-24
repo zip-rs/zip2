@@ -525,8 +525,17 @@ impl ZipFileData {
         Ok(data)
     }
 
-    pub(crate) fn flags(&self) -> u16 {
-        get_flags(self.flags)
+    /// The general purpose flags to write for this entry under `file_name_raw`. The language
+    /// encoding bit is as stored, except that a non-ASCII comment, which is always written as
+    /// UTF-8, sets it when the name bytes are valid UTF-8 too. Such a comment can come from an
+    /// Info-ZIP Unicode Comment extra field on an unflagged entry; written unflagged, a reader
+    /// would decode it as CP437 and it would grow on every reopen.
+    pub(crate) fn flags(&self, file_name_raw: &[u8]) -> u16 {
+        let mut flags = self.flags;
+        if !self.file_comment.is_ascii() && core::str::from_utf8(file_name_raw).is_ok() {
+            flags.set(ZipFlags::LanguageEncoding, true);
+        }
+        get_flags(flags)
     }
 
     /// Sets the language encoding flag for this entry written under a new name.
