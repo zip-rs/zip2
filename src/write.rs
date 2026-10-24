@@ -1508,58 +1508,64 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         let (central_start, is_zip64) = self.write_central_and_footer()?;
-        let writer = self.inner.try_inner_mut()?;
-        let footer_end = writer.stream_position()?;
-        let archive_end = writer.seek(SeekFrom::End(-(self.comment.len() as i64)))?;
-        if footer_end < archive_end {
-            // Data from an aborted file is past the end of the footer.
+        if self.seek_possible {
+            let writer = self.inner.try_inner_mut()?;
+            let footer_end = writer.stream_position()?;
+            let archive_end = writer.seek(SeekFrom::End(-(self.comment.len() as i64)))?;
+            if footer_end < archive_end {
+                // Data from an aborted file is past the end of the footer.
 
-            // Overwrite the magic so the footer is no longer valid.
-            writer.seek(SeekFrom::Start(central_start))?;
-            writer.write_all(&0_u32.to_le_bytes())?;
-            let start_zip32_cde = footer_end
-                - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
-                - self.comment.len() as u64;
-            writer.seek(SeekFrom::Start(start_zip32_cde))?;
-            writer.write_all(&0_u32.to_le_bytes())?;
-            let zip64_extensible_len = self
-                .zip64_extensible_data_sector
-                .as_ref()
-                .map(|e| e.len() as u64)
-                .unwrap_or(0);
-            if is_zip64 {
-                let start_zip64_locator = start_zip32_cde
-                    - (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>()) as u64;
-                writer.seek(SeekFrom::Start(start_zip64_locator))?;
+                // Overwrite the magic so the footer is no longer valid.
+                writer.seek(SeekFrom::Start(central_start))?;
                 writer.write_all(&0_u32.to_le_bytes())?;
-                let start_zip64_cde = start_zip64_locator
-                    - (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE) as u64
-                    - zip64_extensible_len;
-                writer.seek(SeekFrom::Start(start_zip64_cde))?;
+                let start_zip32_cde = footer_end
+                    - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
+                    - self.comment.len() as u64;
+                writer.seek(SeekFrom::Start(start_zip32_cde))?;
                 writer.write_all(&0_u32.to_le_bytes())?;
-            }
-
-            // Rewrite the footer at the actual end.
-            let central_and_footer_size = footer_end - central_start;
-            writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
-            #[cfg_attr(not(debug_assertions), allow(unused_variables))]
-            let (_, new_is_zip64) = self.write_central_and_footer()?;
-            #[cfg(debug_assertions)]
-            {
-                let archive_end = if new_is_zip64 && new_is_zip64 != is_zip64 {
-                    let new_size = (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
-                        as u64
-                        + zip64_extensible_len
-                        + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
+                let zip64_extensible_len = self
+                    .zip64_extensible_data_sector
+                    .as_ref()
+                    .map(|e| e.len() as u64)
+                    .unwrap_or(0);
+                if is_zip64 {
+                    let start_zip64_locator = start_zip32_cde
+                        - (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
                             as u64;
-                    archive_end + new_size
-                } else {
-                    archive_end
-                };
-                debug_assert!(
-                    self.inner.try_inner_mut()?.stream_position()?
-                        == archive_end + self.comment.len() as u64
-                );
+                    writer.seek(SeekFrom::Start(start_zip64_locator))?;
+                    writer.write_all(&0_u32.to_le_bytes())?;
+                    let start_zip64_cde = start_zip64_locator
+                        - (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE) as u64
+                        - zip64_extensible_len;
+                    writer.seek(SeekFrom::Start(start_zip64_cde))?;
+                    writer.write_all(&0_u32.to_le_bytes())?;
+                }
+
+                // Rewrite the footer at the actual end.
+                let central_and_footer_size = footer_end - central_start;
+                writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
+                #[cfg_attr(not(debug_assertions), allow(unused_variables))]
+                let (_, new_is_zip64) = self.write_central_and_footer()?;
+                #[cfg(debug_assertions)]
+                {
+                    let archive_end = if new_is_zip64 && new_is_zip64 != is_zip64 {
+                        let new_size = (size_of::<Magic>()
+                            + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
+                            as u64
+                            + zip64_extensible_len
+                            + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
+                                as u64;
+                        archive_end + new_size
+                    } else {
+                        archive_end
+                    };
+                    debug_assert!(
+                        self.inner.try_inner_mut()?.stream_position()?
+                            == archive_end + self.comment.len() as u64
+                    );
+                }
+            } else {
+                writer.seek(SeekFrom::Start(footer_end))?;
             }
         }
 
