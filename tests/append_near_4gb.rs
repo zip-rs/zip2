@@ -2,16 +2,16 @@
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
-const FOUR_GIB: u64 = 1 << 32;
+const DENSE_SEGMENT_START_INTERVAL: u64 = (1 << 30) - 1024;
+const SEGMENT_COUNT: usize = 5;
 
 fn as_usize_clamped(value: u64) -> usize {
     usize::try_from(value).unwrap_or(usize::MAX)
 }
 
-/// A cursor that omits zero-filled ranges before 4 GiB.
+/// A cursor that stores nonzero bytes in 1 GiB segments and omits zero-filled ranges.
 struct AddressHoleCursor {
-    before_4gib: Vec<u8>,
-    after_4gib: Vec<u8>,
+    segments: [Vec<u8>; SEGMENT_COUNT],
     position: u64,
     len: u64,
 }
@@ -19,8 +19,7 @@ struct AddressHoleCursor {
 impl AddressHoleCursor {
     fn new_at(position: u64) -> Self {
         Self {
-            before_4gib: Vec::new(),
-            after_4gib: Vec::new(),
+            segments: std::array::from_fn(|_| Vec::new()),
             position,
             len: 0,
         }
@@ -53,19 +52,13 @@ impl Read for AddressHoleCursor {
         let mut read = 0;
 
         while read < buf.len() && self.position < self.len {
-            let count = if self.position < FOUR_GIB {
-                as_usize_clamped(FOUR_GIB - self.position)
-            } else {
-                buf.len() - read
-            };
+            let segment = as_usize_clamped(self.position / DENSE_SEGMENT_START_INTERVAL);
+            let segment_offset = self.position % DENSE_SEGMENT_START_INTERVAL;
             let count = (buf.len() - read)
-                .min(count)
+                .min(as_usize_clamped(DENSE_SEGMENT_START_INTERVAL - segment_offset))
                 .min(as_usize_clamped(self.len - self.position));
-            let (vec, offset) = if self.position < FOUR_GIB {
-                (&self.before_4gib, self.position as usize)
-            } else {
-                (&self.after_4gib, as_usize_clamped(self.position - FOUR_GIB))
-            };
+            let vec = &self.segments[segment];
+            let offset = as_usize_clamped(segment_offset);
             Self::read_from_sparse_vec(vec, offset, &mut buf[read..read + count]);
             self.position += count as u64;
             read += count;
@@ -80,20 +73,11 @@ impl Write for AddressHoleCursor {
         let mut written = 0;
 
         while written < buf.len() {
-            let count = if self.position < FOUR_GIB {
-                as_usize_clamped(FOUR_GIB - self.position)
-            } else {
-                buf.len() - written
-            };
-            let count = (buf.len() - written).min(count);
-            let (vec, offset) = if self.position < FOUR_GIB {
-                (&mut self.before_4gib, self.position as usize)
-            } else {
-                (
-                    &mut self.after_4gib,
-                    as_usize_clamped(self.position - FOUR_GIB),
-                )
-            };
+            let segment = as_usize_clamped(self.position / DENSE_SEGMENT_START_INTERVAL);
+            let segment_offset = self.position % DENSE_SEGMENT_START_INTERVAL;
+            let count = (buf.len() - written).min(as_usize_clamped(DENSE_SEGMENT_START_INTERVAL - segment_offset));
+            let vec = &mut self.segments[segment];
+            let offset = as_usize_clamped(segment_offset);
             Self::write_to_sparse_vec(vec, offset, &buf[written..written + count]);
             self.position += count as u64;
             written += count;
