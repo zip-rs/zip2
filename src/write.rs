@@ -1559,14 +1559,14 @@ impl<W: Write + Seek> ZipWriter<W> {
             let writer = self.inner.try_inner_mut()?;
             let footer_end = writer.stream_position()?;
             let stream_end = writer.seek(SeekFrom::End(0))?;
-        let archive_end = stream_end - self.comment.len() as u64;
-        if archive_end <= footer_end && footer_end < stream_end {
-            // Stale bytes no longer than the comment are left after it (we can't truncate), but
-            // blank them: they may hold an old footer that a reader would find instead of ours.
-            writer.seek(SeekFrom::Start(footer_end))?;
-            io::copy(&mut io::repeat(0).take(stream_end - footer_end), writer)?;
-        } else if footer_end < archive_end {
-            // Data from an aborted file is past the end of the footer.
+            let archive_end = stream_end - self.comment.len() as u64;
+            if archive_end <= footer_end && footer_end < stream_end {
+                // Stale bytes no longer than the comment are left after it (we can't truncate), but
+                // blank them: they may hold an old footer that a reader would find instead of ours.
+                writer.seek(SeekFrom::Start(footer_end))?;
+                io::copy(&mut io::repeat(0).take(stream_end - footer_end), writer)?;
+            } else if footer_end < archive_end {
+                // Data from an aborted file is past the end of the footer.
 
                 // Overwrite the magic so the footer is no longer valid.
                 writer.seek(SeekFrom::Start(central_start))?;
