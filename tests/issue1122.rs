@@ -18,21 +18,21 @@ fn test_issue1122() -> ZipResult<()> {
     let opts = SimpleFileOptions::default().large_file(true);
 
     let mut w = ZipWriter::new(Cursor::new(Vec::new()));
-    w.add_directory("dir/", opts).unwrap();
-    let dir = w.finish().unwrap().into_inner();
+    w.add_directory("dir/", opts)?;
+    let dir = w.finish()?.into_inner();
 
     let mut w = ZipWriter::new(Cursor::new(Vec::new()));
-    w.start_file("empty.txt", opts).unwrap();
-    w.write_all(b"").unwrap();
-    let file = w.finish().unwrap().into_inner();
+    w.start_file("empty.txt", opts)?;
+    w.write_all(b"")?;
+    let file = w.finish()?.into_inner();
 
     // Directory entry has no content, but file entry has an empty DEFLATE block.
     for (label, bytes, expected_compressed_size) in [("directory", dir, 0), ("empty file", file, 2)]
     {
         let (u, c) = local_zip64_sizes(&bytes);
         println!("{label}: local ZIP64 extra uncompressed={u:#x} compressed={c:#x}");
-        let mut a = ZipArchive::new(Cursor::new(bytes)).unwrap();
-        let f = a.by_index(0).unwrap();
+        let mut a = ZipArchive::new(Cursor::new(bytes))?;
+        let f = a.by_index(0)?;
         assert_eq!(0, f.size(), "{label}: uncompressed size");
         assert_eq!(
             expected_compressed_size,
