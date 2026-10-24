@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.1.0](https://github.com/zip-rs/zip2/compare/v9.0.5...v9.1.0) - 2026-10-24
+
+### <!-- 0 -->🚀 Features
+
+- *(read)* enforce header consistency on extract_with_options and expose duplicate name detection ([#1109](https://github.com/zip-rs/zip2/pull/1109))
+- Add borrowing `inner` method to reader wrappers ([#1050](https://github.com/zip-rs/zip2/pull/1050))
+- add with_size_limit to ExtractOptions to limit total declared uncompressed size ([#1019](https://github.com/zip-rs/zip2/pull/1019))
+- add file_names_raw iterator ([#1082](https://github.com/zip-rs/zip2/pull/1082))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- raw_copy_file keeps an entry's name bytes and UTF-8 flag as stored ([#1124](https://github.com/zip-rs/zip2/pull/1124))
+- *(write)* prevent seek panic on streaming writer with comment ([#1151](https://github.com/zip-rs/zip2/pull/1151))
+- Accept bounded central directory digital signature record when enforcing header consistency in ZipStreamReader ([#1134](https://github.com/zip-rs/zip2/pull/1134))
+- apply unix permissions at creation ([#1104](https://github.com/zip-rs/zip2/pull/1104))
+- raw_copy_file should work with any extra fields ([#1120](https://github.com/zip-rs/zip2/pull/1120))
+- *(read)* avoid full-file forward scans and redundant allocations in central directory ([#1142](https://github.com/zip-rs/zip2/pull/1142))
+- don't enable typed-path's default std feature ([#1112](https://github.com/zip-rs/zip2/pull/1112))
+- ZIP64 size fields were being deep-copied incorrectly (via Copilot gpt-6-luna) ([#1107](https://github.com/zip-rs/zip2/pull/1107))
+- resolve decoded CP437 member names ([#1080](https://github.com/zip-rs/zip2/pull/1080)) ([#1085](https://github.com/zip-rs/zip2/pull/1085))
+- Debug assertion doesn't account for length of archive comment ([#1097](https://github.com/zip-rs/zip2/pull/1097))
+
+### <!-- 2 -->🚜 Refactor
+
+- Lazy instantiation for all decompressors ([#1046](https://github.com/zip-rs/zip2/pull/1046)) ([#1047](https://github.com/zip-rs/zip2/pull/1047))
+
+### <!-- 4 -->⚡ Performance
+
+- *(write)* reuse the DEFLATE compressor across entries ([#1119](https://github.com/zip-rs/zip2/pull/1119))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Fix reference to nonexistent variable on #[cfg(not(any(unix, windows)))] ([#1138](https://github.com/zip-rs/zip2/pull/1138))
+- target lzma-rust2 v0.23 ([#1096](https://github.com/zip-rs/zip2/pull/1096))
+
+### Bench
+
+- add Criterion benchmarks ([#754](https://github.com/zip-rs/zip2/pull/754))
+- add deflate_many_small_files bench for #633 ([#964](https://github.com/zip-rs/zip2/pull/964))
+
 ## [9.0.5](https://github.com/zip-rs/zip2/compare/v9.0.4...v9.0.5) - 2026-10-17
 
 ### <!-- 1 -->🐛 Bug Fixes
