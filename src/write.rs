@@ -3173,11 +3173,19 @@ mod tests {
     /// EOCD at the end is the one a reader finds.
     #[test]
     fn finish_after_abort_leaves_no_stale_footer_in_tail_shorter_than_comment() -> ZipResult<()> {
-        fn build(comment_len: usize) -> ZipResult<Vec<u8>> {
+        #[cfg(miri)]
+        let options = SimpleFileOptions {
+            compression_method: Stored,
+            ..Default::default()
+        };
+        #[cfg(not(miri))]
+        let options = SimpleFileOptions::default();
+
+        fn build(comment_len: usize, options: SimpleFileOptions) -> ZipResult<Vec<u8>> {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-            writer.start_file("a", SimpleFileOptions::default())?;
+            writer.start_file("a", options)?;
             writer.write_all(b"aaaa")?;
-            writer.start_file("b", SimpleFileOptions::default())?;
+            writer.start_file("b", options)?;
             writer.write_all(b"bbbb")?;
             let mut writer = ZipWriter::new_append(writer.finish()?)?;
             writer.set_raw_comment(vec![b'c'; comment_len].into_boxed_slice())?;
@@ -3186,21 +3194,21 @@ mod tests {
         }
         let old_len = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-            writer.start_file("a", SimpleFileOptions::default())?;
+            writer.start_file("a", options)?;
             writer.write_all(b"aaaa")?;
-            writer.start_file("b", SimpleFileOptions::default())?;
+            writer.start_file("b", options)?;
             writer.write_all(b"bbbb")?;
             writer.finish()?.into_inner().len()
         };
         let only_a_len = {
             let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-            writer.start_file("a", SimpleFileOptions::default())?;
+            writer.start_file("a", options)?;
             writer.write_all(b"aaaa")?;
             writer.finish()?.into_inner().len()
         };
         let stale = old_len - only_a_len;
         for comment_len in 1..=stale {
-            let bytes = build(comment_len)?;
+            let bytes = build(comment_len, options)?;
             let eocds = bytes.windows(4).filter(|w| *w == b"PK\x05\x06").count();
             assert_eq!(eocds, 1, "comment_len {comment_len}");
             let archive = ZipArchive::new(Cursor::new(bytes))?;
