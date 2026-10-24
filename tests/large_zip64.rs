@@ -235,14 +235,41 @@ fn zip64_large() {
     }
 }
 
-/// We cannot run this test because on wasm32
-/// the literal `5368709808` does not fit into the type `usize` whose range is `0..=4294967295`
+/// We cannot run this test on 32-bit because it uses a 5GB buffer.
 ///
 /// Only on native because too long with miri CI
-#[cfg(all(not(target_arch = "wasm32"), not(miri)))]
+#[cfg(all(target_pointer_width = "64", not(miri)))]
 #[test]
 fn test_zip64_check_extra_field() {
     use std::{fs::File, io::Cursor, path::Path};
+    use zip::result::ZipResult;
+
+    fn zip64_check_extra_field(path: &Path, archive_buffer: &mut Vec<u8>) -> ZipResult<()> {
+        use std::{io::Seek, io::SeekFrom};
+        use zip::write::SimpleFileOptions;
+        let mut bigfile = File::open(path)?;
+
+        let mut archive = zip::ZipWriter::new(Cursor::new(archive_buffer));
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o755);
+
+        // add 4GiB of file data to the archive, which should trigger the zip64 extra field
+        for i in 0..4 {
+            bigfile.seek(SeekFrom::Start(0))?;
+            let filename = format!("file{}.bin", i + 1);
+            archive.start_file(filename, options)?;
+            std::io::copy(&mut bigfile, &mut archive)?;
+        }
+        // now add a directory entry, which SHOULD trigger the zip64 extra field for the central directory header
+        archive.add_directory("dir/", options)?;
+        archive.start_file("dir/bigfile.bin", options)?;
+        bigfile.seek(SeekFrom::Start(0))?;
+        std::io::copy(&mut bigfile, &mut archive)?;
+        archive.finish()?;
+        Ok(())
+    }
+
     let path = Path::new("bigfile.bin");
     let bigfile = File::create(path).expect("Failed to create a big file");
 
@@ -396,40 +423,6 @@ fn test_zip64_check_extra_field() {
         assert_eq!(local_header[28..30], [0x00, 0x00]); // extra field length
         assert_eq!(local_header[30..], *b"dir/bigfile.bin"); // file name
     }
-}
-
-/// We cannot run this test because on wasm32
-/// See `test_zip64_check_extra_field`
-///
-/// Only on little endian because too long with miri CI
-#[cfg(all(not(target_arch = "wasm32"), not(miri)))]
-fn zip64_check_extra_field(
-    path: &std::path::Path,
-    archive_buffer: &mut Vec<u8>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use std::{fs::File, io::Cursor, io::Seek, io::SeekFrom};
-    use zip::write::SimpleFileOptions;
-    let mut bigfile = File::open(path)?;
-
-    let mut archive = zip::ZipWriter::new(Cursor::new(archive_buffer));
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .unix_permissions(0o755);
-
-    // add 4GiB of file data to the archive, which should trigger the zip64 extra field
-    for i in 0..4 {
-        bigfile.seek(SeekFrom::Start(0))?;
-        let filename = format!("file{}.bin", i + 1);
-        archive.start_file(filename, options)?;
-        std::io::copy(&mut bigfile, &mut archive)?;
-    }
-    // now add a directory entry, which SHOULD trigger the zip64 extra field for the central directory header
-    archive.add_directory("dir/", options)?;
-    archive.start_file("dir/bigfile.bin", options)?;
-    bigfile.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut bigfile, &mut archive)?;
-    archive.finish()?;
-    Ok(())
 }
 
 /// Only on native because too long with miri CI

@@ -59,8 +59,8 @@ pub mod tests {
 
     /// Create a ZIP file with entries that have Windows-style absolute paths
     ///
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Only on native because we cannot use fs with miri CI
+    #[cfg(not(miri))]
     fn create_zip_with_windows_absolute_paths() -> Vec<u8> {
         let buf = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
@@ -81,8 +81,8 @@ pub mod tests {
     /// Create a ZIP file that more closely simulates the soldeer registry issue
     /// with an underscore directory at the root with absolute path
     ///
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Only on native because we cannot use fs with miri CI
+    #[cfg(not(miri))]
     fn create_zip_like_soldeer_issue() -> Vec<u8> {
         let buf = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
@@ -109,8 +109,8 @@ pub mod tests {
         writer.finish().unwrap().into_inner()
     }
 
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Only on native because we cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_extract_zip_with_absolute_paths() {
         let zip_data = create_zip_with_absolute_paths();
@@ -130,8 +130,8 @@ pub mod tests {
         assert_eq!(content, "File 1 content");
     }
 
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Only on native because we cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_extract_zip_with_windows_absolute_paths() {
         let zip_data = create_zip_with_windows_absolute_paths();
@@ -150,8 +150,8 @@ pub mod tests {
         assert_eq!(content, "File 1 content");
     }
 
-    /// Only on little endian because we cannot use fs with miri CI
-    #[cfg(all(target_endian = "little", not(miri)))]
+    /// Only on native because we cannot use fs with miri CI
+    #[cfg(not(miri))]
     #[test]
     fn test_extract_soldeer_like_zip() {
         let zip_data = create_zip_like_soldeer_issue();

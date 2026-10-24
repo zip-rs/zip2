@@ -1,5 +1,5 @@
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+/// Only on native because we cannot use fs with miri CI
+#[cfg(not(miri))]
 #[test]
 fn test_is_symlink() -> std::io::Result<()> {
     use std::io::Cursor;
@@ -147,8 +147,8 @@ fn extract_symlink_with_hostile_declared_size() -> zip::result::ZipResult<()> {
 }
 
 /// Symlinks being extracted shouldn't be followed out of the destination directory.
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+/// Only on native because we cannot use fs with miri CI
+#[cfg(not(miri))]
 #[test]
 fn test_cannot_symlink_outside_destination() -> zip::result::ZipResult<()> {
     use std::fs::create_dir;
