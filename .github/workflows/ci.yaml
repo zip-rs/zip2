@@ -447,8 +447,6 @@ jobs:
   wasm:
     timeout-minutes: 10
     needs:
-      - build_and_test
-      - bsd_platform
       - setup_wasm_pack
     strategy:
       matrix:
@@ -609,6 +607,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - bsd_platform
       - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -715,6 +714,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - bsd_platform
       - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -812,6 +812,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - bsd_platform
       - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -917,6 +918,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
+      - bsd_platform
       - fuzz_regressions
     steps:
       - name: Harden the runner (Audit all outbound calls)
