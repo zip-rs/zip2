@@ -200,7 +200,12 @@ fn test_append_4gb_with_large_file() {
     // extra field of central header
     let end = zip.seek(SeekFrom::End(0)).unwrap();
     let mut tail = [0; 256];
-    read_at(&mut zip, end.checked_sub(tail.len() as u64).expect("archive smaller than tail buffer"), &mut tail);
+    read_at(
+        &mut zip,
+        end.checked_sub(tail.len() as u64)
+            .expect("archive smaller than tail buffer"),
+        &mut tail,
+    );
     let central_header = tail
         .windows(4)
         .rposition(|bytes| bytes == [0x50, 0x4b, 0x01, 0x02])
