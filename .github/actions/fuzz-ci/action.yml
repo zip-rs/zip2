@@ -30,9 +30,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
-      with:
-        persist-credentials: false
     - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
       shell: bash
     - id: rustc-version
