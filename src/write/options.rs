@@ -182,7 +182,8 @@ impl ExtendedFileOptions {
         serialized.extend_from_slice(data);
         let block = ZipLocalEntryBlock::zeroed();
         ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_ok()
-            && (central_only || ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_ok())
+            && (central_only
+                || ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_ok())
     }
 
     /// Adds an extra field, unless we detect that it's invalid.
