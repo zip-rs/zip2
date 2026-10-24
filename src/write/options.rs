@@ -181,12 +181,8 @@ impl ExtendedFileOptions {
         serialized.extend_from_slice(&size.to_le_bytes());
         serialized.extend_from_slice(data);
         let block = ZipLocalEntryBlock::zeroed();
-        [false, true]
-            .into_iter()
-            .filter(|&is_local_header| !(central_only && is_local_header))
-            .all(|is_local_header| {
-                ExtraField::parse(&mut Cursor::new(&serialized), &block, is_local_header).is_ok()
-            })
+        ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_ok()
+            && (central_only || ExtraField::parse(&mut Cursor::new(&serialized), &block, false).is_ok())
     }
 
     /// Adds an extra field, unless we detect that it's invalid.
