@@ -1558,9 +1558,15 @@ impl<W: Write + Seek> ZipWriter<W> {
         if self.seek_possible {
             let writer = self.inner.try_inner_mut()?;
             let footer_end = writer.stream_position()?;
-            let archive_end = writer.seek(SeekFrom::End(-(self.comment.len() as i64)))?;
-            if footer_end < archive_end {
-                // Data from an aborted file is past the end of the footer.
+            let stream_end = writer.seek(SeekFrom::End(0))?;
+        let archive_end = stream_end - self.comment.len() as u64;
+        if archive_end <= footer_end && footer_end < stream_end {
+            // Stale bytes no longer than the comment are left after it (we can't truncate), but
+            // blank them: they may hold an old footer that a reader would find instead of ours.
+            writer.seek(SeekFrom::Start(footer_end))?;
+            io::copy(&mut io::repeat(0).take(stream_end - footer_end), writer)?;
+        } else if footer_end < archive_end {
+            // Data from an aborted file is past the end of the footer.
 
                 // Overwrite the magic so the footer is no longer valid.
                 writer.seek(SeekFrom::Start(central_start))?;
@@ -3160,6 +3166,48 @@ mod tests {
         path.push("system32");
         let path_str = super::path_to_string(&path).unwrap();
         assert_eq!(&*path_str, "system32");
+    }
+
+    /// After an `abort_file` that rewinds, `finish` must not leave an old footer past the new one,
+    /// even when the stale tail is no longer than the (new) archive comment. Otherwise the stale
+    /// EOCD at the end is the one a reader finds.
+    #[test]
+    fn finish_after_abort_leaves_no_stale_footer_in_tail_shorter_than_comment() -> ZipResult<()> {
+        fn build(comment_len: usize) -> ZipResult<Vec<u8>> {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.start_file("a", SimpleFileOptions::default())?;
+            writer.write_all(b"aaaa")?;
+            writer.start_file("b", SimpleFileOptions::default())?;
+            writer.write_all(b"bbbb")?;
+            let mut writer = ZipWriter::new_append(writer.finish()?)?;
+            writer.set_raw_comment(vec![b'c'; comment_len].into_boxed_slice())?;
+            writer.abort_file()?;
+            Ok(writer.finish()?.into_inner())
+        }
+        let old_len = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.start_file("a", SimpleFileOptions::default())?;
+            writer.write_all(b"aaaa")?;
+            writer.start_file("b", SimpleFileOptions::default())?;
+            writer.write_all(b"bbbb")?;
+            writer.finish()?.into_inner().len()
+        };
+        let only_a_len = {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            writer.start_file("a", SimpleFileOptions::default())?;
+            writer.write_all(b"aaaa")?;
+            writer.finish()?.into_inner().len()
+        };
+        let stale = old_len - only_a_len;
+        for comment_len in 1..=stale {
+            let bytes = build(comment_len)?;
+            let eocds = bytes.windows(4).filter(|w| *w == b"PK\x05\x06").count();
+            assert_eq!(eocds, 1, "comment_len {comment_len}");
+            let archive = ZipArchive::new(Cursor::new(bytes))?;
+            assert_eq!(archive.len(), 1, "comment_len {comment_len}");
+            assert_eq!(archive.comment().len(), comment_len);
+        }
+        Ok(())
     }
 
     #[test]
