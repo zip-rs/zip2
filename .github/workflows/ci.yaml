@@ -292,8 +292,6 @@ jobs:
     needs:
       - cargo_fmt
       - style_and_docs
-      - miri
-      - check_minimal_versions
       - cargo_semver
       - dependency_review
     if: needs.dependency_review.result == 'success' || needs.dependency_review.result == 'skipped'
