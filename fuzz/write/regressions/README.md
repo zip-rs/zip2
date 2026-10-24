@@ -16,3 +16,9 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   After `abort_file` rewound, `finalize` only moved the footer when the stale tail was longer than
   the new comment; a shorter tail was left as is, so the old EOCD in it stayed last and `new_append`
   failed with "Variable-length field extends beyond file boundary". Fixed by zeroing such a tail.
+- `reopen-unicode-comment-extra-field-grows.bin`: found 2026-10-24 (run 40076154738). A file's
+  Info-ZIP Unicode Comment extra field (0x6375) matched the empty stored comment, so the reader
+  took its UTF-8 content as the comment, but the entry was written back without the language
+  encoding flag. Each reopen decoded the UTF-8 bytes as CP437 and grew the comment until its length
+  overflowed `u16` (`TryFromIntError(PosOverflow)` in `write_central_directory_header`). Fixed by
+  setting the flag for a non-ASCII comment when the name bytes are valid UTF-8.
