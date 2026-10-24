@@ -124,6 +124,10 @@ impl FileOperation<'_, '_> {
                     if !initial_junk.is_empty() {
                         return false;
                     }
+                    // An aborted file's bytes stay in the stream (see below).
+                    if operations.iter().any(|(_, abort)| *abort) {
+                        return false;
+                    }
                     pending.extend(operations.iter().map(|(operation, _)| operation));
                 }
                 BasicFileOperation::SetArchiveComment(_) => {}
@@ -158,6 +162,66 @@ fn deduplicate_paths(
     Ok(())
 }
 
+/// Errors that `ZipWriter` returns by design for an arbitrary `FileOptions` or path, rather
+/// than because of a bug. Each one is returned before the writer's state changes.
+fn is_expected_new_entry_error(e: &ZipError) -> bool {
+    match e {
+        // `GenericZipWriter::prepare_next_writer` (src/write.rs): the compression method or
+        // level isn't available for writing with the enabled features.
+        ZipError::UnsupportedArchive(msg) => matches!(
+            *msg,
+            "Unsupported compression"
+                | "Unsupported compression level"
+                | "Compressing Deflate64 is not supported"
+                | "LZMA isn't supported for compression"
+                | "AES encryption is enabled through FileOptions::with_aes_encryption"
+                | "Shrink compression unsupported"
+                | "Reduce compression unsupported"
+                | "Implode compression unsupported"
+        ),
+        // `ZipWriter::insert_file_data`: two arbitrary paths can normalize to the same name.
+        // `ZipWriter::start_entry` with `validate_extra_fields(true)`: the arbitrary options
+        // contain an extra field that the reader would reject.
+        ZipError::InvalidArchive(msg) => {
+            msg.starts_with("Duplicate filename: ")
+                || (msg.starts_with("Extra field ")
+                    && msg.ends_with(" would not be readable: malformed data"))
+        }
+        _ => false,
+    }
+}
+
+/// Errors from `deep_copy_file`/`shallow_copy_file` that are expected when the source was never
+/// written (an expected error above skipped it) or the destination name is already taken.
+fn is_expected_copy_error(e: &ZipError) -> bool {
+    match e {
+        ZipError::FileNotFound => true,
+        ZipError::InvalidArchive(msg) => {
+            msg == "That file already exists"
+                || msg == "Trying to copy a file to itself"
+                || msg.starts_with("Duplicate filename: ")
+        }
+        _ => is_expected_new_entry_error(e),
+    }
+}
+
+/// Turns an expected error into `Ok(false)` (logging it to the transcript) so the caller can skip
+/// updating its model; any other error is passed through.
+fn accept_expected(
+    result: ZipResult<()>,
+    expected: fn(&ZipError) -> bool,
+    stringifier: &mut impl Write,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(e) if expected(&e) => {
+            writeln!(stringifier, "// expected error: {e}")?;
+            Ok(false)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 enum OperationWork<'k, 'n> {
     Run {
         operation: FileOperation<'k, 'n>,
@@ -190,7 +254,7 @@ fn finalize_operation(
     files_added: &mut usize,
     stringifier: &mut impl Write,
     allow_reopen_failure: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error>> {
     if abort && *files_added != 0 {
         writeln!(stringifier, "writer.abort_file()?;")?;
         writer.abort_file()?;
@@ -222,7 +286,10 @@ fn finalize_operation(
                     }
                 }
             });
-            if !allow_reopen_failure && let Some(e) = failed_replace {
+            if let Some(e) = failed_replace {
+                if allow_reopen_failure {
+                    return Ok(false);
+                }
                 return Err(e.into());
             }
             if !writer.get_raw_comment().starts_with(&old_comment) {
@@ -236,14 +303,14 @@ fn finalize_operation(
             let old_comment = writer.get_raw_comment().to_owned();
             writeln!(
                 stringifier,
-                "let mut writer = ZipWriter::new_append(writer.finish()?)?;"
+                "let mut writer = ZipWriter::new_append(writer.finish_into_readable()?.into_inner())?;"
             )?;
             let mut failed_replace = None;
             replace_with_or_abort(
                 writer,
                 |old_writer: ZipWriter<Cursor<Vec<u8>>>| match old_writer
                     .finish_into_readable()
-                    .map(|archive| ZipWriter::new(archive.into_inner()))
+                    .and_then(|archive| ZipWriter::new_append(archive.into_inner()))
                 {
                     Ok(writer) => writer,
                     Err(e) => {
@@ -252,13 +319,21 @@ fn finalize_operation(
                     }
                 },
             );
-            if !allow_reopen_failure && let Some(e) = failed_replace {
+            if let Some(e) = failed_replace {
+                if allow_reopen_failure {
+                    return Ok(false);
+                }
                 return Err(e.into());
             }
-            debug_assert!(writer.get_raw_comment().starts_with(&old_comment));
+            if !writer.get_raw_comment().starts_with(&old_comment) {
+                return Err(ZipError::InvalidArchive(
+                    "Comment unexpectedly changed after reopening".into(),
+                )
+                .into());
+            }
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Returns Ok(true) if everything went okay, Ok(false) if an allowed reopen failure occurred, or
@@ -394,19 +469,19 @@ fn do_operation(
                             &mut sub_writers[writer_index - 1]
                         };
                         match basic {
-                            BasicFileOperation::WriteNormalFile {
-                                contents,
-                                mut options,
-                            } => {
+                            BasicFileOperation::WriteNormalFile { contents, options } => {
+                                let mut options = options.validate_extra_fields(true);
                                 let uncompressed_size =
                                     contents.iter().map(|chunk| chunk.len()).sum::<usize>();
                                 if uncompressed_size >= u32::MAX as usize {
                                     options = options.large_file(true);
                                 }
-                                if options == FullFileOptions::default() {
+                                if options == FullFileOptions::default().validate_extra_fields(true)
+                                {
                                     writeln!(
                                         stringifier,
-                                        "writer.start_file_from_path({path:?}, Default::default())?;"
+                                        "writer.start_file_from_path({path:?}, \
+                                         FullFileOptions::default().validate_extra_fields(true))?;"
                                     )?;
                                 } else {
                                     writeln!(
@@ -414,7 +489,13 @@ fn do_operation(
                                         "writer.start_file_from_path({path:?}, {options:?})?;"
                                     )?;
                                 }
-                                writer.start_file_from_path(&*path, options)?;
+                                if !accept_expected(
+                                    writer.start_file_from_path(&*path, options),
+                                    is_expected_new_entry_error,
+                                    stringifier,
+                                )? {
+                                    continue;
+                                }
                                 for chunk in contents.iter() {
                                     writeln!(stringifier, "writer.write_all(&{chunk:?})?;")?;
                                     writer.write_all(chunk)?;
@@ -422,19 +503,33 @@ fn do_operation(
                                 files_added_by_writer[writer_index] += 1;
                             }
                             BasicFileOperation::WriteDirectory(options) => {
+                                let options = options.validate_extra_fields(true);
                                 writeln!(
                                     stringifier,
                                     "writer.add_directory_from_path(&{path:?}, {options:?})?;"
                                 )?;
-                                writer.add_directory_from_path(&*path, options)?;
+                                if !accept_expected(
+                                    writer.add_directory_from_path(&*path, options),
+                                    is_expected_new_entry_error,
+                                    stringifier,
+                                )? {
+                                    continue;
+                                }
                                 files_added_by_writer[writer_index] += 1;
                             }
                             BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
+                                let options = options.validate_extra_fields(true);
                                 writeln!(
                                     stringifier,
                                     "writer.add_symlink_from_path(&{path:?}, {target:?}, {options:?});"
                                 )?;
-                                writer.add_symlink_from_path(&*path, target, options)?;
+                                if !accept_expected(
+                                    writer.add_symlink_from_path(&*path, target, options),
+                                    is_expected_new_entry_error,
+                                    stringifier,
+                                )? {
+                                    continue;
+                                }
                                 files_added_by_writer[writer_index] += 1;
                             }
                             BasicFileOperation::SetArchiveComment(comment) => {
@@ -464,13 +559,25 @@ fn do_operation(
                         stringifier,
                         "writer.deep_copy_file_from_path({base_path:?}, {path:?});"
                     )?;
-                    writer.deep_copy_file_from_path(&*base_path, path)?;
+                    if !accept_expected(
+                        writer.deep_copy_file_from_path(&*base_path, path),
+                        is_expected_copy_error,
+                        stringifier,
+                    )? {
+                        continue;
+                    }
                 } else {
                     writeln!(
                         stringifier,
                         "writer.shallow_copy_file_from_path({base_path:?}, {path:?});"
                     )?;
-                    writer.shallow_copy_file_from_path(&*base_path, &*path)?;
+                    if !accept_expected(
+                        writer.shallow_copy_file_from_path(&*base_path, &*path),
+                        is_expected_copy_error,
+                        stringifier,
+                    )? {
+                        continue;
+                    }
                 }
                 files_added_by_writer[writer_index] += 1;
             }
@@ -487,8 +594,14 @@ fn do_operation(
                 } else {
                     &mut sub_writers[parent_index - 1]
                 };
-                parent_writer.merge_archive(other_writer.finish_into_readable()?)?;
-                files_added_by_writer[parent_index] += inner_files_added;
+                // Both archives can contain the same (normalized) name.
+                if accept_expected(
+                    parent_writer.merge_archive(other_writer.finish_into_readable()?),
+                    is_expected_new_entry_error,
+                    stringifier,
+                )? {
+                    files_added_by_writer[parent_index] += inner_files_added;
+                }
             }
             OperationWork::Finalize {
                 abort,
@@ -501,14 +614,16 @@ fn do_operation(
                 } else {
                     &mut sub_writers[writer_index - 1]
                 };
-                finalize_operation(
+                if !finalize_operation(
                     writer,
                     abort,
                     reopen,
                     &mut files_added_by_writer[writer_index],
                     stringifier,
                     allow_reopen_failure,
-                )?;
+                )? {
+                    return Ok(false);
+                }
             }
         }
     }
@@ -547,12 +662,14 @@ impl FuzzTestCase<'_, '_> {
         #[allow(unknown_lints)]
         #[allow(boxed_slice_into_iter)]
         for (operation, abort) in self.operations.into_vec().into_iter() {
-            if streamable && !operation.is_streamable() {
+            // `abort_file` can't truncate the inner writer, so an aborted file's bytes stay where a
+            // local header is expected and `finalize` moves the footer past them; only the central
+            // directory (`ZipArchive::new`) can be relied on afterwards.
+            if streamable && (abort || !operation.is_streamable()) {
                 streamable = false;
             }
-            if let BasicFileOperation::SetArchiveComment(ref comment) = operation.basic
-                && !comment.is_empty()
-            {
+            // An empty comment counts too: it's the shortest possible one after a reopen.
+            if let BasicFileOperation::SetArchiveComment(ref comment) = operation.basic {
                 comment_len = comment.len();
                 if !comment_contains_signature {
                     if comment_len >= 22
