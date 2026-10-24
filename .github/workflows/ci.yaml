@@ -36,7 +36,7 @@ jobs:
           - { key: miri-compatible, flags: "--no-default-features --features zip/_miri_compatible_features" }
           - { key: no-default-features, flags: "--no-default-features" }
     name: "Miri ${{ matrix.feature.key }} Cargo.toml"
-    runs-on: ${{ vars.LINUX_RUNNER_CI_MIRI || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_MIRI || 'blacksmith-4vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -112,7 +112,7 @@ jobs:
     - cargo_fmt
     timeout-minutes: 20
     name: "BSD checks"
-    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -238,7 +238,7 @@ jobs:
     permissions:
       security-events: write # for SARIF upload
     name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
-    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -268,7 +268,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     permissions:
       contents: read
-    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -375,7 +375,7 @@ jobs:
         runner:
           - { alias: windows-latest, id: windows-latest }
           - { alias: macOS-latest, id: macOS-latest }
-          - { alias: ubuntu-latest, id: "${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}" }
+          - { alias: ubuntu-latest, id: "${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}" }
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: default, flags: "" }
@@ -429,7 +429,7 @@ jobs:
       - style_and_docs
       - cargo_semver
       - dependency_review
-    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -460,7 +460,7 @@ jobs:
             rust: stable
           - rustalias: nightly
             rust: nightly
-    runs-on: ${{ vars.LINUX_RUNNER_CI_WASM || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_WASM || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -511,7 +511,7 @@ jobs:
         feature_group:
           ["all-features", "default-features", "only-explicit-features"]
     name: "Semver checks: ${{ matrix.feature_group }}"
-    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -526,7 +526,7 @@ jobs:
           manifest-path: ${{ github.workspace }}/${{ matrix.workspace }}
           feature-group: ${{ matrix.feature_group }}
   cargo_fmt:
-    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     timeout-minutes: 10
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -553,7 +553,7 @@ jobs:
         feature:
           - { key: all-features, flags: "--all-features" }
           - { key: no-default-features, flags: "--no-default-features" }
-    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
