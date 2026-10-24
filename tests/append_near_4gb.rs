@@ -59,7 +59,9 @@ impl Read for AddressHoleCursor {
             let segment = as_usize_clamped(self.position / DENSE_SEGMENT_START_INTERVAL);
             let segment_offset = self.position % DENSE_SEGMENT_START_INTERVAL;
             let count = (buf.len() - read)
-                .min(as_usize_clamped(DENSE_SEGMENT_START_INTERVAL - segment_offset))
+                .min(as_usize_clamped(
+                    DENSE_SEGMENT_START_INTERVAL - segment_offset,
+                ))
                 .min(as_usize_clamped(self.len - self.position));
             let vec = &self.segments[segment];
             let offset = as_usize_clamped(segment_offset);
@@ -79,7 +81,9 @@ impl Write for AddressHoleCursor {
         while written < buf.len() {
             let segment = as_usize_clamped(self.position / DENSE_SEGMENT_START_INTERVAL);
             let segment_offset = self.position % DENSE_SEGMENT_START_INTERVAL;
-            let count = (buf.len() - written).min(as_usize_clamped(DENSE_SEGMENT_START_INTERVAL - segment_offset));
+            let count = (buf.len() - written).min(as_usize_clamped(
+                DENSE_SEGMENT_START_INTERVAL - segment_offset,
+            ));
             let vec = &mut self.segments[segment];
             let offset = as_usize_clamped(segment_offset);
             Self::write_to_sparse_vec(vec, offset, &buf[written..written + count]);
@@ -133,8 +137,8 @@ fn write_data(w: &mut impl Write, size: usize) -> Result<(), io::Error> {
 
 #[test]
 fn test_append_4gb_without_large_file() {
-    use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
 
     let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
@@ -153,8 +157,8 @@ fn test_append_4gb_without_large_file() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_append_4gb_with_large_file() {
-    use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
 
     let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
@@ -220,8 +224,8 @@ fn test_append_4gb_with_large_file() {
 
 #[test]
 fn test_append_near_4gb() {
-    use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
 
     // Create a new zip file with a large file close to 4GB
     let cursor = {
@@ -260,22 +264,28 @@ fn test_append_near_4gb() {
 
         assert_eq!(archive.len(), 3);
         assert!(!archive.has_overlapping_files().unwrap());
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "close_to_4gb"));
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "small_file"));
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "appended_file"));
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "small_file")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "appended_file")
+        );
     }
 }
 
 #[test]
 fn test_append_near_4gb_with_1gb_files() {
-    use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
 
     // Create a new zip file with 4 files totaling 1GB
     let cursor = {
@@ -318,24 +328,36 @@ fn test_append_near_4gb_with_1gb_files() {
 
         assert_eq!(archive.len(), 6);
         assert!(!archive.has_overlapping_files().unwrap());
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "close_to_4gb_0"));
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "close_to_4gb_1"));
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "close_to_4gb_2"));
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "close_to_4gb_3"));
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "small_file"));
-        assert!(archive
-            .file_names()
-            .any(|name| name.unwrap() == "appended_file"));
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_0")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_1")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_2")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "close_to_4gb_3")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "small_file")
+        );
+        assert!(
+            archive
+                .file_names()
+                .any(|name| name.unwrap() == "appended_file")
+        );
     }
 }
 
@@ -344,8 +366,8 @@ fn test_append_near_4gb_with_1gb_files() {
 fn test_append_with_large_file_flag() {
     use std::fs::File;
     use tempfile::tempdir;
-    use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
 
     let dir = tempdir().unwrap();
     let path = dir.path().join("test.zip");
