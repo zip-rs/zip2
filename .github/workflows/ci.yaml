@@ -650,7 +650,7 @@ jobs:
           target: read
           feature-key: no-default-features
           clippy-flags: --no-default-features
-          build-flags: ""
+          build-flags: --no-default-features
           minimize: "false"
           artifact-suffix: _no_features
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
