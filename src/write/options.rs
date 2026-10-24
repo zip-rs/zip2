@@ -158,6 +158,29 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         self.add_extra_field(header_id, data, central_only)
     }
+    /// Whether the reader's own extra-field parser accepts this field in every header it will be
+    /// written to (local and central, or central only).
+    fn extra_field_parses(header_id: u16, data: &[u8], central_only: bool) -> bool {
+        use crate::extra_fields::ExtraField;
+        use crate::format::blocks::{Pod, ZipLocalEntryBlock};
+        use std::io::Cursor;
+
+        let Ok(size) = u16::try_from(data.len()) else {
+            return false;
+        };
+        let mut serialized = Vec::with_capacity(data.len() + 4);
+        serialized.extend_from_slice(&header_id.to_le_bytes());
+        serialized.extend_from_slice(&size.to_le_bytes());
+        serialized.extend_from_slice(data);
+        let block = ZipLocalEntryBlock::zeroed();
+        [false, true]
+            .into_iter()
+            .filter(|&is_local_header| !(central_only && is_local_header))
+            .all(|is_local_header| {
+                ExtraField::parse(&mut Cursor::new(&serialized), &block, is_local_header).is_ok()
+            })
+    }
+
     /// Adds an extra field, unless we detect that it's invalid.
     ///
     /// # Parameters
@@ -192,6 +215,12 @@ impl ExtendedFileOptions {
         let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.full_size(false)).sum();
         if extra_fields_len + len > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
+        } else if !Self::extra_field_parses(header_id, data, central_only) {
+            // Otherwise the archive is written, but `ZipArchive` (and `ZipWriter::new_append`)
+            // reject it, e.g. an Info-ZIP Unicode Path field shorter than its 5-byte header.
+            Err(invalid!(
+                "Extra field {header_id:#06x} would not be readable: malformed data"
+            ))
         } else {
             Arc::make_mut(&mut self.extra_fields).push(CustomExtraField::new(
                 central_only,

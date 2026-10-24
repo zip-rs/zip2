@@ -4889,6 +4889,25 @@ mod tests {
         Ok(())
     }
 
+    /// A malformed Info-ZIP Unicode Path field used to be accepted and written, producing an
+    /// archive that `ZipArchive` and `ZipWriter::new_append` then refused to open.
+    #[test]
+    fn add_extra_field_rejects_fields_the_reader_cannot_parse() -> ZipResult<()> {
+        let mut options = FullFileOptions::default();
+        // 0x7075 needs at least a version byte and a CRC-32 (5 bytes).
+        assert!(options.add_extra_field(0x7075, [28], true).is_err());
+        assert!(options.add_extra_field(0x7075, [28], false).is_err());
+        // A vendor ID the reader doesn't interpret is still stored verbatim.
+        options.add_extra_field(0xbeef, [28], false)?;
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a", options)?;
+        let mut archive = ZipArchive::new(writer.finish()?)?;
+        assert_eq!(archive.len(), 1);
+        drop(archive.by_index(0)?);
+        Ok(())
+    }
+
     /// `表示写真.txt` in Shift-JIS, as Japanese Windows tools store it: no
     /// language encoding flag, and not valid UTF-8, so [`ZipFile::name`] reads it
     /// as CP437.
