@@ -83,7 +83,6 @@ runs:
       env:
         AFL_BENCH_UNTIL_CRASH: 1
         AFL_NO_UI: 1
-      timeout-minutes: 20
       run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/${{ inputs.target }}/in -o out -V ${{ inputs.fuzz-seconds }} ${{ inputs.dictionary }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_${{ inputs.target }}
       shell: bash
     - name: Minimize corpus
