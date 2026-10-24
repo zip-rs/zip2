@@ -180,7 +180,13 @@ fn is_expected_new_entry_error(e: &ZipError) -> bool {
                 | "Implode compression unsupported"
         ),
         // `ZipWriter::insert_file_data`: two arbitrary paths can normalize to the same name.
-        ZipError::InvalidArchive(msg) => msg.starts_with("Duplicate filename: "),
+        // `ZipWriter::start_entry` with `validate_extra_fields(true)`: the arbitrary options
+        // contain an extra field that the reader would reject.
+        ZipError::InvalidArchive(msg) => {
+            msg.starts_with("Duplicate filename: ")
+                || (msg.starts_with("Extra field ")
+                    && msg.ends_with(" would not be readable: malformed data"))
+        }
         _ => false,
     }
 }
@@ -463,19 +469,19 @@ fn do_operation(
                             &mut sub_writers[writer_index - 1]
                         };
                         match basic {
-                            BasicFileOperation::WriteNormalFile {
-                                contents,
-                                mut options,
-                            } => {
+                            BasicFileOperation::WriteNormalFile { contents, options } => {
+                                let mut options = options.validate_extra_fields(true);
                                 let uncompressed_size =
                                     contents.iter().map(|chunk| chunk.len()).sum::<usize>();
                                 if uncompressed_size >= u32::MAX as usize {
                                     options = options.large_file(true);
                                 }
-                                if options == FullFileOptions::default() {
+                                if options == FullFileOptions::default().validate_extra_fields(true)
+                                {
                                     writeln!(
                                         stringifier,
-                                        "writer.start_file_from_path({path:?}, Default::default())?;"
+                                        "writer.start_file_from_path({path:?}, \
+                                         FullFileOptions::default().validate_extra_fields(true))?;"
                                     )?;
                                 } else {
                                     writeln!(
@@ -497,6 +503,7 @@ fn do_operation(
                                 files_added_by_writer[writer_index] += 1;
                             }
                             BasicFileOperation::WriteDirectory(options) => {
+                                let options = options.validate_extra_fields(true);
                                 writeln!(
                                     stringifier,
                                     "writer.add_directory_from_path(&{path:?}, {options:?})?;"
@@ -511,6 +518,7 @@ fn do_operation(
                                 files_added_by_writer[writer_index] += 1;
                             }
                             BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
+                                let options = options.validate_extra_fields(true);
                                 writeln!(
                                     stringifier,
                                     "writer.add_symlink_from_path(&{path:?}, {target:?}, {options:?});"
