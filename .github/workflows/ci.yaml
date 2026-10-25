@@ -702,7 +702,7 @@ jobs:
           cp "$RUNNER_TEMP/cargo-afl-artifact/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
           chmod +x "$HOME/.cargo/bin/cargo-afl"
           mkdir -p "$HOME/.local/share/afl.rs"
-          cp -a "$RUNNER_TEMP/cargo-afl-artifact/afl-data/." "$HOME/.local/share/afl.rs/"
+          tar -xzf "$RUNNER_TEMP/cargo-afl-artifact/afl-data.tar.gz" -C "$HOME/.local/share/afl.rs"
       - name: Build AFL runtime if nightly advanced
         if: steps.rustc-version.outputs.version != needs.setup_cargo_afl.outputs.rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
         run: cargo afl config --build --force
@@ -751,9 +751,9 @@ jobs:
       - name: Stage cargo-afl and runtime
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/cargo-afl-artifact/afl-data"
+          mkdir -p "$RUNNER_TEMP/cargo-afl-artifact"
           cp "$HOME/.cargo/bin/cargo-afl" "$RUNNER_TEMP/cargo-afl-artifact/"
-          cp -a "$HOME/.local/share/afl.rs/." "$RUNNER_TEMP/cargo-afl-artifact/afl-data/"
+          tar -czf "$RUNNER_TEMP/cargo-afl-artifact/afl-data.tar.gz" -C "$HOME/.local/share/afl.rs" .
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cargo-afl-linux

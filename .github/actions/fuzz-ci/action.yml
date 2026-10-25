@@ -66,7 +66,7 @@ runs:
         cp "$RUNNER_TEMP/cargo-afl-artifact/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
         chmod +x "$HOME/.cargo/bin/cargo-afl"
         mkdir -p "$HOME/.local/share/afl.rs"
-        cp -a "$RUNNER_TEMP/cargo-afl-artifact/afl-data/." "$HOME/.local/share/afl.rs/"
+        tar -xzf "$RUNNER_TEMP/cargo-afl-artifact/afl-data.tar.gz" -C "$HOME/.local/share/afl.rs"
       shell: bash
     - name: Build AFL runtime if nightly advanced
       if: steps.rustc-version.outputs.version != inputs.setup-rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
