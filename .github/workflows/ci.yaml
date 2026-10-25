@@ -510,7 +510,27 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - run: rustup toolchain add stable && cargo +stable install --locked wasm-pack
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add stable && rustup default stable
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-pack
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-wasm-pack-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/wasm-pack-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-wasm-pack-${{ steps.rustc-version.outputs.version }}-
+      - run: bash .github/scripts/install-cargo-tool.sh wasm-pack tools/wasm-pack-version/Cargo.toml
       - run: mkdir -p "$RUNNER_TEMP/wasm-pack" && cp "$HOME/.cargo/bin/wasm-pack" "$RUNNER_TEMP/wasm-pack/"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
