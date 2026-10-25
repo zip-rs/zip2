@@ -69,6 +69,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.target }}-${{ matrix.feature }}-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
+      - run: cargo afl config --build
       - run: cargo afl system-config
       - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - name: fuzz

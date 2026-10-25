@@ -698,6 +698,7 @@ jobs:
           mkdir -p "$HOME/.cargo/bin"
           cp "$RUNNER_TEMP/cargo-afl/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
           chmod +x "$HOME/.cargo/bin/cargo-afl"
+      - run: cargo afl config --build
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
       - run: cargo afl build --release ${{ matrix.feature.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - run: fuzz/replay.sh fuzz/target/release/fuzz_${{ matrix.target }} 10 fuzz/${{ matrix.target }}/in fuzz/${{ matrix.target }}/regressions

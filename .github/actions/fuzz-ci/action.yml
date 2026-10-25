@@ -58,6 +58,8 @@ runs:
         cp "$RUNNER_TEMP/cargo-afl/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
         chmod +x "$HOME/.cargo/bin/cargo-afl"
       shell: bash
+    - run: cargo afl config --build
+      shell: bash
     - id: cpu-features
       shell: pwsh
       run: |
