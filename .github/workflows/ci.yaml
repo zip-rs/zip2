@@ -525,6 +525,9 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-wasm-pack-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/wasm-pack-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-wasm-pack-${{ steps.rustc-version.outputs.version }}-
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
       - run: bash .github/scripts/install-cargo-tool.sh wasm-pack tools/wasm-pack-version/Cargo.toml
       - run: mkdir -p "$RUNNER_TEMP/wasm-pack" && cp "$HOME/.cargo/bin/wasm-pack" "$RUNNER_TEMP/wasm-pack/"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
