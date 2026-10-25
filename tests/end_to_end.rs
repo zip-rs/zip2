@@ -189,7 +189,11 @@ fn test_raw_copy_file_permissions() {
     for_each_supported_method(|method| {
         let mut src_archive = {
             let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-            let options = SimpleFileOptions::default().compression_method(method);
+            let mut options = SimpleFileOptions::default()
+                .compression_method(method)
+                .into_full_options()
+                .with_file_comment("Preserved comment");
+            options.add_extra_field(87_u16, b"abc", false).unwrap();
             b.start_file("file", options).unwrap();
             b.finish_into_readable().unwrap()
         };
@@ -218,6 +222,8 @@ fn test_raw_copy_file_permissions() {
 
         #[cfg(not(windows))]
         assert_eq!(tgt_file.unix_mode(), Some(unix_mode | ffi::S_IFREG));
+        assert_eq!(src_file.comment(), tgt_file.comment());
+        assert_eq!(src_file.extra_data(), tgt_file.extra_data());
     });
 }
 
