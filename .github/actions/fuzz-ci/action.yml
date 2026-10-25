@@ -27,6 +27,9 @@ inputs:
   fuzz-seconds:
     description: Maximum duration for the fuzz run
     required: true
+  setup-rustc-version:
+    description: Rust compiler version used to build the setup AFL runtime
+    required: true
 runs:
   using: composite
   steps:
@@ -39,6 +42,11 @@ runs:
         $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
         $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
         "version=$release-$commit" >> $env:GITHUB_OUTPUT
+    - id: afl-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.local/share/afl.rs
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
@@ -48,15 +56,22 @@ runs:
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
         restore-keys: |
           ${{ runner.os }}-cargo-registry-
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
-        path: |
-          ~/.cargo/bin/cargo-afl
-          ~/.cargo/.crates2.json
-          ~/.cargo/.crates.toml
-        key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+        name: cargo-afl-linux
+        path: ${{ runner.temp }}/cargo-afl-artifact
+    - name: Install cargo-afl
+      run: |
+        mkdir -p "$HOME/.cargo/bin"
+        cp "$RUNNER_TEMP/cargo-afl-artifact/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
+        chmod +x "$HOME/.cargo/bin/cargo-afl"
+        mkdir -p "$HOME/.local/share/afl.rs"
+        tar -xzf "$RUNNER_TEMP/cargo-afl-artifact/afl-data.tar.gz" -C "$HOME/.local/share/afl.rs"
+      shell: bash
+    - name: Build AFL runtime if nightly advanced
+      if: steps.rustc-version.outputs.version != inputs.setup-rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
+      run: cargo afl config --build --force
+      shell: bash
     - id: cpu-features
       shell: pwsh
       run: |
@@ -69,8 +84,6 @@ runs:
         key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ inputs.target }}-${{ inputs.feature-key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ inputs.target }}-${{ inputs.feature-key }}-
-    - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
-      shell: bash
     - run: cargo afl system-config
       shell: bash
     - name: clippy
