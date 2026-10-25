@@ -6,7 +6,7 @@ publish = false
 
 # Dependabot tracks this pin; the install script reads it.
 [dev-dependencies]
-wasm-pack = "=0.13.1"
+wasm-pack = "=0.15.0"
 
 [lints.rust]
 unused_crate_dependencies = "allow"
