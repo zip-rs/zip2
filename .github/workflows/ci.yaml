@@ -29,6 +29,7 @@ jobs:
     - cargo_semver
     - style_and_docs
     - cargo_fmt
+    - setup_cargo_nextest
     timeout-minutes: 25
     strategy:
       matrix:
@@ -79,16 +80,22 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: |
-            ~/.cargo/bin/cargo-nextest*
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+          name: cargo-nextest-${{ runner.os }}
+          path: ${{ runner.temp }}/cargo-nextest
+      - name: Install cargo-nextest
+        shell: pwsh
+        run: |
+          $extension = if ($env:RUNNER_OS -eq 'Windows') { '.exe' } else { '' }
+          $binDir = Join-Path $HOME '.cargo/bin'
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          $source = Join-Path $env:RUNNER_TEMP "cargo-nextest/cargo-nextest$extension"
+          $destination = Join-Path $binDir "cargo-nextest$extension"
+          Copy-Item $source $destination
+          if ($env:RUNNER_OS -ne 'Windows') {
+            chmod +x $destination
+          }
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -172,6 +179,7 @@ jobs:
       - cargo_semver
       - style_and_docs
       - cargo_fmt
+      - setup_cargo_nextest
     timeout-minutes: 15
     strategy:
       matrix:
@@ -217,16 +225,22 @@ jobs:
         run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
         run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: |
-            ~/.cargo/bin/cargo-nextest*
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+          name: cargo-nextest-${{ runner.os }}
+          path: ${{ runner.temp }}/cargo-nextest
+      - name: Install cargo-nextest
+        shell: pwsh
+        run: |
+          $extension = if ($env:RUNNER_OS -eq 'Windows') { '.exe' } else { '' }
+          $binDir = Join-Path $HOME '.cargo/bin'
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          $source = Join-Path $env:RUNNER_TEMP "cargo-nextest/cargo-nextest$extension"
+          $destination = Join-Path $binDir "cargo-nextest$extension"
+          Copy-Item $source $destination
+          if ($env:RUNNER_OS -ne 'Windows') {
+            chmod +x $destination
+          }
       - name: test
         run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
   style_and_docs:
@@ -294,6 +308,7 @@ jobs:
       - style_and_docs
       - cargo_semver
       - dependency_review
+      - setup_cargo_nextest
     if: needs.dependency_review.result == 'success' || needs.dependency_review.result == 'skipped'
     strategy:
       matrix:
@@ -351,16 +366,22 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-target-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
       - name: Check that the benches can be built
         run: cargo build --benches
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: |
-            ~/.cargo/bin/cargo-nextest*
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+          name: cargo-nextest-${{ runner.os }}
+          path: ${{ runner.temp }}/cargo-nextest
+      - name: Install cargo-nextest
+        shell: pwsh
+        run: |
+          $extension = if ($env:RUNNER_OS -eq 'Windows') { '.exe' } else { '' }
+          $binDir = Join-Path $HOME '.cargo/bin'
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          $source = Join-Path $env:RUNNER_TEMP "cargo-nextest/cargo-nextest$extension"
+          $destination = Join-Path $binDir "cargo-nextest$extension"
+          Copy-Item $source $destination
+          if ($env:RUNNER_OS -ne 'Windows') {
+            chmod +x $destination
+          }
       - run: cargo nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --all --lib --bins --tests --examples ${{ matrix.feature.flags }}
   check_fuzz:
     timeout-minutes: 10
@@ -428,6 +449,54 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.feature.key }}-
       - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature.flags }} --bins --examples
+  setup_cargo_nextest:
+    timeout-minutes: 20
+    needs:
+      - cargo_fmt
+      - style_and_docs
+      - cargo_semver
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && (vars.LINUX_RUNNER_CI_UNIT_TESTS || 'ubuntu-latest') || matrix.os }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain add stable && rustup default stable
+      - id: rustc-version
+        shell: pwsh
+        run: |
+          $rustcInfo = rustc -Vv
+          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+          "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-nextest*
+            ~/.cargo/.crates2.json
+            ~/.cargo/.crates.toml
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-nextest-version/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-nextest-${{ steps.rustc-version.outputs.version }}-
+      - run: bash .github/scripts/install-cargo-tool.sh cargo-nextest tools/cargo-nextest-version/Cargo.toml
+      - name: Stage cargo-nextest
+        shell: pwsh
+        run: |
+          $extension = if ($env:RUNNER_OS -eq 'Windows') { '.exe' } else { '' }
+          $artifactDir = Join-Path $env:RUNNER_TEMP 'cargo-nextest'
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          Copy-Item (Join-Path $HOME ".cargo/bin/cargo-nextest$extension") $artifactDir
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-nextest-${{ runner.os }}
+          path: ${{ runner.temp }}/cargo-nextest/cargo-nextest*
+          if-no-files-found: error
   setup_wasm_pack:
     timeout-minutes: 10
     needs:
