@@ -1,5 +1,13 @@
 //! unreserved feature tests
 
+const PAYLOAD: [u8; 7] = [
+    0x01, // Version
+    0x02, // UID length
+    0xE8, 0x03, // UID = 1000
+    0x02, // GID length
+    0xE8, 0x03, // GID = 1000
+];
+
 #[cfg(not(feature = "unreserved"))]
 #[test]
 fn test_unreserved_feature_disabled() {
@@ -12,16 +20,7 @@ fn test_unreserved_feature_disabled() {
 
     let mut options = FileOptions::default().compression_method(CompressionMethod::Stored);
 
-    // Custom extra-field payload.
-    // Replace this with your own bytes.
-    let payload: Box<[u8]> = vec![
-        0x01, // Version
-        0x02, // UID length
-        0xE8, 0x03, // UID = 1000
-        0x02, // GID length
-        0xE8, 0x03, // GID = 1000
-    ]
-    .into_boxed_slice();
+    let payload: Box<[u8]> = Box::new(PAYLOAD);
 
     // Add extra field ID 0x7875 to the local header
     // and central directory.
@@ -44,16 +43,7 @@ fn test_unreserved_feature_enabled() {
 
     let mut options = FileOptions::default().compression_method(CompressionMethod::Stored);
 
-    // Custom extra-field payload.
-    // Replace this with your own bytes.
-    let payload: Box<[u8]> = vec![
-        0x01, // Version
-        0x02, // UID length
-        0xE8, 0x03, // UID = 1000
-        0x02, // GID length
-        0xE8, 0x03, // GID = 1000
-    ]
-    .into_boxed_slice();
+    let payload: Box<[u8]> = Box::new(PAYLOAD);
 
     // Add extra field ID 0x7875 to the local header
     // and central directory.
@@ -77,8 +67,8 @@ fn test_unreserved_feature_enabled() {
     assert!(
         file.extra_data()
             .unwrap()
-            .windows(11)
-            .any(|field| { field == [0x75, 0x78, 7, 0, 1, 2, 0xE8, 3, 2, 0xE8, 3] })
+            .windows(4 + PAYLOAD.len())
+            .any(|field| { field[0..4] == [0x75, 0x78, 7, 0] && field[4..] == PAYLOAD })
     );
 }
 
