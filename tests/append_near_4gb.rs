@@ -121,19 +121,14 @@ impl Seek for AddressHoleCursor {
     }
 }
 
-fn read_at<R: Read + Seek>(reader: &mut R, position: u64, buf: &mut [u8]) {
-    reader.seek(SeekFrom::Start(position)).unwrap();
-    reader.read_exact(buf).unwrap();
-}
-
-fn write_data(w: &mut impl Write, size: usize) -> Result<(), io::Error> {
+fn write_data(w: &mut impl Write, size: u64) -> Result<(), io::Error> {
     let chunks = 1 << 20; // 1MB chunks
     let mut written = 0;
     let buf = vec![0; chunks];
     while written < size {
-        let to_write = (size - written).min(chunks);
+        let to_write = (size - written).min(chunks as u64) as usize;
         w.write_all(&buf[..to_write])?;
-        written += to_write;
+        written += to_write as u64;
     }
     Ok(())
 }
@@ -150,18 +145,21 @@ fn test_append_4gb_without_large_file() {
     writer.start_file_from_path("4gb_file", opts).unwrap();
 
     // Write a file that's 4GB
-    let size = u32::MAX;
-    let write_result = write_data(&mut writer, size as usize); // check is error
+    let size = u32::MAX as u64;
+    let write_result = write_data(&mut writer, size); // check is error
 
     assert!(write_result.is_err());
 }
 
-///  We cannot run this test because on wasm32 we cannot fit the u32:MAX in the usize
-#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_append_4gb_with_large_file() {
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
+
+    fn read_at<R: Read + Seek>(reader: &mut R, position: u64, buf: &mut [u8]) {
+        reader.seek(SeekFrom::Start(position)).unwrap();
+        reader.read_exact(buf).unwrap();
+    }
 
     let mut writer = ZipWriter::new(AddressHoleCursor::new_at(0));
 
@@ -172,8 +170,8 @@ fn test_append_4gb_with_large_file() {
     writer.start_file_from_path("4gb_file", opts).unwrap();
 
     // Write a file that's 4GB
-    let size = u32::MAX;
-    let write_result = write_data(&mut writer, size as usize); // check is error
+    let size = u32::MAX as u64;
+    let write_result = write_data(&mut writer, size); // check is error
 
     assert!(write_result.is_ok());
     let mut zip = writer.finish().unwrap();
@@ -244,7 +242,7 @@ fn test_append_near_4gb() {
         writer.start_file_from_path("close_to_4gb", opts).unwrap();
 
         // The zero-filled body takes the archive close to 4 GiB without allocating it.
-        write_data(&mut writer, u32::MAX as usize - 1024).unwrap();
+        write_data(&mut writer, u32::MAX as u64 - 1024).unwrap();
 
         // Add a small file
         writer.start_file_from_path("small_file", opts).unwrap();
