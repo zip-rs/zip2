@@ -23,7 +23,7 @@ struct AddressHoleCursor {
 impl AddressHoleCursor {
     fn new_at(position: u64) -> Self {
         Self {
-            segments: std::array::from_fn(|_| Vec::new()),
+            segments: std::array::from_fn(|_| Vec::with_capacity(16 * 1024)),
             position,
             len: position,
         }
