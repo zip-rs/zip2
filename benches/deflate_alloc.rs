@@ -6,8 +6,14 @@ fn bench_many_small_files(c: &mut criterion::Criterion) {
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
 
+    #[cfg(not(miri))]
+    const FILES_PER_ARCHIVE: &[usize] = &[10, 100, 500];
+
+    #[cfg(miri)]
+    const FILES_PER_ARCHIVE: &[usize] = &[10];
+
     let mut group = c.benchmark_group("deflate_many_small");
-    for n in [10, 100, 500].iter() {
+    for n in FILES_PER_ARCHIVE.iter() {
         let data = vec![b'x'; 1024];
         let filenames: Vec<String> = (0..*n).map(|i| format!("file_{:04}.txt", i)).collect();
         group.throughput(Throughput::Bytes((*n as u64) * 1024));

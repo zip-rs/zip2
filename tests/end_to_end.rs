@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::io::{Cursor, Read, Seek, Write};
 use zip::result::ZipResult;
 use zip::write::ExtendedFileOptions;
@@ -11,21 +10,28 @@ where
     F: FnMut(CompressionMethod),
 {
     for &method in SUPPORTED_COMPRESSION_METHODS {
-        if method == CompressionMethod::DEFLATE
-            && cfg!(all(
-                feature = "deflate-zopfli",
-                not(feature = "deflate-flate2")
-            ))
-        {
-            // We do not support DEFLATE decompression without the `flate2` feature.
-            continue;
+        match method {
+            CompressionMethod::Stored => f(method),
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => {
+                if !cfg!(all(
+                    feature = "deflate-zopfli",
+                    not(feature = "deflate-flate2")
+                )) {
+                    // We do not support DEFLATE decompression without the `flate2` feature.
+                    f(method);
+                }
+            }
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => {
+                continue;
+            }
+            _ => {
+                if !cfg!(miri) {
+                    f(method);
+                }
+            }
         }
-
-        if method == CompressionMethod::DEFLATE64 {
-            continue;
-        }
-
-        f(method);
     }
 }
 
@@ -183,7 +189,11 @@ fn test_raw_copy_file_permissions() {
     for_each_supported_method(|method| {
         let mut src_archive = {
             let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-            let options = SimpleFileOptions::default().compression_method(method);
+            let mut options = SimpleFileOptions::default()
+                .compression_method(method)
+                .into_full_options()
+                .with_file_comment("Preserved comment");
+            options.add_extra_field(87_u16, b"abc", false).unwrap();
             b.start_file("file", options).unwrap();
             b.finish_into_readable().unwrap()
         };
@@ -212,6 +222,8 @@ fn test_raw_copy_file_permissions() {
 
         #[cfg(not(windows))]
         assert_eq!(tgt_file.unix_mode(), Some(unix_mode | ffi::S_IFREG));
+        assert_eq!(src_file.comment(), tgt_file.comment());
+        assert_eq!(src_file.extra_data(), tgt_file.extra_data());
     });
 }
 
@@ -287,19 +299,19 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
 
     // Check archive contains expected file names.
     {
-        let expected_file_names = [
+        let mut expected_file_names = [
             "test/",
             "test/☃.txt",
             "test_with_extra_data/🐢.txt",
             ENTRY_NAME,
             INTERNAL_COPY_ENTRY_NAME,
         ];
-        let expected_file_names: HashSet<String> =
-            expected_file_names.iter().map(|f| f.to_string()).collect();
-        let file_names: HashSet<String> = archive
+        expected_file_names.sort_unstable();
+        let mut file_names: Vec<_> = archive
             .file_names()
             .map(|f| f.unwrap().into_owned())
             .collect();
+        file_names.sort_unstable();
         assert_eq!(file_names, expected_file_names);
     }
     {
@@ -489,8 +501,8 @@ fn test_explicit_system_roundtrip() {
     );
 }
 
-/// Only on little endian because it runs too long with Miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+/// Only on native because it runs too long with Miri CI
+#[cfg(not(miri))]
 #[test]
 fn test_64k_files() -> zip::result::ZipResult<()> {
     use std::io::{Read, Write};
@@ -525,8 +537,8 @@ fn test_64k_files() -> zip::result::ZipResult<()> {
     Ok(())
 }
 
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+/// Only on native because we cannot use fs with miri CI
+#[cfg(not(miri))]
 #[test]
 fn test_can_create_destination() -> zip::result::ZipResult<()> {
     use tempfile::TempDir;

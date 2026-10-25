@@ -235,14 +235,41 @@ fn zip64_large() {
     }
 }
 
-/// We cannot run this test because on wasm32
-/// the literal `5368709808` does not fit into the type `usize` whose range is `0..=4294967295`
+/// We cannot run this test on 32-bit because it uses a 5GB buffer.
 ///
 /// Only on native because too long with miri CI
-#[cfg(all(not(target_arch = "wasm32"), not(miri)))]
+#[cfg(all(target_pointer_width = "64", not(miri)))]
 #[test]
 fn test_zip64_check_extra_field() {
     use std::{fs::File, io::Cursor, path::Path};
+    use zip::result::ZipResult;
+
+    fn zip64_check_extra_field(path: &Path, archive_buffer: &mut Vec<u8>) -> ZipResult<()> {
+        use std::{io::Seek, io::SeekFrom};
+        use zip::write::SimpleFileOptions;
+        let mut bigfile = File::open(path)?;
+
+        let mut archive = zip::ZipWriter::new(Cursor::new(archive_buffer));
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o755);
+
+        // add 4GiB of file data to the archive, which should trigger the zip64 extra field
+        for i in 0..4 {
+            bigfile.seek(SeekFrom::Start(0))?;
+            let filename = format!("file{}.bin", i + 1);
+            archive.start_file(filename, options)?;
+            std::io::copy(&mut bigfile, &mut archive)?;
+        }
+        // now add a directory entry, which SHOULD trigger the zip64 extra field for the central directory header
+        archive.add_directory("dir/", options)?;
+        archive.start_file("dir/bigfile.bin", options)?;
+        bigfile.seek(SeekFrom::Start(0))?;
+        std::io::copy(&mut bigfile, &mut archive)?;
+        archive.finish()?;
+        Ok(())
+    }
+
     let path = Path::new("bigfile.bin");
     let bigfile = File::create(path).expect("Failed to create a big file");
 
@@ -396,40 +423,6 @@ fn test_zip64_check_extra_field() {
         assert_eq!(local_header[28..30], [0x00, 0x00]); // extra field length
         assert_eq!(local_header[30..], *b"dir/bigfile.bin"); // file name
     }
-}
-
-/// We cannot run this test because on wasm32
-/// See `test_zip64_check_extra_field`
-///
-/// Only on little endian because too long with miri CI
-#[cfg(all(not(target_arch = "wasm32"), not(miri)))]
-fn zip64_check_extra_field(
-    path: &std::path::Path,
-    archive_buffer: &mut Vec<u8>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use std::{fs::File, io::Cursor, io::Seek, io::SeekFrom};
-    use zip::write::SimpleFileOptions;
-    let mut bigfile = File::open(path)?;
-
-    let mut archive = zip::ZipWriter::new(Cursor::new(archive_buffer));
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .unix_permissions(0o755);
-
-    // add 4GiB of file data to the archive, which should trigger the zip64 extra field
-    for i in 0..4 {
-        bigfile.seek(SeekFrom::Start(0))?;
-        let filename = format!("file{}.bin", i + 1);
-        archive.start_file(filename, options)?;
-        std::io::copy(&mut bigfile, &mut archive)?;
-    }
-    // now add a directory entry, which SHOULD trigger the zip64 extra field for the central directory header
-    archive.add_directory("dir/", options)?;
-    archive.start_file("dir/bigfile.bin", options)?;
-    bigfile.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut bigfile, &mut archive)?;
-    archive.finish()?;
-    Ok(())
 }
 
 /// Only on native because too long with miri CI
@@ -745,4 +738,52 @@ fn zip64_extensible_data_sector() {
 
     assert_eq!(extensible_data.len(), extensible_data_length);
     assert_eq!(extensible_data, bytes);
+}
+
+/// https://github.com/zip-rs/zip2/issues/1122
+#[test]
+fn large_file_check_local_header_zip64_field() {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    fn local_zip64_sizes(bytes: &[u8]) -> (u64, u64) {
+        let name_len = u16::from_le_bytes([bytes[26], bytes[27]]) as usize;
+        let extra = 30 + name_len;
+        assert_eq!(u16::from_le_bytes([bytes[extra], bytes[extra + 1]]), 0x0001);
+        let u = u64::from_le_bytes(bytes[extra + 4..extra + 12].try_into().unwrap());
+        let c = u64::from_le_bytes(bytes[extra + 12..extra + 20].try_into().unwrap());
+        (u, c)
+    }
+
+    let opts = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    w.add_directory("dir/", opts).unwrap();
+    let dir = w.finish().unwrap().into_inner();
+
+    let (u, c) = local_zip64_sizes(&dir);
+    assert_eq!(u, 0x0);
+    assert_eq!(c, 0x0);
+    let mut a = ZipArchive::new(Cursor::new(dir)).unwrap();
+    let f = a.by_index(0).unwrap();
+    assert_eq!(f.size(), 0x0);
+    assert_eq!(f.compressed_size(), 0x0);
+
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    w.start_file("empty.txt", opts).unwrap();
+    w.write_all(b"").unwrap();
+    let file = w.finish().unwrap().into_inner();
+
+    let (u, c) = local_zip64_sizes(&file);
+    assert_eq!(u, 0x0);
+    assert_eq!(c, 0x0);
+    let mut a = ZipArchive::new(Cursor::new(file)).unwrap();
+    let f = a.by_index(0).unwrap();
+    assert_eq!(f.size(), 0x0);
+    assert_eq!(f.compressed_size(), 0x0);
 }

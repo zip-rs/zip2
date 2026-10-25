@@ -357,7 +357,12 @@ mod tests {
     /// the reader past the end of the data.
     #[test]
     fn truncated_stream_is_an_error() {
-        for cut in 0..HAMLET_256.len() {
+        #[cfg(not(miri))]
+        let cuts_iter = 0..HAMLET_256.len();
+        #[cfg(miri)]
+        let cuts_iter = (0..8).chain((HAMLET_256.len() - 8)..HAMLET_256.len());
+
+        for cut in cuts_iter {
             let r = std::panic::catch_unwind(|| {
                 let mut dst = Vec::new();
                 let r = hwexplode(&HAMLET_256[..cut], 256, false, false, false, &mut dst);

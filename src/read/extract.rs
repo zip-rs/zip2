@@ -50,6 +50,7 @@ pub enum SymlinkExtractAction {
 pub struct ExtractOptions {
     pub(crate) symlink_action: SymlinkExtractAction,
     pub(crate) size_limit: Option<u64>,
+    pub(crate) enforce_header_consistency: bool,
 }
 
 impl ExtractOptions {
@@ -67,6 +68,15 @@ impl ExtractOptions {
     pub fn with_size_limit(self, size_limit: u64) -> Self {
         Self {
             size_limit: Some(size_limit),
+            ..self
+        }
+    }
+
+    /// Enforce consistency between local file headers and central directory headers during extraction.
+    #[must_use]
+    pub fn enforce_header_consistency(self, enforce: bool) -> Self {
+        Self {
+            enforce_header_consistency: enforce,
             ..self
         }
     }
@@ -235,11 +245,15 @@ pub(crate) fn make_symlink<T>(
     Ok(())
 }
 
-pub(crate) fn make_symlink_as_file_utf8(outpath: &Path, target: &[u8]) -> ZipResult<()> {
+pub(crate) fn make_symlink_as_file_utf8(
+    outpath: &Path,
+    target: &[u8],
+    unix_mode: Option<u32>,
+) -> ZipResult<()> {
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
-    make_symlink_as_file(outpath, target)?;
+    make_symlink_as_file(outpath, target, unix_mode)?;
     Ok(())
 }
 
@@ -249,13 +263,24 @@ pub(crate) fn make_symlink_as_file_utf8(outpath: &Path, target: &[u8]) -> ZipRes
 /// file so that extraction will not follow the link and overwrite a target file outside the
 /// destination directory. After creation, the file is verified to ensure it was not swapped
 /// for a symbolic link.
-pub(crate) fn create_outfile(outpath: &Path) -> std::io::Result<std::fs::File> {
+pub(crate) fn create_outfile(
+    outpath: &Path,
+    unix_mode: Option<u32>,
+) -> std::io::Result<std::fs::File> {
     if let Ok(meta) = std::fs::symlink_metadata(outpath)
         && meta.file_type().is_symlink()
     {
         std::fs::remove_file(outpath)?;
     }
-    let file = std::fs::File::create(outpath)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).write(true).truncate(true); // Default for `fs::File::create`
+    #[cfg(unix)]
+    if let Some(mode) = unix_mode {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode);
+    }
+    let file = options.open(outpath)?;
+
     if let Ok(meta) = std::fs::symlink_metadata(outpath)
         && meta.file_type().is_symlink()
     {
@@ -267,9 +292,13 @@ pub(crate) fn create_outfile(outpath: &Path) -> std::io::Result<std::fs::File> {
     Ok(file)
 }
 
-pub(crate) fn make_symlink_as_file(outpath: &Path, target: &[u8]) -> std::io::Result<()> {
+pub(crate) fn make_symlink_as_file(
+    outpath: &Path,
+    target: &[u8],
+    unix_mode: Option<u32>,
+) -> std::io::Result<()> {
     use std::io::Write;
-    let mut output = create_outfile(outpath)?;
+    let mut output = create_outfile(outpath, unix_mode)?;
     output.write_all(target)?;
     Ok(())
 }
@@ -366,6 +395,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// not all of their contents extracted will be readable, writable or usable as process working
     /// directories by any non-root user except you.
     ///
+    /// Extraction is also not atomic in term of permissions. Permissions are applied after the
+    /// extraction (because some folder have stricter permissions when we cannot access it). That
+    /// means, for a moment, a file could be created with default permissions (and then changed
+    /// to the correct one). On Unix this only applies to directories and symlinks.
+    ///
     /// On Unix and Windows, symbolic links are extracted correctly. On other platforms such as
     /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
     /// containing the target path in UTF-8.
@@ -459,6 +493,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<()> {
         use std::fs;
 
+        if extract_options.enforce_header_consistency {
+            self.validate_header_consistency()?;
+        }
+
         if let Some(limit) = extract_options.size_limit {
             match self.decompressed_size() {
                 Some(size) if size > u128::from(limit) => {
@@ -499,7 +537,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut files_by_unix_mode = UnixFileModes::default();
 
         for i in 0..self.len() {
-            let mut file = self.by_index(i)?;
+            let read_options = crate::read::ZipReadOptions::new()
+                .enforce_header_consistency(extract_options.enforce_header_consistency);
+            let mut file = self.by_index_with_options(i, read_options)?;
 
             let mut outpath = directory.clone();
             /* TODO: the control flow of this method call and subsequent expectations about the
@@ -525,16 +565,17 @@ impl<R: Read + Seek> ZipArchive<R> {
                 }
                 let mut target = Vec::with_capacity(declared_len as usize);
                 file.read_to_end(&mut target)?;
+                let unix_mode = file.unix_mode();
                 drop(file);
                 match extract_options.symlink_action {
                     SymlinkExtractAction::NoExtract => {
                         // do nothing
                     }
                     SymlinkExtractAction::ExtractAsFile => {
-                        make_symlink_as_file(&outpath, &target)?;
+                        make_symlink_as_file(&outpath, &target, unix_mode)?;
                     }
                     SymlinkExtractAction::ExtractAsFileUtf8 => {
-                        make_symlink_as_file_utf8(&outpath, &target)?;
+                        make_symlink_as_file_utf8(&outpath, &target, unix_mode)?;
                     }
                     #[cfg(any(unix, windows))]
                     SymlinkExtractAction::ExtractRecursiveInFolder => {
@@ -571,8 +612,14 @@ impl<R: Read + Seek> ZipArchive<R> {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
-                let mut outfile = create_outfile(&outpath)?;
+                let mut outfile = create_outfile(&outpath, file.unix_mode())?;
                 io::copy(&mut file, &mut outfile)?;
+                #[cfg(unix)]
+                if let Some(mode) = file.unix_mode() {
+                    // OpenOptions::mode only applies when the file is created. Record modes
+                    // for the final pass too, so overwriting an existing path updates them.
+                    files_by_unix_mode.add_mode(outpath, mode);
+                }
                 // Set original timestamp.
                 #[cfg(feature = "chrono")]
                 if let Some(last_modified) = file.last_modified()
@@ -585,11 +632,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                     let mut permissions = outfile.metadata()?.permissions();
                     permissions.set_readonly(true);
                     outfile.set_permissions(permissions)?;
-                }
-                #[cfg(unix)]
-                if let Some(mode) = file.unix_mode() {
-                    use std::os::unix::fs::PermissionsExt;
-                    outfile.set_permissions(fs::Permissions::from_mode(mode))?;
                 }
             }
         }

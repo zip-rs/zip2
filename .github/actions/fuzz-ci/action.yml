@@ -1,0 +1,150 @@
+name: CI fuzz target
+description: Build and run one AFL fuzz target for CI
+inputs:
+  target:
+    description: Fuzz target name (read or write)
+    required: true
+  feature-key:
+    description: Feature set used to distinguish the target cache
+    required: true
+  clippy-flags:
+    description: Feature flags for cargo afl clippy
+    required: true
+  build-flags:
+    description: Feature flags for the release build
+    required: true
+  dictionary:
+    description: Optional AFL dictionary argument
+    required: false
+    default: ""
+  minimize:
+    description: Whether to minimize and upload the updated corpus
+    required: true
+  artifact-suffix:
+    description: Optional suffix for artifacts from feature-specific jobs
+    required: false
+    default: ""
+  fuzz-seconds:
+    description: Maximum duration for the fuzz run
+    required: true
+  setup-rustc-version:
+    description: Rust compiler version used to build the setup AFL runtime
+    required: true
+runs:
+  using: composite
+  steps:
+    - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
+      shell: bash
+    - id: rustc-version
+      shell: pwsh
+      run: |
+        $rustcInfo = rustc -Vv
+        $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
+        $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
+        "version=$release-$commit" >> $env:GITHUB_OUTPUT
+    - id: afl-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.local/share/afl.rs
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: cargo-afl-linux
+        path: ${{ runner.temp }}/cargo-afl-artifact
+    - name: Install cargo-afl
+      run: |
+        mkdir -p "$HOME/.cargo/bin"
+        cp "$RUNNER_TEMP/cargo-afl-artifact/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
+        chmod +x "$HOME/.cargo/bin/cargo-afl"
+        mkdir -p "$HOME/.local/share/afl.rs"
+        tar -xzf "$RUNNER_TEMP/cargo-afl-artifact/afl-data.tar.gz" -C "$HOME/.local/share/afl.rs"
+      shell: bash
+    - name: Build AFL runtime if nightly advanced
+      if: steps.rustc-version.outputs.version != inputs.setup-rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
+      run: cargo afl config --build --force
+      shell: bash
+    - id: cpu-features
+      shell: pwsh
+      run: |
+        $cpuFeatures = rustc -C target-cpu=native --print cfg | Select-String '^target_feature=' | ForEach-Object { $_.Line } | Sort-Object
+        $cpuFingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($cpuFeatures -join "`n")))).ToLowerInvariant()
+        "hash=$cpuFingerprint" >> $env:GITHUB_OUTPUT
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: fuzz/target
+        key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ inputs.target }}-${{ inputs.feature-key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ inputs.target }}-${{ inputs.feature-key }}-
+    - run: cargo afl system-config
+      shell: bash
+    - name: clippy
+      run: cargo afl clippy ${{ inputs.clippy-flags }} -p fuzz_${{ inputs.target }} --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
+      shell: bash
+    - name: compile fuzz
+      run: cargo afl build --release ${{ inputs.build-flags }} -p fuzz_${{ inputs.target }} --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
+      shell: bash
+    - name: run fuzz
+      env:
+        AFL_BENCH_UNTIL_CRASH: 1
+        AFL_NO_UI: 1
+      run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/${{ inputs.target }}/in -o out -V ${{ inputs.fuzz-seconds }} ${{ inputs.dictionary }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_${{ inputs.target }}
+      shell: bash
+    - name: Minimize corpus
+      if: inputs.minimize == 'true'
+      run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_${{ inputs.target }}
+      shell: bash
+    - name: Report coverage
+      run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_${{ inputs.target }}
+      shell: bash
+    - name: Rename files
+      if: always()
+      run: |
+        find out -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
+        if [ -d out_cmin ]; then
+          find out_cmin -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
+        fi
+        find map -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
+      shell: bash
+    - name: Upload updated corpus
+      if: inputs.minimize == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fuzz_${{ inputs.target }}_corpus
+        path: out_cmin/*
+    - name: Upload any failure inputs
+      id: upload_failures
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fuzz_${{ inputs.target }}_bad_inputs${{ inputs.artifact-suffix }}
+        path: |
+          out/default/crashes/*
+          out/default/hangs/*
+        if-no-files-found: error
+      continue-on-error: true
+    - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
+      if: always()
+      shell: bash
+      run: |
+        shopt -s nullglob
+        crashes=(out/default/crashes/id*)
+        if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
+        hangs=(out/default/hangs/id*)
+        [ ${#hangs[@]} -eq 0 ] && exit 0
+        echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
+        fuzz/replay.sh fuzz/target/release/fuzz_${{ inputs.target }} 10 out/default/hangs
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fuzz_${{ inputs.target }}_coverage${{ inputs.artifact-suffix }}
+        path: map

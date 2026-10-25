@@ -10,7 +10,9 @@ use crate::format::data_descriptor::{
 use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
 use crate::format::flags::ZipFlags;
-use crate::format::functions::{get_flags, get_unix_mode, get_version_needed, is_dir};
+use crate::format::functions::{
+    get_flags, get_unix_mode, get_version_needed, is_dir, needs_language_encoding,
+};
 use crate::format::magic::Magic;
 use crate::format::system::System;
 use crate::format::{ZIP64_BYTES_THR, ZIP64_BYTES_THR_U32};
@@ -32,6 +34,9 @@ pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
     pub(crate) compressed_size: u64,
     pub(crate) uncompressed_size: u64,
+    /// The copied entry's own language encoding flag, for a copy that keeps the
+    /// entry's name bytes as stored. `None` derives the flag from the name.
+    pub(crate) language_encoding: Option<bool>,
 }
 
 /// re-export
@@ -520,8 +525,23 @@ impl ZipFileData {
         Ok(data)
     }
 
+    /// The general purpose flags to write for this entry under `file_name_raw`. The language
+    /// encoding bit is as stored, except that a non-ASCII comment, which is always written as
+    /// UTF-8, sets it when the name bytes are valid UTF-8 too. Such a comment can come from an
+    /// Info-ZIP Unicode Comment extra field on an unflagged entry; written unflagged, a reader
+    /// would decode it as CP437 and it would grow on every reopen.
     pub(crate) fn flags(&self, file_name_raw: &[u8]) -> u16 {
-        get_flags(self.flags, file_name_raw, self.file_comment.as_ref())
+        let mut flags = self.flags;
+        if !self.file_comment.is_ascii() && core::str::from_utf8(file_name_raw).is_ok() {
+            flags.set(ZipFlags::LanguageEncoding, true);
+        }
+        get_flags(flags)
+    }
+
+    /// Sets the language encoding flag for this entry written under a new name.
+    pub(crate) fn set_language_encoding_for(&mut self, file_name_raw: &[u8]) {
+        let on = needs_language_encoding(file_name_raw, &self.file_comment);
+        self.flags.set(ZipFlags::LanguageEncoding, on);
     }
 
     pub(crate) fn clamp_size_field(&self, field: u64) -> Result<u32, std::io::Error> {

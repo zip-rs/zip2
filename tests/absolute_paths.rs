@@ -1,5 +1,5 @@
-/// Only on little endian because we cannot use fs with miri CI
-#[cfg(all(target_endian = "little", not(miri)))]
+/// Only on native because we cannot use fs with miri CI
+#[cfg(not(miri))]
 #[test]
 fn test_absolute_paths() -> zip::result::ZipResult<()> {
     use std::io::Write;

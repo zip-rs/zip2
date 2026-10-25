@@ -102,6 +102,16 @@ impl ZipFileFlags {
     pub const fn as_u16(self) -> u16 {
         self.0
     }
+
+    /// Set or clear one flag
+    #[inline]
+    pub(crate) fn set(&mut self, flag: ZipFlags, on: bool) {
+        if on {
+            self.0 |= flag.as_u16();
+        } else {
+            self.0 &= !flag.as_u16();
+        }
+    }
 }
 
 impl From<u16> for ZipFileFlags {

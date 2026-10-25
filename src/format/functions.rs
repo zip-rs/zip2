@@ -114,10 +114,19 @@ pub(crate) fn get_version_needed(
         .max(misc_feature_version)
 }
 
-pub(crate) fn get_flags(flags: ZipFileFlags, file_name_raw: &[u8], file_comment: &str) -> u16 {
-    let is_utf8 = core::str::from_utf8(file_name_raw).is_ok();
-    let is_ascii = file_name_raw.is_ascii() && file_comment.is_ascii();
-    let utf8_bit: u16 = if is_utf8 && !is_ascii {
+/// Whether an entry written under `file_name_raw` with `file_comment` needs the
+/// language encoding flag: its name is non-ASCII UTF-8, or its comment (always
+/// written as UTF-8) is non-ASCII.
+pub(crate) fn needs_language_encoding(file_name_raw: &[u8], file_comment: &str) -> bool {
+    let utf8_name = !file_name_raw.is_ascii() && core::str::from_utf8(file_name_raw).is_ok();
+    utf8_name || !file_comment.is_ascii()
+}
+
+/// The general purpose flags to write for an entry. The language encoding bit is
+/// taken as stored, so an entry copied with its original name bytes keeps the
+/// flag it was read with; whoever gives an entry a new name sets it.
+pub(crate) fn get_flags(flags: ZipFileFlags) -> u16 {
+    let utf8_bit: u16 = if flags.matching(ZipFlags::LanguageEncoding) {
         ZipFlags::LanguageEncoding.as_u16()
     } else {
         0
