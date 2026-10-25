@@ -1351,16 +1351,13 @@ impl<W: Write + Seek> ZipWriter<W> {
         last_modified_time: DateTime,
         unix_mode: Option<u32>,
     ) -> ZipResult<()> {
-        let mut options = file.options().into_full_options();
+        let mut options = Self::raw_copy_options(&file)?;
 
         options = options.last_modified_time(last_modified_time);
 
         if let Some(perms) = unix_mode {
             options.external_attributes = None;
             options = options.unix_permissions(perms);
-        }
-        if !file.comment().is_empty() {
-            options = options.with_file_comment(file.comment());
         }
 
         options.normalize();
