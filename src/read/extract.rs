@@ -241,7 +241,7 @@ pub(crate) fn make_symlink<T>(
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
     _symlink_action: SymlinkExtractAction,
 ) -> ZipResult<()> {
-    make_symlink_as_file_utf8(outpath, target)?;
+    make_symlink_as_file_utf8(outpath, target, None)?;
     Ok(())
 }
 
@@ -263,6 +263,7 @@ pub(crate) fn make_symlink_as_file_utf8(
 /// file so that extraction will not follow the link and overwrite a target file outside the
 /// destination directory. After creation, the file is verified to ensure it was not swapped
 /// for a symbolic link.
+#[cfg_attr(not(unix), allow(unused_variables))]
 pub(crate) fn create_outfile(
     outpath: &Path,
     unix_mode: Option<u32>,
