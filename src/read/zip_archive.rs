@@ -29,7 +29,8 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
     pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
-    pub(crate) has_duplicate_names: bool,
+    /// The raw file count (before inserting in the IndexMap) - used to detect duplicates
+    pub(crate) raw_file_count: usize,
     pub(crate) offset: u64,
     pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
@@ -64,7 +65,7 @@ impl ZipArchiveMetadata {
     /// Whether the central directory contains duplicate file names.
     #[must_use]
     pub fn has_duplicate_names(&self) -> bool {
-        self.has_duplicate_names
+        self.raw_file_count > self.files.len()
     }
 }
 
@@ -89,10 +90,9 @@ impl SharedBuilder {
         self.files.into_iter().for_each(|(file_name_raw, file)| {
             index_map.insert(file_name_raw, file);
         });
-        let has_duplicate_names = index_map.len() != raw_file_count;
         ZipArchiveMetadata {
             files: index_map,
-            has_duplicate_names,
+            raw_file_count,
             offset: self.offset,
             dir_start: self.dir_start,
             config: self.config,
@@ -141,9 +141,10 @@ impl<R> ZipArchive<R> {
             Some((_, file)) => file.header_start,
             None => central_start,
         };
+        let raw_file_count = files.len();
         let shared = Arc::new(ZipArchiveMetadata {
             files,
-            has_duplicate_names: false,
+            raw_file_count,
             offset: initial_offset,
             dir_start: central_start,
             config: Config {
@@ -483,7 +484,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Whether this zip archive contains duplicate file names in its central directory.
     #[must_use]
     pub fn has_duplicate_names(&self) -> bool {
-        self.shared.has_duplicate_names
+        self.shared.has_duplicate_names()
     }
 
     /// Get the offset from the beginning of the underlying reader that this zip begins at, in bytes.
@@ -793,7 +794,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
         if options.enforce_header_consistency {
-            if self.shared.has_duplicate_names {
+            if self.shared.has_duplicate_names() {
                 return Err(invalid!(
                     "header inconsistency detected: duplicate file names in central directory"
                 ));
@@ -811,7 +812,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Validates that all local file headers in the archive match their corresponding central directory headers.
     pub fn validate_header_consistency(&mut self) -> ZipResult<()> {
-        if self.shared.has_duplicate_names {
+        if self.shared.has_duplicate_names() {
             return Err(invalid!(
                 "header inconsistency detected: duplicate file names in central directory"
             ));
