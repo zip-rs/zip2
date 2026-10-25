@@ -27,6 +27,9 @@ inputs:
   fuzz-seconds:
     description: Maximum duration for the fuzz run
     required: true
+  setup-rustc-version:
+    description: Rust compiler version used to build the setup AFL runtime
+    required: true
 runs:
   using: composite
   steps:
@@ -39,6 +42,11 @@ runs:
         $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
         $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
         "version=$release-$commit" >> $env:GITHUB_OUTPUT
+    - id: afl-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.local/share/afl.rs
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
@@ -51,14 +59,18 @@ runs:
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: cargo-afl-linux
-        path: ${{ runner.temp }}/cargo-afl
+        path: ${{ runner.temp }}/cargo-afl-artifact
     - name: Install cargo-afl
       run: |
         mkdir -p "$HOME/.cargo/bin"
-        cp "$RUNNER_TEMP/cargo-afl/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
+        cp "$RUNNER_TEMP/cargo-afl-artifact/cargo-afl" "$HOME/.cargo/bin/cargo-afl"
         chmod +x "$HOME/.cargo/bin/cargo-afl"
+        mkdir -p "$HOME/.local/share/afl.rs"
+        cp -a "$RUNNER_TEMP/cargo-afl-artifact/afl-data/." "$HOME/.local/share/afl.rs/"
       shell: bash
-    - run: cargo afl config --build
+    - name: Build AFL runtime if nightly advanced
+      if: steps.rustc-version.outputs.version != inputs.setup-rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
+      run: cargo afl config --build --force
       shell: bash
     - id: cpu-features
       shell: pwsh
