@@ -2626,7 +2626,7 @@ impl ZipFileData {
         let block = ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
@@ -2753,7 +2753,7 @@ impl ZipFileData {
         self.data_start.get_or_init(|| data_start);
         let block = ZipLocalEntryBlock {
             version_made_by: self.version_needed(),
-            flags: self.flags(),
+            flags: self.flags(file_name_raw),
             compression_method,
             last_mod_time: last_modified_time.timepart(),
             last_mod_date: last_modified_time.datepart(),
@@ -3171,6 +3171,30 @@ mod tests {
     /// After an `abort_file` that rewinds, `finish` must not leave an old footer past the new one,
     /// even when the stale tail is no longer than the (new) archive comment. Otherwise the stale
     /// EOCD at the end is the one a reader finds.
+    #[test]
+    fn reopening_keeps_a_unicode_comment_extra_field_comment_unchanged() -> ZipResult<()> {
+        // An Info-ZIP Unicode Comment extra field (0x6375) whose CRC matches the (empty) stored
+        // comment makes the reader take its UTF-8 content as the comment, while the language
+        // encoding flag stays clear. Writing that comment back must not let a reader decode it
+        // as CP437, or every reopen grows it until it overflows the 16-bit length field.
+        let mut data = vec![1u8];
+        data.extend_from_slice(&crc32fast::hash(b"").to_le_bytes());
+        data.extend_from_slice("é".as_bytes());
+        let mut options = FullFileOptions::default();
+        options.add_extra_field(0x6375, data.into_boxed_slice(), true)?;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a", options)?;
+        let mut bytes = writer.finish()?.into_inner();
+        for round in 0..8 {
+            let mut archive = ZipArchive::new(Cursor::new(bytes.clone()))?;
+            assert_eq!(archive.by_index(0)?.comment(), "é", "round {round}");
+            bytes = ZipWriter::new_append(Cursor::new(bytes))?
+                .finish()?
+                .into_inner();
+        }
+        Ok(())
+    }
+
     #[test]
     fn finish_after_abort_leaves_no_stale_footer_in_tail_shorter_than_comment() -> ZipResult<()> {
         #[cfg(miri)]
