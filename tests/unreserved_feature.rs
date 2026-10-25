@@ -1,10 +1,18 @@
 //! unreserved feature tests
 
+const PAYLOAD: [u8; 7] = [
+    0x01, // Version
+    0x02, // UID length
+    0xE8, 0x03, // UID = 1000
+    0x02, // GID length
+    0xE8, 0x03, // GID = 1000
+];
+
 #[cfg(not(feature = "unreserved"))]
 #[test]
 fn test_unreserved_feature_disabled() {
     use std::io::Cursor;
-    use zip::write::FileOptions;
+    use zip::write::{FileOptions, ZipFileBuilder};
     use zip::{CompressionMethod, ZipWriter};
 
     let buff = Cursor::new(Vec::new());
@@ -12,57 +20,56 @@ fn test_unreserved_feature_disabled() {
 
     let mut options = FileOptions::default().compression_method(CompressionMethod::Stored);
 
-    // Custom extra-field payload.
-    // Replace this with your own bytes.
-    let payload: Box<[u8]> = vec![
-        0x01, // Version
-        0x02, // UID length
-        0xE8, 0x03, // UID = 1000
-        0x02, // GID length
-        0xE8, 0x03, // GID = 1000
-    ]
-    .into_boxed_slice();
+    let payload: Box<[u8]> = Box::new(PAYLOAD);
 
     // Add extra field ID 0x7875 to the local header
     // and central directory.
     options.add_extra_field(0x7875, payload, false).unwrap();
 
-    let res = zip.start_file("hello.txt", options);
+    let res = zip.start_file("hello.txt", options.clone());
     assert!(res.is_err()); // Extra data header ID 030837 (0x7875) requires crate feature
+    assert!(ZipFileBuilder::new("prepared.txt", options).is_err());
 }
 
 #[cfg(feature = "unreserved")]
 #[test]
 fn test_unreserved_feature_enabled() {
-    use std::io::{Cursor, Write};
-    use zip::write::FileOptions;
-    use zip::{CompressionMethod, ZipWriter};
+    use std::io::{Cursor, Read, Write};
+    use zip::write::{FileOptions, ZipFileBuilder};
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
     let mut buff = Vec::new();
     let mut zip = ZipWriter::new(Cursor::new(&mut buff));
 
     let mut options = FileOptions::default().compression_method(CompressionMethod::Stored);
 
-    // Custom extra-field payload.
-    // Replace this with your own bytes.
-    let payload: Box<[u8]> = vec![
-        0x01, // Version
-        0x02, // UID length
-        0xE8, 0x03, // UID = 1000
-        0x02, // GID length
-        0xE8, 0x03, // GID = 1000
-    ]
-    .into_boxed_slice();
+    let payload: Box<[u8]> = Box::new(PAYLOAD);
 
     // Add extra field ID 0x7875 to the local header
     // and central directory.
     options.add_extra_field(0x7875, payload, false).unwrap();
 
-    let res = zip.start_file("hello.txt", options);
+    let res = zip.start_file("hello.txt", options.clone());
     assert!(res.is_ok()); // does not error
     zip.write_all(b"Hello from Rust!\n").unwrap();
 
+    let mut prepared = ZipFileBuilder::new("prepared.txt", options).unwrap();
+    prepared.write_all(b"Prepared file\n").unwrap();
+    zip.add_prepared_file(prepared.finish().unwrap()).unwrap();
     zip.finish().unwrap();
+
+    let mut archive = ZipArchive::new(Cursor::new(buff)).unwrap();
+    assert_eq!(archive.len(), 2);
+    let mut file = archive.by_name("prepared.txt").unwrap();
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+    assert_eq!(contents, "Prepared file\n");
+    assert!(
+        file.extra_data()
+            .unwrap()
+            .windows(4 + PAYLOAD.len())
+            .any(|field| { field[0..4] == [0x75, 0x78, 7, 0] && field[4..] == PAYLOAD })
+    );
 }
 
 // Raw copy should work with or without the feature
