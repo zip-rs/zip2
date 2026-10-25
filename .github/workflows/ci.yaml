@@ -415,12 +415,18 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
+      - id: cpu-features
+        shell: pwsh
+        run: |
+          $cpuFeatures = rustc -C target-cpu=native --print cfg | Select-String '^target_feature=' | ForEach-Object { $_.Line } | Sort-Object
+          $cpuFingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($cpuFeatures -join "`n")))).ToLowerInvariant()
+          "hash=$cpuFingerprint" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ matrix.feature.key }}-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-build-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.feature.key }}-
       - run: cargo build --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --all ${{ matrix.feature.flags }} --bins --examples
   setup_wasm_pack:
     timeout-minutes: 10
@@ -589,12 +595,18 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
+      - id: cpu-features
+        shell: pwsh
+        run: |
+          $cpuFeatures = rustc -C target-cpu=native --print cfg | Select-String '^target_feature=' | ForEach-Object { $_.Line } | Sort-Object
+          $cpuFingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($cpuFeatures -join "`n")))).ToLowerInvariant()
+          "hash=$cpuFingerprint" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.target }}-${{ matrix.feature.key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ matrix.target }}-${{ matrix.feature.key }}-
+            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.target }}-${{ matrix.feature.key }}-
       - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
       # Same cfg(fuzzing) semantics as the fuzzer; the AFL binary also runs standalone on stdin.
       - run: cargo afl build --release ${{ matrix.feature.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
@@ -612,100 +624,17 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      - id: rustc-version
-        shell: pwsh
-        run: |
-          $rustcInfo = rustc -Vv
-          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
-          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
-          "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/fuzz-ci
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/cargo-afl
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-all-features-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
-
-      - name: cargo afl system-config
-        run: cargo afl system-config
-      - name: clippy
-        run: cargo afl clippy --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
-      - name: compile fuzz
-        run: cargo afl build --release --all-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
-      - name: run fuzz
-        env:
-          AFL_BENCH_UNTIL_CRASH: 1
-          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
-          AFL_NO_UI: 1
-        timeout-minutes: 20
-        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/read/in -o out -V ${{ env.FUZZ_SECONDS }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - name: Minimize corpus
-        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - name: Rename files
-        if: always()
-        run: |
-          find out -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-          find out_cmin -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-          find map -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-      - name: Upload updated corpus
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_read_corpus
-          path: out_cmin/*
-      - name: Upload any failure inputs
-        id: upload_failures
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_read_bad_inputs
-          path: |
-            out/default/crashes/*
-            out/default/hangs/*
-          if-no-files-found: error
-        continue-on-error: true
-      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          crashes=(out/default/crashes/id*)
-          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
-          hangs=(out/default/hangs/id*)
-          [ ${#hangs[@]} -eq 0 ] && exit 0
-          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
-          fuzz/replay.sh fuzz/target/release/fuzz_read 10 out/default/hangs
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_read_coverage
-          path: map
+          target: read
+          feature-key: all-features
+          clippy-flags: --all-features
+          build-flags: --all-features
+          minimize: "true"
+          fuzz-seconds: ${{ env.FUZZ_SECONDS }}
 
   fuzz_read_with_no_features:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -719,91 +648,18 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      - id: rustc-version
-        shell: pwsh
-        run: |
-          $rustcInfo = rustc -Vv
-          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
-          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
-          "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/fuzz-ci
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/cargo-afl
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-read-no-default-features-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
-      - name: cargo afl system-config
-        run: cargo afl system-config
-      - name: clippy
-        run: cargo afl clippy --no-default-features -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
-      - name: compile fuzz
-        run: cargo afl build --release -p fuzz_read --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
-      - name: run fuzz
-        env:
-          AFL_BENCH_UNTIL_CRASH: 1
-          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
-          AFL_NO_UI: 1
-        timeout-minutes: 20
-        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/read/in -o out -V ${{ env.FUZZ_SECONDS }} -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_read
-      - name: Rename files
-        if: always()
-        run: |
-          find out -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-          find map -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-      - name: Upload any failure inputs
-        id: upload_failures
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_read_bad_inputs_no_features
-          path: |
-            out/default/crashes/*
-            out/default/hangs/*
-          if-no-files-found: error
-        continue-on-error: true
-      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          crashes=(out/default/crashes/id*)
-          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
-          hangs=(out/default/hangs/id*)
-          [ ${#hangs[@]} -eq 0 ] && exit 0
-          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
-          fuzz/replay.sh fuzz/target/release/fuzz_read 10 out/default/hangs
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_read_coverage_no_features
-          path: map
+          target: read
+          feature-key: no-default-features
+          clippy-flags: --no-default-features
+          build-flags: --no-default-features
+          minimize: "false"
+          artifact-suffix: _no_features
+          fuzz-seconds: ${{ env.FUZZ_SECONDS }}
 
   fuzz_write:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -817,99 +673,18 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      - id: rustc-version
-        shell: pwsh
-        run: |
-          $rustcInfo = rustc -Vv
-          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
-          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
-          "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/fuzz-ci
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/cargo-afl
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-all-features-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
-      - name: cargo afl system-config
-        run: cargo afl system-config
-      - name: clippy
-        run: cargo afl clippy --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
-      - name: compile fuzz
-        run: cargo afl build --release --all-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
-      - name: run fuzz
-        env:
-          AFL_BENCH_UNTIL_CRASH: 1
-          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
-          AFL_NO_UI: 1
-        timeout-minutes: 20
-        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/write/in -o out -V ${{ env.FUZZ_SECONDS }} -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - name: Minimize corpus
-        run: cargo afl cmin -i out/default/queue -o out_cmin -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - name: Rename files
-        if: always()
-        run: |
-          find out -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-          find out_cmin -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-          find map -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-      - name: Upload updated corpus
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_write_corpus
-          path: out_cmin/*
-      - name: Upload any failure inputs
-        id: upload_failures
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_write_bad_inputs
-          path: |
-            out/default/crashes/*
-            out/default/hangs/*
-          if-no-files-found: error
-        continue-on-error: true
-      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          crashes=(out/default/crashes/id*)
-          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
-          hangs=(out/default/hangs/id*)
-          [ ${#hangs[@]} -eq 0 ] && exit 0
-          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
-          fuzz/replay.sh fuzz/target/release/fuzz_write 10 out/default/hangs
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_write_coverage
-          path: map
+          target: write
+          feature-key: all-features
+          clippy-flags: --all-features
+          build-flags: --all-features
+          dictionary: -x ${{ github.workspace }}/fuzz/write/fuzz.dict
+          minimize: "true"
+          fuzz-seconds: ${{ env.FUZZ_SECONDS }}
 
   fuzz_write_with_no_features:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -923,88 +698,16 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      - id: rustc-version
-        shell: pwsh
-        run: |
-          $rustcInfo = rustc -Vv
-          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
-          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
-          "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/fuzz-ci
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/cargo-afl
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-${{ steps.rustc-version.outputs.version }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-write-no-default-features-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
-      - name: cargo afl system-config
-        run: cargo afl system-config
-      - name: clippy
-        run: cargo afl clippy --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- -D warnings
-      - name: compile fuzz
-        run: cargo afl build --release --no-default-features -p fuzz_write --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
-      - name: run fuzz
-        env:
-          AFL_BENCH_UNTIL_CRASH: 1
-          # Deterministic-ish: fixed seed, no auto-calibrated 20 ms timeout.
-          AFL_NO_UI: 1
-        timeout-minutes: 20
-        run: cargo afl fuzz -s 1 -t 1000 -i ${{ github.workspace }}/fuzz/write/in -o out -V ${{ env.FUZZ_SECONDS }} -x ${{ github.workspace }}/fuzz/write/fuzz.dict -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - name: Report coverage
-        run: cargo afl showmap -C -i out -o map -- ${{ github.workspace }}/fuzz/target/release/fuzz_write
-      - name: Rename files
-        if: always()
-        run: |
-          find out -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-          find map -type f -name '*:*' -exec bash -c 'mv "$0" "${0//:/-}"' {} \;
-      - name: Upload any failure inputs
-        id: upload_failures
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_write_bad_inputs_no_features
-          path: |
-            out/default/crashes/*
-            out/default/hangs/*
-          if-no-files-found: error
-        continue-on-error: true
-      - name: Fail on crashes, or on hangs that reproduce with a 10 s timeout
-        if: always()
-        shell: bash
-        run: |
-          shopt -s nullglob
-          crashes=(out/default/crashes/id*)
-          if [ ${#crashes[@]} -gt 0 ]; then echo "::error::${#crashes[@]} crash(es)"; exit 1; fi
-          hangs=(out/default/hangs/id*)
-          [ ${#hangs[@]} -eq 0 ] && exit 0
-          echo "AFL saved ${#hangs[@]} timeout(s) at -t 1000; replaying at 10 s"
-          fuzz/replay.sh fuzz/target/release/fuzz_write 10 out/default/hangs
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz_write_coverage_no_features
-          path: map
+          target: write
+          feature-key: no-default-features
+          clippy-flags: --no-default-features
+          build-flags: --no-default-features
+          dictionary: -x ${{ github.workspace }}/fuzz/write/fuzz.dict
+          minimize: "false"
+          artifact-suffix: _no_features
+          fuzz-seconds: ${{ env.FUZZ_SECONDS }}
