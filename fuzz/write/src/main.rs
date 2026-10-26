@@ -229,7 +229,6 @@ enum OperationWork<'k, 'n> {
         abort: bool,
         flush_on_finish_file: bool,
         writer_index: usize,
-        allow_reopen_failure: bool,
     },
     Copy {
         base_path: PathBuf,
@@ -244,7 +243,6 @@ enum OperationWork<'k, 'n> {
         abort: bool,
         reopen: ReopenOption,
         writer_index: usize,
-        allow_reopen_failure: bool,
     },
 }
 
@@ -345,6 +343,19 @@ fn finalize_operation(
     Ok(true)
 }
 
+/// Whether a comment contains an EOCD, ZIP64 EOCD or ZIP64 EOCD locator signature with enough
+/// bytes after it for the fixed part of that record, so that a reader may pick it
+/// (GHSA-wjr6-mhvj-cjvm).
+fn contains_eocd_signature(comment: &[u8]) -> bool {
+    let has = |magic: &[u8; 4], record_len: usize| {
+        comment.len() >= record_len
+            && comment[..=comment.len() - (record_len - 4)]
+                .windows(4)
+                .any(|w| w == magic)
+    };
+    has(b"PK\x05\x06", 22) || has(b"PK\x06\x06", 56) || has(b"PK\x06\x07", 20)
+}
+
 /// Returns Ok(true) if everything went okay, Ok(false) if an allowed reopen failure occurred, or
 /// Err if any other failure occurred.
 fn do_operation(
@@ -354,17 +365,20 @@ fn do_operation(
     flush_on_finish_file: bool,
     files_added: &mut usize,
     stringifier: &mut impl Write,
-    allow_reopen_failure: bool,
+    comment_has_signature: &mut bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut pending = vec![OperationWork::Run {
         operation,
         abort,
         flush_on_finish_file,
         writer_index: 0,
-        allow_reopen_failure,
     }];
     let mut sub_writers = Vec::new();
     let mut files_added_by_writer = vec![*files_added];
+    // Per writer: whether its comment has held an EOCD signature, so that reopening its archive
+    // may legitimately fail or change the comment (GHSA-wjr6-mhvj-cjvm). A merge only copies
+    // entries, so the source's comment never reaches the parent.
+    let mut signature_by_writer = vec![*comment_has_signature];
 
     while let Some(work) = pending.pop() {
         match work {
@@ -373,7 +387,6 @@ fn do_operation(
                 abort,
                 flush_on_finish_file,
                 writer_index,
-                allow_reopen_failure,
             } => {
                 let writer = if writer_index == 0 {
                     &mut *writer
@@ -406,7 +419,6 @@ fn do_operation(
                             abort,
                             reopen,
                             writer_index,
-                            allow_reopen_failure,
                         });
                         pending.push(OperationWork::Copy {
                             base_path,
@@ -419,7 +431,6 @@ fn do_operation(
                             abort: false,
                             flush_on_finish_file,
                             writer_index,
-                            allow_reopen_failure,
                         });
                     }
                     BasicFileOperation::MergeWithOtherFile {
@@ -445,12 +456,12 @@ fn do_operation(
                         initial_junk.seek(SeekFrom::End(0))?;
                         sub_writers.push(ZipWriter::new(initial_junk));
                         files_added_by_writer.push(0);
+                        signature_by_writer.push(false);
 
                         pending.push(OperationWork::Finalize {
                             abort,
                             reopen,
                             writer_index,
-                            allow_reopen_failure,
                         });
                         pending.push(OperationWork::Merge {
                             parent_index: writer_index,
@@ -461,7 +472,6 @@ fn do_operation(
                                 abort,
                                 flush_on_finish_file: false,
                                 writer_index: writer_index + 1,
-                                allow_reopen_failure,
                             },
                         ));
                     }
@@ -470,7 +480,6 @@ fn do_operation(
                             abort,
                             reopen,
                             writer_index,
-                            allow_reopen_failure,
                         });
                         let writer = if writer_index == 0 {
                             &mut *writer
@@ -543,6 +552,8 @@ fn do_operation(
                             }
                             BasicFileOperation::SetArchiveComment(comment) => {
                                 writeln!(stringifier, "writer.set_raw_comment({comment:?})?;")?;
+                                signature_by_writer[writer_index] |=
+                                    contains_eocd_signature(&comment);
                                 writer.set_raw_comment(comment)?;
                             }
                             BasicFileOperation::ShallowCopy(_)
@@ -598,14 +609,21 @@ fn do_operation(
                 let other_writer = sub_writers.pop().expect("merge writer was pushed");
                 let inner_files_added =
                     files_added_by_writer.pop().expect("merge count was pushed");
+                let inner_signature = signature_by_writer.pop().expect("merge flag was pushed");
                 let parent_writer = if parent_index == 0 {
                     &mut *writer
                 } else {
                     &mut sub_writers[parent_index - 1]
                 };
                 // Both archives can contain the same (normalized) name.
+                // Reading back a source whose comment holds a signature may fail (see above).
+                let source = match other_writer.finish_into_readable() {
+                    Ok(source) => source,
+                    Err(_) if inner_signature => return Ok(false),
+                    Err(e) => return Err(e.into()),
+                };
                 if accept_expected(
-                    parent_writer.merge_archive(other_writer.finish_into_readable()?),
+                    parent_writer.merge_archive(source),
                     is_expected_new_entry_error,
                     stringifier,
                 )? {
@@ -616,7 +634,6 @@ fn do_operation(
                 abort,
                 reopen,
                 writer_index,
-                allow_reopen_failure,
             } => {
                 let writer = if writer_index == 0 {
                     &mut *writer
@@ -629,7 +646,7 @@ fn do_operation(
                     reopen,
                     &mut files_added_by_writer[writer_index],
                     stringifier,
-                    allow_reopen_failure,
+                    signature_by_writer[writer_index],
                 )? {
                     return Ok(false);
                 }
@@ -638,6 +655,7 @@ fn do_operation(
     }
 
     *files_added = files_added_by_writer[0];
+    *comment_has_signature = signature_by_writer[0];
     Ok(true)
 }
 
@@ -680,30 +698,6 @@ impl FuzzTestCase<'_, '_> {
             // An empty comment counts too: it's the shortest possible one after a reopen.
             if let BasicFileOperation::SetArchiveComment(ref comment) = operation.basic {
                 comment_len = comment.len();
-                if !comment_contains_signature {
-                    if comment_len >= 22
-                        && comment[0..=(comment_len - 18)]
-                            .windows(4)
-                            .any(|w| w == b"PK\x05\x06")
-                    {
-                        // ZIP32 EOCD
-                        comment_contains_signature = true;
-                    } else if comment_len >= 56
-                        && comment[0..=(comment_len - 52)]
-                            .windows(4)
-                            .any(|w| w == b"PK\x06\x06")
-                    {
-                        // ZIP64 EOCD
-                        comment_contains_signature = true;
-                    } else if comment_len >= 20
-                        && comment[0..=(comment_len - 16)]
-                            .windows(4)
-                            .any(|w| w == b"PK\x06\x07")
-                    {
-                        // ZIP64 EOCD locator
-                        comment_contains_signature = true;
-                    }
-                }
                 if streamable && comment_len_at_reopen > comment_len {
                     streamable = false;
                 }
@@ -712,11 +706,6 @@ impl FuzzTestCase<'_, '_> {
             if reopen != ReopenOption::DoNotReopen {
                 comment_len_at_reopen = comment_len;
             }
-            // A comment holding a complete EOCD (or ZIP64) record makes the archive ambiguous:
-            // like Python's zipfile and Info-ZIP, `ZipArchive` may pick that inner record
-            // (GHSA-wjr6-mhvj-cjvm), so any later reopen, by either method and at any nesting
-            // level, may fail or see a different comment.
-            let allow_reopen_failure = comment_contains_signature;
             let completed = do_operation(
                 &mut writer,
                 operation,
@@ -724,7 +713,7 @@ impl FuzzTestCase<'_, '_> {
                 self.flush_on_finish_file,
                 &mut files_added,
                 stringifier.deref_mut(),
-                allow_reopen_failure,
+                &mut comment_contains_signature,
             )
             .map_err(|e| ZipError::InvalidArchive(format!("Error during operation: {e}").into()))?;
             if !completed {
@@ -832,6 +821,56 @@ mod tests {
     }
 
     #[test]
+    fn eocd_signature_comment_is_tracked_per_writer() {
+        let mut comment = b"PK\x05\x06".to_vec();
+        comment.extend_from_slice(&[0; 18]);
+        assert!(contains_eocd_signature(&comment));
+        assert!(!contains_eocd_signature(&comment[..21]));
+
+        // A merged sub-writer's comment doesn't reach the parent archive.
+        let set_comment = file_operation(
+            BasicFileOperation::SetArchiveComment(comment.clone().into_boxed_slice()),
+            "",
+        );
+        let merge = file_operation(
+            BasicFileOperation::MergeWithOtherFile {
+                initial_junk: Box::new([]),
+                operations: vec![(set_comment, false)].into_boxed_slice(),
+            },
+            "",
+        );
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let mut signature = false;
+        do_operation(
+            &mut writer,
+            merge,
+            false,
+            false,
+            &mut 0,
+            &mut String::new(),
+            &mut signature,
+        )
+        .unwrap();
+        assert!(!signature);
+
+        let set_comment = file_operation(
+            BasicFileOperation::SetArchiveComment(comment.into_boxed_slice()),
+            "",
+        );
+        do_operation(
+            &mut writer,
+            set_comment,
+            false,
+            false,
+            &mut 0,
+            &mut String::new(),
+            &mut signature,
+        )
+        .unwrap();
+        assert!(signature);
+    }
+
+    #[test]
     fn deeply_nested_copy_operations_use_a_heap_work_stack() {
         let mut operation = write_file("base");
         for depth in 0..4096 {
@@ -853,7 +892,7 @@ mod tests {
             false,
             &mut files_added,
             &mut String::new(),
-            false,
+            &mut false,
         )
         .unwrap();
 
@@ -884,7 +923,7 @@ mod tests {
             false,
             &mut files_added,
             &mut String::new(),
-            false,
+            &mut false,
         )
         .unwrap();
 
@@ -910,7 +949,7 @@ mod tests {
             false,
             &mut files_added,
             &mut String::new(),
-            false,
+            &mut false,
         )
         .unwrap();
 
@@ -936,7 +975,7 @@ mod tests {
             false,
             &mut files_added,
             &mut String::new(),
-            false,
+            &mut false,
         )
         .unwrap();
 
