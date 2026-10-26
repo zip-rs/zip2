@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::CustomExtraField;
+use crate::format::extra_fields::ExtraFieldId;
 use crate::format::ffi;
 use crate::format::system::System;
 use crate::result::{ZipResult, invalid};
@@ -59,6 +60,7 @@ pub struct FileOptions<'k, 'n, T: sealed::FileOptionExtension> {
     pub(crate) encrypt_with: Option<EncryptWith<'k>>,
     pub(crate) extended_options: T,
     pub(crate) alignment: u16,
+    pub(crate) alignment_header_id: u16,
     #[cfg(feature = "deflate-zopfli")]
     pub(super) zopfli_buffer_size: Option<usize>,
     pub(crate) system: Option<System>,
@@ -478,11 +480,41 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
     pub const fn get_compression_level(&self) -> Option<i64> {
         self.compression_level
     }
-    /// Sets the alignment to the given number of bytes.
+
+    /// Sets the alignment to the given number of bytes using the default header ID (`0xa11e`).
     #[must_use]
     pub const fn with_alignment(mut self, alignment: u16) -> Self {
         self.alignment = alignment;
+        self.alignment_header_id = ExtraFieldId::DataStreamAlignment.as_u16();
         self
+    }
+
+    /// Sets the alignment to the given number of bytes using Android's alignment extra field header ID (`0xd935`).
+    #[must_use]
+    pub const fn with_android_alignment(mut self, alignment: u16) -> Self {
+        self.alignment = alignment;
+        self.alignment_header_id = ExtraFieldId::AndroidZipAlignment.as_u16();
+        self
+    }
+
+    /// Sets the alignment to the given number of bytes with a specified extra field header ID.
+    #[must_use]
+    pub const fn with_alignment_and_header_id(mut self, alignment: u16, header_id: u16) -> Self {
+        self.alignment = alignment;
+        self.alignment_header_id = header_id;
+        self
+    }
+
+    /// Returns the alignment multiple.
+    #[must_use]
+    pub const fn alignment(&self) -> u16 {
+        self.alignment
+    }
+
+    /// Returns the alignment extra field header ID.
+    #[must_use]
+    pub const fn alignment_header_id(&self) -> u16 {
+        self.alignment_header_id
     }
 }
 impl FileOptions<'_, '_, ExtendedFileOptions> {
@@ -569,6 +601,7 @@ impl FileOptions<'static, 'static, ()> {
         encrypt_with: None,
         extended_options: (),
         alignment: 1,
+        alignment_header_id: ExtraFieldId::DataStreamAlignment.as_u16(),
         #[cfg(feature = "deflate-zopfli")]
         zopfli_buffer_size: Some(1 << 15),
         system: None,
@@ -590,6 +623,7 @@ impl<'k, 'n> FileOptions<'k, 'n, ()> {
             encrypt_with: self.encrypt_with,
             extended_options: ExtendedFileOptions::default(),
             alignment: self.alignment,
+            alignment_header_id: self.alignment_header_id,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: self.zopfli_buffer_size,
             system: self.system,
@@ -611,6 +645,7 @@ impl<T: sealed::FileOptionExtension> Default for FileOptions<'_, '_, T> {
             encrypt_with: None,
             extended_options: T::default(),
             alignment: 1,
+            alignment_header_id: ExtraFieldId::DataStreamAlignment.as_u16(),
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: Some(1 << 15),
             system: None,

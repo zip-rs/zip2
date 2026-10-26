@@ -804,7 +804,12 @@ impl<W: Write + Seek> ZipWriter<W> {
         let result: ZipResult<()> = {
             let file = &mut self.files[index];
             let writer = self.inner.try_inner_mut()?;
-            file.write_local_header(header_start, writer, file_name_raw, Some(options.alignment))?;
+            file.write_local_header(
+                header_start,
+                writer,
+                file_name_raw,
+                Some((options.alignment, options.alignment_header_id)),
+            )?;
             Ok(())
         };
         self.ok_or_abort_file(result)?;
@@ -2292,6 +2297,7 @@ impl ZipFileBuilder {
                 validate_extra_fields: options.extended_options.validate_extra_fields(),
             },
             alignment: options.alignment,
+            alignment_header_id: options.alignment_header_id,
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: options.zopfli_buffer_size,
             system: options.system,
@@ -2692,7 +2698,7 @@ impl ZipFileData {
         header_start: u64,
         writer: &mut T,
         file_name_raw: &[u8],
-        alignment_opt: Option<u16>,
+        alignment_opt: Option<(u16, u16)>,
     ) -> ZipResult<()> {
         self.extra_fields
             .inner
@@ -2726,7 +2732,7 @@ impl ZipFileData {
         let header_end = header_start
             + (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64
             + file_name_raw.len() as u64;
-        let opt_alignment_field = if let Some(alignment) = alignment_opt
+        let opt_alignment_field = if let Some((alignment, header_id)) = alignment_opt
             && alignment > 1
         {
             let extra_field_end = header_end + extra_field_len as u64;
@@ -2751,8 +2757,9 @@ impl ZipFileData {
                     let pad_length_u16: Result<u16, core::num::TryFromIntError> =
                         pad_length.try_into();
                     if let Ok(pad_length) = pad_length_u16
-                        && let Some(alignment_extra_field) =
-                            DataStreamAlignment::new(pad_length, alignment)
+                        && let Some(alignment_extra_field) = DataStreamAlignment::new_with_header_id(
+                            header_id, pad_length, alignment,
+                        )
                     {
                         // Add an extra field to the extra_field, per APPNOTE 4.6.11
                         extra_field_len = self
