@@ -1566,6 +1566,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn finalize(&mut self) -> ZipResult<u64> {
+        /// Longest stale tail that [`Self::finalize`] blanks in place rather than moving the footer.
+        const STALE_FILL_MAX_LEN: u64 = 0xFF00;
         self.finish_file()?;
 
         let (central_start, is_zip64) = self.write_central_and_footer()?;
@@ -1574,12 +1576,19 @@ impl<W: Write + Seek> ZipWriter<W> {
             let footer_end = writer.stream_position()?;
             let stream_end = writer.seek(SeekFrom::End(0))?;
             let archive_end = stream_end - self.comment.len() as u64;
-            if archive_end <= footer_end && footer_end < stream_end {
+            if archive_end <= footer_end
+                && footer_end < stream_end
+                && stream_end - footer_end < STALE_FILL_MAX_LEN
+            {
                 // Stale bytes no longer than the comment are left after it (we can't truncate), but
                 // blank them: they may hold an old footer that a reader would find instead of ours.
+                // Use 0xFF, not 0: if the comment ends with part of an EOCD, a fill of zeros would
+                // complete it into a valid empty EOCD that readers would pick instead of ours,
+                // whereas 0xFF gives any such EOCD a comment length of at least 0xFF00, which can't
+                // fit in fewer than STALE_FILL_MAX_LEN trailing bytes.
                 writer.seek(SeekFrom::Start(footer_end))?;
-                io::copy(&mut io::repeat(0).take(stream_end - footer_end), writer)?;
-            } else if footer_end < archive_end {
+                io::copy(&mut io::repeat(0xFF).take(stream_end - footer_end), writer)?;
+            } else if footer_end < stream_end {
                 // Data from an aborted file is past the end of the footer.
 
                 // Overwrite the magic so the footer is no longer valid.
