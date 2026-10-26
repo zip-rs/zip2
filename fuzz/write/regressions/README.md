@@ -22,3 +22,7 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   encoding flag. Each reopen decoded the UTF-8 bytes as CP437 and grew the comment until its length
   overflowed `u16` (`TryFromIntError(PosOverflow)` in `write_central_directory_header`). Fixed by
   setting the flag for a non-ASCII comment when the name bytes are valid UTF-8.
+- `merge-sub-writer-comment-shrink-junk.bin`: found 2026-10-25 (PR #1175 persistent-mode AFL). A
+  sub-writer reopened after its comment shrank pads its archive with junk, which `merge_archive` copies
+  into the outer archive; the harness only marked the top-level writer as non-streamable for this.
+  Harness-only fix: treat `SetArchiveComment` inside a merged sub-writer as non-streamable.
