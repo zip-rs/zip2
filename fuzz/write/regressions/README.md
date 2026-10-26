@@ -48,3 +48,7 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   --no-default-features). An 87 KB input decoded to copies/merges nested thousands deep; the derived
   `Arbitrary` (and `Debug`/`Drop`) recursed once per level and overflowed the stack. Harness-only fix:
   cap the nesting depth at 64 while decoding.
+- `comment-ends-with-complete-eocd.bin`: the archive comment ends with a complete, plausible EOCD
+  record, so the archive is genuinely ambiguous and reopening it picks that record and a different
+  comment. Fixed in the harness by tolerating a failed or changed reopen whenever the comment
+  contains a signature, for every reopen path rather than only `ViaFinish`.
