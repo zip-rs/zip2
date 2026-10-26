@@ -22,3 +22,9 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   encoding flag. Each reopen decoded the UTF-8 bytes as CP437 and grew the comment until its length
   overflowed `u16` (`TryFromIntError(PosOverflow)` in `write_central_directory_header`). Fixed by
   setting the flag for a non-ASCII comment when the name bytes are valid UTF-8.
+- `abort-stale-tail-completes-comment-eocd.bin`: found 2026-10-25 (PR #1175 persistent-mode AFL,
+  --no-default-features). The comment ended with the first bytes of an EOCD record; after `abort_file`
+  rewound, `finalize` zero-filled the stale tail after it, which completed that record into a valid empty
+  EOCD that `new_append` picked over the real one. Fixed by filling such a tail with 0xFF (any EOCD so
+  completed claims a comment of >= 0xFF00 bytes, which cannot fit), and moving the footer instead when
+  the tail is that long.
