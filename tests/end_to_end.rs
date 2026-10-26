@@ -195,20 +195,36 @@ fn test_raw_copy_file_permissions() {
                 .with_file_comment("Preserved comment");
             options.add_extra_field(87_u16, b"abc", false).unwrap();
             b.start_file("file", options).unwrap();
+            let link_options = SimpleFileOptions::default().unix_permissions(0o700);
+            b.add_symlink("link", "file", link_options).unwrap();
+            b.add_directory("dir", link_options).unwrap();
             b.finish_into_readable().unwrap()
         };
         let datetime = DateTime::from_date_and_time(2026, 1, 1, 10, 10, 10).unwrap();
         let unix_mode = 0o777;
         let mut tgt_archive = {
             let mut b = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-            b.raw_copy_file_touch(
-                src_archive.by_name("file").unwrap(),
-                datetime,
-                Some(unix_mode),
-            )
-            .unwrap();
+            for name in ["file", "link", "dir/"] {
+                b.raw_copy_file_touch(
+                    src_archive.by_name(name).unwrap(),
+                    datetime,
+                    Some(unix_mode),
+                )
+                .unwrap();
+            }
             b.finish_into_readable().unwrap()
         };
+
+        // The permissions come from `unix_mode`, the file type from the copied entry.
+        let tgt_link = tgt_archive.by_name("link").unwrap();
+        assert!(tgt_link.is_symlink());
+        assert_eq!(tgt_link.unix_mode(), Some(unix_mode | ffi::S_IFLNK));
+        drop(tgt_link);
+        #[cfg(not(windows))]
+        assert_eq!(
+            tgt_archive.by_name("dir/").unwrap().unix_mode(),
+            Some(unix_mode | ffi::S_IFDIR)
+        );
 
         let src_file = src_archive.by_name("file").unwrap();
         let tgt_file = tgt_archive.by_name("file").unwrap();
