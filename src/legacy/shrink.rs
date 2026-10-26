@@ -107,46 +107,52 @@ fn unshrink_partial_clear(codetab: &mut [Codetab], queue: &mut CodeQueue) {
 
 /// Read the next code from the input stream and return it in next_code. Returns
 /// `Ok(None)` if the end of the stream is reached. If the stream contains invalid
-/// data, returns `Err`.
+/// data or excessive consecutive control codes, returns `Err`.
 fn read_code<T: Read, E: Endianness>(
     is: &mut BitReader<T, E>,
     code_size: &mut u8,
     codetab: &mut [Codetab],
     queue: &mut CodeQueue,
 ) -> io::Result<Option<u16>> {
-    // assert(sizeof(code) * CHAR_BIT >= *code_size);
-    let code = is.read_var::<u16>(u32::from(*code_size))?;
+    const MAX_CONSECUTIVE_CONTROL_CODES: usize = 256;
+    for _ in 0..MAX_CONSECUTIVE_CONTROL_CODES {
+        let code = is.read_var::<u16>(u32::from(*code_size))?;
 
-    // Handle regular codes (the common case).
-    if code != CONTROL_CODE as u16 {
-        return Ok(Some(code));
-    }
+        // Handle regular codes (the common case).
+        if code != CONTROL_CODE as u16 {
+            return Ok(Some(code));
+        }
 
-    // Handle control codes.
-    if let Ok(control_code) = is.read_var::<u16>(u32::from(*code_size)) {
-        match control_code {
-            INC_CODE_SIZE => {
-                if *code_size >= MAX_CODE_SIZE {
+        // Handle control codes.
+        if let Ok(control_code) = is.read_var::<u16>(u32::from(*code_size)) {
+            match control_code {
+                INC_CODE_SIZE => {
+                    if *code_size >= MAX_CODE_SIZE {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "tried to increase code size when already at maximum",
+                        ));
+                    }
+                    *code_size += 1;
+                }
+                PARTIAL_CLEAR => {
+                    unshrink_partial_clear(codetab, queue);
+                }
+                _ => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "tried to increase code size when already at maximum",
+                        format!("Invalid control code {}", control_code),
                     ));
                 }
-                *code_size += 1;
             }
-            PARTIAL_CLEAR => {
-                unshrink_partial_clear(codetab, queue);
-            }
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Invalid control code {}", control_code),
-                ));
-            }
+        } else {
+            return Ok(None);
         }
-        return read_code(is, code_size, codetab, queue);
     }
-    Ok(None)
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "excessive consecutive LZW control codes",
+    ))
 }
 
 /// Output the string represented by a code into dst at dst_pos.
@@ -484,5 +490,29 @@ mod tests {
         limited.read_to_end(&mut out).unwrap();
         assert_eq!(out, &LZW_FIG5[..6]);
         assert!(limited.get_ref().stream.len() <= 8);
+    }
+
+    #[test]
+    fn test_shrink_uncontrolled_recursion_prevention() {
+        use bitstream_io::{BitWrite, BitWriter, LittleEndian};
+
+        let mut buf = Vec::new();
+        {
+            let mut writer = BitWriter::endian(&mut buf, LittleEndian);
+            // Write 500 consecutive (CONTROL_CODE=256, PARTIAL_CLEAR=2) pairs
+            for _ in 0..500 {
+                writer.write::<9, _>(256u32).unwrap();
+                writer.write::<9, _>(2u32).unwrap();
+            }
+            writer.write::<9, _>(65u32).unwrap();
+            writer.byte_align().unwrap();
+        }
+
+        let mut dst = Vec::new();
+        let res = hwunshrink(&buf, 1, &mut dst);
+        assert!(
+            res.is_err(),
+            "Should return error on excessive consecutive control codes"
+        );
     }
 }
