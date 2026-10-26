@@ -318,7 +318,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
 
         // Decode independently of the candidate so later candidates can reuse `cd_chains`.
-        let mut files = Vec::new();
+        let mut files = Vec::with_capacity(file_capacity);
         let mut central_header_start = dir_info.directory_start;
         reader.seek(SeekFrom::Start(central_header_start))?;
         while files.len() < dir_info.number_of_files {
