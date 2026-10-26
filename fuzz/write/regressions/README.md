@@ -27,3 +27,9 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   Path extra field (0x7075); its CRC matched the copy's new name (`""`, CRC 0), so on read-back the copy
   was renamed to the source's name, collided with it and was lost, and a later `abort_file` hit
   `FileNotFound`. Fixed by dropping such a field from the copy.
+- `abort-stale-tail-completes-comment-eocd.bin`: found 2026-10-25 (PR #1175 persistent-mode AFL,
+  --no-default-features). The comment ended with the first bytes of an EOCD record; after `abort_file`
+  rewound, `finalize` zero-filled the stale tail after it, which completed that record into a valid empty
+  EOCD that `new_append` picked over the real one. Fixed by filling such a tail with 0xFF (any EOCD so
+  completed claims a comment of >= 0xFF00 bytes, which cannot fit), and moving the footer instead when
+  the tail is that long.
