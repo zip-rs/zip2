@@ -370,10 +370,10 @@ impl<R: Read> ZipStreamReader<R> {
                     file.read_to_end(&mut target)?;
                     match extract_options.symlink_action {
                         SymlinkExtractAction::ExtractAsFile => {
-                            make_symlink_as_file(&outpath, &target)?;
+                            make_symlink_as_file(&outpath, &target, file.unix_mode())?;
                         }
                         SymlinkExtractAction::ExtractAsFileUtf8 => {
-                            make_symlink_as_file_utf8(&outpath, &target)?;
+                            make_symlink_as_file_utf8(&outpath, &target, file.unix_mode())?;
                         }
                         _ => {
                             make_symlink(
@@ -390,7 +390,8 @@ impl<R: Read> ZipStreamReader<R> {
                 if file.is_dir() {
                     fs::create_dir_all(&outpath)?;
                 } else {
-                    let mut outfile = fs::File::create(&outpath)?;
+                    let mut outfile =
+                        crate::read::extract::create_outfile(&outpath, file.unix_mode())?;
                     io::copy(file, &mut outfile)?;
                 }
 
