@@ -2410,7 +2410,8 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<u32> {
         }
         #[cfg(all(not(feature = "deflate-flate2"), feature = "deflate-zopfli"))]
         {
-            1
+            // Zopfli starts after the best flate2 level, 9
+            10
         }
     };
 
@@ -3573,6 +3574,36 @@ mod tests {
         writer.start_file("", options).unwrap();
         writer.write_all(&[]).unwrap();
         writer.write_all(&[]).unwrap();
+        Ok(())
+    }
+
+    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    #[test]
+    fn zopfli_only_level_range() -> ZipResult<()> {
+        use crate::result::ZipError::UnsupportedArchive;
+
+        let options = |level| {
+            SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Deflated)
+                .compression_level(Some(level))
+        };
+
+        // Zopfli levels start at 10; 1-9 belong to flate2, which is not enabled here
+        for level in 0..10 {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            assert!(
+                matches!(
+                    writer.start_file("below", options(level)),
+                    Err(UnsupportedArchive("Unsupported compression level"))
+                ),
+                "level {level}"
+            );
+        }
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("first", options(10))?;
+        writer.write_all(b"data")?;
+        writer.finish()?;
         Ok(())
     }
 
