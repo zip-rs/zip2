@@ -458,9 +458,9 @@ jobs:
     strategy:
       matrix:
         os:
+          - ${{ vars.WINDOWS_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-windows-2025' }}
+          - ${{ vars.MACOS_RUNNER_CI_PRELIMINARY || 'blacksmith-6vcpu-macos-latest' }}
           - ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
-          - windows-latest
-          - macOS-latest
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
