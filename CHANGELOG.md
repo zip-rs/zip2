@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.1.2](https://github.com/zip-rs/zip2/compare/v9.1.1...v9.1.2) - 2026-10-26
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- preserve the file kind (normal/directory/symlink) in raw_copy_file_touch ([#1179](https://github.com/zip-rs/zip2/pull/1179))
+- *(write)* reject a Unicode Path extra field that would rename the entry ([#1177](https://github.com/zip-rs/zip2/pull/1177))
+- *(extract)* prevent following symbolic links during file creation ([#1116](https://github.com/zip-rs/zip2/pull/1116))
+
 ## [9.1.1](https://github.com/zip-rs/zip2/compare/v9.1.0...v9.1.1) - 2026-10-25
 
 ### <!-- 1 -->🐛 Bug Fixes
