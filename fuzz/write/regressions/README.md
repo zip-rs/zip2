@@ -44,3 +44,7 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   operation) gave a different comment or "Invalid Central Directory header". Such an archive is
   ambiguous by design, so the harness now tolerates a failed or changed reopen once the comment holds a
   signature, for both reopen methods.
+- `stack-overflow-nested-copy-arbitrary.bin`: found 2026-10-25 (PR #1175 persistent-mode AFL,
+  --no-default-features). An 87 KB input decoded to copies/merges nested thousands deep; the derived
+  `Arbitrary` (and `Debug`/`Drop`) recursed once per level and overflowed the stack. Harness-only fix:
+  cap the nesting depth at 64 while decoding.

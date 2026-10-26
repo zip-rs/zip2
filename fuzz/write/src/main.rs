@@ -48,8 +48,40 @@ pub enum ReopenOption {
     ViaFinishIntoReadable,
 }
 
+/// How deeply copies and merges may nest. The derived `Arbitrary`, `Debug` and `Drop` all recurse
+/// once per level, so an unbounded chain overflows the stack (one 87 KB input nested ~2,400 deep).
+const MAX_OPERATION_DEPTH: usize = 64;
+
+std::thread_local! {
+    static OPERATION_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn arbitrary_bounded_basic<'a, 'k, 'n>(
+    u: &mut Unstructured<'a>,
+) -> arbitrary::Result<BasicFileOperation<'k, 'n>>
+where
+    BasicFileOperation<'k, 'n>: Arbitrary<'a>,
+{
+    struct DepthGuard;
+    impl Drop for DepthGuard {
+        fn drop(&mut self) {
+            OPERATION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+        }
+    }
+    let depth = OPERATION_DEPTH.with(|depth| {
+        depth.set(depth.get() + 1);
+        depth.get()
+    });
+    let _guard = DepthGuard;
+    if depth > MAX_OPERATION_DEPTH {
+        return Err(arbitrary::Error::IncorrectFormat);
+    }
+    BasicFileOperation::arbitrary(u)
+}
+
 #[derive(Arbitrary, Clone, Debug)]
 pub struct FileOperation<'k, 'n> {
+    #[arbitrary(with = arbitrary_bounded_basic)]
     basic: BasicFileOperation<'k, 'n>,
     path: PathBuf,
     reopen: ReopenOption,
