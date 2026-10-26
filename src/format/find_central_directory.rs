@@ -180,15 +180,24 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
     eocd_finder: &mut MagicFinder<Backwards<'static>>,
     cdfh_cache: &mut MagicPositionCache,
     eocd64_cache: &mut MagicPositionCache,
+    // Valid candidates already found but not yet returned, shared across calls so that a retry
+    // after a rejected candidate doesn't lose them.
+    queued: &mut Vec<CentralDirectoryEndInfo>,
 ) -> ZipResult<CentralDirectoryEndInfo> {
+    if let Some(info) = queued.pop() {
+        return Ok(info);
+    }
     const EOCD_FIXED_SIZE: u64 = 22;
     const CDFH_SIG_BYTES: [u8; mem::size_of::<Magic>()] =
         Magic::CENTRAL_DIRECTORY_HEADER_SIGNATURE.to_le_bytes();
 
     // Keep the last errors for cases of improper EOCD instances.
     let mut parsing_error = None;
+    // A valid candidate whose comment doesn't end at EOF, with its offset and the end of its
+    // fixed-size record; see `accept!`.
+    let mut pending: Option<(CentralDirectoryEndInfo, u64, u64)> = None;
 
-    while let Some(eocd_offset) = eocd_finder.next(reader)? {
+    'candidates: while let Some(eocd_offset) = eocd_finder.next(reader)? {
         // Attempt to parse the EOCD block
         let eocd = match Zip32CentralDirectoryEnd::parse(reader) {
             Ok(eocd) => eocd,
@@ -205,6 +214,34 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
         if eocd.zip_file_comment.len() as u64 + eocd_offset + EOCD_FIXED_SIZE > file_len {
             parsing_error = Some(invalid!("Invalid EOCD comment length"));
             continue;
+        }
+
+        // Deferred acceptance: a valid record followed by trailing bytes may be a stray signature
+        // inside the real EOCD's comment. Hold it as pending and keep searching backwards; if the
+        // next valid record's comment covers it, that enclosing record is preferred, otherwise the
+        // pending one is. A record that ends exactly at EOF is accepted at once, as `ZipWriter`
+        // can leave a stale footer whose comment covers the real footer and ends there too.
+        // This needs no reads beyond the normal backward search.
+        let comment_start = eocd_offset + EOCD_FIXED_SIZE;
+        let comment_end = comment_start + eocd.zip_file_comment.len() as u64;
+        let has_trailing_bytes = comment_end != file_len;
+        macro_rules! accept {
+            ($info:expr) => {{
+                let info = $info;
+                if let Some((held, held_offset, held_end)) = pending.take() {
+                    if comment_start <= held_offset && held_end <= comment_end {
+                        queued.push(held);
+                        return Ok(info);
+                    }
+                    queued.push(info);
+                    return Ok(held);
+                }
+                if has_trailing_bytes {
+                    pending = Some((info, eocd_offset, eocd_offset + EOCD_FIXED_SIZE));
+                    continue 'candidates;
+                }
+                return Ok(info);
+            }};
         }
 
         let zip64_metadata = if eocd.may_be_zip64() {
@@ -253,7 +290,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                     parsing_error = Some(invalid!("Invalid CDFH offset in EOCD"));
                     continue;
                 }
-                return Ok(CentralDirectoryEndInfo {
+                accept!(CentralDirectoryEndInfo {
                     eocd: (eocd, eocd_offset).into(),
                     eocd64: None,
                     archive_offset: eocd_offset.saturating_sub(cd_offset_from_eocd),
@@ -303,7 +340,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                 // The first CDFH will define the archive offset
                 let archive_offset = cd_offset - cd_offset_from_eocd;
 
-                return Ok(CentralDirectoryEndInfo {
+                accept!(CentralDirectoryEndInfo {
                     eocd: (eocd, eocd_offset).into(),
                     eocd64: None,
                     archive_offset,
@@ -416,7 +453,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                 locator64_offset,
             ) {
                 Ok(Some((eocd64, archive_offset))) => {
-                    return Ok(CentralDirectoryEndInfo {
+                    accept!(CentralDirectoryEndInfo {
                         eocd: (eocd, guess_pos).into(),
                         eocd64: Some(eocd64),
                         archive_offset,
@@ -451,7 +488,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                     locator64_offset,
                 ) {
                     Ok(Some((eocd64, archive_offset))) => {
-                        return Ok(CentralDirectoryEndInfo {
+                        accept!(CentralDirectoryEndInfo {
                             eocd: (eocd, eocd64_offset).into(),
                             eocd64: Some(eocd64),
                             archive_offset,
@@ -473,5 +510,8 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
         parsing_error = local_error.or(Some(invalid!("Could not find EOCD64")));
     }
 
+    if let Some((held, _, _)) = pending {
+        return Ok(held);
+    }
     Err(parsing_error.unwrap_or(invalid!("Could not find EOCD")))
 }

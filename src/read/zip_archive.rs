@@ -223,6 +223,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let mut eocd_finder = MagicFinder::new(&EOCD_SIG_BYTES, min_eocd_position, file_len);
         let mut cdfh_cache = MagicPositionCache::new(CDFH_SIG_BYTES);
         let mut eocd64_cache = MagicPositionCache::new(EOCD64_SIG_BYTES);
+        let mut queued = Vec::new();
         loop {
             // Find the EOCD and possibly EOCD64 entries and determine the archive offset.
             let cde = match find_central_directory_end(
@@ -232,6 +233,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 &mut eocd_finder,
                 &mut cdfh_cache,
                 &mut eocd64_cache,
+                &mut queued,
             ) {
                 Ok(cde) => cde,
                 Err(e) => {
@@ -1289,6 +1291,7 @@ mod tests {
             &mut eocd_finder,
             &mut cdfh_cache,
             &mut eocd64_cache,
+            &mut Vec::new(),
         );
 
         // This should succeed because even though there's a fake locator, it should fall back to Zip32

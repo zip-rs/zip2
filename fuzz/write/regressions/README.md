@@ -22,3 +22,9 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   encoding flag. Each reopen decoded the UTF-8 bytes as CP437 and grew the comment until its length
   overflowed `u16` (`TryFromIntError(PosOverflow)` in `write_central_directory_header`). Fixed by
   setting the flag for a non-ASCII comment when the name bytes are valid UTF-8.
+- `finish-into-readable-comment-signature.bin`, `reopen-nested-copy-comment-signature.bin`: found
+  2026-10-25 (PR #1175 persistent-mode AFL). The archive comment contained an EOCD signature followed by
+  more bytes; the backwards EOCD scan accepted that fake record (trailing bytes are tolerated) instead of
+  the real one whose comment ends exactly at EOF, so reopening yielded an empty archive / a different
+  comment or "Invalid Central Directory header". Fixed by skipping a candidate that lies inside the
+  comment of an earlier EOCD ending exactly at EOF.
