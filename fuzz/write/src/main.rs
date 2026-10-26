@@ -294,6 +294,10 @@ fn finalize_operation(
                 return Err(e.into());
             }
             if !writer.get_raw_comment().starts_with(&old_comment) {
+                // A reader may pick an EOCD inside the comment (GHSA-wjr6-mhvj-cjvm).
+                if allow_reopen_failure {
+                    return Ok(false);
+                }
                 return Err(ZipError::InvalidArchive(
                     "Comment unexpectedly changed after reopening".into(),
                 )
@@ -327,6 +331,10 @@ fn finalize_operation(
                 return Err(e.into());
             }
             if !writer.get_raw_comment().starts_with(&old_comment) {
+                // A reader may pick an EOCD inside the comment (GHSA-wjr6-mhvj-cjvm).
+                if allow_reopen_failure {
+                    return Ok(false);
+                }
                 return Err(ZipError::InvalidArchive(
                     "Comment unexpectedly changed after reopening".into(),
                 )
@@ -704,8 +712,11 @@ impl FuzzTestCase<'_, '_> {
             if reopen != ReopenOption::DoNotReopen {
                 comment_len_at_reopen = comment_len;
             }
-            let allow_reopen_failure =
-                comment_contains_signature && reopen == ReopenOption::ViaFinish;
+            // A comment holding a complete EOCD (or ZIP64) record makes the archive ambiguous:
+            // like Python's zipfile and Info-ZIP, `ZipArchive` may pick that inner record
+            // (GHSA-wjr6-mhvj-cjvm), so any later reopen, by either method and at any nesting
+            // level, may fail or see a different comment.
+            let allow_reopen_failure = comment_contains_signature;
             let completed = do_operation(
                 &mut writer,
                 operation,

@@ -28,3 +28,10 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   EOCD that `new_append` picked over the real one. Fixed by filling such a tail with 0xFF (any EOCD so
   completed claims a comment of >= 0xFF00 bytes, which cannot fit), and moving the footer instead when
   the tail is that long.
+- `finish-into-readable-comment-signature.bin`, `reopen-nested-copy-comment-signature.bin`: found
+  2026-10-25 (PR #1175 persistent-mode AFL). The archive comment contains a complete EOCD record
+  followed by more bytes. Like Python's `zipfile` and Info-ZIP, `ZipArchive` picks that inner record
+  (GHSA-wjr6-mhvj-cjvm), so reopening via `finish_into_readable` (or a later `finish` inside a nested
+  operation) gave a different comment or "Invalid Central Directory header". Such an archive is
+  ambiguous by design, so the harness now tolerates a failed or changed reopen once the comment holds a
+  signature, for both reopen methods.
