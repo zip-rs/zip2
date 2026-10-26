@@ -68,6 +68,10 @@ runs:
         mkdir -p "$HOME/.local/share/afl.rs"
         tar -xzf "$RUNNER_TEMP/cargo-afl-artifact/afl-data.tar.gz" -C "$HOME/.local/share/afl.rs"
       shell: bash
+    - name: Install cargo-afl locally if nightly advanced
+      if: steps.rustc-version.outputs.version != inputs.setup-rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
+      run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml --force
+      shell: bash
     - name: Build AFL runtime if nightly advanced
       if: steps.rustc-version.outputs.version != inputs.setup-rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
       run: cargo afl config --build --force
