@@ -78,6 +78,14 @@ where
     }
 }
 
+impl<C: AesKind> Drop for AesCtrZipKeyStream<C> {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.buffer.zeroize();
+        self.counter.zeroize();
+    }
+}
+
 impl<C> AesCtrZipKeyStream<C>
 where
     C: AesKind,
@@ -277,5 +285,15 @@ mod tests {
         ];
 
         roundtrip::<Aes256>(&key, &ciphertext, expected_plaintext);
+    }
+
+    #[test]
+    fn test_aes_ctr_keystream_zeroize_on_drop() {
+        let key = [0x42u8; 16];
+        let mut stream = AesCtrZipKeyStream::<Aes128>::new(&key).unwrap();
+        let mut data = [0u8; 16];
+        stream.crypt_in_place(&mut data);
+        assert_ne!(data, [0u8; 16]);
+        drop(stream);
     }
 }
