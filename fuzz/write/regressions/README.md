@@ -22,6 +22,11 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   encoding flag. Each reopen decoded the UTF-8 bytes as CP437 and grew the comment until its length
   overflowed `u16` (`TryFromIntError(PosOverflow)` in `write_central_directory_header`). Fixed by
   setting the flag for a non-ASCII comment when the name bytes are valid UTF-8.
+- `deep-copy-keeps-stale-unicode-path.bin`: found 2026-10-25 (PR #1175 persistent-mode AFL,
+  --no-default-features). `deep_copy_file`/`shallow_copy_file` kept the source entry's Info-ZIP Unicode
+  Path extra field (0x7075); its CRC matched the copy's new name (`""`, CRC 0), so on read-back the copy
+  was renamed to the source's name, collided with it and was lost, and a later `abort_file` hit
+  `FileNotFound`. Fixed by dropping such a field from the copy.
 - `abort-stale-tail-completes-comment-eocd.bin`: found 2026-10-25 (PR #1175 persistent-mode AFL,
   --no-default-features). The comment ended with the first bytes of an EOCD record; after `abort_file`
   rewound, `finalize` zero-filled the stale tail after it, which completed that record into a valid empty
