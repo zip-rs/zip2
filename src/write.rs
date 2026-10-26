@@ -1358,7 +1358,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if let Some(perms) = unix_mode {
             // `unix_permissions` keeps only the permission bits: add the entry's own file type
             // back, as `add_symlink` and `add_directory` do.
-            let file_type = file.unix_mode().map_or(0, |mode| mode & !0o777);
+            let file_type = file.unix_mode().map_or(0, |mode| mode & !0o7777);
             options.external_attributes = None;
             options = options.unix_permissions(perms);
             options.permissions = options.permissions.map(|perms| perms | file_type);
