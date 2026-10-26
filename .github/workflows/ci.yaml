@@ -703,6 +703,9 @@ jobs:
           chmod +x "$HOME/.cargo/bin/cargo-afl"
           mkdir -p "$HOME/.local/share/afl.rs"
           tar -xzf "$RUNNER_TEMP/cargo-afl-artifact/afl-data.tar.gz" -C "$HOME/.local/share/afl.rs"
+      - name: Install cargo-afl locally if nightly advanced
+        if: steps.rustc-version.outputs.version != needs.setup_cargo_afl.outputs.rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
+        run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml --force
       - name: Build AFL runtime if nightly advanced
         if: steps.rustc-version.outputs.version != needs.setup_cargo_afl.outputs.rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
         run: cargo afl config --build --force
