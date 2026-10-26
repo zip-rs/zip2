@@ -185,7 +185,8 @@ fn is_expected_new_entry_error(e: &ZipError) -> bool {
         ZipError::InvalidArchive(msg) => {
             msg.starts_with("Duplicate filename: ")
                 || (msg.starts_with("Extra field ")
-                    && msg.ends_with(" would not be readable: malformed data"))
+                    && (msg.ends_with(" would not be readable: malformed data")
+                        || msg.ends_with(" would not be readable: renames the entry")))
         }
         _ => false,
     }

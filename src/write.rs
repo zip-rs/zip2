@@ -739,6 +739,19 @@ impl<W: Write + Seek> ZipWriter<W> {
                         x.header_id
                     ));
                 }
+                // A reader replaces the entry name with a valid Info-ZIP Unicode Path field's
+                // content (APPNOTE 4.6.9), so it must not name a different file than this one.
+                if x.header_id == crate::format::extra_fields::ExtraFieldId::UnicodePath.as_u16()
+                    && let Some(content) = x.data.get(5..)
+                    && x.data[1..5] == crc32fast::hash(file_name_raw).to_le_bytes()
+                    && core::str::from_utf8(content).is_ok()
+                    && content != file_name_raw
+                {
+                    return Err(invalid!(
+                        "Extra field {:#06x} would not be readable: renames the entry",
+                        x.header_id
+                    ));
+                }
             }
         }
         let extra_fields = match options.extended_options.extra_fields() {
@@ -5042,6 +5055,34 @@ mod tests {
         writer.abort_file()?;
         writer.set_raw_comment(Box::new([255]))?;
         let _ = ZipWriter::new_append(writer.finish()?)?;
+        Ok(())
+    }
+
+    /// Regression test for fuzz_write (PR #1175 merge queue): a central-only Unicode Path field
+    /// whose CRC-32 matches the entry name renamed the entry on read-back ("" -> "%$!"), so the
+    /// writer's view of the archive no longer matched what `new_append` read.
+    #[test]
+    fn validate_extra_fields_rejects_renaming_unicode_path() -> ZipResult<()> {
+        let mut options = FullFileOptions::default().validate_extra_fields(true);
+        // version 50, CRC-32 of "" (0), content "%$!"
+        options.add_extra_field(0x7075, [50, 0, 0, 0, 0, 37, 36, 33], true)?;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        assert!(writer.start_file("", options.clone()).is_err());
+        // The CRC doesn't match "a", so a reader ignores the field.
+        writer.start_file("a", options)?;
+        // Content equal to the name is harmless.
+        let mut same = FullFileOptions::default().validate_extra_fields(true);
+        let mut data = vec![1];
+        data.extend_from_slice(&crc32fast::hash(b"b").to_le_bytes());
+        data.push(b'b');
+        same.add_extra_field(0x7075, data, false)?;
+        writer.start_file("b", same)?;
+        let archive = ZipArchive::new(writer.finish()?)?;
+        let names: Vec<_> = archive
+            .file_names()
+            .map(|n| n.unwrap().into_owned())
+            .collect();
+        assert_eq!(names, ["a", "b"]);
         Ok(())
     }
 
