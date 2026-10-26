@@ -347,9 +347,9 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
     /// `None` value specifies default compression level.
     ///
     /// Range of values depends on compression method:
-    /// * `Deflated`: 10 - 264 for Zopfli, 0 - 9 for other encoders. Default is 24 if Zopfli is the
+    /// * `Deflated`: 10 - 264 for Zopfli, 1 - 9 for other encoders. Default is 24 if Zopfli is the
     ///   only encoder, or 6 otherwise.
-    /// * `Bzip2`: 0 - 9. Default is 6
+    /// * `Bzip2`: 1 - 9. Default is 6
     /// * `Zstd`: -7 - 22, with zero being mapped to default level. Default is 3
     /// * others: only `None` is allowed
     #[must_use]
