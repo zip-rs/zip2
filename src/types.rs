@@ -538,6 +538,26 @@ impl ZipFileData {
         get_flags(flags)
     }
 
+    /// Drops any Info-ZIP Unicode Path extra field that a reader would apply to `file_name_raw`
+    /// (its CRC-32 matches) but that names something else. A copy under a new name keeps the
+    /// source's extra fields, and such a field would otherwise rename the copy on read-back
+    /// (APPNOTE 4.6.9), e.g. back to the source's name.
+    pub(crate) fn drop_unicode_path_renaming(&mut self, file_name_raw: &[u8]) {
+        const UNICODE_PATH: u16 = crate::format::extra_fields::ExtraFieldId::UnicodePath.as_u16();
+        let crc = crc32fast::hash(file_name_raw);
+        self.extra_fields.inner.retain(|field| match field {
+            ExtraField::UnicodePath(unicode) => {
+                unicode.crc32 != crc || *unicode.content == *file_name_raw
+            }
+            ExtraField::Custom(custom) if custom.header_id == UNICODE_PATH => {
+                custom.data.len() < 5
+                    || custom.data[1..5] != crc.to_le_bytes()
+                    || custom.data[5..] == *file_name_raw
+            }
+            _ => true,
+        });
+    }
+
     /// Sets the language encoding flag for this entry written under a new name.
     pub(crate) fn set_language_encoding_for(&mut self, file_name_raw: &[u8]) {
         let on = needs_language_encoding(file_name_raw, &self.file_comment);

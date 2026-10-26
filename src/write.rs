@@ -455,6 +455,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         new_data.header_start = write_position;
         new_data.central_header_start = 0;
         new_data.set_language_encoding_for(dest_name_raw);
+        new_data.drop_unicode_path_renaming(dest_name_raw);
         let index = self.insert_file_data(dest_name_raw, new_data)?;
         let new_data = &mut self.files[index];
         let result: io::Result<()> = {
@@ -1723,6 +1724,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let file_name_raw = dest_name.as_bytes();
         dest_data.central_header_start = 0;
         dest_data.set_language_encoding_for(file_name_raw);
+        dest_data.drop_unicode_path_renaming(file_name_raw);
         self.insert_file_data(file_name_raw, dest_data)?;
         Ok(())
     }
