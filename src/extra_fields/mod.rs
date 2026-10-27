@@ -24,7 +24,7 @@ pub use zipinfo_utf8::UnicodeExtraField;
 
 // re-export
 pub use crate::format::extra_fields::EXTRA_FIELD_MAPPING;
-use crate::format::extra_fields::ExtraFieldId;
+pub use crate::format::extra_fields::ExtraFieldId;
 
 /// Internal extra-field identifiers (`u16` tags) recognized by this crate.
 ///
@@ -50,6 +50,8 @@ pub(crate) enum UsedExtraField {
     AeXEncryption = ExtraFieldId::AeXEncryption.as_u16(),
     /// Data Stream Alignment (Apache Commons-Compress)
     DataStreamAlignment = ExtraFieldId::DataStreamAlignment.as_u16(),
+    /// Android ZIP Alignment Extra Field (APK alignment)
+    AndroidZipAlignment = ExtraFieldId::AndroidZipAlignment.as_u16(),
 }
 
 impl UsedExtraField {
@@ -98,6 +100,7 @@ impl TryFrom<u16> for UsedExtraField {
             UsedExtraField::UnicodeComment,
             UsedExtraField::UnicodePath,
             UsedExtraField::DataStreamAlignment,
+            UsedExtraField::AndroidZipAlignment,
             UsedExtraField::AeXEncryption,
         )
     }
