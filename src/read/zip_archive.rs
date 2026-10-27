@@ -301,10 +301,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> Result<SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
+        // Furthermore, each CDFH requires at least 46 bytes (4 bytes magic + 42 bytes ZipCentralEntryBlock).
+        let max_files = (dir_info.directory_size / 46) as usize;
         let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
             0
         } else {
-            dir_info.number_of_files
+            dir_info.number_of_files.min(max_files)
         };
 
         if dir_info.disk_number != dir_info.disk_with_central_directory {
