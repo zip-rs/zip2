@@ -302,8 +302,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
         // Furthermore, each CDFH requires at least 46 bytes (4 bytes magic + 42 bytes ZipCentralEntryBlock).
-        let max_files = (dir_info.directory_size / 46) as usize;
-        let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
+        let max_files = usize::try_from(dir_info.directory_size / 46).unwrap_or(usize::MAX);
+        let dir_start_bound = usize::try_from(dir_info.directory_start).unwrap_or(usize::MAX);
+        let file_capacity = if dir_info.number_of_files > dir_start_bound {
             0
         } else {
             dir_info.number_of_files.min(max_files)
