@@ -3,7 +3,7 @@
 use crate::result::{ZipResult, invalid};
 use crate::{ZipArchive, result::ZipError};
 use std::ffi::OsStr;
-use std::io::{self, Read, Seek};
+use std::io::{Read, Seek, Write};
 use std::path::Path;
 
 use indexmap::IndexMap;
@@ -15,6 +15,28 @@ use indexmap::IndexMap;
 /// uncompressed size stored in the central directory is attacker-controlled,
 /// so entries above this bound are rejected rather than pre-allocated.
 pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
+
+/// Buffer capacity for file extraction streams (64 KiB), reducing syscall overhead
+/// and optimizing page cache utilization during archive extraction.
+pub(crate) const EXTRACT_BUFFER_SIZE: usize = 64 * 1024;
+
+/// Copies decompressed data from `reader` into `writer` using `buf` as a reusable transfer buffer.
+pub(crate) fn copy_into<R: Read + ?Sized, W: Write + ?Sized>(
+    reader: &mut R,
+    writer: &mut W,
+    buf: &mut [u8],
+) -> std::io::Result<u64> {
+    let mut written = 0u64;
+    loop {
+        let n = reader.read(buf)?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n])?;
+        written = written.saturating_add(n as u64);
+    }
+    Ok(written)
+}
 
 /// Symlink extract action
 #[derive(Debug, Default, Copy, Clone)]
@@ -541,6 +563,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             .transpose()?;
 
         let mut files_by_unix_mode = UnixFileModes::default();
+        let mut extract_buf = vec![0u8; EXTRACT_BUFFER_SIZE];
 
         for i in 0..self.len() {
             let read_options = crate::read::ZipReadOptions::new()
@@ -619,7 +642,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 }
             } else {
                 let mut outfile = create_outfile(&outpath, file.unix_mode())?;
-                io::copy(&mut file, &mut outfile)?;
+                copy_into(&mut file, &mut outfile, &mut extract_buf)?;
                 #[cfg(unix)]
                 if let Some(mode) = file.unix_mode() {
                     // OpenOptions::mode only applies when the file is created. Record modes

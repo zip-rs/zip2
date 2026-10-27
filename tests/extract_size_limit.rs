@@ -84,3 +84,28 @@ fn extract_options_size_limit_rejects_an_unknown_total() {
     assert!(matches!(err, ZipError::DecompressedSizeUnknown));
     assert!(!out.exists());
 }
+
+#[test]
+fn extract_options_size_limit_multi_file_cumulative_exact() {
+    let parts = [
+        ("f1.txt", &b"alpha"[..]),
+        ("f2.txt", &b"beta"[..]),
+        ("f3.txt", &b"gamma"[..]),
+    ];
+    let bytes = stored_archive(&parts);
+    let mut archive = open(&bytes);
+    let total = archive.decompressed_size().unwrap();
+    assert_eq!(total, 14); // 5 + 4 + 5 = 14
+
+    let dest = TempDir::with_prefix("zip_size_limit_multi").unwrap();
+    let out = dest.path().join("out");
+
+    // Exact limit succeeds
+    archive
+        .extract_with_options(&out, ExtractOptions::default().with_size_limit(14))
+        .unwrap();
+
+    assert_eq!(std::fs::read(out.join("f1.txt")).unwrap(), b"alpha");
+    assert_eq!(std::fs::read(out.join("f2.txt")).unwrap(), b"beta");
+    assert_eq!(std::fs::read(out.join("f3.txt")).unwrap(), b"gamma");
+}
