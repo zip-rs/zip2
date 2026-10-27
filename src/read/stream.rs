@@ -335,6 +335,7 @@ impl<R: Read> ZipStreamReader<R> {
             outpath: PathBuf,
             resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
             file_permissions: std::collections::BTreeMap<PathBuf, u32>,
+            buf: Vec<u8>,
         }
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
@@ -392,7 +393,7 @@ impl<R: Read> ZipStreamReader<R> {
                 } else {
                     let mut outfile =
                         crate::read::extract::create_outfile(&outpath, file.unix_mode())?;
-                    io::copy(file, &mut outfile)?;
+                    crate::read::extract::copy_into(file, &mut outfile, &mut self.buf)?;
                 }
 
                 Ok(())
@@ -474,6 +475,7 @@ impl<R: Read> ZipStreamReader<R> {
             outpath: staging.clone().unwrap_or_else(|| directory.clone()),
             resolved_paths: IndexMap::new(),
             file_permissions: Default::default(),
+            buf: vec![0u8; crate::read::extract::EXTRACT_BUFFER_SIZE],
         };
         let visited = self.visit(&mut extractor);
         if let Some(mut staging) = staging {
