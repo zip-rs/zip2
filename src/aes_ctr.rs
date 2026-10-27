@@ -25,8 +25,9 @@ pub struct Aes256;
 pub trait AesKind {
     /// Key type.
     type Key: AsRef<[u8]>;
-    /// Cipher used to decrypt.
-    type Cipher: KeyInit;
+    /// Cipher used to encrypt and decrypt. The `ZeroizeOnDrop` bound holds only with the
+    /// `aes` crate's `zeroize` feature, which wipes the round keys when the cipher is dropped.
+    type Cipher: KeyInit + zeroize::ZeroizeOnDrop;
 }
 
 impl AesKind for Aes128 {
