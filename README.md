@@ -80,8 +80,8 @@ This library can work in a Wasm environment but you may need to disable certain 
 # change to latest version
 zip = { version = "latest", default-features = false, features = [
     # "aes-crypto",
-    # "bzip2",
     # "xz",
+    "bzip2",
     "deflate64",
     "deflate",
     "lzma",
