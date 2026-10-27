@@ -248,3 +248,68 @@ fn test_custom_central_only_extra_field() {
         "Central directory header must contain central_only custom field"
     );
 }
+
+#[test]
+fn test_android_alignment_extra_field_local_only() {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+    use zip::ZipArchive;
+    use zip::read::read_zipfile_from_stream;
+    use zip::write::{SimpleFileOptions, ZipWriter};
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .with_android_alignment(16);
+    writer.start_file("android_test.txt", options).unwrap();
+    writer.write_all(b"hello android alignment").unwrap();
+    let zip_bytes = writer.finish().unwrap().into_inner();
+
+    // Verify 0xd935 alignment tag is present in the local header bytes
+    let tag = (0xd935_u16).to_le_bytes();
+    assert_eq!(
+        zip_bytes.windows(2).filter(|w| *w == tag).count(),
+        1,
+        "Local header must contain Android alignment extra field tag 0xd935"
+    );
+
+    // Verify default 0xa11e tag is NOT present
+    let default_tag = (0xa11e_u16).to_le_bytes();
+    assert_eq!(
+        zip_bytes.windows(2).filter(|w| *w == default_tag).count(),
+        0,
+        "Local header must NOT contain default alignment extra field tag 0xa11e"
+    );
+
+    // Central directory should not contain DataStreamAlignment
+    let mut archive = ZipArchive::new(Cursor::new(&zip_bytes)).unwrap();
+    let file = archive.by_name("android_test.txt").unwrap();
+    assert_eq!(
+        file.data_start().unwrap() % 16,
+        0,
+        "File data start must be 16-byte aligned"
+    );
+    let has_alignment_central = file.extra_data_fields().any(|ef| {
+        matches!(
+            ef,
+            zip::extra_fields::ExtraField::DataStreamAlignment { .. }
+        )
+    });
+    assert!(
+        !has_alignment_central,
+        "Central directory header must NOT contain DataStreamAlignment"
+    );
+
+    // Streaming reader parses the local header and should find DataStreamAlignment with 0xd935
+    let mut stream = Cursor::new(&zip_bytes);
+    let stream_file = read_zipfile_from_stream(&mut stream).unwrap().unwrap();
+    let alignment_field = stream_file
+        .extra_data_fields()
+        .find_map(|ef| match ef {
+            zip::extra_fields::ExtraField::DataStreamAlignment(dsa) => Some(dsa),
+            _ => None,
+        })
+        .expect("Streaming reader must parse DataStreamAlignment extra field");
+    assert_eq!(alignment_field.header_id(), 0xd935);
+    assert_eq!(alignment_field.alignment(), 16);
+}
