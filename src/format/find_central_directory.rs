@@ -417,7 +417,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
             ) {
                 Ok(Some((eocd64, archive_offset))) => {
                     return Ok(CentralDirectoryEndInfo {
-                        eocd: (eocd, guess_pos).into(),
+                        eocd: (eocd, eocd_offset).into(),
                         eocd64: Some(eocd64),
                         archive_offset,
                     });
@@ -452,7 +452,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
                 ) {
                     Ok(Some((eocd64, archive_offset))) => {
                         return Ok(CentralDirectoryEndInfo {
-                            eocd: (eocd, eocd64_offset).into(),
+                            eocd: (eocd, eocd_offset).into(),
                             eocd64: Some(eocd64),
                             archive_offset,
                         });
