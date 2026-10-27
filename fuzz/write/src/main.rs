@@ -104,8 +104,9 @@ impl FileOperation<'_, '_> {
     }
 
     fn is_streamable(&self) -> bool {
-        let mut pending = vec![self];
-        while let Some(operation) = pending.pop() {
+        // The flag records whether the operation runs on a sub-writer that is later merged.
+        let mut pending = vec![(self, false)];
+        while let Some((operation, in_sub_writer)) = pending.pop() {
             match &operation.basic {
                 BasicFileOperation::WriteNormalFile { options, .. }
                 | BasicFileOperation::WriteDirectory(options)
@@ -115,7 +116,7 @@ impl FileOperation<'_, '_> {
                     }
                 }
                 BasicFileOperation::ShallowCopy(base) | BasicFileOperation::DeepCopy(base) => {
-                    pending.push(base);
+                    pending.push((base, in_sub_writer));
                 }
                 BasicFileOperation::MergeWithOtherFile {
                     operations,
@@ -128,9 +129,16 @@ impl FileOperation<'_, '_> {
                     if operations.iter().any(|(_, abort)| *abort) {
                         return false;
                     }
-                    pending.extend(operations.iter().map(|(operation, _)| operation));
+                    pending.extend(operations.iter().map(|(operation, _)| (operation, true)));
                 }
-                BasicFileOperation::SetArchiveComment(_) => {}
+                // A sub-writer reopened after its comment shrinks can pad the start of its
+                // archive with junk (see `finalize_operation`), which `merge_archive` copies in.
+                // The top-level writer tracks this for its own comment, but not for sub-writers.
+                BasicFileOperation::SetArchiveComment(_) => {
+                    if in_sub_writer {
+                        return false;
+                    }
+                }
             }
         }
         true
