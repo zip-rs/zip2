@@ -810,7 +810,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
 
         let mut files_by_unix_mode = UnixFileModes::default();
         let mut created_dirs = std::collections::HashSet::new();
-        let mut regular_files: Vec<(usize, std::path::PathBuf)> = Vec::new();
+        let mut regular_files: indexmap::IndexMap<std::path::PathBuf, usize> = indexmap::IndexMap::new();
         let mut total_extracted = 0u64;
 
         for i in 0..self.len() {
@@ -885,7 +885,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
-                regular_files.push((i, outpath));
+                regular_files.insert(outpath, i);
             }
         }
 
@@ -894,7 +894,9 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         let enforce_header = extract_options.enforce_header_consistency;
         let total_extracted_atomic = std::sync::atomic::AtomicU64::new(total_extracted);
 
-        let regular_file_results: ZipResult<Vec<(std::path::PathBuf, Option<u32>)>> = regular_files
+        let regular_files_vec: Vec<(std::path::PathBuf, usize)> = regular_files.into_iter().collect();
+
+        let regular_file_results: ZipResult<Vec<(std::path::PathBuf, Option<u32>)>> = regular_files_vec
             .into_par_iter()
             .map_init(
                 || -> std::io::Result<(ZipArchive<R>, Vec<u8>)> {
@@ -903,7 +905,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                     let buf = vec![0u8; EXTRACT_BUFFER_SIZE];
                     Ok((archive, buf))
                 },
-                |state, (idx, outpath)| -> ZipResult<(std::path::PathBuf, Option<u32>)> {
+                |state, (outpath, idx)| -> ZipResult<(std::path::PathBuf, Option<u32>)> {
                     let (archive, buf) = match state {
                         Ok(s) => s,
                         Err(e) => return Err(ZipError::Io(std::io::Error::new(e.kind(), e.to_string()))),
@@ -944,7 +946,16 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                         };
                         let n_u64 = n as u64;
                         let old_total = total_extracted_atomic.fetch_add(n_u64, std::sync::atomic::Ordering::Relaxed);
-                        let new_total = old_total.saturating_add(n_u64);
+                        let new_total = match old_total.checked_add(n_u64) {
+                            Some(total) => total,
+                            None => {
+                                copy_error = Some(ZipError::DecompressedSizeLimitExceeded {
+                                    size: u128::MAX,
+                                    limit: size_limit.unwrap_or(u64::MAX),
+                                });
+                                break;
+                            }
+                        };
                         if let Some(limit) = size_limit
                             && new_total > limit
                         {

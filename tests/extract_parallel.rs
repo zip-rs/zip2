@@ -104,3 +104,27 @@ fn test_par_extract_with_size_limit_rejection() {
         ZipError::DecompressedSizeLimitExceeded { size: 100, limit: 50 }
     ));
 }
+
+#[test]
+fn test_par_extract_duplicate_paths_safe() {
+    let buf = Vec::new();
+    let mut writer = ZipWriter::new(Cursor::new(buf));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    // Two distinct raw entries that resolve to the same normalized destination path
+    writer.start_file("dup.txt", options).unwrap();
+    writer.write_all(b"first entry").unwrap();
+
+    writer.start_file("./dup.txt", options).unwrap();
+    writer.write_all(b"second entry (later)").unwrap();
+
+    let zip_bytes = writer.finish().unwrap().into_inner();
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+    let dest = TempDir::with_prefix("par_extract_dup").unwrap();
+    // Must succeed without file sharing violation or concurrent write race
+    archive.par_extract(dest.path()).unwrap();
+
+    let content = fs::read(dest.path().join("dup.txt")).unwrap();
+    assert_eq!(content, b"second entry (later)");
+}
