@@ -128,3 +128,130 @@ fn test_par_extract_duplicate_paths_safe() {
     let content = fs::read(dest.path().join("dup.txt")).unwrap();
     assert_eq!(content, b"second entry (later)");
 }
+
+#[test]
+fn test_par_extract_zero_byte_files() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    for i in 0..15 {
+        writer.start_file(format!("empty_{i}.dat"), options).unwrap();
+        // Zero bytes written
+    }
+    writer.start_file("non_empty.txt", options).unwrap();
+    writer.write_all(b"not empty").unwrap();
+
+    let zip_bytes = writer.finish().unwrap().into_inner();
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+    let dest = TempDir::with_prefix("par_extract_zero").unwrap();
+    archive.par_extract(dest.path()).unwrap();
+
+    for i in 0..15 {
+        let p = dest.path().join(format!("empty_{i}.dat"));
+        assert!(p.exists());
+        assert_eq!(fs::metadata(&p).unwrap().len(), 0);
+    }
+    let ne = dest.path().join("non_empty.txt");
+    assert_eq!(fs::read(&ne).unwrap(), b"not empty");
+}
+
+#[test]
+fn test_par_extract_deeply_nested_hierarchy() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    let mut path = String::new();
+    for depth in 1..=10 {
+        path.push_str(&format!("lvl_{depth}/"));
+        writer.add_directory(&path, options).unwrap();
+        let file_path = format!("{path}file_at_depth_{depth}.txt");
+        writer.start_file(&file_path, options).unwrap();
+        writer
+            .write_all(format!("depth {depth} payload").as_bytes())
+            .unwrap();
+    }
+
+    let zip_bytes = writer.finish().unwrap().into_inner();
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+    let dest = TempDir::with_prefix("par_extract_deep").unwrap();
+    archive.par_extract(dest.path()).unwrap();
+
+    let mut check_path = dest.path().to_path_buf();
+    for depth in 1..=10 {
+        check_path.push(format!("lvl_{depth}"));
+        assert!(check_path.is_dir());
+        let file_p = check_path.join(format!("file_at_depth_{depth}.txt"));
+        assert!(file_p.is_file());
+        assert_eq!(
+            fs::read_to_string(&file_p).unwrap(),
+            format!("depth {depth} payload")
+        );
+    }
+}
+
+#[test]
+fn test_par_extract_high_concurrency_stress() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    for i in 0..100 {
+        let name = format!("stress/worker_{i}.bin");
+        writer.start_file(&name, options).unwrap();
+        // Variable payloads from 0 up to 1024 bytes
+        let size = (i * 17) % 1024;
+        let payload = vec![i as u8; size];
+        writer.write_all(&payload).unwrap();
+    }
+
+    let zip_bytes = writer.finish().unwrap().into_inner();
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+    let dest = TempDir::with_prefix("par_extract_stress").unwrap();
+    archive.par_extract(dest.path()).unwrap();
+
+    for i in 0..100 {
+        let p = dest.path().join(format!("stress/worker_{i}.bin"));
+        assert!(p.exists());
+        let expected_size = (i * 17) % 1024;
+        let data = fs::read(&p).unwrap();
+        assert_eq!(data.len(), expected_size);
+        if expected_size > 0 {
+            assert!(data.iter().all(|&b| b == (i as u8)));
+        }
+    }
+}
+
+#[test]
+fn test_par_extract_preallocation_truncation_on_short_payload() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("parallel_short.bin", options).unwrap();
+    writer.write_all(b"1234567890").unwrap(); // 10 bytes
+    let mut zip_bytes = writer.finish().unwrap().into_inner();
+
+    // Patch Central Directory record magic PK\x01\x02 (0x02014b50)
+    let cd_magic = [0x50, 0x4b, 0x01, 0x02];
+    let cd_pos = zip_bytes
+        .windows(4)
+        .position(|w| w == cd_magic)
+        .expect("CD header magic must exist");
+
+    // In CD header: offset 24..28 is uncompressed_size (u32 little endian)
+    let fake_size: u32 = 256 * 1024; // 256 KiB
+    zip_bytes[cd_pos + 24..cd_pos + 28].copy_from_slice(&fake_size.to_le_bytes());
+
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+    assert_eq!(archive.by_index(0).unwrap().size(), 256 * 1024);
+
+    let dest = TempDir::with_prefix("par_prealloc_trunc").unwrap();
+    archive.par_extract(dest.path()).unwrap();
+
+    let extracted_path = dest.path().join("parallel_short.bin");
+    assert!(extracted_path.exists());
+    let data = fs::read(&extracted_path).unwrap();
+    assert_eq!(data, b"1234567890");
+    // Verify file on disk was properly truncated back to 10 bytes, NOT 256 KiB
+    assert_eq!(fs::metadata(&extracted_path).unwrap().len(), 10);
+}
