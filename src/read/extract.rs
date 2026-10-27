@@ -20,6 +20,14 @@ pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 /// and optimizing page cache utilization during archive extraction.
 pub(crate) const EXTRACT_BUFFER_SIZE: usize = 64 * 1024;
 
+/// Maximum extent pre-allocation ceiling (64 MiB).
+///
+/// Pre-allocating disk space via `File::set_len` before streaming uncompressed bytes
+/// reduces filesystem fragmentation and optimizes NTFS/ext4 block allocation.
+/// Capped at 64 MiB to prevent denial-of-service / zero-fill amplification attacks
+/// where an archive header claims an exorbitantly large uncompressed size.
+pub(crate) const MAX_PREALLOCATE_LEN: u64 = 64 * 1024 * 1024;
+
 /// Copies decompressed data from `reader` into `writer` using `buf` as a reusable transfer buffer.
 pub(crate) fn copy_into<R: Read + ?Sized, W: Write + ?Sized>(
     reader: &mut R,
@@ -305,7 +313,10 @@ pub(crate) fn create_outfile(
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+        options.custom_flags(
+            windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT
+                | windows_sys::Win32::Storage::FileSystem::FILE_FLAG_SEQUENTIAL_SCAN,
+        );
     }
     let file = options.open(outpath)?;
 
@@ -564,6 +575,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let mut files_by_unix_mode = UnixFileModes::default();
         let mut extract_buf = vec![0u8; EXTRACT_BUFFER_SIZE];
+        let mut created_dirs = std::collections::HashSet::new();
 
         for i in 0..self.len() {
             let read_options = crate::read::ZipReadOptions::new()
@@ -635,14 +647,34 @@ impl<R: Read + Seek> ZipArchive<R> {
                     }
                 }
             } else if file.is_dir() {
-                make_writable_dir_all(&outpath)?;
+                if created_dirs.insert(outpath.clone()) {
+                    make_writable_dir_all(&outpath)?;
+                }
                 // Check for real permissions, which we'll set in a second pass.
                 if let Some(mode) = file.unix_mode() {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
                 let mut outfile = create_outfile(&outpath, file.unix_mode())?;
-                copy_into(&mut file, &mut outfile, &mut extract_buf)?;
+                let uncompressed_len = file.size();
+                let mut preallocated_len = 0u64;
+                if uncompressed_len > 0 && !file.flags().is_using_data_descriptor() {
+                    let alloc_len = uncompressed_len.min(MAX_PREALLOCATE_LEN);
+                    if outfile.set_len(alloc_len).is_ok() {
+                        preallocated_len = alloc_len;
+                    }
+                }
+                let copy_res = copy_into(&mut file, &mut outfile, &mut extract_buf);
+                if preallocated_len > 0 {
+                    let actual_len = match &copy_res {
+                        Ok(extracted) => *extracted,
+                        Err(_) => outfile.stream_position().unwrap_or(0),
+                    };
+                    if actual_len < preallocated_len {
+                        let _ = outfile.set_len(actual_len);
+                    }
+                }
+                copy_res?;
                 #[cfg(unix)]
                 if let Some(mode) = file.unix_mode() {
                     // OpenOptions::mode only applies when the file is created. Record modes

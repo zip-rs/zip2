@@ -91,3 +91,33 @@ fn extract_two_entries_with_the_same_path() {
         0o640
     );
 }
+
+#[test]
+fn test_extract_with_preallocation_and_duplicate_dirs() {
+    use std::io::{Cursor, Write};
+    use tempfile::TempDir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let buf = Vec::new();
+    let mut writer = ZipWriter::new(Cursor::new(buf));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    // Different raw entry names that resolve to the same directory
+    writer.add_directory("sub/", options).unwrap();
+    writer.add_directory("./sub/", options).unwrap();
+    writer.start_file("sub/hello.txt", options).unwrap();
+    writer.write_all(b"Hello Preallocation!").unwrap();
+
+    let zip_bytes = writer.finish().unwrap().into_inner();
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+    let dest = TempDir::with_prefix("prealloc_test").unwrap();
+    archive.extract(dest.path()).unwrap();
+
+    let file_path = dest.path().join("sub/hello.txt");
+    assert!(file_path.exists());
+    let data = std::fs::read(&file_path).unwrap();
+    assert_eq!(data, b"Hello Preallocation!");
+    assert_eq!(std::fs::metadata(&file_path).unwrap().len(), 20);
+}
