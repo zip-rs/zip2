@@ -11,6 +11,12 @@ use core::{any, fmt};
 /// Internal block size of an AES cipher.
 const AES_BLOCK_SIZE: usize = 16;
 
+/// How many counter blocks are encrypted per call into the cipher. CTR blocks are
+/// independent, so a backend can pipeline a batch (AES-NI and ARMv8 run eight at a time);
+/// one block per call leaves that unused. Raising it above 32 needs a different way to
+/// initialize `keystream` in `crypt_in_place`: `Default` is implemented for arrays of up to 32.
+const BATCH_BLOCKS: usize = 32;
+
 /// AES-128.
 #[derive(Debug)]
 pub struct Aes128;
@@ -110,9 +116,39 @@ where
     C::Cipher: BlockCipherEncrypt,
 {
     /// Decrypt or encrypt `target`.
+    ///
+    /// Whole blocks use keystream from up to [`BATCH_BLOCKS`] counter blocks encrypted in one
+    /// call. A partial block at either end goes through `buffer`, which carries its unused
+    /// keystream over to the next call.
     #[inline]
     fn crypt_in_place(&mut self, mut target: &mut [u8]) {
         while !target.is_empty() {
+            if self.pos == AES_BLOCK_SIZE && target.len() >= AES_BLOCK_SIZE {
+                let blocks = (target.len() / AES_BLOCK_SIZE).min(BATCH_BLOCKS);
+                let mut keystream: [aes::cipher::Block<C::Cipher>; BATCH_BLOCKS] =
+                    Default::default();
+                for block in &mut keystream[..blocks] {
+                    block.copy_from_slice(&self.counter.to_le_bytes());
+                    self.counter += 1;
+                }
+                self.cipher.encrypt_blocks(&mut keystream[..blocks]);
+                let (whole, rest) =
+                    core::mem::take(&mut target).split_at_mut(blocks * AES_BLOCK_SIZE);
+                for (chunk, block) in whole
+                    .as_chunks_mut::<AES_BLOCK_SIZE>()
+                    .0
+                    .iter_mut()
+                    .zip(&keystream)
+                {
+                    xor(chunk, block);
+                }
+                for block in &mut keystream[..blocks] {
+                    zeroize::Zeroize::zeroize(block.as_mut_slice());
+                }
+                target = rest;
+                continue;
+            }
+
             if self.pos == AES_BLOCK_SIZE {
                 self.buffer = self.counter.to_le_bytes();
                 #[allow(deprecated)]
@@ -177,6 +213,65 @@ mod tests {
         let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key).unwrap();
         key_stream.crypt_in_place(&mut plaintext);
         assert_eq!(*plaintext, *ciphertext);
+    }
+
+    /// The keystream one block per cipher call, as `crypt_in_place` produced it before
+    /// whole blocks were batched.
+    fn keystream_block_by_block<Aes>(key: &[u8], len: usize) -> Vec<u8>
+    where
+        Aes: AesKind,
+        Aes::Cipher: KeyInit + BlockCipherEncrypt,
+    {
+        let cipher = Aes::Cipher::new_from_slice(key).unwrap();
+        let mut out = Vec::with_capacity(len + 16);
+        let mut counter = 1u128;
+        while out.len() < len {
+            let mut block = aes::cipher::Block::<Aes::Cipher>::default();
+            block.copy_from_slice(&counter.to_le_bytes());
+            cipher.encrypt_block(&mut block);
+            out.extend_from_slice(&block);
+            counter += 1;
+        }
+        out.truncate(len);
+        out
+    }
+
+    /// Batched whole blocks give the same keystream as one block at a time, however the
+    /// input is split across calls: partial blocks at either end, runs shorter and longer
+    /// than a batch, and a split that leaves part of a block in `buffer` between calls.
+    fn batched_matches_block_by_block<Aes>(key: &[u8])
+    where
+        Aes: AesKind,
+        Aes::Cipher: KeyInit + BlockCipherEncrypt,
+    {
+        const LEN: usize = 3 * 512 + 37;
+        let expected = keystream_block_by_block::<Aes>(key, LEN);
+        let splits: &[&[usize]] = &[
+            &[LEN],
+            &[1, LEN - 1],
+            &[15, 1, 16, 17, LEN - 49],
+            &[16; 4],
+            &[511, 1, 513, 7, 9],
+            &[5, 512, 3, 512, 5],
+        ];
+        for split in splits {
+            let mut stream = AesCtrZipKeyStream::<Aes>::new(key).unwrap();
+            let mut data = vec![0u8; LEN];
+            let mut at = 0;
+            for &part in split.iter().chain(core::iter::once(&LEN)) {
+                let end = (at + part).min(LEN);
+                stream.crypt_in_place(&mut data[at..end]);
+                at = end;
+            }
+            assert_eq!(data, expected, "split {split:?}");
+        }
+    }
+
+    #[test]
+    fn batched_keystream_matches_block_by_block() {
+        batched_matches_block_by_block::<Aes128>(&[0x11; 16]);
+        batched_matches_block_by_block::<Aes192>(&[0x22; 24]);
+        batched_matches_block_by_block::<Aes256>(&[0x33; 32]);
     }
 
     #[test]
