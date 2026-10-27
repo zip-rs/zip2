@@ -182,14 +182,14 @@ struct CentralDirectoryChains {
 }
 
 impl CentralDirectoryChains {
-    /// Marks the headers in `files` as followed by `tail` and returns its error.
-    fn fail(&mut self, files: &IndexMap<Box<[u8]>, ZipFileData>, tail: FailedRun) -> ZipError {
-        for (i, (_, file)) in files.iter().enumerate() {
+    /// Marks the headers in `chain` as followed by `tail` and returns its error.
+    fn fail(&mut self, chain: &[u64], tail: FailedRun) -> ZipError {
+        for (i, &central_header_start) in chain.iter().enumerate() {
             let run = FailedRun {
-                valid: files.len() - i + tail.valid,
+                valid: chain.len() - i + tail.valid,
                 error: tail.error.clone(),
             };
-            self.runs.insert(file.central_header_start, run);
+            self.runs.insert(central_header_start, run);
         }
         tail.error
     }
@@ -297,10 +297,12 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> Result<SharedBuilder, ZipError> {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
+        // Furthermore, each CDFH requires at least 46 bytes (4 bytes magic + 42 bytes ZipCentralEntryBlock).
+        let max_files = (dir_info.directory_size / 46) as usize;
         let file_capacity = if dir_info.number_of_files > dir_info.directory_start as usize {
             0
         } else {
-            dir_info.number_of_files
+            dir_info.number_of_files.min(max_files)
         };
 
         if dir_info.disk_number != dir_info.disk_with_central_directory {
@@ -315,20 +317,20 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         // Decode independently of the candidate so later candidates can reuse `cd_chains`.
         let mut files = IndexMap::with_capacity(file_capacity);
-        let mut raw_file_count = 0;
+        let mut chain = Vec::with_capacity(file_capacity);
         let mut central_header_start = dir_info.directory_start;
         reader.seek(SeekFrom::Start(central_header_start))?;
-        while raw_file_count < dir_info.number_of_files {
+        while chain.len() < dir_info.number_of_files {
             // An earlier candidate dropped these headers; decode them again for this last one.
             if let Some(run) = cd_chains.runs.get(&central_header_start)
-                && raw_file_count + run.valid < dir_info.number_of_files
+                && chain.len() + run.valid < dir_info.number_of_files
             {
                 let run = run.clone();
-                return Err(cd_chains.fail(&files, run));
+                return Err(cd_chains.fail(&chain, run));
             }
             match Self::read_one_central_header(reader, central_header_start) {
                 Ok((file_name_raw, file, next)) => {
-                    raw_file_count += 1;
+                    chain.push(central_header_start);
                     files.insert(file_name_raw, file);
                     central_header_start = next;
                 }
@@ -337,7 +339,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     cd_chains
                         .runs
                         .insert(central_header_start, failed_here.clone());
-                    return Err(cd_chains.fail(&files, failed_here));
+                    return Err(cd_chains.fail(&chain, failed_here));
                 }
             }
         }
@@ -351,7 +353,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         Ok(SharedBuilder {
             files,
-            raw_file_count,
+            raw_file_count: chain.len(),
             offset: dir_info.archive_offset,
             dir_start: dir_info.directory_start,
             config,

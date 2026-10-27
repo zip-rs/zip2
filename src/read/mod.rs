@@ -42,6 +42,7 @@ pub use crate::aes::AesInfo;
 pub(crate) struct CentralDirectoryInfo {
     pub(crate) archive_offset: u64,
     pub(crate) directory_start: u64,
+    pub(crate) directory_size: u64,
     pub(crate) number_of_files: usize,
     pub(crate) disk_number: u32,
     pub(crate) disk_with_central_directory: u32,
@@ -51,28 +52,35 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
     type Error = ZipError;
 
     fn try_from(value: &'a CentralDirectoryEndInfo) -> Result<Self, Self::Error> {
-        let (relative_cd_offset, number_of_files, disk_number, disk_with_central_directory) =
-            match &value.eocd64 {
-                Some(DataAndPosition { data: eocd64, .. }) => {
-                    if eocd64.number_of_files_on_this_disk > eocd64.number_of_files {
-                        return Err(invalid!(
-                            "ZIP64 footer indicates more files on this disk than in the whole archive"
-                        ));
-                    }
-                    (
-                        eocd64.central_directory_offset,
-                        eocd64.number_of_files as usize,
-                        eocd64.disk_number,
-                        eocd64.disk_with_central_directory,
-                    )
+        let (
+            relative_cd_offset,
+            directory_size,
+            number_of_files,
+            disk_number,
+            disk_with_central_directory,
+        ) = match &value.eocd64 {
+            Some(DataAndPosition { data: eocd64, .. }) => {
+                if eocd64.number_of_files_on_this_disk > eocd64.number_of_files {
+                    return Err(invalid!(
+                        "ZIP64 footer indicates more files on this disk than in the whole archive"
+                    ));
                 }
-                _ => (
-                    u64::from(value.eocd.data.central_directory_offset),
-                    value.eocd.data.number_of_files_on_this_disk as usize,
-                    u32::from(value.eocd.data.disk_number),
-                    u32::from(value.eocd.data.disk_with_central_directory),
-                ),
-            };
+                (
+                    eocd64.central_directory_offset,
+                    eocd64.central_directory_size,
+                    eocd64.number_of_files as usize,
+                    eocd64.disk_number,
+                    eocd64.disk_with_central_directory,
+                )
+            }
+            _ => (
+                u64::from(value.eocd.data.central_directory_offset),
+                u64::from(value.eocd.data.central_directory_size),
+                value.eocd.data.number_of_files_on_this_disk as usize,
+                u32::from(value.eocd.data.disk_number),
+                u32::from(value.eocd.data.disk_with_central_directory),
+            ),
+        };
 
         let directory_start = relative_cd_offset
             .checked_add(value.archive_offset)
@@ -81,6 +89,7 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
         Ok(Self {
             archive_offset: value.archive_offset,
             directory_start,
+            directory_size,
             number_of_files,
             disk_number,
             disk_with_central_directory,
