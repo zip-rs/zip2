@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.1.3](https://github.com/zip-rs/zip2/compare/v9.1.2...v9.1.3) - 2026-10-27
+
+### <!-- 0 -->🚀 Features
+
+- *(extra_fields)* support 0xd935 Android ZIP alignment extra field ([#928](https://github.com/zip-rs/zip2/pull/928)) ([#1198](https://github.com/zip-rs/zip2/pull/1198))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(format)* record correct 32-bit EOCD offset in ZIP64 archives ([#1205](https://github.com/zip-rs/zip2/pull/1205))
+- *(aes)* wipe AES round keys when the cipher is dropped ([#1204](https://github.com/zip-rs/zip2/pull/1204))
+- *(fuzz)* treat a comment change in a merged sub-writer as non-streamable ([#1188](https://github.com/zip-rs/zip2/pull/1188))
+- *(aes)* zeroize AesCtrZipKeyStream buffer and counter on drop ([#1196](https://github.com/zip-rs/zip2/pull/1196))
+- *(extract)* prevent symlink-follow truncation via FILE_FLAG_OPEN_REPARSE_POINT ([#1195](https://github.com/zip-rs/zip2/pull/1195))
+- *(write)* drop a stale Unicode Path extra field when copying an entry ([#1187](https://github.com/zip-rs/zip2/pull/1187))
+- *(write)* don't leave a stale tail that completes a fake EOCD in the comment ([#1186](https://github.com/zip-rs/zip2/pull/1186))
+- *(write)* reject deflate levels below 10 when only zopfli is enabled ([#1182](https://github.com/zip-rs/zip2/pull/1182))
+
+### <!-- 4 -->⚡ Performance
+
+- *(read)* accelerate extraction with 64 KiB reusable buffer ([#1206](https://github.com/zip-rs/zip2/pull/1206))
+- *(aes)* encrypt AES-CTR counter blocks in batches ([#1203](https://github.com/zip-rs/zip2/pull/1203))
+- *(read)* eliminate double allocation by populating IndexMap directly ([#1200](https://github.com/zip-rs/zip2/pull/1200))
+- *(read)* preallocate files vector in read_central_header ([#1199](https://github.com/zip-rs/zip2/pull/1199))
+
 ## [9.1.2](https://github.com/zip-rs/zip2/compare/v9.1.1...v9.1.2) - 2026-10-26
 
 ### <!-- 1 -->🐛 Bug Fixes
