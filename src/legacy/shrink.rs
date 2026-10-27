@@ -493,6 +493,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn test_shrink_uncontrolled_recursion_prevention() {
         use bitstream_io::{BitWrite, BitWriter, LittleEndian};
 
