@@ -66,7 +66,9 @@ fn test_par_extract_from_file_path() {
     let mut archive = ZipArchive::new(read_file).unwrap();
 
     let dest = TempDir::with_prefix("par_extract_fs_dst").unwrap();
-    archive.par_extract_from_path(&zip_path, dest.path()).unwrap();
+    archive
+        .par_extract_from_path(&zip_path, dest.path())
+        .unwrap();
 
     for i in 0..40 {
         let folder = if i % 2 == 0 { "sub_alpha" } else { "sub_beta" };
@@ -101,7 +103,10 @@ fn test_par_extract_with_size_limit_rejection() {
 
     assert!(matches!(
         err,
-        ZipError::DecompressedSizeLimitExceeded { size: 100, limit: 50 }
+        ZipError::DecompressedSizeLimitExceeded {
+            size: 100,
+            limit: 50
+        }
     ));
 }
 
@@ -135,7 +140,9 @@ fn test_par_extract_zero_byte_files() {
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     for i in 0..15 {
-        writer.start_file(format!("empty_{i}.dat"), options).unwrap();
+        writer
+            .start_file(format!("empty_{i}.dat"), options)
+            .unwrap();
         // Zero bytes written
     }
     writer.start_file("non_empty.txt", options).unwrap();
