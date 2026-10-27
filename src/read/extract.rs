@@ -280,10 +280,15 @@ pub(crate) fn create_outfile(
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(mode);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
     let file = options.open(outpath)?;
 
-    if let Ok(meta) = std::fs::symlink_metadata(outpath)
-        && meta.file_type().is_symlink()
+    if file.metadata()?.file_type().is_symlink()
+        || std::fs::symlink_metadata(outpath).is_ok_and(|meta| meta.file_type().is_symlink())
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
