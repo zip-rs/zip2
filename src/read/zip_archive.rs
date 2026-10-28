@@ -616,7 +616,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
-    /// Get the index of a file entry by the raw name, if it's present.
+    /// Get the index of a file entry by the raw name, if it's present. The running time of this
+    /// operation doesn't scale with the number of files in the archive, only with the length of the
+    /// name being looked up (since it is hashed).
     #[inline]
     pub fn index_for_name_raw(&self, name: &[u8]) -> Option<usize> {
         self.shared.files.get_index_of(name)
