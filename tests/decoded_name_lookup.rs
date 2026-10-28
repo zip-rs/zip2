@@ -23,10 +23,13 @@ fn fixture_password() -> [u8; PASSWORD_LENGTH] {
     }
 }
 
-fn archive_with_raw_names(entries: &[(&[u8], &[u8])], password: Option<&[u8]>) -> TestResult<ZipArchive<Cursor<Vec<u8>>>> {
+fn archive_with_raw_names(
+    entries: &[(&[u8], &[u8])],
+    password: Option<&[u8]>,
+) -> TestResult<ZipArchive<Cursor<Vec<u8>>>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let mut options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        if let Some(password) = password {
+    if let Some(password) = password {
         options = options.with_deprecated_encryption(password)?;
     }
     for (name, contents) in entries {
@@ -155,7 +158,10 @@ fn should_preserve_invalid_password_error_for_decoded_name() -> TestResult {
 
 #[test]
 fn should_prefer_raw_utf8_match_over_earlier_cp437_decoded_collision() -> TestResult {
-    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", b"cp437"), ("café.txt".as_bytes(), b"utf8")], None)?;
+    let mut zip = archive_with_raw_names(
+        &[(b"caf\x82.txt", b"cp437"), ("café.txt".as_bytes(), b"utf8")],
+        None,
+    )?;
     assert_eq!(
         zip.file_names().collect::<Result<Vec<_>, _>>()?,
         ["café.txt", "café.txt"]
@@ -167,7 +173,10 @@ fn should_prefer_raw_utf8_match_over_earlier_cp437_decoded_collision() -> TestRe
 
 #[test]
 fn should_preserve_raw_utf8_match_before_later_cp437_decoded_collision() -> TestResult {
-    let mut zip = archive_with_raw_names(&[("café.txt".as_bytes(), b"utf8"), (b"caf\x82.txt", b"cp437")], None)?;
+    let mut zip = archive_with_raw_names(
+        &[("café.txt".as_bytes(), b"utf8"), (b"caf\x82.txt", b"cp437")],
+        None,
+    )?;
     assert_eq!(zip.index_for_name("café.txt"), Some(0));
     assert_eq!(payload(zip.by_name("café.txt")?)?, b"utf8");
     Ok(())
@@ -196,7 +205,10 @@ fn should_keep_missing_name_and_path_not_found() -> TestResult {
 #[test]
 fn should_not_normalize_separators_during_decoded_lookup() -> TestResult {
     let mut zip = archive_with_raw_names(
-        &[(b"caf\x82.txt", PAYLOAD), (b"folder\\file.txt", b"backslash")],
+        &[
+            (b"caf\x82.txt", PAYLOAD),
+            (b"folder\\file.txt", b"backslash"),
+        ],
         None,
     )?;
     assert_eq!(zip.index_for_name("folder/file.txt"), None);
@@ -235,8 +247,10 @@ fn should_resolve_non_utf8_raw_name() -> TestResult {
 
 #[test]
 fn should_prefer_raw_name_match_over_decoded_collision() -> TestResult {
-    let mut zip =
-        archive_with_raw_names(&[("café.txt".as_bytes(), b"utf8"), (b"caf\x82.txt", b"cp437")], None)?;
+    let mut zip = archive_with_raw_names(
+        &[("café.txt".as_bytes(), b"utf8"), (b"caf\x82.txt", b"cp437")],
+        None,
+    )?;
     let file_index = zip.index_for_name_raw(b"caf\x82.txt").unwrap();
     assert_eq!(file_index, 1);
     assert_eq!(payload(zip.by_index(file_index)?)?, b"cp437");
