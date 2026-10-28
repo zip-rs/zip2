@@ -1,5 +1,7 @@
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
 
+#[cfg(fuzzing)]
+use afl::fuzz;
 use arbitrary::{Arbitrary, Unstructured};
 use replace_with::replace_with_or_abort;
 use std::fmt::Write;
@@ -46,8 +48,40 @@ pub enum ReopenOption {
     ViaFinishIntoReadable,
 }
 
+/// How deeply copies and merges may nest. The derived `Arbitrary`, `Debug` and `Drop` all recurse
+/// once per level, so an unbounded chain overflows the stack (one 87 KB input nested ~2,400 deep).
+const MAX_OPERATION_DEPTH: usize = 64;
+
+std::thread_local! {
+    static OPERATION_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn arbitrary_bounded_basic<'a, 'k, 'n>(
+    u: &mut Unstructured<'a>,
+) -> arbitrary::Result<BasicFileOperation<'k, 'n>>
+where
+    BasicFileOperation<'k, 'n>: Arbitrary<'a>,
+{
+    struct DepthGuard;
+    impl Drop for DepthGuard {
+        fn drop(&mut self) {
+            OPERATION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+        }
+    }
+    let depth = OPERATION_DEPTH.with(|depth| {
+        depth.set(depth.get() + 1);
+        depth.get()
+    });
+    let _guard = DepthGuard;
+    if depth > MAX_OPERATION_DEPTH {
+        return Err(arbitrary::Error::IncorrectFormat);
+    }
+    BasicFileOperation::arbitrary(u)
+}
+
 #[derive(Arbitrary, Clone, Debug)]
 pub struct FileOperation<'k, 'n> {
+    #[arbitrary(with = arbitrary_bounded_basic)]
     basic: BasicFileOperation<'k, 'n>,
     path: PathBuf,
     reopen: ReopenOption,
@@ -778,28 +812,55 @@ impl FuzzTestCase<'_, '_> {
     }
 }
 
-fn main() {
-    #[cfg(fuzzing)]
-    unsafe {
-        backtrace_on_stack_overflow::enable()
-    };
+/// Discards the Rust-source transcript of a test case. The transcript is only
+/// needed to explain a failure, so on the hot path it is not built at all.
+struct NullWriter;
 
-    use std::io::Read;
-    let mut v = Vec::new();
-    std::io::stdin().read_to_end(&mut v).unwrap();
-    let u = Unstructured::new(&v[..]);
-    let mut w = String::new();
+impl Write for NullWriter {
+    fn write_str(&mut self, _: &str) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+fn fuzz_one(data: &[u8]) {
+    let u = Unstructured::new(data);
     if let Ok(it) = u.arbitrary_take_rest_iter::<FuzzTestCase>() {
-        for test_case in it.flatten() {
-            w.clear();
-            let result = test_case.execute(&mut w);
-            assert!(
-                result.is_ok(),
-                "Test case failed:\n{}\n{}",
-                w,
-                result.err().unwrap()
-            );
+        for (index, test_case) in it.flatten().enumerate() {
+            if let Err(e) = test_case.execute(&mut NullWriter) {
+                report_failure(data, index, e);
+            }
         }
+    }
+}
+
+/// Decoding is deterministic, so decode the failing test case again and rerun it
+/// with a real transcript before panicking.
+#[cold]
+fn report_failure(data: &[u8], index: usize, error: ZipError) -> ! {
+    let mut w = String::new();
+    if let Some(test_case) = Unstructured::new(data)
+        .arbitrary_take_rest_iter::<FuzzTestCase>()
+        .ok()
+        .and_then(|mut it| it.by_ref().flatten().nth(index))
+    {
+        let _ = test_case.execute(&mut w);
+    }
+    panic!("Test case failed:\n{w}\n{error}");
+}
+
+fn main() {
+    // backtrace_on_stack_overflow is not enabled here: its signal handler also
+    // intercepts the SIGABRT that afl::fuzz! raises on panic and loops. A real
+    // stack overflow still aborts via Rust's own guard-page handler.
+    #[cfg(fuzzing)]
+    fuzz!(|data: &[u8]| fuzz_one(data));
+
+    #[cfg(not(fuzzing))]
+    {
+        use std::io::Read;
+        let mut v = Vec::new();
+        std::io::stdin().read_to_end(&mut v).unwrap();
+        fuzz_one(&v);
     }
 }
 

@@ -11,7 +11,7 @@ zip.workspace = true
 
 [target.'cfg(fuzzing)'.dependencies]
 tikv-jemallocator.workspace = true
-backtrace-on-stack-overflow = "0.3.0"
+afl.workspace = true
 
 [features]
 zip-default = ["zip/default"]

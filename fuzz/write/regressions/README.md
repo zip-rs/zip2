@@ -44,3 +44,11 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   operation) gave a different comment or "Invalid Central Directory header". Such an archive is
   ambiguous by design, so the harness now tolerates a failed or changed reopen once the comment holds a
   signature, for both reopen methods.
+- `stack-overflow-nested-copy-arbitrary.bin`: found 2026-10-25 (PR #1175 persistent-mode AFL,
+  --no-default-features). An 87 KB input decoded to copies/merges nested thousands deep; the derived
+  `Arbitrary` (and `Debug`/`Drop`) recursed once per level and overflowed the stack. Harness-only fix:
+  cap the nesting depth at 64 while decoding.
+- `comment-ends-with-complete-eocd.bin`: the archive comment ends with a complete, plausible EOCD
+  record, so the archive is genuinely ambiguous and reopening it picks that record and a different
+  comment. Fixed in the harness by tolerating a failed or changed reopen whenever the comment
+  contains a signature, for every reopen path rather than only `ViaFinish`.
