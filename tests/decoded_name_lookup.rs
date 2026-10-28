@@ -234,3 +234,20 @@ fn should_not_normalize_separators_during_decoded_lookup() -> TestResult {
     assert_eq!(payload(zip.by_name("folder\\file.txt")?)?, b"backslash");
     Ok(())
 }
+
+#[test]
+fn check_index_for_name_methods() {
+    let zip_archive = archive(&[("cafe.txt", b"cp437"), ("café.txt", b"utf8")], None).unwrap();
+    let file_index = zip_archive.index_for_name("café.txt").unwrap();
+    assert_eq!(file_index, 0);
+    let file_index = zip_archive.index_for_name_raw(b"caf\x82.txt").unwrap();
+    assert_eq!(file_index, 0);
+    let file_index = zip_archive
+        .index_for_name_raw("café.txt".as_bytes())
+        .unwrap();
+    assert_eq!(file_index, 1);
+
+    // normal index_for_name
+    let file_index = zip_archive.index_for_name("café.txt").unwrap();
+    assert_eq!(file_index, 1);
+}
