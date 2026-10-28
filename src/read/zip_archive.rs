@@ -604,6 +604,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// First try to get the index by the name as a binary representation of the name. If not found,
     /// try to find the name with the decoded version of the name. This is a fallback for name
     /// encoded with CP437.
+    /// If you don't need to use the fallback, considiser using [`Self::index_for_name_raw`] which doesn't
+    /// have the fallback.
     #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
         self.shared.files.get_index_of(name.as_bytes()).or_else(|| {
@@ -612,6 +614,12 @@ impl<R: Read + Seek> ZipArchive<R> {
                 .iter()
                 .position(|(raw, data)| data.name(raw).is_ok_and(|decoded| decoded == name))
         })
+    }
+
+    /// Get the index of a file entry by the raw name, if it's present.
+    #[inline]
+    pub fn index_for_name_raw(&self, name: &[u8]) -> Option<usize> {
+        self.shared.files.get_index_of(name)
     }
 
     /// Get data and the data descriptor of the file
