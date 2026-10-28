@@ -604,7 +604,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// First try to get the index by the name as a binary representation of the name. If not found,
     /// try to find the name with the decoded version of the name. This is a fallback for name
     /// encoded with CP437.
-    /// If you don't need to use the fallback, considiser using [`Self::index_for_name_raw`] which doesn't
+    /// If you don't need to use the fallback, consider using [`Self::index_for_name_raw`] which doesn't
     /// have the fallback.
     #[inline]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
