@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.2.0](https://github.com/zip-rs/zip2/compare/v9.1.3...v9.2.0) - 2026-10-28
+
+### <!-- 0 -->🚀 Features
+
+- add index_for_name_raw
+
 ## [9.1.3](https://github.com/zip-rs/zip2/compare/v9.1.2...v9.1.3) - 2026-10-27
 
 ### <!-- 0 -->🚀 Features
