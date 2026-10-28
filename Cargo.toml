@@ -164,6 +164,10 @@ name = "memory"
 harness = false
 
 [[bench]]
+name = "zip_file_list"
+harness = false
+
+[[bench]]
 name = "aes"
 harness = false
 required-features = ["aes-crypto"]
