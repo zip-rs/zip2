@@ -80,7 +80,7 @@ zip2 is synchronous. In an async application there are two ways to use it withou
 - For a seekable archive, move the file handle and the zip work into `tokio::task::spawn_blocking` (or the equivalent in your runtime).
 - For streaming output, run `ZipWriter::new_stream` on a dedicated thread and connect it to the async writer through a bounded channel. The channel bound applies backpressure, so the archive payload is not buffered in memory as a whole. See [`examples/async_bridge.rs`](https://github.com/zip-rs/zip2/tree/master/examples/async_bridge.rs).
 
-For native async I/O, use [`async_zip`](https://crates.io/crates/async_zip) for reading and writing, or [`async-deflate-zip`](https://crates.io/crates/async-deflate-zip) for a streaming writer.
+Native async I/O isn't yet implemented. You can try [`async_zip`](https://crates.io/crates/async_zip) for reading and writing, or [`async-deflate-zip`](https://crates.io/crates/async-deflate-zip) for a streaming writer, but note that they're still in beta and may not be as secure or support as many compression methods.
 
 ## Wasm
 
