@@ -25,6 +25,12 @@ pub mod stream {
 pub mod format {
     pub use crate::format::*;
 }
+
+/// Iterable ZIP reading that does not build an in-memory index of every entry.
+pub mod read {
+    pub use crate::read::zip_iterable::{ZipIterable, ZipIterableFiles};
+}
+
 /// Types for creating ZIP archives.
 pub mod write {
     use crate::result::{ZipError, ZipResult};
