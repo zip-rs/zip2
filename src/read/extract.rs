@@ -8,6 +8,9 @@ use std::path::Path;
 
 use indexmap::IndexMap;
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 /// Upper bound on the uncompressed size of a symlink entry.
 ///
 /// A symlink target is a filesystem path, so its length is bounded by the
@@ -19,6 +22,14 @@ pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 /// Buffer capacity for file extraction streams (64 KiB), reducing syscall overhead
 /// and optimizing page cache utilization during archive extraction.
 pub(crate) const EXTRACT_BUFFER_SIZE: usize = 64 * 1024;
+
+/// Maximum extent pre-allocation ceiling (64 MiB).
+///
+/// Pre-allocating disk space via `File::set_len` before streaming uncompressed bytes
+/// reduces filesystem fragmentation and optimizes NTFS/ext4 block allocation.
+/// Capped at 64 MiB to prevent denial-of-service / zero-fill amplification attacks
+/// where an archive header claims an exorbitantly large uncompressed size.
+pub(crate) const MAX_PREALLOCATE_LEN: u64 = 64 * 1024 * 1024;
 
 /// Copies decompressed data from `reader` into `writer` using `buf` as a reusable transfer buffer.
 pub(crate) fn copy_into<R: Read + ?Sized, W: Write + ?Sized>(
@@ -305,7 +316,10 @@ pub(crate) fn create_outfile(
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+        options.custom_flags(
+            windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT
+                | windows_sys::Win32::Storage::FileSystem::FILE_FLAG_SEQUENTIAL_SCAN,
+        );
     }
     let file = options.open(outpath)?;
 
@@ -564,6 +578,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let mut files_by_unix_mode = UnixFileModes::default();
         let mut extract_buf = vec![0u8; EXTRACT_BUFFER_SIZE];
+        let mut created_dirs = std::collections::HashSet::new();
 
         for i in 0..self.len() {
             let read_options = crate::read::ZipReadOptions::new()
@@ -635,14 +650,34 @@ impl<R: Read + Seek> ZipArchive<R> {
                     }
                 }
             } else if file.is_dir() {
-                make_writable_dir_all(&outpath)?;
+                if created_dirs.insert(outpath.clone()) {
+                    make_writable_dir_all(&outpath)?;
+                }
                 // Check for real permissions, which we'll set in a second pass.
                 if let Some(mode) = file.unix_mode() {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
                 let mut outfile = create_outfile(&outpath, file.unix_mode())?;
-                copy_into(&mut file, &mut outfile, &mut extract_buf)?;
+                let uncompressed_len = file.size();
+                let mut preallocated_len = 0u64;
+                if uncompressed_len > 0 && !file.flags().is_using_data_descriptor() {
+                    let alloc_len = uncompressed_len.min(MAX_PREALLOCATE_LEN);
+                    if outfile.set_len(alloc_len).is_ok() {
+                        preallocated_len = alloc_len;
+                    }
+                }
+                let copy_res = copy_into(&mut file, &mut outfile, &mut extract_buf);
+                if preallocated_len > 0 {
+                    let actual_len = match &copy_res {
+                        Ok(extracted) => *extracted,
+                        Err(_) => outfile.stream_position().unwrap_or(0),
+                    };
+                    if actual_len < preallocated_len {
+                        let _ = outfile.set_len(actual_len);
+                    }
+                }
+                copy_res?;
                 #[cfg(unix)]
                 if let Some(mode) = file.unix_mode() {
                     // OpenOptions::mode only applies when the file is created. Record modes
@@ -681,6 +716,429 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<R: Read + Seek + Send> ZipArchive<R> {
+    /// Extracts archive contents in parallel across available CPU cores using a reader factory.
+    ///
+    /// The `reader_factory` closure is called to produce an independent reader instance
+    /// for each worker thread, ensuring independent file offsets and preventing concurrent seek collisions.
+    ///
+    /// # Common `reader_factory` Implementations
+    ///
+    /// Parallel extraction requires that each worker thread possesses an independent seek
+    /// position into the archive stream. Common implementations include:
+    ///
+    /// - **In-memory slice (`Cursor<&[u8]>`)**:
+    ///   Allows all worker threads to safely share an immutable buffer in memory without reallocation:
+    ///   ```no_run
+    ///   # use zip::ZipArchive;
+    ///   # use std::io::Cursor;
+    ///   # fn example(slice: &[u8]) -> zip::result::ZipResult<()> {
+    ///   # let mut archive = ZipArchive::new(Cursor::new(slice))?;
+    ///   archive.par_extract_with_reader_factory("destination", || Ok(Cursor::new(&slice)))?;
+    ///   # Ok(())
+    ///   # }
+    ///   ```
+    ///
+    /// - **Cloned file descriptor (`File::try_clone`)**:
+    ///   Duplicates the file handle so that each worker thread maintains an independent file pointer:
+    ///   ```no_run
+    ///   # use zip::ZipArchive;
+    ///   # use std::fs::File;
+    ///   # fn example(file: &File) -> zip::result::ZipResult<()> {
+    ///   # let mut archive = ZipArchive::new(file.try_clone().unwrap())?;
+    ///   archive.par_extract_with_reader_factory("destination", || file.try_clone())?;
+    ///   # Ok(())
+    ///   # }
+    ///   ```
+    ///
+    /// - **Positional / Random-access cursor (`positioned_io::Cursor`)**:
+    ///   Enables positional reads without duplicating kernel file handles:
+    ///   ```ignore
+    ///   archive.par_extract_with_reader_factory("destination", || {
+    ///       Ok(positioned_io::Cursor::new(random_access_file))
+    ///   })?;
+    ///   ```
+    pub fn par_extract_with_reader_factory<P, F>(
+        &mut self,
+        directory: P,
+        reader_factory: F,
+    ) -> ZipResult<()>
+    where
+        P: AsRef<Path>,
+        F: Fn() -> std::io::Result<R> + Sync + Send,
+    {
+        self.par_extract_with_reader_factory_and_options(
+            directory,
+            reader_factory,
+            ExtractOptions::default(),
+            None::<fn(&Path) -> bool>,
+        )
+    }
+
+    /// Extracts archive contents in parallel using a reader factory, custom [`ExtractOptions`],
+    /// and an optional [`RootDirFilter`].
+    ///
+    /// See [`ZipArchive::par_extract_with_reader_factory`] for common `reader_factory` implementations.
+    pub fn par_extract_with_reader_factory_and_options<P, F, Filter>(
+        &mut self,
+        directory: P,
+        reader_factory: F,
+        extract_options: ExtractOptions,
+        root_dir_filter: Option<Filter>,
+    ) -> ZipResult<()>
+    where
+        P: AsRef<Path>,
+        F: Fn() -> std::io::Result<R> + Sync + Send,
+        Filter: RootDirFilter,
+    {
+        self.par_extract_internal(
+            directory.as_ref(),
+            &reader_factory,
+            extract_options,
+            root_dir_filter,
+        )
+    }
+
+    fn par_extract_internal<F, Filter>(
+        &mut self,
+        directory: &Path,
+        reader_factory: &F,
+        extract_options: ExtractOptions,
+        root_dir_filter: Option<Filter>,
+    ) -> ZipResult<()>
+    where
+        F: Fn() -> std::io::Result<R> + Sync + Send,
+        Filter: RootDirFilter,
+    {
+        if let Some(limit) = extract_options.size_limit {
+            match self.decompressed_size() {
+                Some(size) if size > u128::from(limit) => {
+                    return Err(ZipError::DecompressedSizeLimitExceeded { size, limit });
+                }
+                None => return Err(ZipError::DecompressedSizeUnknown),
+                Some(_) => {}
+            }
+        }
+
+        std::fs::create_dir_all(directory)?;
+        let directory = directory.canonicalize()?;
+
+        let root_dir = root_dir_filter
+            .and_then(|filter| {
+                self.root_dir(&filter)
+                    .transpose()
+                    .map(|root_dir| root_dir.map(|root_dir| (root_dir, filter)))
+            })
+            .transpose()?;
+
+        let root_dir = root_dir
+            .as_ref()
+            .map(|(root_dir, filter)| {
+                crate::path::simplified_components(root_dir)
+                    .ok_or_else(|| {
+                        debug_assert!(false, "Invalid root dir path");
+                        invalid!("Invalid root dir path")
+                    })
+                    .map(|root_dir| (root_dir, filter))
+            })
+            .transpose()?;
+
+        let mut files_by_unix_mode = UnixFileModes::default();
+        let mut created_dirs = std::collections::HashSet::new();
+        let mut regular_files: indexmap::IndexMap<std::path::PathBuf, usize> =
+            indexmap::IndexMap::new();
+        let mut total_extracted = 0u64;
+
+        for i in 0..self.len() {
+            let read_options = crate::read::ZipReadOptions::new()
+                .enforce_header_consistency(extract_options.enforce_header_consistency);
+            let mut file = self.by_index_with_options(i, read_options)?;
+
+            let mut outpath = directory.clone();
+            file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
+
+            if file.is_symlink() {
+                let declared_len = file.size();
+                if declared_len > MAX_SYMLINK_TARGET_LEN {
+                    return Err(invalid!(
+                        "symlink target declares {} bytes, more than the {} byte limit",
+                        declared_len,
+                        MAX_SYMLINK_TARGET_LEN
+                    ));
+                }
+                let mut target = Vec::with_capacity(declared_len as usize);
+                file.read_to_end(&mut target)?;
+                let symlink_bytes = target.len() as u64;
+                let new_total = total_extracted.checked_add(symlink_bytes).ok_or_else(|| {
+                    ZipError::DecompressedSizeLimitExceeded {
+                        size: u128::MAX,
+                        limit: extract_options.size_limit.unwrap_or(u64::MAX),
+                    }
+                })?;
+                if let Some(limit) = extract_options.size_limit
+                    && new_total > limit
+                {
+                    return Err(ZipError::DecompressedSizeLimitExceeded {
+                        size: u128::from(new_total),
+                        limit,
+                    });
+                }
+                total_extracted = new_total;
+                let unix_mode = file.unix_mode();
+                drop(file);
+                match extract_options.symlink_action {
+                    SymlinkExtractAction::NoExtract => {}
+                    SymlinkExtractAction::ExtractAsFile => {
+                        make_symlink_as_file(&outpath, &target, unix_mode)?;
+                    }
+                    SymlinkExtractAction::ExtractAsFileUtf8 => {
+                        make_symlink_as_file_utf8(&outpath, &target, unix_mode)?;
+                    }
+                    #[cfg(any(unix, windows))]
+                    SymlinkExtractAction::ExtractRecursiveInFolder
+                    | SymlinkExtractAction::ExtractInFolder => {
+                        make_symlink(
+                            directory.as_ref(),
+                            &outpath,
+                            &target,
+                            &self.shared.files,
+                            extract_options.symlink_action,
+                        )?;
+                    }
+                    #[cfg(any(unix, windows))]
+                    SymlinkExtractAction::ExtractNoRestrictions => {
+                        let Ok(target_str) = std::str::from_utf8(&target) else {
+                            return Err(invalid!("Invalid UTF-8 as symlink target"));
+                        };
+                        make_symlink_impl(&outpath, target_str, &self.shared.files)?;
+                    }
+                }
+            } else if file.is_dir() {
+                if created_dirs.insert(outpath.clone()) {
+                    make_writable_dir_all(&outpath)?;
+                }
+                if let Some(mode) = file.unix_mode() {
+                    files_by_unix_mode.add_mode(outpath, mode);
+                }
+            } else {
+                regular_files.insert(outpath, i);
+            }
+        }
+
+        let metadata = self.metadata();
+        let size_limit = extract_options.size_limit;
+        let enforce_header = extract_options.enforce_header_consistency;
+        let total_extracted_atomic = std::sync::atomic::AtomicU64::new(total_extracted);
+
+        let regular_files_vec: Vec<(std::path::PathBuf, usize)> =
+            regular_files.into_iter().collect();
+
+        let regular_file_results: ZipResult<Vec<(std::path::PathBuf, Option<u32>)>> =
+            regular_files_vec
+                .into_par_iter()
+                .map_init(
+                    || -> std::io::Result<(ZipArchive<R>, Vec<u8>)> {
+                        let reader = reader_factory()?;
+                        let archive = unsafe {
+                            ZipArchive::unsafe_new_with_metadata(reader, metadata.clone())
+                        };
+                        let buf = vec![0u8; EXTRACT_BUFFER_SIZE];
+                        Ok((archive, buf))
+                    },
+                    |state, (outpath, idx)| -> ZipResult<(std::path::PathBuf, Option<u32>)> {
+                        let (archive, buf) = match state {
+                            Ok(s) => s,
+                            Err(e) => {
+                                return Err(ZipError::Io(std::io::Error::new(
+                                    e.kind(),
+                                    e.to_string(),
+                                )));
+                            }
+                        };
+
+                        let read_options = crate::read::ZipReadOptions::new()
+                            .enforce_header_consistency(enforce_header);
+                        let mut file = archive.by_index_with_options(idx, read_options)?;
+
+                        let mut outfile = create_outfile(&outpath, file.unix_mode())?;
+                        let uncompressed_len = file.size();
+                        let mut preallocated_len = 0u64;
+
+                        if uncompressed_len > 0 && !file.flags().is_using_data_descriptor() {
+                            let alloc_len = uncompressed_len.min(MAX_PREALLOCATE_LEN);
+                            let can_preallocate = match size_limit {
+                                Some(limit) => {
+                                    let cur = total_extracted_atomic
+                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                    cur.saturating_add(alloc_len) <= limit
+                                }
+                                None => true,
+                            };
+                            if can_preallocate && outfile.set_len(alloc_len).is_ok() {
+                                preallocated_len = alloc_len;
+                            }
+                        }
+
+                        let mut file_extracted = 0u64;
+                        let mut copy_error = None;
+                        loop {
+                            let n = match file.read(buf) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(e) => {
+                                    copy_error = Some(ZipError::Io(e));
+                                    break;
+                                }
+                            };
+                            let n_u64 = n as u64;
+                            let old_total = total_extracted_atomic
+                                .fetch_add(n_u64, std::sync::atomic::Ordering::Relaxed);
+                            let new_total = match old_total.checked_add(n_u64) {
+                                Some(total) => total,
+                                None => {
+                                    copy_error = Some(ZipError::DecompressedSizeLimitExceeded {
+                                        size: u128::MAX,
+                                        limit: size_limit.unwrap_or(u64::MAX),
+                                    });
+                                    break;
+                                }
+                            };
+                            if let Some(limit) = size_limit
+                                && new_total > limit
+                            {
+                                copy_error = Some(ZipError::DecompressedSizeLimitExceeded {
+                                    size: u128::from(new_total),
+                                    limit,
+                                });
+                                break;
+                            }
+                            if let Err(e) = outfile.write_all(&buf[..n]) {
+                                copy_error = Some(ZipError::Io(e));
+                                break;
+                            }
+                            file_extracted = file_extracted.saturating_add(n_u64);
+                        }
+
+                        if preallocated_len > 0 {
+                            let actual_len = if copy_error.is_none() {
+                                file_extracted
+                            } else {
+                                outfile.stream_position().unwrap_or(0)
+                            };
+                            if actual_len < preallocated_len {
+                                let _ = outfile.set_len(actual_len);
+                            }
+                        }
+
+                        if let Some(err) = copy_error {
+                            return Err(err);
+                        }
+
+                        #[cfg(feature = "chrono")]
+                        if let Some(last_modified) = file.last_modified()
+                            && let Some(t) = last_modified.datetime_to_systemtime()
+                        {
+                            let _ = outfile.set_modified(t);
+                        }
+                        #[cfg(not(unix))]
+                        if file.is_read_only() {
+                            let mut permissions = outfile.metadata()?.permissions();
+                            permissions.set_readonly(true);
+                            outfile.set_permissions(permissions)?;
+                        }
+
+                        Ok((outpath, file.unix_mode()))
+                    },
+                )
+                .collect();
+
+        #[cfg_attr(not(unix), allow(unused_variables))]
+        let extracted_files = regular_file_results?;
+
+        #[cfg(unix)]
+        for (path, mode) in extracted_files {
+            if let Some(m) = mode {
+                files_by_unix_mode.add_mode(path, m);
+            }
+        }
+
+        #[cfg(unix)]
+        for (path, perms) in files_by_unix_mode.all_perms_with_children_first() {
+            set_permissions_no_follow_symlink(&path, perms)?;
+        }
+        #[cfg(not(unix))]
+        for path in files_by_unix_mode.all_read_only_with_children_first() {
+            let metadata = std::fs::symlink_metadata(&path)?;
+            if metadata.is_dir() {
+                let mut permissions = metadata.permissions();
+                permissions.set_readonly(true);
+                std::fs::set_permissions(path, permissions)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl ZipArchive<std::fs::File> {
+    /// Extracts a filesystem-backed archive in parallel across available CPU cores.
+    ///
+    /// Requires the path to the original archive file (`archive_path`) so that each
+    /// worker thread can open its own independent kernel file handle via `File::open`.
+    pub fn par_extract_from_path<P: AsRef<Path>, Q: AsRef<Path>>(
+        &mut self,
+        archive_path: P,
+        destination: Q,
+    ) -> ZipResult<()> {
+        let path_buf = archive_path.as_ref().to_path_buf();
+        self.par_extract_with_reader_factory(destination, move || std::fs::File::open(&path_buf))
+    }
+
+    /// Extracts a filesystem-backed archive in parallel with custom [`ExtractOptions`].
+    pub fn par_extract_from_path_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
+        &mut self,
+        archive_path: P,
+        destination: Q,
+        options: ExtractOptions,
+    ) -> ZipResult<()> {
+        let path_buf = archive_path.as_ref().to_path_buf();
+        self.par_extract_with_reader_factory_and_options(
+            destination,
+            move || std::fs::File::open(&path_buf),
+            options,
+            None::<fn(&Path) -> bool>,
+        )
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T: AsRef<[u8]> + Sync + Send + Clone> ZipArchive<std::io::Cursor<T>> {
+    /// Extracts an in-memory archive in parallel across available CPU cores.
+    pub fn par_extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
+        let cursor_data = self.reader.get_ref().clone();
+        self.par_extract_with_reader_factory(directory, move || {
+            Ok(std::io::Cursor::new(cursor_data.clone()))
+        })
+    }
+
+    /// Extracts an in-memory archive in parallel with custom [`ExtractOptions`].
+    pub fn par_extract_with_options<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        options: ExtractOptions,
+    ) -> ZipResult<()> {
+        let cursor_data = self.reader.get_ref().clone();
+        self.par_extract_with_reader_factory_and_options(
+            directory,
+            move || Ok(std::io::Cursor::new(cursor_data.clone())),
+            options,
+            None::<fn(&Path) -> bool>,
+        )
     }
 }
 

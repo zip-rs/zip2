@@ -91,3 +91,72 @@ fn extract_two_entries_with_the_same_path() {
         0o640
     );
 }
+
+#[test]
+fn test_extract_with_preallocation_and_duplicate_dirs() {
+    use std::io::{Cursor, Write};
+    use tempfile::TempDir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let buf = Vec::new();
+    let mut writer = ZipWriter::new(Cursor::new(buf));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    // Different raw entry names that resolve to the same directory
+    writer.add_directory("sub/", options).unwrap();
+    writer.add_directory("./sub/", options).unwrap();
+    writer.start_file("sub/hello.txt", options).unwrap();
+    writer.write_all(b"Hello Preallocation!").unwrap();
+
+    let zip_bytes = writer.finish().unwrap().into_inner();
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+    let dest = TempDir::with_prefix("prealloc_test").unwrap();
+    archive.extract(dest.path()).unwrap();
+
+    let file_path = dest.path().join("sub/hello.txt");
+    assert!(file_path.exists());
+    let data = std::fs::read(&file_path).unwrap();
+    assert_eq!(data, b"Hello Preallocation!");
+    assert_eq!(std::fs::metadata(&file_path).unwrap().len(), 20);
+}
+
+#[test]
+fn test_preallocation_truncation_on_short_payload() {
+    use std::io::{Cursor, Write};
+    use tempfile::TempDir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("short.bin", options).unwrap();
+    writer.write_all(b"1234567890").unwrap(); // 10 bytes
+    let mut zip_bytes = writer.finish().unwrap().into_inner();
+
+    // Patch the Central Directory header for short.bin to claim 256 KiB uncompressed size
+    // Search for Central Directory record magic PK\x01\x02 (0x02014b50)
+    let cd_magic = [0x50, 0x4b, 0x01, 0x02];
+    let cd_pos = zip_bytes
+        .windows(4)
+        .position(|w| w == cd_magic)
+        .expect("CD header magic must exist");
+
+    // In CD header: offset 24..28 is uncompressed_size (u32 little endian)
+    let fake_size: u32 = 256 * 1024;
+    zip_bytes[cd_pos + 24..cd_pos + 28].copy_from_slice(&fake_size.to_le_bytes());
+
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+    assert_eq!(archive.by_index(0).unwrap().size(), 256 * 1024);
+
+    let dest = TempDir::with_prefix("prealloc_trunc").unwrap();
+    archive.extract(dest.path()).unwrap();
+
+    let extracted_path = dest.path().join("short.bin");
+    assert!(extracted_path.exists());
+    let data = std::fs::read(&extracted_path).unwrap();
+    assert_eq!(data, b"1234567890");
+    // Verify file on disk was properly truncated back to 10 bytes, NOT 256 KiB
+    assert_eq!(std::fs::metadata(&extracted_path).unwrap().len(), 10);
+}
