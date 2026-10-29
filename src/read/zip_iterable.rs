@@ -125,18 +125,38 @@ impl<R: Read + Seek> ZipIterable<R> {
         self.files.reset()?;
         Ok(&mut self.files)
     }
+
+    /// Validate each entry's local file header against the central directory before yielding it.
+    ///
+    /// When enabled, any discrepancy (such as Zip Cloaking / Dual-Header Smuggling attacks,
+    /// where an attacker provides different names or hidden files across headers) makes that
+    /// entry fail with [`ZipError::InvalidArchive`] and stops the pass.
+    ///
+    /// Duplicate names are not treated as an inconsistency: preserving them is the reason this
+    /// reader exists. Use [`ZipArchive::validate_header_consistency`] when duplicates must be
+    /// rejected.
+    ///
+    /// [`ZipArchive::validate_header_consistency`]: crate::ZipArchive::validate_header_consistency
+    #[must_use]
+    pub fn enforce_header_consistency(mut self, enforce: bool) -> Self {
+        self.files.enforce_header_consistency = enforce;
+        self
+    }
 }
 
 /// Iterator over the entries of a [`ZipIterable`].
 ///
 /// Entries are yielded in central-directory order. Duplicate names are preserved. After an
 /// error, the iterator stops yielding entries until [`ZipIterable::files`] is called again.
+/// When [`ZipIterable::enforce_header_consistency`] is enabled, each entry is validated against
+/// its local file header before it is yielded.
 #[derive(Debug)]
 pub struct ZipIterableFiles<R> {
     reader: R,
     central_directory: CentralDirectoryInfo,
     next_header_start: u64,
     remaining: usize,
+    enforce_header_consistency: bool,
 }
 
 impl<R: Read + Seek> ZipIterableFiles<R> {
@@ -148,6 +168,7 @@ impl<R: Read + Seek> ZipIterableFiles<R> {
             central_directory,
             next_header_start,
             remaining,
+            enforce_header_consistency: false,
         }
     }
 
@@ -198,6 +219,10 @@ impl<R: Read + Seek> ZipIterableFiles<R> {
             central_header_start,
             block,
         )?;
+
+        if self.enforce_header_consistency {
+            data.validate_header_consistency(&mut self.reader, &file_name)?;
+        }
 
         Ok((
             ZipFileEntry {

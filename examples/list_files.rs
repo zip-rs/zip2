@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for entry in archive.files()? {
         let entry = entry?;
-        println!("{:>12}  {}", entry.size(), entry.name()?);
+        println!("{:>20}  {}", entry.size(), entry.name()?);
     }
 
     Ok(())

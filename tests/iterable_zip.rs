@@ -5,7 +5,9 @@ use std::io::{Cursor, Read, Seek};
 use zip::ZipArchive;
 use zip::ZipReadOptions;
 use zip::read::Config;
+use zip::result::ZipError;
 use zip::unstable::read::{ZipIterable, ZipIterableFiles};
+#[cfg(feature = "deflate")]
 use zip::write::SimpleFileOptions;
 
 /// Builds a minimal ZIP archive with stored entries, including duplicate names if requested.
@@ -244,4 +246,106 @@ fn matches_zip_archive_for_deflated_archives() {
     }
 
     assert_eq!(actual, expected);
+}
+
+/// Overwrites the first central-directory header's file name in place.
+fn spoof_first_central_name(bytes: &mut [u8], name: &[u8]) {
+    let central = bytes
+        .windows(4)
+        .position(|s| s == b"PK\x01\x02")
+        .expect("central directory header must exist");
+    let name_len = u16::from_le_bytes(bytes[central + 28..central + 30].try_into().unwrap());
+    assert_eq!(usize::from(name_len), name.len());
+    bytes[central + 46..central + 46 + name.len()].copy_from_slice(name);
+}
+
+#[test]
+fn enforce_header_consistency_rejects_dual_header_mismatch() {
+    let mut bytes = raw_zip(&[("cron_worker.sh", b"#!/bin/sh\necho pwned\n")]);
+    spoof_first_central_name(&mut bytes, b"benign_doc.pdf");
+
+    // Without the option the central directory name wins, for backwards compatibility.
+    let mut lenient = ZipIterable::try_new(Cursor::new(bytes.clone()), Config::default()).unwrap();
+    let entry = lenient.files().unwrap().next().unwrap().unwrap();
+    assert_eq!(entry.name().unwrap(), "benign_doc.pdf");
+
+    // With the option, the mismatch is reported and stops the pass.
+    let mut strict = ZipIterable::try_new(Cursor::new(bytes), Config::default())
+        .unwrap()
+        .enforce_header_consistency(true);
+    let files = strict.files().unwrap();
+    match files.next() {
+        Some(Err(ZipError::InvalidArchive(message))) => {
+            assert!(message.contains("filename mismatch"), "{message}");
+        }
+        other => panic!("expected a header inconsistency error, got {other:?}"),
+    }
+    assert!(files.next().is_none());
+}
+
+#[test]
+fn enforce_header_consistency_rejects_local_crc_mismatch() {
+    let mut bytes = raw_zip(&[("a.txt", b"alpha")]);
+    // The CRC32 lives at offset 14 of the local file header.
+    bytes[14..18].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
+
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default())
+        .unwrap()
+        .enforce_header_consistency(true);
+    let files = archive.files().unwrap();
+    match files.next() {
+        Some(Err(ZipError::InvalidArchive(message))) => {
+            assert!(message.contains("CRC32"), "{message}");
+        }
+        other => panic!("expected a header inconsistency error, got {other:?}"),
+    }
+}
+
+#[test]
+fn enforce_header_consistency_accepts_valid_archive() {
+    let bytes = raw_zip(&[("a.txt", b"alpha"), ("dir/b.bin", b"bravo")]);
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default())
+        .unwrap()
+        .enforce_header_consistency(true);
+    let files = archive.files().unwrap();
+
+    let mut names = Vec::new();
+    let mut contents = Vec::new();
+    while let Some(entry) = files.next() {
+        let entry = entry.unwrap();
+        names.push(entry.name().unwrap().into_owned());
+        contents.push(read_entry(entry, files));
+    }
+
+    assert_eq!(names, ["a.txt", "dir/b.bin"]);
+    assert_eq!(contents, [b"alpha".as_slice(), b"bravo"]);
+}
+
+#[test]
+fn enforce_header_consistency_accepts_prepended_data() {
+    let mut prefixed = b"#!/bin/sh\nexit 0\n".to_vec();
+    prefixed.extend_from_slice(&raw_zip(&[("a.txt", b"alpha")]));
+
+    let mut archive = ZipIterable::try_new(Cursor::new(prefixed), Config::default())
+        .unwrap()
+        .enforce_header_consistency(true);
+    let files = archive.files().unwrap();
+    let entry = files.next().unwrap().unwrap();
+    assert_eq!(read_entry(entry, files), b"alpha");
+}
+
+#[test]
+fn enforce_header_consistency_still_yields_duplicate_names() {
+    // Duplicate names are the reason this reader exists, so they are not an inconsistency.
+    let bytes = raw_zip(&[("a.txt", b"first"), ("a.txt", b"second")]);
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default())
+        .unwrap()
+        .enforce_header_consistency(true);
+    let files = archive.files().unwrap();
+
+    let first = files.next().unwrap().unwrap();
+    assert_eq!(read_entry(first, files), b"first");
+    let second = files.next().unwrap().unwrap();
+    assert_eq!(read_entry(second, files), b"second");
+    assert!(files.next().is_none());
 }
