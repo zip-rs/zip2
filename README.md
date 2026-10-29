@@ -71,6 +71,16 @@ See the [examples directory](https://github.com/zip-rs/zip2/tree/master/examples
 - How to [extract a single file from a zip](https://github.com/zip-rs/zip2/tree/master/examples/extract_lorem.rs).
 - How to [read a zip from the standard input](https://github.com/zip-rs/zip2/tree/master/examples/stdin_info.rs).
 - How to [append a directory to an existing archive](https://github.com/zip-rs/zip2/tree/master/examples/append.rs)
+- How to [stream ZIP output to an async runtime](https://github.com/zip-rs/zip2/tree/master/examples/async_bridge.rs) through a bounded channel.
+
+## Using zip2 in async runtimes
+
+zip2 is synchronous. In an async application there are two ways to use it without blocking the executor:
+
+- For a seekable archive, move the file handle and the zip work into `tokio::task::spawn_blocking` (or the equivalent in your runtime).
+- For streaming output, run `ZipWriter::new_stream` on a dedicated thread and connect it to the async writer through a bounded channel. The channel bound applies backpressure, so the archive payload is not buffered in memory as a whole. See [`examples/async_bridge.rs`](https://github.com/zip-rs/zip2/tree/master/examples/async_bridge.rs).
+
+For native async I/O, use [`async_zip`](https://crates.io/crates/async_zip) for reading and writing, or [`async-deflate-zip`](https://crates.io/crates/async-deflate-zip) for a streaming writer.
 
 ## Wasm
 

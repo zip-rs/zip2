@@ -1763,6 +1763,9 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
     /// Creates a writer that doesn't require the inner writer to implement [Seek], but where
     /// operations that would overwrite previously-written bytes or cause subsequent operations to
     /// do so (such as `abort_file`) will always return an error.
+    ///
+    /// To use this writer from an async runtime, run it on a dedicated thread and forward its
+    /// output through a bounded channel. See `examples/async_bridge.rs`.
     pub fn new_stream(inner: W) -> ZipWriter<StreamWriter<W>> {
         ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(StreamWriter::new(inner))),
