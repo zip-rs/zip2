@@ -3,11 +3,17 @@
 ## Supported Versions
 
 Only the latest released version (and, when a prerelease is newer than the latest stable release, that prerelease to a 
-limited extent) are supported.
+limited extent) are supported. Backports of security fixes or backward-compatibility shims for older major versions may
+be developed, but this is strictly best-effort; all users should update to the latest version as soon as possible.
 
 ## Reporting a Vulnerability
 
-To report a vulnerability in a release or prerelease on crates.io, please go to 
+To report a vulnerability in a prerelease version or at the tip of the master branch, if no release versions are affected,
+please open an issue at https://github.com/zip-rs/zip2/issues. Prerelease versions and tip-of-master builds aren't expected
+to be secure, so full disclosure of vulnerabilities that are caught at that stage doesn't cost us trust, and it makes it
+easier to develop a fix collaboratively.
+
+To report a vulnerability in a release that's published on crates.io, please go to 
 https://github.com/zip-rs/zip2/security/advisories/new. We'll attempt to:
 
 * Close the report within 7 days without publishing it if:
@@ -37,11 +43,6 @@ the delay before full public disclosure will be determined as follows:
 * If a potential victim at credible risk requests more time to deploy a fix, then the withholding of details can
   be extended up to 30 days. This may be extended to 90 days for high-value government and nonprofit targets, when
   truly extraordinary circumstances are delaying the deployment.
-
-## Backporting
-
-Backports of security fixes to older major versions are strictly best-effort; all users should update to the latest 
-version as soon as possible.
 
 ## No yanked versions
 
