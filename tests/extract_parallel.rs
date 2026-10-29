@@ -1,5 +1,5 @@
 //! Tests for parallel archive extraction engine.
-#![cfg(all(not(miri), feature = "parallel"))]
+#![cfg(all(not(miri), feature = "rayon"))]
 
 use std::fs;
 use std::io::{Cursor, Write};
@@ -9,31 +9,79 @@ use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+fn enabled_read_write_compression_methods() -> Vec<CompressionMethod> {
+    vec![
+        CompressionMethod::Stored,
+        #[cfg(feature = "_deflate-any")]
+        CompressionMethod::Deflated,
+        #[cfg(feature = "_bzip2_any")]
+        CompressionMethod::Bzip2,
+        #[cfg(feature = "zstd")]
+        CompressionMethod::Zstd,
+        #[cfg(feature = "xz")]
+        CompressionMethod::Xz,
+        #[cfg(feature = "ppmd")]
+        CompressionMethod::Ppmd,
+    ]
+}
+
 #[test]
 fn test_par_extract_in_memory_cursor() {
+    for method in enabled_read_write_compression_methods() {
+        let buf = Vec::new();
+        let mut writer = ZipWriter::new(Cursor::new(buf));
+        let options = SimpleFileOptions::default().compression_method(method);
+
+        for i in 0..25 {
+            let name = format!("folder_{method:?}/file_{i}.txt");
+            writer.start_file(&name, options).unwrap();
+            writer
+                .write_all(format!("payload content for {method:?} file {i}").as_bytes())
+                .unwrap();
+        }
+
+        let zip_bytes = writer.finish().unwrap().into_inner();
+        let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+        let dest = TempDir::with_prefix("par_extract_mem").unwrap();
+        archive.par_extract(dest.path()).unwrap();
+
+        for i in 0..25 {
+            let expected_path = dest.path().join(format!("folder_{method:?}/file_{i}.txt"));
+            assert!(expected_path.exists());
+            let content = fs::read_to_string(&expected_path).unwrap();
+            assert_eq!(content, format!("payload content for {method:?} file {i}"));
+        }
+    }
+}
+
+#[test]
+fn test_par_extract_mixed_compression_methods() {
+    let methods = enabled_read_write_compression_methods();
     let buf = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(buf));
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
-    for i in 0..30 {
-        let name = format!("folder/file_{i}.txt");
+    for i in 0..40 {
+        let method = methods[i % methods.len()];
+        let options = SimpleFileOptions::default().compression_method(method);
+        let name = format!("mixed/entry_{i}.dat");
         writer.start_file(&name, options).unwrap();
-        writer
-            .write_all(format!("payload content for file {i}").as_bytes())
-            .unwrap();
+        let payload = vec![(i % 251) as u8; 512 + (i * 13) % 1024];
+        writer.write_all(&payload).unwrap();
     }
 
     let zip_bytes = writer.finish().unwrap().into_inner();
     let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
 
-    let dest = TempDir::with_prefix("par_extract_mem").unwrap();
+    let dest = TempDir::with_prefix("par_extract_mixed").unwrap();
     archive.par_extract(dest.path()).unwrap();
 
-    for i in 0..30 {
-        let expected_path = dest.path().join(format!("folder/file_{i}.txt"));
+    for i in 0..40 {
+        let expected_path = dest.path().join(format!("mixed/entry_{i}.dat"));
         assert!(expected_path.exists());
-        let content = fs::read_to_string(&expected_path).unwrap();
-        assert_eq!(content, format!("payload content for file {i}"));
+        let expected_payload = vec![(i % 251) as u8; 512 + (i * 13) % 1024];
+        let actual = fs::read(&expected_path).unwrap();
+        assert_eq!(actual, expected_payload);
     }
 }
 
@@ -50,10 +98,13 @@ fn test_par_extract_from_file_path() {
     writer.add_directory("sub_alpha/", options).unwrap();
     writer.add_directory("sub_beta/", options).unwrap();
 
+    let methods = enabled_read_write_compression_methods();
     for i in 0..40 {
         let folder = if i % 2 == 0 { "sub_alpha" } else { "sub_beta" };
         let name = format!("{folder}/data_{i}.bin");
-        writer.start_file(&name, options).unwrap();
+        let method_options =
+            SimpleFileOptions::default().compression_method(methods[i % methods.len()]);
+        writer.start_file(&name, method_options).unwrap();
         let payload = vec![i as u8; 1024]; // 1 KiB each
         writer.write_all(&payload).unwrap();
     }

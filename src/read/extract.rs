@@ -8,7 +8,7 @@ use std::path::Path;
 
 use indexmap::IndexMap;
 
-#[cfg(feature = "parallel")]
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 /// Upper bound on the uncompressed size of a symlink entry.
@@ -719,12 +719,49 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 }
 
-#[cfg(feature = "parallel")]
+#[cfg(feature = "rayon")]
 impl<R: Read + Seek + Send> ZipArchive<R> {
     /// Extracts archive contents in parallel across available CPU cores using a reader factory.
     ///
     /// The `reader_factory` closure is called to produce an independent reader instance
     /// for each worker thread, ensuring independent file offsets and preventing concurrent seek collisions.
+    ///
+    /// # Common `reader_factory` Implementations
+    ///
+    /// Parallel extraction requires that each worker thread possesses an independent seek
+    /// position into the archive stream. Common implementations include:
+    ///
+    /// - **In-memory slice (`Cursor<&[u8]>`)**:
+    ///   Allows all worker threads to safely share an immutable buffer in memory without reallocation:
+    ///   ```no_run
+    ///   # use zip::ZipArchive;
+    ///   # use std::io::Cursor;
+    ///   # fn example(slice: &[u8]) -> zip::result::ZipResult<()> {
+    ///   # let mut archive = ZipArchive::new(Cursor::new(slice))?;
+    ///   archive.par_extract_with_reader_factory("destination", || Ok(Cursor::new(&slice)))?;
+    ///   # Ok(())
+    ///   # }
+    ///   ```
+    ///
+    /// - **Cloned file descriptor (`File::try_clone`)**:
+    ///   Duplicates the file handle so that each worker thread maintains an independent file pointer:
+    ///   ```no_run
+    ///   # use zip::ZipArchive;
+    ///   # use std::fs::File;
+    ///   # fn example(file: &File) -> zip::result::ZipResult<()> {
+    ///   # let mut archive = ZipArchive::new(file.try_clone().unwrap())?;
+    ///   archive.par_extract_with_reader_factory("destination", || file.try_clone())?;
+    ///   # Ok(())
+    ///   # }
+    ///   ```
+    ///
+    /// - **Positional / Random-access cursor (`positioned_io::Cursor`)**:
+    ///   Enables positional reads without duplicating kernel file handles:
+    ///   ```ignore
+    ///   archive.par_extract_with_reader_factory("destination", || {
+    ///       Ok(positioned_io::Cursor::new(random_access_file))
+    ///   })?;
+    ///   ```
     pub fn par_extract_with_reader_factory<P, F>(
         &mut self,
         directory: P,
@@ -744,6 +781,8 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
 
     /// Extracts archive contents in parallel using a reader factory, custom [`ExtractOptions`],
     /// and an optional [`RootDirFilter`].
+    ///
+    /// See [`ZipArchive::par_extract_with_reader_factory`] for common `reader_factory` implementations.
     pub fn par_extract_with_reader_factory_and_options<P, F, Filter>(
         &mut self,
         directory: P,
@@ -1045,7 +1084,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
     }
 }
 
-#[cfg(feature = "parallel")]
+#[cfg(feature = "rayon")]
 impl ZipArchive<std::fs::File> {
     /// Extracts a filesystem-backed archive in parallel across available CPU cores.
     ///
@@ -1077,7 +1116,7 @@ impl ZipArchive<std::fs::File> {
     }
 }
 
-#[cfg(feature = "parallel")]
+#[cfg(feature = "rayon")]
 impl<T: AsRef<[u8]> + Sync + Send + Clone> ZipArchive<std::io::Cursor<T>> {
     /// Extracts an in-memory archive in parallel across available CPU cores.
     pub fn par_extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
