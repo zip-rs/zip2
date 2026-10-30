@@ -5,6 +5,7 @@ ZIP64_ENTRY_THR = "ZIP64_ENTRY_THR"
 ERROR_FILENAME_EXCED_RANGE = "ERROR_FILENAME_EXCED_RANGE"
 flate2 = "flate2"
 "00ba" = "00ba"
+caf = "caf"
 
 [default]
 extend-ignore-re = [

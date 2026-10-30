@@ -23,8 +23,8 @@ fn fixture_password() -> [u8; PASSWORD_LENGTH] {
     }
 }
 
-fn archive(
-    entries: &[(&str, &[u8])],
+fn archive_with_raw_names(
+    entries: &[(&[u8], &[u8])],
     password: Option<&[u8]>,
 ) -> TestResult<ZipArchive<Cursor<Vec<u8>>>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -33,34 +33,10 @@ fn archive(
         options = options.with_deprecated_encryption(password)?;
     }
     for (name, contents) in entries {
-        writer.start_file(*name, options)?;
+        writer.start_file_with_options(options.name(name))?;
         writer.write_all(contents)?;
     }
-    let mut bytes = writer.finish()?.into_inner();
-    replace_cp437_name(&mut bytes, password.is_some());
-    Ok(ZipArchive::new(Cursor::new(bytes))?)
-}
-
-fn replace_cp437_name(bytes: &mut [u8], encrypted: bool) {
-    let marker = b"cafe.txt";
-    let positions: Vec<_> = bytes
-        .windows(marker.len())
-        .enumerate()
-        .filter_map(|(index, value)| (value == marker).then_some(index))
-        .collect();
-    assert_eq!(positions.len(), 2);
-    for index in positions {
-        let flags_offset = if &bytes[index - 30..index - 26] == b"PK\x03\x04" {
-            index - 30 + 6
-        } else {
-            assert_eq!(&bytes[index - 46..index - 42], b"PK\x01\x02");
-            index - 46 + 8
-        };
-        let flags = u16::from_le_bytes([bytes[flags_offset], bytes[flags_offset + 1]]);
-        assert_eq!(flags & 0x0800, 0);
-        assert_eq!(flags & 1, u16::from(encrypted));
-        bytes[index + 3] = 0x82;
-    }
+    Ok(ZipArchive::new(Cursor::new(writer.finish()?.into_inner()))?)
 }
 
 fn payload(mut reader: impl Read) -> TestResult<Vec<u8>> {
@@ -71,7 +47,7 @@ fn payload(mut reader: impl Read) -> TestResult<Vec<u8>> {
 
 #[test]
 fn should_enumerate_decoded_cp437_name_and_read_indexed_payload() -> TestResult {
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], None)?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], None)?;
     assert_eq!(zip.len(), 1);
     assert_eq!(
         zip.file_names().collect::<Result<Vec<_>, _>>()?,
@@ -83,21 +59,21 @@ fn should_enumerate_decoded_cp437_name_and_read_indexed_payload() -> TestResult 
 
 #[test]
 fn should_resolve_decoded_cp437_name_to_index() -> TestResult {
-    let zip = archive(&[("cafe.txt", PAYLOAD)], None)?;
+    let zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], None)?;
     assert_eq!(zip.index_for_name("café.txt"), Some(0));
     Ok(())
 }
 
 #[test]
 fn should_read_cp437_member_by_decoded_name() -> TestResult {
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], None)?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], None)?;
     assert_eq!(payload(zip.by_name("café.txt")?)?, PAYLOAD);
     Ok(())
 }
 
 #[test]
 fn should_read_cp437_member_with_options_by_decoded_name() -> TestResult {
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], None)?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], None)?;
     assert_eq!(
         payload(zip.by_name_with_options("café.txt", zip::ZipReadOptions::new())?)?,
         PAYLOAD
@@ -107,14 +83,14 @@ fn should_read_cp437_member_with_options_by_decoded_name() -> TestResult {
 
 #[test]
 fn should_read_cp437_member_by_decoded_path() -> TestResult {
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], None)?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], None)?;
     assert_eq!(payload(zip.by_path(Path::new("café.txt"))?)?, PAYLOAD);
     Ok(())
 }
 
 #[test]
 fn should_seek_cp437_member_by_decoded_name() -> TestResult {
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], None)?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], None)?;
     let mut file = zip.by_name_seek("café.txt")?;
     file.seek(std::io::SeekFrom::Start(10))?;
     assert_eq!(payload(file)?, &PAYLOAD[10..]);
@@ -124,7 +100,7 @@ fn should_seek_cp437_member_by_decoded_name() -> TestResult {
 #[test]
 fn should_decrypt_cp437_member_by_decoded_name() -> TestResult {
     let password = fixture_password();
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], Some(&password))?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], Some(&password))?;
     assert_eq!(
         payload(zip.by_name_decrypt("café.txt", &password)?)?,
         PAYLOAD
@@ -135,7 +111,7 @@ fn should_decrypt_cp437_member_by_decoded_name() -> TestResult {
 #[test]
 fn should_decrypt_cp437_member_by_decoded_path() -> TestResult {
     let password = fixture_password();
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], Some(&password))?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], Some(&password))?;
     assert_eq!(
         payload(zip.by_path_decrypt("café.txt", &password)?)?,
         PAYLOAD
@@ -146,10 +122,10 @@ fn should_decrypt_cp437_member_by_decoded_path() -> TestResult {
 #[test]
 fn should_preserve_password_required_error_for_decoded_name() -> TestResult {
     let password = fixture_password();
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], Some(&password))?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], Some(&password))?;
     assert!(
         matches!(zip.by_name("café.txt"), Err(ZipError::UnsupportedArchive(message))
-        if message == zip::result::ZipError::PASSWORD_REQUIRED)
+        if message == ZipError::PASSWORD_REQUIRED)
     );
     Ok(())
 }
@@ -157,7 +133,7 @@ fn should_preserve_password_required_error_for_decoded_name() -> TestResult {
 #[test]
 fn should_preserve_invalid_password_error_for_decoded_name() -> TestResult {
     let password = fixture_password();
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], Some(&password))?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], Some(&password))?;
     assert_eq!(payload(zip.by_index_decrypt(0, &password)?)?, PAYLOAD);
     let mut wrong_password = password;
     // ~keep ZipCrypto checks one header byte; indexed lookup selects a rejected password without name lookup.
@@ -182,7 +158,10 @@ fn should_preserve_invalid_password_error_for_decoded_name() -> TestResult {
 
 #[test]
 fn should_prefer_raw_utf8_match_over_earlier_cp437_decoded_collision() -> TestResult {
-    let mut zip = archive(&[("cafe.txt", b"cp437"), ("café.txt", b"utf8")], None)?;
+    let mut zip = archive_with_raw_names(
+        &[(b"caf\x82.txt", b"cp437"), ("café.txt".as_bytes(), b"utf8")],
+        None,
+    )?;
     assert_eq!(
         zip.file_names().collect::<Result<Vec<_>, _>>()?,
         ["café.txt", "café.txt"]
@@ -194,7 +173,10 @@ fn should_prefer_raw_utf8_match_over_earlier_cp437_decoded_collision() -> TestRe
 
 #[test]
 fn should_preserve_raw_utf8_match_before_later_cp437_decoded_collision() -> TestResult {
-    let mut zip = archive(&[("café.txt", b"utf8"), ("cafe.txt", b"cp437")], None)?;
+    let mut zip = archive_with_raw_names(
+        &[("café.txt".as_bytes(), b"utf8"), (b"caf\x82.txt", b"cp437")],
+        None,
+    )?;
     assert_eq!(zip.index_for_name("café.txt"), Some(0));
     assert_eq!(payload(zip.by_name("café.txt")?)?, b"utf8");
     Ok(())
@@ -203,7 +185,7 @@ fn should_preserve_raw_utf8_match_before_later_cp437_decoded_collision() -> Test
 #[test]
 fn should_keep_missing_name_and_path_not_found() -> TestResult {
     let password = fixture_password();
-    let mut zip = archive(&[("cafe.txt", PAYLOAD)], None)?;
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", PAYLOAD)], None)?;
     assert_eq!(zip.index_for_name("missing.txt"), None);
     assert!(matches!(
         zip.by_name("missing.txt"),
@@ -222,8 +204,11 @@ fn should_keep_missing_name_and_path_not_found() -> TestResult {
 
 #[test]
 fn should_not_normalize_separators_during_decoded_lookup() -> TestResult {
-    let mut zip = archive(
-        &[("cafe.txt", PAYLOAD), ("folder\\file.txt", b"backslash")],
+    let mut zip = archive_with_raw_names(
+        &[
+            (b"caf\x82.txt", PAYLOAD),
+            (b"folder\\file.txt", b"backslash"),
+        ],
         None,
     )?;
     assert_eq!(zip.index_for_name("folder/file.txt"), None);
@@ -232,5 +217,42 @@ fn should_not_normalize_separators_during_decoded_lookup() -> TestResult {
         Err(ZipError::FileNotFound)
     ));
     assert_eq!(payload(zip.by_name("folder\\file.txt")?)?, b"backslash");
+    Ok(())
+}
+
+#[test]
+fn should_use_raw_name_index_with_by_index() -> TestResult {
+    let mut zip = archive_with_raw_names(&[(b"caf\x82.txt", b"cp437")], None)?;
+    let file_index = zip.index_for_name_raw(b"caf\x82.txt").unwrap();
+    assert_eq!(payload(zip.by_index(file_index)?)?, b"cp437");
+    Ok(())
+}
+
+#[test]
+fn should_not_resolve_decoded_cp437_name_as_raw() -> TestResult {
+    let zip = archive_with_raw_names(&[(b"caf\x82.txt", b"cp437")], None)?;
+    assert_eq!(zip.index_for_name_raw("café.txt".as_bytes()), None);
+    Ok(())
+}
+
+#[test]
+#[allow(invalid_from_utf8)]
+fn should_resolve_non_utf8_raw_name() -> TestResult {
+    let zip = archive_with_raw_names(&[(b"caf\x82.txt", b"cp437")], None)?;
+    let raw_name = b"caf\x82.txt";
+    assert!(std::str::from_utf8(raw_name).is_err());
+    assert_eq!(zip.index_for_name_raw(raw_name), Some(0));
+    Ok(())
+}
+
+#[test]
+fn should_prefer_raw_name_match_over_decoded_collision() -> TestResult {
+    let mut zip = archive_with_raw_names(
+        &[("café.txt".as_bytes(), b"utf8"), (b"caf\x82.txt", b"cp437")],
+        None,
+    )?;
+    let file_index = zip.index_for_name_raw(b"caf\x82.txt").unwrap();
+    assert_eq!(file_index, 1);
+    assert_eq!(payload(zip.by_index(file_index)?)?, b"cp437");
     Ok(())
 }

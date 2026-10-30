@@ -319,6 +319,15 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
         }
     }
 
+    /// Set the raw name for the new file. The name need not be UTF-8.
+    #[must_use]
+    pub fn name<'name>(self, name: &'name [u8]) -> FileOptions<'k, 'name, T> {
+        FileOptions {
+            name: Some(name),
+            ..self
+        }
+    }
+
     /// Indicates whether this file will be encrypted (whether with AES or `ZipCrypto`).
     pub const fn has_encryption(&self) -> bool {
         self.encrypt_with.is_some()
