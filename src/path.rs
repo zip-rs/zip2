@@ -1,8 +1,9 @@
 //! Path manipulation utilities
 
 use std::{
+    borrow::Cow,
     collections::VecDeque,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -361,16 +362,16 @@ const MAX_SYMLINK_HOPS: usize = 40;
 /// intermediate directories are created; the last component is left alone.
 ///
 /// Returns an error if resolution would leave `base`.
-pub(crate) fn resolve_enclosed(
+pub(crate) fn resolve_enclosed<'a>(
     base: &Path,
     start: &Path,
-    components: impl IntoIterator<Item = OsString>,
+    components: impl IntoIterator<Item = impl Into<Cow<'a, OsStr>>>,
     create_dirs: bool,
 ) -> ZipResult<PathBuf> {
     debug_assert!(start.starts_with(base));
 
     let mut current = start.to_path_buf();
-    let mut queue: VecDeque<OsString> = components.into_iter().collect();
+    let mut queue: VecDeque<Cow<'a, OsStr>> = components.into_iter().map(Into::into).collect();
     let mut hops = 0usize;
 
     // Set once a component does not exist (and is not created). A later entry may create it as a
@@ -408,7 +409,7 @@ pub(crate) fn resolve_enclosed(
             ));
         }
 
-        current.push(&component);
+        current.push(&*component);
         // Pushing a prefixed component replaces `current` on Windows; check before creating dirs.
         if !current.starts_with(base) {
             return Err(invalid!(
@@ -463,8 +464,8 @@ pub(crate) fn resolve_enclosed(
                     return Err(invalid!("Invalid symlink target path"));
                 }
                 Component::CurDir => (),
-                Component::ParentDir => queue.push_front(OsString::from("..")),
-                Component::Normal(s) => queue.push_front(s.to_os_string()),
+                Component::ParentDir => queue.push_front(Cow::Borrowed(OsStr::new(".."))),
+                Component::Normal(s) => queue.push_front(Cow::Owned(s.to_os_string())),
             }
         }
     }

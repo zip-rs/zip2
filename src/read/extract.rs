@@ -246,7 +246,7 @@ pub(crate) fn make_symlink<T>(
                     crate::path::resolve_enclosed(
                         base,
                         start,
-                        rest.components().map(|c| c.as_os_str().to_os_string()),
+                        rest.components().map(|c| c.as_os_str()),
                         false,
                     )?;
                 }
@@ -256,7 +256,7 @@ pub(crate) fn make_symlink<T>(
         crate::path::resolve_enclosed(
             base,
             start,
-            rest.components().map(|c| c.as_os_str().to_os_string()),
+            rest.components().map(|c| c.as_os_str()),
             false, // only checking here, so nothing is created
         )?;
     }
@@ -585,12 +585,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 .enforce_header_consistency(extract_options.enforce_header_consistency);
             let mut file = self.by_index_with_options(i, read_options)?;
 
-            let mut outpath = directory.clone();
-            /* TODO: the control flow of this method call and subsequent expectations about the
-             *       values in this loop is extremely difficult to follow. It also appears to
-             *       perform a nested loop upon extracting every single file entry? Why does it
-             *       accept two arguments that point to the same directory path, one mutable? */
-            file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
+            let outpath = file.safe_prepare_path(directory.as_ref(), root_dir.as_ref())?;
 
             if file.is_symlink() {
                 // `file.size()` is the uncompressed size declared in the central
@@ -858,8 +853,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                 .enforce_header_consistency(extract_options.enforce_header_consistency);
             let mut file = self.by_index_with_options(i, read_options)?;
 
-            let mut outpath = directory.clone();
-            file.safe_prepare_path(directory.as_ref(), &mut outpath, root_dir.as_ref())?;
+            let outpath = file.safe_prepare_path(directory.as_ref(), root_dir.as_ref())?;
 
             if file.is_symlink() {
                 let declared_len = file.size();
