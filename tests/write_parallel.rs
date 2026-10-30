@@ -162,3 +162,201 @@ fn test_par_append_duplicate_name_error() {
     let result = writer.par_append_data(entries);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_par_append_empty_inputs() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let empty_data: Vec<(String, SimpleFileOptions, Vec<u8>)> = Vec::new();
+    writer.par_append_data(empty_data).unwrap();
+
+    let empty_data_slice: &[(String, SimpleFileOptions, Vec<u8>)] = &[];
+    writer
+        .par_append_data_batches(empty_data_slice, NonZeroUsize::new(10).unwrap())
+        .unwrap();
+
+    let empty_paths: Vec<(String, std::path::PathBuf, SimpleFileOptions)> = Vec::new();
+    writer.par_append_from_paths(empty_paths).unwrap();
+
+    let empty_paths_slice: &[(String, std::path::PathBuf, SimpleFileOptions)] = &[];
+    writer
+        .par_append_from_paths_batches(empty_paths_slice, NonZeroUsize::new(10).unwrap())
+        .unwrap();
+
+    let archive = writer.finish_into_readable().unwrap();
+    assert_eq!(archive.len(), 0);
+}
+
+#[test]
+fn test_par_append_zero_byte_empty_file() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let opts_stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let opts_deflated = SimpleFileOptions::default().compression_method(CompressionMethod::DEFLATE);
+
+    let entries = vec![
+        ("empty_stored.dat", opts_stored, b"".as_slice()),
+        ("empty_deflated.dat", opts_deflated, b"".as_slice()),
+    ];
+
+    writer.par_append_data(entries).unwrap();
+    let mut archive = writer.finish_into_readable().unwrap();
+
+    assert_eq!(archive.len(), 2);
+    for name in &["empty_stored.dat", "empty_deflated.dat"] {
+        let mut file = archive.by_name(name).unwrap();
+        assert_eq!(file.size(), 0);
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).unwrap();
+        assert!(buf.is_empty());
+    }
+}
+
+#[test]
+fn test_par_append_unicode_and_special_paths() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default();
+
+    let entries = vec![
+        (
+            "türkçe_şeker_çilek_öğrenci.txt",
+            options,
+            b"Turkce icerik".as_slice(),
+        ),
+        (
+            "nested/sub_dir/deep_file.log",
+            options,
+            b"Nested log".as_slice(),
+        ),
+        ("🦀_emoji_file_🇹🇷.bin", options, b"Emoji payload".as_slice()),
+        (
+            "path with spaces and symbols #1!.csv",
+            options,
+            b"col1,col2".as_slice(),
+        ),
+    ];
+
+    writer.par_append_data(entries).unwrap();
+    let mut archive = writer.finish_into_readable().unwrap();
+
+    assert_eq!(archive.len(), 4);
+    {
+        let mut f1 = archive.by_name("türkçe_şeker_çilek_öğrenci.txt").unwrap();
+        let mut c1 = Vec::new();
+        f1.read_to_end(&mut c1).unwrap();
+        assert_eq!(c1, b"Turkce icerik");
+    }
+    {
+        let mut f2 = archive.by_name("nested/sub_dir/deep_file.log").unwrap();
+        let mut c2 = Vec::new();
+        f2.read_to_end(&mut c2).unwrap();
+        assert_eq!(c2, b"Nested log");
+    }
+    {
+        let mut f3 = archive.by_name("🦀_emoji_file_🇹🇷.bin").unwrap();
+        let mut c3 = Vec::new();
+        f3.read_to_end(&mut c3).unwrap();
+        assert_eq!(c3, b"Emoji payload");
+    }
+}
+
+#[test]
+fn test_par_append_batch_size_edge_cases() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default();
+
+    let entries: Vec<(String, SimpleFileOptions, Vec<u8>)> = (0..7)
+        .map(|i| (format!("item_{i}.txt"), options, vec![i as u8; 32]))
+        .collect();
+
+    // batch_size = 1 (single-item chunks)
+    writer
+        .par_append_data_batches(&entries[..3], NonZeroUsize::new(1).unwrap())
+        .unwrap();
+
+    // batch_size = 100 (> entries len)
+    writer
+        .par_append_data_batches(&entries[3..5], NonZeroUsize::new(100).unwrap())
+        .unwrap();
+
+    // batch_size = 3 (non-divisor)
+    writer
+        .par_append_data_batches(&entries[5..], NonZeroUsize::new(3).unwrap())
+        .unwrap();
+
+    let mut archive = writer.finish_into_readable().unwrap();
+    assert_eq!(archive.len(), 7);
+    for i in 0..7 {
+        let mut file = archive.by_name(&format!("item_{i}.txt")).unwrap();
+        let mut content = Vec::new();
+        file.read_to_end(&mut content).unwrap();
+        assert_eq!(content, vec![i as u8; 32]);
+    }
+}
+
+#[test]
+fn test_par_append_duplicate_pre_existing_atomicity() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default();
+
+    // Initially write "alpha.txt"
+    writer.start_file("alpha.txt", options).unwrap();
+    writer.write_all(b"alpha").unwrap();
+
+    // Now try to append batch containing "beta.txt" and duplicate "alpha.txt"
+    let entries = vec![
+        ("beta.txt", options, b"beta".as_slice()),
+        ("alpha.txt", options, b"alpha_dup".as_slice()),
+    ];
+
+    let result = writer.par_append_data(entries);
+    assert!(result.is_err());
+
+    // Because pre-validation caught the collision, "beta.txt" was NOT written!
+    let mut archive = writer.finish_into_readable().unwrap();
+    assert_eq!(archive.len(), 1);
+    assert!(archive.by_name("alpha.txt").is_ok());
+    assert!(archive.by_name("beta.txt").is_err());
+}
+
+#[test]
+fn test_par_append_nonexistent_disk_path_atomicity() {
+    let dir = tempdir().unwrap();
+    let valid_path = dir.path().join("good.txt");
+    std::fs::write(&valid_path, b"good content").unwrap();
+
+    let invalid_path = dir.path().join("does_not_exist_xyz.bin");
+    let options = SimpleFileOptions::default();
+
+    let entries = vec![
+        ("good.txt".to_string(), valid_path, options),
+        ("bad.txt".to_string(), invalid_path, options),
+    ];
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let result = writer.par_append_from_paths(entries);
+    assert!(result.is_err());
+
+    // Pristine archive: 0 entries committed
+    let archive = writer.finish_into_readable().unwrap();
+    assert_eq!(archive.len(), 0);
+}
+
+#[test]
+fn test_par_append_scoped_single_thread_pool() {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap();
+
+    pool.install(|| {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default();
+
+        let entries: Vec<(String, SimpleFileOptions, Vec<u8>)> = (0..10)
+            .map(|i| (format!("single_pool_{i}.dat"), options, vec![i as u8; 64]))
+            .collect();
+
+        writer.par_append_data(entries).unwrap();
+        let archive = writer.finish_into_readable().unwrap();
+        assert_eq!(archive.len(), 10);
+    });
+}

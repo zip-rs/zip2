@@ -1801,6 +1801,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             .collect();
 
         let prepared_files = prepared_files?;
+
+        let mut seen = std::collections::HashSet::with_capacity(prepared_files.len());
+        for file in &prepared_files {
+            let name = file.file_name_raw();
+            if self.files.contains_key(name) || !seen.insert(name) {
+                return Err(invalid!("Duplicate filename: {:?}", name.escape_ascii()));
+            }
+        }
+
         for file in prepared_files {
             self.add_prepared_file(file)?;
         }
@@ -1826,6 +1835,17 @@ impl<W: Write + Seek> ZipWriter<W> {
         D: AsRef<[u8]> + Sync,
     {
         use rayon::prelude::*;
+        let mut seen = std::collections::HashSet::with_capacity(entries.len());
+        for (name, _, _) in entries {
+            let name_bytes = name.as_ref().as_bytes();
+            if self.files.contains_key(name_bytes) || !seen.insert(name_bytes) {
+                return Err(invalid!(
+                    "Duplicate filename: {:?}",
+                    name_bytes.escape_ascii()
+                ));
+            }
+        }
+
         for chunk in entries.chunks(batch_size.get()) {
             let prepared_files: ZipResult<Vec<PreparedZipFile>> = chunk
                 .par_iter()
@@ -1865,6 +1885,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             .collect();
 
         let prepared_files = prepared_files?;
+
+        let mut seen = std::collections::HashSet::with_capacity(prepared_files.len());
+        for file in &prepared_files {
+            let name = file.file_name_raw();
+            if self.files.contains_key(name) || !seen.insert(name) {
+                return Err(invalid!("Duplicate filename: {:?}", name.escape_ascii()));
+            }
+        }
+
         for file in prepared_files {
             self.add_prepared_file(file)?;
         }
@@ -1890,6 +1919,17 @@ impl<W: Write + Seek> ZipWriter<W> {
         T: FileOptionExtension + Clone + Send + Sync + 'a,
     {
         use rayon::prelude::*;
+        let mut seen = std::collections::HashSet::with_capacity(entries.len());
+        for (name, _, _) in entries {
+            let name_bytes = name.as_ref().as_bytes();
+            if self.files.contains_key(name_bytes) || !seen.insert(name_bytes) {
+                return Err(invalid!(
+                    "Duplicate filename: {:?}",
+                    name_bytes.escape_ascii()
+                ));
+            }
+        }
+
         for chunk in entries.chunks(batch_size.get()) {
             let prepared_files: ZipResult<Vec<PreparedZipFile>> = chunk
                 .par_iter()
