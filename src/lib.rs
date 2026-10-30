@@ -21,7 +21,7 @@ pub use crate::format::system::System;
 pub use crate::format::{ZIP64_BYTES_THR, ZIP64_ENTRY_THR};
 pub use crate::read::HasZipMetadata;
 pub use crate::read::{ZipArchive, ZipReadOptions};
-pub use crate::write::ZipWriter;
+pub use crate::write::{PreparedZipFile, ZipWriter};
 
 #[cfg(feature = "aes-crypto")]
 mod aes;

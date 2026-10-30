@@ -1571,6 +1571,21 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()
     }
 
+    /// Appends multiple pre-compressed [`PreparedZipFile`] entries into the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if appending any prepared file fails.
+    pub fn add_prepared_files(
+        &mut self,
+        files: impl IntoIterator<Item = PreparedZipFile>,
+    ) -> ZipResult<()> {
+        for file in files {
+            self.add_prepared_file(file)?;
+        }
+        Ok(())
+    }
+
     fn finalize(&mut self) -> ZipResult<u64> {
         /// Longest stale tail that [`Self::finalize`] blanks in place rather than moving the footer.
         const STALE_FILL_MAX_LEN: u64 = 0xFF00;
@@ -1756,6 +1771,143 @@ impl<W: Write + Seek> ZipWriter<W> {
         let src = path_to_string(src_path)?;
         let dest = path_to_string(dest_path)?;
         self.shallow_copy_file(&src, &dest)
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<W: Write + Seek> ZipWriter<W> {
+    /// Compresses a collection of in-memory data entries in parallel using Rayon
+    /// and appends them sequentially to the archive in the input order.
+    ///
+    /// The compression work is performed concurrently across available Rayon worker threads.
+    /// If any entry fails compression, no changes are committed to the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any entry fails compression or if appending to the archive fails.
+    pub fn par_append_data<'a, I, N, T, D>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, FileOptions<'a, 'a, T>, D)>,
+        N: AsRef<str> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+        D: AsRef<[u8]> + Send,
+    {
+        use rayon::prelude::*;
+        let prepared_files: ZipResult<Vec<PreparedZipFile>> = entries
+            .into_par_iter()
+            .map(|(name, options, data)| PreparedZipFile::from_data(name, options, data.as_ref()))
+            .collect();
+
+        let prepared_files = prepared_files?;
+        for file in prepared_files {
+            self.add_prepared_file(file)?;
+        }
+        Ok(())
+    }
+
+    /// Compresses and appends in-memory data entries in parallel batches of `batch_size`.
+    ///
+    /// This bounds peak memory consumption by processing at most `batch_size` files
+    /// concurrently in memory before appending them to the underlying writer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `batch_size` is 0, if compression fails, or if writing fails.
+    pub fn par_append_data_batches<'a, N, T, D>(
+        &mut self,
+        entries: &[(N, FileOptions<'a, 'a, T>, D)],
+        batch_size: usize,
+    ) -> ZipResult<()>
+    where
+        N: AsRef<str> + Sync,
+        T: FileOptionExtension + Clone + Send + Sync + 'a,
+        D: AsRef<[u8]> + Sync,
+    {
+        use rayon::prelude::*;
+        if batch_size == 0 {
+            return Err(invalid!("Batch size must be greater than 0"));
+        }
+        for chunk in entries.chunks(batch_size) {
+            let prepared_files: ZipResult<Vec<PreparedZipFile>> = chunk
+                .par_iter()
+                .map(|(name, options, data)| {
+                    PreparedZipFile::from_data(name, options.clone(), data.as_ref())
+                })
+                .collect();
+
+            let prepared_files = prepared_files?;
+            for file in prepared_files {
+                self.add_prepared_file(file)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Compresses files from disk paths in parallel using Rayon and appends them
+    /// sequentially to the archive in the input order.
+    ///
+    /// Each file is opened, read, and compressed concurrently on worker threads.
+    /// If any file fails to open, read, or compress, no changes are committed to the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening/reading any path fails, if compression fails, or if writing fails.
+    pub fn par_append_from_paths<'a, I, N, P, T>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, P, FileOptions<'a, 'a, T>)>,
+        N: AsRef<str> + Send,
+        P: AsRef<Path> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+    {
+        use rayon::prelude::*;
+        let prepared_files: ZipResult<Vec<PreparedZipFile>> = entries
+            .into_par_iter()
+            .map(|(name, path, options)| PreparedZipFile::from_path(name, path, options))
+            .collect();
+
+        let prepared_files = prepared_files?;
+        for file in prepared_files {
+            self.add_prepared_file(file)?;
+        }
+        Ok(())
+    }
+
+    /// Compresses and appends disk files in parallel batches of `batch_size`.
+    ///
+    /// This bounds peak memory consumption by processing at most `batch_size` files
+    /// concurrently before appending them to the underlying writer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `batch_size` is 0, if opening/reading any path fails, or if writing fails.
+    pub fn par_append_from_paths_batches<'a, N, P, T>(
+        &mut self,
+        entries: &[(N, P, FileOptions<'a, 'a, T>)],
+        batch_size: usize,
+    ) -> ZipResult<()>
+    where
+        N: AsRef<str> + Sync,
+        P: AsRef<Path> + Sync,
+        T: FileOptionExtension + Clone + Send + Sync + 'a,
+    {
+        use rayon::prelude::*;
+        if batch_size == 0 {
+            return Err(invalid!("Batch size must be greater than 0"));
+        }
+        for chunk in entries.chunks(batch_size) {
+            let prepared_files: ZipResult<Vec<PreparedZipFile>> = chunk
+                .par_iter()
+                .map(|(name, path, options)| {
+                    PreparedZipFile::from_path(name, path, options.clone())
+                })
+                .collect();
+
+            let prepared_files = prepared_files?;
+            for file in prepared_files {
+                self.add_prepared_file(file)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -2413,6 +2565,63 @@ impl Debug for PreparedZipFile {
             self.uncompressed_size,
             self.compressed_size
         ))
+    }
+}
+
+impl PreparedZipFile {
+    /// Compresses `data` in memory and prepares it as a [`PreparedZipFile`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if compression fails or options are invalid.
+    pub fn from_data<N: AsRef<str>, T: FileOptionExtension>(
+        name: N,
+        options: FileOptions<'_, '_, T>,
+        data: &[u8],
+    ) -> ZipResult<Self> {
+        let mut builder = ZipFileBuilder::new(name, options)?;
+        builder.write_all(data)?;
+        builder.finish()
+    }
+
+    /// Compresses a file from `path` on disk and prepares it as a [`PreparedZipFile`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening `disk_path` fails, if reading fails, or if compression fails.
+    pub fn from_path<N: AsRef<str>, P: AsRef<Path>, T: FileOptionExtension>(
+        archive_name: N,
+        disk_path: P,
+        options: FileOptions<'_, '_, T>,
+    ) -> ZipResult<Self> {
+        let mut file = std::fs::File::open(disk_path)?;
+        let mut builder = ZipFileBuilder::new(archive_name, options)?;
+        std::io::copy(&mut file, &mut builder)?;
+        builder.finish()
+    }
+
+    /// Returns the file name of this prepared file as a byte slice.
+    #[must_use]
+    pub fn file_name_raw(&self) -> &[u8] {
+        &self.file_name
+    }
+
+    /// Returns the CRC-32 checksum of the uncompressed data.
+    #[must_use]
+    pub const fn crc32(&self) -> u32 {
+        self.crc32
+    }
+
+    /// Returns the uncompressed size in bytes.
+    #[must_use]
+    pub const fn uncompressed_size(&self) -> u64 {
+        self.uncompressed_size
+    }
+
+    /// Returns the compressed size in bytes.
+    #[must_use]
+    pub const fn compressed_size(&self) -> u64 {
+        self.compressed_size
     }
 }
 
