@@ -340,10 +340,8 @@ impl<R: Read> ZipStreamReader<R> {
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
                 let extract_options = crate::read::extract::ExtractOptions::default();
-                let outpath = file.safe_prepare_path(
-                    &self.outpath,
-                    None::<&(_, fn(&Path) -> bool)>,
-                )?;
+                let outpath =
+                    file.safe_prepare_path(&self.outpath, None::<&(_, fn(&Path) -> bool)>)?;
                 self.resolved_paths
                     .insert(file.name_raw().into(), outpath.clone());
 
