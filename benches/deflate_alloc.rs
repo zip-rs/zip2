@@ -122,16 +122,19 @@ fn bench_parallel_deflate(c: &mut criterion::Criterion) {
             })
         });
 
-        // Batched Parallel ZipWriter (par_append_data_batches, batch_size = 25)
+        // Bounded Channel Parallel ZipWriter (par_append_data_with_capacity = 25)
         group.bench_with_input(
-            BenchmarkId::new("parallel_rayon_batches_25", n),
+            BenchmarkId::new("parallel_rayon_capacity_25", n),
             &n,
             |b, &_n| {
                 b.iter(|| {
                     let buf = Cursor::new(Vec::new());
                     let mut zip = ZipWriter::new(buf);
-                    zip.par_append_data_batches(&entries, NonZeroUsize::new(25).unwrap())
-                        .unwrap();
+                    zip.par_append_data_with_capacity(
+                        entries.clone(),
+                        NonZeroUsize::new(25).unwrap(),
+                    )
+                    .unwrap();
                     zip.finish().unwrap()
                 })
             },

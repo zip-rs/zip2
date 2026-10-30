@@ -360,3 +360,61 @@ fn test_par_append_scoped_single_thread_pool() {
         assert_eq!(archive.len(), 10);
     });
 }
+
+#[test]
+fn test_par_append_with_capacity_and_backpressure() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default();
+
+    let entries: Vec<(String, SimpleFileOptions, Vec<u8>)> = (0..20)
+        .map(|i| (format!("capacity_{i}.bin"), options, vec![i as u8; 128]))
+        .collect();
+
+    // Test with tight channel capacity = 1 to exercise strict backpressure
+    writer
+        .par_append_data_with_capacity(entries, NonZeroUsize::new(1).unwrap())
+        .unwrap();
+
+    let dir = tempdir().unwrap();
+    let mut path_entries = Vec::new();
+    for i in 0..5 {
+        let p = dir.path().join(format!("from_path_cap_{i}.bin"));
+        std::fs::write(&p, vec![i as u8; 64]).unwrap();
+        path_entries.push((format!("from_path_cap_{i}.bin"), p, options));
+    }
+
+    writer
+        .par_append_from_paths_with_capacity(path_entries, NonZeroUsize::new(2).unwrap())
+        .unwrap();
+
+    let mut archive = writer.finish_into_readable().unwrap();
+    assert_eq!(archive.len(), 25);
+    let mut buf = Vec::new();
+    let mut f = archive.by_name("capacity_5.bin").unwrap();
+    f.read_to_end(&mut buf).unwrap();
+    assert_eq!(buf, vec![5u8; 128]);
+}
+
+#[test]
+fn test_par_append_cp437_raw_name_override() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default();
+
+    // Two entries with different string names, but both override to the SAME raw byte name!
+    let entry1 = (
+        "utf8_one.txt",
+        options.name(b"shared_raw.bin"),
+        b"data1".as_slice(),
+    );
+    let entry2 = (
+        "utf8_two.txt",
+        options.name(b"shared_raw.bin"),
+        b"data2".as_slice(),
+    );
+
+    let result = writer.par_append_data(vec![entry1, entry2]);
+    assert!(
+        result.is_err(),
+        "Collision on options.name CP437 raw bytes must be rejected"
+    );
+}
