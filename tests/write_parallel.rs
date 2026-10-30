@@ -1,4 +1,5 @@
 #![cfg(feature = "rayon")]
+#![allow(deprecated)]
 
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
