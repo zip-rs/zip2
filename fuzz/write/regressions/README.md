@@ -52,3 +52,8 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   record, so the archive is genuinely ambiguous and reopening it picks that record and a different
   comment. Fixed in the harness by tolerating a failed or changed reopen whenever the comment
   contains a signature, for every reopen path rather than only `ViaFinish`.
+- `nested-copy-comment-shrink-junk.bin`: found 2026-10-29 (PR #1210, run 40805120389, --no-default-features).
+  A 6-byte comment was set, then a copy chain whose bases reopened the writer, then a 1-byte comment.
+  `execute` only tracked `comment_len_at_reopen` for top-level reopens, so the harness still expected
+  `read_zipfile_from_stream` to work on the junk-padded archive. Harness bug (reproduces on master 9926c64);
+  fixed by looking through copy bases for reopens.
