@@ -126,6 +126,19 @@ fn files_starts_a_new_pass() {
 }
 
 #[test]
+fn archive_len_is_unchanged_by_iteration() {
+    let bytes = raw_zip(&[("one.txt", b"1"), ("two.txt", b"2")]);
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default()).unwrap();
+
+    archive.files().unwrap().next().unwrap().unwrap();
+    assert_eq!(archive.len(), 2);
+
+    assert_eq!(archive.files().unwrap().count(), 2);
+    assert_eq!(archive.len(), 2);
+    assert!(!archive.is_empty());
+}
+
+#[test]
 fn duplicate_names_are_all_yielded() {
     let bytes = raw_zip(&[("a.txt", b"first"), ("a.txt", b"second")]);
 

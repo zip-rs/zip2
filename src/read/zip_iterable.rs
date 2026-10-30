@@ -108,7 +108,7 @@ impl<R: Read + Seek> ZipIterable<R> {
     /// Number of entries in the central directory.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.files.remaining
+        self.files.central_directory.number_of_files
     }
 
     /// Whether the central directory contains no entries.
