@@ -340,12 +340,8 @@ impl<R: Read> ZipStreamReader<R> {
         impl ZipStreamVisitor for Extractor {
             fn visit_file<R: Read>(&mut self, file: &mut ZipFile<'_, R>) -> ZipResult<()> {
                 let extract_options = crate::read::extract::ExtractOptions::default();
-                let mut outpath = self.outpath.clone();
-                file.safe_prepare_path(
-                    &self.outpath,
-                    &mut outpath,
-                    None::<&(_, fn(&Path) -> bool)>,
-                )?;
+                let outpath =
+                    file.safe_prepare_path(&self.outpath, None::<&(_, fn(&Path) -> bool)>)?;
                 self.resolved_paths
                     .insert(file.name_raw().into(), outpath.clone());
 
@@ -438,8 +434,7 @@ impl<R: Read> ZipStreamReader<R> {
                     .strip_prefix(&written_to)
                     .map_err(|_| invalid!("Entry was not extracted to the staging directory"))?;
                 let from = staging.join(relative);
-                let components = relative.iter().map(|c| c.to_os_string());
-                let outpath = crate::path::resolve_enclosed(dest, dest, components, true)?;
+                let outpath = crate::path::resolve_enclosed(dest, dest, relative.iter(), true)?;
                 if outpath.starts_with(&*staging) {
                     return Err(invalid!("Entry would be written to the staging directory"));
                 }
@@ -490,7 +485,7 @@ impl<R: Read> ZipStreamReader<R> {
                     let output = crate::path::resolve_enclosed(
                         &directory,
                         &directory,
-                        relative.iter().map(|component| component.to_os_string()),
+                        relative.iter(),
                         false,
                     )?;
                     if !staged_paths.insert(staged)
