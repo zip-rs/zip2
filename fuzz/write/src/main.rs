@@ -137,6 +137,23 @@ impl FileOperation<'_, '_> {
         None
     }
 
+    /// Whether this operation, or the base of any copy it makes, reopens the writer it runs on.
+    /// Operations inside a `MergeWithOtherFile` run on a sub-writer, so they don't count.
+    fn reopens(&self) -> bool {
+        let mut operation = self;
+        loop {
+            if operation.reopen != ReopenOption::DoNotReopen {
+                return true;
+            }
+            match &operation.basic {
+                BasicFileOperation::ShallowCopy(base) | BasicFileOperation::DeepCopy(base) => {
+                    operation = base;
+                }
+                _ => return false,
+            }
+        }
+    }
+
     fn is_streamable(&self) -> bool {
         // The flag records whether the operation runs on a sub-writer that is later merged.
         let mut pending = vec![(self, false)];
@@ -744,8 +761,8 @@ impl FuzzTestCase<'_, '_> {
                     streamable = false;
                 }
             }
-            let reopen = operation.reopen;
-            if reopen != ReopenOption::DoNotReopen {
+            // A copy's base can reopen the writer too, so look through copies.
+            if operation.reopens() {
                 comment_len_at_reopen = comment_len;
             }
             let completed = do_operation(
