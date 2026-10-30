@@ -835,6 +835,76 @@ fn test_ziparchive_validate_header_consistency_passes_on_valid_archive() {
 }
 
 #[test]
+fn test_ziparchive_validate_header_consistency_detects_unlisted_local_header() {
+    let mut payload = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut payload);
+    for name in ["listed.txt", "unlisted.txt"] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(name.as_bytes()).unwrap();
+    }
+    writer.finish().unwrap();
+
+    let mut archive_bytes = payload.into_inner();
+    let central_directory_headers: Vec<_> = archive_bytes
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, signature)| (signature == b"PK\x01\x02").then_some(offset))
+        .collect();
+    let unlisted_header = central_directory_headers
+        .into_iter()
+        .find(|&offset| {
+            let name_length =
+                u16::from_le_bytes(archive_bytes[offset + 28..offset + 30].try_into().unwrap())
+                    as usize;
+            &archive_bytes[offset + 46..offset + 46 + name_length] == b"unlisted.txt"
+        })
+        .unwrap();
+    let name_length = u16::from_le_bytes(
+        archive_bytes[unlisted_header + 28..unlisted_header + 30]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let extra_length = u16::from_le_bytes(
+        archive_bytes[unlisted_header + 30..unlisted_header + 32]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let comment_length = u16::from_le_bytes(
+        archive_bytes[unlisted_header + 32..unlisted_header + 34]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let central_header_length = 46 + name_length + extra_length + comment_length;
+    let end_of_central_directory = archive_bytes
+        .windows(4)
+        .rposition(|signature| signature == b"PK\x05\x06")
+        .unwrap()
+        - central_header_length;
+    let central_directory_size = u32::from_le_bytes(
+        archive_bytes[end_of_central_directory + 12..end_of_central_directory + 16]
+            .try_into()
+            .unwrap(),
+    );
+    archive_bytes.drain(unlisted_header..unlisted_header + central_header_length);
+    archive_bytes[end_of_central_directory + 8..end_of_central_directory + 10]
+        .copy_from_slice(&1u16.to_le_bytes());
+    archive_bytes[end_of_central_directory + 10..end_of_central_directory + 12]
+        .copy_from_slice(&1u16.to_le_bytes());
+    archive_bytes[end_of_central_directory + 12..end_of_central_directory + 16]
+        .copy_from_slice(&(central_directory_size - central_header_length as u32).to_le_bytes());
+
+    let mut archive = ZipArchive::new(Cursor::new(archive_bytes)).unwrap();
+    assert!(!archive.has_overlapping_entries().unwrap());
+    assert!(matches!(
+        archive.validate_header_consistency(),
+        Err(ZipError::InvalidArchive(message))
+            if message.contains("local file header missing from central directory")
+    ));
+}
+
+#[test]
 fn test_extract_with_options_enforce_header_consistency_blocks_dual_header_mismatch() {
     let temp_env = tempdir().unwrap();
     let dest_dir = temp_env.path();

@@ -1,13 +1,16 @@
 //! Code related to `ZipArchive`
 
 use crate::compression::CompressionMethod;
+use crate::extra_fields::ExtraFields;
 use crate::format::MagicPositionCache;
-use crate::format::blocks::{FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock};
+use crate::format::blocks::{
+    FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock, ZipLocalEntryBlock,
+};
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::config::Config;
 use crate::read::extract::RootDirFilter;
-use crate::read::magic_finder::MagicFinder;
+use crate::read::magic_finder::{Forward, MagicFinder};
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::{ZipFileEntry, ZipFileEntryWithDataDescriptor};
 use crate::read::{
@@ -551,6 +554,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     fn has_overlap(&mut self, include_header: bool) -> ZipResult<bool> {
+        let ranges = self.entry_byte_ranges(include_header)?;
+        Ok(Self::ranges_overlap(&ranges, self.shared.dir_start))
+    }
+
+    fn entry_byte_ranges(&mut self, include_header: bool) -> ZipResult<Vec<Range<u64>>> {
         let mut ranges = Vec::<Range<u64>>::with_capacity(self.shared.files.len());
         for file in self.shared.files.values() {
             if !include_header && file.compressed_size == 0 {
@@ -571,8 +579,99 @@ impl<R: Read + Seek> ZipArchive<R> {
             ranges.push(start..end);
         }
         ranges.sort_unstable_by_key(|r| (r.start, r.end));
-        let overlaps_central_directory = ranges.iter().any(|r| r.end > self.shared.dir_start);
-        Ok(overlaps_central_directory || ranges.windows(2).any(|w| w[0].end > w[1].start))
+        Ok(ranges)
+    }
+
+    fn ranges_overlap(ranges: &[Range<u64>], dir_start: u64) -> bool {
+        ranges.iter().any(|r| r.end > dir_start) || ranges.windows(2).any(|w| w[0].end > w[1].start)
+    }
+
+    fn unoccupied_ranges(ranges: &[Range<u64>], end: u64) -> Vec<Range<u64>> {
+        let mut unoccupied = Vec::new();
+        let mut cursor = 0;
+        for range in ranges {
+            let gap_end = range.start.min(end);
+            if cursor < gap_end {
+                unoccupied.push(cursor..gap_end);
+            }
+            cursor = cursor.max(range.end.min(end));
+            if cursor == end {
+                break;
+            }
+        }
+        if cursor < end {
+            unoccupied.push(cursor..end);
+        }
+        unoccupied
+    }
+
+    fn scan_for_unlisted_local_headers(&mut self, gaps: &[Range<u64>]) -> ZipResult<bool> {
+        const LOCAL_FILE_HEADER_SIGNATURE: [u8; size_of::<Magic>()] =
+            Magic::LOCAL_FILE_HEADER_SIGNATURE.to_le_bytes();
+
+        for gap in gaps {
+            let mut finder =
+                MagicFinder::<Forward<'_>>::new(&LOCAL_FILE_HEADER_SIGNATURE, gap.start, gap.end);
+            while let Some(offset) = finder.next(&mut self.reader)? {
+                if Self::is_valid_local_header_at(&mut self.reader, offset, gap.end)? {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    fn is_valid_local_header_at<T: Read + Seek + ?Sized>(
+        reader: &mut T,
+        offset: u64,
+        range_end: u64,
+    ) -> ZipResult<bool> {
+        let fixed_header_end =
+            offset.checked_add((size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64);
+        if fixed_header_end.is_none_or(|end| end > range_end) {
+            return Ok(false);
+        }
+        reader.seek(SeekFrom::Start(offset))?;
+        let block = match ZipLocalEntryBlock::parse(reader) {
+            Ok(block) => block,
+            Err(ZipError::Io(error)) if error.kind() != std::io::ErrorKind::UnexpectedEof => {
+                return Err(ZipError::Io(error));
+            }
+            Err(_) => return Ok(false),
+        };
+        let variable_fields_len =
+            u64::from(block.file_name_length) + u64::from(block.extra_field_length);
+        if fixed_header_end
+            .and_then(|end| end.checked_add(variable_fields_len))
+            .is_none_or(|end| end > range_end)
+        {
+            return Ok(false);
+        }
+
+        let mut file_name = vec![0; usize::from(block.file_name_length)];
+        if let Err(error) = reader.read_exact(&mut file_name) {
+            if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Ok(false);
+            }
+            return Err(error.into());
+        }
+        let mut extra_fields_raw = vec![0; usize::from(block.extra_field_length)];
+        if let Err(error) = reader.read_exact(&mut extra_fields_raw) {
+            if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Ok(false);
+            }
+            return Err(error.into());
+        }
+
+        let extra_fields = match ExtraFields::parse(&extra_fields_raw, &block, true) {
+            Ok(extra_fields) => extra_fields,
+            Err(_) => return Ok(false),
+        };
+        let mut data = match ZipFileData::from_local_block(block, extra_fields) {
+            Ok(data) => data,
+            Err(_) => return Ok(false),
+        };
+        Ok(data.apply_extra_fields(&mut file_name).is_ok())
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -822,7 +921,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         })
     }
 
-    /// Validates that all local file headers in the archive match their corresponding central directory headers.
+    /// Validates that local file headers match their corresponding central directory headers and
+    /// that no local file headers are missing from the central directory.
     pub fn validate_header_consistency(&mut self) -> ZipResult<()> {
         if self.shared.has_duplicate_names() {
             return Err(invalid!(
@@ -832,9 +932,16 @@ impl<R: Read + Seek> ZipArchive<R> {
         for (file_name_raw, data) in &self.shared.files {
             data.validate_header_consistency(&mut self.reader, file_name_raw)?;
         }
-        if self.has_overlapping_entries()? {
+        let ranges = self.entry_byte_ranges(true)?;
+        if Self::ranges_overlap(&ranges, self.shared.dir_start) {
             return Err(invalid!(
                 "header inconsistency detected: archive contains overlapping entries"
+            ));
+        }
+        let gaps = Self::unoccupied_ranges(&ranges, self.shared.dir_start);
+        if self.scan_for_unlisted_local_headers(&gaps)? {
+            return Err(invalid!(
+                "header inconsistency detected: local file header missing from central directory"
             ));
         }
         Ok(())
