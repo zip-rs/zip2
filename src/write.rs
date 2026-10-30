@@ -1777,16 +1777,20 @@ impl<W: Write + Seek> ZipWriter<W> {
 }
 
 #[cfg(feature = "rayon")]
-impl<W: Write + Seek> ZipWriter<W> {
+impl<W: Write + Seek + Send> ZipWriter<W> {
     /// Compresses a collection of in-memory data entries in parallel using Rayon
-    /// and appends them sequentially to the archive in the input order.
+    /// and appends them to the archive.
     ///
-    /// The compression work is performed concurrently across available Rayon worker threads.
-    /// If any entry fails compression, no changes are committed to the archive.
+    /// Compression occurs concurrently across available Rayon worker threads. As each file
+    /// completes compression, it acquires the writer lock and appends immediately, overlapping
+    /// compression of subsequent files with writing of finished files.
+    ///
+    /// Duplicate filenames are checked before compression begins to avoid wasted CPU work.
     ///
     /// # Errors
     ///
-    /// Returns an error if any entry fails compression or if appending to the archive fails.
+    /// Returns an error if any entry fails compression, if duplicate filenames are detected,
+    /// or if appending to the archive fails.
     pub fn par_append_data<'a, I, N, T, D>(&mut self, entries: I) -> ZipResult<()>
     where
         I: rayon::iter::IntoParallelIterator<Item = (N, FileOptions<'a, 'a, T>, D)>,
@@ -1795,25 +1799,43 @@ impl<W: Write + Seek> ZipWriter<W> {
         D: AsRef<[u8]> + Send,
     {
         use rayon::prelude::*;
-        let prepared_files: ZipResult<Vec<PreparedZipFile>> = entries
+        use std::collections::HashSet;
+        use std::sync::Mutex;
+
+        let mut initial_seen = HashSet::with_capacity(self.files.len());
+        for key in self.files.keys() {
+            initial_seen.insert(key.clone());
+        }
+        let seen = Mutex::new(initial_seen);
+        let writer_mutex = Mutex::new(self);
+
+        entries
             .into_par_iter()
-            .map(|(name, options, data)| PreparedZipFile::from_data(name, options, data.as_ref()))
-            .collect();
+            .try_for_each(|(name, options, data)| -> ZipResult<()> {
+                let name_str = name.as_ref();
+                let name_bytes: Box<[u8]> = name_str.as_bytes().into();
 
-        let prepared_files = prepared_files?;
+                // Fast pre-check: verify uniqueness before starting expensive compression
+                {
+                    let mut seen_guard = seen.lock().map_err(|_| invalid!("Mutex poisoned"))?;
+                    if !seen_guard.insert(name_bytes) {
+                        return Err(invalid!("Duplicate filename: {:?}", name_str));
+                    }
+                }
 
-        let mut seen = std::collections::HashSet::with_capacity(prepared_files.len());
-        for file in &prepared_files {
-            let name = file.file_name_raw();
-            if self.files.contains_key(name) || !seen.insert(name) {
-                return Err(invalid!("Duplicate filename: {:?}", name.escape_ascii()));
-            }
-        }
+                // Compress concurrently on worker threads without holding writer lock
+                let prepared = PreparedZipFile::from_data(name, options, data.as_ref())?;
 
-        for file in prepared_files {
-            self.add_prepared_file(file)?;
-        }
-        Ok(())
+                // Append immediately upon completion
+                {
+                    let mut guard = writer_mutex
+                        .lock()
+                        .map_err(|_| invalid!("Mutex poisoned"))?;
+                    guard.add_prepared_file(prepared)?;
+                }
+
+                Ok(())
+            })
     }
 
     /// Compresses and appends in-memory data entries in parallel batches of `batch_size`.
@@ -1862,16 +1884,111 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Compresses files from disk paths in parallel using Rayon and appends them
-    /// sequentially to the archive in the input order.
+    /// Compresses files from disk paths in parallel using Rayon and appends them to the archive.
     ///
-    /// Each file is opened, read, and compressed concurrently on worker threads.
+    /// Each file is opened, read, and compressed concurrently on worker threads. As each file
+    /// completes compression, it acquires the writer lock and appends immediately, overlapping
+    /// I/O and compression.
+    ///
+    /// Duplicate filenames are checked before disk reading and compression begin.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening/reading any path fails, if compression fails, if duplicate
+    /// filenames are detected, or if writing fails.
+    pub fn par_append_from_paths<'a, I, N, P, T>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, P, FileOptions<'a, 'a, T>)>,
+        N: AsRef<str> + Send,
+        P: AsRef<Path> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+    {
+        use rayon::prelude::*;
+        use std::collections::HashSet;
+        use std::sync::Mutex;
+
+        let mut initial_seen = HashSet::with_capacity(self.files.len());
+        for key in self.files.keys() {
+            initial_seen.insert(key.clone());
+        }
+        let seen = Mutex::new(initial_seen);
+        let writer_mutex = Mutex::new(self);
+
+        entries
+            .into_par_iter()
+            .try_for_each(|(name, path, options)| -> ZipResult<()> {
+                let name_str = name.as_ref();
+                let name_bytes: Box<[u8]> = name_str.as_bytes().into();
+
+                // Fast pre-check: verify uniqueness before disk I/O and compression
+                {
+                    let mut seen_guard = seen.lock().map_err(|_| invalid!("Mutex poisoned"))?;
+                    if !seen_guard.insert(name_bytes) {
+                        return Err(invalid!("Duplicate filename: {:?}", name_str));
+                    }
+                }
+
+                // Read and compress file concurrently without holding writer lock
+                let prepared = PreparedZipFile::from_path(name, path, options)?;
+
+                // Append immediately upon completion
+                {
+                    let mut guard = writer_mutex
+                        .lock()
+                        .map_err(|_| invalid!("Mutex poisoned"))?;
+                    guard.add_prepared_file(prepared)?;
+                }
+
+                Ok(())
+            })
+    }
+
+    /// Compresses a collection of in-memory data entries in parallel with atomic all-or-nothing guarantee.
+    ///
+    /// All entries are compressed into memory and validated before any files are appended to the archive.
+    /// If any entry fails compression or if duplicate filenames are detected, no files are committed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any entry fails compression, if duplicates are found, or if writing fails.
+    pub fn par_append_data_atomic<'a, I, N, T, D>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, FileOptions<'a, 'a, T>, D)>,
+        N: AsRef<str> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+        D: AsRef<[u8]> + Send,
+    {
+        use rayon::prelude::*;
+        let prepared_files: ZipResult<Vec<PreparedZipFile>> = entries
+            .into_par_iter()
+            .map(|(name, options, data)| PreparedZipFile::from_data(name, options, data.as_ref()))
+            .collect();
+
+        let prepared_files = prepared_files?;
+
+        let mut seen = std::collections::HashSet::with_capacity(prepared_files.len());
+        for file in &prepared_files {
+            let name = file.file_name_raw();
+            if self.files.contains_key(name) || !seen.insert(name) {
+                return Err(invalid!("Duplicate filename: {:?}", name.escape_ascii()));
+            }
+        }
+
+        for file in prepared_files {
+            self.add_prepared_file(file)?;
+        }
+        Ok(())
+    }
+
+    /// Compresses disk files in parallel with atomic all-or-nothing guarantee.
+    ///
+    /// All files are read and compressed before any files are appended to the archive.
     /// If any file fails to open, read, or compress, no changes are committed to the archive.
     ///
     /// # Errors
     ///
     /// Returns an error if opening/reading any path fails, if compression fails, or if writing fails.
-    pub fn par_append_from_paths<'a, I, N, P, T>(&mut self, entries: I) -> ZipResult<()>
+    pub fn par_append_from_paths_atomic<'a, I, N, P, T>(&mut self, entries: I) -> ZipResult<()>
     where
         I: rayon::iter::IntoParallelIterator<Item = (N, P, FileOptions<'a, 'a, T>)>,
         N: AsRef<str> + Send,

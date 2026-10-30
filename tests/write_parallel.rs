@@ -307,7 +307,7 @@ fn test_par_append_duplicate_pre_existing_atomicity() {
         ("alpha.txt", options, b"alpha_dup".as_slice()),
     ];
 
-    let result = writer.par_append_data(entries);
+    let result = writer.par_append_data_atomic(entries);
     assert!(result.is_err());
 
     // Because pre-validation caught the collision, "beta.txt" was NOT written!
@@ -332,7 +332,7 @@ fn test_par_append_nonexistent_disk_path_atomicity() {
     ];
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let result = writer.par_append_from_paths(entries);
+    let result = writer.par_append_from_paths_atomic(entries);
     assert!(result.is_err());
 
     // Pristine archive: 0 entries committed
