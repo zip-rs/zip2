@@ -29,6 +29,8 @@ use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::SeekFrom;
 use std::io::{self, Read, Seek, Write};
+#[cfg(feature = "rayon")]
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 pub(crate) mod options;
@@ -1812,11 +1814,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `batch_size` is 0, if compression fails, or if writing fails.
+    /// Returns an error if compression fails or if writing fails.
     pub fn par_append_data_batches<'a, N, T, D>(
         &mut self,
         entries: &[(N, FileOptions<'a, 'a, T>, D)],
-        batch_size: usize,
+        batch_size: NonZeroUsize,
     ) -> ZipResult<()>
     where
         N: AsRef<str> + Sync,
@@ -1824,10 +1826,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         D: AsRef<[u8]> + Sync,
     {
         use rayon::prelude::*;
-        if batch_size == 0 {
-            return Err(invalid!("Batch size must be greater than 0"));
-        }
-        for chunk in entries.chunks(batch_size) {
+        for chunk in entries.chunks(batch_size.get()) {
             let prepared_files: ZipResult<Vec<PreparedZipFile>> = chunk
                 .par_iter()
                 .map(|(name, options, data)| {
@@ -1879,11 +1878,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `batch_size` is 0, if opening/reading any path fails, or if writing fails.
+    /// Returns an error if opening/reading any path fails, if compression fails, or if writing fails.
     pub fn par_append_from_paths_batches<'a, N, P, T>(
         &mut self,
         entries: &[(N, P, FileOptions<'a, 'a, T>)],
-        batch_size: usize,
+        batch_size: NonZeroUsize,
     ) -> ZipResult<()>
     where
         N: AsRef<str> + Sync,
@@ -1891,10 +1890,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         T: FileOptionExtension + Clone + Send + Sync + 'a,
     {
         use rayon::prelude::*;
-        if batch_size == 0 {
-            return Err(invalid!("Batch size must be greater than 0"));
-        }
-        for chunk in entries.chunks(batch_size) {
+        for chunk in entries.chunks(batch_size.get()) {
             let prepared_files: ZipResult<Vec<PreparedZipFile>> = chunk
                 .par_iter()
                 .map(|(name, path, options)| {

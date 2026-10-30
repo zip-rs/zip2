@@ -70,6 +70,7 @@ fn bench_many_small_files(c: &mut criterion::Criterion) {
 fn bench_parallel_deflate(c: &mut criterion::Criterion) {
     use criterion::{BenchmarkId, Throughput};
     use std::io::{Cursor, Write};
+    use std::num::NonZeroUsize;
     use zip::CompressionMethod;
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
@@ -129,7 +130,8 @@ fn bench_parallel_deflate(c: &mut criterion::Criterion) {
                 b.iter(|| {
                     let buf = Cursor::new(Vec::new());
                     let mut zip = ZipWriter::new(buf);
-                    zip.par_append_data_batches(&entries, 25).unwrap();
+                    zip.par_append_data_batches(&entries, NonZeroUsize::new(25).unwrap())
+                        .unwrap();
                     zip.finish().unwrap()
                 })
             },

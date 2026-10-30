@@ -2,6 +2,7 @@
 
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
+use std::num::NonZeroUsize;
 use tempfile::tempdir;
 use zip::CompressionMethod;
 use zip::write::SimpleFileOptions;
@@ -53,7 +54,9 @@ fn test_par_append_data_batches() {
         .map(|i| (format!("batch_{i}.dat"), options, vec![i as u8; 256]))
         .collect();
 
-    writer.par_append_data_batches(&entries, 10).unwrap();
+    writer
+        .par_append_data_batches(&entries, NonZeroUsize::new(10).unwrap())
+        .unwrap();
     let mut archive = writer.finish_into_readable().unwrap();
 
     assert_eq!(archive.len(), 35);
@@ -110,7 +113,9 @@ fn test_par_append_from_paths_batches() {
     }
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    writer.par_append_from_paths_batches(&entries, 5).unwrap();
+    writer
+        .par_append_from_paths_batches(&entries, NonZeroUsize::new(5).unwrap())
+        .unwrap();
     let mut archive = writer.finish_into_readable().unwrap();
 
     assert_eq!(archive.len(), 15);
