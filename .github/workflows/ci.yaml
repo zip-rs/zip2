@@ -55,6 +55,8 @@ jobs:
           components: miri
           targets: s390x-unknown-linux-gnu
           cache-extra-identifier: miri-${{ runner.os }}-${{ runner.arch }}-${{ matrix.feature.key }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install cross compiler
         shell: bash
         run: |
@@ -88,6 +90,8 @@ jobs:
           channel: nightly
           bins: cargo-nextest, cargo-zigbuild
           targets: x86_64-unknown-freebsd
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install zig
         shell: bash
         run: sudo snap install --beta zig --classic
@@ -120,6 +124,8 @@ jobs:
           channel: nightly
           bins: cargo-nextest
           cache-extra-identifier: ${{ runner.os }}-cargo-minimal-versions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: resolve minimal versions
         run: cargo -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
@@ -151,6 +157,8 @@ jobs:
           channel: nightly
           components: clippy
           bins: clippy-sarif, sarif-fmt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run clippy - inside bash for pipefail
         shell: bash
         # allow warnings but not errors
@@ -233,6 +241,8 @@ jobs:
           channel: ${{ matrix.rust }}
           bins: cargo-nextest
           cache-extra-identifier: ${{ runner.os }}-${{ matrix.rustalias }}-${{ matrix.feature.key }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Check that the benches can be built
         run: cargo build --benches
       - run: cargo nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --all --lib --bins --tests --examples ${{ matrix.feature.flags }}
@@ -329,6 +339,8 @@ jobs:
           channel: ${{ matrix.rust }}
           bins: wasm-pack
           cache-extra-identifier: wasm-${{ runner.os }}-${{ matrix.feature.key }}-${{ matrix.browser_flags }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Conditionally set env
         if: matrix.browser_flags != '--node' # if browser testing
         run: echo "WASM_BINDGEN_USE_BROWSER=1" >> $GITHUB_ENV
@@ -407,6 +419,8 @@ jobs:
           bins: cargo-afl
           cache-target: release
           cache-extra-identifier: fuzz-${{ matrix.feature.key }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - id: rustc-version
         shell: pwsh
         run: |
