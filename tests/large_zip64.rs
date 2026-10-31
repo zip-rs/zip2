@@ -283,6 +283,7 @@ fn test_zip64_check_extra_field() {
 
     let mut archive_buffer = Vec::new();
     let res = zip64_check_extra_field(&path, &mut archive_buffer);
+    drop(bigfile);
     drop(big_file_dir);
 
     assert_eq!(res.unwrap(), ());
