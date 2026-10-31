@@ -29,6 +29,8 @@ use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::SeekFrom;
 use std::io::{self, Read, Seek, Write};
+#[cfg(feature = "rayon")]
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 pub(crate) mod options;
@@ -1571,6 +1573,21 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()
     }
 
+    /// Appends multiple pre-compressed [`PreparedZipFile`] entries into the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if appending any prepared file fails.
+    pub fn add_prepared_files(
+        &mut self,
+        files: impl IntoIterator<Item = PreparedZipFile>,
+    ) -> ZipResult<()> {
+        for file in files {
+            self.add_prepared_file(file)?;
+        }
+        Ok(())
+    }
+
     fn finalize(&mut self) -> ZipResult<u64> {
         /// Longest stale tail that [`Self::finalize`] blanks in place rather than moving the footer.
         const STALE_FILL_MAX_LEN: u64 = 0xFF00;
@@ -1756,6 +1773,330 @@ impl<W: Write + Seek> ZipWriter<W> {
         let src = path_to_string(src_path)?;
         let dest = path_to_string(dest_path)?;
         self.shallow_copy_file(&src, &dest)
+    }
+}
+
+#[cfg(feature = "rayon")]
+#[inline]
+fn default_data_channel_capacity() -> NonZeroUsize {
+    NonZeroUsize::new(rayon::current_num_threads()).unwrap_or(NonZeroUsize::MIN)
+}
+
+#[cfg(feature = "rayon")]
+#[inline]
+fn default_paths_channel_capacity() -> NonZeroUsize {
+    NonZeroUsize::new(rayon::current_num_threads().saturating_mul(2)).unwrap_or(NonZeroUsize::MIN)
+}
+
+#[cfg(feature = "rayon")]
+impl<W: Write + Seek + Send> ZipWriter<W> {
+    /// Compresses a collection of in-memory data entries in parallel using Rayon
+    /// and streams them to the archive via a zero-mutex bounded channel pipeline.
+    ///
+    /// Compression occurs concurrently across available Rayon worker threads. Finished files
+    /// are streamed into a bounded channel and written sequentially by the calling thread.
+    /// Memory consumption is naturally bounded to `num_threads * file_size` via channel
+    /// backpressure.
+    ///
+    /// Duplicate filenames (including CP437 raw byte overrides) are checked before compression
+    /// begins to eliminate wasted CPU work.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any entry fails compression, if duplicate filenames are detected,
+    /// or if appending to the archive fails.
+    pub fn par_append_data<'a, I, N, T, D>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, FileOptions<'a, 'a, T>, D)>,
+        N: AsRef<str> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+        D: AsRef<[u8]> + Send,
+    {
+        self.par_append_data_with_capacity(entries, default_data_channel_capacity())
+    }
+
+    /// Compresses a collection of in-memory data entries in parallel using Rayon
+    /// and streams them to the archive with a user-specified channel buffer capacity.
+    ///
+    /// `channel_capacity` bounds the maximum number of compressed files held in memory
+    /// waiting for sequential I/O commit. Rayon worker threads automatically stall when
+    /// the channel fills, providing hardware-level backpressure tailored to your storage
+    /// throughput and memory budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any entry fails compression, if duplicate filenames are detected,
+    /// or if appending to the archive fails.
+    pub fn par_append_data_with_capacity<'a, I, N, T, D>(
+        &mut self,
+        entries: I,
+        channel_capacity: NonZeroUsize,
+    ) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, FileOptions<'a, 'a, T>, D)>,
+        N: AsRef<str> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+        D: AsRef<[u8]> + Send,
+    {
+        use rayon::prelude::*;
+        use std::collections::HashSet;
+        use std::sync::Mutex;
+        use std::sync::mpsc::sync_channel;
+
+        let par_iter = entries.into_par_iter();
+        let additional = par_iter.opt_len().unwrap_or(0);
+        let mut initial_seen = HashSet::with_capacity(self.files.len().saturating_add(additional));
+        for key in self.files.keys() {
+            initial_seen.insert(key.clone());
+        }
+        let seen = Mutex::new(initial_seen);
+        let (tx, rx) = sync_channel(channel_capacity.get());
+        let mut write_err = None;
+
+        std::thread::scope(|s| {
+            let consumer_handle = s.spawn(|| -> ZipResult<()> {
+                for item in rx {
+                    self.add_prepared_file(item?)?;
+                }
+                Ok(())
+            });
+
+            let _ = par_iter.try_for_each(|(name, options, data)| -> Result<(), ()> {
+                let name_str = name.as_ref();
+                let name_bytes: Box<[u8]> = options.name.unwrap_or(name_str.as_bytes()).into();
+
+                // Fast pre-check: verify uniqueness before starting expensive compression
+                {
+                    let mut seen_guard = match seen.lock() {
+                        Ok(g) => g,
+                        Err(_) => return Err(()),
+                    };
+                    if !seen_guard.insert(name_bytes) {
+                        let err = invalid!("Duplicate filename: {:?}", name_str);
+                        let _ = tx.send(Err(err));
+                        return Err(());
+                    }
+                }
+
+                // Compress concurrently on worker threads without holding any writer locks
+                let prepared = match PreparedZipFile::from_data(name, options, data.as_ref()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        let _ = tx.send(Err(err));
+                        return Err(());
+                    }
+                };
+
+                // Send to bounded channel; if receiver disconnected, abort immediately
+                if tx.send(Ok(prepared)).is_err() {
+                    return Err(());
+                }
+
+                Ok(())
+            });
+
+            drop(tx);
+
+            if let Ok(res) = consumer_handle.join() {
+                write_err = res.err();
+            }
+        });
+
+        if let Some(err) = write_err {
+            return Err(err);
+        }
+        Ok(())
+    }
+
+    /// Compresses files from disk paths in parallel using Rayon and streams them to the archive
+    /// via a zero-mutex bounded channel pipeline.
+    ///
+    /// Each file is opened, read, and compressed concurrently on worker threads. Finished files
+    /// are streamed into a bounded channel and written sequentially by the calling thread,
+    /// achieving maximum sequential storage bandwidth with zero writer lock contention.
+    ///
+    /// Duplicate filenames (including CP437 raw byte overrides) are checked before disk reading
+    /// begins to eliminate wasted I/O and CPU work.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening/reading any path fails, if compression fails, if duplicate
+    /// filenames are detected, or if writing fails.
+    pub fn par_append_from_paths<'a, I, N, P, T>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, P, FileOptions<'a, 'a, T>)>,
+        N: AsRef<str> + Send,
+        P: AsRef<Path> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+    {
+        self.par_append_from_paths_with_capacity(entries, default_paths_channel_capacity())
+    }
+
+    /// Compresses files from disk paths in parallel using Rayon and streams them to the archive
+    /// with a user-specified channel buffer capacity.
+    ///
+    /// `channel_capacity` bounds the maximum number of compressed files held in memory
+    /// waiting for sequential I/O commit. Rayon worker threads automatically stall when
+    /// the channel fills, providing hardware-level backpressure tailored to your storage
+    /// throughput and memory budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening/reading any path fails, if compression fails, if duplicate
+    /// filenames are detected, or if writing fails.
+    pub fn par_append_from_paths_with_capacity<'a, I, N, P, T>(
+        &mut self,
+        entries: I,
+        channel_capacity: NonZeroUsize,
+    ) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, P, FileOptions<'a, 'a, T>)>,
+        N: AsRef<str> + Send,
+        P: AsRef<Path> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+    {
+        use rayon::prelude::*;
+        use std::collections::HashSet;
+        use std::sync::Mutex;
+        use std::sync::mpsc::sync_channel;
+
+        let par_iter = entries.into_par_iter();
+        let additional = par_iter.opt_len().unwrap_or(0);
+        let mut initial_seen = HashSet::with_capacity(self.files.len().saturating_add(additional));
+        for key in self.files.keys() {
+            initial_seen.insert(key.clone());
+        }
+        let seen = Mutex::new(initial_seen);
+        let (tx, rx) = sync_channel(channel_capacity.get());
+        let mut write_err = None;
+
+        std::thread::scope(|s| {
+            let consumer_handle = s.spawn(|| -> ZipResult<()> {
+                for item in rx {
+                    self.add_prepared_file(item?)?;
+                }
+                Ok(())
+            });
+
+            let _ = par_iter.try_for_each(|(name, path, options)| -> Result<(), ()> {
+                let name_str = name.as_ref();
+                let name_bytes: Box<[u8]> = options.name.unwrap_or(name_str.as_bytes()).into();
+
+                // Fast pre-check: verify uniqueness before disk I/O and compression
+                {
+                    let mut seen_guard = match seen.lock() {
+                        Ok(g) => g,
+                        Err(_) => return Err(()),
+                    };
+                    if !seen_guard.insert(name_bytes) {
+                        let err = invalid!("Duplicate filename: {:?}", name_str);
+                        let _ = tx.send(Err(err));
+                        return Err(());
+                    }
+                }
+
+                // Read from disk and compress concurrently without holding any writer locks
+                let prepared = match PreparedZipFile::from_path(name, path, options) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        let _ = tx.send(Err(err));
+                        return Err(());
+                    }
+                };
+
+                // Send to bounded channel; if receiver disconnected, abort immediately
+                if tx.send(Ok(prepared)).is_err() {
+                    return Err(());
+                }
+
+                Ok(())
+            });
+
+            drop(tx);
+
+            if let Ok(res) = consumer_handle.join() {
+                write_err = res.err();
+            }
+        });
+
+        if let Some(err) = write_err {
+            return Err(err);
+        }
+        Ok(())
+    }
+
+    /// Compresses a collection of in-memory data entries in parallel with atomic all-or-nothing guarantee.
+    ///
+    /// All entries are compressed into memory and validated before any files are appended to the archive.
+    /// If any entry fails compression or if duplicate filenames are detected, no files are committed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any entry fails compression, if duplicates are found, or if writing fails.
+    pub fn par_append_data_atomic<'a, I, N, T, D>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, FileOptions<'a, 'a, T>, D)>,
+        N: AsRef<str> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+        D: AsRef<[u8]> + Send,
+    {
+        use rayon::prelude::*;
+        let prepared_files: ZipResult<Vec<PreparedZipFile>> = entries
+            .into_par_iter()
+            .map(|(name, options, data)| PreparedZipFile::from_data(name, options, data.as_ref()))
+            .collect();
+
+        let prepared_files = prepared_files?;
+
+        let mut seen = std::collections::HashSet::with_capacity(prepared_files.len());
+        for file in &prepared_files {
+            let name = file.file_name_raw();
+            if self.files.contains_key(name) || !seen.insert(name) {
+                return Err(invalid!("Duplicate filename: {:?}", name.escape_ascii()));
+            }
+        }
+
+        for file in prepared_files {
+            self.add_prepared_file(file)?;
+        }
+        Ok(())
+    }
+
+    /// Compresses disk files in parallel with atomic all-or-nothing guarantee.
+    ///
+    /// All files are read and compressed before any files are appended to the archive.
+    /// If any file fails to open, read, or compress, no changes are committed to the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening/reading any path fails, if compression fails, or if writing fails.
+    pub fn par_append_from_paths_atomic<'a, I, N, P, T>(&mut self, entries: I) -> ZipResult<()>
+    where
+        I: rayon::iter::IntoParallelIterator<Item = (N, P, FileOptions<'a, 'a, T>)>,
+        N: AsRef<str> + Send,
+        P: AsRef<Path> + Send,
+        T: FileOptionExtension + Send + Sync + 'a,
+    {
+        use rayon::prelude::*;
+        let prepared_files: ZipResult<Vec<PreparedZipFile>> = entries
+            .into_par_iter()
+            .map(|(name, path, options)| PreparedZipFile::from_path(name, path, options))
+            .collect();
+
+        let prepared_files = prepared_files?;
+
+        let mut seen = std::collections::HashSet::with_capacity(prepared_files.len());
+        for file in &prepared_files {
+            let name = file.file_name_raw();
+            if self.files.contains_key(name) || !seen.insert(name) {
+                return Err(invalid!("Duplicate filename: {:?}", name.escape_ascii()));
+            }
+        }
+
+        for file in prepared_files {
+            self.add_prepared_file(file)?;
+        }
+        Ok(())
     }
 }
 
@@ -2413,6 +2754,63 @@ impl Debug for PreparedZipFile {
             self.uncompressed_size,
             self.compressed_size
         ))
+    }
+}
+
+impl PreparedZipFile {
+    /// Compresses `data` in memory and prepares it as a [`PreparedZipFile`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if compression fails or options are invalid.
+    pub fn from_data<N: AsRef<str>, T: FileOptionExtension>(
+        name: N,
+        options: FileOptions<'_, '_, T>,
+        data: &[u8],
+    ) -> ZipResult<Self> {
+        let mut builder = ZipFileBuilder::new(name, options)?;
+        builder.write_all(data)?;
+        builder.finish()
+    }
+
+    /// Compresses a file from `path` on disk and prepares it as a [`PreparedZipFile`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening `disk_path` fails, if reading fails, or if compression fails.
+    pub fn from_path<N: AsRef<str>, P: AsRef<Path>, T: FileOptionExtension>(
+        archive_name: N,
+        disk_path: P,
+        options: FileOptions<'_, '_, T>,
+    ) -> ZipResult<Self> {
+        let mut file = std::fs::File::open(disk_path)?;
+        let mut builder = ZipFileBuilder::new(archive_name, options)?;
+        std::io::copy(&mut file, &mut builder)?;
+        builder.finish()
+    }
+
+    /// Returns the file name of this prepared file as a byte slice.
+    #[must_use]
+    pub fn file_name_raw(&self) -> &[u8] {
+        &self.file_name
+    }
+
+    /// Returns the CRC-32 checksum of the uncompressed data.
+    #[must_use]
+    pub const fn crc32(&self) -> u32 {
+        self.crc32
+    }
+
+    /// Returns the uncompressed size in bytes.
+    #[must_use]
+    pub const fn uncompressed_size(&self) -> u64 {
+        self.uncompressed_size
+    }
+
+    /// Returns the compressed size in bytes.
+    #[must_use]
+    pub const fn compressed_size(&self) -> u64 {
+        self.compressed_size
     }
 }
 
