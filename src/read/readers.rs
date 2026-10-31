@@ -297,12 +297,6 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     reader: io::Take<&'a mut R>,
     password: Option<&[u8]>,
 ) -> ZipResult<CryptoReader<'a, R>> {
-    #[allow(deprecated)]
-    {
-        if let CompressionMethod::Unsupported(id) = data.compression_method {
-            return Err(ZipError::CompressionMethodNotSupported(id));
-        }
-    }
     let reader = match (password, data.aes_settings()) {
         #[cfg(not(feature = "aes-crypto"))]
         (Some(_), Some(_)) => {
