@@ -116,14 +116,14 @@ jobs:
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
           channel: nightly
-          bins: cargo-afl
+          bins: cargo-nextest
           cache-extra-identifier: ${{ runner.os }}-cargo-minimal-versions
       - name: resolve minimal versions
-        run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
-        run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: test
-        run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+        run: cargo nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
   style_and_docs:
     timeout-minutes: 10
     strategy:
