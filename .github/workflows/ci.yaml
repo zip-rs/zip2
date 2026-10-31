@@ -52,29 +52,16 @@ jobs:
           channel: nightly
           bins: cargo-nextest
           components: miri
+          targets: stable-s390x-unknown-linux-gnu
           cache-extra-identifier: miri-${{ runner.os }}-${{ runner.arch }}-${{ matrix.feature.key }}
-      - name: Install cross compiler and Rust toolchains in parallel
+      - name: Install cross compiler
         shell: bash
         run: |
           set +e
           (
             sudo apt-get update &&
             sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu libc6-dev-s390x-cross
-          ) &
-          (
-            rustup toolchain add --force-non-host stable-s390x-unknown-linux-gnu
-          ) &
-          wait -n
-          first_status=$?
-          if [[ "$first_status" -ne 0 ]]; then
-            exit 1
-          fi
-          wait -n
-          second_status=$?
-          if [[ "$second_status" -ne 0 ]]; then
-            exit 1
-          fi
-          set -e
+          )
       - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
   bsd_platform:
     needs:
@@ -93,50 +80,16 @@ jobs:
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup target add x86_64-unknown-freebsd
-      - id: rustc-version
-        shell: pwsh
-        run: |
-          $rustcInfo = rustc -Vv
-          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
-          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
-          "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Setup Rust and Cargo
+        uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target
-          key: ${{ runner.os }}-${{ runner.arch }}-target-bsd-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-target-bsd-${{ steps.rustc-version.outputs.version }}-
-      - name: Install zig and cargo-zigbuild in parallel
+          channel: nightly
+          bins: cargo-nextest
+          targets: x86_64-unknown-freebsd
+          components: zigbuild
+      - name: Install zig
         shell: bash
-        run: |
-          set +e
-          (
-            sudo snap install --beta zig --classic
-          ) &
-          (
-            cargo install cargo-zigbuild
-          ) &
-          wait -n
-          first_status=$?
-          if [[ "$first_status" -ne 0 ]]; then
-            exit 1
-          fi
-          wait -n
-          second_status=$?
-          if [[ "$second_status" -ne 0 ]]; then
-            exit 1
-          fi
-          set -e
+        run: sudo snap install --beta zig --classic
       - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
   check_minimal_versions:
     needs:
@@ -315,7 +268,6 @@ jobs:
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - id: rustc-version
         shell: pwsh
         run: |
@@ -323,15 +275,6 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
       - id: cpu-features
         shell: pwsh
         run: |
@@ -413,8 +356,12 @@ jobs:
           egress-policy: audit
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
-          persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add rustfmt
+          persist-credentials: false\
+      - name: Setup Rust and Cargo
+        uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
+        with:
+          channel: nightly
+          components: rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
       - name: fmt fuzz
