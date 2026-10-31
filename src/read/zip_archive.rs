@@ -700,6 +700,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by its raw name bytes, without decoding the name.
+    /// The running time of this operation doesn't scale with the number of files in the archive,
+    /// only with the length of the name being looked up (since it is hashed).
     pub fn by_name_raw(&mut self, name: &[u8]) -> ZipResult<ZipFile<'_, R>> {
         let index = self
             .index_for_name_raw(name)
