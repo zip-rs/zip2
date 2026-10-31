@@ -3,13 +3,16 @@
 use crate::extra_fields::ExtendedTimestamp;
 use core::fmt::Debug;
 use std::marker::PhantomData;
+use std::mem;
 use std::sync::Arc;
 
 use crate::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::CustomExtraField;
+use crate::format::blocks::ZipLocalEntryBlock;
 use crate::format::extra_fields::ExtraFieldId;
 use crate::format::ffi;
+use crate::format::magic::Magic;
 use crate::format::system::System;
 use crate::result::{ZipResult, invalid};
 use crate::zipcrypto::ZipCryptoKeys;
@@ -300,7 +303,13 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             Ok(core::ops::ControlFlow::Continue(()))
         })?;
-        let len = u.arbitrary_len::<u8>()?;
+        let entry_len: usize = size_of::<Magic>()
+            + size_of::<ZipLocalEntryBlock>()
+            + options.extended_options.extra_fields.iter().map(|x| x.size(false)).sum::<usize>();
+        let Some(max_name_len) = (u16::MAX as usize).checked_sub(entry_len) else {
+            return Err(arbitrary::Error::IncorrectFormat);
+        };
+        let len = u.arbitrary_len::<u8>()?.min(max_name_len);
         options.name = Some(u.bytes(len)?);
         Ok(options)
     }
