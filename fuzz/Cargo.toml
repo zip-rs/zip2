@@ -11,6 +11,7 @@ afl = "0.18"
 arbitrary = { version = "^1.4.2", features = ["derive"] }
 tikv-jemallocator = "0.7"
 zip = { path = "..", default-features = false, features = ["_arbitrary"] }
+sha3 = "0.12.0"
 
 # Keep debug assertions/overflow checks (they catch bugs) while getting optimized speed.
 [profile.release]
