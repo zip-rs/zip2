@@ -19,7 +19,7 @@ use rayon::prelude::*;
 /// so entries above this bound are rejected rather than pre-allocated.
 pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
-/// Buffer capacity for file extraction streams (64 KiB), reducing syscall overhead
+/// Buffer capacity for file extraction streams, reducing syscall overhead
 /// and optimizing page cache utilization during archive extraction.
 pub(crate) const EXTRACT_BUFFER_SIZE: usize = 256 * 1024;
 
@@ -879,7 +879,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                 let symlink_bytes = target.len() as u64;
                 let new_total = total_extracted.checked_add(symlink_bytes).ok_or_else(|| {
                     ZipError::DecompressedSizeLimitExceeded {
-                        size: u128::MAX,
+                        size: u128::from(total_extracted) + u128::from(symlink_bytes),
                         limit: extract_options.size_limit.unwrap_or(u64::MAX),
                     }
                 })?;
@@ -977,7 +977,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                             let can_preallocate = match size_limit {
                                 Some(limit) => {
                                     let cur = total_extracted_atomic
-                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                        .load(std::sync::atomic::Ordering::Acquire);
                                     cur.saturating_add(alloc_len) <= limit
                                 }
                                 None => true,
@@ -1001,13 +1001,15 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                             let n_u64 = n as u64;
                             if let Some(limit) = size_limit {
                                 let old_total = total_extracted_atomic
-                                    .fetch_add(n_u64, std::sync::atomic::Ordering::Relaxed);
+                                    .fetch_add(n_u64, std::sync::atomic::Ordering::AcqRel);
                                 let new_total = match old_total.checked_add(n_u64) {
                                     Some(total) => total,
                                     None => {
+                                        total_extracted_atomic
+                                            .store(u64::MAX, std::sync::atomic::Ordering::Release);
                                         copy_error =
                                             Some(ZipError::DecompressedSizeLimitExceeded {
-                                                size: u128::MAX,
+                                                size: u128::from(old_total) + u128::from(n_u64),
                                                 limit,
                                             });
                                         break;
