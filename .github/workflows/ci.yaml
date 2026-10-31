@@ -50,7 +50,8 @@ jobs:
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
           channel: nightly
-          bins: cargo-nextest, cargo-miri
+          bins: cargo-nextest
+          components: miri
           cache-extra-identifier: miri-${{ runner.os }}-${{ runner.arch }}-${{ matrix.feature.key }}
       - name: Install cross compiler and Rust toolchains in parallel
         shell: bash
