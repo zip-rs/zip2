@@ -193,7 +193,7 @@ jobs:
         with:
           channel: nightly
           components: clippy
-          bins: clippy-sarif sarif-fmt
+          bins: clippy-sarif, sarif-fmt
       - name: Run clippy - inside bash for pipefail
         shell: bash
         # allow warnings but not errors
