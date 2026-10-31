@@ -33,9 +33,11 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: nightly
           bins: cargo-afl
           components: clippy
+          cache-target: release
       - run: cargo afl system-config
       - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - name: fuzz

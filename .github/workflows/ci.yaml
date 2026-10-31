@@ -49,6 +49,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: nightly
           bins: cargo-nextest
           components: miri
@@ -83,6 +84,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: nightly
           bins: cargo-nextest, cargo-zigbuild
           targets: x86_64-unknown-freebsd
@@ -114,6 +116,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: nightly
           bins: cargo-nextest
           cache-extra-identifier: ${{ runner.os }}-cargo-minimal-versions
@@ -144,6 +147,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: nightly
           components: clippy
           bins: clippy-sarif, sarif-fmt
@@ -225,6 +229,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: ${{ matrix.rust }}
           bins: cargo-nextest
           cache-extra-identifier: ${{ runner.os }}-${{ matrix.rustalias }}-${{ matrix.feature.key }}
@@ -267,6 +272,11 @@ jobs:
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
+      - name: Setup Rust and Cargo
+        uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
+        with:
+          cache-base: master
+          channel: ${{ matrix.rust }}
       - id: rustc-version
         shell: pwsh
         run: |
@@ -315,7 +325,8 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          channel: nightly
+          cache-base: master
+          channel: ${{ matrix.rust }}
           bins: wasm-pack
           cache-extra-identifier: wasm-${{ runner.os }}-${{ matrix.feature.key }}-${{ matrix.browser_flags }}
       - name: Conditionally set env
@@ -359,6 +370,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: nightly
           components: rustfmt
       - name: fmt
@@ -390,8 +402,11 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
+          cache-base: master
           channel: nightly
           bins: cargo-afl
+          cache-target: release
+          cache-extra-identifier: fuzz-${{ matrix.feature.key }}
       - id: rustc-version
         shell: pwsh
         run: |
@@ -421,13 +436,6 @@ jobs:
       - bsd_platform
       - fuzz_regressions
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
-        with:
-          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: read
@@ -445,13 +453,6 @@ jobs:
       - bsd_platform
       - fuzz_regressions
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
-        with:
-          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: read
@@ -470,13 +471,6 @@ jobs:
       - bsd_platform
       - fuzz_regressions
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
-        with:
-          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: write
@@ -495,13 +489,6 @@ jobs:
       - bsd_platform
       - fuzz_regressions
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
-        with:
-          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: write
