@@ -19,9 +19,9 @@ use rayon::prelude::*;
 /// so entries above this bound are rejected rather than pre-allocated.
 pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
-/// Buffer capacity for file extraction streams (64 KiB), reducing syscall overhead
+/// Buffer capacity for file extraction streams, reducing syscall overhead
 /// and optimizing page cache utilization during archive extraction.
-pub(crate) const EXTRACT_BUFFER_SIZE: usize = 64 * 1024;
+pub(crate) const EXTRACT_BUFFER_SIZE: usize = 256 * 1024;
 
 /// Maximum extent pre-allocation ceiling (64 MiB).
 ///
@@ -846,16 +846,25 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         let mut created_dirs = std::collections::HashSet::new();
         let mut regular_files: indexmap::IndexMap<std::path::PathBuf, usize> =
             indexmap::IndexMap::new();
-        let mut total_extracted = 0u64;
 
         for i in 0..self.len() {
-            let read_options = crate::read::ZipReadOptions::new()
-                .enforce_header_consistency(extract_options.enforce_header_consistency);
-            let mut file = self.by_index_with_options(i, read_options)?;
+            let (file_name_raw, data) = self
+                .shared
+                .files
+                .get_index(i)
+                .ok_or(ZipError::FileNotFound)?;
 
-            let outpath = file.safe_prepare_path(directory.as_ref(), root_dir.as_ref())?;
+            let outpath = crate::read::zipfile::safe_prepare_path_from_metadata(
+                file_name_raw,
+                data,
+                directory.as_ref(),
+                root_dir.as_ref(),
+            )?;
 
-            if file.is_symlink() {
+            if data.is_symlink() {
+                let read_options = crate::read::ZipReadOptions::new()
+                    .enforce_header_consistency(extract_options.enforce_header_consistency);
+                let mut file = self.by_index_with_options(i, read_options)?;
                 let declared_len = file.size();
                 if declared_len > MAX_SYMLINK_TARGET_LEN {
                     return Err(invalid!(
@@ -866,22 +875,6 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                 }
                 let mut target = Vec::with_capacity(declared_len as usize);
                 file.read_to_end(&mut target)?;
-                let symlink_bytes = target.len() as u64;
-                let new_total = total_extracted.checked_add(symlink_bytes).ok_or_else(|| {
-                    ZipError::DecompressedSizeLimitExceeded {
-                        size: u128::MAX,
-                        limit: extract_options.size_limit.unwrap_or(u64::MAX),
-                    }
-                })?;
-                if let Some(limit) = extract_options.size_limit
-                    && new_total > limit
-                {
-                    return Err(ZipError::DecompressedSizeLimitExceeded {
-                        size: u128::from(new_total),
-                        limit,
-                    });
-                }
-                total_extracted = new_total;
                 let unix_mode = file.unix_mode();
                 drop(file);
                 match extract_options.symlink_action {
@@ -911,11 +904,11 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                         make_symlink_impl(&outpath, target_str, &self.shared.files)?;
                     }
                 }
-            } else if file.is_dir() {
+            } else if data.is_dir(file_name_raw) {
                 if created_dirs.insert(outpath.clone()) {
                     make_writable_dir_all(&outpath)?;
                 }
-                if let Some(mode) = file.unix_mode() {
+                if let Some(mode) = data.unix_mode() {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
@@ -924,9 +917,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         }
 
         let metadata = self.metadata();
-        let size_limit = extract_options.size_limit;
         let enforce_header = extract_options.enforce_header_consistency;
-        let total_extracted_atomic = std::sync::atomic::AtomicU64::new(total_extracted);
 
         let regular_files_vec: Vec<(std::path::PathBuf, usize)> =
             regular_files.into_iter().collect();
@@ -964,73 +955,22 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
 
                         if uncompressed_len > 0 && !file.flags().is_using_data_descriptor() {
                             let alloc_len = uncompressed_len.min(MAX_PREALLOCATE_LEN);
-                            let can_preallocate = match size_limit {
-                                Some(limit) => {
-                                    let cur = total_extracted_atomic
-                                        .load(std::sync::atomic::Ordering::Relaxed);
-                                    cur.saturating_add(alloc_len) <= limit
-                                }
-                                None => true,
-                            };
-                            if can_preallocate && outfile.set_len(alloc_len).is_ok() {
+                            if outfile.set_len(alloc_len).is_ok() {
                                 preallocated_len = alloc_len;
                             }
                         }
 
-                        let mut file_extracted = 0u64;
-                        let mut copy_error = None;
-                        loop {
-                            let n = match file.read(buf) {
-                                Ok(0) => break,
-                                Ok(n) => n,
-                                Err(e) => {
-                                    copy_error = Some(ZipError::Io(e));
-                                    break;
-                                }
-                            };
-                            let n_u64 = n as u64;
-                            let old_total = total_extracted_atomic
-                                .fetch_add(n_u64, std::sync::atomic::Ordering::Relaxed);
-                            let new_total = match old_total.checked_add(n_u64) {
-                                Some(total) => total,
-                                None => {
-                                    copy_error = Some(ZipError::DecompressedSizeLimitExceeded {
-                                        size: u128::MAX,
-                                        limit: size_limit.unwrap_or(u64::MAX),
-                                    });
-                                    break;
-                                }
-                            };
-                            if let Some(limit) = size_limit
-                                && new_total > limit
-                            {
-                                copy_error = Some(ZipError::DecompressedSizeLimitExceeded {
-                                    size: u128::from(new_total),
-                                    limit,
-                                });
-                                break;
-                            }
-                            if let Err(e) = outfile.write_all(&buf[..n]) {
-                                copy_error = Some(ZipError::Io(e));
-                                break;
-                            }
-                            file_extracted = file_extracted.saturating_add(n_u64);
-                        }
-
+                        let copy_res = copy_into(&mut file, &mut outfile, buf);
                         if preallocated_len > 0 {
-                            let actual_len = if copy_error.is_none() {
-                                file_extracted
-                            } else {
-                                outfile.stream_position().unwrap_or(0)
+                            let actual_len = match &copy_res {
+                                Ok(extracted) => *extracted,
+                                Err(_) => outfile.stream_position().unwrap_or(0),
                             };
                             if actual_len < preallocated_len {
                                 let _ = outfile.set_len(actual_len);
                             }
                         }
-
-                        if let Some(err) = copy_error {
-                            return Err(err);
-                        }
+                        copy_res?;
 
                         #[cfg(feature = "chrono")]
                         if let Some(last_modified) = file.last_modified()

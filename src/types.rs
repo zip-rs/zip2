@@ -331,6 +331,12 @@ impl ZipFileData {
         is_dir(file_name)
     }
 
+    /// Check if the file is a symbolic link.
+    pub(crate) fn is_symlink(&self) -> bool {
+        self.unix_mode()
+            .is_some_and(|mode| mode & crate::format::ffi::S_IFLNK == crate::format::ffi::S_IFLNK)
+    }
+
     pub(crate) fn file_name_sanitized(&self, file_name: &str) -> PathBuf {
         let no_null_filename = match file_name.find('\0') {
             Some(index) => &file_name[0..index],

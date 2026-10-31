@@ -313,3 +313,32 @@ fn test_par_extract_preallocation_truncation_on_short_payload() {
     // Verify file on disk was properly truncated back to 10 bytes, NOT 256 KiB
     assert_eq!(fs::metadata(&extracted_path).unwrap().len(), 10);
 }
+
+#[test]
+fn test_par_extract_in_flight_size_limit_stream_exact_accounting() {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    // 5 files, each 20 bytes = 100 bytes total
+    for i in 0..5 {
+        writer.start_file(format!("file_{i}.txt"), options).unwrap();
+        writer.write_all(b"01234567890123456789").unwrap();
+    }
+
+    let zip_bytes = writer.finish().unwrap().into_inner();
+    let mut archive = ZipArchive::new(Cursor::new(zip_bytes)).unwrap();
+
+    let dest = TempDir::with_prefix("par_size_exact").unwrap();
+
+    // Set size limit to 60 bytes (total 100 bytes)
+    let res = archive
+        .par_extract_with_options(dest.path(), ExtractOptions::default().with_size_limit(60));
+
+    match res {
+        Err(ZipError::DecompressedSizeLimitExceeded { size, limit }) => {
+            assert_eq!(limit, 60);
+            assert!(size >= 60, "Recorded size must reflect the limit breach");
+        }
+        other => panic!("Expected DecompressedSizeLimitExceeded, got {other:?}"),
+    }
+}

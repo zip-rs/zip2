@@ -173,3 +173,9 @@ harness = false
 name = "aes"
 harness = false
 required-features = ["aes-crypto"]
+
+[[bench]]
+name = "extract"
+harness = false
+required-features = ["rayon"]
+
