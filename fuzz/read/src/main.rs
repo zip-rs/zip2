@@ -1,9 +1,9 @@
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
 
-use std::borrow::Cow;
 #[cfg(fuzzing)]
 use afl::fuzz;
 use sha3::{Digest, Sha3_512};
+use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
@@ -180,7 +180,10 @@ fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
     let mut archive_checksums = Vec::new();
     let mut archive_checksums_complete = true;
     for index in 0..archive.len() {
-        let mut file = archive.by_index_with_options(index, ZipReadOptions::new().enforce_header_consistency(true))?;
+        let mut file = archive.by_index_with_options(
+            index,
+            ZipReadOptions::new().enforce_header_consistency(true),
+        )?;
         let metadata = file_metadata!(file);
         let size = file.size();
         if size > MAX_BYTES_TO_READ {
