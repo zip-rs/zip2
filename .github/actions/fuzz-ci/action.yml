@@ -33,8 +33,15 @@ inputs:
 runs:
   using: composite
   steps:
-    - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      shell: bash
+    - name: Setup Rust and Cargo
+      uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
+      with:
+        cache-base: master
+        channel: nightly
+        bins: cargo-afl
+        components: clippy
+        cache-target: release
+        cache-extra-identifier: fuzz-${{ inputs.feature-key }}
     - id: rustc-version
       shell: pwsh
       run: |
@@ -47,15 +54,6 @@ runs:
       with:
         path: ~/.local/share/afl.rs
         key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: |
-          ~/.cargo/registry/index
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-registry-
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: cargo-afl-linux
@@ -85,7 +83,7 @@ runs:
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: fuzz/target
-        key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ inputs.target }}-${{ inputs.feature-key }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ inputs.target }}-${{ inputs.feature-key }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ inputs.target }}-${{ inputs.feature-key }}-
     - run: cargo afl system-config
