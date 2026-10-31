@@ -438,9 +438,6 @@ jobs:
           path: |
             ~/.local/share/afl.rs
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}
-      - name: Build AFL runtime if not cached
-        if: steps.rustc-version.outputs.version != needs.setup_cargo_afl.outputs.rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
-        run: cargo afl config --build --force
       - id: cpu-features
         shell: pwsh
         run: |
