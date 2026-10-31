@@ -1,5 +1,6 @@
 #![allow(unexpected_cfgs)] // Needed for cfg(fuzzing) on nightly as of 2024-05-06
 
+use std::borrow::Cow;
 #[cfg(fuzzing)]
 use afl::fuzz;
 use sha3::{Digest, Sha3_512};
@@ -10,6 +11,7 @@ use std::io::{Read, Seek, SeekFrom};
 use tikv_jemallocator::Jemalloc;
 use zip::ZipReadOptions;
 use zip::read::{ZipFile, ZipFileEntry, read_zipfile_from_stream};
+use zip::result::ZipError;
 use zip::unstable::stream::{ZipStreamReader, ZipStreamVisitor};
 
 const MAX_BYTES_TO_READ: u64 = 1 << 24;
@@ -85,7 +87,13 @@ struct FileChecksum {
 }
 
 #[derive(Debug)]
-struct ReaderMismatch(&'static str);
+struct ReaderMismatch(Cow<'static, str>);
+
+impl From<ZipError> for ReaderMismatch {
+    fn from(value: ZipError) -> Self {
+        Self(Cow::Owned(value.to_string()))
+    }
+}
 
 impl fmt::Display for ReaderMismatch {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -172,7 +180,7 @@ fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
     let mut archive_checksums = Vec::new();
     let mut archive_checksums_complete = true;
     for index in 0..archive.len() {
-        let Ok(mut file) = archive.by_index_with_options(index, ZipReadOptions::new().enforce_header_consistency(true))?;
+        let mut file = archive.by_index_with_options(index, ZipReadOptions::new().enforce_header_consistency(true))?;
         let metadata = file_metadata!(file);
         let size = file.size();
         if size > MAX_BYTES_TO_READ {
@@ -202,7 +210,7 @@ fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
     archive_metadata.sort();
     stream_results.metadata.sort();
     if archive_metadata != stream_results.metadata {
-        return Err(ReaderMismatch("file metadata"));
+        return Err(ReaderMismatch("file metadata".into()));
     }
     if !archive_checksums_complete {
         return Ok(());
@@ -210,7 +218,7 @@ fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
     archive_checksums.sort();
     stream_results.checksums.sort();
     if archive_checksums != stream_results.checksums {
-        return Err(ReaderMismatch("SHA3-512 checksums"));
+        return Err(ReaderMismatch("SHA3-512 checksums".into()));
     }
     Ok(())
 }
