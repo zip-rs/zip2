@@ -270,9 +270,8 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     pub(crate) fn safe_prepare_path(
         &self,
         base_path: &Path,
-        outpath: &mut PathBuf,
         root_dir: Option<&(Vec<&OsStr>, impl RootDirFilter)>,
-    ) -> ZipResult<()> {
+    ) -> ZipResult<PathBuf> {
         let file_name = self.name()?;
         let components = self
             .data
@@ -307,14 +306,12 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
             None => &components[..],
         };
 
-        *outpath = crate::path::resolve_enclosed(
+        crate::path::resolve_enclosed(
             base_path,
             base_path,
-            components.iter().map(|c| c.to_os_string()),
+            components.iter().copied(),
             true, // create intermediate directories
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Get the extra data of the zip header for this file
