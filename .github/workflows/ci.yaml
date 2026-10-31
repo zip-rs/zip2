@@ -547,6 +547,13 @@ jobs:
       - fuzz_regressions
       - setup_cargo_afl
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: read
@@ -555,6 +562,7 @@ jobs:
           build-flags: --all-features
           minimize: "true"
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
+          setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
 
   fuzz_read_with_no_features:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -565,6 +573,13 @@ jobs:
       - fuzz_regressions
       - setup_cargo_afl
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: read
@@ -574,6 +589,7 @@ jobs:
           minimize: "false"
           artifact-suffix: _no_features
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
+          setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
 
   fuzz_write:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -584,6 +600,13 @@ jobs:
       - fuzz_regressions
       - setup_cargo_afl
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: write
@@ -593,6 +616,7 @@ jobs:
           dictionary: -x ${{ github.workspace }}/fuzz/write/fuzz.dict
           minimize: "true"
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
+          setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
 
   fuzz_write_with_no_features:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -603,6 +627,13 @@ jobs:
       - fuzz_regressions
       - setup_cargo_afl
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
         with:
           target: write
@@ -613,3 +644,4 @@ jobs:
           minimize: "false"
           artifact-suffix: _no_features
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
+          setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
