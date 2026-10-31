@@ -1778,7 +1778,13 @@ impl<W: Write + Seek> ZipWriter<W> {
 
 #[cfg(feature = "rayon")]
 #[inline]
-fn default_channel_capacity() -> NonZeroUsize {
+fn default_data_channel_capacity() -> NonZeroUsize {
+    NonZeroUsize::new(rayon::current_num_threads()).unwrap_or(NonZeroUsize::MIN)
+}
+
+#[cfg(feature = "rayon")]
+#[inline]
+fn default_paths_channel_capacity() -> NonZeroUsize {
     NonZeroUsize::new(rayon::current_num_threads().saturating_mul(2)).unwrap_or(NonZeroUsize::MIN)
 }
 
@@ -1789,7 +1795,7 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
     ///
     /// Compression occurs concurrently across available Rayon worker threads. Finished files
     /// are streamed into a bounded channel and written sequentially by the calling thread.
-    /// Memory consumption is naturally bounded to `2 * num_threads * file_size` via channel
+    /// Memory consumption is naturally bounded to `num_threads * file_size` via channel
     /// backpressure.
     ///
     /// Duplicate filenames (including CP437 raw byte overrides) are checked before compression
@@ -1806,7 +1812,7 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
         T: FileOptionExtension + Send + Sync + 'a,
         D: AsRef<[u8]> + Send,
     {
-        self.par_append_data_with_capacity(entries, default_channel_capacity())
+        self.par_append_data_with_capacity(entries, default_data_channel_capacity())
     }
 
     /// Compresses a collection of in-memory data entries in parallel using Rayon
@@ -1848,24 +1854,11 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
         let mut write_err = None;
 
         std::thread::scope(|s| {
-            let consumer_handle = s.spawn(|| {
-                let mut err = None;
-                while let Ok(item) = rx.recv() {
-                    match item {
-                        Ok(prepared) => {
-                            if let Err(e) = self.add_prepared_file(prepared) {
-                                err = Some(e);
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            err = Some(e);
-                            break;
-                        }
-                    }
+            let consumer_handle = s.spawn(|| -> ZipResult<()> {
+                for item in rx {
+                    self.add_prepared_file(item?)?;
                 }
-                drop(rx);
-                err
+                Ok(())
             });
 
             let _ = par_iter.try_for_each(|(name, options, data)| -> Result<(), ()> {
@@ -1904,8 +1897,8 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
 
             drop(tx);
 
-            if let Ok(err) = consumer_handle.join() {
-                write_err = err;
+            if let Ok(res) = consumer_handle.join() {
+                write_err = res.err();
             }
         });
 
@@ -1913,27 +1906,6 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
             return Err(err);
         }
         Ok(())
-    }
-
-    /// Compresses and appends in-memory data entries in parallel batches of `batch_size`.
-    #[deprecated(note = "use `par_append_data_with_capacity` instead")]
-    pub fn par_append_data_batches<'a, N, T, D>(
-        &mut self,
-        entries: &[(N, FileOptions<'a, 'a, T>, D)],
-        batch_size: NonZeroUsize,
-    ) -> ZipResult<()>
-    where
-        N: AsRef<str> + Sync,
-        T: FileOptionExtension + Clone + Send + Sync + 'a,
-        D: AsRef<[u8]> + Sync,
-    {
-        use rayon::prelude::*;
-        self.par_append_data_with_capacity(
-            entries
-                .par_iter()
-                .map(|(n, o, d)| (n.as_ref(), o.clone(), d.as_ref())),
-            batch_size,
-        )
     }
 
     /// Compresses files from disk paths in parallel using Rayon and streams them to the archive
@@ -1957,7 +1929,7 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
         P: AsRef<Path> + Send,
         T: FileOptionExtension + Send + Sync + 'a,
     {
-        self.par_append_from_paths_with_capacity(entries, default_channel_capacity())
+        self.par_append_from_paths_with_capacity(entries, default_paths_channel_capacity())
     }
 
     /// Compresses files from disk paths in parallel using Rayon and streams them to the archive
@@ -1999,24 +1971,11 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
         let mut write_err = None;
 
         std::thread::scope(|s| {
-            let consumer_handle = s.spawn(|| {
-                let mut err = None;
-                while let Ok(item) = rx.recv() {
-                    match item {
-                        Ok(prepared) => {
-                            if let Err(e) = self.add_prepared_file(prepared) {
-                                err = Some(e);
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            err = Some(e);
-                            break;
-                        }
-                    }
+            let consumer_handle = s.spawn(|| -> ZipResult<()> {
+                for item in rx {
+                    self.add_prepared_file(item?)?;
                 }
-                drop(rx);
-                err
+                Ok(())
             });
 
             let _ = par_iter.try_for_each(|(name, path, options)| -> Result<(), ()> {
@@ -2055,8 +2014,8 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
 
             drop(tx);
 
-            if let Ok(err) = consumer_handle.join() {
-                write_err = err;
+            if let Ok(res) = consumer_handle.join() {
+                write_err = res.err();
             }
         });
 
@@ -2064,27 +2023,6 @@ impl<W: Write + Seek + Send> ZipWriter<W> {
             return Err(err);
         }
         Ok(())
-    }
-
-    /// Compresses and appends disk files in parallel batches of `batch_size`.
-    #[deprecated(note = "use `par_append_from_paths_with_capacity` instead")]
-    pub fn par_append_from_paths_batches<'a, N, P, T>(
-        &mut self,
-        entries: &[(N, P, FileOptions<'a, 'a, T>)],
-        batch_size: NonZeroUsize,
-    ) -> ZipResult<()>
-    where
-        N: AsRef<str> + Sync,
-        P: AsRef<Path> + Sync,
-        T: FileOptionExtension + Clone + Send + Sync + 'a,
-    {
-        use rayon::prelude::*;
-        self.par_append_from_paths_with_capacity(
-            entries
-                .par_iter()
-                .map(|(n, p, o)| (n.as_ref(), p.as_ref(), o.clone())),
-            batch_size,
-        )
     }
 
     /// Compresses a collection of in-memory data entries in parallel with atomic all-or-nothing guarantee.

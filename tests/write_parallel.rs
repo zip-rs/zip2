@@ -1,5 +1,4 @@
 #![cfg(feature = "rayon")]
-#![allow(deprecated)]
 
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
@@ -47,7 +46,7 @@ fn test_par_append_data_in_memory() {
 }
 
 #[test]
-fn test_par_append_data_batches() {
+fn test_par_append_data_with_capacity_chunks() {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default();
 
@@ -56,7 +55,7 @@ fn test_par_append_data_batches() {
         .collect();
 
     writer
-        .par_append_data_batches(&entries, NonZeroUsize::new(10).unwrap())
+        .par_append_data_with_capacity(entries, NonZeroUsize::new(10).unwrap())
         .unwrap();
     let mut archive = writer.finish_into_readable().unwrap();
 
@@ -100,7 +99,7 @@ fn test_par_append_from_paths() {
 }
 
 #[test]
-fn test_par_append_from_paths_batches() {
+fn test_par_append_from_paths_with_capacity_chunks() {
     let dir = tempdir().unwrap();
     let mut entries = Vec::new();
     let options = SimpleFileOptions::default();
@@ -115,7 +114,7 @@ fn test_par_append_from_paths_batches() {
 
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     writer
-        .par_append_from_paths_batches(&entries, NonZeroUsize::new(5).unwrap())
+        .par_append_from_paths_with_capacity(entries, NonZeroUsize::new(5).unwrap())
         .unwrap();
     let mut archive = writer.finish_into_readable().unwrap();
 
@@ -170,17 +169,17 @@ fn test_par_append_empty_inputs() {
     let empty_data: Vec<(String, SimpleFileOptions, Vec<u8>)> = Vec::new();
     writer.par_append_data(empty_data).unwrap();
 
-    let empty_data_slice: &[(String, SimpleFileOptions, Vec<u8>)] = &[];
+    let empty_data_slice: Vec<(String, SimpleFileOptions, Vec<u8>)> = Vec::new();
     writer
-        .par_append_data_batches(empty_data_slice, NonZeroUsize::new(10).unwrap())
+        .par_append_data_with_capacity(empty_data_slice, NonZeroUsize::new(10).unwrap())
         .unwrap();
 
     let empty_paths: Vec<(String, std::path::PathBuf, SimpleFileOptions)> = Vec::new();
     writer.par_append_from_paths(empty_paths).unwrap();
 
-    let empty_paths_slice: &[(String, std::path::PathBuf, SimpleFileOptions)] = &[];
+    let empty_paths_slice: Vec<(String, std::path::PathBuf, SimpleFileOptions)> = Vec::new();
     writer
-        .par_append_from_paths_batches(empty_paths_slice, NonZeroUsize::new(10).unwrap())
+        .par_append_from_paths_with_capacity(empty_paths_slice, NonZeroUsize::new(10).unwrap())
         .unwrap();
 
     let archive = writer.finish_into_readable().unwrap();
@@ -260,7 +259,7 @@ fn test_par_append_unicode_and_special_paths() {
 }
 
 #[test]
-fn test_par_append_batch_size_edge_cases() {
+fn test_par_append_channel_capacity_edge_cases() {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default();
 
@@ -268,19 +267,19 @@ fn test_par_append_batch_size_edge_cases() {
         .map(|i| (format!("item_{i}.txt"), options, vec![i as u8; 32]))
         .collect();
 
-    // batch_size = 1 (single-item chunks)
+    // capacity = 1 (single-item buffer backpressure)
     writer
-        .par_append_data_batches(&entries[..3], NonZeroUsize::new(1).unwrap())
+        .par_append_data_with_capacity(entries[..3].to_vec(), NonZeroUsize::new(1).unwrap())
         .unwrap();
 
-    // batch_size = 100 (> entries len)
+    // capacity = 100 (> entries len)
     writer
-        .par_append_data_batches(&entries[3..5], NonZeroUsize::new(100).unwrap())
+        .par_append_data_with_capacity(entries[3..5].to_vec(), NonZeroUsize::new(100).unwrap())
         .unwrap();
 
-    // batch_size = 3 (non-divisor)
+    // capacity = 3 (non-divisor)
     writer
-        .par_append_data_batches(&entries[5..], NonZeroUsize::new(3).unwrap())
+        .par_append_data_with_capacity(entries[5..].to_vec(), NonZeroUsize::new(3).unwrap())
         .unwrap();
 
     let mut archive = writer.finish_into_readable().unwrap();
