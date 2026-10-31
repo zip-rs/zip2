@@ -8,10 +8,8 @@ use std::sync::Arc;
 use crate::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::CustomExtraField;
-use crate::format::blocks::ZipLocalEntryBlock;
 use crate::format::extra_fields::ExtraFieldId;
 use crate::format::ffi;
-use crate::format::magic::Magic;
 use crate::format::system::System;
 use crate::result::{ZipResult, invalid};
 use crate::zipcrypto::ZipCryptoKeys;
@@ -267,6 +265,8 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         use crate::extra_fields::EXTRA_FIELD_MAPPING;
         use crate::extra_fields::UsedExtraField;
+        use crate::format::blocks::ZipLocalEntryBlock;
+        use crate::format::magic::Magic;
 
         let mut options = FullFileOptions {
             compression_method: CompressionMethod::arbitrary(u)?,
