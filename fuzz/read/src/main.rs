@@ -6,7 +6,9 @@ use sha3::{Digest, Sha3_512};
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
+use std::fmt::Write;
 use std::io::{Read, Seek, SeekFrom};
+use arbitrary::Unstructured;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
 use zip::ZipReadOptions;
@@ -20,7 +22,7 @@ const MAX_BYTES_TO_READ: u64 = 1 << 24;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-fn decompress_all(reader: impl Read + Seek) -> Result<(), Box<dyn std::error::Error>> {
+fn decompress_all(reader: impl Read + Seek) -> Result<(), Box<dyn Error>> {
     let mut zip = zip::ZipArchive::new(reader)?;
 
     for i in 0..zip.len() {
@@ -87,13 +89,7 @@ struct FileChecksum {
 }
 
 #[derive(Debug)]
-struct ReaderMismatch(Cow<'static, str>);
-
-impl From<ZipError> for ReaderMismatch {
-    fn from(value: ZipError) -> Self {
-        Self(Cow::Owned(value.to_string()))
-    }
-}
+struct ReaderMismatch(&'static str);
 
 impl fmt::Display for ReaderMismatch {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -164,7 +160,7 @@ impl ZipStreamVisitor for StreamResults {
     }
 }
 
-fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
+fn compare_readers(data: &[u8]) -> Result<(), Box<dyn Error>> {
     let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(data)) else {
         return Ok(());
     };
@@ -213,7 +209,7 @@ fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
     archive_metadata.sort();
     stream_results.metadata.sort();
     if archive_metadata != stream_results.metadata {
-        return Err(ReaderMismatch("file metadata".into()));
+        return Err(ReaderMismatch("file metadata").into());
     }
     if !archive_checksums_complete {
         return Ok(());
@@ -221,30 +217,38 @@ fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
     archive_checksums.sort();
     stream_results.checksums.sort();
     if archive_checksums != stream_results.checksums {
-        return Err(ReaderMismatch("SHA3-512 checksums".into()));
+        return Err(ReaderMismatch("SHA3-512 checksums").into());
     }
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    #[cfg(fuzzing)]
-    fuzz!(|data: &[u8]| {
-        let reader = std::io::Cursor::new(data);
-        let _ = decompress_all(reader);
-        if let Err(error) = compare_readers(data) {
-            panic!("{error}");
+fn fuzz_one(data: &[u8]) -> Result<(), Box<dyn Error>> {
+    let u = Unstructured::new(data);
+    if let Ok(it) = u.arbitrary_take_rest_iter::<Vec<u8>>() {
+        for test_case in it.flatten() {
+            let reader = std::io::Cursor::new(&test_case);
+            // Invalid archives are expected; only panics/hangs are bugs.
+            let _ = decompress_all(reader);
+            // A mismatch between successful, consistency-enforcing readers is a bug.
+            compare_readers(&test_case)?;
         }
-    });
+    }
+    Ok(())
+}
+
+fn main() {
+    // backtrace_on_stack_overflow is not enabled here: its signal handler also
+    // intercepts the SIGABRT that afl::fuzz! raises on panic and loops. A real
+    // stack overflow still aborts via Rust's own guard-page handler.
+    #[cfg(fuzzing)]
+    fuzz!(|data: &[u8]| fuzz_one(data).unwrap());
 
     #[cfg(not(fuzzing))]
     {
+        use std::io::Read;
         let mut v = Vec::new();
         std::io::stdin().read_to_end(&mut v).unwrap();
-        let reader = std::io::Cursor::new(&v);
-        // Invalid archives are expected; only panics/hangs are bugs.
-        let _ = decompress_all(reader);
-        // A mismatch between successful, consistency-enforcing readers is a bug.
-        compare_readers(&v)?;
+        fuzz_one(&v).unwrap();
     }
-    Ok(())
 }
+
