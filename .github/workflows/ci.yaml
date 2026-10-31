@@ -49,10 +49,10 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          channel: nightly
+          channel: stable
           bins: cargo-nextest
           components: miri
-          targets: stable-s390x-unknown-linux-gnu
+          targets: s390x-unknown-linux-gnu
           cache-extra-identifier: miri-${{ runner.os }}-${{ runner.arch }}-${{ matrix.feature.key }}
       - name: Install cross compiler
         shell: bash
@@ -62,7 +62,7 @@ jobs:
             sudo apt-get update &&
             sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu libc6-dev-s390x-cross
           )
-      - run: cargo +nightly miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
+      - run: cargo miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
   bsd_platform:
     needs:
     - cargo_semver
