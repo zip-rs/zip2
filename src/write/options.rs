@@ -3,7 +3,6 @@
 use crate::extra_fields::ExtendedTimestamp;
 use core::fmt::Debug;
 use std::marker::PhantomData;
-use std::mem;
 use std::sync::Arc;
 
 use crate::CompressionMethod;
@@ -305,7 +304,12 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
         })?;
         let entry_len: usize = size_of::<Magic>()
             + size_of::<ZipLocalEntryBlock>()
-            + options.extended_options.extra_fields.iter().map(|x| x.size(false)).sum::<usize>();
+            + options
+                .extended_options
+                .extra_fields
+                .iter()
+                .map(|x| x.size(false))
+                .sum::<usize>();
         let Some(max_name_len) = (u16::MAX as usize).checked_sub(entry_len) else {
             return Err(arbitrary::Error::IncorrectFormat);
         };
