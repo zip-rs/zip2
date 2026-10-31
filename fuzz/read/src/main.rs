@@ -3,7 +3,6 @@
 #[cfg(fuzzing)]
 use afl::fuzz;
 use sha3::{Digest, Sha3_512};
-use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Write;
@@ -13,7 +12,6 @@ use arbitrary::Unstructured;
 use tikv_jemallocator::Jemalloc;
 use zip::ZipReadOptions;
 use zip::read::{ZipFile, ZipFileEntry, read_zipfile_from_stream};
-use zip::result::ZipError;
 use zip::unstable::stream::{ZipStreamReader, ZipStreamVisitor};
 
 const MAX_BYTES_TO_READ: u64 = 1 << 24;
