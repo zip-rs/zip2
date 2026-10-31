@@ -6,7 +6,6 @@ use crate::HasZipMetadata;
 use crate::ZIP64_BYTES_THR;
 use crate::ZipReadOptions;
 use crate::format::data_descriptor::ZipDataDescriptor;
-use crate::format::ffi;
 use crate::format::flags::ZipFileFlags;
 use crate::format::system::System;
 use crate::read::ExtraField;
@@ -189,8 +188,7 @@ macro_rules! zip_file_methods {
 
         /// Returns whether the file is actually a symbolic link
         pub fn is_symlink(&self) -> bool {
-            self.unix_mode()
-                .is_some_and(|mode| mode & ffi::S_IFLNK == ffi::S_IFLNK)
+            self.get_metadata().is_symlink()
         }
 
         /// Returns whether the file is a normal file (i.e. not a directory or symlink)
