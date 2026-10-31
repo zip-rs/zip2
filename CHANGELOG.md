@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.2.0](https://github.com/zip-rs/zip2/compare/v9.1.3...v9.2.0) - 2026-10-31
+
+### <!-- 0 -->🚀 Features
+
+- *(write)* add parallel compression and batch appending for ZipWriter with Rayon ([#1225](https://github.com/zip-rs/zip2/pull/1225))
+- add index_for_name_raw ([#1210](https://github.com/zip-rs/zip2/pull/1210))
+- *(extract)* multi-threaded parallel extraction engine and safe extent pre-allocation ([#1207](https://github.com/zip-rs/zip2/pull/1207))
+- *(read)* add index-free iterable ZIP reader ([#1218](https://github.com/zip-rs/zip2/pull/1218))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- by_name().get_metadata() and by_index().get_metadata() now succeed even when compression method is unsupported ([#1228](https://github.com/zip-rs/zip2/pull/1228))
+- *(read)* keep ZipIterable::len at the central directory entry count ([#1221](https://github.com/zip-rs/zip2/pull/1221))
+- *(fuzz)* count reopens in copy bases when tracking comment shrink ([#1222](https://github.com/zip-rs/zip2/pull/1222))
+
+### <!-- 4 -->⚡ Performance
+
+- *(read)* eliminate redundant pre-scan I/O and atomic contention in par_extract ([#1227](https://github.com/zip-rs/zip2/pull/1227))
+- *(read)* eliminate redundant clone and heap allocations in safe_prepare_path ([#1224](https://github.com/zip-rs/zip2/pull/1224))
+
 ## [9.1.3](https://github.com/zip-rs/zip2/compare/v9.1.2...v9.1.3) - 2026-10-27
 
 ### <!-- 0 -->🚀 Features
