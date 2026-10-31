@@ -308,7 +308,7 @@ impl<'k, 'n, 'a: 'k + 'n> arbitrary::Arbitrary<'a> for FileOptions<'k, 'n, Exten
                 .extended_options
                 .extra_fields
                 .iter()
-                .map(|x| x.size(false))
+                .map(|x| x.full_size(true))
                 .sum::<usize>();
         let Some(max_name_len) = (u16::MAX as usize).checked_sub(entry_len) else {
             return Err(arbitrary::Error::IncorrectFormat);
