@@ -163,7 +163,9 @@ fn compare_readers(data: &[u8]) -> Result<(), ReaderMismatch> {
 
     if archive.validate_header_consistency().is_err() {
         let mut data = std::io::Cursor::new(data);
-        while let Ok(_) = read_zipfile_from_stream(&mut data) {}
+        while let Ok(Some(mut file)) = read_zipfile_from_stream(&mut data) {
+            std::io::copy(&mut file, &mut std::io::sink()).ok();
+        }
         return Ok(());
     }
     let mut archive_metadata = Vec::new();
