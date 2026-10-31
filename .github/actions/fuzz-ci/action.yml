@@ -34,7 +34,8 @@ runs:
       uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
       with:
         channel: nightly
-        bins: cargo-clippy, cargo-afl
+        bins: cargo-afl
+        components: clippy
     - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
       shell: bash
     - id: rustc-version

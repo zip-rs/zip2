@@ -158,51 +158,16 @@ jobs:
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly
-      - id: rustc-version
-        shell: pwsh
-        run: |
-          $rustcInfo = rustc -Vv
-          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
-          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
-          "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Setup Rust and Cargo
+        uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-minver-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-minver-
-            ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-            ${{ runner.os }}-cargo-registry-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target
-          key: ${{ runner.os }}-${{ runner.arch }}-target-minver-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-target-minver-${{ steps.rustc-version.outputs.version }}-
+          channel: nightly
+          bins: cargo-afl
+          cache-extra-identifier: ${{ runner.os }}-cargo-minimal-versions
       - name: resolve minimal versions
         run: cargo +nightly -Z minimal-versions update --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
       - name: check
         run: cargo +nightly check --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: cargo-nextest-${{ runner.os }}
-          path: ${{ runner.temp }}/cargo-nextest
-      - name: Install cargo-nextest
-        shell: pwsh
-        run: |
-          $extension = if ($env:RUNNER_OS -eq 'Windows') { '.exe' } else { '' }
-          $binDir = Join-Path $HOME '.cargo/bin'
-          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-          $source = Join-Path $env:RUNNER_TEMP "cargo-nextest/cargo-nextest$extension"
-          $destination = Join-Path $binDir "cargo-nextest$extension"
-          Copy-Item $source $destination
-          if ($env:RUNNER_OS -ne 'Windows') {
-            chmod +x $destination
-          }
       - name: test
         run: cargo +nightly nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
   style_and_docs:
@@ -220,26 +185,19 @@ jobs:
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
-
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Setup Rust and Cargo
+        uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - name: Install required cargo
-        run: cargo install clippy-sarif sarif-fmt
+          channel: nightly
+          components: clippy
+          bins: clippy-sarif sarif-fmt
       - name: Run clippy - inside bash for pipefail
         shell: bash
         # allow warnings but not errors
-        run: cargo +nightly clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload analysis results to GitHub
         if: always()
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
@@ -314,7 +272,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          channel: nightly
+          channel: ${{ matrix.rust }}
           bins: cargo-nextest
           cache-extra-identifier: ${{ runner.os }}-${{ matrix.rustalias }}-${{ matrix.feature.key }}
       - name: Check that the benches can be built
@@ -404,12 +362,22 @@ jobs:
             rust: nightly
     runs-on: ${{ vars.LINUX_RUNNER_CI_WASM || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
+        with:
+          persist-credentials: false
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
           channel: nightly
           bins: wasm-pack
           cache-extra-identifier: wasm-${{ runner.os }}-${{ matrix.feature.key }}-${{ matrix.browser_flags }}
+      - name: Conditionally set env
+        if: matrix.browser_flags != '--node' # if browser testing
+        run: echo "WASM_BINDGEN_USE_BROWSER=1" >> $GITHUB_ENV
       - run: wasm-pack test ${{ matrix.browser_flags }} --manifest-path ${{ github.workspace }}/${{ matrix.manifest }} ${{ matrix.feature.flags }}
   cargo_semver:
     timeout-minutes: 10
