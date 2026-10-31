@@ -1,7 +1,6 @@
 //! Code related to `ZipArchive`
 
 use crate::compression::CompressionMethod;
-use crate::extra_fields::ExtraFields;
 use crate::format::MagicPositionCache;
 use crate::format::blocks::{
     FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock, ZipLocalEntryBlock,
@@ -641,37 +640,9 @@ impl<R: Read + Seek> ZipArchive<R> {
         };
         let variable_fields_len =
             u64::from(block.file_name_length) + u64::from(block.extra_field_length);
-        if fixed_header_end
+        Ok(!fixed_header_end
             .and_then(|end| end.checked_add(variable_fields_len))
-            .is_none_or(|end| end > range_end)
-        {
-            return Ok(false);
-        }
-
-        let mut file_name = vec![0; usize::from(block.file_name_length)];
-        if let Err(error) = reader.read_exact(&mut file_name) {
-            if error.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Ok(false);
-            }
-            return Err(error.into());
-        }
-        let mut extra_fields_raw = vec![0; usize::from(block.extra_field_length)];
-        if let Err(error) = reader.read_exact(&mut extra_fields_raw) {
-            if error.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Ok(false);
-            }
-            return Err(error.into());
-        }
-
-        let extra_fields = match ExtraFields::parse(&extra_fields_raw, &block, true) {
-            Ok(extra_fields) => extra_fields,
-            Err(_) => return Ok(false),
-        };
-        let mut data = match ZipFileData::from_local_block(block, extra_fields) {
-            Ok(data) => data,
-            Err(_) => return Ok(false),
-        };
-        Ok(data.apply_extra_fields(&mut file_name).is_ok())
+            .is_none_or(|end| end > range_end))
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -1047,6 +1018,26 @@ mod tests {
     use crate::read::ArchiveOffset;
     use crate::read::magic_finder::{Backwards, MagicFinder};
     use std::io::{Cursor, Write};
+
+    #[test]
+    fn unlisted_local_header_with_malformed_extra_field_is_detected() {
+        let mut bytes = Magic::LOCAL_FILE_HEADER_SIGNATURE.to_le_bytes().to_vec();
+        let mut fixed_header = [0; 26];
+        fixed_header[22..24].copy_from_slice(&1u16.to_le_bytes());
+        fixed_header[24..26].copy_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&fixed_header);
+        bytes.extend_from_slice(b"x");
+        bytes.extend_from_slice(&[1, 0, 5, 0]);
+
+        assert!(
+            super::ZipArchive::<Cursor<Vec<u8>>>::is_valid_local_header_at(
+                &mut Cursor::new(bytes.clone()),
+                0,
+                bytes.len() as u64,
+            )
+            .unwrap()
+        );
+    }
 
     #[test]
     fn invalid_offset() {
