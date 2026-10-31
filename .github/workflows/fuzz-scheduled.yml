@@ -30,50 +30,12 @@ jobs:
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
           persist-credentials: false
-      - run: rustup toolchain add nightly && rustup default nightly
-      - id: rustc-version
-        shell: pwsh
-        run: |
-          $rustcInfo = rustc -Vv
-          $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
-          $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
-          "version=$release-$commit" >> $env:GITHUB_OUTPUT
-      - id: cpu-features
-        shell: pwsh
-        run: |
-          $cpuFeatures = rustc -C target-cpu=native --print cfg | Select-String '^target_feature=' | ForEach-Object { $_.Line } | Sort-Object
-          $cpuFingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($cpuFeatures -join "`n")))).ToLowerInvariant()
-          "hash=$cpuFingerprint" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Setup Rust and Cargo
+        uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - id: afl-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/cargo-afl
-            ~/.cargo/.crates2.json
-            ~/.cargo/.crates.toml
-            ~/.local/share/afl.rs
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: fuzz/target
-          key: ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.target }}-${{ matrix.feature }}-${{ hashFiles('Cargo.toml', 'fuzz/Cargo.toml', 'tools/cargo-afl-version/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fuzz-${{ steps.rustc-version.outputs.version }}-${{ steps.cpu-features.outputs.hash }}-${{ matrix.target }}-${{ matrix.feature }}-
-      - run: bash .github/scripts/install-cargo-tool.sh cargo-afl tools/cargo-afl-version/Cargo.toml
-      - name: Build AFL runtime
-        if: steps.afl-cache.outputs.cache-hit != 'true'
-        run: cargo afl config --build --force
+          channel: nightly
+          bins: cargo-afl
+          components: clippy
       - run: cargo afl system-config
       - run: cargo afl build --release ${{ matrix.flags }} -p fuzz_${{ matrix.target }} --manifest-path fuzz/Cargo.toml
       - name: fuzz
