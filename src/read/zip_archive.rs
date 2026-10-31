@@ -699,6 +699,14 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.by_name_with_optional_password(name, None)
     }
 
+    /// Search for a file entry by its raw name bytes, without decoding the name.
+    pub fn by_name_raw(&mut self, name: &[u8]) -> ZipResult<ZipFile<'_, R>> {
+        let index = self
+            .index_for_name_raw(name)
+            .ok_or(ZipError::FileNotFound)?;
+        self.by_index_raw(index)
+    }
+
     /// Get the index of a file entry by name, if it's present.
     /// First try to get the index by the name as a binary representation of the name. If not found,
     /// try to find the name with the decoded version of the name. This is a fallback for name
