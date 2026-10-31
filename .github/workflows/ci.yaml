@@ -84,9 +84,8 @@ jobs:
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
           channel: nightly
-          bins: cargo-nextest
+          bins: cargo-nextest, cargo-zigbuild
           targets: x86_64-unknown-freebsd
-          components: zigbuild
       - name: Install zig
         shell: bash
         run: sudo snap install --beta zig --classic
