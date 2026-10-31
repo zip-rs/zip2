@@ -287,6 +287,8 @@ jobs:
         with:
           cache-base: master
           channel: ${{ matrix.rust }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - id: rustc-version
         shell: pwsh
         run: |
@@ -385,6 +387,8 @@ jobs:
           cache-base: master
           channel: nightly
           components: rustfmt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: fmt
         run: cargo fmt --all -- --check
       - name: fmt fuzz
