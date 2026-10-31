@@ -242,6 +242,7 @@ fn zip64_large() {
 #[test]
 fn test_zip64_check_extra_field() {
     use std::{fs::File, io::Cursor, path::Path};
+    use tempfile::tempdir;
     use zip::result::ZipResult;
 
     fn zip64_check_extra_field(path: &Path, archive_buffer: &mut Vec<u8>) -> ZipResult<()> {
@@ -270,8 +271,9 @@ fn test_zip64_check_extra_field() {
         Ok(())
     }
 
-    let path = Path::new("bigfile.bin");
-    let bigfile = File::create(path).expect("Failed to create a big file");
+    let big_file_dir = tempdir().unwrap();
+    let path = big_file_dir.path().join("bigfile.bin");
+    let bigfile = File::create(&path).expect("Failed to create a big file");
 
     let bigfile_size: u32 = 1024 * 1024 * 1024;
     // 1024 MiB = 1024 * 1024 * 1024 bytes
@@ -280,8 +282,9 @@ fn test_zip64_check_extra_field() {
         .expect("Failed to set file length of the big file");
 
     let mut archive_buffer = Vec::new();
-    let res = zip64_check_extra_field(path, &mut archive_buffer);
-    std::fs::remove_file(path).expect("Failed to remove the big file");
+    let res = zip64_check_extra_field(&path, &mut archive_buffer);
+    drop(bigfile);
+    drop(big_file_dir);
 
     assert_eq!(res.unwrap(), ());
     assert_eq!(archive_buffer.len(), 5368709808);

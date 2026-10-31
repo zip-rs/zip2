@@ -1,6 +1,5 @@
 use std::io::{Cursor, Write};
 
-use zip::unstable::stream::ZipStreamReader;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
@@ -49,6 +48,7 @@ fn two_concatenated_archives() -> Result<(), Box<dyn std::error::Error>> {
     {
         use std::fs;
         use tempfile::tempdir;
+        use zip::unstable::stream::ZipStreamReader;
 
         let destination = tempdir()?;
         let victim = destination.path().join("plugins/bootstrap.js");
