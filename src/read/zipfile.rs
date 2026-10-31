@@ -272,46 +272,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         base_path: &Path,
         root_dir: Option<&(Vec<&OsStr>, impl RootDirFilter)>,
     ) -> ZipResult<PathBuf> {
-        let file_name = self.name()?;
-        let components = self
-            .data
-            .simplified_components(&file_name)
-            .ok_or(invalid!("Invalid file path"))?;
-
-        let components = match root_dir {
-            Some((root_dir, filter)) => match components.strip_prefix(&**root_dir) {
-                Some(components) => components,
-
-                // In this case, we expect that the file was not in the root
-                // directory, but was filtered out when searching for the
-                // root directory.
-                None => {
-                    // We could technically find ourselves at this code
-                    // path if the user provides an unstable or
-                    // non-deterministic `filter` function.
-                    //
-                    // If debug assertions are on, we should panic here.
-                    // Otherwise, the safest thing to do here is to just
-                    // extract as-is.
-                    debug_assert!(
-                        !filter(&PathBuf::from_iter(components.iter())),
-                        "Root directory filter should not match at this point"
-                    );
-
-                    // Extract as-is.
-                    &components[..]
-                }
-            },
-
-            None => &components[..],
-        };
-
-        crate::path::resolve_enclosed(
-            base_path,
-            base_path,
-            components.iter().copied(),
-            true, // create intermediate directories
-        )
+        safe_prepare_path_from_metadata(&self.file_name_raw, &self.data, base_path, root_dir)
     }
 
     /// Get the extra data of the zip header for this file
@@ -435,4 +396,32 @@ impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {
             }
         }
     }
+}
+
+pub(crate) fn safe_prepare_path_from_metadata<Filter: RootDirFilter>(
+    file_name_raw: &[u8],
+    data: &ZipFileData,
+    base_path: &Path,
+    root_dir: Option<&(Vec<&OsStr>, Filter)>,
+) -> ZipResult<PathBuf> {
+    let file_name = data.name(file_name_raw)?;
+    let components = data
+        .simplified_components(&file_name)
+        .ok_or(invalid!("Invalid file path"))?;
+
+    let components = match root_dir {
+        Some((root_dir, filter)) => match components.strip_prefix(&**root_dir) {
+            Some(components) => components,
+            None => {
+                debug_assert!(
+                    !filter(&PathBuf::from_iter(components.iter())),
+                    "Root directory filter should not match at this point"
+                );
+                &components[..]
+            }
+        },
+        None => &components[..],
+    };
+
+    crate::path::resolve_enclosed(base_path, base_path, components.iter().copied(), true)
 }

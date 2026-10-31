@@ -21,7 +21,7 @@ pub(crate) const MAX_SYMLINK_TARGET_LEN: u64 = 4096;
 
 /// Buffer capacity for file extraction streams (64 KiB), reducing syscall overhead
 /// and optimizing page cache utilization during archive extraction.
-pub(crate) const EXTRACT_BUFFER_SIZE: usize = 64 * 1024;
+pub(crate) const EXTRACT_BUFFER_SIZE: usize = 256 * 1024;
 
 /// Maximum extent pre-allocation ceiling (64 MiB).
 ///
@@ -849,13 +849,23 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         let mut total_extracted = 0u64;
 
         for i in 0..self.len() {
-            let read_options = crate::read::ZipReadOptions::new()
-                .enforce_header_consistency(extract_options.enforce_header_consistency);
-            let mut file = self.by_index_with_options(i, read_options)?;
+            let (file_name_raw, data) = self
+                .shared
+                .files
+                .get_index(i)
+                .ok_or(ZipError::FileNotFound)?;
 
-            let outpath = file.safe_prepare_path(directory.as_ref(), root_dir.as_ref())?;
+            let outpath = crate::read::zipfile::safe_prepare_path_from_metadata(
+                file_name_raw,
+                data,
+                directory.as_ref(),
+                root_dir.as_ref(),
+            )?;
 
-            if file.is_symlink() {
+            if data.is_symlink() {
+                let read_options = crate::read::ZipReadOptions::new()
+                    .enforce_header_consistency(extract_options.enforce_header_consistency);
+                let mut file = self.by_index_with_options(i, read_options)?;
                 let declared_len = file.size();
                 if declared_len > MAX_SYMLINK_TARGET_LEN {
                     return Err(invalid!(
@@ -911,11 +921,11 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                         make_symlink_impl(&outpath, target_str, &self.shared.files)?;
                     }
                 }
-            } else if file.is_dir() {
+            } else if data.is_dir(file_name_raw) {
                 if created_dirs.insert(outpath.clone()) {
                     make_writable_dir_all(&outpath)?;
                 }
-                if let Some(mode) = file.unix_mode() {
+                if let Some(mode) = data.unix_mode() {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
@@ -989,26 +999,27 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                                 }
                             };
                             let n_u64 = n as u64;
-                            let old_total = total_extracted_atomic
-                                .fetch_add(n_u64, std::sync::atomic::Ordering::Relaxed);
-                            let new_total = match old_total.checked_add(n_u64) {
-                                Some(total) => total,
-                                None => {
+                            if let Some(limit) = size_limit {
+                                let old_total = total_extracted_atomic
+                                    .fetch_add(n_u64, std::sync::atomic::Ordering::Relaxed);
+                                let new_total = match old_total.checked_add(n_u64) {
+                                    Some(total) => total,
+                                    None => {
+                                        copy_error =
+                                            Some(ZipError::DecompressedSizeLimitExceeded {
+                                                size: u128::MAX,
+                                                limit,
+                                            });
+                                        break;
+                                    }
+                                };
+                                if new_total > limit {
                                     copy_error = Some(ZipError::DecompressedSizeLimitExceeded {
-                                        size: u128::MAX,
-                                        limit: size_limit.unwrap_or(u64::MAX),
+                                        size: u128::from(new_total),
+                                        limit,
                                     });
                                     break;
                                 }
-                            };
-                            if let Some(limit) = size_limit
-                                && new_total > limit
-                            {
-                                copy_error = Some(ZipError::DecompressedSizeLimitExceeded {
-                                    size: u128::from(new_total),
-                                    limit,
-                                });
-                                break;
                             }
                             if let Err(e) = outfile.write_all(&buf[..n]) {
                                 copy_error = Some(ZipError::Io(e));
