@@ -414,6 +414,15 @@ jobs:
           $release = ($rustcInfo | Select-String '^release: ').ToString() -replace '^release: ', ''
           $commit = ($rustcInfo | Select-String '^commit-hash: ').ToString() -replace '^commit-hash: ', ''
           "version=$release-$commit" >> $env:GITHUB_OUTPUT
+      - id: afl-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.local/share/afl.rs
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-afl-runtime-v1-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('tools/cargo-afl-version/Cargo.toml') }}
+      - name: Build AFL runtime if not cached
+        if: steps.rustc-version.outputs.version != needs.setup_cargo_afl.outputs.rustc-version && steps.afl-cache.outputs.cache-hit != 'true'
+        run: cargo afl config --build --force
       - id: cpu-features
         shell: pwsh
         run: |
