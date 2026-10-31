@@ -36,8 +36,6 @@ runs:
         channel: nightly
         bins: cargo-afl
         components: clippy
-    - run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
-      shell: bash
     - id: rustc-version
       shell: pwsh
       run: |
