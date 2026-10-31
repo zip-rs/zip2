@@ -109,7 +109,7 @@ fn checksum(reader: &mut impl Read, size: u64) -> std::io::Result<[u8; 64]> {
 
     let mut hasher = Sha3_512::new();
     let mut buffer = [0; 8192];
-    let mut remaining = MAX_BYTES_TO_READ;
+    let mut remaining = size;
     while remaining > 0 {
         let length = buffer.len().min(remaining as usize);
         let count = reader.read(&mut buffer[..length])?;
