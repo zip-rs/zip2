@@ -49,7 +49,7 @@ jobs:
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          channel: stable
+          channel: nightly
           bins: cargo-nextest
           components: miri
           targets: s390x-unknown-linux-gnu
