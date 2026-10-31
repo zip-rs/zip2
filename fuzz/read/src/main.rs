@@ -2,12 +2,11 @@
 
 #[cfg(fuzzing)]
 use afl::fuzz;
+use arbitrary::Unstructured;
 use sha3::{Digest, Sha3_512};
 use std::error::Error;
 use std::fmt;
-use std::fmt::Write;
 use std::io::{Read, Seek, SeekFrom};
-use arbitrary::Unstructured;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
 use zip::ZipReadOptions;
@@ -249,4 +248,3 @@ fn main() {
         fuzz_one(&v).unwrap();
     }
 }
-
