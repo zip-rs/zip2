@@ -565,6 +565,7 @@ jobs:
           minimize: "true"
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
           setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   fuzz_read_with_no_features:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -594,7 +595,7 @@ jobs:
           artifact-suffix: _no_features
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
           setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
-
+          github-token: ${{ secrets.GITHUB_TOKEN }}
   fuzz_write:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
     needs:
@@ -623,6 +624,7 @@ jobs:
           minimize: "true"
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
           setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   fuzz_write_with_no_features:
     runs-on: ${{ vars.LINUX_RUNNER_CI_FINAL_FUZZ || 'ubuntu-latest' }}
@@ -653,3 +655,4 @@ jobs:
           artifact-suffix: _no_features
           fuzz-seconds: ${{ env.FUZZ_SECONDS }}
           setup-rustc-version: ${{ needs.setup_cargo_afl.outputs.rustc-version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

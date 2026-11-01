@@ -30,6 +30,9 @@ inputs:
   setup-rustc-version:
     description: Rust compiler version used to build the setup AFL runtime
     required: true
+  github-token:
+    description: GitHub token used by moonrepo/setup-rust to fetch artifacts from GitHub
+    required: true
 runs:
   using: composite
   steps:
@@ -42,6 +45,8 @@ runs:
         components: clippy
         cache-target: release
         cache-extra-identifier: fuzz-${{ inputs.feature-key }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
     - id: rustc-version
       shell: pwsh
       run: |
