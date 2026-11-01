@@ -77,3 +77,49 @@ fn two_concatenated_archives() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+#[test]
+fn second_archive_empty() -> Result<(), Box<dyn std::error::Error>> {
+    let first = archive("plugins/bootstrap.js", b"console.log('ATTACKER_PLUGIN');\n");
+    let second = ZipWriter::new(Cursor::new(Vec::new()));
+    let second = second.finish()?.into_inner();
+
+    let mut combined = first;
+    combined.extend_from_slice(&second);
+
+    let mut strict_inspected = ZipArchive::new(Cursor::new(&combined))?;
+    assert!(strict_inspected.validate_header_consistency().is_err());
+
+    #[cfg(not(miri))]
+    {
+        use std::fs;
+        use tempfile::tempdir;
+        use zip::unstable::stream::ZipStreamReader;
+
+        let destination = tempdir()?;
+        let victim = destination.path().join("plugins/bootstrap.js");
+        fs::create_dir_all(victim.parent().unwrap())?;
+        fs::write(&victim, b"console.log('TRUSTED_PLUGIN');\n")?;
+
+        let result = ZipStreamReader::new(Cursor::new(&combined))
+            .enforce_header_consistency(true)
+            .extract(destination.path());
+
+        println!("strict stream extraction: {result:?}");
+        println!(
+            "victim after extraction: {:?}",
+            fs::read_to_string(&victim)?
+        );
+        println!(
+            "benign PDF extracted: {}",
+            destination
+                .path()
+                .join("documents/quarterly-report.pdf")
+                .exists()
+        );
+
+        assert!(result.is_err());
+        assert!(!fs::read_to_string(&victim)?.contains("ATTACKER_PLUGIN"));
+    }
+    Ok(())
+}
