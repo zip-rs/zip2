@@ -152,3 +152,50 @@ fn test_partial_buffer_read_crypto() {
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
 }
+
+#[test]
+#[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
+fn test_zip_crypto_header_randomness() -> zip::result::ZipResult<()> {
+    use std::io::{Cursor, Read, Write};
+    use zip::unstable::write::FileOptionsExt;
+    use zip::write::{SimpleFileOptions, ZipWriter};
+    use zip::DateTime;
+
+    let create_archive = || -> zip::result::ZipResult<Vec<u8>> {
+        let mut buffer = Vec::new();
+        let mut archive = ZipWriter::new(Cursor::new(&mut buffer));
+        let options = SimpleFileOptions::default()
+            .with_deprecated_encryption(b"test_password")?
+            .last_modified_time(DateTime::from_date_and_time(2025, 1, 1, 0, 0, 0).unwrap());
+        archive.start_file("test.txt", options)?;
+        archive.write_all(b"deterministic content for randomness test")?;
+        archive.finish()?;
+        Ok(buffer)
+    };
+
+    let archive1 = create_archive()?;
+    let archive2 = create_archive()?;
+
+    // Both archives must decrypt successfully with the correct password
+    for archive_bytes in [&archive1, &archive2] {
+        let mut archive = zip::ZipArchive::new(Cursor::new(archive_bytes))?;
+        let mut file = archive.by_index_decrypt(0, b"test_password").unwrap();
+        let mut decrypted = Vec::new();
+        file.read_to_end(&mut decrypted)?;
+        assert_eq!(decrypted, b"deterministic content for randomness test");
+    }
+
+    // Verify that the archives differ due to randomized 10-byte ZipCrypto header prefix
+    assert_ne!(archive1, archive2);
+
+    // Specifically inspect the 10-byte random header prefix in the local file entry:
+    // Local header offset: 30 + filename_len + extra_len
+    let filename_len = u16::from_le_bytes([archive1[26], archive1[27]]) as usize;
+    let extra_len = u16::from_le_bytes([archive1[28], archive1[29]]) as usize;
+    let header_offset = 30 + filename_len + extra_len;
+    let prefix1 = &archive1[header_offset..header_offset + 10];
+    let prefix2 = &archive2[header_offset..header_offset + 10];
+    assert_ne!(prefix1, prefix2);
+
+    Ok(())
+}
