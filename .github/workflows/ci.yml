@@ -25,10 +25,15 @@ jobs:
     name: CI Complete
     needs: run-ci
     runs-on: ubuntu-latest
+    if: github.actor != 'github-merge-queue[bot]'
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
-
-      - run: "true"
+      - name: Check if tests actually ran
+        run: |
+          if [ "${{ needs.run-ci.result }}" != "success" ]; then
+            echo "Error: Required test suite failed or was skipped!"
+            exit 1
+          fi
