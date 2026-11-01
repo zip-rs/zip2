@@ -290,28 +290,135 @@ pub(crate) fn make_symlink_as_file_utf8(
     Ok(())
 }
 
+#[cfg(windows)]
+fn delete_by_handle(file: std::fs::File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+
+    let handle = file.as_raw_handle() as _;
+    let mut disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    let success = unsafe {
+        SetFileInformationByHandle(
+            handle,
+            FileDispositionInfo,
+            &mut disposition as *mut _ as *const _,
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    };
+    drop(file);
+    if success == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 /// Create an output file for extraction securely.
 ///
-/// If `outpath` already exists as a symbolic link, it is removed before creating the regular
-/// file so that extraction will not follow the link and overwrite a target file outside the
+/// If `outpath` already exists as a symbolic link or hard link, it is removed before creating the regular
+/// file so that extraction will not follow the link and overwrite or truncate a target file outside the
 /// destination directory. After creation, the file is verified to ensure it was not swapped
-/// for a symbolic link.
+/// for a symbolic link or hard link.
 #[cfg_attr(not(unix), allow(unused_variables))]
 pub(crate) fn create_outfile(
     outpath: &Path,
     unix_mode: Option<u32>,
 ) -> std::io::Result<std::fs::File> {
-    if let Ok(meta) = std::fs::symlink_metadata(outpath)
-        && meta.file_type().is_symlink()
-    {
-        std::fs::remove_file(outpath)?;
+    if let Ok(meta) = std::fs::symlink_metadata(outpath) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if meta.file_type().is_symlink() || meta.nlink() > 1 {
+                std::fs::remove_file(outpath)?;
+            }
+        }
+        #[cfg(windows)]
+        {
+            if meta.file_type().is_symlink() {
+                std::fs::remove_file(outpath)?;
+            } else {
+                use std::os::windows::fs::OpenOptionsExt;
+                use std::os::windows::io::AsRawHandle;
+                // Open with DELETE | FILE_READ_ATTRIBUTES to inspect link count and atomically delete by handle if it is a hard link, avoiding a TOCTOU race.
+                let open_res = std::fs::OpenOptions::new()
+                    .access_mode(
+                        windows_sys::Win32::Storage::FileSystem::DELETE
+                            | windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES,
+                    )
+                    .custom_flags(
+                        windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT,
+                    )
+                    .open(outpath);
+
+                match open_res {
+                    Ok(f) => {
+                        let mut info = unsafe {
+                            std::mem::zeroed::<
+                                windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION,
+                            >()
+                        };
+                        let is_hardlink = unsafe {
+                            windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+                                f.as_raw_handle() as _,
+                                &mut info,
+                            ) != 0
+                                && info.nNumberOfLinks > 1
+                        };
+                        if is_hardlink && delete_by_handle(f).is_err() {
+                            std::fs::remove_file(outpath)?;
+                        }
+                    }
+                    Err(_) => {
+                        // Fall back to opening with FILE_READ_ATTRIBUTES if DELETE permission could not be acquired (e.g. read-only)
+                        if let Ok(f) = std::fs::OpenOptions::new()
+                            .access_mode(
+                                windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES,
+                            )
+                            .custom_flags(
+                                windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT,
+                            )
+                            .open(outpath)
+                        {
+                            let mut info = unsafe {
+                                std::mem::zeroed::<
+                                    windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION,
+                                >()
+                            };
+                            let is_hardlink = unsafe {
+                                windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+                                    f.as_raw_handle() as _,
+                                    &mut info,
+                                ) != 0
+                                    && info.nNumberOfLinks > 1
+                            };
+                            drop(f);
+                            if is_hardlink {
+                                std::fs::remove_file(outpath)?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            if meta.file_type().is_symlink() {
+                std::fs::remove_file(outpath)?;
+            }
+        }
     }
+
     let mut options = std::fs::OpenOptions::new();
-    options.create(true).write(true).truncate(true); // Default for `fs::File::create`
+    options.create(true).write(true);
     #[cfg(unix)]
-    if let Some(mode) = unix_mode {
+    {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(mode);
+        if let Some(mode) = unix_mode {
+            options.mode(mode);
+        }
+        options.custom_flags(libc::O_NOFOLLOW);
     }
     #[cfg(windows)]
     {
@@ -331,6 +438,40 @@ pub(crate) fn create_outfile(
             "Extracted file cannot be written through a symbolic link",
         ));
     }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if file.metadata()?.nlink() > 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "Extracted file cannot be written through a hard link",
+            ));
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        unsafe {
+            let mut info = std::mem::zeroed::<
+                windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION,
+            >();
+            if windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+                file.as_raw_handle() as _,
+                &mut info,
+            ) != 0
+                && info.nNumberOfLinks > 1
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "Extracted file cannot be written through a hard link",
+                ));
+            }
+        }
+    }
+
+    file.set_len(0)?;
     Ok(file)
 }
 
