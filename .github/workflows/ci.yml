@@ -18,3 +18,9 @@ jobs:
   run-ci:
     if: github.actor != 'github-merge-queue[bot]'
     uses: ./.github/workflows/ci-impl.yaml
+  ci-complete:
+    name: CI Complete
+    needs: run-ci
+    runs-on: ubuntu-latest
+    steps:
+      - run: "true"
