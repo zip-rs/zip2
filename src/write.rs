@@ -865,8 +865,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.stats.start = zipwriter.writer.stream_position()?;
                 // crypto_header is counted as part of the data
                 let mut crypto_header = [0u8; 12];
-                let rand_result =
-                    getrandom::fill(&mut crypto_header[0..10]).map_err(|e| ZipError::Io(e.into()));
+                let rand_result = getrandom::fill(&mut crypto_header[0..10])
+                    .map_err(|e| invalid!("getrandom returned error: {}", e));
                 self.ok_or_abort_file(rand_result)?;
                 let file = &mut self.files[index];
                 // The last two bytes of the header should either be the CRC of
