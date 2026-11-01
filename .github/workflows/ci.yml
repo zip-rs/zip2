@@ -14,4 +14,4 @@ on:
 jobs:
   run-ci:
     if: github.actor != 'github-merge-queue[bot]'
-    uses: ./.github/workflows/ci-impl.yml
+    uses: ./.github/workflows/ci-impl.yaml
