@@ -127,6 +127,7 @@ jobs:
         run: cargo nextest run --all-features --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
   style_and_docs:
     permissions:
+      contents: read
       security-events: write # for SARIF upload
     uses: ./.github/workflows/style_and_docs.yml
   dependency_review:
