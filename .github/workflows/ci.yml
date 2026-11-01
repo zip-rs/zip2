@@ -1,0 +1,17 @@
+name: CI Trigger
+on:
+  pull_request:
+    branches:
+      - "master"
+      - "backport/*"
+  push:
+    branches:
+      - "master"
+      - "backport/*"
+  merge_group:
+    types: [checks_requested]
+
+jobs:
+  run-ci:
+    if: github.actor != 'github-merge-queue[bot]'
+    uses: ./.github/workflows/ci-impl.yml
