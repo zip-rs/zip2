@@ -1,4 +1,3 @@
-use std::fs;
 use std::io::{Cursor, Write};
 
 use zip::write::SimpleFileOptions;
@@ -93,6 +92,7 @@ fn second_archive_empty() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(miri))]
     {
+        use std::fs;
         use tempfile::tempdir;
         use zip::unstable::stream::ZipStreamReader;
 
