@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::{Cursor, Write};
 
 use zip::write::SimpleFileOptions;
@@ -92,34 +93,18 @@ fn second_archive_empty() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(miri))]
     {
-        use std::fs;
         use tempfile::tempdir;
         use zip::unstable::stream::ZipStreamReader;
 
         let destination = tempdir()?;
-        let victim = destination.path().join("plugins/bootstrap.js");
-        fs::create_dir_all(victim.parent().unwrap())?;
-        fs::write(&victim, b"console.log('TRUSTED_PLUGIN');\n")?;
 
         let result = ZipStreamReader::new(Cursor::new(&combined))
             .enforce_header_consistency(true)
             .extract(destination.path());
 
-        println!("strict stream extraction: {result:?}");
-        println!(
-            "victim after extraction: {:?}",
-            fs::read_to_string(&victim)?
-        );
-        println!(
-            "benign PDF extracted: {}",
-            destination
-                .path()
-                .join("documents/quarterly-report.pdf")
-                .exists()
-        );
-
         assert!(result.is_err());
-        assert!(!fs::read_to_string(&victim)?.contains("ATTACKER_PLUGIN"));
+        assert!(matches!(fs::symlink_metadata(destination.path().join("plugins/bootstrap.js")),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound));
     }
     Ok(())
 }
