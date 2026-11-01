@@ -19,7 +19,7 @@ These are our requirements for PRs, in addition to the usual functionality and r
     eligible (reviewed, passing CI tests, and no conflicts with the base branch). I will attempt to fix merge
     conflicts, but this is best-effort.
 - Your changes must build against the MSRV (see README.md) AND the latest stable Rust version AND the latest nightly Rust version.
-- PRs must pass all the checks specified in `.github/workflows/ci.yaml`, which include:
+- PRs must pass all the checks specified in `.github/workflows/ci-impl.yaml`, which include:
   - Unit tests, run with `--no-default-features` AND with `--all-features` AND with the default features, each run
     against the MSRV (see README.md) AND the latest stable Rust version AND the latest nightly Rust version, on Windows, MacOS 
     AND Ubuntu (yes, that's a 3-dimensional matrix).

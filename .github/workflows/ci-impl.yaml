@@ -2,20 +2,13 @@ name: CI
 permissions:
   contents: read
 
+on:
+  workflow_call:
+  workflow_dispatch:
+
 concurrency:
   group: ci-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
   cancel-in-progress: false
-
-on:
-  pull_request:
-    branches:
-      - "master"
-  push:
-    branches:
-      - "master"
-  workflow_dispatch:
-  merge_group:
-    types: [checks_requested]
 
 env:
   RUSTFLAGS: -Dwarnings
