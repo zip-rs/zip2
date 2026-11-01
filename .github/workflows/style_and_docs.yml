@@ -41,7 +41,15 @@ jobs:
         if: always()
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
-          sarif_file: sarif
+          sarif_file: rust-clippy-results.sarif
+          category: main
+          wait-for-processing: true
+      - name: Upload analysis results to GitHub
+        if: always()
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: fuzz-clippy-results.sarif
+          category: fuzz
           wait-for-processing: true
       - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/Cargo.toml
       - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
