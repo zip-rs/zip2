@@ -11,6 +11,9 @@ on:
   merge_group:
     types: [checks_requested]
 
+permissions:
+  contents: read
+
 jobs:
   run-ci:
     if: github.actor != 'github-merge-queue[bot]'
