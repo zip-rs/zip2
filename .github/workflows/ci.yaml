@@ -325,7 +325,7 @@ jobs:
             rust: stable
           - rustalias: nightly
             rust: nightly
-    runs-on: ${{ vars.LINUX_RUNNER_CI_WASM || 'blacksmith-2vcpu-ubuntu-2604' }}
+    runs-on: ${{ vars.LINUX_RUNNER_CI_WASM || 'ubuntu-latest' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
@@ -544,6 +544,8 @@ jobs:
       - build_and_test
       - wasm
       - bsd_platform
+      - miri
+      - check_minimal_versions
       - fuzz_regressions
       - setup_cargo_afl
     steps:
@@ -570,6 +572,8 @@ jobs:
       - build_and_test
       - wasm
       - bsd_platform
+      - miri
+      - check_minimal_versions
       - fuzz_regressions
       - setup_cargo_afl
     steps:
@@ -597,6 +601,8 @@ jobs:
       - build_and_test
       - wasm
       - bsd_platform
+      - miri
+      - check_minimal_versions
       - fuzz_regressions
       - setup_cargo_afl
     steps:
@@ -624,6 +630,8 @@ jobs:
       - build_and_test
       - wasm
       - bsd_platform
+      - miri
+      - check_minimal_versions
       - fuzz_regressions
       - setup_cargo_afl
     steps:
