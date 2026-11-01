@@ -339,7 +339,7 @@ jobs:
           egress-policy: audit
       - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # 1.8.1
         with:
-          persist-credentials: false\
+          persist-credentials: false
       - name: Setup Rust and Cargo
         uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
