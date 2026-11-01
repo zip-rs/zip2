@@ -65,3 +65,5 @@ fn deep_copy_uses_bounded_read_buffer() {
         .unwrap();
     assert_eq!(copy, contents);
 }
+
+use zip::ZipUpdate;

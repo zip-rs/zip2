@@ -6,7 +6,7 @@ use std::path::Path;
 
 use typed_path::{Utf8WindowsComponent, Utf8WindowsPath};
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipExtract, ZipFilePathExt, ZipWriter};
 
 const NAMES: &[&str] = &["/c:x", "./c:x", "a/../c:x", "/c:x/y", "b/c:x", "/c:d:x"];
 

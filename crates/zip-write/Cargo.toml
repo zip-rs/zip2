@@ -1,0 +1,62 @@
+[package]
+name = "zip-write"
+version = "9.2.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/zip-rs/zip2"
+description = "ZIP archive writing APIs."
+
+[lib]
+doctest = false
+
+[dependencies]
+zip-core-lib = { path = "../zip-core-lib", version = "9.2.0", default-features = false }
+aes = { version = "0.9", optional = true, features = ["zeroize"] }
+bzip2 = { version = "0.6", default-features = false, optional = true }
+constant_time_eq = { version = "^0.6.1", optional = true }
+crc32fast = "1.5"
+flate2 = { version = "1.1", default-features = false, optional = true }
+hmac = { version = "0.13", optional = true, features = ["zeroize"] }
+indexmap = "2"
+ppmd-rust = { version = "1.5", optional = true }
+pbkdf2 = { version = "0.13", optional = true }
+sha1 = { version = "0.11", optional = true }
+zeroize = { version = "1.9", optional = true }
+zstd = { version = "^0.14.2", optional = true, default-features = false }
+zopfli = { version = "^0.8.3", optional = true }
+lzma-rust2 = { version = "^0.23.0", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+rayon = { version = "1.11", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+time = { version = "^0.3.47", default-features = false, optional = true, features = ["std", "wasm-bindgen"] }
+
+[features]
+_deflate-any = ["zip-core-lib/_deflate-any"]
+_bzip2_any = ["zip-core-lib/_bzip2_any"]
+default = ["aes-crypto", "bzip2", "deflate64", "deflate", "lzma", "ppmd", "time", "zstd", "xz"]
+aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize", "zip-core-lib/aes-crypto"]
+bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any", "zip-core-lib/bzip2"]
+bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any", "zip-core-lib/bzip2-rs"]
+chrono = ["zip-core-lib/chrono"]
+deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs", "zip-core-lib/deflate"]
+deflate-flate2 = ["dep:flate2", "_deflate-any", "zip-core-lib/deflate-flate2"]
+deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib", "zip-core-lib/deflate-flate2-zlib"]
+deflate-flate2-zlib-ng = ["deflate-flate2", "flate2/zlib-ng", "zip-core-lib/deflate-flate2-zlib-ng"]
+deflate-flate2-zlib-ng-compat = ["deflate-flate2", "flate2/zlib-ng-compat", "zip-core-lib/deflate-flate2-zlib-ng-compat"]
+deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs", "zip-core-lib/deflate-flate2-zlib-rs"]
+deflate-zopfli = ["dep:zopfli", "zip-core-lib/deflate-zopfli"]
+deflate64 = ["zip-core-lib/deflate64"]
+jiff-02 = ["zip-core-lib/jiff-02"]
+legacy-zip = ["zip-core-lib/legacy-zip"]
+lzma = ["dep:lzma-rust2", "zip-core-lib/lzma"]
+nt-time = ["zip-core-lib/nt-time"]
+ppmd = ["dep:ppmd-rust", "zip-core-lib/ppmd"]
+rayon = ["dep:rayon", "zip-core-lib/rayon"]
+time = ["dep:time", "zip-core-lib/time"]
+unreserved = ["zip-core-lib/unreserved"]
+xz = ["dep:lzma-rust2", "zip-core-lib/xz"]
+zstd = ["dep:zstd", "zip-core-lib/zstd"]

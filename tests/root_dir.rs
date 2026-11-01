@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use zip::read::root_dir_common_filter;
 use zip::write::SimpleFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipExtract, ZipWriter};
 
 fn create_zip_with_root_dir() -> Vec<u8> {
     let buf = Vec::new();

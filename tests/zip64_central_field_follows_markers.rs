@@ -203,3 +203,5 @@ fn appending_with_leftover_bytes_finishes_and_keeps_entries() {
     a.by_name("b.txt").unwrap().read_to_string(&mut s).unwrap();
     assert_eq!(s, "world");
 }
+
+use zip::ZipUpdate;

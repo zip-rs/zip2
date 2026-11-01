@@ -4,6 +4,8 @@
 ))]
 pub mod tests {
     use std::io::Write;
+    use zip::ZipExtract;
+    use zip::ZipFilePathExt;
     use zip::write::SimpleFileOptions;
     use zip::{ZipArchive, ZipWriter};
 

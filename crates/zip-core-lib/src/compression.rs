@@ -1,0 +1,352 @@
+//! Possible ZIP compression methods.
+
+use crate::format::compression::Compression;
+use core::fmt;
+use core::fmt::Formatter;
+
+#[allow(deprecated)]
+/// Identifies the storage format used to compress a file within a ZIP archive.
+///
+/// Each file's compression method is stored alongside it, allowing the
+/// contents to be read without context.
+///
+/// When creating ZIP files, you may choose the method to use with
+/// [`crate::write::FileOptions::compression_method`]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
+#[non_exhaustive]
+pub enum CompressionMethod {
+    /// Store the file as is
+    Stored,
+    /// Compress the file using Deflate
+    #[cfg(feature = "_deflate-any")]
+    Deflated,
+    /// Compress the file using Deflate64.
+    /// Decoding deflate64 is supported but encoding deflate64 is not supported.
+    #[cfg(feature = "deflate64")]
+    Deflate64,
+    /// Compress the file using BZIP2
+    #[cfg(feature = "_bzip2_any")]
+    Bzip2,
+    /// Encrypted using AES.
+    ///
+    /// The actual compression method has to be taken from the AES extra data field
+    /// or from `ZipFileData`.
+    #[cfg(feature = "aes-crypto")]
+    Aes,
+    /// Compress the file using `ZStandard`
+    #[cfg(feature = "zstd")]
+    Zstd,
+    /// Compress the file using LZMA
+    #[cfg(feature = "lzma")]
+    Lzma,
+    #[cfg(feature = "legacy-zip")]
+    /// Method 1 Shrink
+    Shrink,
+    #[cfg(feature = "legacy-zip")]
+    /// Reduce (Method 2-5)
+    Reduce(u8),
+    #[cfg(feature = "legacy-zip")]
+    /// Method 6 Implode/explode
+    Implode,
+    /// Compress the file using XZ
+    #[cfg(feature = "xz")]
+    Xz,
+    /// Compress the file using `PPMd`
+    #[cfg(feature = "ppmd")]
+    Ppmd,
+    /// Unsupported compression method
+    #[cfg_attr(
+        not(any(fuzzing, feature = "_arbitrary")),
+        deprecated(since = "0.5.7", note = "use the constants instead")
+    )]
+    Unsupported(u16),
+}
+#[allow(deprecated, missing_docs)]
+/// All compression methods defined for the ZIP format
+impl CompressionMethod {
+    pub const STORE: Self = CompressionMethod::Stored;
+    #[cfg(feature = "legacy-zip")]
+    pub const SHRINK: Self = CompressionMethod::Shrink;
+    #[cfg(not(feature = "legacy-zip"))]
+    /// Legacy compression method (enable feature `legacy-zip` to get support)
+    pub const SHRINK: Self = CompressionMethod::Unsupported(1);
+    #[cfg(feature = "legacy-zip")]
+    /// Legacy compression method
+    pub const REDUCE_1: Self = CompressionMethod::Reduce(1);
+    #[cfg(not(feature = "legacy-zip"))]
+    /// Legacy compression method (enable feature `legacy-zip` to get support)
+    pub const REDUCE_1: Self = CompressionMethod::Unsupported(2);
+    #[cfg(feature = "legacy-zip")]
+    /// Legacy compression method
+    pub const REDUCE_2: Self = CompressionMethod::Reduce(2);
+    #[cfg(not(feature = "legacy-zip"))]
+    /// Legacy compression method (enable feature `legacy-zip` to get support)
+    pub const REDUCE_2: Self = CompressionMethod::Unsupported(3);
+    #[cfg(feature = "legacy-zip")]
+    /// Legacy compression method
+    pub const REDUCE_3: Self = CompressionMethod::Reduce(3);
+    #[cfg(not(feature = "legacy-zip"))]
+    /// Legacy compression method (enable feature `legacy-zip` to get support)
+    pub const REDUCE_3: Self = CompressionMethod::Unsupported(4);
+    #[cfg(feature = "legacy-zip")]
+    /// Legacy compression method
+    pub const REDUCE_4: Self = CompressionMethod::Reduce(4);
+    #[cfg(not(feature = "legacy-zip"))]
+    /// Legacy compression method (enable feature `legacy-zip` to get support)
+    pub const REDUCE_4: Self = CompressionMethod::Unsupported(5);
+    #[cfg(feature = "legacy-zip")]
+    /// Legacy compression method
+    pub const IMPLODE: Self = CompressionMethod::Implode;
+    #[cfg(not(feature = "legacy-zip"))]
+    /// Legacy compression method (enable feature `legacy-zip` to get support)
+    pub const IMPLODE: Self = CompressionMethod::Unsupported(6);
+    #[cfg(feature = "_deflate-any")]
+    pub const DEFLATE: Self = CompressionMethod::Deflated;
+    #[cfg(not(feature = "_deflate-any"))]
+    pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
+    #[cfg(feature = "deflate64")]
+    pub const DEFLATE64: Self = CompressionMethod::Deflate64;
+    #[cfg(not(feature = "deflate64"))]
+    pub const DEFLATE64: Self = CompressionMethod::Unsupported(9);
+    pub const PKWARE_IMPLODE: Self = CompressionMethod::Unsupported(10);
+    #[cfg(feature = "_bzip2_any")]
+    pub const BZIP2: Self = CompressionMethod::Bzip2;
+    #[cfg(not(feature = "_bzip2_any"))]
+    pub const BZIP2: Self = CompressionMethod::Unsupported(12);
+    #[cfg(not(feature = "lzma"))]
+    pub const LZMA: Self = CompressionMethod::Unsupported(14);
+    #[cfg(feature = "lzma")]
+    pub const LZMA: Self = CompressionMethod::Lzma;
+    pub const IBM_ZOS_CMPSC: Self = CompressionMethod::Unsupported(16);
+    pub const IBM_TERSE: Self = CompressionMethod::Unsupported(18);
+    pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
+    #[cfg(feature = "zstd")]
+    pub const ZSTD: Self = CompressionMethod::Zstd;
+    #[cfg(not(feature = "zstd"))]
+    pub const ZSTD: Self = CompressionMethod::Unsupported(93);
+    pub const MP3: Self = CompressionMethod::Unsupported(94);
+    #[cfg(feature = "xz")]
+    pub const XZ: Self = CompressionMethod::Xz;
+    #[cfg(not(feature = "xz"))]
+    pub const XZ: Self = CompressionMethod::Unsupported(95);
+    pub const JPEG: Self = CompressionMethod::Unsupported(96);
+    pub const WAVPACK: Self = CompressionMethod::Unsupported(97);
+    #[cfg(feature = "ppmd")]
+    pub const PPMD: Self = CompressionMethod::Ppmd;
+    #[cfg(not(feature = "ppmd"))]
+    pub const PPMD: Self = CompressionMethod::Unsupported(98);
+    #[cfg(feature = "aes-crypto")]
+    pub const AES: Self = CompressionMethod::Aes;
+
+    // E.4 The compression method field (section 4.4.5) is set to 99
+    // to indicate a file has been encrypted using this method.
+    #[cfg(not(feature = "aes-crypto"))]
+    pub const AES: Self = CompressionMethod::Unsupported(99);
+
+    #[cfg(feature = "_deflate-any")]
+    pub const DEFAULT: Self = CompressionMethod::Deflated;
+
+    #[cfg(all(not(feature = "_deflate-any"), feature = "_bzip2_any"))]
+    pub const DEFAULT: Self = CompressionMethod::Bzip2;
+
+    #[cfg(all(not(feature = "_deflate-any"), not(feature = "_bzip2_any")))]
+    pub const DEFAULT: Self = CompressionMethod::Stored;
+}
+impl CompressionMethod {
+    /// Convert the compression method (as `u16`) to a name
+    #[must_use]
+    pub const fn name_from_u16(val: u16) -> &'static str {
+        match val {
+            0 => "Stored",
+            1 => "Shrink",
+            2 => "Reduce(1)",
+            3 => "Reduce(2)",
+            4 => "Reduce(3)",
+            5 => "Reduce(4)",
+            6 => "Implode",
+            8 => "Deflated",
+            9 => "Deflate64",
+            12 => "Bzip2",
+            14 => "Lzma",
+            95 => "Xz",
+            93 => "Zstd",
+            98 => "Ppmd",
+            99 => "Aes",
+            _ => "Unknown",
+        }
+    }
+
+    pub const fn parse_from_u16(val: u16) -> Self {
+        match val {
+            0 => CompressionMethod::Stored,
+            #[cfg(feature = "legacy-zip")]
+            1 => CompressionMethod::Shrink,
+            #[cfg(feature = "legacy-zip")]
+            2 => CompressionMethod::Reduce(1),
+            #[cfg(feature = "legacy-zip")]
+            3 => CompressionMethod::Reduce(2),
+            #[cfg(feature = "legacy-zip")]
+            4 => CompressionMethod::Reduce(3),
+            #[cfg(feature = "legacy-zip")]
+            5 => CompressionMethod::Reduce(4),
+            #[cfg(feature = "legacy-zip")]
+            6 => CompressionMethod::Implode,
+            #[cfg(feature = "_deflate-any")]
+            8 => CompressionMethod::Deflated,
+            #[cfg(feature = "deflate64")]
+            9 => CompressionMethod::Deflate64,
+            #[cfg(feature = "_bzip2_any")]
+            12 => CompressionMethod::Bzip2,
+            #[cfg(feature = "lzma")]
+            14 => CompressionMethod::Lzma,
+            #[cfg(feature = "xz")]
+            95 => CompressionMethod::Xz,
+            #[cfg(feature = "zstd")]
+            93 => CompressionMethod::Zstd,
+            #[cfg(feature = "ppmd")]
+            98 => CompressionMethod::Ppmd,
+            #[cfg(feature = "aes-crypto")]
+            99 => CompressionMethod::Aes,
+            #[allow(deprecated)]
+            v => CompressionMethod::Unsupported(v),
+        }
+    }
+
+    /// Converts a u16 to its corresponding `CompressionMethod`
+    #[deprecated(
+        since = "0.5.7",
+        note = "use a constant to construct a compression method"
+    )]
+    #[must_use]
+    pub const fn from_u16(val: u16) -> CompressionMethod {
+        Self::parse_from_u16(val)
+    }
+
+    pub const fn serialize_to_u16(self) -> u16 {
+        match self {
+            CompressionMethod::Stored => 0,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Shrink => 1,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Reduce(n) => 1 + n as u16,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Implode => 6,
+
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => 8,
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => 9,
+            #[cfg(feature = "_bzip2_any")]
+            CompressionMethod::Bzip2 => 12,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd => 93,
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => 14,
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz => 95,
+            #[cfg(feature = "ppmd")]
+            CompressionMethod::Ppmd => 98,
+            // E.4 The compression method field (section 4.4.5) is set to 99
+            // to indicate a file has been encrypted using this method.
+            #[cfg(feature = "aes-crypto")]
+            CompressionMethod::Aes => 99,
+            #[allow(deprecated)]
+            CompressionMethod::Unsupported(v) => v,
+        }
+    }
+
+    /// Converts a `CompressionMethod` to a u16
+    #[deprecated(
+        since = "0.5.7",
+        note = "to match on other compression methods, use a constant"
+    )]
+    #[must_use]
+    pub const fn to_u16(self) -> u16 {
+        self.serialize_to_u16()
+    }
+
+    /// Transform to `Compression`
+    #[must_use]
+    pub const fn into_compression(self) -> Compression {
+        match self {
+            CompressionMethod::Stored => Compression::Stored,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Shrink => Compression::Shrink,
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Reduce(n) => match n {
+                1 => Compression::ReduceFactor1,
+                2 => Compression::ReduceFactor2,
+                3 => Compression::ReduceFactor3,
+                4 => Compression::ReduceFactor4,
+                _ => Compression::Unknown(n as u16),
+            },
+            #[cfg(feature = "legacy-zip")]
+            CompressionMethod::Implode => Compression::Implode,
+            #[cfg(feature = "_deflate-any")]
+            CompressionMethod::Deflated => Compression::Deflated,
+            #[cfg(feature = "deflate64")]
+            CompressionMethod::Deflate64 => Compression::Deflate64,
+            #[cfg(feature = "_bzip2_any")]
+            CompressionMethod::Bzip2 => Compression::Bzip2,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd => Compression::Zstd,
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => Compression::Lzma,
+            #[cfg(feature = "xz")]
+            CompressionMethod::Xz => Compression::Xz,
+            #[cfg(feature = "ppmd")]
+            CompressionMethod::Ppmd => Compression::Ppmd,
+            // E.4 The compression method field (section 4.4.5) is set to 99
+            // to indicate a file has been encrypted using this method.
+            #[cfg(feature = "aes-crypto")]
+            CompressionMethod::Aes => Compression::Aes,
+            #[allow(deprecated)]
+            CompressionMethod::Unsupported(v) => Compression::Unknown(v),
+        }
+    }
+}
+
+impl From<CompressionMethod> for Compression {
+    fn from(value: CompressionMethod) -> Self {
+        value.into_compression()
+    }
+}
+
+impl Default for CompressionMethod {
+    #[cfg(feature = "_deflate-any")]
+    fn default() -> Self {
+        CompressionMethod::Deflated
+    }
+
+    #[cfg(not(feature = "_deflate-any"))]
+    fn default() -> Self {
+        CompressionMethod::Stored
+    }
+}
+
+impl fmt::Display for CompressionMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        // Just duplicate what the Debug format looks like, i.e, the enum key:
+        let method_u16 = self.serialize_to_u16();
+        let name = Self::name_from_u16(method_u16);
+        write!(f, "{name}")
+    }
+}
+
+/// The compression methods which have been implemented.
+pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
+    CompressionMethod::Stored,
+    #[cfg(feature = "_deflate-any")]
+    CompressionMethod::Deflated,
+    #[cfg(feature = "deflate64")]
+    CompressionMethod::Deflate64,
+    #[cfg(feature = "_bzip2_any")]
+    CompressionMethod::Bzip2,
+    #[cfg(feature = "zstd")]
+    CompressionMethod::Zstd,
+    #[cfg(feature = "xz")]
+    CompressionMethod::Xz,
+    #[cfg(feature = "ppmd")]
+    CompressionMethod::Ppmd,
+];

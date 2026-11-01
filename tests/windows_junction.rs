@@ -8,7 +8,7 @@ use std::process::Command;
 use tempfile::tempdir;
 use zip::unstable::stream::ZipStreamReader;
 use zip::write::SimpleFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipStreamExtract, ZipWriter};
 
 fn archive(names: &[&str]) -> Vec<u8> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -68,3 +68,5 @@ fn stream_rejects_a_junction_outside_the_destination() {
     assert!(result.is_err());
     assert_eq!(fs::read(outside.join("victim.txt")).unwrap(), b"original");
 }
+
+use zip::ZipExtract;

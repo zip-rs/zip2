@@ -5,7 +5,7 @@
 use std::io::{Cursor, Write};
 use zip::unstable::stream::ZipStreamReader;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipStreamExtract, ZipWriter};
 
 fn archive_with_signature(size_includes_signature: bool) -> Vec<u8> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));

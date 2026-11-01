@@ -1,3 +1,5 @@
+use zip::ZipFilePathExt;
+
 #[cfg(not(miri))]
 #[test]
 fn zip64_large() {

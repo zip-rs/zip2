@@ -109,3 +109,5 @@ fn extract_options_size_limit_multi_file_cumulative_exact() {
     assert_eq!(std::fs::read(out.join("f2.txt")).unwrap(), b"beta");
     assert_eq!(std::fs::read(out.join("f3.txt")).unwrap(), b"gamma");
 }
+
+use zip::ZipExtract;

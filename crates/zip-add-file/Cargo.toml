@@ -1,0 +1,36 @@
+[package]
+name = "zip-add-file"
+version = "9.2.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/zip-rs/zip2"
+description = "Filesystem file-adding APIs for ZIP archives."
+
+[dependencies]
+zip-core-lib = { path = "../zip-core-lib", version = "9.2.0", default-features = false }
+zip-read = { path = "../zip-read", version = "9.2.0", default-features = false }
+zip-update = { path = "../zip-update", version = "9.2.0", default-features = false }
+zip-write = { path = "../zip-write", version = "9.2.0", default-features = false }
+rayon = { version = "1.11", optional = true }
+
+[features]
+default = ["aes-crypto", "bzip2", "deflate64", "deflate", "lzma", "ppmd", "time", "zstd", "xz"]
+rayon = ["dep:rayon", "zip-write/rayon"]
+aes-crypto = ["zip-core-lib/aes-crypto", "zip-read/aes-crypto", "zip-update/aes-crypto", "zip-write/aes-crypto"]
+bzip2 = ["zip-core-lib/bzip2", "zip-read/bzip2", "zip-update/bzip2", "zip-write/bzip2"]
+bzip2-rs = ["zip-core-lib/bzip2-rs", "zip-read/bzip2-rs", "zip-update/bzip2-rs", "zip-write/bzip2-rs"]
+deflate = ["zip-core-lib/deflate", "zip-read/deflate", "zip-update/deflate", "zip-write/deflate"]
+deflate-flate2 = ["zip-read/deflate-flate2", "zip-update/deflate-flate2", "zip-write/deflate-flate2"]
+deflate-flate2-zlib = ["zip-read/deflate-flate2-zlib", "zip-update/deflate-flate2-zlib", "zip-write/deflate-flate2-zlib"]
+deflate-flate2-zlib-ng = ["zip-read/deflate-flate2-zlib-ng", "zip-update/deflate-flate2-zlib-ng", "zip-write/deflate-flate2-zlib-ng"]
+deflate-flate2-zlib-ng-compat = ["zip-read/deflate-flate2-zlib-ng-compat", "zip-update/deflate-flate2-zlib-ng-compat", "zip-write/deflate-flate2-zlib-ng-compat"]
+deflate-flate2-zlib-rs = ["zip-read/deflate-flate2-zlib-rs", "zip-update/deflate-flate2-zlib-rs", "zip-write/deflate-flate2-zlib-rs"]
+deflate-zopfli = ["zip-read/deflate-zopfli", "zip-update/deflate-zopfli", "zip-write/deflate-zopfli"]
+deflate64 = ["zip-core-lib/deflate64", "zip-read/deflate64", "zip-write/deflate64"]
+legacy-zip = ["zip-core-lib/legacy-zip", "zip-read/legacy-zip", "zip-update/legacy-zip"]
+lzma = ["zip-core-lib/lzma", "zip-read/lzma", "zip-write/lzma"]
+ppmd = ["zip-core-lib/ppmd", "zip-read/ppmd", "zip-write/ppmd"]
+time = ["zip-core-lib/time", "zip-write/time"]
+xz = ["zip-core-lib/xz", "zip-read/xz", "zip-write/xz"]
+zstd = ["zip-core-lib/zstd", "zip-read/zstd", "zip-write/zstd"]

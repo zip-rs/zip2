@@ -18,11 +18,29 @@ description = "Library to support the reading and writing of zip files."
 edition = "2024"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**", ".amazonq/**", "benches/**", ".typos.toml"]
 
+[workspace]
+members = [
+    ".",
+    "crates/zip-core-lib",
+    "crates/zip-read",
+    "crates/zip-write",
+    "crates/zip-extract",
+    "crates/zip-add-file",
+    "crates/zip-update",
+]
+resolver = "3"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+zip-core-lib = { path = "crates/zip-core-lib", version = "9.2.0", default-features = false }
+zip-read = { path = "crates/zip-read", version = "9.2.0", default-features = false }
+zip-write = { path = "crates/zip-write", version = "9.2.0", default-features = false }
+zip-extract = { path = "crates/zip-extract", version = "9.2.0", default-features = false }
+zip-add-file = { path = "crates/zip-add-file", version = "9.2.0", default-features = false }
+zip-update = { path = "crates/zip-update", version = "9.2.0", default-features = false }
 arbitrary = { version = "1.4", features = ["derive"], optional = true }
 aes = { version = "0.9", optional = true, features = ["zeroize"] }
 bzip2 = { version = "0.6", default-features = false, optional = true }
@@ -87,32 +105,33 @@ clap = { version = "^4.4.18", features = ["derive"] }
 rayon = "1.11"
 
 [features]
-rayon = ["dep:rayon"]
-_arbitrary = ["dep:arbitrary"]
-aes-crypto = ["dep:aes", "dep:constant_time_eq", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
-chrono = ["dep:chrono"]
-_deflate-any = []
-deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
+rayon = ["dep:rayon", "zip-read/rayon", "zip-write/rayon", "zip-add-file/rayon"]
+_arbitrary = ["dep:arbitrary", "zip-core-lib/_arbitrary"]
+aes-crypto = ["dep:aes", "dep:constant_time_eq", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize", "zip-core-lib/aes-crypto", "zip-read/aes-crypto", "zip-write/aes-crypto", "zip-update/aes-crypto", "zip-add-file/aes-crypto", "zip-extract/aes-crypto"]
+chrono = ["dep:chrono", "zip-core-lib/chrono"]
+_deflate-any = ["zip-core-lib/_deflate-any", "zip-read/_deflate-any"]
+deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs", "zip-core-lib/deflate", "zip-read/deflate", "zip-write/deflate", "zip-update/deflate", "zip-add-file/deflate", "zip-extract/deflate"]
 # Pull in flate2, but don't choose a backend; useful if you want to choose your own flate2 backend
-deflate-flate2 = ["_deflate-any", "dep:flate2"]
+deflate-flate2 = ["_deflate-any", "dep:flate2", "zip-core-lib/deflate-flate2", "zip-read/deflate-flate2", "zip-write/deflate-flate2", "zip-update/deflate-flate2", "zip-add-file/deflate-flate2", "zip-extract/deflate-flate2"]
 # Pull in flate2 and the fast zlib-rs backend; this is what most users will want
-deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
+deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs", "zip-core-lib/deflate-flate2-zlib-rs", "zip-read/deflate-flate2-zlib-rs", "zip-write/deflate-flate2-zlib-rs", "zip-update/deflate-flate2-zlib-rs", "zip-add-file/deflate-flate2-zlib-rs", "zip-extract/deflate-flate2-zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
-deflate-zopfli = ["dep:zopfli", "_deflate-any"]
+deflate-zopfli = ["dep:zopfli", "_deflate-any", "zip-core-lib/deflate-zopfli", "zip-read/deflate-zopfli", "zip-write/deflate-zopfli", "zip-update/deflate-zopfli", "zip-add-file/deflate-zopfli", "zip-extract/deflate-zopfli"]
 # Deprecated: This is a formerly-optional dependency that pre-dates the "dep:" syntax for optional dependencies that aren't features.
 # It will be removed in 10.0.0.
-getrandom = []
-jiff-02 = ["dep:jiff"]
-nt-time = ["dep:nt-time"]
-lzma = ["dep:lzma-rust2"]
-ppmd = ["dep:ppmd-rust"]
+getrandom = ["zip-core-lib/getrandom"]
+jiff-02 = ["dep:jiff", "zip-core-lib/jiff-02"]
+nt-time = ["dep:nt-time", "zip-core-lib/nt-time"]
+lzma = ["dep:lzma-rust2", "zip-core-lib/lzma", "zip-read/lzma", "zip-write/lzma", "zip-update/lzma", "zip-extract/lzma", "zip-add-file/lzma"]
+ppmd = ["dep:ppmd-rust", "zip-core-lib/ppmd", "zip-read/ppmd", "zip-write/ppmd", "zip-update/ppmd", "zip-extract/ppmd", "zip-add-file/ppmd"]
 # This feature allows writing custom extra-data field IDs in file headers.
-unreserved = []
-xz = ["dep:lzma-rust2"]
-_bzip2_any = []
-bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any"]
-legacy-zip = ["bitstream-io"]
-time = ["dep:time"]
+unreserved = ["zip-core-lib/unreserved"]
+xz = ["dep:lzma-rust2", "zip-core-lib/xz", "zip-read/xz", "zip-write/xz", "zip-update/xz", "zip-extract/xz", "zip-add-file/xz"]
+_bzip2_any = ["zip-core-lib/_bzip2_any"]
+bzip2 = ["dep:bzip2", "bzip2/default", "_bzip2_any", "zip-core-lib/bzip2", "zip-read/bzip2", "zip-write/bzip2", "zip-update/bzip2", "zip-extract/bzip2", "zip-add-file/bzip2"]
+legacy-zip = ["bitstream-io", "zip-core-lib/legacy-zip", "zip-read/legacy-zip", "zip-update/legacy-zip", "zip-add-file/legacy-zip", "zip-extract/legacy-zip"]
+time = ["dep:time", "zip-core-lib/time", "zip-write/time", "zip-update/time", "zip-extract/time", "zip-add-file/time"]
+deflate64 = ["dep:deflate64", "zip-core-lib/deflate64", "zip-read/deflate64", "zip-write/deflate64", "zip-update/deflate64", "zip-extract/deflate64", "zip-add-file/deflate64"]
 default = [
     "aes-crypto",
     "bzip2",
@@ -124,7 +143,7 @@ default = [
     "zstd",
     "xz",
 ]
-zstd = ["dep:zstd"]
+zstd = ["dep:zstd", "zip-core-lib/zstd", "zip-read/zstd", "zip-write/zstd", "zip-update/zstd", "zip-extract/zstd", "zip-add-file/zstd"]
 _miri_compatible_features = [
     # Not "aes-crypto" (too slow),
     "bzip2",
@@ -144,13 +163,13 @@ _miri_compatible_features = [
 ]
 
 # The following features are not supported on wasm
-bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]
+bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any", "zip-core-lib/bzip2-rs", "zip-read/bzip2-rs", "zip-write/bzip2-rs", "zip-update/bzip2-rs", "zip-add-file/bzip2-rs", "zip-extract/bzip2-rs"]
 # Pull in flate2 and the zlib backend; only use this if you need a dynamically linked system zlib
-deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
+deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib", "zip-core-lib/deflate-flate2-zlib", "zip-read/deflate-flate2-zlib", "zip-write/deflate-flate2-zlib", "zip-add-file/deflate-flate2-zlib", "zip-extract/deflate-flate2-zlib"]
 # Pull in flate2 and the zlib-ng backend; a modern fork of zlib
-deflate-flate2-zlib-ng = ["deflate-flate2", "flate2/zlib-ng"]
+deflate-flate2-zlib-ng = ["deflate-flate2", "flate2/zlib-ng", "zip-core-lib/deflate-flate2-zlib-ng", "zip-read/deflate-flate2-zlib-ng", "zip-write/deflate-flate2-zlib-ng", "zip-add-file/deflate-flate2-zlib-ng", "zip-extract/deflate-flate2-zlib-ng"]
 # Pull in flate2 and the zlib-ng backend with a zlib-compatible API
-deflate-flate2-zlib-ng-compat = ["deflate-flate2", "flate2/zlib-ng-compat"]
+deflate-flate2-zlib-ng-compat = ["deflate-flate2", "flate2/zlib-ng-compat", "zip-core-lib/deflate-flate2-zlib-ng-compat", "zip-read/deflate-flate2-zlib-ng-compat", "zip-write/deflate-flate2-zlib-ng-compat", "zip-add-file/deflate-flate2-zlib-ng-compat", "zip-extract/deflate-flate2-zlib-ng-compat"]
 
 [[bench]]
 name = "deflate_alloc"
@@ -178,4 +197,3 @@ required-features = ["aes-crypto"]
 name = "extract"
 harness = false
 required-features = ["rayon"]
-

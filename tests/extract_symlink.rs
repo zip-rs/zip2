@@ -791,3 +791,7 @@ fn test_existing_symlink_in_destination_cannot_escape() -> zip::result::ZipResul
 
     Ok(())
 }
+
+use zip::ZipExtract;
+use zip::ZipStreamExtract;
+use zip::ZipUpdate;

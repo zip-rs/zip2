@@ -160,3 +160,6 @@ fn test_preallocation_truncation_on_short_payload() {
     // Verify file on disk was properly truncated back to 10 bytes, NOT 256 KiB
     assert_eq!(std::fs::metadata(&extracted_path).unwrap().len(), 10);
 }
+
+use zip::ZipExtract;
+use zip::ZipStreamExtract;

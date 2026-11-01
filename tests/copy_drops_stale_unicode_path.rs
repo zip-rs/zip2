@@ -42,3 +42,5 @@ fn shallow_copy_drops_stale_unicode_path() {
     writer.shallow_copy_file("a.txt", "b.txt").unwrap();
     assert_both_names(writer);
 }
+
+use zip::ZipUpdate;

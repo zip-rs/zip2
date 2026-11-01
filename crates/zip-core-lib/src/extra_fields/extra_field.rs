@@ -1,0 +1,438 @@
+//! Code related to the `ExtraField` enum
+
+#[cfg(feature = "aes-crypto")]
+use crate::extra_fields::AexEncryption;
+use crate::extra_fields::CustomExtraField;
+use crate::extra_fields::DataStreamAlignment;
+use crate::extra_fields::ExtendedTimestamp;
+use crate::extra_fields::Ntfs;
+use crate::extra_fields::UnicodeExtraField;
+use crate::extra_fields::UsedExtraField;
+use crate::extra_fields::Zip64ExtendedInformation;
+use crate::extra_fields::zip64_extended_information::Zip64Sizes;
+use crate::format::blocks::ZipEntryBlock;
+use crate::format::flags::ZipFlags;
+use crate::result::ZipResult;
+use crate::result::invalid;
+use crate::types::ZipFileData;
+use crate::unstable::LittleEndianReadExt;
+use std::io::ErrorKind;
+use std::io::{Cursor, Read, Write};
+
+/// contains one extra field
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum ExtraField {
+    /// NTFS extra field
+    Ntfs(Ntfs),
+    /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
+    ExtendedTimestamp(ExtendedTimestamp),
+    /// AeX Encryption
+    #[cfg(feature = "aes-crypto")]
+    AeXEncryption(AexEncryption),
+    /// Zip64 Information
+    Zip64ExtendedInformation(Zip64ExtendedInformation),
+    /// Unicode Comment
+    UnicodeComment(UnicodeExtraField),
+    /// UnicodePath
+    UnicodePath(UnicodeExtraField),
+    /// Data Stream Alignment
+    DataStreamAlignment(DataStreamAlignment),
+    /// Custom extra field
+    Custom(CustomExtraField),
+}
+
+/// Extra fields list
+#[derive(Debug, Clone, Default)]
+pub struct ExtraFields {
+    pub inner: Vec<ExtraField>,
+}
+
+impl ExtraFields {
+    pub fn parse<B: ZipEntryBlock>(
+        buff: &[u8],
+        block: &B,
+        is_local_header: bool,
+    ) -> ZipResult<Self> {
+        let mut reader = Cursor::new(buff);
+        let mut extra_fields = Vec::new();
+        while (reader.position() as usize) < buff.len() {
+            let parsed_extra_field = ExtraField::parse(&mut reader, block, is_local_header)?;
+            let Some(parsed_extra_field) = parsed_extra_field else {
+                break;
+            };
+            extra_fields.push(parsed_extra_field);
+        }
+        Ok(Self {
+            inner: extra_fields,
+        })
+    }
+
+    pub fn local_extra_fields_mut(&mut self) -> impl Iterator<Item = &mut ExtraField> {
+        self.inner.iter_mut()
+    }
+
+    pub fn local_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
+        self.inner.iter().filter(|ef| match ef {
+            ExtraField::Custom(cef) => !cef.central_only,
+            _ => true,
+        })
+    }
+
+    pub fn central_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
+        // data alignment is local only
+        self.inner
+            .iter()
+            .filter(|ef| !matches!(ef, ExtraField::DataStreamAlignment(_)))
+    }
+}
+
+impl ExtraField {
+    pub fn parse<R: Read, B: ZipEntryBlock>(
+        reader: &mut R,
+        file: &B,
+        is_local_header: bool,
+    ) -> ZipResult<Option<Self>> {
+        let extra_field_header_id = match reader.read_u16_le() {
+            Ok(value) => value,
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let decoded_extra_field = UsedExtraField::try_from(extra_field_header_id);
+        let len = match decoded_extra_field {
+            Ok(known_field) => match reader.read_u16_le() {
+                Ok(len) => len,
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                    return Err(invalid!("Extra field {} header truncated", known_field));
+                }
+                Err(e) => return Err(e.into()),
+            },
+            Err(()) => {
+                match reader.read_u16_le() {
+                    Ok(len) => len,
+                    Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None), // early return, most likely a padding
+                    Err(_e) => {
+                        // Consume remaining bytes to avoid infinite loop in caller
+                        let _ = std::io::copy(reader, &mut std::io::sink());
+                        return Ok(None);
+                    }
+                }
+            }
+        };
+        let parsed_extra_field =
+            match decoded_extra_field {
+                // Zip64 extended information extra field
+                Ok(UsedExtraField::Zip64ExtendedInfo) => {
+                    ExtraField::Zip64ExtendedInformation(Zip64ExtendedInformation::parse(
+                        reader,
+                        len,
+                        file.get_uncompressed_size(),
+                        file.get_compressed_size(),
+                        file.get_header_start(),
+                    )?)
+                }
+                Ok(UsedExtraField::Ntfs) => {
+                    let mut data = vec![0; len as usize];
+                    reader.read_exact(&mut data)?;
+                    // Preserve malformed optional metadata as opaque bytes, as with custom fields.
+                    match Ntfs::try_from_reader(&mut Cursor::new(&data), len) {
+                        Ok(ntfs) => ExtraField::Ntfs(ntfs),
+                        Err(crate::result::ZipError::UnsupportedArchive(_)) => {
+                            ExtraField::Custom(CustomExtraField::new(
+                                false,
+                                extra_field_header_id,
+                                data.into_boxed_slice(),
+                            ))
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                #[cfg(feature = "aes-crypto")]
+                Ok(UsedExtraField::AeXEncryption) => {
+                    // AES
+                    let (new_aes_enc, inner_compression) = AexEncryption::parse(reader, len)?;
+                    ExtraField::AeXEncryption(AexEncryption::new(
+                        new_aes_enc.1,
+                        new_aes_enc.0,
+                        inner_compression,
+                    ))
+                }
+                Ok(UsedExtraField::ExtendedTimestamp) => ExtraField::ExtendedTimestamp(
+                    ExtendedTimestamp::try_from_reader(reader, len, is_local_header)?,
+                ),
+                Ok(UsedExtraField::UnicodeComment) => {
+                    // Info-ZIP Unicode Comment Extra Field
+                    // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
+                    let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
+                    ExtraField::UnicodeComment(unicode)
+                }
+                Ok(UsedExtraField::UnicodePath) => {
+                    // Info-ZIP Unicode Path Extra Field
+                    // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
+                    let unicode = UnicodeExtraField::try_from_reader(reader, len)?;
+                    ExtraField::UnicodePath(unicode)
+                }
+                Ok(UsedExtraField::DataStreamAlignment)
+                | Ok(UsedExtraField::AndroidZipAlignment) => ExtraField::DataStreamAlignment(
+                    DataStreamAlignment::try_from_reader(reader, extra_field_header_id, len)?,
+                ),
+                _ => {
+                    let mut buf = vec![0u8; len as usize];
+                    if let Err(e) = reader.read_exact(&mut buf) {
+                        if e.kind() == ErrorKind::UnexpectedEof {
+                            return Err(invalid!("Extra field content truncated"));
+                        }
+                        return Err(e.into());
+                    }
+                    ExtraField::Custom(CustomExtraField::new(
+                        false,
+                        extra_field_header_id,
+                        buf.into_boxed_slice(),
+                    ))
+                    // Other fields are ignored
+                }
+            };
+        Ok(Some(parsed_extra_field))
+    }
+
+    pub fn size(&self, is_local_header: bool) -> usize {
+        match self {
+            // Zip64 extended information extra field
+            ExtraField::Zip64ExtendedInformation(zip64_extra) => {
+                zip64_extra.full_size(is_local_header)
+            }
+            ExtraField::Ntfs(_ntfs) => {
+                // NTFS extra field
+                0
+            }
+            #[cfg(feature = "aes-crypto")]
+            ExtraField::AeXEncryption(aes) => aes.full_size(),
+            ExtraField::ExtendedTimestamp(_extended_timestamp) => {
+                // nothing to do
+                0
+            }
+            ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
+            ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
+            ExtraField::Custom(custom) => custom.full_size(is_local_header),
+            ExtraField::DataStreamAlignment(data_stream_alignment) => {
+                data_stream_alignment.full_size(is_local_header)
+            }
+        }
+    }
+
+    pub fn write<W: Write>(&self, writer: &mut W, is_local_header: bool) -> ZipResult<()> {
+        match self {
+            // Zip64 extended information extra field
+            ExtraField::Zip64ExtendedInformation(zip64_extra) => {
+                zip64_extra.write(writer, is_local_header)?;
+            }
+            #[cfg(feature = "aes-crypto")]
+            ExtraField::AeXEncryption(aex) => {
+                aex.write(writer)?;
+            }
+            ExtraField::Custom(custom) => {
+                custom.write(writer, is_local_header)?;
+            }
+            ExtraField::UnicodeComment(unicode_comment) => {
+                let magic = UsedExtraField::UnicodeComment.as_u16();
+                writer.write_all(&magic.to_le_bytes())?;
+                unicode_comment.write(writer)?;
+            }
+            ExtraField::UnicodePath(unicode_path) => {
+                let magic = UsedExtraField::UnicodePath.as_u16();
+                writer.write_all(&magic.to_le_bytes())?;
+                unicode_path.write(writer)?;
+            }
+            ExtraField::DataStreamAlignment(data_stream_alignment) => {
+                data_stream_alignment.write(writer, is_local_header)?
+            }
+            _ => {
+                // nothing to do
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ZipFileData {
+    pub fn apply_extra_fields(&mut self, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
+        #[cfg(feature = "aes-crypto")]
+        let mut has_aes = false;
+        let mut orig_name_crc = None;
+        let mut orig_comment_crc = None;
+
+        for one_extra_field in &self.extra_fields.inner {
+            match one_extra_field {
+                // Zip64 extended information extra field
+                ExtraField::Zip64ExtendedInformation(zip64_block) => {
+                    self.large_file = true;
+                    if let Some(Zip64Sizes {
+                        uncompressed_size,
+                        compressed_size,
+                    }) = zip64_block.sizes
+                    {
+                        self.uncompressed_size = uncompressed_size;
+                        self.compressed_size = compressed_size;
+                    }
+                    if let Some(head_start) = zip64_block.header_start {
+                        self.header_start = head_start;
+                    }
+                }
+                #[cfg(feature = "aes-crypto")]
+                ExtraField::AeXEncryption(AexEncryption {
+                    compression_method, ..
+                }) => {
+                    if has_aes || self.compression_method != crate::CompressionMethod::Aes {
+                        return Err(invalid!(
+                            "AES extra field present without AES compression method (99)"
+                        ));
+                    }
+                    has_aes = true;
+                    self.compression_method = *compression_method;
+                }
+                ExtraField::UnicodeComment(unicode) => {
+                    // Info-ZIP Unicode Comment Extra Field
+                    // APPNOTE 4.6.8 and https://libzip.org/specifications/extrafld.txt
+                    // If the CRC check fails, this Unicode Comment extra field SHOULD be ignored and
+                    // the File Comment field in the header SHOULD be used instead.
+                    // Check if the comment is UTF-8
+                    let crc = *orig_comment_crc
+                        .get_or_insert_with(|| crc32fast::hash(self.file_comment.as_bytes()));
+                    if unicode.crc32 == crc
+                        && let Ok(comment) = String::from_utf8(unicode.content.to_vec())
+                    {
+                        self.file_comment = comment.into_boxed_str();
+                    }
+                }
+                #[allow(clippy::collapsible_match)]
+                ExtraField::UnicodePath(unicode) => {
+                    // Info-ZIP Unicode Path Extra Field
+                    // APPNOTE 4.6.9 and https://libzip.org/specifications/extrafld.txt
+                    // If the CRC check fails, this UTF-8 Path Extra Field SHOULD be ignored and
+                    // the File Name field in the header SHOULD be used instead.
+                    let crc = *orig_name_crc.get_or_insert_with(|| crc32fast::hash(file_name_raw));
+                    if unicode.crc32 == crc && std::str::from_utf8(&unicode.content).is_ok() {
+                        *file_name_raw = unicode.content.to_vec();
+                        self.flags |= ZipFlags::LanguageEncoding.as_u16();
+                    }
+                }
+                _ => {
+                    // nothing to do
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::extra_fields::ExtraFields;
+    use crate::extra_fields::{CustomExtraField, ExtraField};
+    use crate::format::blocks::ZipEntryBlock;
+    use crate::write::FullFileOptions;
+    use crate::{ZipArchive, ZipWriter};
+    use std::io::Cursor;
+
+    struct PlaceHolderBlock;
+
+    impl ZipEntryBlock for PlaceHolderBlock {
+        fn get_uncompressed_size(&self) -> u32 {
+            0
+        }
+        fn get_compressed_size(&self) -> u32 {
+            0
+        }
+        fn get_header_start(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "aes-crypto")]
+    fn aex_extra_field_with_feature() {
+        let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
+
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        assert!(matches!(
+            extra_fields.inner[0],
+            ExtraField::AeXEncryption(..)
+        ));
+    }
+
+    #[test]
+    fn ntfs_extra_field() {
+        let mut ntfs_extra_field = [0; 32];
+        ntfs_extra_field[4] = 1;
+        ntfs_extra_field[6] = 24;
+        let mut options = FullFileOptions::default();
+        options.name = Some(b"test.txt");
+        options.extended_options.extra_fields = vec![CustomExtraField {
+            central_only: false,
+            header_id: 0x000A,
+            data: Box::new(ntfs_extra_field),
+        }]
+        .into();
+        // Compression is disabled on Miri for zlib-backed flate2 backends
+        // (zlib-rs / zlib / zlib-ng / zlib-ng-compat) because when it's enabled,
+        // flate2::Decompress::new makes a C function call (zlibVersion via
+        // flate2::ffi::c::c_backend::mz_inflateInit2).
+        #[cfg(all(
+            miri,
+            any(
+                feature = "deflate-flate2-zlib-rs",
+                feature = "deflate-flate2-zlib",
+                feature = "deflate-flate2-zlib-ng",
+                feature = "deflate-flate2-zlib-ng-compat"
+            )
+        ))]
+        let options = options.compression_method(crate::CompressionMethod::Stored);
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file_with_options(options).unwrap();
+        let archive = writer.finish().unwrap();
+        ZipArchive::new(archive).unwrap();
+    }
+
+    #[test]
+    #[cfg(not(feature = "aes-crypto"))]
+    fn aex_extra_field_without_feature() {
+        use crate::extra_fields::CustomExtraField;
+        use crate::extra_fields::UsedExtraField;
+
+        let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
+
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra = CustomExtraField::new(
+            false,
+            UsedExtraField::AeXEncryption.as_u16(),
+            [1, 0, b'A', b'E', 3, 0, 0].to_vec().into_boxed_slice(),
+        );
+        assert_eq!(extra_fields.inner[0], ExtraField::Custom(extra));
+    }
+
+    #[test]
+    fn test_parse_data_stream_alignment() {
+        // Tag 0xa11e, len 4, alignment 16, 2 padding bytes
+        let buff = [0x1e, 0xa1, 0x04, 0x00, 0x10, 0x00, 0x00, 0x00];
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        assert_eq!(extra_fields.inner.len(), 1);
+        assert!(matches!(
+            extra_fields.inner[0],
+            ExtraField::DataStreamAlignment(ref dsa)
+                if dsa.header_id() == 0xa11e && dsa.alignment() == 16 && dsa.pad_len() == 4
+        ));
+    }
+
+    #[test]
+    fn test_parse_android_zip_alignment() {
+        // Tag 0xd935, len 6, alignment 4, 4 padding bytes
+        let buff = [0x35, 0xd9, 0x06, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        assert_eq!(extra_fields.inner.len(), 1);
+        assert!(matches!(
+            extra_fields.inner[0],
+            ExtraField::DataStreamAlignment(ref dsa)
+                if dsa.header_id() == 0xd935 && dsa.alignment() == 4 && dsa.pad_len() == 6
+        ));
+    }
+}

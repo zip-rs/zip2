@@ -48,3 +48,5 @@ fn deep_copy_after_append_with_data_start_past_eof() {
     };
     assert!(w.deep_copy_file("a", "b").is_err());
 }
+
+use zip::ZipUpdate;

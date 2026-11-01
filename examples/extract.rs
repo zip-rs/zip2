@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fs;
 use std::io;
 use zip::ZipArchive;
+use zip::ZipFilePathExt;
 use zip::result::ZipError;
 
 fn main() -> Result<(), Box<dyn Error>> {

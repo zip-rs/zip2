@@ -2,6 +2,7 @@
 // https://github.com/zip-rs/zip/discussions/430
 
 use zip::result::{ZipError, ZipResult};
+use zip::{ZipFilePathExt, ZipUpdate};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();

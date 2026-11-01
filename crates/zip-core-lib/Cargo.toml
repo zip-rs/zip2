@@ -1,0 +1,63 @@
+[package]
+name = "zip-core-lib"
+version = "9.2.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/zip-rs/zip2"
+description = "Shared core implementation for the zip workspace crates."
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+arbitrary = { version = "1.4", features = ["derive"], optional = true }
+aes = { version = "0.9", optional = true, features = ["zeroize"] }
+chrono = { version = "^0.4.27", optional = true, default-features = false, features = ["std"] }
+constant_time_eq = { version = "^0.6.1", optional = true }
+crc32fast = "1.5"
+hmac = { version = "0.13", optional = true, features = ["zeroize"] }
+jiff = { version = "^0.2.4", optional = true }
+nt-time = { version = "0.13", default-features = false, optional = true }
+pbkdf2 = { version = "0.13", optional = true }
+sha1 = { version = "0.11", optional = true }
+zeroize = { version = "1.9", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = { version = "0.4", default-features = false, optional = true }
+time = { version = "^0.3.47", default-features = false, optional = true, features = ["std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", default-features = false, features = ["wasm_js"], optional = true }
+time = { version = "^0.3.47", default-features = false, optional = true, features = ["std", "wasm-bindgen"] }
+
+[features]
+rayon = []
+_arbitrary = ["dep:arbitrary"]
+aes-crypto = ["dep:aes", "dep:constant_time_eq", "dep:getrandom", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
+chrono = ["dep:chrono"]
+_deflate-any = []
+deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
+deflate-flate2 = ["_deflate-any"]
+deflate-flate2-zlib-rs = ["deflate-flate2"]
+deflate-zopfli = ["_deflate-any"]
+deflate64 = []
+getrandom = []
+jiff-02 = ["dep:jiff"]
+nt-time = ["dep:nt-time"]
+lzma = []
+ppmd = []
+unreserved = []
+xz = []
+_bzip2_any = []
+bzip2 = ["_bzip2_any"]
+legacy-zip = []
+time = ["dep:time"]
+default = ["aes-crypto", "bzip2", "deflate64", "deflate", "lzma", "ppmd", "time", "zstd", "xz"]
+zstd = []
+_miri_compatible_features = ["bzip2", "chrono", "deflate-flate2", "deflate-zopfli", "jiff-02", "legacy-zip", "lzma", "nt-time", "ppmd", "unreserved", "xz", "time"]
+bzip2-rs = ["_bzip2_any"]
+deflate-flate2-zlib = ["deflate-flate2"]
+deflate-flate2-zlib-ng = ["deflate-flate2"]
+deflate-flate2-zlib-ng-compat = ["deflate-flate2"]

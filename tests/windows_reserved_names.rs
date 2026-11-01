@@ -12,6 +12,8 @@
 //! - `mangled_name()` safely sanitizes reserved device names (e.g. by prefixing `_`) and trims trailing separators.
 //! - Non-reserved names (such as `contact.txt`, `auxiliary.rs`, `nullify.dat`, `com0.txt`) remain fully valid.
 
+use zip::ZipFilePathExt;
+
 #[cfg(windows)]
 #[test]
 fn test_windows_reserved_device_names_rejected_in_enclosed_name() {
@@ -293,3 +295,5 @@ fn test_cannot_escape_to_windows_startup_directory() {
         }
     }
 }
+
+use zip::ZipExtract;

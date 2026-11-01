@@ -312,3 +312,5 @@ fn test_extract_options_recursive_in_folder_non_working() {
     );
     assert!(res.is_err());
 }
+
+use zip::ZipExtract;

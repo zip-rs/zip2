@@ -1,5 +1,5 @@
 use std::io::Cursor;
-use zip::ZipArchive;
+use zip::{ZipArchive, ZipFilePathExt};
 
 #[test]
 fn test_prepended_garbage() {

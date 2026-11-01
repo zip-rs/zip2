@@ -63,3 +63,5 @@ fn empty_archive_still_opens_and_appends() {
         assert_eq!(s, "hello");
     }
 }
+
+use zip::ZipUpdate;

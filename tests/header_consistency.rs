@@ -1328,3 +1328,7 @@ fn test_enforce_header_consistency_blocks_implode_flag_mismatch() {
         );
     }
 }
+
+use zip::ZipExtract;
+use zip::ZipStreamExtract;
+use zip::ZipUpdate;

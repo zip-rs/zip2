@@ -1,4 +1,5 @@
 /// Only on native because we cannot use fs with miri CI
+use zip::ZipFilePathExt;
 #[cfg(not(miri))]
 #[test]
 fn test_absolute_paths() -> zip::result::ZipResult<()> {
@@ -71,3 +72,5 @@ fn test_absolute_paths() -> zip::result::ZipResult<()> {
 
     Ok(())
 }
+
+use zip::ZipExtract;

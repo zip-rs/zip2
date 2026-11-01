@@ -1,0 +1,44 @@
+[package]
+name = "zip-extract"
+version = "9.2.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/zip-rs/zip2"
+description = "Filesystem extraction APIs for ZIP archives."
+
+[dependencies]
+zip-core-lib = { path = "../zip-core-lib", version = "9.2.0", default-features = false }
+zip-read = { path = "../zip-read", version = "9.2.0", default-features = false }
+typed-path = { version = "0.13", default-features = false }
+indexmap = "2"
+getrandom = { version = "0.4", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
+nix = { version = "^0.31.3", features = ["fs"], default-features = false }
+
+[features]
+default = ["aes-crypto", "bzip2", "deflate64", "deflate", "lzma", "ppmd", "time", "zstd", "xz"]
+aes-crypto = ["zip-core-lib/aes-crypto", "zip-read/aes-crypto"]
+bzip2 = ["zip-core-lib/bzip2", "zip-read/bzip2"]
+bzip2-rs = ["zip-core-lib/bzip2-rs", "zip-read/bzip2-rs"]
+chrono = ["zip-core-lib/chrono"]
+deflate = ["zip-core-lib/deflate", "zip-read/deflate"]
+deflate-flate2 = ["zip-read/deflate-flate2"]
+deflate-flate2-zlib = ["zip-read/deflate-flate2-zlib"]
+deflate-flate2-zlib-ng = ["zip-read/deflate-flate2-zlib-ng"]
+deflate-flate2-zlib-ng-compat = ["zip-read/deflate-flate2-zlib-ng-compat"]
+deflate-flate2-zlib-rs = ["zip-read/deflate-flate2-zlib-rs"]
+deflate-zopfli = ["zip-read/deflate-zopfli"]
+deflate64 = ["zip-core-lib/deflate64", "zip-read/deflate64"]
+legacy-zip = ["zip-core-lib/legacy-zip", "zip-read/legacy-zip"]
+lzma = ["zip-core-lib/lzma", "zip-read/lzma"]
+nt-time = ["zip-core-lib/nt-time"]
+ppmd = ["zip-core-lib/ppmd", "zip-read/ppmd"]
+time = ["zip-core-lib/time"]
+xz = ["zip-core-lib/xz", "zip-read/xz"]
+zstd = ["zip-core-lib/zstd", "zip-read/zstd"]
+rayon = ["zip-core-lib/rayon"]

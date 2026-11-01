@@ -7,6 +7,7 @@
 
 use std::fs;
 use std::io::BufReader;
+use zip::ZipFilePathExt;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();

@@ -2,6 +2,8 @@
 // https://github.com/zip-rs/zip/discussions/430
 
 use std::io::Write;
+use zip::ZipFilePathExt;
+use zip::ZipUpdate;
 use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 

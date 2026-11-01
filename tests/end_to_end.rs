@@ -732,3 +732,7 @@ fn modify_in_place_with_data() {
         assert_eq!(date.timepart(), 44746);
     }
 }
+
+use zip::ZipAddFile;
+use zip::ZipExtract;
+use zip::ZipUpdate;

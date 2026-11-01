@@ -1,48 +1,47 @@
+//! Backward-compatible facade for the ZIP workspace crates.
+//!
+//! The historical `zip` crate name and all of its public API paths remain available.
 #![doc = include_str!("../README.md")]
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(clippy::all, rust_2018_idioms)]
-#![deny(
-    missing_docs,
-    clippy::all,
-    clippy::missing_panics_doc,
-    clippy::cargo,
-    clippy::panic,
-    clippy::cast_lossless,
-    clippy::decimal_literal_representation,
-    clippy::must_use_candidate
-)]
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-#![allow(unexpected_cfgs)] // Needed for cfg(fuzzing)
-#![allow(clippy::multiple_crate_versions)] // https://github.com/rust-lang/rust-clippy/issues/16440
-pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
-pub use crate::datetime::DateTime;
-pub use crate::format::aes::AesMode;
-pub use crate::format::system::System;
-pub use crate::format::{ZIP64_BYTES_THR, ZIP64_ENTRY_THR};
-pub use crate::read::HasZipMetadata;
-pub use crate::read::{ZipArchive, ZipReadOptions};
-pub use crate::write::{PreparedZipFile, ZipWriter};
 
-#[cfg(feature = "aes-crypto")]
-mod aes;
-#[cfg(feature = "aes-crypto")]
-pub use aes::AesSalt;
-#[cfg(feature = "aes-crypto")]
-mod aes_ctr;
-mod compression;
-mod cp437;
-mod crc32;
-mod datetime;
-pub mod extra_fields;
-mod format;
-mod path;
-pub mod read;
-pub mod result;
-mod types;
-pub mod write;
-mod zipcrypto;
-pub use extra_fields::ExtraField;
+pub use zip_add_file as add_file;
+pub use zip_add_file::{PreparedZipFilePathExt, ZipAddFile, ZipFileBuilderPathExt};
+pub use zip_core_lib::*;
+pub use zip_extract as extract;
+pub use zip_extract::path;
+pub use zip_extract::{ZipExtract, ZipStreamExtract};
+pub use zip_extract::{ZipFileDataPathExt, ZipFilePathExt};
+pub use zip_read as reader;
 #[cfg(feature = "legacy-zip")]
-mod legacy;
+pub use zip_read::legacy;
+pub use zip_read::read;
+pub use zip_read::read::ZipFileDataReadExt;
+pub use zip_read::{ZipArchive, ZipFile};
+pub use zip_update as update;
+pub use zip_update::ZipUpdate;
+pub use zip_write::ZipFileWriteExt;
+pub use zip_write::write;
+pub use zip_write::{PreparedZipFile, ZipWriter};
 
-pub mod unstable;
+/// ZIP format structures and read-side format scanning APIs.
+pub mod format {
+    pub use zip_core_lib::format::*;
+    pub use zip_read::format::{MagicPositionCache, find_central_directory_end};
+    pub mod find_central_directory {
+        pub use zip_read::format::find_central_directory::*;
+    }
+}
+
+/// Unstable APIs preserved from the original `zip` crate.
+pub mod unstable {
+    pub use zip_core_lib::unstable::*;
+
+    /// Iterable ZIP reading that does not build an in-memory index of every entry.
+    pub mod read {
+        pub use zip_read::read::{ZipIterable, ZipIterableFiles};
+    }
+
+    /// Provides high level API for reading from a stream.
+    pub mod stream {
+        pub use zip_read::read::stream::{ZipStreamReader, ZipStreamVisitor};
+    }
+}

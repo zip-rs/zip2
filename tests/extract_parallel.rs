@@ -342,3 +342,5 @@ fn test_par_extract_in_flight_size_limit_stream_exact_accounting() {
         other => panic!("Expected DecompressedSizeLimitExceeded, got {other:?}"),
     }
 }
+
+use zip::ZipExtract;

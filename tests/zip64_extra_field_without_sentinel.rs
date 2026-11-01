@@ -360,3 +360,5 @@ fn test_zip64_mixed_sentinel_desync_mitigated() {
     sub_entry.read_to_end(&mut sub_out).unwrap();
     assert_eq!(sub_out, SUBSEQUENT_CONTENT);
 }
+
+use zip::ZipUpdate;

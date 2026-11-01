@@ -3,7 +3,7 @@
 use std::io::{self, Read, Write};
 use zip::CompressionMethod;
 use zip::write::ZipWriter;
-use zip::{AesMode, ZipArchive, result::ZipError, write::SimpleFileOptions};
+use zip::{AesMode, ZipArchive, ZipUpdate, result::ZipError, write::SimpleFileOptions};
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 

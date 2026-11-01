@@ -127,3 +127,5 @@ fn exact_declared_size_still_reads() {
         assert_eq!(out.len(), REAL_SIZE, "{method:?}");
     }
 }
+
+use zip::ZipExtract;

@@ -38,3 +38,5 @@ fn abort_file_leaves_no_phantom_eocd_after_comment() {
         );
     }
 }
+
+use zip::ZipUpdate;

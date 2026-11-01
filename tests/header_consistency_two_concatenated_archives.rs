@@ -1,7 +1,7 @@
 use std::io::{Cursor, Write};
 
 use zip::write::SimpleFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipStreamExtract, ZipWriter};
 
 fn archive(name: &str, content: &[u8]) -> Vec<u8> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));

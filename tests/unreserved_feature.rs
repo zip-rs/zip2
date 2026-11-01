@@ -1,5 +1,7 @@
 //! unreserved feature tests
 
+use zip::ZipUpdate;
+
 const PAYLOAD: [u8; 7] = [
     0x01, // Version
     0x02, // UID length
@@ -13,7 +15,7 @@ const PAYLOAD: [u8; 7] = [
 fn test_unreserved_feature_disabled() {
     use std::io::Cursor;
     use zip::write::{FileOptions, ZipFileBuilder};
-    use zip::{CompressionMethod, ZipWriter};
+    use zip::{CompressionMethod, ZipUpdate, ZipWriter};
 
     let buff = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buff);

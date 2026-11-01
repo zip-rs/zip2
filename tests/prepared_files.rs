@@ -189,3 +189,5 @@ fn test_prepared_files_on_threads() {
         assert_eq!(&contents, data);
     }
 }
+
+use zip::ZipUpdate;

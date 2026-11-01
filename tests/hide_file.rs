@@ -207,3 +207,5 @@ fn hide_file_same_bytes() {
     assert_eq!(central_idx, 787);
     assert_eq!(zip_modified[0..central_idx], zip_raw_copy[0..central_idx]);
 }
+
+use zip::ZipUpdate;

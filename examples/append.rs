@@ -104,3 +104,5 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+use zip::ZipUpdate;

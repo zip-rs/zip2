@@ -78,3 +78,5 @@ fn test_windows_ads_stream_creation() -> Result<(), Box<dyn std::error::Error>> 
 
     Ok(())
 }
+
+use zip::ZipExtract;

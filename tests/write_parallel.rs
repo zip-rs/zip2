@@ -5,6 +5,7 @@ use std::io::{Cursor, Read, Write};
 use std::num::NonZeroUsize;
 use tempfile::tempdir;
 use zip::CompressionMethod;
+use zip::ZipAddFile;
 use zip::write::SimpleFileOptions;
 use zip::write::{PreparedZipFile, ZipWriter};
 
@@ -418,3 +419,5 @@ fn test_par_append_cp437_raw_name_override() {
         "Collision on options.name CP437 raw bytes must be rejected"
     );
 }
+
+use zip::ZipUpdate;

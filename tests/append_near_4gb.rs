@@ -417,3 +417,6 @@ fn test_append_with_large_file_flag() {
         assert!(archive.file_names().any(|name| name.unwrap() == "file2"));
     }
 }
+
+use zip::ZipAddFile;
+use zip::ZipUpdate;

@@ -3,6 +3,31 @@
 A zip library for rust which supports reading and writing of simple ZIP files. Currently hosted at
 <https://github.com/zip-rs/zip2>.
 
+The workspace provides focused crate entry points alongside the compatible `zip` facade:
+`zip-core-lib` for shared types and format/compression elements, `zip-read` for reading, `zip-write` for
+writing, `zip-extract` for filesystem extraction, `zip-add-file` for path-based file addition, and
+`zip-update` for append/update operations. Existing applications can continue depending on `zip`
+without changing their imports; each focused crate reuses the same shared public types.
+
+Operations moved to focused crates are exposed as extension traits. Import the traits you use,
+including when depending on the compatibility facade:
+
+```rust,ignore
+use zip::{
+    PreparedZipFilePathExt, ZipAddFile, ZipExtract, ZipFileBuilderPathExt, ZipFileDataReadExt,
+    ZipStreamExtract, ZipUpdate,
+};
+```
+
+`ZipUpdate` provides append, merge, deep-copy, and raw-copy operations (including
+`ZipWriter::new_append` and `finish_into_readable`); `ZipAddFile` provides
+path-based writer methods; `ZipExtract` provides archive extraction; and `ZipStreamExtract`
+provides extraction from a `ZipStreamReader`.
+`ZipFileDataReadExt` exposes local-header and content-reader helpers on the shared `ZipFileData`
+metadata type.
+`ZipFileBuilderPathExt` and `PreparedZipFilePathExt` add path-based constructors for writer helper
+types.
+
 The current implementation is based on [PKWARE's APPNOTE.TXT v6.3.9](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)
 
 Supported compression formats:
@@ -58,7 +83,7 @@ Reading:
 
 Writing:
 - [`ZipWriter::new()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new) - to create a new archive
-- [`ZipWriter::new_append()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new_append) - to read and append to an existing zip file
+- [`ZipWriter::new_append()`](https://docs.rs/zip/latest/zip/trait.ZipUpdate.html#tymethod.new_append) - to read and append to an existing zip file (import `ZipUpdate`)
 - [`ZipWriter::new_stream()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new_stream) - to write in stream mode
 
 ## Examples
