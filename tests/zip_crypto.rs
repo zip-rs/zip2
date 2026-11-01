@@ -157,9 +157,9 @@ fn test_partial_buffer_read_crypto() {
 #[cfg(any(feature = "deflate-flate2", not(feature = "_deflate-any")))]
 fn test_zip_crypto_header_randomness() -> zip::result::ZipResult<()> {
     use std::io::{Cursor, Read, Write};
+    use zip::DateTime;
     use zip::unstable::write::FileOptionsExt;
     use zip::write::{SimpleFileOptions, ZipWriter};
-    use zip::DateTime;
 
     let create_archive = || -> zip::result::ZipResult<Vec<u8>> {
         let mut buffer = Vec::new();

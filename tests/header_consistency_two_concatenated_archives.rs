@@ -103,8 +103,10 @@ fn second_archive_empty() -> Result<(), Box<dyn std::error::Error>> {
             .extract(destination.path());
 
         assert!(result.is_err());
-        assert!(matches!(fs::symlink_metadata(destination.path().join("plugins/bootstrap.js")),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound));
+        assert!(
+            matches!(fs::symlink_metadata(destination.path().join("plugins/bootstrap.js")),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+        );
     }
     Ok(())
 }
