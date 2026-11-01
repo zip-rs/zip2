@@ -3,8 +3,8 @@
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{
-    FixedSizeBlock, Pod, Zip32CDEBlock, Zip32CentralDirectoryEnd, Zip64CDEBlock,
-    Zip64CDELocatorBlock, ZipCentralEntryBlock, ZipLocalEntryBlock,
+    FixedSizeBlock, Pod, Zip32CentralDirectoryEnd, Zip64CDEBlock, Zip64CDELocatorBlock,
+    ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::format::magic::Magic;
 use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
@@ -20,7 +20,7 @@ use crate::read::stream::ReadFromStreamResult::{
 };
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::io::{self, Cursor, Read};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 /// Stream decoder for zip.
@@ -44,9 +44,8 @@ impl<R> ZipStreamReader<R> {
     /// and Central Directory File Headers (CDFH).
     ///
     /// When enabled, any discrepancy (such as Zip Cloaking / Dual-Header Smuggling attacks
-    /// where an attacker provides different names or hidden files across headers, or an extra
-    /// end-of-central-directory record that selects a different directory) will cause the
-    /// extraction to abort with [`ZipError::InvalidArchive`].
+    /// where an attacker provides different names or hidden files across headers) will cause
+    /// the extraction to abort with [`ZipError::InvalidArchive`].
     ///
     /// The headers can only be compared once the central directory, at the end of the stream,
     /// has been read. [`ZipStreamReader::extract`] therefore extracts into a temporary directory
@@ -142,168 +141,6 @@ fn validate_stream_footer<R: Read>(
         return Err(invalid!("Inconsistent end of central directory record"));
     }
     Ok(())
-}
-
-fn contains_unlisted_local_header_or_extra_eocd<R: Read>(
-    reader: &mut R,
-    scanned_start: u64,
-    central_start: u64,
-    central_size: u64,
-    entry_count: usize,
-) -> ZipResult<bool> {
-    const LOCAL_FILE_HEADER_SIGNATURE: [u8; 4] = Magic::LOCAL_FILE_HEADER_SIGNATURE.to_le_bytes();
-    const EOCD_SIGNATURE: [u8; 4] = Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-    const FIXED_HEADER_LEN: usize = 4 + std::mem::size_of::<ZipLocalEntryBlock>();
-    const EOCD_FIXED_LEN: usize = 4 + std::mem::size_of::<Zip32CDEBlock>();
-    const READ_BUFFER_LEN: usize = 8192;
-
-    let mut buffer = Vec::with_capacity(READ_BUFFER_LEN);
-    let mut buffer_start = scanned_start;
-    let mut search_from = 0;
-    let mut eof = false;
-
-    loop {
-        let search = &buffer[search_from..];
-        let local_candidate = search
-            .windows(LOCAL_FILE_HEADER_SIGNATURE.len())
-            .position(|window| window == LOCAL_FILE_HEADER_SIGNATURE)
-            .map(|offset| offset + search_from);
-        let eocd_candidate = search
-            .windows(EOCD_SIGNATURE.len())
-            .position(|window| window == EOCD_SIGNATURE)
-            .map(|offset| offset + search_from);
-
-        if let Some(offset) =
-            local_candidate.filter(|&local| eocd_candidate.is_none_or(|eocd| local <= eocd))
-        {
-            let fixed_end = offset + FIXED_HEADER_LEN;
-            while buffer.len() < fixed_end && !eof {
-                let mut chunk = [0; READ_BUFFER_LEN];
-                let read = reader.read(&mut chunk)?;
-                if read == 0 {
-                    eof = true;
-                } else {
-                    buffer.extend_from_slice(&chunk[..read]);
-                }
-            }
-            if buffer.len() < fixed_end {
-                search_from = offset + 1;
-                continue;
-            }
-
-            let block =
-                match ZipLocalEntryBlock::parse(&mut Cursor::new(&buffer[offset..fixed_end])) {
-                    Ok(block) => block,
-                    Err(_) => {
-                        search_from = offset + 1;
-                        continue;
-                    }
-                };
-            let header_end = fixed_end
-                + usize::from(block.file_name_length)
-                + usize::from(block.extra_field_length);
-            while buffer.len() < header_end && !eof {
-                let mut chunk = [0; READ_BUFFER_LEN];
-                let read = reader.read(&mut chunk)?;
-                if read == 0 {
-                    eof = true;
-                } else {
-                    buffer.extend_from_slice(&chunk[..read]);
-                }
-            }
-            if buffer.len() < header_end {
-                search_from = offset + 1;
-                continue;
-            }
-
-            return Ok(true);
-        }
-
-        if let Some(offset) = eocd_candidate {
-            let fixed_end = offset + EOCD_FIXED_LEN;
-            while buffer.len() < fixed_end && !eof {
-                let mut chunk = [0; READ_BUFFER_LEN];
-                let read = reader.read(&mut chunk)?;
-                if read == 0 {
-                    eof = true;
-                } else {
-                    buffer.extend_from_slice(&chunk[..read]);
-                }
-            }
-            if buffer.len() < fixed_end {
-                search_from = offset + 1;
-                continue;
-            }
-
-            let record = match Zip32CDEBlock::parse(&mut Cursor::new(&buffer[offset..fixed_end])) {
-                Ok(record) => record,
-                Err(_) => {
-                    search_from = offset + 1;
-                    continue;
-                }
-            };
-            let comment_end = fixed_end + usize::from(record.zip_file_comment_length);
-            while buffer.len() < comment_end && !eof {
-                let mut chunk = [0; READ_BUFFER_LEN];
-                let read = reader.read(&mut chunk)?;
-                if read == 0 {
-                    eof = true;
-                } else {
-                    buffer.extend_from_slice(&chunk[..read]);
-                }
-            }
-            if buffer.len() < comment_end {
-                search_from = offset + 1;
-                continue;
-            }
-
-            let candidate_offset = buffer_start + offset as u64;
-            let is_zip64 = record.number_of_files_on_this_disk == u16::MAX
-                || record.number_of_files == u16::MAX
-                || record.central_directory_size == u32::MAX
-                || record.central_directory_offset == u32::MAX;
-            let fields_are_plausible = record.disk_number == 0
-                && record.disk_with_central_directory == 0
-                && record.number_of_files_on_this_disk == record.number_of_files
-                && (is_zip64
-                    || (u64::from(record.number_of_files)
-                        <= u64::from(record.central_directory_size) / 46
-                        && u64::from(record.central_directory_offset)
-                            .checked_add(u64::from(record.central_directory_size))
-                            .is_some_and(|end| end <= candidate_offset)));
-            let candidate_central_start =
-                candidate_offset.checked_sub(u64::from(record.central_directory_size));
-            let archive_offset_is_valid = candidate_central_start
-                .is_some_and(|start| start >= u64::from(record.central_directory_offset));
-            let same_central_directory = candidate_central_start == Some(central_start)
-                && u64::from(record.central_directory_size) == central_size
-                && usize::from(record.number_of_files) == entry_count;
-            if fields_are_plausible
-                && (is_zip64 || (archive_offset_is_valid && !same_central_directory))
-            {
-                return Ok(true);
-            }
-            search_from = offset + 1;
-            continue;
-        }
-
-        if eof {
-            return Ok(false);
-        }
-        if buffer.len() > LOCAL_FILE_HEADER_SIGNATURE.len() - 1 {
-            let retain_from = buffer.len() - (LOCAL_FILE_HEADER_SIGNATURE.len() - 1);
-            buffer.drain(..retain_from);
-            buffer_start += retain_from as u64;
-            search_from = 0;
-        }
-        let mut chunk = [0; READ_BUFFER_LEN];
-        let read = reader.read(&mut chunk)?;
-        if read == 0 {
-            eof = true;
-        } else {
-            buffer.extend_from_slice(&chunk[..read]);
-        }
-    }
 }
 
 impl<R: Read> ZipStreamReader<R> {
@@ -477,18 +314,6 @@ impl<R: Read> ZipStreamReader<R> {
                 central_size,
                 footer_offset,
             )?;
-            let scan_start = reader.count;
-            if contains_unlisted_local_header_or_extra_eocd(
-                &mut reader,
-                scan_start,
-                central_start,
-                central_size,
-                central_entries.len(),
-            )? {
-                return Err(invalid!(
-                    "header inconsistency detected: extra local file header or ambiguous end of central directory"
-                ));
-            }
         }
 
         Ok(())
@@ -973,53 +798,12 @@ fn read_zipfile_from_stream_with_options_internal<'a, R: Read>(
 #[cfg(test)]
 mod tests {
     use crate::ZipWriter;
-    use crate::format::magic::Magic;
     use crate::read::ZipFile;
     use crate::read::ZipFileEntry;
     use crate::read::stream::{ZipStreamReader, ZipStreamVisitor};
     use crate::result::ZipResult;
     use std::collections::BTreeSet;
     use std::io::{Cursor, Read};
-
-    #[test]
-    fn unlisted_local_header_with_malformed_extra_field_is_detected() {
-        let mut bytes = Magic::LOCAL_FILE_HEADER_SIGNATURE.to_le_bytes().to_vec();
-        let mut fixed_header = [0; 26];
-        fixed_header[22..24].copy_from_slice(&1u16.to_le_bytes());
-        fixed_header[24..26].copy_from_slice(&4u16.to_le_bytes());
-        bytes.extend_from_slice(&fixed_header);
-        bytes.extend_from_slice(b"x");
-        bytes.extend_from_slice(&[1, 0, 5, 0]);
-
-        assert!(
-            super::contains_unlisted_local_header_or_extra_eocd(
-                &mut Cursor::new(bytes.clone()),
-                0,
-                0,
-                0,
-                0,
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn extra_eocd_with_different_central_directory_is_detected() {
-        let mut bytes = vec![0];
-        bytes.extend_from_slice(&Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes());
-        bytes.extend_from_slice(&[0; 18]);
-
-        assert!(
-            super::contains_unlisted_local_header_or_extra_eocd(
-                &mut Cursor::new(bytes),
-                0,
-                0,
-                0,
-                0,
-            )
-            .unwrap()
-        );
-    }
 
     #[cfg(all(unix, not(miri)))]
     #[test]

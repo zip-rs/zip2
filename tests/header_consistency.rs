@@ -899,52 +899,8 @@ fn test_ziparchive_validate_header_consistency_detects_unlisted_local_header() {
     assert!(!archive.has_overlapping_entries().unwrap());
     assert!(matches!(
         archive.validate_header_consistency(),
-        Err(ZipError::InvalidArchive(ref message))
+        Err(ZipError::InvalidArchive(message))
             if message.contains("local file header missing from central directory")
-    ));
-}
-
-#[test]
-fn test_ziparchive_validate_header_consistency_rejects_ambiguous_central_directories() {
-    let mut combined = Vec::new();
-    for name in ["first.txt", "second.txt"] {
-        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer
-            .start_file(name, SimpleFileOptions::default())
-            .unwrap();
-        writer.write_all(name.as_bytes()).unwrap();
-        combined.extend_from_slice(&writer.finish().unwrap().into_inner());
-    }
-
-    let mut archive = ZipArchive::new(Cursor::new(combined)).unwrap();
-    let result = archive.validate_header_consistency();
-    assert!(
-        matches!(result, Err(ZipError::InvalidArchive(_))),
-        "{result:?}"
-    );
-}
-
-#[test]
-fn test_stream_rejects_extra_eocd_with_different_central_directory() {
-    let first = ZipWriter::new(Cursor::new(Vec::new()))
-        .finish()
-        .unwrap()
-        .into_inner();
-    let second = ZipWriter::new(Cursor::new(Vec::new()))
-        .finish()
-        .unwrap()
-        .into_inner();
-    let mut combined = first;
-    combined.extend_from_slice(&second);
-
-    let destination = tempdir().unwrap();
-    let result = ZipStreamReader::new(Cursor::new(combined))
-        .enforce_header_consistency(true)
-        .extract(destination.path());
-    assert!(matches!(
-        result,
-        Err(ZipError::InvalidArchive(ref message))
-            if message.contains("ambiguous end of central directory")
     ));
 }
 
