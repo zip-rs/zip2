@@ -63,6 +63,11 @@ impl<R> Crc32Reader<R> {
     pub fn into_inner(self) -> R {
         self.inner
     }
+
+    pub(crate) fn is_at_limit(&self) -> bool {
+        self.size_limit
+            .is_some_and(|limit| self.bytes_read >= limit)
+    }
 }
 
 macro_rules! invalid_checksum {

@@ -735,6 +735,147 @@ mod early_eof {
     }
 
     #[test]
+    fn forged_deflate_stream_is_rejected_on_read_exact() {
+        for vendor in [1, 2] {
+            for len in [12 * 1024, 64 * 1024] {
+                let b = forged_archive(len, vendor);
+                let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                let mut buf = vec![0u8; f.size() as usize];
+                let err = f
+                    .read_exact(&mut buf)
+                    .expect_err(&format!("AE-{vendor} len={len}: forged entry accepted"));
+                assert_auth_error(&err);
+                // The failure must be sticky: a retry must not report a clean EOF.
+                assert!(
+                    f.read(&mut [0u8; 16]).is_err(),
+                    "AE-{vendor}: error not sticky"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn valid_aes_entries_read_with_read_exact() {
+        for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+            for vendor in [1u16, 2] {
+                for p in [
+                    Vec::new(),
+                    b"hello world\n".to_vec(),
+                    known_plaintext(4096),
+                    pseudo_random(8192),
+                ] {
+                    let mut b = aes_archive(&p, method);
+                    set_aes(&mut b, Some(vendor), None, &p);
+                    let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                    let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                    let mut buf = vec![0u8; f.size() as usize];
+                    f.read_exact(&mut buf).unwrap();
+                    assert_eq!(buf, p);
+                    // reading again after EOF keeps returning Ok(0)
+                    assert_eq!(f.read(&mut [0u8; 16]).unwrap(), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn valid_aes_entries_read_with_chunked_read_exact() {
+        for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+            for vendor in [1u16, 2] {
+                for p in [
+                    b"hello world\n".to_vec(),
+                    known_plaintext(4096),
+                    pseudo_random(8192),
+                ] {
+                    let mut b = aes_archive(&p, method);
+                    set_aes(&mut b, Some(vendor), None, &p);
+                    let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                    let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                    let chunk_size = 17;
+                    let mut result = Vec::new();
+                    let mut remaining = f.size() as usize;
+                    while remaining > 0 {
+                        let to_read = remaining.min(chunk_size);
+                        let mut chunk = vec![0u8; to_read];
+                        f.read_exact(&mut chunk).unwrap();
+                        result.extend_from_slice(&chunk);
+                        remaining -= to_read;
+                    }
+                    assert_eq!(result, p);
+                    // reading again after EOF keeps returning Ok(0)
+                    assert_eq!(f.read(&mut [0u8; 16]).unwrap(), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn forged_deflate_stream_is_rejected_on_chunked_read_exact() {
+        for vendor in [1, 2] {
+            for len in [12 * 1024, 64 * 1024] {
+                let b = forged_archive(len, vendor);
+                let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                let chunk_size = 1024;
+                let mut remaining = f.size() as usize;
+                let mut last_err = None;
+                while remaining > 0 {
+                    let to_read = remaining.min(chunk_size);
+                    let mut chunk = vec![0u8; to_read];
+                    match f.read_exact(&mut chunk) {
+                        Ok(()) => {
+                            remaining -= to_read;
+                        }
+                        Err(e) => {
+                            last_err = Some(e);
+                            break;
+                        }
+                    }
+                }
+                let err = last_err.unwrap_or_else(|| {
+                    panic!("AE-{vendor} len={len}: forged entry accepted on chunked read_exact")
+                });
+                assert_auth_error(&err);
+                assert!(
+                    f.read(&mut [0u8; 16]).is_err(),
+                    "AE-{vendor}: error not sticky"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn read_exact_interleaved_with_normal_read() {
+        for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+            for vendor in [1u16, 2] {
+                let p = pseudo_random(8192);
+                let mut b = aes_archive(&p, method);
+                set_aes(&mut b, Some(vendor), None, &p);
+                let mut a = ZipArchive::new(Cursor::new(b)).unwrap();
+                let mut f = a.by_index_decrypt(0, PASSWORD).unwrap();
+                // 1. read_exact 500 bytes (buffer length smaller than remainder)
+                let mut chunk1 = vec![0u8; 500];
+                f.read_exact(&mut chunk1).unwrap();
+                assert_eq!(chunk1, &p[..500]);
+                // 2. normal read for next 1000 bytes
+                let mut chunk2 = vec![0u8; 1000];
+                let n = f.read(&mut chunk2).unwrap();
+                assert!(n > 0 && n <= 1000);
+                assert_eq!(&chunk2[..n], &p[500..500 + n]);
+                // 3. read_to_end for the rest
+                let mut rest = Vec::new();
+                f.read_to_end(&mut rest).unwrap();
+                let mut total = chunk1;
+                total.extend_from_slice(&chunk2[..n]);
+                total.extend_from_slice(&rest);
+                assert_eq!(total, p);
+                assert_eq!(f.read(&mut [0u8; 16]).unwrap(), 0);
+            }
+        }
+    }
+
+    #[test]
     fn trailing_data_inside_compressed_size_is_authenticated() {
         for n in [16, 20 * 1024] {
             for how in ALL {

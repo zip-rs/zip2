@@ -233,7 +233,13 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
             ZipFileReader::Raw(r) => r.read_exact(buf),
             ZipFileReader::Stored(r) => r.read_exact(buf),
             ZipFileReader::Compressed(r) => r.read_exact(buf),
-            ZipFileReader::CompressedAes(r) => r.read_exact(buf),
+            ZipFileReader::CompressedAes(r) => {
+                r.read_exact(buf)?;
+                if r.is_at_limit() {
+                    self.finish_aes()?;
+                }
+                Ok(())
+            }
         }
     }
 }
