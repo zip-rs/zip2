@@ -8,11 +8,8 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        workspace: ["Cargo.toml", "fuzz/Cargo.toml"]
-        feature_flag: ["--all-features", "--no-default-features", ""]
-    permissions:
-      security-events: write # for SARIF upload
-    name: "Style and docs ${{ matrix.feature_flag }} ${{ matrix.workspace }}"
+        feature_flag: [ "--all-features", "--no-default-features", "" ]
+    name: "Style and docs ${{ matrix.feature_flag }}"
     runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -31,14 +28,20 @@ jobs:
           bins: clippy-sarif, sarif-fmt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: mkdir sarif
       - name: Run clippy - inside bash for pipefail
         shell: bash
         # allow warnings but not errors
-        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }} --message-format=json -- -D warnings | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/Cargo.toml --message-format=json -- -D warnings | clippy-sarif | tee sarif/rust-clippy-results.sarif | sarif-fmt
+      - name: Run clippy - inside bash for pipefail
+        shell: bash
+        # allow warnings but not errors
+        run: cargo clippy --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml --message-format=json -- -D warnings | clippy-sarif | tee sarif/fuzz-clippy-results.sarif | sarif-fmt
       - name: Upload analysis results to GitHub
         if: always()
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
-          sarif_file: rust-clippy-results.sarif
+          sarif_file: sarif
           wait-for-processing: true
-      - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/${{ matrix.workspace }}
+      - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/Cargo.toml
+      - run: cargo doc --no-deps --workspace ${{ matrix.feature_flag }} --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml
