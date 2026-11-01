@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-trigger-${{ (github.ref == 'refs/heads/master' && github.sha) || (github.event_name == 'pull_request' && github.head_ref) || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   run-ci:
     if: github.actor != 'github-merge-queue[bot]'

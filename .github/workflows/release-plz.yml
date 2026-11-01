@@ -10,6 +10,10 @@ on:
 permissions:  # added using https://github.com/step-security/secure-repo
   contents: read
 
+concurrency:
+  group: release-plz-${{ (github.ref) }}
+  cancel-in-progress: true
+
 jobs:
   release-plz-release:
     name: Release-plz release
