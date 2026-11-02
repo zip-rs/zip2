@@ -1219,9 +1219,9 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
     let reader = ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
     assert!(reader.extract(dest_dir).is_ok());
 
-    // 2. Tamper LFH raw name ("evil_cmd.sh\0") and LFH 0x7075 CRC32 to match "evil_cmd.sh\0"
+    // 2. Tamper LFH raw name ("evilcmd.sh") and LFH 0x7075 CRC32 to match "evilcmd.sh"
     // while keeping 0x7075 content ("ümlaut.txt") identical in both headers.
-    let spoofed_raw = b"evil_cmd.sh!";
+    let spoofed_raw = b"evilcmd.sh";
     assert_eq!(spoofed_raw.len(), b"fallback.txt".len());
     archive_bytes[30..42].copy_from_slice(spoofed_raw);
     let spoofed_crc = crc32fast::hash(spoofed_raw);
