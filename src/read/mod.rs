@@ -785,6 +785,12 @@ fn test_validate_unicode_path_name_compatibility() {
         validate_unicode_path_name(b"diyarbak\xfdr.txt", "Diyarbakır.txt".as_bytes(), false)
             .is_ok()
     );
+    assert!(validate_unicode_path_name(b"ATATURK.TXT", "Atatürk.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"ataturk.txt", "Atatürk.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"TURKIYE.TXT", "Türkiye.txt".as_bytes(), false).is_ok());
+    assert!(
+        validate_unicode_path_name(b"CANAKKALE.TXT", "Çanakkale.txt".as_bytes(), false).is_ok()
+    );
 
     // 3. DOS & OS/2 8.3 Aliases and Fallbacks
     assert!(
@@ -830,7 +836,7 @@ fn test_validate_unicode_path_name_compatibility() {
 
     // 5. Latin and Non-Latin alphabets / Hungarian diacritics & dropped characters
     assert!(validate_unicode_path_name(b"arxeio.txt", "αρχείο.txt".as_bytes(), false).is_ok());
-    assert!(validate_unicode_path_name(b"dokument.txt", "документ.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"document.txt", "документ.txt".as_bytes(), false).is_ok());
     assert!(validate_unicode_path_name(b"dok.txt", "документ.txt".as_bytes(), false).is_ok());
     assert!(
         validate_unicode_path_name(b"arvizturo.txt", "árvíztűrő.txt".as_bytes(), false).is_ok()

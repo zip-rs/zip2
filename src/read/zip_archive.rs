@@ -1488,10 +1488,14 @@ mod tests {
         assert_unicode_path_consistency("STRASSE.TXT", "straße.txt", true);
         assert_unicode_path_consistency("README.TXT", "readme.txt", true);
 
-        // Turkish I / İ / ı case conversions
+        // Turkish I / İ / ı case conversions and Turkish diacritics
         assert_unicode_path_consistency("ISTANBUL.TXT", "İstanbul.txt", true);
         assert_unicode_path_consistency("istanbul.txt", "İstanbul.txt", true);
         assert_unicode_path_consistency("DIYARBAKIR.TXT", "Diyarbakır.txt", true);
+        assert_unicode_path_consistency("ATATURK.TXT", "Atatürk.txt", true);
+        assert_unicode_path_consistency("ataturk.txt", "Atatürk.txt", true);
+        assert_unicode_path_consistency("TURKIYE.TXT", "Türkiye.txt", true);
+        assert_unicode_path_consistency("CANAKKALE.TXT", "Çanakkale.txt", true);
 
         // DOS 8.3 aliases with tilde (LFN compatibility for 1990s tools)
         assert_unicode_path_consistency("LONGFI~1.TXT", "LongFileName.txt", true);
@@ -1506,7 +1510,7 @@ mod tests {
 
         // Latin and Non-Latin alphabets
         assert_unicode_path_consistency("arxeio.txt", "αρχείο.txt", true);
-        assert_unicode_path_consistency("dokument.txt", "документ.txt", true);
+        assert_unicode_path_consistency("document.txt", "документ.txt", true);
 
         // Adversarial Cloaking Bypasses (Must be blocked):
         assert_unicode_path_consistency("readme.txt", "malwaré.txt", false);

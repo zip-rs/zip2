@@ -6,6 +6,7 @@ ERROR_FILENAME_EXCED_RANGE = "ERROR_FILENAME_EXCED_RANGE"
 flate2 = "flate2"
 "00ba" = "00ba"
 caf = "caf"
+dokument = "dokument"
 
 [default]
 extend-ignore-re = [
