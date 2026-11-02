@@ -816,7 +816,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 .set(ZipFlags::LanguageEncoding, language_encoding);
         }
         if (!self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..))))
-            && file.is_dir_based_on_unix_mode()
+            && file.is_non_dir_based_on_unix_mode()
         {
             file.flags |= ZipFlags::UsingDataDescriptor.as_u16();
         }

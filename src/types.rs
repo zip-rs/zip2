@@ -255,7 +255,7 @@ impl ZipFileData {
         HeaderConsistencyMetadata {
             name,
             overridden_header_name: self.overridden_header_name.as_deref(),
-            is_directory: self.is_dir_based_on_unix_mode(),
+            is_directory: self.is_dir(name),
             upath,
             upath_crc32,
             compression_method: self.compression_method.serialize_to_u16(),
@@ -335,7 +335,7 @@ impl ZipFileData {
         is_dir(file_name)
     }
 
-    pub(crate) fn is_dir_based_on_unix_mode(&self) -> bool {
+    pub(crate) fn is_non_dir_based_on_unix_mode(&self) -> bool {
         self.unix_mode()
             .is_some_and(|p| p & ffi::S_IFDIR != ffi::S_IFDIR)
     }

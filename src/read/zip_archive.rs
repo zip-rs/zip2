@@ -1482,5 +1482,55 @@ mod tests {
         assert_unicode_path_consistency("cafe.tar.gz", "café.tar.gz", true);
         assert_unicode_path_consistency("cafe", "café", true);
         assert_unicode_path_consistency("é/foo.txt", "e/foo.txt", true);
+
+        // Positive examples (German ß / ss transliteration and case insensitivity)
+        assert_unicode_path_consistency("strasse.txt", "straße.txt", true);
+        assert_unicode_path_consistency("STRASSE.TXT", "straße.txt", true);
+        assert_unicode_path_consistency("README.TXT", "readme.txt", true);
+
+        // Turkish I / İ / ı case conversions
+        assert_unicode_path_consistency("ISTANBUL.TXT", "İstanbul.txt", true);
+        assert_unicode_path_consistency("istanbul.txt", "İstanbul.txt", true);
+        assert_unicode_path_consistency("DIYARBAKIR.TXT", "Diyarbakır.txt", true);
+
+        // DOS 8.3 aliases with tilde (LFN compatibility for 1990s tools)
+        assert_unicode_path_consistency("LONGFI~1.TXT", "LongFileName.txt", true);
+        assert_unicode_path_consistency("DOCUME~2.PDF", "DocumentSpecialReport.pdf", true);
+        assert_unicode_path_consistency("ISTANB~1.DOC", "İstanbulReport.doc", true);
+        assert_unicode_path_consistency("LONGFI~1.TXT", "malware.txt", false);
+        assert_unicode_path_consistency("LONGFI~1.EXE", "LongFileName.pdf", false);
+
+        // Non-ASCII extension with ASCII fallback
+        assert_unicode_path_consistency("document.doc", "document.дос", true);
+        assert_unicode_path_consistency("report.pdf", "report.рdf", true);
+
+        // Latin and Non-Latin alphabets
+        assert_unicode_path_consistency("arxeio.txt", "αρχείο.txt", true);
+        assert_unicode_path_consistency("dokument.txt", "документ.txt", true);
+
+        // Adversarial Cloaking Bypasses (Must be blocked):
+        assert_unicode_path_consistency("readme.txt", "malwaré.txt", false);
+        assert_unicode_path_consistency("readme.txt", "malware.ехе", false);
+        assert_unicode_path_consistency("cache/file.txt", "startup_é/file.txt", false);
+        assert_unicode_path_consistency("updater.exe", "trojan_é.exe", false);
+
+        // Valid multi-dot versioned archive:
+        assert_unicode_path_consistency(
+            "my.package.version.tar.gz",
+            "my.päckage.version.tar.gz",
+            true,
+        );
+
+        // Edge case bypasses:
+        // 1. Right-to-Left Override (RLO) spoofing:
+        assert_unicode_path_consistency("file.txt", "file\u{202E}txt.exe", false);
+        // 2. Fullwidth dot homoglyph:
+        assert_unicode_path_consistency("malware", "malware\u{FF0E}exe", false);
+        // 3. Trailing dot / space divergence (Windows Win32 stripping evasion):
+        assert_unicode_path_consistency("file.txt", "file.txt.", false);
+        assert_unicode_path_consistency("file.txt", "file.txt ", false);
+        // 4. Directory trailing slash mismatch:
+        assert_unicode_path_consistency("folder/", "folder", false);
+        assert_unicode_path_consistency("folder", "folder/", false);
     }
 }

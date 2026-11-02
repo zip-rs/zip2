@@ -554,38 +554,129 @@ fn validate_unicode_path_name(
     unicode_path: &[u8],
     is_directory: bool,
 ) -> ZipResult<()> {
-    let main_name = String::from_utf8_lossy(main_name);
-    let unicode_path = std::str::from_utf8(unicode_path).map_err(|_| {
+    // 1. Null-byte poisoning check
+    if main_name.contains(&0) || unicode_path.contains(&0) {
+        return Err(invalid!(
+            "header inconsistency detected: filename contains null byte"
+        ));
+    }
+
+    // 2. Directory trailing separator parity
+    let main_has_trailing = main_name.ends_with(b"/") || main_name.ends_with(b"\\");
+    let unicode_has_trailing = unicode_path.ends_with(b"/") || unicode_path.ends_with(b"\\");
+    if main_has_trailing != unicode_has_trailing {
+        return Err(invalid!(
+            "header inconsistency detected: UnicodePath (0x7075) directory status differs from file name"
+        ));
+    }
+
+    let main_name_str = String::from_utf8_lossy(main_name);
+    let unicode_path_str = std::str::from_utf8(unicode_path).map_err(|_| {
         invalid!("header inconsistency detected: UnicodePath (0x7075) is not valid UTF-8")
     })?;
-    let main_components: Vec<_> = Utf8WindowsPath::new(&main_name).components().collect();
-    let unicode_components: Vec<_> = Utf8WindowsPath::new(unicode_path).components().collect();
 
-    let components_match = main_components.len() == unicode_components.len()
-        && main_components
-            .iter()
-            .zip(&unicode_components)
-            .all(|(main, unicode)| {
-                core::mem::discriminant(main) == core::mem::discriminant(unicode)
-                    && !(main.as_str().is_ascii()
-                        && unicode.as_str().is_ascii()
-                        && main.as_str() != unicode.as_str())
-            });
-    if !components_match {
+    // 3. Prohibit dangerous Unicode control characters & homoglyph delimiters:
+    // - Bidirectional overrides: U+202A..=U+202E, U+2066..=U+2069
+    // - Fullwidth dots and slashes: U+FF0E, U+FF0F, U+FF3C, U+2044, U+2215
+    // - ASCII control characters (< 0x20)
+    for ch in unicode_path_str.chars() {
+        if matches!(
+            ch,
+            '\u{202A}'..='\u{202E}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FF0E}'
+                | '\u{FF0F}'
+                | '\u{FF3C}'
+                | '\u{2044}'
+                | '\u{2215}'
+                | '\0'..='\x1F'
+                | '\x7F'
+        ) {
+            return Err(invalid!(
+                "header inconsistency detected: UnicodePath (0x7075) contains illegal control or homoglyph character"
+            ));
+        }
+    }
+
+    let main_components: Vec<_> = Utf8WindowsPath::new(&main_name_str).components().collect();
+    let unicode_components: Vec<_> = Utf8WindowsPath::new(unicode_path_str)
+        .components()
+        .collect();
+
+    if main_components.len() != unicode_components.len() {
         return Err(invalid!(
             "header inconsistency detected: UnicodePath (0x7075) changes file name path components"
         ));
     }
 
+    for (main, unicode) in main_components.iter().zip(&unicode_components) {
+        if core::mem::discriminant(main) != core::mem::discriminant(unicode) {
+            return Err(invalid!(
+                "header inconsistency detected: UnicodePath (0x7075) changes file name path components"
+            ));
+        }
+
+        let (main_str, unicode_str) = (main.as_str(), unicode.as_str());
+
+        // 4. Windows trailing dot/space spoofing check
+        let main_trimmed = main_str.trim_end_matches(['.', ' ']);
+        let unicode_trimmed = unicode_str.trim_end_matches(['.', ' ']);
+        if (main_trimmed != main_str) != (unicode_trimmed != unicode_str) {
+            return Err(invalid!(
+                "header inconsistency detected: UnicodePath (0x7075) has divergent trailing dots or spaces"
+            ));
+        }
+
+        // Exception: DOS 8.3 alias compatibility (e.g. LONGFI~1.TXT for LongFileName.txt).
+        // Tools in the 1990s wrote 8.3 aliases in the main header and long names in 0x7075.
+        if let Some(prefix) = parse_dos_8_3_alias(main_trimmed) {
+            let unicode_stem = match unicode_trimmed.rsplit_once('.') {
+                Some((stem, _)) => stem,
+                None => unicode_trimmed,
+            };
+            if is_ascii_subsequence(prefix, unicode_stem) {
+                continue;
+            }
+        }
+
+        if main_str.is_ascii() && unicode_str.is_ascii() {
+            // Case-insensitive ASCII comparison: handles uppercase fallback tools (e.g. README.TXT vs readme.txt).
+            if !main_str.eq_ignore_ascii_case(unicode_str) {
+                return Err(invalid!(
+                    "header inconsistency detected: UnicodePath (0x7075) changes file name path components"
+                ));
+            }
+        } else {
+            // When either component has non-ASCII characters, the raw main_name must represent a valid
+            // fallback (transliteration / lossy representation). ASCII characters in either component
+            // must appear in the other in relative order (subsequence match).
+            let matches = is_ascii_subsequence(unicode_str, main_str)
+                || is_ascii_subsequence(main_str, unicode_str);
+
+            if !matches {
+                return Err(invalid!(
+                    "header inconsistency detected: UnicodePath (0x7075) changes file name path components"
+                ));
+            }
+        }
+    }
+
     if !is_directory {
-        let unicode_extension = file_extension(unicode_path);
-        let main_extension = file_extension(&main_name);
-        let extension_mismatch = match unicode_extension {
-            None => main_extension.is_some(),
-            Some(extension) if extension.is_ascii() => main_extension != Some(extension),
-            Some(_) => false,
+        let unicode_extension = file_extension(unicode_path_str);
+        let main_extension = file_extension(&main_name_str);
+        let extensions_consistent = match (main_extension, unicode_extension) {
+            (None, None) => true,
+            (Some(main_ext), Some(unicode_ext)) => {
+                if main_ext.eq_ignore_ascii_case(unicode_ext) {
+                    true
+                } else {
+                    // Legitimate non-ASCII extension with ASCII fallback (e.g. Cyrillic/Greek transliteration)
+                    main_ext.is_ascii() && !unicode_ext.is_ascii()
+                }
+            }
+            _ => false,
         };
-        if extension_mismatch {
+        if !extensions_consistent {
             return Err(invalid!(
                 "header inconsistency detected: UnicodePath (0x7075) file extension differs from file name"
             ));
@@ -595,24 +686,177 @@ fn validate_unicode_path_name(
     Ok(())
 }
 
+fn to_subsequence_ascii(c: char) -> Option<char> {
+    match c {
+        // Turkish dotted capital İ (U+0130) and dotless lowercase ı (U+0131)
+        '\u{0130}' | '\u{0131}' => Some('i'),
+        c if c.is_ascii() => Some(c.to_ascii_lowercase()),
+        _ => None,
+    }
+}
+
+fn is_ascii_subsequence(sub: &str, full: &str) -> bool {
+    let mut sub_iter = sub.chars().filter_map(to_subsequence_ascii);
+
+    let mut target = match sub_iter.next() {
+        Some(c) => c,
+        None => return true,
+    };
+
+    for ch in full.chars().filter_map(to_subsequence_ascii) {
+        if ch == target {
+            match sub_iter.next() {
+                Some(next_c) => target = next_c,
+                None => return true,
+            }
+        }
+    }
+    false
+}
+
+fn parse_dos_8_3_alias(component: &str) -> Option<&str> {
+    let stem = match component.rsplit_once('.') {
+        Some((s, _)) => s,
+        None => component,
+    };
+    if stem.len() > 8 || !stem.contains('~') {
+        return None;
+    }
+    let tilde_idx = stem.rfind('~')?;
+    let (prefix, suffix) = stem.split_at(tilde_idx);
+    let digits = &suffix[1..];
+    if !prefix.is_empty() && !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+        Some(prefix)
+    } else {
+        None
+    }
+}
+
 fn file_extension(path: &str) -> Option<&str> {
     let Utf8WindowsComponent::Normal(file_name) =
         Utf8WindowsPath::new(path).components().next_back()?
     else {
         return None;
     };
-    let ascii_extension = file_name.match_indices('.').find_map(|(index, _)| {
-        let extension = &file_name[index..];
-        (index > 0 && extension.len() > 1 && extension.is_ascii()).then_some(extension)
-    });
-    ascii_extension.or_else(|| {
-        let (stem, extension) = file_name.rsplit_once('.')?;
-        (!stem.is_empty() && !extension.is_empty()).then_some(extension)
-    })
+    let dot_idx = file_name.rfind('.')?;
+    let stem = &file_name[..dot_idx];
+    let ext = &file_name[dot_idx + 1..];
+    if stem.is_empty() || ext.is_empty() {
+        return None;
+    }
+    Some(ext)
 }
 
 #[test]
 fn test_multiple_file_extension() {
-    assert_eq!(file_extension("archive.tar.gz"), Some(".tar.gz"));
-    assert_eq!(file_extension("archive.résumé.gz"), Some(".gz"));
+    assert_eq!(file_extension("archive.tar.gz"), Some("gz"));
+    assert_eq!(file_extension("archive.résumé.gz"), Some("gz"));
+    assert_eq!(file_extension("file.txt"), Some("txt"));
+    assert_eq!(file_extension(".gitignore"), None);
+    assert_eq!(file_extension("no_extension"), None);
+}
+
+#[test]
+fn test_validate_unicode_path_name_compatibility() {
+    // 1. German ß / ss & CP437
+    assert!(validate_unicode_path_name(b"strasse.txt", "straße.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"STRASSE.TXT", "straße.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"Stra\xe1e.txt", "straße.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"strae.txt", "straße.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"stra_e.txt", "straße.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"stra?e.txt", "straße.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"M\x81ller.txt", "Müller.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"caf\x82.txt", "café.txt".as_bytes(), false).is_ok());
+
+    // 2. Turkish I / İ / ı (including Windows-1254 encodings)
+    assert!(validate_unicode_path_name(b"ISTANBUL.TXT", "İstanbul.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"istanbul.txt", "İstanbul.txt".as_bytes(), false).is_ok());
+    assert!(
+        validate_unicode_path_name(b"\xddSTANBUL.TXT", "İstanbul.txt".as_bytes(), false).is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(b"DIYARBAKIR.TXT", "Diyarbakır.txt".as_bytes(), false).is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(b"D\xfdYARBAKIR.TXT", "Diyarbakır.txt".as_bytes(), false)
+            .is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(b"diyarbak\xfdr.txt", "Diyarbakır.txt".as_bytes(), false)
+            .is_ok()
+    );
+
+    // 3. DOS & OS/2 8.3 Aliases and Fallbacks
+    assert!(
+        validate_unicode_path_name(b"LONGFI~1.TXT", "LongFileName.txt".as_bytes(), false).is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(
+            b"DOCUME~2.PDF",
+            "DocumentSpecialReport.pdf".as_bytes(),
+            false
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(b"ISTANB~1.DOC", "İstanbulReport.doc".as_bytes(), false).is_ok()
+    );
+    // DOS 8.3 aliases with prefix matching:
+    assert!(
+        validate_unicode_path_name(
+            b"VERYLO~1.TXT",
+            "VeryLongDocumentName.txt".as_bytes(),
+            false
+        )
+        .is_ok()
+    );
+    // Adversarial: arbitrary 8.3 ASCII names cannot cloak divergent Unicode paths:
+    assert!(
+        validate_unicode_path_name(b"MYDOC.TXT", "VeryLongDocumentName.txt".as_bytes(), false)
+            .is_err()
+    );
+    assert!(validate_unicode_path_name(b"readme.txt", "malwaré.txt".as_bytes(), false).is_err());
+    // Adversarial: both 8.3 ASCII but divergent names must be blocked:
+    assert!(validate_unicode_path_name(b"safe.txt", "evil.txt".as_bytes(), false).is_err());
+    assert!(validate_unicode_path_name(b"SAFE.TXT", "safe.txt".as_bytes(), false).is_ok());
+    assert!(
+        validate_unicode_path_name(b"LONGFI~1.EXE", "LongFileName.pdf".as_bytes(), false).is_err()
+    );
+
+    // 4. Non-ASCII Extensions with ASCII Fallback
+    assert!(validate_unicode_path_name(b"document.doc", "document.дос".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"report.pdf", "report.рdf".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"document.txt", "document.exe".as_bytes(), false).is_err());
+
+    // 5. Latin and Non-Latin alphabets / Hungarian diacritics & dropped characters
+    assert!(validate_unicode_path_name(b"arxeio.txt", "αρχείο.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"dokument.txt", "документ.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"dok.txt", "документ.txt".as_bytes(), false).is_ok());
+    assert!(
+        validate_unicode_path_name(b"arvizturo.txt", "árvíztűrő.txt".as_bytes(), false).is_ok()
+    );
+    assert!(validate_unicode_path_name(b"ervnyes.txt", "érvényes.txt".as_bytes(), false).is_ok());
+    assert!(validate_unicode_path_name(b"rvztr.txt", "árvíztűrő.txt".as_bytes(), false).is_ok());
+    assert!(
+        validate_unicode_path_name(b"?rv?zt?r?.txt", "árvíztűrő.txt".as_bytes(), false).is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(b"\xA0rv\xA1zturo.txt", "árvíztűrő.txt".as_bytes(), false)
+            .is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(b"\xA0rv\xA1ztr.txt", "árvíztűrő.txt".as_bytes(), false).is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(b"\xA0rv\xA1zt?r?.txt", "árvíztűrő.txt".as_bytes(), false)
+            .is_ok()
+    );
+    assert!(
+        validate_unicode_path_name(
+            b"\xA0rv\xA1zt\x81r\x94.txt",
+            "árvíztűrő.txt".as_bytes(),
+            false
+        )
+        .is_ok()
+    );
 }

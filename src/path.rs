@@ -74,7 +74,7 @@ pub(crate) fn is_windows_reserved_device_name(name: &str) -> bool {
         return true;
     }
 
-    if stem.len() >= 4 {
+    if stem.len() >= 4 && stem.is_char_boundary(3) {
         let (prefix, rest) = stem.split_at(3);
         if prefix.eq_ignore_ascii_case("COM") || prefix.eq_ignore_ascii_case("LPT") {
             let mut chars = rest.chars();
