@@ -304,7 +304,7 @@ fn delete_by_handle(file: std::fs::File) -> std::io::Result<()> {
             handle,
             FileDispositionInfo,
             &mut disposition as *mut _ as *const _,
-            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+            core::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
         )
     };
     drop(file);
@@ -355,7 +355,7 @@ pub(crate) fn create_outfile(
                 match open_res {
                     Ok(f) => {
                         let mut info = unsafe {
-                            std::mem::zeroed::<
+                            core::mem::zeroed::<
                                 windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION,
                             >()
                         };
@@ -382,7 +382,7 @@ pub(crate) fn create_outfile(
                             .open(outpath)
                         {
                             let mut info = unsafe {
-                                std::mem::zeroed::<
+                                core::mem::zeroed::<
                                     windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION,
                                 >()
                             };
@@ -454,7 +454,7 @@ pub(crate) fn create_outfile(
     {
         use std::os::windows::io::AsRawHandle;
         unsafe {
-            let mut info = std::mem::zeroed::<
+            let mut info = core::mem::zeroed::<
                 windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION,
             >();
             if windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(

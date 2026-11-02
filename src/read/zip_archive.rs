@@ -23,7 +23,7 @@ use core::ops::Range;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{Read, Seek, SeekFrom};
-use std::mem;
+use core::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

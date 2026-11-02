@@ -280,7 +280,7 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
     /// is left in the `NoReader` state, so later reads keep failing instead of
     /// reporting a clean EOF.
     fn finish_aes(&mut self) -> io::Result<()> {
-        let ZipFileReader::CompressedAes(r) = std::mem::replace(self, ZipFileReader::NoReader)
+        let ZipFileReader::CompressedAes(r) = core::mem::replace(self, ZipFileReader::NoReader)
         else {
             return Ok(());
         };
@@ -392,7 +392,7 @@ mod tests {
         use std::io::BufReader;
         use std::io::Cursor;
         use std::io::Take;
-        use std::mem::size_of;
+        use core::mem::size_of;
 
         type R = Cursor<Vec<u8>>;
         let enum_size = size_of::<ZipFileReader<'_, R>>();

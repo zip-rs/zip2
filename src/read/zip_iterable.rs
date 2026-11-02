@@ -21,7 +21,7 @@ use crate::read::{CentralDirectoryInfo, Config, central_header_to_zip_file_inner
 use crate::result::{ZipError, ZipResult, invalid};
 use std::borrow::Cow;
 use std::io::{Read, Seek, SeekFrom};
-use std::mem::size_of;
+use core::mem::size_of;
 
 /// Iterable version of [`ZipArchive`](crate::ZipArchive).
 ///
