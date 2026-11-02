@@ -35,6 +35,7 @@ pub fn generate_random_archive(size: usize) -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
+#[cfg_attr(miri, allow(unused))]
 pub fn generate_random_archive_meta(count_files: usize, file_size: usize) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);

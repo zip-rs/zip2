@@ -1020,11 +1020,9 @@ mod tests {
     use crate::format::{MagicPositionCache, find_central_directory_end};
     use crate::read::ArchiveOffset;
     use crate::read::magic_finder::{Backwards, MagicFinder};
-    use crate::read::stream::ZipStreamReader;
     use crate::write::SimpleFileOptions;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Write};
-    use tempfile::tempdir;
 
     #[test]
     fn unlisted_local_header_with_malformed_extra_field_is_detected() {
@@ -1441,6 +1439,10 @@ mod tests {
             options
                 .add_extra_field(0x7075, unicode_path_data, false)
                 .unwrap();
+            #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+            {
+                options = options.compression_method(crate::CompressionMethod::Stored);
+            }
             writer.start_file(main_name, options).unwrap();
             writer.write_all(b"payload").unwrap();
             writer.finish().unwrap();
@@ -1453,14 +1455,20 @@ mod tests {
                 "ZipArchive result for {main_name:?} -> {unicode_path:?}"
             );
 
-            let destination = tempdir().unwrap();
-            let stream =
-                ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
-            assert_eq!(
-                stream.extract(destination.path()).is_ok(),
-                expected,
-                "ZipStreamReader result for {main_name:?} -> {unicode_path:?}"
-            );
+            #[cfg(not(miri))]
+            {
+                use crate::read::stream::ZipStreamReader;
+                use tempfile::tempdir;
+                let destination = tempdir().unwrap();
+                let stream = ZipStreamReader::new(Cursor::new(&archive_bytes))
+                    .enforce_header_consistency(true);
+                let result = stream.extract(destination.path());
+                assert_eq!(
+                    result.is_ok(),
+                    expected,
+                    "ZipStreamReader result for {main_name:?} -> {unicode_path:?}: {result:?}"
+                );
+            }
         }
         assert_unicode_path_consistency("fallback.txt", "other.txt", false);
         assert_unicode_path_consistency("a/../b.txt", "a/b.txt", false);

@@ -84,7 +84,7 @@ fn test_windows_reserved_device_names_rejected_in_enclosed_name() {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(miri)))]
 #[test]
 fn test_windows_reserved_device_names_extraction_rejected() {
     use std::io::Cursor;
@@ -181,7 +181,6 @@ fn test_windows_reserved_names_mangled_name_sanitized() {
 #[test]
 fn test_legitimate_similar_names_accepted() {
     use std::io::Cursor;
-    use tempfile::tempdir;
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -218,18 +217,21 @@ fn test_legitimate_similar_names_accepted() {
         );
     }
 
-    let target_dir = tempdir().unwrap();
-    assert!(
-        archive.extract(target_dir.path()).is_ok(),
-        "Legitimate files should extract successfully without errors"
-    );
+    #[cfg(not(miri))]
+    {
+        use tempfile::tempdir;
+        let target_dir = tempdir().unwrap();
+        assert!(
+            archive.extract(target_dir.path()).is_ok(),
+            "Legitimate files should extract successfully without errors"
+        );
+    }
 }
 
 #[cfg(windows)]
 #[test]
 fn test_cannot_escape_to_windows_startup_directory() {
     use std::io::Cursor;
-    use tempfile::tempdir;
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -244,8 +246,12 @@ fn test_cannot_escape_to_windows_startup_directory() {
         r"\\?\C:\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\evil.bat",
     ];
 
-    let dest = tempdir().unwrap();
+    #[cfg(not(miri))]
+    let dest = tempfile::tempdir().unwrap();
+    #[cfg(not(miri))]
     let dest_path = dest.path();
+    #[cfg(miri)]
+    let dest_path = std::path::Path::new("C:\\examp");
 
     for attack_path in startup_attack_vectors {
         let mut zip_data = Vec::new();
@@ -280,16 +286,19 @@ fn test_cannot_escape_to_windows_startup_directory() {
             );
         }
 
-        // Check 3: Extracting archive must either fail (rejection) or write strictly INSIDE dest_path
-        let _ = archive.extract(dest_path);
+        #[cfg(not(miri))]
+        {
+            // Check 3: Extracting archive must either fail (rejection) or write strictly INSIDE dest_path
+            let _ = archive.extract(dest_path);
 
-        // Verify that nothing was written outside dest_path
-        for entry in walkdir::WalkDir::new(dest_path) {
-            let path = entry.unwrap().into_path();
-            assert!(
-                path.starts_with(dest_path),
-                "File extracted outside destination directory: {path:?}"
-            );
+            // Verify that nothing was written outside dest_path
+            for entry in walkdir::WalkDir::new(dest_path) {
+                let path = entry.unwrap().into_path();
+                assert!(
+                    path.starts_with(dest_path),
+                    "File extracted outside destination directory: {path:?}"
+                );
+            }
         }
     }
 }
