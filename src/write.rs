@@ -816,9 +816,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 .set(ZipFlags::LanguageEncoding, language_encoding);
         }
         if (!self.seek_possible || matches!(options.encrypt_with, Some(EncryptWith::ZipCrypto(..))))
-            && file
-                .unix_mode()
-                .is_some_and(|p| p & ffi::S_IFDIR != ffi::S_IFDIR)
+            && file.is_dir_based_on_unix_mode()
         {
             file.flags |= ZipFlags::UsingDataDescriptor.as_u16();
         }
@@ -904,13 +902,18 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn insert_file_data(&mut self, file_name_raw: &[u8], file: ZipFileData) -> ZipResult<usize> {
+    fn insert_file_data(
+        &mut self,
+        file_name_raw: &[u8],
+        mut file: ZipFileData,
+    ) -> ZipResult<usize> {
         if self.files.contains_key(file_name_raw) {
             return Err(invalid!(
                 "Duplicate filename: {:?}",
                 file_name_raw.escape_ascii()
             ));
         }
+        file.overridden_header_name = None;
         let (index, _) = self.files.insert_full(file_name_raw.into(), file);
         Ok(index)
     }

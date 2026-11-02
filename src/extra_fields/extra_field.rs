@@ -312,6 +312,8 @@ impl ZipFileData {
                     // the File Name field in the header SHOULD be used instead.
                     let crc = *orig_name_crc.get_or_insert_with(|| crc32fast::hash(file_name_raw));
                     if unicode.crc32 == crc && std::str::from_utf8(&unicode.content).is_ok() {
+                        self.overridden_header_name
+                            .get_or_insert_with(|| file_name_raw.clone().into_boxed_slice());
                         *file_name_raw = unicode.content.to_vec();
                         self.flags |= ZipFlags::LanguageEncoding.as_u16();
                     }

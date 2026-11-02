@@ -78,6 +78,8 @@ pub struct ZipFileData {
     pub large_file: bool,
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
     pub extra_fields: ExtraFields,
+    /// The file name as stored in the header, before applying a Unicode Path extra field.
+    pub(crate) overridden_header_name: Option<Box<[u8]>>,
 }
 
 impl ZipFileData {
@@ -252,6 +254,8 @@ impl ZipFileData {
         };
         HeaderConsistencyMetadata {
             name,
+            overridden_header_name: self.overridden_header_name.as_deref(),
+            is_directory: self.is_dir_based_on_unix_mode(),
             upath,
             upath_crc32,
             compression_method: self.compression_method.serialize_to_u16(),
@@ -329,6 +333,11 @@ impl ZipFileData {
     /// Check if the file is a directory based on the file name.
     pub(crate) fn is_dir(&self, file_name: &[u8]) -> bool {
         is_dir(file_name)
+    }
+
+    pub(crate) fn is_dir_based_on_unix_mode(&self) -> bool {
+        self.unix_mode()
+            .is_some_and(|p| p & ffi::S_IFDIR != ffi::S_IFDIR)
     }
 
     /// Check if the file is a symbolic link.
@@ -483,6 +492,7 @@ impl ZipFileData {
             external_attributes,
             large_file: options.large_file,
             extra_fields,
+            overridden_header_name: None,
         };
         local_block.version_made_by = local_block.version_needed() as u8;
         local_block
@@ -527,6 +537,7 @@ impl ZipFileData {
             external_attributes: 0,
             large_file: false,
             extra_fields,
+            overridden_header_name: None,
         };
         Ok(data)
     }

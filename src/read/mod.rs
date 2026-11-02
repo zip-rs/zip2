@@ -12,6 +12,7 @@ use crate::types::ZipFileData;
 use indexmap::IndexMap;
 use std::io::{self, Read, Seek};
 use std::sync::OnceLock;
+use typed_path::{Utf8Component, Utf8WindowsComponent, Utf8WindowsPath};
 
 mod config;
 pub use config::{ArchiveOffset, Config};
@@ -247,6 +248,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         external_attributes: external_file_attributes,
         large_file: false,
         extra_fields,
+        overridden_header_name: None,
     };
     result.apply_extra_fields(&mut file_name_raw)?;
 
@@ -399,9 +401,11 @@ impl HeaderDataDescriptorMetadata {
 
 /// Unified header metadata used to validate consistency between Local and Central headers.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct HeaderConsistencyMetadata<T: AsRef<[u8]>, U: AsRef<[u8]> = T> {
+pub(crate) struct HeaderConsistencyMetadata<T: AsRef<[u8]>> {
     pub(crate) name: T,
-    pub(crate) upath: Option<U>,
+    pub(crate) overridden_header_name: Option<T>,
+    pub(crate) is_directory: bool,
+    pub(crate) upath: Option<T>,
     pub(crate) upath_crc32: Option<u32>,
     pub(crate) compression_method: u16,
     pub(crate) is_encrypted: bool,
@@ -418,6 +422,8 @@ impl HeaderConsistencyMetadata<&[u8]> {
     pub(crate) fn into_owned(self) -> HeaderConsistencyMetadata<Box<[u8]>> {
         HeaderConsistencyMetadata {
             name: self.name.into(),
+            overridden_header_name: self.overridden_header_name.map(Into::into),
+            is_directory: self.is_directory,
             upath: self.upath.map(Into::into),
             upath_crc32: self.upath_crc32,
             compression_method: self.compression_method,
@@ -432,11 +438,11 @@ impl HeaderConsistencyMetadata<&[u8]> {
     }
 }
 
-impl<T: AsRef<[u8]>, U: AsRef<[u8]>> HeaderConsistencyMetadata<T, U> {
+impl<T: AsRef<[u8]>> HeaderConsistencyMetadata<T> {
     /// Validates header identity (filename, UnicodePath, compression method, and flags).
-    pub(crate) fn validate_identity_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+    pub(crate) fn validate_identity_matches<T2: AsRef<[u8]>>(
         &self,
-        central: &HeaderConsistencyMetadata<T2, U2>,
+        central: &HeaderConsistencyMetadata<T2>,
     ) -> ZipResult<()> {
         let local_effective = self
             .upath
@@ -457,6 +463,26 @@ impl<T: AsRef<[u8]>, U: AsRef<[u8]>> HeaderConsistencyMetadata<T, U> {
             return Err(invalid!(
                 "header inconsistency detected: Local file header filename mismatch (does not match central directory)"
             ));
+        }
+
+        if let (Some(upath), Some(overridden_header_name)) =
+            (self.upath.as_ref(), self.overridden_header_name.as_ref())
+        {
+            validate_unicode_path_name(
+                overridden_header_name.as_ref(),
+                upath.as_ref(),
+                self.is_directory && central.is_directory,
+            )?;
+        }
+        if let (Some(upath), Some(overridden_header_name)) = (
+            central.upath.as_ref(),
+            central.overridden_header_name.as_ref(),
+        ) {
+            validate_unicode_path_name(
+                overridden_header_name.as_ref(),
+                upath.as_ref(),
+                self.is_directory && central.is_directory,
+            )?;
         }
 
         if self.compression_method != central.compression_method {
@@ -505,20 +531,88 @@ impl<T: AsRef<[u8]>, U: AsRef<[u8]>> HeaderConsistencyMetadata<T, U> {
     }
 
     /// Validates data descriptor and payload consistency.
-    pub(crate) fn validate_data_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+    pub(crate) fn validate_data_matches<T2: AsRef<[u8]>>(
         &self,
-        central: &HeaderConsistencyMetadata<T2, U2>,
+        central: &HeaderConsistencyMetadata<T2>,
     ) -> ZipResult<()> {
         self.data.validate_matches(&central.data)
     }
 
     /// Validates that local header metadata matches central directory metadata.
-    pub(crate) fn validate_matches<T2: AsRef<[u8]>, U2: AsRef<[u8]>>(
+    pub(crate) fn validate_matches<T2: AsRef<[u8]>>(
         &self,
-        central: &HeaderConsistencyMetadata<T2, U2>,
+        central: &HeaderConsistencyMetadata<T2>,
     ) -> ZipResult<()> {
         self.validate_identity_matches(central)?;
         self.validate_data_matches(central)?;
         Ok(())
     }
+}
+
+fn validate_unicode_path_name(
+    main_name: &[u8],
+    unicode_path: &[u8],
+    is_directory: bool,
+) -> ZipResult<()> {
+    let main_name = String::from_utf8_lossy(main_name);
+    let unicode_path = std::str::from_utf8(unicode_path).map_err(|_| {
+        invalid!("header inconsistency detected: UnicodePath (0x7075) is not valid UTF-8")
+    })?;
+    let main_components: Vec<_> = Utf8WindowsPath::new(&main_name).components().collect();
+    let unicode_components: Vec<_> = Utf8WindowsPath::new(unicode_path).components().collect();
+
+    let components_match = main_components.len() == unicode_components.len()
+        && main_components
+            .iter()
+            .zip(&unicode_components)
+            .all(|(main, unicode)| {
+                core::mem::discriminant(main) == core::mem::discriminant(unicode)
+                    && !(main.as_str().is_ascii()
+                        && unicode.as_str().is_ascii()
+                        && main.as_str() != unicode.as_str())
+            });
+    if !components_match {
+        return Err(invalid!(
+            "header inconsistency detected: UnicodePath (0x7075) changes file name path components"
+        ));
+    }
+
+    if !is_directory {
+        let unicode_extension = file_extension(unicode_path);
+        let main_extension = file_extension(&main_name);
+        let extension_mismatch = match unicode_extension {
+            None => main_extension.is_some(),
+            Some(extension) if extension.is_ascii() => main_extension != Some(extension),
+            Some(_) => false,
+        };
+        if extension_mismatch {
+            return Err(invalid!(
+                "header inconsistency detected: UnicodePath (0x7075) file extension differs from file name"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn file_extension(path: &str) -> Option<&str> {
+    let Utf8WindowsComponent::Normal(file_name) =
+        Utf8WindowsPath::new(path).components().next_back()?
+    else {
+        return None;
+    };
+    let ascii_extension = file_name.match_indices('.').find_map(|(index, _)| {
+        let extension = &file_name[index..];
+        (index > 0 && extension.len() > 1 && extension.is_ascii()).then_some(extension)
+    });
+    ascii_extension.or_else(|| {
+        let (stem, extension) = file_name.rsplit_once('.')?;
+        (!stem.is_empty() && !extension.is_empty()).then_some(extension)
+    })
+}
+
+#[test]
+fn test_multiple_file_extension() {
+    assert_eq!(file_extension("archive.tar.gz"), Some(".tar.gz"));
+    assert_eq!(file_extension("archive.résumé.gz"), Some(".gz"));
 }

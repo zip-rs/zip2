@@ -129,12 +129,15 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: IndexMap<Box<[u8]>, ZipFileData>,
+        mut files: IndexMap<Box<[u8]>, ZipFileData>,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
+        for file in files.values_mut() {
+            file.overridden_header_name = None;
+        }
         let initial_offset = match files.first() {
             Some((_, file)) => file.header_start,
             None => central_start,
@@ -1017,7 +1020,11 @@ mod tests {
     use crate::format::{MagicPositionCache, find_central_directory_end};
     use crate::read::ArchiveOffset;
     use crate::read::magic_finder::{Backwards, MagicFinder};
+    use crate::read::stream::ZipStreamReader;
+    use crate::write::SimpleFileOptions;
+    use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Write};
+    use tempfile::tempdir;
 
     #[test]
     fn unlisted_local_header_with_malformed_extra_field_is_detected() {
@@ -1417,5 +1424,55 @@ mod tests {
         let info = result.unwrap();
         assert_eq!(info.archive_offset, archive_start);
         assert!(info.eocd64.is_none());
+    }
+
+    #[test]
+    fn test_unicode_path_components_and_ascii_extension_are_consistent() {
+        fn assert_unicode_path_consistency(main_name: &str, unicode_path: &str, expected: bool) {
+            let mut unicode_path_data = Vec::with_capacity(5 + unicode_path.len());
+            unicode_path_data.push(1u8);
+            unicode_path_data
+                .extend_from_slice(&crc32fast::hash(main_name.as_bytes()).to_le_bytes());
+            unicode_path_data.extend_from_slice(unicode_path.as_bytes());
+
+            let mut payload = Cursor::new(Vec::new());
+            let mut writer = ZipWriter::new(&mut payload);
+            let mut options = SimpleFileOptions::default().into_full_options();
+            options
+                .add_extra_field(0x7075, unicode_path_data, false)
+                .unwrap();
+            writer.start_file(main_name, options).unwrap();
+            writer.write_all(b"payload").unwrap();
+            writer.finish().unwrap();
+            let archive_bytes = payload.into_inner();
+
+            let mut archive = ZipArchive::new(Cursor::new(&archive_bytes)).unwrap();
+            assert_eq!(
+                archive.validate_header_consistency().is_ok(),
+                expected,
+                "ZipArchive result for {main_name:?} -> {unicode_path:?}"
+            );
+
+            let destination = tempdir().unwrap();
+            let stream =
+                ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
+            assert_eq!(
+                stream.extract(destination.path()).is_ok(),
+                expected,
+                "ZipStreamReader result for {main_name:?} -> {unicode_path:?}"
+            );
+        }
+        assert_unicode_path_consistency("fallback.txt", "other.txt", false);
+        assert_unicode_path_consistency("a/../b.txt", "a/b.txt", false);
+        assert_unicode_path_consistency("café.bin", "café.txt", false);
+        assert_unicode_path_consistency("café.txt", "café", false);
+        assert_unicode_path_consistency("café.zip.gz", "café.tar.gz", false);
+        assert_unicode_path_consistency("cafe.zip.gz", "cafe.tar.gz", false);
+
+        // Non-ASCII names remain valid overrides when path structure and ASCII extension agree.
+        assert_unicode_path_consistency("cafe.txt", "café.txt", true);
+        assert_unicode_path_consistency("cafe.tar.gz", "café.tar.gz", true);
+        assert_unicode_path_consistency("cafe", "café", true);
+        assert_unicode_path_consistency("é/foo.txt", "e/foo.txt", true);
     }
 }
