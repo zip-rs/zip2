@@ -3,7 +3,7 @@
 
 use zip::result::{ZipError, ZipResult};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
         return Err(format!(

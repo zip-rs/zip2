@@ -5,7 +5,7 @@ use std::io::Write;
 use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
         return Err(format!(

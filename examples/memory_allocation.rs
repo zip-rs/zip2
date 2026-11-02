@@ -53,8 +53,8 @@ fn fmt_bytes(b: usize) -> String {
 fn check_memory<T, R>(
     label: &str,
     value: T,
-    cb: impl FnOnce(T) -> Result<R, Box<dyn std::error::Error>>,
-) -> Result<R, Box<dyn std::error::Error>> {
+    cb: impl FnOnce(T) -> Result<R, Box<dyn core::error::Error>>,
+) -> Result<R, Box<dyn core::error::Error>> {
     TRACKING.store(true, Ordering::Relaxed); // start tracking
 
     ALLOC_COUNT.store(0, Ordering::Relaxed);
@@ -89,7 +89,7 @@ fn check_memory<T, R>(
 trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     let zip_data: Box<dyn ReadSeek> = if args.len() < 2 {
         let zip_data = Cursor::new(Vec::with_capacity(2048));

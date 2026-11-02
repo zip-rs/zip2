@@ -5,7 +5,7 @@
 //! whole. In an async runtime, replace the receiving loop with `recv().await` and use the
 //! runtime's bounded channel.
 
-use std::error::Error;
+use core::error::Error;
 use std::fs::File;
 use std::io::{self, Write};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};

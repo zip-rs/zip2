@@ -54,11 +54,11 @@ macro_rules! is_feature {
     }};
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args = Args::parse();
     let src_dir = &args.source;
     let dest_file = &args.destination;
-    let method: Result<zip::CompressionMethod, Box<dyn std::error::Error>> =
+    let method: Result<zip::CompressionMethod, Box<dyn core::error::Error>> =
         match args.compression_method {
             CompressionMethod::Stored => Ok(zip::CompressionMethod::Stored),
             // _deflate-any and _bzip2_any are enabled by their respective implementations
@@ -79,7 +79,7 @@ fn zip_dir(
     src_dir: &Path,
     dest_file: &Path,
     method: zip::CompressionMethod,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn core::error::Error>> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }

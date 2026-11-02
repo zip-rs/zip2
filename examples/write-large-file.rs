@@ -1,6 +1,6 @@
 //! Write a huge file with lots of zeros, that should compress perfectly.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn core::error::Error>> {
     if !cfg!(feature = "_deflate-any") {
         return Err("Please enable one of the deflate features".into());
     }

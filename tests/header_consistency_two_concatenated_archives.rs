@@ -30,7 +30,7 @@ fn relocate_offsets(bytes: &mut [u8], prefix_len: u32) {
 }
 
 #[test]
-fn two_concatenated_archives() -> Result<(), Box<dyn std::error::Error>> {
+fn two_concatenated_archives() -> Result<(), Box<dyn core::error::Error>> {
     let first = archive("plugins/bootstrap.js", b"console.log('ATTACKER_PLUGIN');\n");
     let mut second = archive(
         "documents/quarterly-report.pdf",
@@ -79,7 +79,7 @@ fn two_concatenated_archives() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn second_archive_empty() -> Result<(), Box<dyn std::error::Error>> {
+fn second_archive_empty() -> Result<(), Box<dyn core::error::Error>> {
     let first = archive("plugins/bootstrap.js", b"console.log('ATTACKER_PLUGIN');\n");
     let second = ZipWriter::new(Cursor::new(Vec::new()));
     let second = second.finish()?.into_inner();

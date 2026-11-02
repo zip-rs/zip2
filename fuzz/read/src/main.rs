@@ -4,7 +4,7 @@
 use afl::fuzz;
 use arbitrary::Unstructured;
 use sha3::{Digest, Sha3_512};
-use std::error::Error;
+use core::error::Error;
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 #[cfg(fuzzing)]

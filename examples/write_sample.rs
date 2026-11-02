@@ -1,4 +1,4 @@
-use std::error::Error;
+use core::error::Error;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use zip::CompressionMethod::Stored;
