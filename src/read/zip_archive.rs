@@ -1024,7 +1024,6 @@ mod tests {
     use crate::write::SimpleFileOptions;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Write};
-    use tempfile::tempdir;
 
     #[test]
     fn unlisted_local_header_with_malformed_extra_field_is_detected() {
@@ -1453,14 +1452,18 @@ mod tests {
                 "ZipArchive result for {main_name:?} -> {unicode_path:?}"
             );
 
-            let destination = tempdir().unwrap();
-            let stream =
-                ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
-            assert_eq!(
-                stream.extract(destination.path()).is_ok(),
-                expected,
-                "ZipStreamReader result for {main_name:?} -> {unicode_path:?}"
-            );
+            #[cfg(not(miri))]
+            {
+                use tempfile::tempdir;
+                let destination = tempdir().unwrap();
+                let stream =
+                    ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
+                assert_eq!(
+                    stream.extract(destination.path()).is_ok(),
+                    expected,
+                    "ZipStreamReader result for {main_name:?} -> {unicode_path:?}"
+                );
+            }
         }
         assert_unicode_path_consistency("fallback.txt", "other.txt", false);
         assert_unicode_path_consistency("a/../b.txt", "a/b.txt", false);
