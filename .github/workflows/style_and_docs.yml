@@ -15,6 +15,7 @@ jobs:
     name: "Style and docs ${{ matrix.feature_flag }}"
     runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     permissions:
+      contents: read
       security-events: write # for SARIF upload
     steps:
       - name: Harden the runner (Audit all outbound calls)
