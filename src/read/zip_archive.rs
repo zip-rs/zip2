@@ -1020,7 +1020,6 @@ mod tests {
     use crate::format::{MagicPositionCache, find_central_directory_end};
     use crate::read::ArchiveOffset;
     use crate::read::magic_finder::{Backwards, MagicFinder};
-    use crate::read::stream::ZipStreamReader;
     use crate::write::SimpleFileOptions;
     use crate::{ZipArchive, ZipWriter};
     use std::io::{Cursor, Write};
@@ -1454,6 +1453,7 @@ mod tests {
 
             #[cfg(not(miri))]
             {
+                use crate::read::stream::ZipStreamReader;
                 use tempfile::tempdir;
                 let destination = tempdir().unwrap();
                 let stream = ZipStreamReader::new(Cursor::new(&archive_bytes))
