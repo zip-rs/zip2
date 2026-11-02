@@ -4,7 +4,7 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{Cursor, Read, Seek, SeekFrom};
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 struct PeakCountingAllocator;
 
