@@ -389,10 +389,10 @@ mod tests {
         use super::Crc32Reader;
         use super::CryptoReader;
         use super::ZipFileReader;
+        use core::mem::size_of;
         use std::io::BufReader;
         use std::io::Cursor;
         use std::io::Take;
-        use core::mem::size_of;
 
         type R = Cursor<Vec<u8>>;
         let enum_size = size_of::<ZipFileReader<'_, R>>();

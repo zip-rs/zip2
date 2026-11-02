@@ -3,9 +3,9 @@
 //! Usage:
 //!   cargo run --release --example memory_allocation -- ./tests/data/files_and_dirs.zip
 
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{Cursor, Read, Seek, Write};
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
