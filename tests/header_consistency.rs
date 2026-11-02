@@ -1196,7 +1196,7 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
 
     // 1. Valid archive with identical 0x7075 UnicodePath in both LFH and CDFH must pass
     let mut upath_data = vec![1u8];
-    upath_data.extend_from_slice(&crc32fast::hash(b"fallback.txt").to_le_bytes());
+    upath_data.extend_from_slice(&crc32fast::hash(b"umlaut.txt").to_le_bytes());
     upath_data.extend_from_slice("ümlaut.txt".as_bytes());
 
     let mut payload = Cursor::new(Vec::new());
@@ -1205,7 +1205,7 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
     options
         .add_extra_field(0x7075, upath_data.clone(), false)
         .unwrap();
-    writer.start_file("fallback.txt", options).unwrap();
+    writer.start_file("umlaut.txt", options).unwrap();
     writer.write_all(b"UTF8 PATH CONTENT").unwrap();
     writer.finish().unwrap();
 
