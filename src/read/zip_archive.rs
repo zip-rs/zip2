@@ -1456,8 +1456,8 @@ mod tests {
             {
                 use tempfile::tempdir;
                 let destination = tempdir().unwrap();
-                let stream =
-                    ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
+                let stream = ZipStreamReader::new(Cursor::new(&archive_bytes))
+                    .enforce_header_consistency(true);
                 assert_eq!(
                     stream.extract(destination.path()).is_ok(),
                     expected,
