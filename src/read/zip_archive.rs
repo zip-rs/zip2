@@ -1439,6 +1439,10 @@ mod tests {
             options
                 .add_extra_field(0x7075, unicode_path_data, false)
                 .unwrap();
+            #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+            {
+                options = options.compression_method(crate::CompressionMethod::Stored);
+            }
             writer.start_file(main_name, options).unwrap();
             writer.write_all(b"payload").unwrap();
             writer.finish().unwrap();
@@ -1458,10 +1462,11 @@ mod tests {
                 let destination = tempdir().unwrap();
                 let stream = ZipStreamReader::new(Cursor::new(&archive_bytes))
                     .enforce_header_consistency(true);
+                let result = stream.extract(destination.path());
                 assert_eq!(
-                    stream.extract(destination.path()).is_ok(),
+                    result.is_ok(),
                     expected,
-                    "ZipStreamReader result for {main_name:?} -> {unicode_path:?}"
+                    "ZipStreamReader result for {main_name:?} -> {unicode_path:?}: {result:?}"
                 );
             }
         }
