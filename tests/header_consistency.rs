@@ -1241,7 +1241,6 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
     let reader = ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
     assert!(reader.extract(dest_dir).is_ok());
 
-
     // 2. Valid archive with identical 0x7075 UnicodePath in both LFH and CDFH must pass
     let mut upath_data = vec![1u8];
     upath_data.extend_from_slice(&crc32fast::hash(b"umlaut__.txt").to_le_bytes());
