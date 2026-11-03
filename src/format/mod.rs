@@ -40,7 +40,7 @@ pub(crate) use find_central_directory::find_central_directory_end;
 /// # #[cfg(not(miri))] // too long to run on miri
 /// # {
 /// use std::io::{self, Cursor, Write};
-/// use std::error::Error;
+/// use core::error::Error;
 /// use zip::{ZipWriter, write::SimpleFileOptions};
 ///
 /// let mut zip = ZipWriter::new(Cursor::new(Vec::new()));

@@ -4,7 +4,7 @@
 
 #[cfg(all(windows, not(miri)))]
 #[test]
-fn test_windows_ads_stream_creation() -> Result<(), Box<dyn std::error::Error>> {
+fn test_windows_ads_stream_creation() -> Result<(), Box<dyn core::error::Error>> {
     use std::fs::File;
     use std::io::Write;
     use std::process::Command;

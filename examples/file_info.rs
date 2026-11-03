@@ -8,7 +8,7 @@
 use std::fs;
 use std::io::BufReader;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
         return Err(format!("Usage: {:?} <filename>", args[0]).into());

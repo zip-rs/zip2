@@ -6,7 +6,7 @@
 //! cargo run --example list_files -- archive.zip
 //! ```
 
-use std::error::Error;
+use core::error::Error;
 
 use zip::read::Config;
 use zip::unstable::read::ZipIterable;

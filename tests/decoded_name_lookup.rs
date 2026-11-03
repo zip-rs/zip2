@@ -6,7 +6,7 @@ use zip::unstable::write::FileOptionsExt;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+type TestResult<T = ()> = Result<T, Box<dyn core::error::Error>>;
 const PAYLOAD: &[u8] = b"synthetic-content\n";
 const PASSWORD_LENGTH: usize = 32;
 

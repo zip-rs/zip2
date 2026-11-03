@@ -19,11 +19,11 @@ use crate::read::{
 use crate::result::{ZipError, ZipResult};
 use crate::types::ZipFileData;
 use crate::unstable::path_to_string;
+use core::mem;
 use core::ops::Range;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::io::{Read, Seek, SeekFrom};
-use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

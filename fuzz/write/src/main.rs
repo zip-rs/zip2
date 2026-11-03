@@ -206,7 +206,7 @@ pub struct FuzzTestCase<'k, 'n> {
 fn deduplicate_paths(
     copy: &mut PathBuf,
     original: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn core::error::Error>> {
     if path_to_string(&**copy)? == path_to_string(original)? {
         let new_path = match original.file_name() {
             Some(name) => {
@@ -271,7 +271,7 @@ fn accept_expected(
     result: ZipResult<()>,
     expected: fn(&ZipError) -> bool,
     stringifier: &mut impl Write,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn core::error::Error>> {
     match result {
         Ok(()) => Ok(true),
         Err(e) if expected(&e) => {
@@ -312,7 +312,7 @@ fn finalize_operation(
     files_added: &mut usize,
     stringifier: &mut impl Write,
     allow_reopen_failure: bool,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn core::error::Error>> {
     if abort && *files_added != 0 {
         writeln!(stringifier, "writer.abort_file()?;")?;
         writer.abort_file()?;
@@ -425,7 +425,7 @@ fn do_operation(
     files_added: &mut usize,
     stringifier: &mut impl Write,
     comment_has_signature: &mut bool,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn core::error::Error>> {
     let mut pending = vec![OperationWork::Run {
         operation,
         abort,

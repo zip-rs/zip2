@@ -230,7 +230,7 @@ fn test_windows_delete_by_handle() {
         .open(&file2)
         .unwrap();
 
-    let mut info = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+    let mut info = unsafe { core::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
     assert_ne!(
         unsafe { GetFileInformationByHandle(f.as_raw_handle() as _, &mut info) },
         0
@@ -243,7 +243,7 @@ fn test_windows_delete_by_handle() {
             f.as_raw_handle() as _,
             FileDispositionInfo,
             &mut disposition as *mut _ as *mut _,
-            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+            core::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
         )
     };
     assert_ne!(res, 0);

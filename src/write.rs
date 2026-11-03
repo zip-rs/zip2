@@ -5519,8 +5519,8 @@ mod tests {
     fn test_max_len_extra_field() {
         use crate::format::blocks::ZipLocalEntryBlock;
         use crate::format::magic::Magic;
-        assert_eq!(std::mem::size_of::<Magic>(), 4);
-        assert_eq!(std::mem::size_of::<ZipLocalEntryBlock>(), 26);
+        assert_eq!(core::mem::size_of::<Magic>(), 4);
+        assert_eq!(core::mem::size_of::<ZipLocalEntryBlock>(), 26);
     }
 
     #[test]

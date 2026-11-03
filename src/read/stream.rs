@@ -153,8 +153,8 @@ fn contains_unlisted_local_header_or_extra_eocd<R: Read>(
 ) -> ZipResult<bool> {
     const LOCAL_FILE_HEADER_SIGNATURE: [u8; 4] = Magic::LOCAL_FILE_HEADER_SIGNATURE.to_le_bytes();
     const EOCD_SIGNATURE: [u8; 4] = Magic::CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-    const FIXED_HEADER_LEN: usize = 4 + std::mem::size_of::<ZipLocalEntryBlock>();
-    const EOCD_FIXED_LEN: usize = 4 + std::mem::size_of::<Zip32CDEBlock>();
+    const FIXED_HEADER_LEN: usize = 4 + core::mem::size_of::<ZipLocalEntryBlock>();
+    const EOCD_FIXED_LEN: usize = 4 + core::mem::size_of::<Zip32CDEBlock>();
     const READ_BUFFER_LEN: usize = 8192;
 
     let mut buffer = Vec::with_capacity(READ_BUFFER_LEN);
@@ -735,7 +735,7 @@ fn staged_file_identity(
         let handle = file.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
         // Safety: We provide a valid file handle and a mutable pointer to a zeroed struct.
         unsafe {
-            let mut info: BY_HANDLE_FILE_INFORMATION = std::mem::zeroed();
+            let mut info: BY_HANDLE_FILE_INFORMATION = core::mem::zeroed();
             let result = GetFileInformationByHandle(handle, &mut info);
 
             if result == 0 {
@@ -814,7 +814,7 @@ fn create_private_staging_dir_windows(path: &Path) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     let attributes = SECURITY_ATTRIBUTES {
-        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        nLength: core::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
         lpSecurityDescriptor: descriptor,
         bInheritHandle: 0,
     };
@@ -1105,7 +1105,7 @@ mod tests {
                 GetAclInformation(
                     dacl,
                     (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-                    std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                    core::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
                     AclSizeInformation,
                 )
             },

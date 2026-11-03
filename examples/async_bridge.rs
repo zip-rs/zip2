@@ -5,7 +5,7 @@
 //! whole. In an async runtime, replace the receiving loop with `recv().await` and use the
 //! runtime's bounded channel.
 
-use std::error::Error;
+use core::error::Error;
 use std::fs::File;
 use std::io::{self, Write};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
@@ -35,7 +35,7 @@ impl ChannelWriter {
         if self.buffer.is_empty() {
             return Ok(());
         }
-        let chunk = std::mem::replace(&mut self.buffer, Vec::with_capacity(self.chunk_size));
+        let chunk = core::mem::replace(&mut self.buffer, Vec::with_capacity(self.chunk_size));
         self.sender
             .send(chunk)
             .map_err(|_| io::Error::other("ZIP consumer stopped"))
