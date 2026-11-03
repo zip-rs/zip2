@@ -249,6 +249,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         large_file: false,
         extra_fields,
         overridden_header_name: None,
+        header_language_encoding: ZipFlags::matching(flags, ZipFlags::LanguageEncoding),
     };
     result.apply_extra_fields(&mut file_name_raw)?;
 
@@ -405,6 +406,7 @@ pub(crate) struct HeaderConsistencyMetadata<T: AsRef<[u8]>> {
     pub(crate) name: T,
     pub(crate) overridden_header_name: Option<T>,
     pub(crate) is_directory: bool,
+    pub(crate) has_language_encoding: bool,
     pub(crate) upath: Option<T>,
     pub(crate) upath_crc32: Option<u32>,
     pub(crate) compression_method: u16,
@@ -424,6 +426,7 @@ impl HeaderConsistencyMetadata<&[u8]> {
             name: self.name.into(),
             overridden_header_name: self.overridden_header_name.map(Into::into),
             is_directory: self.is_directory,
+            has_language_encoding: self.has_language_encoding,
             upath: self.upath.map(Into::into),
             upath_crc32: self.upath_crc32,
             compression_method: self.compression_method,
@@ -464,6 +467,19 @@ impl<T: AsRef<[u8]>> HeaderConsistencyMetadata<T> {
                 "header inconsistency detected: Local file header filename mismatch (does not match central directory)"
             ));
         }
+
+        validate_language_encoding_upath(
+            self.has_language_encoding,
+            self.name.as_ref(),
+            self.overridden_header_name.as_ref().map(AsRef::as_ref),
+            self.upath.as_ref().map(AsRef::as_ref),
+        )?;
+        validate_language_encoding_upath(
+            central.has_language_encoding,
+            central.name.as_ref(),
+            central.overridden_header_name.as_ref().map(AsRef::as_ref),
+            central.upath.as_ref().map(AsRef::as_ref),
+        )?;
 
         if let (Some(upath), Some(overridden_header_name)) =
             (self.upath.as_ref(), self.overridden_header_name.as_ref())
@@ -547,6 +563,23 @@ impl<T: AsRef<[u8]>> HeaderConsistencyMetadata<T> {
         self.validate_data_matches(central)?;
         Ok(())
     }
+}
+
+fn validate_language_encoding_upath(
+    has_language_encoding: bool,
+    file_name: &[u8],
+    overridden_header_name: Option<&[u8]>,
+    upath: Option<&[u8]>,
+) -> ZipResult<()> {
+    if has_language_encoding
+        && let Some(upath) = upath
+        && overridden_header_name.unwrap_or(file_name) != upath
+    {
+        return Err(invalid!(
+            "header inconsistency detected: UnicodePath (0x7075) does not match UTF-8 file name"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_unicode_path_name(

@@ -80,6 +80,7 @@ pub struct ZipFileData {
     pub extra_fields: ExtraFields,
     /// The file name as stored in the header, before applying a Unicode Path extra field.
     pub(crate) overridden_header_name: Option<Box<[u8]>>,
+    pub(crate) header_language_encoding: bool,
 }
 
 impl ZipFileData {
@@ -256,6 +257,7 @@ impl ZipFileData {
             name,
             overridden_header_name: self.overridden_header_name.as_deref(),
             is_directory: self.is_dir(name),
+            has_language_encoding: self.header_language_encoding,
             upath,
             upath_crc32,
             compression_method: self.compression_method.serialize_to_u16(),
@@ -493,6 +495,7 @@ impl ZipFileData {
             large_file: options.large_file,
             extra_fields,
             overridden_header_name: None,
+            header_language_encoding: flags.matching(ZipFlags::LanguageEncoding),
         };
         local_block.version_made_by = local_block.version_needed() as u8;
         local_block
@@ -538,6 +541,7 @@ impl ZipFileData {
             large_file: false,
             extra_fields,
             overridden_header_name: None,
+            header_language_encoding: ZipFlags::matching(flags, ZipFlags::LanguageEncoding),
         };
         Ok(data)
     }

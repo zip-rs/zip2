@@ -46,6 +46,41 @@ fn dir_entries(dir: &std::path::Path) -> Vec<String> {
     names
 }
 
+fn archive_with_unicode_path(file_name: &str, unicode_path: &str) -> Vec<u8> {
+    let mut upath_data = vec![1u8];
+    upath_data.extend_from_slice(&crc32fast::hash(file_name.as_bytes()).to_le_bytes());
+    upath_data.extend_from_slice(unicode_path.as_bytes());
+
+    let mut payload = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut payload);
+    let mut options = SimpleFileOptions::default().into_full_options();
+    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    {
+        options = options.compression_method(crate::CompressionMethod::Stored);
+    }
+    options.add_extra_field(0x7075, upath_data, false).unwrap();
+    writer.start_file(file_name, options).unwrap();
+    writer.write_all(b"payload").unwrap();
+    writer.finish().unwrap();
+    payload.into_inner()
+}
+
+fn set_language_encoding_flags(archive_bytes: &mut [u8]) {
+    let central_header = archive_bytes
+        .windows(4)
+        .position(|signature| signature == b"PK\x01\x02")
+        .unwrap();
+    for flags_offset in [6, central_header + 8] {
+        let flags = u16::from_le_bytes(
+            archive_bytes[flags_offset..flags_offset + 2]
+                .try_into()
+                .unwrap(),
+        );
+        archive_bytes[flags_offset..flags_offset + 2]
+            .copy_from_slice(&(flags | 0x0800).to_le_bytes());
+    }
+}
+
 /// Constructs a dual-header archive where LFH is "cron_worker.sh" and CDFH is "doc_report.pdf".
 fn create_dual_header_archive() -> Vec<u8> {
     const SCRIPT_NAME: &str = "cron_worker.sh";
@@ -1194,7 +1229,20 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
     let temp_env = tempdir().unwrap();
     let dest_dir = temp_env.path();
 
-    // 1. Valid archive with identical 0x7075 UnicodePath in both LFH and CDFH must pass
+    // 1. A lossy ASCII fallback is valid when the language encoding flag is clear.
+    let archive_bytes = archive_with_unicode_path("cafe.txt", "café.txt");
+
+    let mut archive = ZipArchive::new(Cursor::new(&archive_bytes)).unwrap();
+    let validation = archive.validate_header_consistency();
+    assert!(
+        validation.is_ok(),
+        "Valid 0x7075 UnicodePath in both headers must pass ZipArchive::validate_header_consistency: {validation:?}"
+    );
+    let reader = ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
+    assert!(reader.extract(dest_dir).is_ok());
+
+
+    // 2. Valid archive with identical 0x7075 UnicodePath in both LFH and CDFH must pass
     let mut upath_data = vec![1u8];
     upath_data.extend_from_slice(&crc32fast::hash(b"umlaut__.txt").to_le_bytes());
     upath_data.extend_from_slice("ümlaut__.txt".as_bytes());
@@ -1212,21 +1260,49 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
     let mut archive_bytes = payload.into_inner();
 
     let mut archive = ZipArchive::new(Cursor::new(&archive_bytes)).unwrap();
+    let validation = archive.validate_header_consistency();
     assert!(
-        archive.validate_header_consistency().is_ok(),
-        "Valid 0x7075 UnicodePath in both headers must passZipArchive::validate_header_consistency"
+        validation.is_ok(),
+        "Valid 0x7075 UnicodePath in both headers must pass ZipArchive::validate_header_consistency: {validation:?}"
     );
     let reader = ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
     assert!(reader.extract(dest_dir).is_ok());
 
-    // 2. Tamper LFH raw name ("evil_cmd.sh!") and LFH 0x7075 CRC32 to match "evil_cmd.sh!"
+    // The UTF-8 flag requires the stored filename and Unicode Path to match exactly.
+    let mut flagged_archive_bytes = archive_bytes.clone();
+    set_language_encoding_flags(&mut flagged_archive_bytes);
+    let mut flagged_archive = ZipArchive::new(Cursor::new(&flagged_archive_bytes)).unwrap();
+    assert!(flagged_archive.validate_header_consistency().is_err());
+    let flagged_stream =
+        ZipStreamReader::new(Cursor::new(&flagged_archive_bytes)).enforce_header_consistency(true);
+    assert!(flagged_stream.extract(tempdir().unwrap().path()).is_err());
+
+    let matching_path_bytes = archive_with_unicode_path("unicodé.txt", "unicodé.txt");
+    let mut flagged_matching_path_bytes = matching_path_bytes;
+    set_language_encoding_flags(&mut flagged_matching_path_bytes);
+    let mut flagged_matching_archive =
+        ZipArchive::new(Cursor::new(&flagged_matching_path_bytes)).unwrap();
+    assert!(
+        flagged_matching_archive
+            .validate_header_consistency()
+            .is_ok()
+    );
+    let flagged_matching_stream = ZipStreamReader::new(Cursor::new(&flagged_matching_path_bytes))
+        .enforce_header_consistency(true);
+    assert!(
+        flagged_matching_stream
+            .extract(tempdir().unwrap().path())
+            .is_ok()
+    );
+
+    // 3. Tamper LFH raw name ("evil_cmd.sh!") and LFH 0x7075 CRC32 to match "evil_cmd.sh!"
     // while keeping 0x7075 content ("ümlaut__.txt") identical in both headers.
     let spoofed_raw = b"evil_cmd.sh!";
     assert_eq!(spoofed_raw.len(), b"umlaut__.txt".len());
     archive_bytes[30..42].copy_from_slice(spoofed_raw);
     let spoofed_crc = crc32fast::hash(spoofed_raw);
-    // In LFH, extra field starts at 42: tag (2B) + len (2B) + version (1B) + crc32 (4B at 47..51)
-    archive_bytes[47..51].copy_from_slice(&spoofed_crc.to_le_bytes());
+    // In LFH, the extra field CRC follows its 2-byte tag, 2-byte length, and 1-byte version.
+    archive_bytes[43..47].copy_from_slice(&spoofed_crc.to_le_bytes());
 
     let mut tampered_archive = ZipArchive::new(Cursor::new(&archive_bytes)).unwrap();
     assert!(

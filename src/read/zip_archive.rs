@@ -135,8 +135,12 @@ impl<R> ZipArchive<R> {
         reader: R,
         central_start: u64,
     ) -> Self {
-        for file in files.values_mut() {
+        for (name, file) in &mut files {
             file.overridden_header_name = None;
+            file.header_language_encoding = crate::format::flags::ZipFlags::matching(
+                file.flags(name),
+                crate::format::flags::ZipFlags::LanguageEncoding,
+            );
         }
         let initial_offset = match files.first() {
             Some((_, file)) => file.header_start,
@@ -1481,7 +1485,9 @@ mod tests {
         assert_unicode_path_consistency("cafe.txt", "café.txt", true);
         assert_unicode_path_consistency("cafe.tar.gz", "café.tar.gz", true);
         assert_unicode_path_consistency("cafe", "café", true);
-        assert_unicode_path_consistency("é/foo.txt", "e/foo.txt", true);
+        assert_unicode_path_consistency("café.txt", "café.txt", true);
+        // A filename encoded as UTF-8 by EFS cannot be overridden by a different path.
+        assert_unicode_path_consistency("é/foo.txt", "e/foo.txt", false);
 
         // Positive examples (German ß / ss transliteration and case insensitivity)
         assert_unicode_path_consistency("strasse.txt", "straße.txt", true);
