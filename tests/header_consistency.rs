@@ -1196,8 +1196,8 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
 
     // 1. Valid archive with identical 0x7075 UnicodePath in both LFH and CDFH must pass
     let mut upath_data = vec![1u8];
-    upath_data.extend_from_slice(&crc32fast::hash(b"fallback.txt").to_le_bytes());
-    upath_data.extend_from_slice("ümlaut.txt".as_bytes());
+    upath_data.extend_from_slice(&crc32fast::hash(b"umlaut__.txt").to_le_bytes());
+    upath_data.extend_from_slice("ümlaut__.txt".as_bytes());
 
     let mut payload = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(&mut payload);
@@ -1205,7 +1205,7 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
     options
         .add_extra_field(0x7075, upath_data.clone(), false)
         .unwrap();
-    writer.start_file("fallback.txt", options).unwrap();
+    writer.start_file("umlaut__.txt", options).unwrap();
     writer.write_all(b"UTF8 PATH CONTENT").unwrap();
     writer.finish().unwrap();
 
@@ -1219,10 +1219,10 @@ fn test_upath_valid_and_raw_name_smuggling_blocked() {
     let reader = ZipStreamReader::new(Cursor::new(&archive_bytes)).enforce_header_consistency(true);
     assert!(reader.extract(dest_dir).is_ok());
 
-    // 2. Tamper LFH raw name ("evil_cmd.sh\0") and LFH 0x7075 CRC32 to match "evil_cmd.sh\0"
-    // while keeping 0x7075 content ("ümlaut.txt") identical in both headers.
+    // 2. Tamper LFH raw name ("evil_cmd.sh!") and LFH 0x7075 CRC32 to match "evil_cmd.sh!"
+    // while keeping 0x7075 content ("ümlaut__.txt") identical in both headers.
     let spoofed_raw = b"evil_cmd.sh!";
-    assert_eq!(spoofed_raw.len(), b"fallback.txt".len());
+    assert_eq!(spoofed_raw.len(), b"umlaut__.txt".len());
     archive_bytes[30..42].copy_from_slice(spoofed_raw);
     let spoofed_crc = crc32fast::hash(spoofed_raw);
     // In LFH, extra field starts at 42: tag (2B) + len (2B) + version (1B) + crc32 (4B at 47..51)
