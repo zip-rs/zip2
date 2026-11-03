@@ -2842,6 +2842,18 @@ impl PreparedZipFile {
     }
 }
 
+impl TryFrom<ZipFileBuilder> for PreparedZipFile {
+    type Error = ZipError;
+
+    /// Converts a [`ZipFileBuilder`] into a [`PreparedZipFile`] by finishing compression.
+    ///
+    /// This is equivalent to calling [`ZipFileBuilder::finish`].
+    #[inline]
+    fn try_from(builder: ZipFileBuilder) -> Result<Self, Self::Error> {
+        builder.finish()
+    }
+}
+
 #[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<u32> {
     #[cfg(not(any(feature = "deflate-zopfli", feature = "deflate-flate2")))]
@@ -5762,6 +5774,31 @@ mod tests {
                 .matching(crate::format::flags::ZipFlags::LanguageEncoding);
             assert_eq!(flagged, language_encoding, "{name}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_from_zip_file_builder() -> ZipResult<()> {
+        use super::{PreparedZipFile, ZipFileBuilder};
+
+        let mut builder = ZipFileBuilder::new(
+            "test_try_from.txt",
+            SimpleFileOptions::default().compression_method(Stored),
+        )?;
+        builder.write_all(b"Hello TryFrom")?;
+
+        let prepared: PreparedZipFile = builder.try_into()?;
+        assert_eq!(prepared.file_name_raw(), b"test_try_from.txt");
+        assert_eq!(prepared.uncompressed_size(), 13);
+        assert_eq!(prepared.compressed_size(), 13);
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_prepared_file(prepared)?;
+        let mut archive = ZipArchive::new(Cursor::new(writer.finish()?.into_inner()))?;
+        let mut file = archive.by_name("test_try_from.txt")?;
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut content)?;
+        assert_eq!(content, b"Hello TryFrom");
         Ok(())
     }
 }
