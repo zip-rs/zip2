@@ -62,7 +62,7 @@ unsafe impl GlobalAlloc for PeakCountingAllocator {
                 DEALLOC_BYTES.fetch_add(layout.size(), Relaxed);
             }
             Greater => {
-                let live = LIVE.fetch_add(size_change.unsigned_abs(), Relaxed) + layout.size();
+                let live = LIVE.fetch_add(size_change.unsigned_abs(), Relaxed) + size_change.unsigned_abs();
                 PEAK.fetch_max(live, Relaxed);
                 REALLOC_COUNT.fetch_add(1, Relaxed);
                 REALLOC_BYTES.fetch_add(size_change, Relaxed);
