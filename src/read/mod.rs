@@ -37,6 +37,9 @@ pub use zipfile::{ZipFile, ZipFileEntry, ZipFileEntryWithDataDescriptor, ZipFile
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
 
+pub(crate) type ZipArchiveFiles = IndexMap<Box<[u8]>, ZipFileData<Box<[ExtraField]>>>;
+pub(crate) type ZipWriterFiles = IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>;
+
 #[cfg(feature = "aes-crypto")]
 pub use crate::aes::AesInfo;
 
@@ -103,44 +106,39 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: std::io::Write + Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>> {
+    ) -> ZipResult<ZipWriterFiles> {
         if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
-        let mut new_files = self.shared.files.clone();
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
          * definitely be greater than 0.
          *
-         * assert_eq!(0, new_files[0].header_start); // Avoid this.
+         * assert_eq!(0, self.shared.files[0].header_start); // Avoid this.
          */
 
         let first_new_file_header_start = w.stream_position()?;
 
-        /* Push back file header starts for all entries in the covered files. */
-        new_files.values_mut().try_for_each(|f| {
-            /* This is probably the only really important thing to change. */
-            f.header_start = f
+        let mut new_files = IndexMap::with_capacity(self.shared.files.len());
+        for (name, file) in &self.shared.files {
+            let mut file = file.clone().map_extra_fields::<Vec<ExtraField>>();
+            file.header_start = file
                 .header_start
                 .checked_add(first_new_file_header_start)
                 .ok_or(invalid!(
                     "new header start from merge would have been too large"
                 ))?;
-            /* This is only ever used internally to cache metadata lookups (it's not part of the
-             * zip spec), and 0 is the sentinel value. */
-            f.central_header_start = 0;
-            /* This is an atomic variable so it can be updated from another thread in the
-             * implementation (which is good!). */
-            if let Some(old_data_start) = f.data_start.take() {
+            file.central_header_start = 0;
+            if let Some(old_data_start) = file.data_start.take() {
                 let new_data_start = old_data_start
                     .checked_add(first_new_file_header_start)
                     .ok_or(invalid!(
                         "new data start from merge would have been too large"
                     ))?;
-                f.data_start.get_or_init(|| new_data_start);
+                file.data_start.get_or_init(|| new_data_start);
             }
-            Ok::<_, ZipError>(())
-        })?;
+            new_files.insert(name.clone(), file);
+        }
 
         /* Rewind to the beginning of the file.
          *
@@ -164,10 +162,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         io::copy(&mut limited_raw, &mut w)?;
 
         /* Return the files we've just written to the data stream. */
-        Ok(new_files
-            .into_iter()
-            .map(|(name, file)| (name, file.map_extra_fields::<Vec<ExtraField>>()))
-            .collect())
+        Ok(new_files)
     }
 }
 

@@ -14,8 +14,8 @@ use crate::read::magic_finder::{Forward, MagicFinder};
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::{ZipFileEntry, ZipFileEntryWithDataDescriptor};
 use crate::read::{
-    ArchiveOffset, CentralDirectoryInfo, ZipFile, ZipFileSeek, ZipReadOptions,
-    central_header_to_zip_file_inner,
+    ArchiveOffset, CentralDirectoryInfo, ZipArchiveFiles, ZipFile, ZipFileSeek, ZipReadOptions,
+    ZipWriterFiles, central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, ZipResult};
 use crate::types::ZipFileData;
@@ -31,7 +31,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) files: ZipArchiveFiles,
     /// The raw file count (before inserting in the IndexMap) - used to detect duplicates
     pub(crate) raw_file_count: usize,
     pub(crate) offset: u64,
@@ -144,13 +144,13 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>,
+        files: ZipWriterFiles,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
-        let mut files: IndexMap<Box<[u8]>, ZipFileData> = files
+        let mut files: ZipArchiveFiles = files
             .into_iter()
             .map(|(name, file)| (name, file.map_extra_fields::<Box<[ExtraField]>>()))
             .collect();

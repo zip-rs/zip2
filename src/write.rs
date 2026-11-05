@@ -205,12 +205,10 @@ pub(crate) mod zip_writer {
     #[cfg(feature = "deflate-flate2")]
     use super::DeflateCache;
     use crate::{
-        ExtraField,
-        types::ZipFileData,
+        read::ZipWriterFiles,
         write::{GenericZipWriter, ZipWriterStats},
     };
     use core::fmt::{Debug, Formatter};
-    use indexmap::IndexMap;
     use std::io::{Seek, Write};
 
     /// ZIP archive generator
@@ -248,7 +246,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>,
+        pub(super) files: ZipWriterFiles,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
