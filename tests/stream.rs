@@ -124,7 +124,7 @@ fn zip_read_streaming_in_function() {
     fn read_a_file_as_stream() -> Option<OwnedZipFileEntry> {
         let mut reader = Cursor::new(include_bytes!("./data/mimetype.zip").as_ref());
         if let Ok(Some(file)) = read_zipfile_from_stream(&mut reader) {
-            let entry: ZipFileEntry = file.into();
+            let entry = file.entry();
             return Some(entry.into());
         }
         None

@@ -287,18 +287,17 @@ impl HasZipMetadata for ZipFileEntry<'_> {
     }
 }
 
-impl<'a, R: Read + ?Sized> From<ZipFile<'a, R>> for ZipFileEntry<'a> {
-    fn from(mut file: ZipFile<'a, R>) -> Self {
-        Self {
-            file_name_raw: core::mem::take(&mut file.file_name_raw),
-            data: core::mem::take(&mut file.data),
-        }
-    }
-}
-
 /// Methods for retrieving information on zip files
 impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     zip_file_methods!();
+
+    /// get the corresponding entry
+    pub fn entry(&self) -> ZipFileEntry<'_> {
+        ZipFileEntry {
+            file_name_raw: Cow::Borrowed(self.file_name_raw.as_ref()),
+            data: Cow::Borrowed(self.data.as_ref()),
+        }
+    }
 
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
         replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
