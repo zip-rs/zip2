@@ -38,7 +38,7 @@ pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
 
 pub(crate) type ZipArchiveFiles = IndexMap<Box<[u8]>, ZipFileData<Box<[ExtraField]>>>;
-pub(crate) type ZipWriterFiles = IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>;
+pub(crate) type ZipWriterFiles = ZipArchiveFiles;
 
 #[cfg(feature = "aes-crypto")]
 pub use crate::aes::AesInfo;
@@ -118,7 +118,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         {
             let mut new_files = IndexMap::with_capacity(files.size_hint().0);
             for (name, file) in files {
-                let mut file = file.map_extra_fields::<Vec<ExtraField>>();
+                let mut file = file;
                 file.header_start = file
                     .header_start
                     .checked_add(first_new_file_header_start)

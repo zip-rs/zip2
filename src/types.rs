@@ -420,12 +420,9 @@ impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
         raw_values: &ZipRawValues,
         header_start: u64,
         #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))] mut extra_fields: ExtraFields<
-            T,
+            Vec<ExtraField>,
         >,
-    ) -> Self
-    where
-        T: Extend<ExtraField>,
-    {
+    ) -> ZipFileData<Box<[ExtraField]>> {
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
         // Preserve AES method for raw copies without needing a password
@@ -507,7 +504,9 @@ impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
             central_header_start: 0,
             external_attributes,
             large_file: options.large_file,
-            extra_fields,
+            extra_fields: ExtraFields {
+                inner: extra_fields.inner.into_boxed_slice(),
+            },
             overridden_header_name: None,
             header_language_encoding: flags.matching(ZipFlags::LanguageEncoding),
         };
@@ -689,53 +688,7 @@ impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
     }
 }
 
-impl<T> ZipFileData<T> {
-    pub(crate) fn map_extra_fields<U: From<T>>(self) -> ZipFileData<U> {
-        let Self {
-            system,
-            version_made_by,
-            flags,
-            compression_method,
-            last_modified_time,
-            crc32,
-            compressed_size,
-            uncompressed_size,
-            file_comment,
-            header_start,
-            central_header_start,
-            data_start,
-            external_attributes,
-            large_file,
-            extra_fields,
-            overridden_header_name,
-            header_language_encoding,
-            ..
-        } = self;
-        ZipFileData {
-            system,
-            version_made_by,
-            flags,
-            compression_method,
-            last_modified_time,
-            crc32,
-            compressed_size,
-            uncompressed_size,
-            file_comment,
-            header_start,
-            central_header_start,
-            data_start,
-            external_attributes,
-            large_file,
-            extra_fields: ExtraFields {
-                inner: U::from(extra_fields.inner),
-            },
-            overridden_header_name,
-            header_language_encoding,
-        }
-    }
-}
-
-impl ZipFileData<Vec<ExtraField>> {
+impl ZipFileData {
     /// Drops any Info-ZIP Unicode Path extra field that a reader would apply to `file_name_raw`
     /// (its CRC-32 matches) but that names something else. A copy under a new name keeps the
     /// source's extra fields, and such a field would otherwise rename the copy on read-back
@@ -743,7 +696,8 @@ impl ZipFileData<Vec<ExtraField>> {
     pub(crate) fn drop_unicode_path_renaming(&mut self, file_name_raw: &[u8]) {
         const UNICODE_PATH: u16 = crate::format::extra_fields::ExtraFieldId::UnicodePath.as_u16();
         let crc = crc32fast::hash(file_name_raw);
-        self.extra_fields.inner.retain(|field| match field {
+        let mut inner = std::mem::take(&mut self.extra_fields.inner).into_vec();
+        inner.retain(|field| match field {
             ExtraField::UnicodePath(unicode) => {
                 unicode.crc32 != crc || *unicode.content == *file_name_raw
             }
@@ -754,6 +708,7 @@ impl ZipFileData<Vec<ExtraField>> {
             }
             _ => true,
         });
+        self.extra_fields.inner = inner.into_boxed_slice();
     }
 }
 

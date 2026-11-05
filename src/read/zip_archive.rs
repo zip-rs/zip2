@@ -144,16 +144,12 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: ZipWriterFiles,
+        mut files: ZipWriterFiles,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
-        let mut files: ZipArchiveFiles = files
-            .into_iter()
-            .map(|(name, file)| (name, file.map_extra_fields::<Box<[ExtraField]>>()))
-            .collect();
         for (name, file) in &mut files {
             file.overridden_header_name = None;
             file.header_language_encoding = crate::format::flags::ZipFlags::matching(
