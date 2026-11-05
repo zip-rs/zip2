@@ -134,12 +134,12 @@ impl<R: Read + Seek> ZipIterable<R> {
     pub fn files_with_reader<'files, 'options>(
         &'files mut self,
         body_reader: R,
-        config: ZipReadOptions<'options>,
+        options: ZipReadOptions<'options>,
     ) -> ZipResult<ZipIterableFilesWithReader<'files, 'options, R>> {
         Ok(ZipIterableFilesWithReader {
             files: self.files()?,
             body_reader,
-            options: config,
+            options,
         })
     }
 
@@ -168,9 +168,9 @@ impl<R: Read + Seek + Clone> ZipIterable<R> {
     /// of that reader to read the file contents.
     pub fn files_with_cloned_reader<'files, 'options>(
         &'files mut self,
-        config: ZipReadOptions<'options>,
+        options: ZipReadOptions<'options>,
     ) -> ZipResult<ZipIterableFilesWithReader<'files, 'options, R>> {
-        self.files_with_reader(self.files.metadata_reader.clone(), config)
+        self.files_with_reader(self.files.metadata_reader.clone(), options)
     }
 }
 
