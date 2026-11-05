@@ -5,12 +5,12 @@
 
 use core::cmp::Ordering::{Equal, Greater, Less};
 use core::hint::black_box;
+use core::sync::atomic::AtomicIsize;
+use core::sync::atomic::Ordering::Relaxed;
 use core::sync::atomic::{AtomicBool, AtomicUsize};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::Result as IoResult;
 use std::io::{BufReader, Cursor, Read, Seek, Sink, Write, copy};
-use core::sync::atomic::AtomicIsize;
-use core::sync::atomic::Ordering::Relaxed;
 use zip::read::Config;
 use zip::write::SimpleFileOptions;
 use zip::{ZipReadOptions, ZipWriter};

@@ -31,10 +31,10 @@ unsafe impl GlobalAlloc for PeakCountingAllocator {
             match size_change.cmp(&0) {
                 Less => {
                     LIVE.fetch_sub(size_change.unsigned_abs(), Relaxed);
-                },
+                }
                 Greater => {
                     LIVE.fetch_add(size_change.unsigned_abs(), Relaxed);
-                },
+                }
                 Equal => {}
             }
         }
