@@ -63,6 +63,7 @@ impl ExtraFields {
             };
             extra_fields.push(parsed_extra_field);
         }
+        extra_fields.shrink_to_fit();
         Ok(Self {
             inner: extra_fields,
         })

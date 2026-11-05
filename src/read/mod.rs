@@ -269,7 +269,7 @@ pub trait HasZipMetadata {
 }
 
 /// Options for reading a file from an archive.
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 #[non_exhaustive]
 pub struct ZipReadOptions<'a> {
     /// The password to use when decrypting the file.  This is ignored if not required.
