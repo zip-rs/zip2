@@ -103,25 +103,25 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
-    pub(crate) fn merge_contents<W: std::io::Write + Seek>(
-        &mut self,
+    pub(crate) fn merge_contents<W: io::Write + Seek>(
+        self,
         mut w: W,
     ) -> ZipResult<ZipWriterFiles> {
-        if self.shared.files.is_empty() {
+        let Self { mut reader, shared } = self;
+        if shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
-        /* The first file header will probably start at the beginning of the file, but zip doesn't
-         * enforce that, and executable zips like PEX files will have a shebang line so will
-         * definitely be greater than 0.
-         *
-         * assert_eq!(0, self.shared.files[0].header_start); // Avoid this.
-         */
 
-        let first_new_file_header_start = w.stream_position()?;
-
-        let mut new_files = IndexMap::with_capacity(self.shared.files.len());
-        for (name, file) in &self.shared.files {
-            let mut file = file.clone().map_extra_fields::<Vec<ExtraField>>();
+            fn prepare_merge_files<I>(
+        files: I,
+        first_new_file_header_start: u64,
+    ) -> ZipResult<ZipWriterFiles>
+    where
+        I: Iterator<Item = (Box<[u8]>, ZipFileData)>,
+    {
+        let mut new_files = IndexMap::with_capacity(files.size_hint().0);
+        for (name, file) in files {
+            let mut file = file.map_extra_fields::<Vec<ExtraField>>();
             file.header_start = file
                 .header_start
                 .checked_add(first_new_file_header_start)
@@ -137,8 +137,33 @@ impl<R: Read + Seek> ZipArchive<R> {
                     ))?;
                 file.data_start.get_or_init(|| new_data_start);
             }
-            new_files.insert(name.clone(), file);
+            new_files.insert(name, file);
         }
+        Ok(new_files)
+    }
+
+        let (new_files, dir_start) = match std::sync::Arc::try_unwrap(shared) {
+            Ok(metadata) => (
+                prepare_merge_files(metadata.files.into_iter(), w.stream_position()?)?,
+                metadata.dir_start,
+            ),
+            Err(shared) => (
+                prepare_merge_files(
+                    shared
+                        .files
+                        .iter()
+                        .map(|(name, file)| (name.clone(), file.clone())),
+                    w.stream_position()?,
+                )?,
+                shared.dir_start,
+            ),
+        };
+        /* The first file header will probably start at the beginning of the file, but zip doesn't
+         * enforce that, and executable zips like PEX files will have a shebang line so will
+         * definitely be greater than 0.
+         *
+         * assert_eq!(0, new_files[0].header_start); // Avoid this.
+         */
 
         /* Rewind to the beginning of the file.
          *
@@ -151,13 +176,13 @@ impl<R: Read + Seek> ZipArchive<R> {
          * specifically for that purpose (and therefore are unlikely to have a shebang or other
          * preface). Finally, this preserves any data that might actually be useful.
          */
-        self.reader.rewind()?;
+        reader.rewind()?;
         /* Find the end of the file data. */
-        let length_to_read = self.shared.dir_start;
+        let length_to_read = dir_start;
         /* Produce a Read that reads bytes up until the start of the central directory header.
          * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
          * handle, which it really shouldn't need to anyway. */
-        let mut limited_raw = (&mut self.reader as &mut dyn Read).take(length_to_read);
+        let mut limited_raw = (&mut reader as &mut dyn Read).take(length_to_read);
         /* Copy over file data from source archive directly. */
         io::copy(&mut limited_raw, &mut w)?;
 
@@ -191,7 +216,7 @@ fn central_header_to_zip_file_inner<R: Read, T>(
     block: ZipCentralEntryBlock,
 ) -> ZipResult<(ZipFileData<T>, Vec<u8>)>
 where
-    T: From<Vec<crate::ExtraField>> + AsRef<[crate::ExtraField]>,
+    T: From<Vec<ExtraField>> + AsRef<[ExtraField]>,
 {
     let ZipCentralEntryBlock {
         // magic,

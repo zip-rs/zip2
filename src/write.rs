@@ -1196,7 +1196,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// # Ok(())
     /// # }
     ///```
-    pub fn merge_archive<R>(&mut self, mut source: ZipArchive<R>) -> ZipResult<()>
+    pub fn merge_archive<R>(&mut self, source: ZipArchive<R>) -> ZipResult<()>
     where
         R: Read + Seek,
     {
