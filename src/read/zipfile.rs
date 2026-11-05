@@ -51,6 +51,31 @@ pub struct ZipFileEntry<'a> {
     pub(crate) data: Cow<'a, ZipFileData>,
 }
 
+/// Owned version of `ZipFileEntry`
+#[derive(Debug)]
+pub struct OwnedZipFileEntry {
+    pub(crate) file_name_raw: Box<[u8]>,
+    pub(crate) data: ZipFileData,
+}
+
+impl OwnedZipFileEntry {
+    /// Convert the owned type to a `ZipFileEntry`
+    pub fn as_ref(&self) -> ZipFileEntry<'_> {
+        ZipFileEntry {
+            file_name_raw: Cow::Borrowed(&self.file_name_raw),
+            data: Cow::Borrowed(&self.data),
+        }
+    }
+}
+
+impl<'a> From<ZipFileEntry<'a>> for OwnedZipFileEntry {
+    fn from(entry: ZipFileEntry<'a>) -> Self {
+        Self {
+            file_name_raw: entry.file_name_raw.into_owned().into_boxed_slice(),
+            data: entry.data.into_owned(),
+        }
+    }
+}
 /// A struct for reading and seeking a zip file
 pub struct ZipFileSeek<'a, R> {
     pub(crate) file_name_raw: Cow<'a, [u8]>,
@@ -228,6 +253,16 @@ impl HasZipMetadata for ZipFileEntryWithDataDescriptor<'_> {
     }
 }
 
+impl HasZipMetadata for OwnedZipFileEntry {
+    fn get_metadata(&self) -> &ZipFileData {
+        &self.data
+    }
+}
+
+impl OwnedZipFileEntry {
+    zip_file_methods!();
+}
+
 impl<'a> ZipFileEntry<'a> {
     zip_file_methods!();
 
@@ -251,6 +286,15 @@ impl<'a> ZipFileEntry<'a> {
 impl HasZipMetadata for ZipFileEntry<'_> {
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
+    }
+}
+
+impl<'a, R: Read + ?Sized> From<ZipFile<'a, R>> for ZipFileEntry<'a> {
+    fn from(mut file: ZipFile<'a, R>) -> Self {
+        Self {
+            file_name_raw: core::mem::take(&mut file.file_name_raw),
+            data: core::mem::take(&mut file.data),
+        }
     }
 }
 

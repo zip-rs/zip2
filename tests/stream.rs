@@ -1,6 +1,8 @@
 //! Zip stream tests
 
 use std::io::{Cursor, Read};
+use zip::ZipReadOptions;
+use zip::read::OwnedZipFileEntry;
 use zip::read::ZipFile;
 use zip::read::ZipFileEntry;
 use zip::result::ZipResult;
@@ -112,4 +114,32 @@ fn invalid_cde_number_of_files_allocation_greater_offset() {
     )))
     .visit(&mut DummyVisitor)
     .unwrap_err();
+}
+
+/// Test inside a function where we own the data in the functions, not in the main test
+#[test]
+fn zip_read_streaming_in_function() {
+    use zip::read::read_zipfile_from_stream;
+
+    fn read_a_file_as_stream() -> Option<OwnedZipFileEntry> {
+        let mut reader = Cursor::new(include_bytes!("./data/mimetype.zip").as_ref());
+        if let Ok(Some(file)) = read_zipfile_from_stream(&mut reader) {
+            let entry: ZipFileEntry = file.into();
+            return Some(entry.into());
+        }
+        None
+    }
+    fn check_content(owned_zip_file: OwnedZipFileEntry) {
+        let zip_file_entry = owned_zip_file.as_ref();
+        let mut reader = Cursor::new(include_bytes!("./data/mimetype.zip"));
+        let mut zip_file = zip_file_entry
+            .with_reader(&mut reader, ZipReadOptions::default())
+            .unwrap();
+        let mut data = Vec::new();
+        zip_file.read_to_end(&mut data).unwrap();
+        assert_eq!(data, b"application/vnd.oasis.opendocument.text");
+    }
+    let owned_zip_file = read_a_file_as_stream().unwrap();
+    assert_eq!(owned_zip_file.name_raw(), b"mimetype");
+    check_content(owned_zip_file);
 }
