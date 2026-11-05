@@ -221,7 +221,7 @@ fn hwexpand(src: &[u8], uncomp_len: usize, comp_factor: u8, dst: &mut Vec<u8>) -
 pub struct ReduceDecoder<R> {
     compressed_reader: R,
     uncompressed_size: u64,
-    state: Option<ReduceState<io::Cursor<Vec<u8>>>>,
+    state: Option<ReduceState<io::Cursor<Box<[u8]>>>>,
     comp_factor: u8,
     stream: Vec<u8>,
     read_pos: usize, // Add read position tracker
@@ -262,7 +262,7 @@ impl<R: Read> Read for ReduceDecoder<R> {
                 let mut compressed_bytes = Vec::new();
                 self.compressed_reader.read_to_end(&mut compressed_bytes)?;
                 self.state.insert(ReduceState::new(
-                    io::Cursor::new(compressed_bytes),
+                    io::Cursor::new(compressed_bytes.into_boxed_slice()),
                     uncomp_len,
                     self.comp_factor,
                 )?)

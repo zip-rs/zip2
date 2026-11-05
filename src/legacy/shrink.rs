@@ -399,7 +399,7 @@ fn hwunshrink(src: &[u8], uncompressed_size: usize, dst: &mut Vec<u8>) -> io::Re
 #[derive(Debug)]
 pub struct ShrinkDecoder<R> {
     compressed_reader: R,
-    state: Option<ShrinkState<io::Cursor<Vec<u8>>>>,
+    state: Option<ShrinkState<io::Cursor<Box<[u8]>>>>,
     uncompressed_size: u64,
     stream: Vec<u8>,
     read_pos: usize,
@@ -438,7 +438,7 @@ impl<R: Read> Read for ShrinkDecoder<R> {
                 let mut compressed_bytes = Vec::new();
                 self.compressed_reader.read_to_end(&mut compressed_bytes)?;
                 self.state.insert(ShrinkState::new(
-                    io::Cursor::new(compressed_bytes),
+                    io::Cursor::new(compressed_bytes.into_boxed_slice()),
                     uncompressed_size,
                 ))
             }
