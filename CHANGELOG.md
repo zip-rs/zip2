@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.4.0](https://github.com/zip-rs/zip2/compare/v9.3.0...v9.4.0) - 2026-11-05
+
+### <!-- 0 -->🚀 Features
+
+- Implement ZipIterable::files_with_reader ([#1267](https://github.com/zip-rs/zip2/pull/1267))
+
 ## [9.3.0](https://github.com/zip-rs/zip2/compare/v9.2.3...v9.3.0) - 2026-11-03
 
 ### <!-- 0 -->🚀 Features
