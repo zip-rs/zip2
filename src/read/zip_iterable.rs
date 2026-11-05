@@ -11,13 +11,14 @@
 //! non-seekable stream, use [`read_zipfile_from_stream`](crate::read::read_zipfile_from_stream)
 //! instead.
 
+use crate::ZipReadOptions;
 use crate::format::MagicPositionCache;
 use crate::format::blocks::{FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock};
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::magic_finder::{Backwards, MagicFinder};
 use crate::read::zipfile::ZipFileEntry;
-use crate::read::{CentralDirectoryInfo, Config, central_header_to_zip_file_inner};
+use crate::read::{CentralDirectoryInfo, Config, ZipFile, central_header_to_zip_file_inner};
 use crate::result::{ZipError, ZipResult, invalid};
 use core::mem::size_of;
 use std::borrow::Cow;
@@ -126,6 +127,22 @@ impl<R: Read + Seek> ZipIterable<R> {
         Ok(&mut self.files)
     }
 
+    /// Start a pass that uses a second reader to read file contents.
+    ///
+    /// The returned lending iterator borrows the archive and each yielded file borrows its body
+    /// reader until that file is dropped.
+    pub fn files_with_reader<'files, 'options>(
+        &'files mut self,
+        body_reader: R,
+        config: ZipReadOptions<'options>,
+    ) -> ZipResult<ZipIterableFilesWithReader<'files, 'options, R>> {
+        Ok(ZipIterableFilesWithReader {
+            files: self.files()?,
+            body_reader,
+            options: config,
+        })
+    }
+
     /// Validate each entry's local file header against the central directory before yielding it.
     ///
     /// When enabled, any discrepancy (such as Zip Cloaking / Dual-Header Smuggling attacks,
@@ -144,6 +161,19 @@ impl<R: Read + Seek> ZipIterable<R> {
     }
 }
 
+impl<R: Read + Seek + Clone> ZipIterable<R> {
+    /// Start a new pass over the central directory.
+    ///
+    /// The returned iterator borrows the underlying reader and yields entries that borrow a clone
+    /// of that reader to read the file contents.
+    pub fn files_with_cloned_reader<'files, 'options>(
+        &'files mut self,
+        config: ZipReadOptions<'options>,
+    ) -> ZipResult<ZipIterableFilesWithReader<'files, 'options, R>> {
+        self.files_with_reader(self.files.metadata_reader.clone(), config)
+    }
+}
+
 /// Iterator over the entries of a [`ZipIterable`].
 ///
 /// Entries are yielded in central-directory order. Duplicate names are preserved. After an
@@ -152,11 +182,19 @@ impl<R: Read + Seek> ZipIterable<R> {
 /// its local file header before it is yielded.
 #[derive(Debug)]
 pub struct ZipIterableFiles<R> {
-    reader: R,
+    metadata_reader: R,
     central_directory: CentralDirectoryInfo,
     next_header_start: u64,
     remaining: usize,
     enforce_header_consistency: bool,
+}
+
+/// Lending iterator over entries that borrow its body reader.
+#[derive(Debug)]
+pub struct ZipIterableFilesWithReader<'files, 'options, R> {
+    files: &'files mut ZipIterableFiles<R>,
+    body_reader: R,
+    options: ZipReadOptions<'options>,
 }
 
 impl<R: Read + Seek> ZipIterableFiles<R> {
@@ -164,7 +202,7 @@ impl<R: Read + Seek> ZipIterableFiles<R> {
         let next_header_start = central_directory.directory_start;
         let remaining = central_directory.number_of_files;
         Self {
-            reader,
+            metadata_reader: reader,
             central_directory,
             next_header_start,
             remaining,
@@ -175,7 +213,8 @@ impl<R: Read + Seek> ZipIterableFiles<R> {
     fn reset(&mut self) -> ZipResult<()> {
         self.next_header_start = self.central_directory.directory_start;
         self.remaining = self.central_directory.number_of_files;
-        self.reader.seek(SeekFrom::Start(self.next_header_start))?;
+        self.metadata_reader
+            .seek(SeekFrom::Start(self.next_header_start))?;
         Ok(())
     }
 
@@ -197,15 +236,16 @@ impl<R: Read + Seek> ZipIterableFiles<R> {
     /// this reader to read entry contents does not disturb iteration. This is meant to be used
     /// with [`ZipFileEntry::with_reader`].
     pub fn reader_mut(&mut self) -> &mut R {
-        &mut self.reader
+        &mut self.metadata_reader
     }
 
     fn parse_entry(
         &mut self,
         central_header_start: u64,
     ) -> ZipResult<(ZipFileEntry<'static>, u64)> {
-        self.reader.seek(SeekFrom::Start(central_header_start))?;
-        let block = ZipCentralEntryBlock::parse(&mut self.reader)?;
+        self.metadata_reader
+            .seek(SeekFrom::Start(central_header_start))?;
+        let block = ZipCentralEntryBlock::parse(&mut self.metadata_reader)?;
         let next = central_header_start
             .checked_add((size_of::<Magic>() + size_of::<ZipCentralEntryBlock>()) as u64)
             .and_then(|next| next.checked_add(u64::from(block.file_name_length)))
@@ -214,14 +254,14 @@ impl<R: Read + Seek> ZipIterableFiles<R> {
             .ok_or_else(|| invalid!("Central directory entry offset overflows u64"))?;
 
         let (data, file_name) = central_header_to_zip_file_inner(
-            &mut self.reader,
+            &mut self.metadata_reader,
             self.central_directory.archive_offset,
             central_header_start,
             block,
         )?;
 
         if self.enforce_header_consistency {
-            data.validate_header_consistency(&mut self.reader, &file_name)?;
+            data.validate_header_consistency(&mut self.metadata_reader, &file_name)?;
         }
 
         Ok((
@@ -258,5 +298,20 @@ impl<R: Read + Seek> Iterator for ZipIterableFiles<R> {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.remaining, Some(self.remaining))
+    }
+}
+
+impl<R: Read + Seek> ZipIterableFilesWithReader<'_, '_, R> {
+    /// Read the next entry, borrowing this iterator's body reader until the returned file is dropped.
+    pub fn next(&mut self) -> Option<ZipResult<ZipFile<'_, R>>> {
+        self.files.next().map(|res| {
+            res.and_then(|entry| entry.with_reader(&mut self.body_reader, self.options.clone()))
+        })
+    }
+
+    /// Number of entries that have not been yielded yet.
+    #[must_use]
+    pub fn size_hint(&self) -> (usize, Option<usize>) {
+        self.files.size_hint()
     }
 }

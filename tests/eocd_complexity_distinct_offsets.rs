@@ -4,6 +4,7 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cmp::Ordering::{Equal, Greater, Less};
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
 struct PeakCountingAllocator;
@@ -21,6 +22,23 @@ unsafe impl GlobalAlloc for PeakCountingAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         LIVE.fetch_sub(layout.size(), Relaxed);
         unsafe { System.dealloc(ptr, layout) }
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let reallocated = unsafe { System.realloc(ptr, layout, new_size) };
+        if !reallocated.is_null() {
+            let size_change = new_size as isize - layout.size() as isize;
+            match size_change.cmp(&0) {
+                Less => {
+                    LIVE.fetch_sub(size_change.unsigned_abs(), Relaxed);
+                },
+                Greater => {
+                    LIVE.fetch_add(size_change.unsigned_abs(), Relaxed);
+                },
+                Equal => {}
+            }
+        }
+        reallocated
     }
 }
 
