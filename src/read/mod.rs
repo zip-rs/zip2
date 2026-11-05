@@ -103,44 +103,41 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
-    pub(crate) fn merge_contents<W: io::Write + Seek>(
-        self,
-        mut w: W,
-    ) -> ZipResult<ZipWriterFiles> {
+    pub(crate) fn merge_contents<W: io::Write + Seek>(self, mut w: W) -> ZipResult<ZipWriterFiles> {
         let Self { mut reader, shared } = self;
         if shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
 
-            fn prepare_merge_files<I>(
-        files: I,
-        first_new_file_header_start: u64,
-    ) -> ZipResult<ZipWriterFiles>
-    where
-        I: Iterator<Item = (Box<[u8]>, ZipFileData)>,
-    {
-        let mut new_files = IndexMap::with_capacity(files.size_hint().0);
-        for (name, file) in files {
-            let mut file = file.map_extra_fields::<Vec<ExtraField>>();
-            file.header_start = file
-                .header_start
-                .checked_add(first_new_file_header_start)
-                .ok_or(invalid!(
-                    "new header start from merge would have been too large"
-                ))?;
-            file.central_header_start = 0;
-            if let Some(old_data_start) = file.data_start.take() {
-                let new_data_start = old_data_start
+        fn prepare_merge_files<I>(
+            files: I,
+            first_new_file_header_start: u64,
+        ) -> ZipResult<ZipWriterFiles>
+        where
+            I: Iterator<Item = (Box<[u8]>, ZipFileData)>,
+        {
+            let mut new_files = IndexMap::with_capacity(files.size_hint().0);
+            for (name, file) in files {
+                let mut file = file.map_extra_fields::<Vec<ExtraField>>();
+                file.header_start = file
+                    .header_start
                     .checked_add(first_new_file_header_start)
                     .ok_or(invalid!(
-                        "new data start from merge would have been too large"
+                        "new header start from merge would have been too large"
                     ))?;
-                file.data_start.get_or_init(|| new_data_start);
+                file.central_header_start = 0;
+                if let Some(old_data_start) = file.data_start.take() {
+                    let new_data_start = old_data_start
+                        .checked_add(first_new_file_header_start)
+                        .ok_or(invalid!(
+                            "new data start from merge would have been too large"
+                        ))?;
+                    file.data_start.get_or_init(|| new_data_start);
+                }
+                new_files.insert(name, file);
             }
-            new_files.insert(name, file);
+            Ok(new_files)
         }
-        Ok(new_files)
-    }
 
         let (new_files, dir_start) = match std::sync::Arc::try_unwrap(shared) {
             Ok(metadata) => (
