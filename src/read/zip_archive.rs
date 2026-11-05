@@ -101,6 +101,20 @@ impl SharedBuilder {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct ArchiveMetadataBuilder<T = Box<[ExtraField]>> {
+    pub(crate) shared: SharedBuilder<T>,
+    pub(crate) comment: Box<[u8]>,
+    pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
+}
+
+impl ArchiveMetadataBuilder {
+    pub(crate) fn build(self) -> ZipArchiveMetadata {
+        self.shared
+            .build(self.comment, self.zip64_extensible_data_sector)
+    }
+}
+
 /// ZIP archive reader
 ///
 /// At the moment, this type is cheap to clone if this is the case for the
@@ -215,7 +229,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn get_metadata<T>(
         config: Config,
         reader: &mut R,
-    ) -> ZipResult<(SharedBuilder<T>, Box<[u8]>, Option<Box<[u8]>>)>
+    ) -> ZipResult<ArchiveMetadataBuilder<T>>
     where
         T: From<Vec<ExtraField>> + AsRef<[ExtraField]>,
     {
@@ -266,11 +280,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                     } else {
                         None
                     };
-                    return Ok((
+                    return Ok(ArchiveMetadataBuilder {
                         shared,
-                        cde.eocd.data.zip_file_comment,
+                        comment: cde.eocd.data.zip_file_comment,
                         zip64_extensible_data_sector,
-                    ));
+                    });
                 }
                 Err(e) => {
                     // Other readers use a record whose CD ends at it, so don't fall back past it.
@@ -488,9 +502,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let (shared, comment, zip64_extensible_data_sector) =
-            Self::get_metadata::<Box<[ExtraField]>>(config, &mut reader)?;
-        let shared = shared.build(comment, zip64_extensible_data_sector);
+        let shared = Self::get_metadata::<Box<[ExtraField]>>(config, &mut reader)?.build();
 
         Ok(ZipArchive {
             reader,

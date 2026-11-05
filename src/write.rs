@@ -415,15 +415,14 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        let (shared, comment, zip64_extensible_data_sector) =
-            ZipArchive::get_metadata::<Vec<ExtraField>>(config, &mut readwriter)?;
+        let metadata = ZipArchive::get_metadata::<Vec<ExtraField>>(config, &mut readwriter)?;
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: shared.files,
+            files: metadata.shared.files,
             stats: ZipWriterStats::default(),
             writing_to_file: false,
-            comment,
-            zip64_extensible_data_sector,
+            comment: metadata.comment,
+            zip64_extensible_data_sector: metadata.zip64_extensible_data_sector,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
