@@ -45,7 +45,7 @@ pub use crate::format::{DEFAULT_VERSION, MIN_VERSION};
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub struct ZipFileData<T = Box<[ExtraField]>> {
+pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,
     /// Specification version
@@ -77,13 +77,13 @@ pub struct ZipFileData<T = Box<[ExtraField]>> {
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
     /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
-    pub extra_fields: ExtraFields<T>,
+    pub extra_fields: ExtraFields,
     /// The file name as stored in the header, before applying a Unicode Path extra field.
     pub(crate) overridden_header_name: Option<Box<[u8]>>,
     pub(crate) header_language_encoding: bool,
 }
 
-impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
+impl ZipFileData {
     pub(crate) fn make_reader<'a, R: Read>(
         &self,
         limit_reader: Take<&'a mut R>,
@@ -329,8 +329,7 @@ impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
         let _ = self.data_start.set(data_start);
 
         let local_extra_fields = ExtraFields::parse(&local_extra, &block, true)?;
-        let mut local_data =
-            ZipFileData::<Box<[ExtraField]>>::from_local_block(block, local_extra_fields)?;
+        let mut local_data = ZipFileData::from_local_block(block, local_extra_fields)?;
         local_data.apply_extra_fields(&mut local_name)?;
 
         let local_meta = local_data.consistency_metadata(&local_name, true);
@@ -422,7 +421,7 @@ impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
         #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))] mut extra_fields: ExtraFields<
             Vec<ExtraField>,
         >,
-    ) -> ZipFileData<Box<[ExtraField]>> {
+    ) -> ZipFileData {
         // Figure out the underlying compression_method and aes mode when using
         // AES encryption.
         // Preserve AES method for raw copies without needing a password

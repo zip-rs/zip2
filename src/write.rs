@@ -413,7 +413,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        let metadata = ZipArchive::get_metadata::<Box<[ExtraField]>>(config, &mut readwriter)?;
+        let metadata = ZipArchive::get_metadata(config, &mut readwriter)?;
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
             files: metadata.shared.files,
@@ -792,7 +792,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ));
         }
 
-        let mut file = ZipFileData::<Box<[ExtraField]>>::initialize_local_block(
+        let mut file = ZipFileData::initialize_local_block(
             file_name_raw,
             &options,
             &raw_values,

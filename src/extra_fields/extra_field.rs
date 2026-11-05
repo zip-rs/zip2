@@ -257,7 +257,7 @@ impl ExtraField {
     }
 }
 
-impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
+impl ZipFileData {
     pub(crate) fn apply_extra_fields(&mut self, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
         #[cfg(feature = "aes-crypto")]
         let mut has_aes = false;

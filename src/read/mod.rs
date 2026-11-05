@@ -37,7 +37,7 @@ pub use zipfile::{ZipFile, ZipFileEntry, ZipFileEntryWithDataDescriptor, ZipFile
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
 
-pub(crate) type ZipArchiveFiles = IndexMap<Box<[u8]>, ZipFileData<Box<[ExtraField]>>>;
+pub(crate) type ZipArchiveFiles = IndexMap<Box<[u8]>, ZipFileData>;
 pub(crate) type ZipWriterFiles = ZipArchiveFiles;
 
 #[cfg(feature = "aes-crypto")]
@@ -206,15 +206,12 @@ fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipRe
 }
 
 /// Parse a central directory entry to collect the information for the file.
-fn central_header_to_zip_file_inner<R: Read, T>(
+fn central_header_to_zip_file_inner<R: Read>(
     reader: &mut R,
     archive_offset: u64,
     central_header_start: u64,
     block: ZipCentralEntryBlock,
-) -> ZipResult<(ZipFileData<T>, Vec<u8>)>
-where
-    T: From<Vec<ExtraField>> + AsRef<[ExtraField]>,
-{
+) -> ZipResult<(ZipFileData, Vec<u8>)> {
     let ZipCentralEntryBlock {
         // magic,
         version_made_by,
@@ -253,7 +250,7 @@ where
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
-    let extra_fields = ExtraFields::<T>::parse(&extra_fields_raw, &block, false)?;
+    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, false)?;
     // Construct the result
     let mut result = ZipFileData {
         system,
