@@ -58,16 +58,6 @@ pub struct OwnedZipFileEntry {
     pub(crate) data: ZipFileData,
 }
 
-impl OwnedZipFileEntry {
-    /// Convert the owned type to a `ZipFileEntry`
-    pub fn as_ref(&self) -> ZipFileEntry<'_> {
-        ZipFileEntry {
-            file_name_raw: Cow::Borrowed(&self.file_name_raw),
-            data: Cow::Borrowed(&self.data),
-        }
-    }
-}
-
 impl<'a> From<ZipFileEntry<'a>> for OwnedZipFileEntry {
     fn from(entry: ZipFileEntry<'a>) -> Self {
         Self {
@@ -261,6 +251,14 @@ impl HasZipMetadata for OwnedZipFileEntry {
 
 impl OwnedZipFileEntry {
     zip_file_methods!();
+
+    /// Convert the owned type to a `ZipFileEntry`
+    pub fn as_ref(&self) -> ZipFileEntry<'_> {
+        ZipFileEntry {
+            file_name_raw: Cow::Borrowed(&self.file_name_raw),
+            data: Cow::Borrowed(&self.data),
+        }
+    }
 }
 
 impl<'a> ZipFileEntry<'a> {
