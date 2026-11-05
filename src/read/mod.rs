@@ -103,7 +103,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: std::io::Write + Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
+    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>> {
         if self.shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
@@ -164,7 +164,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         io::copy(&mut limited_raw, &mut w)?;
 
         /* Return the files we've just written to the data stream. */
-        Ok(new_files)
+        Ok(new_files
+            .into_iter()
+            .map(|(name, file)| (name, file.map_extra_fields(|inner| inner.into_vec())))
+            .collect())
     }
 }
 
@@ -186,12 +189,15 @@ fn read_variable_length_byte_field<R: Read>(reader: &mut R, len: usize) -> ZipRe
 }
 
 /// Parse a central directory entry to collect the information for the file.
-fn central_header_to_zip_file_inner<R: Read>(
+fn central_header_to_zip_file_inner<R: Read, T>(
     reader: &mut R,
     archive_offset: u64,
     central_header_start: u64,
     block: ZipCentralEntryBlock,
-) -> ZipResult<(ZipFileData, Vec<u8>)> {
+) -> ZipResult<(ZipFileData<T>, Vec<u8>)>
+where
+    T: From<Vec<crate::ExtraField>> + AsRef<[crate::ExtraField]>,
+{
     let ZipCentralEntryBlock {
         // magic,
         version_made_by,
@@ -230,7 +236,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
-    let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, false)?;
+    let extra_fields = ExtraFields::<T>::parse(&extra_fields_raw, &block, false)?;
     // Construct the result
     let mut result = ZipFileData {
         system,
@@ -349,9 +355,12 @@ impl<'a> ZipReadOptions<'a> {
 }
 
 /// Helper to extract Info-ZIP UnicodePath (0x7075) extra field content and CRC32.
-pub(crate) fn get_upath(extra_fields: &ExtraFields) -> (Option<&[u8]>, Option<u32>) {
+pub(crate) fn get_upath<T: AsRef<[ExtraField]>>(
+    extra_fields: &ExtraFields<T>,
+) -> (Option<&[u8]>, Option<u32>) {
     extra_fields
         .inner
+        .as_ref()
         .iter()
         .rev()
         .find_map(|f| match f {

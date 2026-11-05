@@ -44,11 +44,11 @@ pub enum ExtraField {
 
 /// Extra fields list
 #[derive(Debug, Clone, Default)]
-pub struct ExtraFields {
-    pub(crate) inner: Vec<ExtraField>,
+pub struct ExtraFields<T = Box<[ExtraField]>> {
+    pub(crate) inner: T,
 }
 
-impl ExtraFields {
+impl<T: From<Vec<ExtraField>>> ExtraFields<T> {
     pub(crate) fn parse<B: ZipEntryBlock>(
         buff: &[u8],
         block: &B,
@@ -63,18 +63,19 @@ impl ExtraFields {
             };
             extra_fields.push(parsed_extra_field);
         }
-        extra_fields.shrink_to_fit();
         Ok(Self {
-            inner: extra_fields,
+            inner: T::from(extra_fields),
         })
     }
+}
 
+impl<T: AsRef<[ExtraField]> + AsMut<[ExtraField]>> ExtraFields<T> {
     pub(crate) fn local_extra_fields_mut(&mut self) -> impl Iterator<Item = &mut ExtraField> {
-        self.inner.iter_mut()
+        self.inner.as_mut().iter_mut()
     }
 
     pub(crate) fn local_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
-        self.inner.iter().filter(|ef| match ef {
+        self.inner.as_ref().iter().filter(|ef| match ef {
             ExtraField::Custom(cef) => !cef.central_only,
             _ => true,
         })
@@ -83,6 +84,7 @@ impl ExtraFields {
     pub(crate) fn central_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
         // data alignment is local only
         self.inner
+            .as_ref()
             .iter()
             .filter(|ef| !matches!(ef, ExtraField::DataStreamAlignment(_)))
     }
@@ -255,14 +257,14 @@ impl ExtraField {
     }
 }
 
-impl ZipFileData {
+impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
     pub(crate) fn apply_extra_fields(&mut self, file_name_raw: &mut Vec<u8>) -> ZipResult<()> {
         #[cfg(feature = "aes-crypto")]
         let mut has_aes = false;
         let mut orig_name_crc = None;
         let mut orig_comment_crc = None;
 
-        for one_extra_field in &self.extra_fields.inner {
+        for one_extra_field in self.extra_fields.inner.as_ref() {
             match one_extra_field {
                 // Zip64 extended information extra field
                 ExtraField::Zip64ExtendedInformation(zip64_block) => {
@@ -356,7 +358,8 @@ mod tests {
     fn aex_extra_field_with_feature() {
         let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
 
-        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields =
+            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         assert!(matches!(
             extra_fields.inner[0],
             ExtraField::AeXEncryption(..)
@@ -404,7 +407,8 @@ mod tests {
 
         let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
 
-        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields =
+            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         let extra = CustomExtraField::new(
             false,
             UsedExtraField::AeXEncryption.as_u16(),
@@ -417,7 +421,8 @@ mod tests {
     fn test_parse_data_stream_alignment() {
         // Tag 0xa11e, len 4, alignment 16, 2 padding bytes
         let buff = [0x1e, 0xa1, 0x04, 0x00, 0x10, 0x00, 0x00, 0x00];
-        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields =
+            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         assert_eq!(extra_fields.inner.len(), 1);
         assert!(matches!(
             extra_fields.inner[0],
@@ -430,7 +435,8 @@ mod tests {
     fn test_parse_android_zip_alignment() {
         // Tag 0xd935, len 6, alignment 4, 4 padding bytes
         let buff = [0x35, 0xd9, 0x06, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00];
-        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields =
+            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         assert_eq!(extra_fields.inner.len(), 1);
         assert!(matches!(
             extra_fields.inner[0],

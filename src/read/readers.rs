@@ -298,8 +298,8 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
-    data: &ZipFileData,
+pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized, T: AsRef<[crate::ExtraField]>>(
+    data: &ZipFileData<T>,
     reader: io::Take<&'a mut R>,
     password: Option<&[u8]>,
 ) -> ZipResult<CryptoReader<'a, R>> {

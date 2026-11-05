@@ -205,6 +205,7 @@ pub(crate) mod zip_writer {
     #[cfg(feature = "deflate-flate2")]
     use super::DeflateCache;
     use crate::{
+        ExtraField,
         types::ZipFileData,
         write::{GenericZipWriter, ZipWriterStats},
     };
@@ -247,7 +248,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: IndexMap<Box<[u8]>, ZipFileData>,
+        pub(super) files: IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -414,14 +415,15 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
+        let (shared, comment, zip64_extensible_data_sector) =
+            ZipArchive::get_metadata::<Vec<ExtraField>>(config, &mut readwriter)?;
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
             files: shared.files,
             stats: ZipWriterStats::default(),
             writing_to_file: false,
-            comment: shared.comment,
-            zip64_extensible_data_sector: shared.zip64_extensible_data_sector,
+            comment,
+            zip64_extensible_data_sector,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
@@ -905,7 +907,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn insert_file_data(
         &mut self,
         file_name_raw: &[u8],
-        mut file: ZipFileData,
+        mut file: ZipFileData<Vec<ExtraField>>,
     ) -> ZipResult<usize> {
         if self.files.contains_key(file_name_raw) {
             return Err(invalid!(
@@ -2916,7 +2918,7 @@ fn validate_value_in_range<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
 #[cfg(feature = "aes-crypto")]
 fn update_aes_extra_field<W: Write + Seek>(
     writer: &mut W,
-    file: &mut ZipFileData,
+    file: &mut ZipFileData<Vec<ExtraField>>,
     bytes_written: u64,
 ) -> ZipResult<()> {
     use crate::extra_fields::AexEncryption;
@@ -2968,7 +2970,7 @@ fn update_aes_extra_field<W: Write + Seek>(
     Ok(())
 }
 
-impl ZipFileData {
+impl ZipFileData<Vec<ExtraField>> {
     pub(crate) fn update_local_file_header<T: Write + Seek>(
         &mut self,
         writer: &mut T,

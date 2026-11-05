@@ -1,5 +1,6 @@
 //! Code related to `ZipArchive`
 
+use crate::ExtraField;
 use crate::compression::CompressionMethod;
 use crate::format::MagicPositionCache;
 use crate::format::blocks::{
@@ -72,8 +73,8 @@ impl ZipArchiveMetadata {
 }
 
 #[derive(Debug)]
-pub(crate) struct SharedBuilder {
-    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+pub(crate) struct SharedBuilder<T = Box<[ExtraField]>> {
+    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData<T>>,
     pub(crate) raw_file_count: usize,
     pub(super) offset: u64,
     pub(super) dir_start: u64,
@@ -129,12 +130,21 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        mut files: IndexMap<Box<[u8]>, ZipFileData>,
+        files: IndexMap<Box<[u8]>, ZipFileData<Vec<ExtraField>>>,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
         central_start: u64,
     ) -> Self {
+        let mut files: IndexMap<Box<[u8]>, ZipFileData> = files
+            .into_iter()
+            .map(|(name, file)| {
+                (
+                    name,
+                    file.map_extra_fields(|inner| inner.into_boxed_slice()),
+                )
+            })
+            .collect();
         for (name, file) in &mut files {
             file.overridden_header_name = None;
             file.header_language_encoding = crate::format::flags::ZipFlags::matching(
@@ -207,7 +217,13 @@ impl CentralDirectoryChains {
 impl<R: Read + Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<ZipArchiveMetadata> {
+    pub(crate) fn get_metadata<T>(
+        config: Config,
+        reader: &mut R,
+    ) -> ZipResult<(SharedBuilder<T>, Box<[u8]>, Option<Box<[u8]>>)>
+    where
+        T: From<Vec<ExtraField>> + AsRef<[ExtraField]>,
+    {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(SeekFrom::End(0))?;
         let mut last_err = None;
@@ -255,9 +271,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                     } else {
                         None
                     };
-                    return Ok(
-                        shared.build(cde.eocd.data.zip_file_comment, zip64_extensible_data_sector)
-                    );
+                    return Ok((
+                        shared,
+                        cde.eocd.data.zip_file_comment,
+                        zip64_extensible_data_sector,
+                    ));
                 }
                 Err(e) => {
                     // Other readers use a record whose CD ends at it, so don't fall back past it.
@@ -275,10 +293,13 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Decodes the header at `central_header_start`, where `reader` must be positioned. The
     /// returned entry's local header offset isn't shifted by the archive offset yet.
-    fn read_one_central_header(
+    fn read_one_central_header<T>(
         reader: &mut R,
         central_header_start: u64,
-    ) -> ZipResult<(Box<[u8]>, ZipFileData, u64)> {
+    ) -> ZipResult<(Box<[u8]>, ZipFileData<T>, u64)>
+    where
+        T: From<Vec<ExtraField>> + AsRef<[ExtraField]>,
+    {
         let block = ZipCentralEntryBlock::parse(reader)?;
         let next = central_header_start
             + (size_of::<Magic>() + size_of::<ZipCentralEntryBlock>()) as u64
@@ -298,12 +319,15 @@ impl<R: Read + Seek> ZipArchive<R> {
         Ok((file_name_raw.into_boxed_slice(), file, next))
     }
 
-    fn read_central_header(
+    fn read_central_header<T>(
         dir_info: &CentralDirectoryInfo,
         config: Config,
         reader: &mut R,
         cd_chains: &mut CentralDirectoryChains,
-    ) -> Result<SharedBuilder, ZipError> {
+    ) -> Result<SharedBuilder<T>, ZipError>
+    where
+        T: From<Vec<ExtraField>> + AsRef<[ExtraField]>,
+    {
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
         // Furthermore, each CDFH requires at least 46 bytes (4 bytes magic + 42 bytes ZipCentralEntryBlock).
@@ -321,7 +345,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             ));
         }
 
-        if file_capacity.saturating_mul(size_of::<ZipFileData>()) > isize::MAX as usize {
+        if file_capacity.saturating_mul(size_of::<ZipFileData<T>>()) > isize::MAX as usize {
             return Err(ZipError::UnsupportedArchive("Oversized central directory"));
         }
 
@@ -469,7 +493,9 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let shared = Self::get_metadata(config, &mut reader)?;
+        let (shared, comment, zip64_extensible_data_sector) =
+            Self::get_metadata::<Box<[ExtraField]>>(config, &mut reader)?;
+        let shared = shared.build(comment, zip64_extensible_data_sector);
 
         Ok(ZipArchive {
             reader,

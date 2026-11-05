@@ -940,7 +940,7 @@ fn read_zipfile_from_stream_with_options_internal<'a, R: Read>(
     }
     // parse extra fields
     let extra_fields = ExtraFields::parse(&extra_fields_raw, &block, true)?;
-    let mut data = ZipFileData::from_local_block(block, extra_fields)?;
+    let mut data = ZipFileData::<Box<[crate::ExtraField]>>::from_local_block(block, extra_fields)?;
     data.apply_extra_fields(&mut file_name_raw)?;
     if data.is_using_data_descriptor() {
         if let Some(comp_size) = options.force_compressed_size {
