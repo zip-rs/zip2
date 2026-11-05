@@ -690,7 +690,7 @@ impl<T: AsRef<[ExtraField]>> ZipFileData<T> {
 }
 
 impl<T> ZipFileData<T> {
-    pub(crate) fn map_extra_fields<U>(self, map: impl FnOnce(T) -> U) -> ZipFileData<U> {
+    pub(crate) fn map_extra_fields<U: From<T>>(self) -> ZipFileData<U> {
         let Self {
             system,
             version_made_by,
@@ -727,7 +727,7 @@ impl<T> ZipFileData<T> {
             external_attributes,
             large_file,
             extra_fields: ExtraFields {
-                inner: map(extra_fields.inner),
+                inner: U::from(extra_fields.inner),
             },
             overridden_header_name,
             header_language_encoding,

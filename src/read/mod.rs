@@ -166,7 +166,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         /* Return the files we've just written to the data stream. */
         Ok(new_files
             .into_iter()
-            .map(|(name, file)| (name, file.map_extra_fields(|inner| inner.into_vec())))
+            .map(|(name, file)| (name, file.map_extra_fields::<Vec<ExtraField>>()))
             .collect())
     }
 }

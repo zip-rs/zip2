@@ -138,12 +138,7 @@ impl<R> ZipArchive<R> {
     ) -> Self {
         let mut files: IndexMap<Box<[u8]>, ZipFileData> = files
             .into_iter()
-            .map(|(name, file)| {
-                (
-                    name,
-                    file.map_extra_fields(|inner| inner.into_boxed_slice()),
-                )
-            })
+            .map(|(name, file)| (name, file.map_extra_fields::<Box<[ExtraField]>>()))
             .collect();
         for (name, file) in &mut files {
             file.overridden_header_name = None;
