@@ -418,8 +418,8 @@ impl ZipFileData {
         options: &FileOptions<'_, '_, E>,
         raw_values: &ZipRawValues,
         header_start: u64,
-        #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))] mut extra_fields: ExtraFields<
-            Vec<ExtraField>,
+        #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))] mut extra_fields: Vec<
+            ExtraField,
         >,
     ) -> ZipFileData {
         // Figure out the underlying compression_method and aes mode when using
@@ -436,13 +436,11 @@ impl ZipFileData {
                 use crate::extra_fields::AexEncryption;
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
-                extra_fields
-                    .inner
-                    .extend([ExtraField::AeXEncryption(AexEncryption::new(
-                        vendor_version,
-                        mode,
-                        compression_method,
-                    ))]);
+                extra_fields.extend([ExtraField::AeXEncryption(AexEncryption::new(
+                    vendor_version,
+                    mode,
+                    compression_method,
+                ))]);
             }
             _ => {}
         }
@@ -504,7 +502,7 @@ impl ZipFileData {
             external_attributes,
             large_file: options.large_file,
             extra_fields: ExtraFields {
-                inner: extra_fields.inner.into_boxed_slice(),
+                inner: extra_fields.into_boxed_slice(),
             },
             overridden_header_name: None,
             header_language_encoding: flags.matching(ZipFlags::LanguageEncoding),

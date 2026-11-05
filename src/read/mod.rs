@@ -369,12 +369,9 @@ impl<'a> ZipReadOptions<'a> {
 }
 
 /// Helper to extract Info-ZIP UnicodePath (0x7075) extra field content and CRC32.
-pub(crate) fn get_upath<T: AsRef<[ExtraField]>>(
-    extra_fields: &ExtraFields<T>,
-) -> (Option<&[u8]>, Option<u32>) {
+pub(crate) fn get_upath(extra_fields: &ExtraFields) -> (Option<&[u8]>, Option<u32>) {
     extra_fields
         .inner
-        .as_ref()
         .iter()
         .rev()
         .find_map(|f| match f {

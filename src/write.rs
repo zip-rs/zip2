@@ -4,7 +4,6 @@ use crate::ExtraField;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::DataStreamAlignment;
-use crate::extra_fields::ExtraFields;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::blocks::{
     FixedSizeBlock, Zip32CDEBlock, Zip32CentralDirectoryEnd, Zip64CentralDirectoryEnd,
@@ -797,9 +796,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             &options,
             &raw_values,
             header_start,
-            ExtraFields {
-                inner: extra_fields,
-            },
+            extra_fields,
         );
         if let Some(comment) = options.extended_options.take_file_comment() {
             if comment.len() > u16::MAX as usize {

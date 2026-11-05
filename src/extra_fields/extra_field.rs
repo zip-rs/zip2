@@ -44,11 +44,11 @@ pub enum ExtraField {
 
 /// Extra fields list
 #[derive(Debug, Clone, Default)]
-pub struct ExtraFields<T = Box<[ExtraField]>> {
-    pub(crate) inner: T,
+pub struct ExtraFields {
+    pub(crate) inner: Box<[ExtraField]>,
 }
 
-impl<T: From<Vec<ExtraField>>> ExtraFields<T> {
+impl ExtraFields {
     pub(crate) fn parse<B: ZipEntryBlock>(
         buff: &[u8],
         block: &B,
@@ -64,18 +64,16 @@ impl<T: From<Vec<ExtraField>>> ExtraFields<T> {
             extra_fields.push(parsed_extra_field);
         }
         Ok(Self {
-            inner: T::from(extra_fields),
+            inner: extra_fields.into_boxed_slice(),
         })
     }
-}
 
-impl<T: AsRef<[ExtraField]> + AsMut<[ExtraField]>> ExtraFields<T> {
     pub(crate) fn local_extra_fields_mut(&mut self) -> impl Iterator<Item = &mut ExtraField> {
-        self.inner.as_mut().iter_mut()
+        self.inner.iter_mut()
     }
 
     pub(crate) fn local_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
-        self.inner.as_ref().iter().filter(|ef| match ef {
+        self.inner.iter().filter(|ef| match ef {
             ExtraField::Custom(cef) => !cef.central_only,
             _ => true,
         })
@@ -84,7 +82,6 @@ impl<T: AsRef<[ExtraField]> + AsMut<[ExtraField]>> ExtraFields<T> {
     pub(crate) fn central_extra_fields(&self) -> impl Iterator<Item = &ExtraField> {
         // data alignment is local only
         self.inner
-            .as_ref()
             .iter()
             .filter(|ef| !matches!(ef, ExtraField::DataStreamAlignment(_)))
     }
@@ -358,8 +355,7 @@ mod tests {
     fn aex_extra_field_with_feature() {
         let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
 
-        let extra_fields =
-            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         assert!(matches!(
             extra_fields.inner[0],
             ExtraField::AeXEncryption(..)
@@ -407,8 +403,7 @@ mod tests {
 
         let buff = [1, 0x99, 7, 0, 1, 0, b'A', b'E', 3, 0, 0];
 
-        let extra_fields =
-            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         let extra = CustomExtraField::new(
             false,
             UsedExtraField::AeXEncryption.as_u16(),
@@ -421,8 +416,7 @@ mod tests {
     fn test_parse_data_stream_alignment() {
         // Tag 0xa11e, len 4, alignment 16, 2 padding bytes
         let buff = [0x1e, 0xa1, 0x04, 0x00, 0x10, 0x00, 0x00, 0x00];
-        let extra_fields =
-            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         assert_eq!(extra_fields.inner.len(), 1);
         assert!(matches!(
             extra_fields.inner[0],
@@ -435,8 +429,7 @@ mod tests {
     fn test_parse_android_zip_alignment() {
         // Tag 0xd935, len 6, alignment 4, 4 padding bytes
         let buff = [0x35, 0xd9, 0x06, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00];
-        let extra_fields =
-            ExtraFields::<Box<[ExtraField]>>::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
+        let extra_fields = ExtraFields::parse(&buff[..], &PlaceHolderBlock, true).unwrap();
         assert_eq!(extra_fields.inner.len(), 1);
         assert!(matches!(
             extra_fields.inner[0],
