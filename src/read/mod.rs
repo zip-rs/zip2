@@ -176,12 +176,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         reader.rewind()?;
         /* Find the end of the file data. */
         let length_to_read = dir_start;
-        /* Produce a Read that reads bytes up until the start of the central directory header.
-         * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
-         * handle, which it really shouldn't need to anyway. */
-        let mut limited_raw = (&mut reader as &mut dyn Read).take(length_to_read);
         /* Copy over file data from source archive directly. */
-        io::copy(&mut limited_raw, &mut w)?;
+        io::copy(&mut reader.take(length_to_read), &mut w)?;
 
         /* Return the files we've just written to the data stream. */
         Ok(new_files)
