@@ -187,15 +187,20 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
         }
     }
     let mut sink = DecompressionSink(std::io::sink());
-    check_memory("ZipIterable::new()", (get_zip_data()?, get_zip_data()?), |(header_reader, body_reader)| {
-        let mut zip_iterable = zip::unstable::read::ZipIterable::try_new(header_reader, Config::default())?;
-        let mut entries =
-            zip_iterable.files_with_reader(body_reader, ZipReadOptions::default())?;
-        while let Some(entry) = entries.next() {
-            copy(&mut entry?, &mut sink)?;
-        }
-        Ok(())
-    })?;
+    check_memory(
+        "ZipIterable::new()",
+        (get_zip_data()?, get_zip_data()?),
+        |(header_reader, body_reader)| {
+            let mut zip_iterable =
+                zip::unstable::read::ZipIterable::try_new(header_reader, Config::default())?;
+            let mut entries =
+                zip_iterable.files_with_reader(body_reader, ZipReadOptions::default())?;
+            while let Some(entry) = entries.next() {
+                copy(&mut entry?, &mut sink)?;
+            }
+            Ok(())
+        },
+    )?;
 
     let zip_archive = check_memory("ZipArchive::new()", get_zip_data()?, |data| {
         Ok(zip::ZipArchive::new(data)?)
