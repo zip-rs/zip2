@@ -708,6 +708,8 @@ impl ZipFileData {
     }
 }
 
+pub(crate) type FilesByNameMap = IndexMap<Box<[u8]>, ZipFileData>;
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -731,5 +733,3 @@ mod tests {
         );
     }
 }
-
-pub(crate) type FilesByNameMap = IndexMap<Box<[u8]>, ZipFileData>;
