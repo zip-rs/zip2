@@ -530,7 +530,7 @@ impl ZipFileData {
 
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
         let (version_made_by, system) = System::extract_bytes(version_made_by);
-        let data: ZipFileData = ZipFileData {
+        let data = ZipFileData {
             system,
             version_made_by,
             flags: ZipFileFlags(flags),
@@ -664,7 +664,6 @@ impl ZipFileData {
                     || self
                         .extra_fields
                         .inner
-                        .as_ref()
                         .iter()
                         .any(|e| matches!(e, ExtraField::Zip64ExtendedInformation(_)));
                 let desc_start = data_start.checked_add(self.compressed_size).ok_or(
