@@ -437,11 +437,11 @@ impl ZipFileData {
                 use crate::extra_fields::AexEncryption;
                 // Write AES encryption extra data.
                 // For raw copies of AES entries, write the correct AES extra data immediately
-                extra_fields.extend([ExtraField::AeXEncryption(AexEncryption::new(
+                extra_fields.push(ExtraField::AeXEncryption(AexEncryption::new(
                     vendor_version,
                     mode,
                     compression_method,
-                ))]);
+                )));
             }
             _ => {}
         }
