@@ -329,7 +329,7 @@ impl ZipFileData {
         let _ = self.data_start.set(data_start);
 
         let local_extra_fields = ExtraFields::parse(&local_extra, &block, true)?;
-        let mut local_data = ZipFileData::from_local_block(block, local_extra_fields)?;
+        let mut local_data = Self::from_local_block(block, local_extra_fields)?;
         local_data.apply_extra_fields(&mut local_name)?;
 
         let local_meta = local_data.consistency_metadata(&local_name, true);
@@ -413,9 +413,9 @@ impl ZipFileData {
         )
     }
 
-    pub(crate) fn initialize_local_block<E: FileOptionExtension>(
+    pub(crate) fn initialize_local_block<T: FileOptionExtension>(
         file_name_raw: &[u8],
-        options: &FileOptions<'_, '_, E>,
+        options: &FileOptions<'_, '_, T>,
         raw_values: &ZipRawValues,
         header_start: u64,
         #[cfg_attr(not(feature = "aes-crypto"), allow(unused_mut))] mut extra_fields: Vec<
@@ -569,6 +569,28 @@ impl ZipFileData {
         get_flags(flags)
     }
 
+    /// Drops any Info-ZIP Unicode Path extra field that a reader would apply to `file_name_raw`
+    /// (its CRC-32 matches) but that names something else. A copy under a new name keeps the
+    /// source's extra fields, and such a field would otherwise rename the copy on read-back
+    /// (APPNOTE 4.6.9), e.g. back to the source's name.
+    pub(crate) fn drop_unicode_path_renaming(&mut self, file_name_raw: &[u8]) {
+        const UNICODE_PATH: u16 = crate::format::extra_fields::ExtraFieldId::UnicodePath.as_u16();
+        let crc = crc32fast::hash(file_name_raw);
+        let mut inner = std::mem::take(&mut self.extra_fields.inner).into_vec();
+        inner.retain(|field| match field {
+            ExtraField::UnicodePath(unicode) => {
+                unicode.crc32 != crc || *unicode.content == *file_name_raw
+            }
+            ExtraField::Custom(custom) if custom.header_id == UNICODE_PATH => {
+                custom.data.len() < 5
+                    || custom.data[1..5] != crc.to_le_bytes()
+                    || custom.data[5..] == *file_name_raw
+            }
+            _ => true,
+        });
+        self.extra_fields.inner = inner.into_boxed_slice();
+    }
+
     /// Sets the language encoding flag for this entry written under a new name.
     pub(crate) fn set_language_encoding_for(&mut self, file_name_raw: &[u8]) {
         let on = needs_language_encoding(file_name_raw, &self.file_comment);
@@ -685,30 +707,6 @@ impl ZipFileData {
     }
 }
 
-impl ZipFileData {
-    /// Drops any Info-ZIP Unicode Path extra field that a reader would apply to `file_name_raw`
-    /// (its CRC-32 matches) but that names something else. A copy under a new name keeps the
-    /// source's extra fields, and such a field would otherwise rename the copy on read-back
-    /// (APPNOTE 4.6.9), e.g. back to the source's name.
-    pub(crate) fn drop_unicode_path_renaming(&mut self, file_name_raw: &[u8]) {
-        const UNICODE_PATH: u16 = crate::format::extra_fields::ExtraFieldId::UnicodePath.as_u16();
-        let crc = crc32fast::hash(file_name_raw);
-        let mut inner = std::mem::take(&mut self.extra_fields.inner).into_vec();
-        inner.retain(|field| match field {
-            ExtraField::UnicodePath(unicode) => {
-                unicode.crc32 != crc || *unicode.content == *file_name_raw
-            }
-            ExtraField::Custom(custom) if custom.header_id == UNICODE_PATH => {
-                custom.data.len() < 5
-                    || custom.data[1..5] != crc.to_le_bytes()
-                    || custom.data[5..] == *file_name_raw
-            }
-            _ => true,
-        });
-        self.extra_fields.inner = inner.into_boxed_slice();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -717,7 +715,7 @@ mod tests {
         use std::{path::PathBuf, sync::OnceLock};
 
         let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
-        let data: ZipFileData = ZipFileData {
+        let data = ZipFileData {
             system: System::Dos,
             compression_method: CompressionMethod::Stored,
             file_comment: String::with_capacity(0).into_boxed_str(),
