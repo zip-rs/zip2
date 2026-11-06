@@ -3380,10 +3380,10 @@ mod tests {
     use crate::write::EncryptWith::ZipCrypto;
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
+    use core::marker::PhantomData;
     #[cfg(feature = "deflate-flate2")]
     use std::io::Read;
     use std::io::{Cursor, Write};
-    use std::marker::PhantomData;
     use std::path::PathBuf;
 
     const SYSTEM_BYTE: u8 = if cfg!(windows) {

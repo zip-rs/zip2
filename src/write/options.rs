@@ -2,7 +2,7 @@
 
 use crate::extra_fields::ExtendedTimestamp;
 use core::fmt::Debug;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::CompressionMethod;

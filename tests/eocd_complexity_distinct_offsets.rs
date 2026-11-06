@@ -2,9 +2,9 @@
 //! directory. Work and memory must stay linear in the input length.
 #![cfg(not(miri))]
 
+use core::cmp::Ordering::{Equal, Greater, Less};
 use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::alloc::{GlobalAlloc, Layout, System};
-use core::cmp::Ordering::{Equal, Greater, Less};
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
 struct PeakCountingAllocator;
