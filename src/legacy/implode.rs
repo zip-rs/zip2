@@ -241,7 +241,7 @@ fn hwexplode(
 pub struct ImplodeDecoder<R> {
     compressed_reader: R,
     uncompressed_size: u64,
-    state: Option<ImplodeState<Cursor<Vec<u8>>>>,
+    state: Option<ImplodeState<Cursor<Box<[u8]>>>>,
     large_wnd: bool,
     lit_tree: bool,
     stream: Vec<u8>,
@@ -288,7 +288,7 @@ impl<R: Read> Read for ImplodeDecoder<R> {
 
                 let bit_length = compressed_bytes.len() as u64 * 8;
                 self.state.insert(ImplodeState::new(
-                    Cursor::new(compressed_bytes),
+                    Cursor::new(compressed_bytes.into_boxed_slice()),
                     bit_length,
                     uncomp_len,
                     self.large_wnd,

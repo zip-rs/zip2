@@ -8,7 +8,7 @@ use crate::format::blocks::{CentralDirectoryEndInfo, DataAndPosition, ZipCentral
 use crate::format::flags::{ZipFileFlags, ZipFlags};
 use crate::format::system::System;
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::types::ZipFileData;
+use crate::types::{FilesByNameMap, ZipFileData};
 use indexmap::IndexMap;
 use std::io::{self, Read, Seek};
 use std::sync::OnceLock;
@@ -102,14 +102,12 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
-    pub(crate) fn merge_contents<W: std::io::Write + Seek>(
-        &mut self,
-        mut w: W,
-    ) -> ZipResult<IndexMap<Box<[u8]>, ZipFileData>> {
-        if self.shared.files.is_empty() {
+    pub(crate) fn merge_contents<W: io::Write + Seek>(self, mut w: W) -> ZipResult<FilesByNameMap> {
+        let Self { mut reader, shared } = self;
+        if shared.files.is_empty() {
             return Ok(IndexMap::new());
         }
-        let mut new_files = self.shared.files.clone();
+
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
          * definitely be greater than 0.
@@ -117,32 +115,52 @@ impl<R: Read + Seek> ZipArchive<R> {
          * assert_eq!(0, new_files[0].header_start); // Avoid this.
          */
 
-        let first_new_file_header_start = w.stream_position()?;
-
-        /* Push back file header starts for all entries in the covered files. */
-        new_files.values_mut().try_for_each(|f| {
-            /* This is probably the only really important thing to change. */
-            f.header_start = f
-                .header_start
-                .checked_add(first_new_file_header_start)
-                .ok_or(invalid!(
-                    "new header start from merge would have been too large"
-                ))?;
-            /* This is only ever used internally to cache metadata lookups (it's not part of the
-             * zip spec), and 0 is the sentinel value. */
-            f.central_header_start = 0;
-            /* This is an atomic variable so it can be updated from another thread in the
-             * implementation (which is good!). */
-            if let Some(old_data_start) = f.data_start.take() {
-                let new_data_start = old_data_start
+        fn prepare_merge_files<I>(
+            files: I,
+            first_new_file_header_start: u64,
+        ) -> ZipResult<FilesByNameMap>
+        where
+            I: Iterator<Item = (Box<[u8]>, ZipFileData)>,
+        {
+            let mut new_files = IndexMap::with_capacity(files.size_hint().0);
+            for (name, file) in files {
+                let mut file = file;
+                file.header_start = file
+                    .header_start
                     .checked_add(first_new_file_header_start)
                     .ok_or(invalid!(
-                        "new data start from merge would have been too large"
+                        "new header start from merge would have been too large"
                     ))?;
-                f.data_start.get_or_init(|| new_data_start);
+                file.central_header_start = 0;
+                if let Some(old_data_start) = file.data_start.take() {
+                    let new_data_start = old_data_start
+                        .checked_add(first_new_file_header_start)
+                        .ok_or(invalid!(
+                            "new data start from merge would have been too large"
+                        ))?;
+                    file.data_start.get_or_init(|| new_data_start);
+                }
+                new_files.insert(name, file);
             }
-            Ok::<_, ZipError>(())
-        })?;
+            Ok(new_files)
+        }
+
+        let (new_files, dir_start) = match std::sync::Arc::try_unwrap(shared) {
+            Ok(metadata) => (
+                prepare_merge_files(metadata.files.into_iter(), w.stream_position()?)?,
+                metadata.dir_start,
+            ),
+            Err(shared) => (
+                prepare_merge_files(
+                    shared
+                        .files
+                        .iter()
+                        .map(|(name, file)| (name.clone(), file.clone())),
+                    w.stream_position()?,
+                )?,
+                shared.dir_start,
+            ),
+        };
 
         /* Rewind to the beginning of the file.
          *
@@ -155,15 +173,11 @@ impl<R: Read + Seek> ZipArchive<R> {
          * specifically for that purpose (and therefore are unlikely to have a shebang or other
          * preface). Finally, this preserves any data that might actually be useful.
          */
-        self.reader.rewind()?;
+        reader.rewind()?;
         /* Find the end of the file data. */
-        let length_to_read = self.shared.dir_start;
-        /* Produce a Read that reads bytes up until the start of the central directory header.
-         * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
-         * handle, which it really shouldn't need to anyway. */
-        let mut limited_raw = (&mut self.reader as &mut dyn Read).take(length_to_read);
+        let length_to_read = dir_start;
         /* Copy over file data from source archive directly. */
-        io::copy(&mut limited_raw, &mut w)?;
+        io::copy(&mut reader.take(length_to_read), &mut w)?;
 
         /* Return the files we've just written to the data stream. */
         Ok(new_files)

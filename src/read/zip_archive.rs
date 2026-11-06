@@ -17,7 +17,7 @@ use crate::read::{
     central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, ZipResult};
-use crate::types::ZipFileData;
+use crate::types::{FilesByNameMap, ZipFileData};
 use crate::unstable::path_to_string;
 use core::mem;
 use core::ops::Range;
@@ -30,7 +30,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) files: FilesByNameMap,
     /// The raw file count (before inserting in the IndexMap) - used to detect duplicates
     pub(crate) raw_file_count: usize,
     pub(crate) offset: u64,
@@ -73,7 +73,7 @@ impl ZipArchiveMetadata {
 
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
-    pub(crate) files: IndexMap<Box<[u8]>, ZipFileData>,
+    pub(crate) files: FilesByNameMap,
     pub(crate) raw_file_count: usize,
     pub(super) offset: u64,
     pub(super) dir_start: u64,
@@ -97,6 +97,20 @@ impl SharedBuilder {
             comment,
             zip64_extensible_data_sector,
         }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ArchiveMetadataBuilder {
+    pub(crate) shared: SharedBuilder,
+    pub(crate) comment: Box<[u8]>,
+    pub(crate) zip64_extensible_data_sector: Option<Box<[u8]>>,
+}
+
+impl ArchiveMetadataBuilder {
+    pub(crate) fn build(self) -> ZipArchiveMetadata {
+        self.shared
+            .build(self.comment, self.zip64_extensible_data_sector)
     }
 }
 
@@ -129,7 +143,7 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        mut files: IndexMap<Box<[u8]>, ZipFileData>,
+        mut files: FilesByNameMap,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,
@@ -207,7 +221,10 @@ impl CentralDirectoryChains {
 impl<R: Read + Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    pub(crate) fn get_metadata(config: Config, reader: &mut R) -> ZipResult<ZipArchiveMetadata> {
+    pub(crate) fn get_metadata(
+        config: Config,
+        reader: &mut R,
+    ) -> ZipResult<ArchiveMetadataBuilder> {
         // End of the probed region, initially set to the end of the file
         let file_len = reader.seek(SeekFrom::End(0))?;
         let mut last_err = None;
@@ -255,9 +272,11 @@ impl<R: Read + Seek> ZipArchive<R> {
                     } else {
                         None
                     };
-                    return Ok(
-                        shared.build(cde.eocd.data.zip_file_comment, zip64_extensible_data_sector)
-                    );
+                    return Ok(ArchiveMetadataBuilder {
+                        shared,
+                        comment: cde.eocd.data.zip_file_comment,
+                        zip64_extensible_data_sector,
+                    });
                 }
                 Err(e) => {
                     // Other readers use a record whose CD ends at it, so don't fall back past it.
@@ -469,7 +488,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers.
     pub fn with_config(config: Config, mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let shared = Self::get_metadata(config, &mut reader)?;
+        let shared = Self::get_metadata(config, &mut reader)?.build();
 
         Ok(ZipArchive {
             reader,

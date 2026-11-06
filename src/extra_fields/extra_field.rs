@@ -45,7 +45,7 @@ pub enum ExtraField {
 /// Extra fields list
 #[derive(Debug, Clone, Default)]
 pub struct ExtraFields {
-    pub(crate) inner: Vec<ExtraField>,
+    pub(crate) inner: Box<[ExtraField]>,
 }
 
 impl ExtraFields {
@@ -63,9 +63,8 @@ impl ExtraFields {
             };
             extra_fields.push(parsed_extra_field);
         }
-        extra_fields.shrink_to_fit();
         Ok(Self {
-            inner: extra_fields,
+            inner: extra_fields.into_boxed_slice(),
         })
     }
 
@@ -262,7 +261,7 @@ impl ZipFileData {
         let mut orig_name_crc = None;
         let mut orig_comment_crc = None;
 
-        for one_extra_field in &self.extra_fields.inner {
+        for one_extra_field in self.extra_fields.inner.as_ref() {
             match one_extra_field {
                 // Zip64 extended information extra field
                 ExtraField::Zip64ExtendedInformation(zip64_block) => {

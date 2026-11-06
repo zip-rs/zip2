@@ -4,7 +4,6 @@ use crate::ExtraField;
 use crate::compression::CompressionMethod;
 use crate::datetime::DateTime;
 use crate::extra_fields::DataStreamAlignment;
-use crate::extra_fields::ExtraFields;
 use crate::extra_fields::Zip64ExtendedInformation;
 use crate::format::blocks::{
     FixedSizeBlock, Zip32CDEBlock, Zip32CentralDirectoryEnd, Zip64CentralDirectoryEnd,
@@ -21,7 +20,7 @@ use crate::write::options::EncryptWith;
 
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
-use core::mem::{self, offset_of, size_of};
+use core::mem::{self, offset_of, replace, size_of, take};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
@@ -204,12 +203,9 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 pub(crate) mod zip_writer {
     #[cfg(feature = "deflate-flate2")]
     use super::DeflateCache;
-    use crate::{
-        types::ZipFileData,
-        write::{GenericZipWriter, ZipWriterStats},
-    };
+    use crate::types::FilesByNameMap;
+    use crate::write::{GenericZipWriter, ZipWriterStats};
     use core::fmt::{Debug, Formatter};
-    use indexmap::IndexMap;
     use std::io::{Seek, Write};
 
     /// ZIP archive generator
@@ -247,7 +243,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: IndexMap<Box<[u8]>, ZipFileData>,
+        pub(super) files: FilesByNameMap,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -414,14 +410,14 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        let shared = ZipArchive::get_metadata(config, &mut readwriter)?;
+        let metadata = ZipArchive::get_metadata(config, &mut readwriter)?;
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: shared.files,
+            files: metadata.shared.files,
             stats: ZipWriterStats::default(),
             writing_to_file: false,
-            comment: shared.comment,
-            zip64_extensible_data_sector: shared.zip64_extensible_data_sector,
+            comment: metadata.comment,
+            zip64_extensible_data_sector: metadata.zip64_extensible_data_sector,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
             seek_possible: true,
@@ -798,9 +794,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             &options,
             &raw_values,
             header_start,
-            ExtraFields {
-                inner: extra_fields,
-            },
+            extra_fields,
         );
         if let Some(comment) = options.extended_options.take_file_comment() {
             if comment.len() > u16::MAX as usize {
@@ -1197,7 +1191,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// # Ok(())
     /// # }
     ///```
-    pub fn merge_archive<R>(&mut self, mut source: ZipArchive<R>) -> ZipResult<()>
+    pub fn merge_archive<R>(&mut self, source: ZipArchive<R>) -> ZipResult<()>
     where
         R: Read + Seek,
     {
@@ -2969,6 +2963,57 @@ fn update_aes_extra_field<W: Write + Seek>(
 }
 
 impl ZipFileData {
+    fn replace_zip64_extra_field(&mut self, zip64: Option<ExtraField>) {
+        if let Some(ExtraField::Zip64ExtendedInformation(new_zip64)) = zip64.as_ref() {
+            let new_zip64 = *new_zip64;
+            if self.extra_fields.inner.is_empty() {
+                self.extra_fields.inner =
+                    Box::new([ExtraField::Zip64ExtendedInformation(new_zip64)]);
+                return;
+            }
+            if let Some(ExtraField::Zip64ExtendedInformation(old_zip64)) =
+                self.extra_fields.inner.first_mut()
+            {
+                *old_zip64 = new_zip64;
+                return;
+            }
+            if let Some(zip64_index) =
+                self.extra_fields
+                    .inner
+                    .iter()
+                    .enumerate()
+                    .skip(1)
+                    .find_map(|(index, field)| {
+                        matches!(field, ExtraField::Zip64ExtendedInformation(_)).then_some(index)
+                    })
+            {
+                let moved_field = replace(
+                    &mut self.extra_fields.inner[0],
+                    ExtraField::Zip64ExtendedInformation(new_zip64),
+                );
+                self.extra_fields.inner[zip64_index] = moved_field;
+                return;
+            }
+        }
+
+        if zip64.is_none()
+            && !self
+                .extra_fields
+                .inner
+                .iter()
+                .any(|field| matches!(field, ExtraField::Zip64ExtendedInformation(_)))
+        {
+            return;
+        }
+
+        let mut inner = take(&mut self.extra_fields.inner).into_vec();
+        inner.retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation(_)));
+        if let Some(zip64) = zip64 {
+            inner.insert(0, zip64);
+        }
+        self.extra_fields.inner = inner.into_boxed_slice();
+    }
+
     pub(crate) fn update_local_file_header<T: Write + Seek>(
         &mut self,
         writer: &mut T,
@@ -3042,19 +3087,14 @@ impl ZipFileData {
         // first stored value (a size) as the offset. Recomputing (instead of editing in place)
         // also makes repeated writes of this header identical, which `finalize` relies on when it
         // writes the central directory and then rewrites it at the end of the file.
-        self.extra_fields
-            .inner
-            .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation(_)));
-        if let Some(zip64_block) = Zip64ExtendedInformation::central_header(
+        let zip64 = Zip64ExtendedInformation::central_header(
             self.large_file,
             self.uncompressed_size,
             self.compressed_size,
             self.header_start,
-        ) {
-            self.extra_fields
-                .inner
-                .insert(0, ExtraField::Zip64ExtendedInformation(zip64_block));
-        }
+        )
+        .map(ExtraField::Zip64ExtendedInformation);
+        self.replace_zip64_extra_field(zip64);
         // The ZIP64 field stores the two sizes together, so when it carries them both size
         // fields of the header must hold the sentinel, not only the one that overflowed;
         // otherwise the field has one more value than the header marks.
@@ -3141,18 +3181,13 @@ impl ZipFileData {
         file_name_raw: &[u8],
         alignment_opt: Option<(u16, u16)>,
     ) -> ZipResult<()> {
-        self.extra_fields
-            .inner
-            .retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation { .. }));
-        if let Some(zip64) = Zip64ExtendedInformation::local_header(
+        let zip64 = Zip64ExtendedInformation::local_header(
             self.large_file,
             self.uncompressed_size,
             self.compressed_size,
-        ) {
-            self.extra_fields
-                .inner
-                .insert(0, ExtraField::Zip64ExtendedInformation(zip64));
-        }
+        )
+        .map(ExtraField::Zip64ExtendedInformation);
+        self.replace_zip64_extra_field(zip64);
         let (compressed_size, uncompressed_size) = if self.is_using_data_descriptor() {
             (0, 0)
         } else {
