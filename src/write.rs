@@ -203,10 +203,8 @@ impl<W: Write + Seek> Debug for GenericZipWriter<W> {
 pub(crate) mod zip_writer {
     #[cfg(feature = "deflate-flate2")]
     use super::DeflateCache;
-    use crate::{
-        read::ZipWriterFiles,
-        write::{GenericZipWriter, ZipWriterStats},
-    };
+    use crate::types::FilesByNameMap;
+    use crate::write::{GenericZipWriter, ZipWriterStats};
     use core::fmt::{Debug, Formatter};
     use std::io::{Seek, Write};
 
@@ -245,7 +243,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: ZipWriterFiles,
+        pub(super) files: FilesByNameMap,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,

@@ -13,11 +13,11 @@ use crate::read::magic_finder::{Forward, MagicFinder};
 use crate::read::readers::{ZipFileReader, ZipFileSeekReader};
 use crate::read::zipfile::{ZipFileEntry, ZipFileEntryWithDataDescriptor};
 use crate::read::{
-    ArchiveOffset, CentralDirectoryInfo, ZipArchiveFiles, ZipFile, ZipFileSeek, ZipReadOptions,
-    ZipWriterFiles, central_header_to_zip_file_inner,
+    ArchiveOffset, CentralDirectoryInfo, ZipFile, ZipFileSeek, ZipReadOptions,
+    central_header_to_zip_file_inner,
 };
 use crate::result::{ZipError, ZipResult};
-use crate::types::ZipFileData;
+use crate::types::{FilesByNameMap, ZipFileData};
 use crate::unstable::path_to_string;
 use core::mem;
 use core::ops::Range;
@@ -30,7 +30,7 @@ use std::sync::Arc;
 /// Immutable metadata about a `ZipArchive`.
 #[derive(Debug)]
 pub struct ZipArchiveMetadata {
-    pub(crate) files: ZipArchiveFiles,
+    pub(crate) files: FilesByNameMap,
     /// The raw file count (before inserting in the IndexMap) - used to detect duplicates
     pub(crate) raw_file_count: usize,
     pub(crate) offset: u64,
@@ -73,7 +73,7 @@ impl ZipArchiveMetadata {
 
 #[derive(Debug)]
 pub(crate) struct SharedBuilder {
-    pub(crate) files: ZipArchiveFiles,
+    pub(crate) files: FilesByNameMap,
     pub(crate) raw_file_count: usize,
     pub(super) offset: u64,
     pub(super) dir_start: u64,
@@ -143,7 +143,7 @@ pub struct ZipArchive<R> {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        mut files: ZipWriterFiles,
+        mut files: FilesByNameMap,
         comment: Box<[u8]>,
         zip64_extensible_data_sector: Option<Box<[u8]>>,
         reader: R,

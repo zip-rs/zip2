@@ -24,6 +24,7 @@ use crate::write::FileOptionExtension;
 use crate::write::FileOptions;
 use crate::{CompressionMethod, ZipReadOptions};
 
+use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Take};
@@ -730,3 +731,5 @@ mod tests {
         );
     }
 }
+
+pub(crate) type FilesByNameMap = IndexMap<Box<[u8]>, ZipFileData>;

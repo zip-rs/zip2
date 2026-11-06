@@ -8,7 +8,7 @@ use crate::format::blocks::{CentralDirectoryEndInfo, DataAndPosition, ZipCentral
 use crate::format::flags::{ZipFileFlags, ZipFlags};
 use crate::format::system::System;
 use crate::result::{ZipError, ZipResult, invalid};
-use crate::types::ZipFileData;
+use crate::types::{FilesByNameMap, ZipFileData};
 use indexmap::IndexMap;
 use std::io::{self, Read, Seek};
 use std::sync::OnceLock;
@@ -36,9 +36,6 @@ pub use zipfile::{ZipFile, ZipFileEntry, ZipFileEntryWithDataDescriptor, ZipFile
 
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};
-
-pub(crate) type ZipArchiveFiles = IndexMap<Box<[u8]>, ZipFileData>;
-pub(crate) type ZipWriterFiles = ZipArchiveFiles;
 
 #[cfg(feature = "aes-crypto")]
 pub use crate::aes::AesInfo;
@@ -103,7 +100,7 @@ impl<'a> TryFrom<&'a CentralDirectoryEndInfo> for CentralDirectoryInfo {
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
-    pub(crate) fn merge_contents<W: io::Write + Seek>(self, mut w: W) -> ZipResult<ZipWriterFiles> {
+    pub(crate) fn merge_contents<W: io::Write + Seek>(self, mut w: W) -> ZipResult<FilesByNameMap> {
         let Self { mut reader, shared } = self;
         if shared.files.is_empty() {
             return Ok(IndexMap::new());
@@ -112,7 +109,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         fn prepare_merge_files<I>(
             files: I,
             first_new_file_header_start: u64,
-        ) -> ZipResult<ZipWriterFiles>
+        ) -> ZipResult<FilesByNameMap>
         where
             I: Iterator<Item = (Box<[u8]>, ZipFileData)>,
         {
