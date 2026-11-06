@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.4.1](https://github.com/zip-rs/zip2/compare/v9.4.0...v9.4.1) - 2026-11-06
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Add a OwnedZipFileEntry for #177 ([#1270](https://github.com/zip-rs/zip2/pull/1270))
+
+### <!-- 2 -->🚜 Refactor
+
+- Use boxed slices instead of Vec when growability isn't needed ([#1271](https://github.com/zip-rs/zip2/pull/1271))
+
 ## [9.4.0](https://github.com/zip-rs/zip2/compare/v9.3.0...v9.4.0) - 2026-11-05
 
 ### <!-- 0 -->🚀 Features
