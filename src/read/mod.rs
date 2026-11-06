@@ -32,7 +32,9 @@ pub(crate) mod readers;
 pub(crate) mod zip_iterable;
 
 pub(crate) mod zipfile;
-pub use zipfile::{ZipFile, ZipFileEntry, ZipFileEntryWithDataDescriptor, ZipFileSeek};
+pub use zipfile::{
+    OwnedZipFileEntry, ZipFile, ZipFileEntry, ZipFileEntryWithDataDescriptor, ZipFileSeek,
+};
 
 pub(crate) mod zip_archive;
 pub use zip_archive::{ZipArchive, ZipArchiveMetadata};

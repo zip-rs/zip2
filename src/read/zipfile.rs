@@ -51,6 +51,21 @@ pub struct ZipFileEntry<'a> {
     pub(crate) data: Cow<'a, ZipFileData>,
 }
 
+/// Owned version of `ZipFileEntry`
+#[derive(Debug)]
+pub struct OwnedZipFileEntry {
+    pub(crate) file_name_raw: Box<[u8]>,
+    pub(crate) data: ZipFileData,
+}
+
+impl<'a> From<ZipFileEntry<'a>> for OwnedZipFileEntry {
+    fn from(entry: ZipFileEntry<'a>) -> Self {
+        Self {
+            file_name_raw: entry.file_name_raw.into_owned().into_boxed_slice(),
+            data: entry.data.into_owned(),
+        }
+    }
+}
 /// A struct for reading and seeking a zip file
 pub struct ZipFileSeek<'a, R> {
     pub(crate) file_name_raw: Cow<'a, [u8]>,
@@ -228,6 +243,24 @@ impl HasZipMetadata for ZipFileEntryWithDataDescriptor<'_> {
     }
 }
 
+impl HasZipMetadata for OwnedZipFileEntry {
+    fn get_metadata(&self) -> &ZipFileData {
+        &self.data
+    }
+}
+
+impl OwnedZipFileEntry {
+    zip_file_methods!();
+
+    /// Convert the owned type to a `ZipFileEntry`
+    pub fn as_ref(&self) -> ZipFileEntry<'_> {
+        ZipFileEntry {
+            file_name_raw: Cow::Borrowed(&self.file_name_raw),
+            data: Cow::Borrowed(&self.data),
+        }
+    }
+}
+
 impl<'a> ZipFileEntry<'a> {
     zip_file_methods!();
 
@@ -257,6 +290,14 @@ impl HasZipMetadata for ZipFileEntry<'_> {
 /// Methods for retrieving information on zip files
 impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
     zip_file_methods!();
+
+    /// get the corresponding entry
+    pub fn entry(&self) -> ZipFileEntry<'_> {
+        ZipFileEntry {
+            file_name_raw: Cow::Borrowed(self.file_name_raw.as_ref()),
+            data: Cow::Borrowed(self.data.as_ref()),
+        }
+    }
 
     pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
         replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
