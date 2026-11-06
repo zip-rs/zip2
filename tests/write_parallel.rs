@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 use tempfile::tempdir;
 use zip::CompressionMethod;
 use zip::write::SimpleFileOptions;

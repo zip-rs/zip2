@@ -29,7 +29,7 @@ use std::io::ErrorKind;
 use std::io::SeekFrom;
 use std::io::{self, Read, Seek, Write};
 #[cfg(feature = "rayon")]
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 use std::path::Path;
 
 pub(crate) mod options;
