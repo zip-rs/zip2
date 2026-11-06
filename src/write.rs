@@ -21,6 +21,8 @@ use crate::write::options::EncryptWith;
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
 use core::mem::{self, offset_of, replace, size_of, take};
+#[cfg(feature = "rayon")]
+use core::num::NonZeroUsize;
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
@@ -28,8 +30,6 @@ use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::SeekFrom;
 use std::io::{self, Read, Seek, Write};
-#[cfg(feature = "rayon")]
-use core::num::NonZeroUsize;
 use std::path::Path;
 
 pub(crate) mod options;
