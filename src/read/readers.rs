@@ -50,7 +50,7 @@ impl<R: Seek + ?Sized> Seek for SeekableTake<'_, R> {
                 "invalid seek to a negative or overflowing position",
             )),
             Some(offset) => {
-                let clamped_offset = std::cmp::min(self.length, offset);
+                let clamped_offset = core::cmp::min(self.length, offset);
                 // `new` checked that `inner_starting_offset + length` fits.
                 self.inner
                     .seek(SeekFrom::Start(self.inner_starting_offset + clamped_offset))?;
