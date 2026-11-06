@@ -59,7 +59,6 @@ unsafe impl GlobalAlloc for PeakCountingAllocator {
                 LIVE.fetch_sub(size_change.unsigned_abs(), Relaxed);
                 REALLOC_COUNT.fetch_add(1, Relaxed);
                 REALLOC_BYTES.fetch_add(size_change, Relaxed);
-                DEALLOC_BYTES.fetch_add(layout.size(), Relaxed);
             }
             Greater => {
                 let live = LIVE.fetch_add(size_change.unsigned_abs(), Relaxed)
@@ -67,7 +66,6 @@ unsafe impl GlobalAlloc for PeakCountingAllocator {
                 PEAK.fetch_max(live, Relaxed);
                 REALLOC_COUNT.fetch_add(1, Relaxed);
                 REALLOC_BYTES.fetch_add(size_change, Relaxed);
-                ALLOC_BYTES.fetch_add(new_size, Relaxed);
             }
             Equal => {}
         }
@@ -189,11 +187,10 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
         }
     }
     let mut sink = DecompressionSink(std::io::sink());
-    let zip_data_for_iterate_body = get_zip_data()?;
-    check_memory("ZipIterable::new()", get_zip_data()?, |data| {
-        let mut zip_iterable = zip::unstable::read::ZipIterable::try_new(data, Config::default())?;
+    check_memory("ZipIterable::new()", (get_zip_data()?, get_zip_data()?), |(header_reader, body_reader)| {
+        let mut zip_iterable = zip::unstable::read::ZipIterable::try_new(header_reader, Config::default())?;
         let mut entries =
-            zip_iterable.files_with_reader(zip_data_for_iterate_body, ZipReadOptions::default())?;
+            zip_iterable.files_with_reader(body_reader, ZipReadOptions::default())?;
         while let Some(entry) = entries.next() {
             copy(&mut entry?, &mut sink)?;
         }
