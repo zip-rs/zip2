@@ -106,6 +106,13 @@ impl<R: Read + Seek> ZipArchive<R> {
             return Ok(IndexMap::new());
         }
 
+        /* The first file header will probably start at the beginning of the file, but zip doesn't
+         * enforce that, and executable zips like PEX files will have a shebang line so will
+         * definitely be greater than 0.
+         *
+         * assert_eq!(0, new_files[0].header_start); // Avoid this.
+         */
+
         fn prepare_merge_files<I>(
             files: I,
             first_new_file_header_start: u64,
@@ -152,12 +159,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                 shared.dir_start,
             ),
         };
-        /* The first file header will probably start at the beginning of the file, but zip doesn't
-         * enforce that, and executable zips like PEX files will have a shebang line so will
-         * definitely be greater than 0.
-         *
-         * assert_eq!(0, new_files[0].header_start); // Avoid this.
-         */
 
         /* Rewind to the beginning of the file.
          *
