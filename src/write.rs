@@ -20,7 +20,7 @@ use crate::write::options::EncryptWith;
 
 use core::default::Default;
 use core::fmt::{Debug, Formatter};
-use core::mem::{self, offset_of, size_of};
+use core::mem::{self, offset_of, replace, size_of, take};
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
@@ -2964,7 +2964,49 @@ fn update_aes_extra_field<W: Write + Seek>(
 
 impl ZipFileData {
     fn replace_zip64_extra_field(&mut self, zip64: Option<ExtraField>) {
-        let mut inner = std::mem::take(&mut self.extra_fields.inner).into_vec();
+        if let Some(ExtraField::Zip64ExtendedInformation(new_zip64)) = zip64.as_ref() {
+            let new_zip64 = *new_zip64;
+            if self.extra_fields.inner.is_empty() {
+                self.extra_fields.inner =
+                    Box::new([ExtraField::Zip64ExtendedInformation(new_zip64)]);
+                return;
+            }
+            if let Some(ExtraField::Zip64ExtendedInformation(old_zip64)) =
+                self.extra_fields.inner.first_mut()
+            {
+                *old_zip64 = new_zip64;
+                return;
+            }
+            if let Some(zip64_index) =
+                self.extra_fields
+                    .inner
+                    .iter()
+                    .enumerate()
+                    .skip(1)
+                    .find_map(|(index, field)| {
+                        matches!(field, ExtraField::Zip64ExtendedInformation(_)).then_some(index)
+                    })
+            {
+                let moved_field = replace(
+                    &mut self.extra_fields.inner[0],
+                    ExtraField::Zip64ExtendedInformation(new_zip64),
+                );
+                self.extra_fields.inner[zip64_index] = moved_field;
+                return;
+            }
+        }
+
+        if zip64.is_none()
+            && !self
+                .extra_fields
+                .inner
+                .iter()
+                .any(|field| matches!(field, ExtraField::Zip64ExtendedInformation(_)))
+        {
+            return;
+        }
+
+        let mut inner = take(&mut self.extra_fields.inner).into_vec();
         inner.retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation(_)));
         if let Some(zip64) = zip64 {
             inner.insert(0, zip64);
