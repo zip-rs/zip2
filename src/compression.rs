@@ -1,15 +1,16 @@
 //! Possible ZIP compression methods.
 
 use crate::format::compression::Compression;
-use crate::result::ZipError;
+use crate::result::{ReadWithAuthenticationError, ZipError, ZipResult};
 use core::fmt;
 use core::fmt::Debug;
 use core::fmt::Formatter;
 use core::mem::replace;
 use core::panic::RefUnwindSafe;
 use std::io;
-use std::io::{BufRead, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::panic::UnwindSafe;
+use crate::read::readers::{CryptoReader, ReadToEndAuthenticated};
 
 #[allow(deprecated)]
 /// Identifies the storage format used to compress a file within a ZIP archive.
@@ -538,15 +539,17 @@ fn instantiate<R: BufRead>(
     }
 }
 
-impl<R: BufRead> Read for LazyDecompressor<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut decompressor = match replace(self, LazyDecompressor::Failed(None)) {
+impl <R: BufRead> LazyDecompressor<R> {
+    pub(crate) fn initialize_inner(&mut self) -> io::Result<&mut Decompressor<R>> {
+        let decompressor = match replace(self, LazyDecompressor::Failed(None)) {
             LazyDecompressor::Initialized(decompressor) => decompressor,
-            LazyDecompressor::Uninitialized { inner, parameters } => instantiate(inner, parameters)
-                .map_err(|(error, inner)| {
-                    *self = LazyDecompressor::Failed(inner);
-                    error
-                })?,
+            LazyDecompressor::Uninitialized { inner, parameters } => {
+                instantiate(inner, parameters)
+                    .map_err(|(error, inner)| {
+                        *self = LazyDecompressor::Failed(inner);
+                        error
+                    })?
+            },
             LazyDecompressor::Failed(inner) => {
                 *self = LazyDecompressor::Failed(inner);
                 return Err(io::Error::other(
@@ -554,9 +557,15 @@ impl<R: BufRead> Read for LazyDecompressor<R> {
                 ));
             }
         };
-        let result = decompressor.read(buf);
         *self = LazyDecompressor::Initialized(decompressor);
-        result
+        let LazyDecompressor::Initialized(decompressor) = self else { unreachable!() };
+        Ok(decompressor)
+    }
+}
+
+impl<R: BufRead> Read for LazyDecompressor<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.initialize_inner()?.read(buf)
     }
 }
 
@@ -640,6 +649,12 @@ impl<R: BufRead> Read for Decompressor<R> {
             #[cfg(feature = "legacy-zip")]
             Decompressor::Implode(r) => r.read(buf),
         }
+    }
+}
+
+impl <R: BufRead> ReadToEndAuthenticated for Decompressor<BufReader<CryptoReader<'_, R>>> {
+    fn read_to_end_authenticated(&mut self, buf: &mut Vec<u8>, rollback_on_error: bool) -> Result<usize, ReadWithAuthenticationError> {
+        todo!()
     }
 }
 

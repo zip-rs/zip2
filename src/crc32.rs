@@ -1,8 +1,11 @@
 //! Helper module to compute a CRC32 checksum
 
-use std::io::{self, Read};
+use std::io::{self, BufRead, Read};
 
 use crc32fast::Hasher;
+use crate::compression::LazyDecompressor;
+use crate::read::readers::{CryptoReader, ReadToEndAuthenticated};
+use crate::result::ReadWithAuthenticationError;
 
 /// Reader that validates the CRC32 when it reaches the EOF, and that fails as soon as the
 /// data grows past the declared uncompressed size.
@@ -67,6 +70,12 @@ impl<R> Crc32Reader<R> {
     pub(crate) fn is_at_limit(&self) -> bool {
         self.size_limit
             .is_some_and(|limit| self.bytes_read >= limit)
+    }
+}
+
+impl <R: ?Sized + Read> ReadToEndAuthenticated for Crc32Reader<CryptoReader<'_, R>> {
+    fn read_to_end_authenticated(&mut self, buf: &mut Vec<u8>, rollback_on_error: bool) -> Result<usize, ReadWithAuthenticationError> {
+        self.inner.read_to_end_authenticated(buf, rollback_on_error)
     }
 }
 

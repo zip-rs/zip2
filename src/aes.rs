@@ -6,7 +6,7 @@
 
 use crate::aes_ctr::AesCipher;
 use crate::format::aes::AesMode;
-use crate::result::{ZipResult, invalid};
+use crate::result::{ZipResult, invalid, ReadWithAuthenticationError};
 use crate::{aes_ctr, result::ZipError};
 use constant_time_eq::constant_time_eq;
 use hmac::{KeyInit, Mac, SimpleHmacReset};
@@ -344,31 +344,41 @@ impl<R: Read> AesReaderValid<R> {
     /// Read all remaining authenticated data into `buf`.
     ///
     /// Buffers the ciphertext and verifies HMAC before exposing plaintext to the caller.
-    /// If verification fails, `buf` remains unmodified and an authentication error is returned.
+    /// If verification fails and `rollback_on_error` is true,
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn read_to_end_authenticated(
         &mut self,
         buf: &mut Vec<u8>,
         rollback_on_error: bool,
-    ) -> io::Result<usize> {
+    ) -> Result<usize, ReadWithAuthenticationError> {
+        fn out_of_memory_error<E: Into<Box<dyn core::error::Error + Send + Sync>> + Sized>(e: E) -> ReadWithAuthenticationError {
+            ReadWithAuthenticationError::ZipError(ZipError::Io(Error::new(
+                ErrorKind::OutOfMemory,
+                e,
+            )))
+        }
+
+        if self.finalized && self.authenticated {
+            return Ok(0);
+        }
         let initial_len = buf.len();
         let initial_capacity = buf.capacity();
         let needed = usize::try_from(self.data_remaining)
-            .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, e))?;
+            .map_err(out_of_memory_error)?;
 
         if needed > 0 {
             buf.try_reserve_exact(needed)
-                .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, e))?;
+                .map_err(out_of_memory_error)?;
         }
-        let read_result = self.read_to_end(buf);
+        let read_result = self.reader.read_to_end(buf);
         match read_result {
             Ok(bytes_read) => {
-                if !self.authenticated {
+                if self.finish().is_err() {
                     if rollback_on_error {
                         buf.truncate(initial_len);
                         buf.shrink_to(initial_capacity);
                     }
-                    return Err(auth_error());
+                    return Err(ReadWithAuthenticationError::InvalidAuthenticationCode);
                 }
                 Ok(bytes_read)
             }
@@ -377,7 +387,7 @@ impl<R: Read> AesReaderValid<R> {
                     buf.truncate(initial_len);
                     buf.shrink_to(initial_capacity);
                 }
-                Err(e)
+                Err(ReadWithAuthenticationError::ZipError(ZipError::Io(e)))
             }
         }
     }
@@ -522,6 +532,7 @@ mod tests {
         format::aes::AesMode,
         result::ZipError,
     };
+    use crate::result::ReadWithAuthenticationError;
 
     /// Checks whether `AesReader` can successfully decrypt what `AesWriter` produces.
     fn roundtrip(aes_mode: AesMode, password: &[u8], plaintext: &[u8]) -> Result<bool, ZipError> {
@@ -704,9 +715,7 @@ mod tests {
         let err = reader_tampered
             .read_to_end_authenticated(&mut out_rolled_back, true)
             .unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert_eq!(out_rolled_back.len(), initial_len);
-        assert_eq!(out_rolled_back, b"initial_prefix_");
+        assert!(matches!(err, ReadWithAuthenticationError::InvalidAuthenticationCode));
 
         // 3. Tampered ciphertext with rollback_on_error = false
         let mut cur_tampered2 = io::Cursor::new(tampered_bytes);
@@ -719,7 +728,7 @@ mod tests {
         let err2 = reader_tampered2
             .read_to_end_authenticated(&mut out_retained, false)
             .unwrap_err();
-        assert_eq!(err2.kind(), io::ErrorKind::InvalidData);
+        assert!(matches!(err2, ReadWithAuthenticationError::InvalidAuthenticationCode));
         assert!(out_retained.len() > initial_len);
     }
 }

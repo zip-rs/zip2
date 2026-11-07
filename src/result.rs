@@ -47,6 +47,14 @@ pub enum ZipError {
     DecompressedSizeUnknown,
 }
 
+/// Error type for ``
+#[derive(Debug)]
+pub enum ReadWithAuthenticationError {
+    ZipError(ZipError),
+    InvalidAuthenticationCode,
+    NoAuthentication,
+}
+
 impl ZipError {
     /// The text used as an error when a password is required and not supplied
     ///

@@ -2,7 +2,7 @@
 
 use crate::compression::{CompressionMethod, InstantiationParameters, LazyDecompressor};
 use crate::crc32::Crc32Reader;
-use crate::result::{ZipError, ZipResult};
+use crate::result::{invalid, ReadWithAuthenticationError, ZipError, ZipResult};
 use crate::types::ZipFileData;
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -125,6 +125,19 @@ impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
 }
 
 impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
+
+    pub fn read_to_end_authenticated(
+        &mut self,
+        buf: &mut Vec<u8>,
+        rollback_on_error: bool,
+    ) -> Result<usize, ReadWithAuthenticationError> {
+        match self {
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader } => reader.read_to_end_authenticated(buf, rollback_on_error),
+            _ => Err(ReadWithAuthenticationError::NoAuthentication),
+        }
+    }
+
     fn is_aes(&self) -> bool {
         #[cfg(feature = "aes-crypto")]
         if let CryptoReader::Aes { .. } = self {
@@ -240,6 +253,47 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
                 }
                 Ok(())
             }
+        }
+    }
+}
+
+pub trait ReadToEndAuthenticated {
+    fn read_to_end_authenticated(
+        &mut self,
+        buf: &mut Vec<u8>,
+        rollback_on_error: bool,
+    ) -> Result<usize, ReadWithAuthenticationError>;
+}
+
+impl <'a, R: Read + ?Sized> ReadToEndAuthenticated for CryptoReader<'a, R> {
+    fn read_to_end_authenticated(
+        &mut self,
+        buf: &mut Vec<u8>,
+        rollback_on_error: bool,
+    ) -> Result<usize, ReadWithAuthenticationError> {
+        match self {
+            #[cfg(feature = "aes-crypto")]
+            CryptoReader::Aes { reader } => reader.read_to_end_authenticated(buf, rollback_on_error),
+            _ => Err(ReadWithAuthenticationError::NoAuthentication),
+        }
+    }
+}
+
+impl <'a, R: Read + ?Sized> ReadToEndAuthenticated for ZipFileReader<'a, R> {
+    fn read_to_end_authenticated(
+        &mut self,
+        buf: &mut Vec<u8>,
+        rollback_on_error: bool,
+    ) -> Result<usize, ReadWithAuthenticationError> {
+        match self {
+            ZipFileReader::NoReader | ZipFileReader::Raw(_) => Err(ReadWithAuthenticationError::ZipError(invalid!(
+                "ZipFileReader was in an invalid state",
+            ))),
+            ZipFileReader::Stored(r) => r.read_to_end_authenticated(buf, rollback_on_error),
+            ZipFileReader::Compressed(r) => Err(ReadWithAuthenticationError::NoAuthentication),
+            ZipFileReader::CompressedAes(r) => r.inner().initialize_inner()
+                .map_err(|e| ReadWithAuthenticationError::ZipError(ZipError::Io(e)))?
+                .read_to_end_authenticated(buf, rollback_on_error),
         }
     }
 }
