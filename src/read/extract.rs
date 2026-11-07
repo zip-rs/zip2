@@ -152,9 +152,14 @@ pub(crate) fn make_symlink_impl<T>(
     let target = Path::new(OsStr::new(&target_str));
     let target_is_dir_from_archive =
         is_dir(target_str.as_bytes()) && existing_files.contains_key(target_str.as_bytes());
+    let resolved_target = if target.is_relative() {
+        outpath.parent().map(|p| p.join(target)).unwrap_or_else(|| target.to_path_buf())
+    } else {
+        target.to_path_buf()
+    };
     let target_is_dir = if target_is_dir_from_archive {
         true
-    } else if let Ok(meta) = std::fs::metadata(target) {
+    } else if let Ok(meta) = std::fs::metadata(&resolved_target) {
         meta.is_dir()
     } else {
         false
@@ -240,6 +245,18 @@ pub(crate) fn make_symlink<T>(
                 Ok(canonical) => {
                     if !canonical.starts_with(base) {
                         return Err(invalid!("Path escapes the destination directory"));
+                    }
+                    #[cfg(windows)]
+                    for component in rest.components() {
+                        if let std::path::Component::Normal(s) = component
+                            && let Some(s_str) = s.to_str()
+                            && crate::path::is_windows_invalid_component(s_str)
+                        {
+                            return Err(invalid!(
+                                "Symlink component is invalid or reserved on Windows: {:?}",
+                                s_str
+                            ));
+                        }
                     }
                 }
                 Err(_) => {

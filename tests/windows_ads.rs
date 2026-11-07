@@ -78,3 +78,41 @@ fn test_windows_ads_stream_creation() -> Result<(), Box<dyn core::error::Error>>
 
     Ok(())
 }
+
+
+#[cfg(all(windows, not(miri)))]
+#[test]
+fn test_windows_ads_variants_rejected() {
+    use std::io::Cursor;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let ads_cases = [
+        "payload.exe:Zone.Identifier",
+        "data.txt::$DATA",
+        "folder:stream/nested.txt",
+        "a/b/c:stream",
+        "target.bin:hidden:$DATA",
+        "file.txt:Zone.Identifier:$DATA",
+    ];
+
+    for name in ads_cases {
+        let mut zip_data = Vec::new();
+        {
+            let mut zip = ZipWriter::new(Cursor::new(&mut zip_data));
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            zip.start_file(name, options).unwrap();
+            std::io::Write::write_all(&mut zip, b"ads_payload").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(zip_data)).unwrap();
+        let file = archive.by_index(0).unwrap();
+        assert_eq!(
+            file.enclosed_name(),
+            None,
+            "Alternate Data Stream {name:?} must be rejected by enclosed_name()"
+        );
+    }
+}

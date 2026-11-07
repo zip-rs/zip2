@@ -14,7 +14,7 @@ zip = \"="]
 use std::borrow::Cow;
 use std::io;
 use std::io::Read;
-use std::path::{Component, MAIN_SEPARATOR, Path};
+use std::path::{Component, Path};
 
 /// Provides high level API for reading from a stream.
 pub mod stream {
@@ -98,18 +98,20 @@ pub fn path_to_string<T: AsRef<Path>>(path: T) -> Result<Box<str>, std::io::Erro
         if original.is_empty() || original == "." || original == ".." {
             return Ok(String::new().into_boxed_str());
         }
-        if original.starts_with(MAIN_SEPARATOR) {
-            if original.len() == 1 {
-                return Ok(MAIN_SEPARATOR.to_string().into_boxed_str());
-            } else if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
-                && !original.ends_with('.')
-                && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR])
-                && !original.contains([MAIN_SEPARATOR, '.', MAIN_SEPARATOR])
-                && !original.contains([MAIN_SEPARATOR, '.', '.', MAIN_SEPARATOR])
+        if original == "/" || original == "\\" {
+            return Ok("/".to_string().into_boxed_str());
+        }
+        if original.starts_with('/') || original.starts_with('\\') {
+            let rest = &original[1..];
+            if !rest.contains('/')
+                && !rest.contains('\\')
+                && !rest.ends_with('.')
+                && rest != "."
+                && rest != ".."
             {
-                maybe_original = Some(&original[1..]);
+                maybe_original = Some(rest);
             }
-        } else if !original.contains(MAIN_SEPARATOR) {
+        } else if !original.contains('/') && !original.contains('\\') {
             return Ok(original.into());
         }
     }

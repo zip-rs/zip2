@@ -230,4 +230,65 @@ pub mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_path_to_string_normalizes_parent_components() {
+        use zip::unstable::path_to_string;
+
+        let cases = [
+            ("a/b/../c", "a/c"),
+            ("a/b/../../c", "c"),
+            ("foo/./bar", "foo/bar"),
+            ("a/b/c/../../d", "a/d"),
+        ];
+
+        for (input, expected) in cases {
+            let res = path_to_string(input).expect("path_to_string failed");
+            assert_eq!(
+                res.as_ref(),
+                expected,
+                "Input {input:?} did not normalize to {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_path_to_string_strips_leading_parent_traversal() {
+        use zip::unstable::path_to_string;
+
+        let traversal_cases = [
+            ("../../etc/passwd", "etc/passwd"),
+            ("../../../var/log/syslog", "var/log/syslog"),
+            ("a/../../../../root/flag.txt", "root/flag.txt"),
+        ];
+
+        for (input, expected) in traversal_cases {
+            let res = path_to_string(input).expect("path_to_string execution");
+            assert_eq!(
+                res.as_ref(),
+                expected,
+                "Traversal input {input:?} must be normalized to root-relative path {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_path_to_string_handles_absolute_and_drive_prefixes() {
+        use zip::unstable::path_to_string;
+
+        let cases = [
+            ("/etc/shadow", "etc/shadow"),
+            ("C:\\Windows\\System32\\cmd.exe", "Windows/System32/cmd.exe"),
+            (r"\\server\share\secret.docx", "secret.docx"),
+        ];
+
+        for (input, expected) in cases {
+            let res = path_to_string(input).expect("path_to_string execution");
+            assert_eq!(
+                res.as_ref(),
+                expected,
+                "Input {input:?} failed to normalize cleanly to {expected:?}"
+            );
+        }
+    }
 }

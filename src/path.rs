@@ -61,22 +61,19 @@ pub(crate) fn is_windows_reserved_device_name(name: &str) -> bool {
         .split(['.', ':'])
         .next()
         .unwrap_or(name)
-        .trim_end_matches([' ', '.']);
+        .trim_end_matches([' ', '.'])
+        .to_ascii_uppercase();
 
-    if stem.eq_ignore_ascii_case("CON")
-        || stem.eq_ignore_ascii_case("PRN")
-        || stem.eq_ignore_ascii_case("AUX")
-        || stem.eq_ignore_ascii_case("NUL")
-        || stem.eq_ignore_ascii_case("CONIN$")
-        || stem.eq_ignore_ascii_case("CONOUT$")
-        || stem.eq_ignore_ascii_case("CLOCK$")
-    {
+    if matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" | "CLOCK$" | "CONFIG$"
+    ) {
         return true;
     }
 
     if stem.len() >= 4 && stem.is_char_boundary(3) {
         let (prefix, rest) = stem.split_at(3);
-        if prefix.eq_ignore_ascii_case("COM") || prefix.eq_ignore_ascii_case("LPT") {
+        if matches!(prefix, "COM" | "LPT") {
             let mut chars = rest.chars();
             if let Some(c) = chars.next()
                 && chars.next().is_none()

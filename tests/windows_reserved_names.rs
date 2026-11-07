@@ -38,6 +38,8 @@ fn test_windows_reserved_device_names_rejected_in_enclosed_name() {
         "CONOUT$",
         "CLOCK$",
         "clock$.log",
+        "CONFIG$",
+        "config$.sys",
         "COM¹",
         "COM¹.dat",
         "COM²",

@@ -259,3 +259,36 @@ fn test_windows_delete_by_handle() {
     assert_eq!(std::fs::read(&file2).unwrap(), b"new file");
     assert_eq!(std::fs::read(&file1).unwrap(), b"hello");
 }
+
+
+#[test]
+#[cfg(not(miri))]
+fn test_zip_slip_relative_traversal_rejected_by_extract() {
+    use std::io::{Cursor, Write};
+    use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let temp = tempdir().unwrap();
+    let dest = temp.path().join("dest");
+    std::fs::create_dir(&dest).unwrap();
+
+    let mut zip_data = Vec::new();
+    {
+        let mut zip = ZipWriter::new(Cursor::new(&mut zip_data));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file("../../escaped_file.txt", options).unwrap();
+        zip.write_all(b"escaped_content").unwrap();
+        zip.finish().unwrap();
+    }
+
+    let mut archive = ZipArchive::new(Cursor::new(zip_data)).unwrap();
+    let res = archive.extract(&dest);
+
+    let outside_victim = temp.path().join("escaped_file.txt");
+    assert!(
+        !outside_victim.exists(),
+        "Zip slip escaped the extraction root! Found at {outside_victim:?}"
+    );
+    let _ = res;
+}
