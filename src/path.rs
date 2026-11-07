@@ -57,12 +57,19 @@ fn split_drive_prefix(component: &str) -> [Option<Utf8WindowsComponent<'_>>; 2] 
 /// (e.g. `CON.txt`, `aux.json`, `nul.dat` map to console, null, or hardware ports).
 #[cfg(windows)]
 pub(crate) fn is_windows_reserved_device_name(name: &str) -> bool {
-    let stem = name
+    let Some(stem) = name
         .split(['.', ':'])
-        .next()
-        .unwrap_or(name)
-        .trim_end_matches([' ', '.'])
-        .to_ascii_uppercase();
+        .next() else {
+        return false;
+    };
+    if stem.len() < 3 {
+        return false;
+    }
+    let stem = stem.trim_end_matches([' ', '.']);
+    if stem.len() < 3 || stem.len() > 7 {
+        return false;
+    }
+    let stem = stem.to_ascii_uppercase();
 
     if matches!(
         stem.as_str(),
@@ -77,7 +84,7 @@ pub(crate) fn is_windows_reserved_device_name(name: &str) -> bool {
             let mut chars = rest.chars();
             if let Some(c) = chars.next()
                 && chars.next().is_none()
-                && ((b'1'..=b'9').contains(&(c as u8)) || matches!(c, '¹' | '²' | '³'))
+                && matches!(c, '1'..='9' | '¹' | '²' | '³' | '⁴'..='⁹')
             {
                 return true;
             }
@@ -827,7 +834,7 @@ mod tests {
         for name in [
             "CON", "con", "Con", "PRN", "prn", "AUX", "aux", "NUL", "nul", "CONIN$", "conin$",
             "CONOUT$", "conout$", "CLOCK$", "clock$", "COM1", "com1", "COM9", "com9", "LPT1",
-            "lpt1", "LPT9", "lpt9", "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³",
+            "lpt1", "LPT9", "lpt9", "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³", "Lpt⁴", "COM⁹",
         ] {
             assert!(
                 is_windows_reserved_device_name(name),

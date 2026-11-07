@@ -79,7 +79,6 @@ fn test_windows_ads_stream_creation() -> Result<(), Box<dyn core::error::Error>>
     Ok(())
 }
 
-
 #[cfg(all(windows, not(miri)))]
 #[test]
 fn test_windows_ads_variants_rejected() {

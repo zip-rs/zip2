@@ -153,7 +153,10 @@ pub(crate) fn make_symlink_impl<T>(
     let target_is_dir_from_archive =
         is_dir(target_str.as_bytes()) && existing_files.contains_key(target_str.as_bytes());
     let resolved_target = if target.is_relative() {
-        outpath.parent().map(|p| p.join(target)).unwrap_or_else(|| target.to_path_buf())
+        outpath
+            .parent()
+            .map(|p| p.join(target))
+            .unwrap_or_else(|| target.to_path_buf())
     } else {
         target.to_path_buf()
     };
