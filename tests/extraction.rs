@@ -260,7 +260,6 @@ fn test_windows_delete_by_handle() {
     assert_eq!(std::fs::read(&file1).unwrap(), b"hello");
 }
 
-
 #[test]
 #[cfg(not(miri))]
 fn test_zip_slip_relative_traversal_rejected_by_extract() {
