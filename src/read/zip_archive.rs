@@ -855,6 +855,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// There are many passwords out there that will also pass the validity checks
     /// we are able to perform. This is a weakness of the `ZipCrypto` algorithm,
     /// due to its fairly primitive approach to cryptography.
+    ///
+    /// AES HMAC authentication is only performed once the end of the file is read. If any read
+    /// method returns an error, the file may have been tampered with. `ZipCrypto` provides no
+    /// authentication at all.
     pub fn by_index_decrypt(
         &mut self,
         file_number: usize,
