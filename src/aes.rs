@@ -341,6 +341,47 @@ impl<R: Read> AesReaderValid<R> {
         Ok(())
     }
 
+    /// Read all remaining authenticated data into `buf`.
+    ///
+    /// Buffers the ciphertext and verifies HMAC before exposing plaintext to the caller.
+    /// If verification fails, `buf` remains unmodified and an authentication error is returned.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn read_to_end_authenticated(
+        &mut self,
+        buf: &mut Vec<u8>,
+        rollback_on_error: bool,
+    ) -> io::Result<usize> {
+        let initial_len = buf.len();
+        let initial_capacity = buf.capacity();
+        let needed = usize::try_from(self.data_remaining)
+            .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, e))?;
+
+        if needed > 0 {
+            buf.try_reserve_exact(needed)
+                .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, e))?;
+        }
+        let read_result = self.read_to_end(buf);
+        match read_result {
+            Ok(bytes_read) => {
+                if !self.authenticated {
+                    if rollback_on_error {
+                        buf.truncate(initial_len);
+                        buf.shrink_to(initial_capacity);
+                    }
+                    return Err(auth_error());
+                }
+                Ok(bytes_read)
+            }
+            Err(e) => {
+                if rollback_on_error {
+                    buf.truncate(initial_len);
+                    buf.shrink_to(initial_capacity);
+                }
+                Err(e)
+            }
+        }
+    }
+
     /// Consumes this decoder, returning the underlying reader.
     pub fn into_inner(self) -> R {
         self.reader
@@ -618,5 +659,67 @@ mod tests {
         let mut decrypted = Vec::new();
         reader3.read_to_end(&mut decrypted).unwrap();
         assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_read_to_end_authenticated_success_and_tampered_rollback() {
+        let plaintext = vec![0x42u8; 128 * 1024]; // 128 KiB to test multi-chunk reads
+        let password = b"authenticated_password_999";
+
+        let mut buf = io::Cursor::new(vec![]);
+        {
+            let mut writer =
+                AesWriter::new_with_options(&mut buf, AesMode::Aes256, password, None).unwrap();
+            writer.write_all(&plaintext).unwrap();
+            writer.finish().unwrap();
+        }
+
+        let encrypted_bytes = buf.into_inner();
+        let compressed_length = encrypted_bytes.len() as u64;
+
+        // 1. Success case
+        let mut cur = io::Cursor::new(encrypted_bytes.clone());
+        let mut reader = AesReader::new(&mut cur, AesMode::Aes256, compressed_length)
+            .unwrap()
+            .validate(password)
+            .unwrap();
+        let mut out = Vec::new();
+        let bytes_read = reader.read_to_end_authenticated(&mut out, true).unwrap();
+        assert_eq!(bytes_read, plaintext.len());
+        assert_eq!(out, plaintext);
+
+        // 2. Tampered ciphertext with rollback_on_error = true
+        let mut tampered_bytes = encrypted_bytes.clone();
+        // Tamper a byte at the end of the ciphertext payload
+        let payload_last_byte = tampered_bytes.len() - super::AUTH_CODE_LENGTH - 1;
+        tampered_bytes[payload_last_byte] ^= 0xFF;
+        let mut cur_tampered = io::Cursor::new(tampered_bytes.clone());
+        let mut reader_tampered =
+            AesReader::new(&mut cur_tampered, AesMode::Aes256, compressed_length)
+                .unwrap()
+                .validate(password)
+                .unwrap();
+        let mut out_rolled_back = b"initial_prefix_".to_vec();
+        let initial_len = out_rolled_back.len();
+        let err = reader_tampered
+            .read_to_end_authenticated(&mut out_rolled_back, true)
+            .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(out_rolled_back.len(), initial_len);
+        assert_eq!(out_rolled_back, b"initial_prefix_");
+
+        // 3. Tampered ciphertext with rollback_on_error = false
+        let mut cur_tampered2 = io::Cursor::new(tampered_bytes);
+        let mut reader_tampered2 =
+            AesReader::new(&mut cur_tampered2, AesMode::Aes256, compressed_length)
+                .unwrap()
+                .validate(password)
+                .unwrap();
+        let mut out_retained = b"initial_prefix_".to_vec();
+        let err2 = reader_tampered2
+            .read_to_end_authenticated(&mut out_retained, false)
+            .unwrap_err();
+        assert_eq!(err2.kind(), io::ErrorKind::InvalidData);
+        assert!(out_retained.len() > initial_len);
     }
 }

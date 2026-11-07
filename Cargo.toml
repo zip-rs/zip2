@@ -27,7 +27,7 @@ arbitrary = { version = "1.4", features = ["derive"], optional = true }
 aes = { version = "0.9", optional = true, features = ["zeroize"] }
 bzip2 = { version = "0.6", default-features = false, optional = true }
 chrono = { version = "^0.4.27", optional = true, default-features = false, features = ["std"] }
-constant_time_eq = { version = "^0.6.1", optional = true }
+constant_time_eq = "^0.6.1"
 crc32fast = "1.5"
 flate2 = { version = "1.1", default-features = false, optional = true }
 hmac = { version = "0.13", optional = true, features = ["zeroize"] }
@@ -38,7 +38,7 @@ nt-time = { version = "0.13", default-features = false, optional = true }
 ppmd-rust = { version = "1.5", optional = true }
 pbkdf2 = { version = "0.13", optional = true }
 sha1 = { version = "0.11", optional = true }
-zeroize = { version = "1.9", optional = true }
+zeroize = { version = "1.9", features = ["derive"] }
 zstd = { version = "^0.14.2", optional = true, default-features = false }
 zopfli = { version = "^0.8.3", optional = true }
 deflate64 = { version = "^0.1.10", optional = true }
@@ -92,7 +92,7 @@ rayon = "1.11"
 [features]
 rayon = ["dep:rayon"]
 _arbitrary = ["dep:arbitrary"]
-aes-crypto = ["dep:aes", "dep:constant_time_eq", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1", "dep:zeroize"]
+aes-crypto = ["dep:aes", "getrandom/std", "dep:hmac", "dep:pbkdf2", "dep:sha1"]
 chrono = ["dep:chrono"]
 _deflate-any = []
 deflate = ["deflate-zopfli", "deflate-flate2-zlib-rs"]
@@ -102,9 +102,6 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
-# Deprecated: This is a formerly-optional dependency that pre-dates the "dep:" syntax for optional dependencies that aren't features.
-# It will be removed in 10.0.0.
-getrandom = []
 jiff-02 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
@@ -154,6 +151,12 @@ deflate-flate2-zlib = ["deflate-flate2", "flate2/zlib"]
 deflate-flate2-zlib-ng = ["deflate-flate2", "flate2/zlib-ng"]
 # Pull in flate2 and the zlib-ng backend with a zlib-compatible API
 deflate-flate2-zlib-ng-compat = ["deflate-flate2", "flate2/zlib-ng-compat"]
+
+
+# Deprecated: Formerly-optional dependencies retained as dummy features for backwards compatibility.
+constant_time_eq = []
+getrandom = []
+zeroize = []
 
 [[bench]]
 name = "deflate_alloc"

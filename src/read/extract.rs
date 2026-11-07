@@ -813,7 +813,18 @@ impl<R: Read + Seek> ZipArchive<R> {
                         let _ = outfile.set_len(actual_len);
                     }
                 }
-                copy_res?;
+                if let Err(e) = copy_res {
+                    drop(outfile);
+                    if let Err(err) = std::fs::remove_file(&outpath)
+                        && err.kind() != std::io::ErrorKind::NotFound
+                    {
+                        eprintln!(
+                            "extract: failed to remove unauthenticated partial file {}: {err:?}",
+                            outpath.display()
+                        );
+                    }
+                    return Err(e.into());
+                }
                 #[cfg(unix)]
                 if let Some(mode) = file.unix_mode() {
                     // OpenOptions::mode only applies when the file is created. Record modes
@@ -1111,7 +1122,18 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                                 let _ = outfile.set_len(actual_len);
                             }
                         }
-                        copy_res?;
+                        if let Err(e) = copy_res {
+                            drop(outfile);
+                            if let Err(err) = std::fs::remove_file(&outpath)
+                                && err.kind() != std::io::ErrorKind::NotFound
+                            {
+                                eprintln!(
+                                    "extract: failed to remove unauthenticated partial file {}: {err:?}",
+                                    outpath.display()
+                                );
+                            }
+                            return Err(e.into());
+                        }
 
                         #[cfg(feature = "chrono")]
                         if let Some(last_modified) = file.last_modified()

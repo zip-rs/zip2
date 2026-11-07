@@ -442,6 +442,13 @@ impl<'k, 'n, T: sealed::FileOptionExtension> FileOptions<'k, 'n, T> {
     /// The `salt` must be at least 8 bytes long for AES-128, and at least 16 bytes long for AES-256.
     /// This method is not recommended, since having a fixed salt is not secure.
     /// Consider using `with_aes_encryption` instead, which uses a random salt and is more secure.
+    ///
+    /// # Security Warning
+    /// Reusing a fixed salt across multiple files (or cloning a [`FileOptions`] configured with a fixed salt)
+    /// causes keystream reuse in AES-CTR mode, enabling two-time pad / crib-dragging attacks if plaintexts
+    /// share common prefixes or predictable headers. Note that because ZIP archives compress each file
+    /// independently without sharing a dictionary across entries, the pseudorandomness of compressed data
+    /// cannot be relied upon to prevent keystream correlation attacks across multiple files.
     #[cfg(feature = "aes-crypto")]
     pub fn with_aes_encryption_and_salt(
         self,

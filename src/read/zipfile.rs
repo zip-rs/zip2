@@ -368,6 +368,38 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
 
 /// Methods for retrieving information on zip files
 impl<R: Read> ZipFile<'_, R> {
+    /// Read all remaining uncompressed bytes into `buf`, verifying cryptographic integrity.
+    ///
+    /// For AES-encrypted files, this validates the HMAC-SHA1 authentication code before committing the read data.
+    /// If `rollback_on_error` is `true`, `buf` is truncated back to its initial length on any I/O or authentication error.
+    pub fn read_to_end_authenticated(
+        &mut self,
+        buf: &mut Vec<u8>,
+        rollback_on_error: bool,
+    ) -> io::Result<usize> {
+        let initial_len = buf.len();
+        let initial_capacity = buf.capacity();
+        let uncompressed_size = self.size();
+        let needed = usize::try_from(uncompressed_size)
+            .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, e))?;
+
+        if needed > 0 {
+            buf.try_reserve_exact(needed)
+                .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, e))?;
+        }
+
+        let read_res = self.read_to_end(buf);
+        match read_res {
+            Ok(bytes_read) => Ok(bytes_read),
+            Err(e) => {
+                if rollback_on_error {
+                    buf.truncate(initial_len);
+                    buf.shrink_to(initial_capacity);
+                }
+                Err(e)
+            }
+        }
+    }
     /// iterate through all extra fields
     pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
         self.data.extra_fields.inner.iter()

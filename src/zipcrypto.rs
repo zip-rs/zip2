@@ -6,6 +6,7 @@
 use core::fmt::{Debug, Formatter};
 use core::hash::Hash;
 use core::num::Wrapping;
+use zeroize::Zeroize;
 
 use crate::result::ZipError;
 
@@ -14,7 +15,7 @@ const ZIP_CRYPTO_HEADER_SIZE: usize = 12;
 
 /// A container to hold the current key state
 #[cfg_attr(feature = "_arbitrary", derive(arbitrary::Arbitrary))]
-#[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq, Zeroize)]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
@@ -148,15 +149,14 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
             *byte = self.keys.decrypt_byte(*byte);
         }
 
-        match validator {
+        let valid = match validator {
             ZipCryptoValidator::PkzipCrc32(crc32_plaintext) => {
                 // PKZIP before 2.0 used 2 byte CRC check.
                 // PKZIP 2.0+ used 1 byte CRC check. It's more secure.
-                // We also use 1 byte CRC.
-
-                if (crc32_plaintext >> 24) as u8 != header_buf[11] {
-                    return Err(ZipError::InvalidPassword);
-                }
+                // We also use 1 byte CRC with constant-time equality.
+                let expected = (crc32_plaintext >> 24) as u8;
+                let actual = header_buf[11];
+                constant_time_eq::constant_time_eq(&[expected], &[actual])
             }
             ZipCryptoValidator::InfoZipMsdosTime(last_mod_time) => {
                 // Info-ZIP modification to ZipCrypto format:
@@ -164,17 +164,24 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
                 // (indicates that the file uses a data-descriptor section),
                 // it uses high byte of 16-bit File Time.
                 // Info-ZIP code probably writes 2 bytes of File Time.
-                // We check only 1 byte.
-
-                if (last_mod_time >> 8) as u8 != header_buf[11] {
-                    return Err(ZipError::InvalidPassword);
-                }
+                // We check only 1 byte with constant-time equality.
+                let expected = (last_mod_time >> 8) as u8;
+                let actual = header_buf[11];
+                constant_time_eq::constant_time_eq(&[expected], &[actual])
             }
+        };
+
+        header_buf.zeroize();
+
+        if !valid {
+            self.keys.zeroize();
+            return Err(ZipError::InvalidPassword);
         }
 
         Ok(ZipCryptoReaderValid { reader: self })
     }
 }
+
 /// Size of the internal I/O buffer used when encrypting data in chunks.
 /// 4096 bytes is a commonly used buffer size that balances memory usage
 /// and I/O performance for typical workloads; it is not required to match
