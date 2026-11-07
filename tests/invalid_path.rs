@@ -204,8 +204,7 @@ pub mod tests {
     fn test_security_still_prevents_directory_traversal() {
         let buf = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
-        let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let options = SimpleFileOptions::default();
 
         // Create a ZIP with directory traversal attempts
         writer.start_file("../../../etc/passwd", options).unwrap();
@@ -277,18 +276,10 @@ pub mod tests {
     fn test_path_to_string_handles_absolute_and_drive_prefixes() {
         use zip::unstable::path_to_string;
 
-        #[cfg(windows)]
         let cases = [
             ("/etc/shadow", "etc/shadow"),
             ("C:\\Windows\\System32\\cmd.exe", "Windows/System32/cmd.exe"),
             (r"\\server\share\secret.docx", "secret.docx"),
-        ];
-
-        #[cfg(not(windows))]
-        let cases = [
-            ("/etc/shadow", "etc/shadow"),
-            ("/usr/bin/env", "usr/bin/env"),
-            ("/var/log/syslog", "var/log/syslog"),
         ];
 
         for (input, expected) in cases {
