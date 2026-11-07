@@ -315,6 +315,10 @@ impl<'a> ZipReadOptions<'a> {
     }
 
     /// Set the password, if any, to use.  Return for chaining.
+    ///
+    /// AES HMAC authentication is only performed once the end of the file is read. If any read
+    /// method returns an error, the file may have been tampered with. `ZipCrypto` provides no
+    /// authentication at all.
     #[must_use]
     pub fn password(mut self, password: Option<&'a [u8]>) -> Self {
         self.password = password;
