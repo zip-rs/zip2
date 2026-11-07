@@ -1,8 +1,14 @@
 use std::io::Write;
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+use std::path::Path;
 use std::path::PathBuf;
 #[cfg(all(not(miri), feature = "deflate-flate2"))]
 use tempfile::TempDir;
 use zip::read::root_dir_common_filter;
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+use zip::read::{ExtractOptions, SymlinkExtractAction};
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
@@ -18,6 +24,26 @@ fn create_zip_with_root_dir() -> Vec<u8> {
     writer.write_all(b"File 1 content").unwrap();
     writer.start_file("root/subdir/file2.txt", options).unwrap();
     writer.write_all(b"File 2 content").unwrap();
+
+    writer.finish().unwrap().into_inner()
+}
+
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+fn create_zip_with_symlink_root_dir() -> Vec<u8> {
+    let buf = Vec::new();
+    let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
+    let options = SimpleFileOptions::default();
+
+    // Create a zip with a single top-level directory that also contains a symlink
+    writer.add_directory("root/", options).unwrap();
+    writer.add_directory("root/subdir/", options).unwrap();
+    writer.start_file("root/file1.txt", options).unwrap();
+    writer.write_all(b"File 1 content").unwrap();
+    writer.start_file("root/subdir/file2.txt", options).unwrap();
+    writer.write_all(b"File 2 content").unwrap();
+    writer
+        .add_symlink("root/link", "file1.txt", options)
+        .unwrap();
 
     writer.finish().unwrap().into_inner()
 }
@@ -220,6 +246,178 @@ fn test_extract_without_root_dir_with_ds_store() {
 
     // .DS_Store should still be extracted at the root level though
     assert!(temp_dir.path().join(".DS_Store").exists());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+fn test_extract_with_options_unwraps_root_dir() {
+    let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    archive
+        .extract_with_options(
+            temp_dir.path(),
+            ExtractOptions::default().with_filter(root_dir_common_filter),
+        )
+        .unwrap();
+
+    assert!(temp_dir.path().join("file1.txt").exists());
+    assert!(temp_dir.path().join("subdir/file2.txt").exists());
+    assert!(!temp_dir.path().join("root").exists());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+fn test_extract_with_options_follows_size_limit() {
+    let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    let err = archive
+        .extract_with_options(
+            temp_dir.path(),
+            ExtractOptions::default()
+                .with_filter(root_dir_common_filter)
+                .with_size_limit(10),
+        )
+        .expect_err("size limit must still apply when unwrapping");
+    assert!(matches!(
+        err,
+        ZipError::DecompressedSizeLimitExceeded {
+            size: 28,
+            limit: 10
+        }
+    ));
+    assert!(!temp_dir.path().join("file1.txt").exists());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+fn test_extract_with_filter_carries_fields() {
+    let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    let err = archive
+        .extract_with_options(
+            temp_dir.path(),
+            ExtractOptions::default()
+                .with_size_limit(10)
+                .with_filter(root_dir_common_filter),
+        )
+        .expect_err("size limit must still apply when unwrapping");
+    assert!(matches!(
+        err,
+        ZipError::DecompressedSizeLimitExceeded {
+            size: 28,
+            limit: 10
+        }
+    ));
+    assert!(!temp_dir.path().join("file1.txt").exists());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+fn test_extract_with_symlink_action() {
+    let mut archive =
+        ZipArchive::new(std::io::Cursor::new(create_zip_with_symlink_root_dir())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    archive
+        .extract_with_options(
+            temp_dir.path(),
+            ExtractOptions::default()
+                .with_filter(root_dir_common_filter)
+                .symlink_action(SymlinkExtractAction::NoExtract),
+        )
+        .unwrap();
+
+    // The root directory was unwrapped...
+    assert!(temp_dir.path().join("file1.txt").exists());
+    assert!(!temp_dir.path().join("root").exists());
+    // ...and the symlink was skipped. `exists()` follows symlinks, so check the link itself.
+    assert!(std::fs::symlink_metadata(temp_dir.path().join("link")).is_err());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2"))]
+fn test_extract_with_options_capturing_filter() {
+    let ignored = String::from(".DS_Store");
+    let filter = move |path: &Path| path != Path::new(&ignored);
+
+    let mut archive =
+        ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir_and_ds_store())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    archive
+        .extract_with_options(
+            temp_dir.path(),
+            ExtractOptions::default().with_filter(filter),
+        )
+        .unwrap();
+
+    assert!(temp_dir.path().join("file1.txt").exists());
+    assert!(!temp_dir.path().join("root").exists());
+    // Filtered entries only affect root-dir detection; they're still extracted
+    assert!(temp_dir.path().join(".DS_Store").exists());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2", feature = "rayon"))]
+fn test_par_extract_explicit_filter_takes_precedence() {
+    let data = create_zip_with_root_dir_and_ds_store();
+    let mut archive = ZipArchive::new(std::io::Cursor::new(data.clone())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    archive
+        .par_extract_with_reader_factory_and_options(
+            temp_dir.path(),
+            || Ok(std::io::Cursor::new(data.clone())),
+            // Would ignore .DS_Store, find `root/` and unwrap it...
+            ExtractOptions::default().with_filter(root_dir_common_filter),
+            // ...but this one counts .DS_Store, so there's no single root
+            Some(|_: &Path| true),
+        )
+        .unwrap();
+
+    assert!(temp_dir.path().join("root/file1.txt").exists());
+    assert!(!temp_dir.path().join("file1.txt").exists());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2", feature = "rayon"))]
+fn test_par_extract_falls_back_to_options_filter() {
+    let data = create_zip_with_root_dir_and_ds_store();
+    let mut archive = ZipArchive::new(std::io::Cursor::new(data.clone())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    archive
+        .par_extract_with_reader_factory_and_options(
+            temp_dir.path(),
+            || Ok(std::io::Cursor::new(data.clone())),
+            ExtractOptions::default().with_filter(root_dir_common_filter),
+            None::<fn(&Path) -> bool>,
+        )
+        .unwrap();
+
+    assert!(temp_dir.path().join("file1.txt").exists());
+    assert!(!temp_dir.path().join("root").exists());
+}
+
+#[test]
+#[cfg(all(not(miri), feature = "deflate-flate2", feature = "rayon"))]
+fn test_par_extract_with_options_unwraps_root_dir() {
+    let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+
+    archive
+        .par_extract_with_options(
+            temp_dir.path(),
+            ExtractOptions::default().with_filter(root_dir_common_filter),
+        )
+        .unwrap();
+
+    assert!(temp_dir.path().join("file1.txt").exists());
+    assert!(temp_dir.path().join("subdir/file2.txt").exists());
+    assert!(!temp_dir.path().join("root").exists());
 }
 
 #[test]
