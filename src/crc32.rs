@@ -68,6 +68,10 @@ impl<R> Crc32Reader<R> {
         self.size_limit
             .is_some_and(|limit| self.bytes_read >= limit)
     }
+
+    pub fn remaining_bytes(&self) -> Option<u64> {
+        self.size_limit.map(|limit| limit.saturating_sub(self.bytes_read))
+    }
 }
 
 macro_rules! invalid_checksum {
