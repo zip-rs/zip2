@@ -120,6 +120,12 @@ impl<T> std::fmt::Debug for ReduceState<T> {
 
 impl<T: Read> ReduceState<T> {
     fn new(src: T, uncomp_len: usize, comp_factor: u8) -> io::Result<Self> {
+        if !(1..=4).contains(&comp_factor) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "compression factor for reduce must be between 1 and 4",
+            ));
+        }
         let mut is = BitReader::endian(src, LittleEndian);
         let fsets = Box::new(read_follower_sets(&mut is)?);
         Ok(Self {

@@ -59,7 +59,12 @@ impl HuffmanDecoder {
 
         // Count the number of codewords of each length.
         for i in 0..n {
-            debug_assert!(lengths[i] as usize <= MAX_HUFFMAN_BITS);
+            if lengths[i] as usize > MAX_HUFFMAN_BITS {
+                return Err(Error::new(
+                    io::ErrorKind::InvalidData,
+                    "codeword length exceeds MAX_HUFFMAN_BITS",
+                ));
+            }
             count[lengths[i] as usize] += 1;
         }
         count[0] = 0; // Ignore zero-length codewords.
@@ -90,24 +95,33 @@ impl HuffmanDecoder {
         self.table.fill(TableEntry::default());
 
         // Build mapping from index to symbol and populate the lookup table.
-        lengths
-            .iter()
-            .enumerate()
-            .take(n)
-            .for_each(|(i, code_len)| {
-                let l = *code_len as usize;
-                if l == 0 {
-                    return;
-                }
+        for (i, code_len) in lengths.iter().enumerate().take(n) {
+            let l = *code_len as usize;
+            if l == 0 {
+                continue;
+            }
+            if l > MAX_HUFFMAN_BITS {
+                return Err(Error::new(
+                    io::ErrorKind::InvalidData,
+                    "codeword length exceeds MAX_HUFFMAN_BITS",
+                ));
+            }
 
-                self.syms[sym_idx[l] as usize] = i as u16;
-                sym_idx[l] += 1;
+            let idx = sym_idx[l] as usize;
+            if idx >= MAX_HUFFMAN_SYMBOLS {
+                return Err(Error::new(
+                    io::ErrorKind::InvalidData,
+                    "symbol index exceeds MAX_HUFFMAN_SYMBOLS",
+                ));
+            }
+            self.syms[idx] = i as u16;
+            sym_idx[l] += 1;
 
-                if l <= HUFFMAN_LOOKUP_TABLE_BITS as usize {
-                    self.table_insert(i, l, code[l]);
-                    code[l] += 1;
-                }
-            });
+            if l <= HUFFMAN_LOOKUP_TABLE_BITS as usize {
+                self.table_insert(i, l, code[l]);
+                code[l] += 1;
+            }
+        }
 
         Ok(())
     }
@@ -172,11 +186,16 @@ impl HuffmanDecoder {
             if u32::from(bits) < self.sentinel_bits[l] {
                 bits >>= MAX_HUFFMAN_BITS - l;
                 let sym_idx = (self.offset_first_sym_idx[l] as usize + bits as usize) & 0xFFFF;
-                //assert(sym_idx < self.num_syms);
+                let sym = self.syms.get(sym_idx).copied().ok_or_else(|| {
+                    Error::new(
+                        io::ErrorKind::InvalidData,
+                        "huffman decoded symbol index out of bounds",
+                    )
+                })?;
                 is.seek_bits(io::SeekFrom::Current(
                     -(read_bits1 as i64 + read_bits2 as i64) + l as i64,
                 ))?;
-                return Ok(self.syms[sym_idx]);
+                return Ok(sym);
             }
         }
         Err(Error::new(
@@ -268,5 +287,23 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn test_huffman_corrupted_bit_lengths_rejected() {
+        let mut d = HuffmanDecoder::default();
+        let invalid_lengths = [17u8; 10];
+        assert!(d.init(&invalid_lengths, 10).is_err());
+    }
+
+    #[test]
+    fn test_huffman_corrupted_decode_returns_err() {
+        let mut d = HuffmanDecoder::default();
+        let lengths = [3u8, 3, 3, 3, 3, 3, 3, 3];
+        assert!(d.init(&lengths, 8).is_ok());
+
+        let empty_data = [0u8; 0];
+        let mut reader = BitReader::endian(Cursor::new(&empty_data[..]), LittleEndian);
+        assert!(d.huffman_decode(0, &mut reader).is_err());
     }
 }

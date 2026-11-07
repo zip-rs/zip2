@@ -230,6 +230,12 @@ fn output_code(
     let last_dst_pos = dst.len();
     let start = ct.last_dst_pos;
     let len = ct.len as usize;
+    if start >= dst.len() || start.checked_add(len).is_none_or(|end| end > dst.len()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "corrupted shrink dictionary back-reference offset",
+        ));
+    }
     let first = dst[start];
     dst.extend_from_within(start..start + len);
     dst.push(codetab[code as usize].ext_byte);
