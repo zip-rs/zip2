@@ -68,9 +68,9 @@ fn bench_many_small_files(c: &mut criterion::Criterion) {
 
 #[cfg(all(feature = "_deflate-any", feature = "rayon"))]
 fn bench_parallel_deflate(c: &mut criterion::Criterion) {
+    use core::num::NonZeroUsize;
     use criterion::{BenchmarkId, Throughput};
     use std::io::{Cursor, Write};
-    use std::num::NonZeroUsize;
     use zip::CompressionMethod;
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
@@ -145,9 +145,9 @@ fn bench_parallel_deflate(c: &mut criterion::Criterion) {
 
 #[cfg(all(feature = "_deflate-any", feature = "rayon"))]
 fn bench_parallel_deflate_large(c: &mut criterion::Criterion) {
+    use core::num::NonZeroUsize;
     use criterion::{BenchmarkId, Throughput};
     use std::io::{Cursor, Write};
-    use std::num::NonZeroUsize;
     use std::time::Duration;
     use zip::CompressionMethod;
     use zip::ZipWriter;

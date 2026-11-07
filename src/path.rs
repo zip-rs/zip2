@@ -57,9 +57,7 @@ fn split_drive_prefix(component: &str) -> [Option<Utf8WindowsComponent<'_>>; 2] 
 /// (e.g. `CON.txt`, `aux.json`, `nul.dat` map to console, null, or hardware ports).
 #[cfg(windows)]
 pub(crate) fn is_windows_reserved_device_name(name: &str) -> bool {
-    let Some(stem) = name
-        .split(['.', ':'])
-        .next() else {
+    let Some(stem) = name.split(['.', ':']).next() else {
         return false;
     };
     if stem.len() < 3 {

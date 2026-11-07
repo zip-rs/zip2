@@ -24,7 +24,7 @@ jobs:
   ci-complete:
     name: CI Complete
     needs: run-ci
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     if: github.actor != 'github-merge-queue[bot]'
     steps:
       - name: Harden the runner (Audit all outbound calls)

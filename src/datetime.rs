@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn datetime_order() {
-        use std::cmp::Ordering;
+        use core::cmp::Ordering;
 
         use super::DateTime;
 
