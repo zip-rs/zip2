@@ -1,6 +1,9 @@
 name: "Pull request size labels"
 
-on: [pull_request]
+on:
+  workflow_run:
+    workflows: ["PR Metadata"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -16,7 +19,17 @@ jobs:
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
-
+      - name: Download PR Metadata
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pr-metadata
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Parse PR Number
+        id: pr_data
+        run: |
+          PR_NUM=$(cat pr-number.txt)
+          echo "num=$PR_NUM" >> $GITHUB_OUTPUT
       - name: Size Labeler
         uses: codelytv/pr-size-labeler@19c335e7695ba922de938806dd129f0a9b992644
         with:
@@ -31,5 +44,5 @@ jobs:
           xl_label: 'size: huge'
           files_to_ignore: |
             'tests/data/*'
-            'tests/data/*'
             'CHANGELOG.md'
+          github_api_url: "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ steps.pr_data.outputs.num }}"
