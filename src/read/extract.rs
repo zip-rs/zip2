@@ -79,13 +79,13 @@ pub enum SymlinkExtractAction {
 
 /// Extract options
 ///
-/// `F` is the type of the root-directory filter set with [`ExtractOptions::with_filter`].
+/// `F` is the type of the root-directory filter set with [`ExtractOptions::with_root_dir_filter`].
 #[non_exhaustive]
 pub struct ExtractOptions<F = fn(&Path) -> bool> {
     pub(crate) symlink_action: SymlinkExtractAction,
     pub(crate) size_limit: Option<u64>,
     pub(crate) enforce_header_consistency: bool,
-    pub(crate) filter: Option<F>,
+    pub(crate) root_dir_filter: Option<F>,
 }
 
 impl<F> core::fmt::Debug for ExtractOptions<F> {
@@ -97,7 +97,10 @@ impl<F> core::fmt::Debug for ExtractOptions<F> {
                 "enforce_header_consistency",
                 &self.enforce_header_consistency,
             )
-            .field("filter", &self.filter.as_ref().map(|_| "<filter>"))
+            .field(
+                "root_dir_filter",
+                &self.root_dir_filter.as_ref().map(|_| "<filter>"),
+            )
             .finish()
     }
 }
@@ -108,7 +111,7 @@ impl Default for ExtractOptions {
             symlink_action: SymlinkExtractAction::default(),
             size_limit: None,
             enforce_header_consistency: false,
-            filter: None,
+            root_dir_filter: None,
         }
     }
 }
@@ -132,17 +135,17 @@ impl<F> ExtractOptions<F> {
     /// use zip::read::{ExtractOptions, root_dir_common_filter};
     ///
     /// let options = ExtractOptions::default()
-    ///     .with_filter(root_dir_common_filter)
+    ///     .with_root_dir_filter(root_dir_common_filter)
     ///     .with_size_limit(1 << 30);
     /// # let _ = format!("{options:?}");
     /// ```
     #[must_use]
-    pub fn with_filter<G: RootDirFilter>(self, filter: G) -> ExtractOptions<G> {
+    pub fn with_root_dir_filter<G: RootDirFilter>(self, filter: G) -> ExtractOptions<G> {
         ExtractOptions {
             symlink_action: self.symlink_action,
             size_limit: self.size_limit,
             enforce_header_consistency: self.enforce_header_consistency,
-            filter: Some(filter),
+            root_dir_filter: Some(filter),
         }
     }
 
@@ -671,7 +674,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Same as [`ZipArchive::extract`], but with custom [`ExtractOptions`].
     ///
-    /// To unwrap a root directory, set a filter with [`ExtractOptions::with_filter`];
+    /// To unwrap a root directory, set a filter with [`ExtractOptions::with_root_dir_filter`];
     /// see [`ZipArchive::extract_unwrapped_root_dir`] for the semantics.
     pub fn extract_with_options<P: AsRef<Path>>(
         &mut self,
@@ -693,7 +696,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// directory is detected and the meaning of the `filter` parameter.
     ///
     /// To combine unwrapping with other options, use [`ZipArchive::extract_with_options`]
-    /// with [`ExtractOptions::with_filter`].
+    /// with [`ExtractOptions::with_root_dir_filter`].
     ///
     /// ## Example
     ///
@@ -749,7 +752,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     ) -> ZipResult<()> {
         self.extract_internal(
             directory,
-            ExtractOptions::default().with_filter(root_dir_filter),
+            ExtractOptions::default().with_root_dir_filter(root_dir_filter),
         )
     }
 
@@ -764,7 +767,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             symlink_action,
             size_limit,
             enforce_header_consistency,
-            filter,
+            root_dir_filter,
         } = extract_options;
 
         if enforce_header_consistency {
@@ -784,7 +787,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
-        let root_dir = filter
+        let root_dir = root_dir_filter
             .and_then(|filter| {
                 self.root_dir(&filter)
                     .transpose()
@@ -1021,7 +1024,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
     /// and an optional [`RootDirFilter`].
     ///
     /// If `root_dir_filter` is `Some`, it takes precedence over any filter set with
-    /// [`ExtractOptions::with_filter`].
+    /// [`ExtractOptions::with_root_dir_filter`].
     ///
     /// See [`ZipArchive::par_extract_with_reader_factory`] for common `reader_factory` implementations.
     pub fn par_extract_with_reader_factory_and_options<P, F, Filter>(
@@ -1036,13 +1039,14 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         F: Fn() -> std::io::Result<R> + Sync + Send,
         Filter: RootDirFilter,
     {
-        // `root_dir_filter` predates `ExtractOptions::with_filter` and is kept for compatibility;
-        // it takes precedence when `Some`. Separate calls because the arms have different filter types.
+        // `root_dir_filter` predates `ExtractOptions::with_root_dir_filter`
+        // and is kept for compatibility; it takes precedence when `Some`.
+        // Separate calls because the arms have different filter types.
         match root_dir_filter {
             Some(filter) => self.par_extract_internal(
                 directory.as_ref(),
                 &reader_factory,
-                extract_options.with_filter(filter),
+                extract_options.with_root_dir_filter(filter),
             ),
             None => self.par_extract_internal(directory.as_ref(), &reader_factory, extract_options),
         }
@@ -1062,7 +1066,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
             symlink_action,
             size_limit,
             enforce_header_consistency,
-            filter,
+            root_dir_filter,
         } = extract_options;
 
         if let Some(limit) = size_limit {
@@ -1078,7 +1082,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         std::fs::create_dir_all(directory)?;
         let directory = directory.canonicalize()?;
 
-        let root_dir = filter
+        let root_dir = root_dir_filter
             .and_then(|filter| {
                 self.root_dir(&filter)
                     .transpose()
@@ -1301,7 +1305,7 @@ impl ZipArchive<std::fs::File> {
 
     /// Extracts a filesystem-backed archive in parallel with custom [`ExtractOptions`].
     ///
-    /// Root-directory unwrapping can be enabled with [`ExtractOptions::with_filter`].
+    /// Root-directory unwrapping can be enabled with [`ExtractOptions::with_root_dir_filter`].
     pub fn par_extract_from_path_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
         &mut self,
         archive_path: P,
@@ -1330,7 +1334,7 @@ impl<T: AsRef<[u8]> + Sync + Send + Clone> ZipArchive<std::io::Cursor<T>> {
 
     /// Extracts an in-memory archive in parallel with custom [`ExtractOptions`].
     ///
-    /// Root-directory unwrapping can be enabled with [`ExtractOptions::with_filter`].
+    /// Root-directory unwrapping can be enabled with [`ExtractOptions::with_root_dir_filter`].
     pub fn par_extract_with_options<P: AsRef<Path>>(
         &mut self,
         directory: P,

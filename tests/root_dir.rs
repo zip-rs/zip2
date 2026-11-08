@@ -265,7 +265,7 @@ fn test_extract_with_options_unwraps_root_dir() {
     archive
         .extract_with_options(
             temp_dir.path(),
-            ExtractOptions::default().with_filter(root_dir_common_filter),
+            ExtractOptions::default().with_root_dir_filter(root_dir_common_filter),
         )
         .unwrap();
 
@@ -284,7 +284,7 @@ fn test_extract_with_options_follows_size_limit() {
         .extract_with_options(
             temp_dir.path(),
             ExtractOptions::default()
-                .with_filter(root_dir_common_filter)
+                .with_root_dir_filter(root_dir_common_filter)
                 .with_size_limit(10),
         )
         .expect_err("size limit must still apply when unwrapping");
@@ -300,7 +300,7 @@ fn test_extract_with_options_follows_size_limit() {
 
 #[test]
 #[cfg(not(miri))]
-fn test_extract_with_filter_carries_fields() {
+fn test_extract_with_root_dir_filter_carries_fields() {
     let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
     let temp_dir = TempDir::new().unwrap();
 
@@ -309,7 +309,7 @@ fn test_extract_with_filter_carries_fields() {
             temp_dir.path(),
             ExtractOptions::default()
                 .with_size_limit(10)
-                .with_filter(root_dir_common_filter),
+                .with_root_dir_filter(root_dir_common_filter),
         )
         .expect_err("size limit must still apply when unwrapping");
     assert!(matches!(
@@ -333,7 +333,7 @@ fn test_extract_with_symlink_action() {
         .extract_with_options(
             temp_dir.path(),
             ExtractOptions::default()
-                .with_filter(root_dir_common_filter)
+                .with_root_dir_filter(root_dir_common_filter)
                 .symlink_action(SymlinkExtractAction::NoExtract),
         )
         .unwrap();
@@ -358,7 +358,7 @@ fn test_extract_with_options_capturing_filter() {
     archive
         .extract_with_options(
             temp_dir.path(),
-            ExtractOptions::default().with_filter(filter),
+            ExtractOptions::default().with_root_dir_filter(filter),
         )
         .unwrap();
 
@@ -380,7 +380,7 @@ fn test_par_extract_explicit_filter_takes_precedence() {
             temp_dir.path(),
             || Ok(std::io::Cursor::new(data.clone())),
             // Would ignore .DS_Store, find `root/` and unwrap it...
-            ExtractOptions::default().with_filter(root_dir_common_filter),
+            ExtractOptions::default().with_root_dir_filter(root_dir_common_filter),
             // ...but this one counts .DS_Store, so there's no single root
             Some(|_: &Path| true),
         )
@@ -401,7 +401,7 @@ fn test_par_extract_falls_back_to_options_filter() {
         .par_extract_with_reader_factory_and_options(
             temp_dir.path(),
             || Ok(std::io::Cursor::new(data.clone())),
-            ExtractOptions::default().with_filter(root_dir_common_filter),
+            ExtractOptions::default().with_root_dir_filter(root_dir_common_filter),
             None::<fn(&Path) -> bool>,
         )
         .unwrap();
@@ -419,7 +419,7 @@ fn test_par_extract_with_options_unwraps_root_dir() {
     archive
         .par_extract_with_options(
             temp_dir.path(),
-            ExtractOptions::default().with_filter(root_dir_common_filter),
+            ExtractOptions::default().with_root_dir_filter(root_dir_common_filter),
         )
         .unwrap();
 
