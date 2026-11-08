@@ -80,13 +80,26 @@ pub enum SymlinkExtractAction {
 /// Extract options
 ///
 /// `F` is the type of the root-directory filter set with [`ExtractOptions::with_filter`].
-#[derive(Debug)]
 #[non_exhaustive]
 pub struct ExtractOptions<F = fn(&Path) -> bool> {
     pub(crate) symlink_action: SymlinkExtractAction,
     pub(crate) size_limit: Option<u64>,
     pub(crate) enforce_header_consistency: bool,
     pub(crate) filter: Option<F>,
+}
+
+impl<F> core::fmt::Debug for ExtractOptions<F> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ExtractOptions")
+            .field("symlink_action", &self.symlink_action)
+            .field("size_limit", &self.size_limit)
+            .field(
+                "enforce_header_consistency",
+                &self.enforce_header_consistency,
+            )
+            .field("filter", &self.filter.as_ref().map(|_| "<filter>"))
+            .finish()
+    }
 }
 
 impl Default for ExtractOptions {
@@ -121,7 +134,7 @@ impl<F> ExtractOptions<F> {
     /// let options = ExtractOptions::default()
     ///     .with_filter(root_dir_common_filter)
     ///     .with_size_limit(1 << 30);
-    /// # let _ = options;
+    /// # let _ = format!("{options:?}");
     /// ```
     #[must_use]
     pub fn with_filter<G: RootDirFilter>(self, filter: G) -> ExtractOptions<G> {
