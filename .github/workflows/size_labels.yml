@@ -29,6 +29,10 @@ jobs:
         id: pr_data
         run: |
           PR_NUM=$(cat pr-number.txt)
+          if ! [[ "$PR_NUM" =~ ^[0-9]+$ ]]; then
+            echo "Invalid PR number: $PR_NUM" >&2
+            exit 1
+          fi
           echo "num=$PR_NUM" >> $GITHUB_OUTPUT
       - name: Size Labeler
         uses: codelytv/pr-size-labeler@19c335e7695ba922de938806dd129f0a9b992644
