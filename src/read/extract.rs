@@ -78,15 +78,77 @@ pub enum SymlinkExtractAction {
 }
 
 /// Extract options
-#[derive(Debug, Default)]
+///
+/// `F` is the type of the root-directory filter set with [`ExtractOptions::with_root_dir_filter`].
 #[non_exhaustive]
-pub struct ExtractOptions {
+pub struct ExtractOptions<F = fn(&Path) -> bool> {
     pub(crate) symlink_action: SymlinkExtractAction,
     pub(crate) size_limit: Option<u64>,
     pub(crate) enforce_header_consistency: bool,
+    pub(crate) root_dir_filter: Option<F>,
 }
 
-impl ExtractOptions {
+impl<F> core::fmt::Debug for ExtractOptions<F> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ExtractOptions")
+            .field("symlink_action", &self.symlink_action)
+            .field("size_limit", &self.size_limit)
+            .field(
+                "enforce_header_consistency",
+                &self.enforce_header_consistency,
+            )
+            .field(
+                "root_dir_filter",
+                &self.root_dir_filter.as_ref().map(|_| "<filter>"),
+            )
+            .finish()
+    }
+}
+
+impl Default for ExtractOptions {
+    fn default() -> Self {
+        Self {
+            symlink_action: SymlinkExtractAction::default(),
+            size_limit: None,
+            enforce_header_consistency: false,
+            root_dir_filter: None,
+        }
+    }
+}
+
+impl<F> ExtractOptions<F> {
+    /// Unwrap a single top-level "root" directory during extraction, using `filter`
+    /// to decide which entries are considered when detecting it.
+    ///
+    /// Entries for which `filter` returns `false` are ignored while searching for the
+    /// root directory, but they are **still extracted**; this does not exclude entries
+    /// from extraction. If no root directory is found, the archive is extracted as by
+    /// [`ZipArchive::extract`]. See [`ZipArchive::root_dir`] for how the root directory
+    /// is detected.
+    ///
+    /// For a sensible default, use [`root_dir_common_filter`]. For a custom filter,
+    /// see [`RootDirFilter`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use zip::read::{ExtractOptions, root_dir_common_filter};
+    ///
+    /// let options = ExtractOptions::default()
+    ///     .with_root_dir_filter(root_dir_common_filter)
+    ///     .with_size_limit(1 << 30);
+    /// # let _ = format!("{options:?}");
+    /// ```
+    #[must_use]
+    pub fn with_root_dir_filter<G: RootDirFilter>(self, filter: G) -> ExtractOptions<G> {
+        ExtractOptions {
+            symlink_action: self.symlink_action,
+            size_limit: self.size_limit,
+            enforce_header_consistency: self.enforce_header_consistency,
+            root_dir_filter: Some(filter),
+        }
+    }
+
     /// Set the symlink action
     #[must_use]
     pub fn symlink_action(self, symlink_action: SymlinkExtractAction) -> Self {
@@ -607,19 +669,19 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// WebAssembly, symbolic links aren't supported, so they're extracted as normal files
     /// containing the target path in UTF-8.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
-        self.extract_internal(
-            directory,
-            None::<fn(&Path) -> bool>,
-            ExtractOptions::default(),
-        )
+        self.extract_internal(directory, ExtractOptions::default())
     }
-    /// Same as extract but with options
+
+    /// Same as [`ZipArchive::extract`], but with custom [`ExtractOptions`].
+    ///
+    /// To unwrap a root directory, set a filter with [`ExtractOptions::with_root_dir_filter`];
+    /// see [`ZipArchive::extract_unwrapped_root_dir`] for the semantics.
     pub fn extract_with_options<P: AsRef<Path>>(
         &mut self,
         directory: P,
-        extract_options: ExtractOptions,
+        extract_options: ExtractOptions<impl RootDirFilter>,
     ) -> ZipResult<()> {
-        self.extract_internal(directory, None::<fn(&Path) -> bool>, extract_options)
+        self.extract_internal(directory, extract_options)
     }
 
     /// Extracts a Zip archive into a directory in the same fashion as
@@ -632,6 +694,9 @@ impl<R: Read + Seek> ZipArchive<R> {
     ///
     /// See [`ZipArchive::root_dir`] for more information on how the root
     /// directory is detected and the meaning of the `filter` parameter.
+    ///
+    /// To combine unwrapping with other options, use [`ZipArchive::extract_with_options`]
+    /// with [`ExtractOptions::with_root_dir_filter`].
     ///
     /// ## Example
     ///
@@ -685,22 +750,31 @@ impl<R: Read + Seek> ZipArchive<R> {
         directory: P,
         root_dir_filter: impl RootDirFilter,
     ) -> ZipResult<()> {
-        self.extract_internal(directory, Some(root_dir_filter), ExtractOptions::default())
+        self.extract_internal(
+            directory,
+            ExtractOptions::default().with_root_dir_filter(root_dir_filter),
+        )
     }
 
     fn extract_internal<P: AsRef<Path>>(
         &mut self,
         directory: P,
-        root_dir_filter: Option<impl RootDirFilter>,
-        extract_options: ExtractOptions,
+        extract_options: ExtractOptions<impl RootDirFilter>,
     ) -> ZipResult<()> {
         use std::fs;
 
-        if extract_options.enforce_header_consistency {
+        let ExtractOptions {
+            symlink_action,
+            size_limit,
+            enforce_header_consistency,
+            root_dir_filter,
+        } = extract_options;
+
+        if enforce_header_consistency {
             self.validate_header_consistency()?;
         }
 
-        if let Some(limit) = extract_options.size_limit {
+        if let Some(limit) = size_limit {
             match self.decompressed_size() {
                 Some(size) if size > u128::from(limit) => {
                     return Err(ZipError::DecompressedSizeLimitExceeded { size, limit });
@@ -743,7 +817,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         for i in 0..self.len() {
             let read_options = crate::read::ZipReadOptions::new()
-                .enforce_header_consistency(extract_options.enforce_header_consistency);
+                .enforce_header_consistency(enforce_header_consistency);
             let mut file = self.by_index_with_options(i, read_options)?;
 
             let outpath = file.safe_prepare_path(directory.as_ref(), root_dir.as_ref())?;
@@ -767,7 +841,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                 file.read_to_end(&mut target)?;
                 let unix_mode = file.unix_mode();
                 drop(file);
-                match extract_options.symlink_action {
+                match symlink_action {
                     SymlinkExtractAction::NoExtract => {
                         // do nothing
                     }
@@ -784,7 +858,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                             &outpath,
                             &target,
                             &self.shared.files,
-                            extract_options.symlink_action,
+                            symlink_action,
                         )?;
                     }
                     #[cfg(any(unix, windows))]
@@ -794,7 +868,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                             &outpath,
                             &target,
                             &self.shared.files,
-                            extract_options.symlink_action,
+                            symlink_action,
                         )?;
                     }
                     #[cfg(any(unix, windows))]
@@ -949,12 +1023,15 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
     /// Extracts archive contents in parallel using a reader factory, custom [`ExtractOptions`],
     /// and an optional [`RootDirFilter`].
     ///
+    /// If `root_dir_filter` is `Some`, it takes precedence over any filter set with
+    /// [`ExtractOptions::with_root_dir_filter`].
+    ///
     /// See [`ZipArchive::par_extract_with_reader_factory`] for common `reader_factory` implementations.
     pub fn par_extract_with_reader_factory_and_options<P, F, Filter>(
         &mut self,
         directory: P,
         reader_factory: F,
-        extract_options: ExtractOptions,
+        extract_options: ExtractOptions<impl RootDirFilter>,
         root_dir_filter: Option<Filter>,
     ) -> ZipResult<()>
     where
@@ -962,26 +1039,37 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         F: Fn() -> std::io::Result<R> + Sync + Send,
         Filter: RootDirFilter,
     {
-        self.par_extract_internal(
-            directory.as_ref(),
-            &reader_factory,
-            extract_options,
-            root_dir_filter,
-        )
+        // `root_dir_filter` predates `ExtractOptions::with_root_dir_filter`
+        // and is kept for compatibility; it takes precedence when `Some`.
+        // Separate calls because the arms have different filter types.
+        match root_dir_filter {
+            Some(filter) => self.par_extract_internal(
+                directory.as_ref(),
+                &reader_factory,
+                extract_options.with_root_dir_filter(filter),
+            ),
+            None => self.par_extract_internal(directory.as_ref(), &reader_factory, extract_options),
+        }
     }
 
     fn par_extract_internal<F, Filter>(
         &mut self,
         directory: &Path,
         reader_factory: &F,
-        extract_options: ExtractOptions,
-        root_dir_filter: Option<Filter>,
+        extract_options: ExtractOptions<Filter>,
     ) -> ZipResult<()>
     where
         F: Fn() -> std::io::Result<R> + Sync + Send,
         Filter: RootDirFilter,
     {
-        if let Some(limit) = extract_options.size_limit {
+        let ExtractOptions {
+            symlink_action,
+            size_limit,
+            enforce_header_consistency,
+            root_dir_filter,
+        } = extract_options;
+
+        if let Some(limit) = size_limit {
             match self.decompressed_size() {
                 Some(size) if size > u128::from(limit) => {
                     return Err(ZipError::DecompressedSizeLimitExceeded { size, limit });
@@ -1035,7 +1123,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
 
             if data.is_symlink() {
                 let read_options = crate::read::ZipReadOptions::new()
-                    .enforce_header_consistency(extract_options.enforce_header_consistency);
+                    .enforce_header_consistency(enforce_header_consistency);
                 let mut file = self.by_index_with_options(i, read_options)?;
                 let declared_len = file.size();
                 if declared_len > MAX_SYMLINK_TARGET_LEN {
@@ -1049,7 +1137,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                 file.read_to_end(&mut target)?;
                 let unix_mode = file.unix_mode();
                 drop(file);
-                match extract_options.symlink_action {
+                match symlink_action {
                     SymlinkExtractAction::NoExtract => {}
                     SymlinkExtractAction::ExtractAsFile => {
                         make_symlink_as_file(&outpath, &target, unix_mode)?;
@@ -1065,7 +1153,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                             &outpath,
                             &target,
                             &self.shared.files,
-                            extract_options.symlink_action,
+                            symlink_action,
                         )?;
                     }
                     #[cfg(any(unix, windows))]
@@ -1089,7 +1177,6 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         }
 
         let metadata = self.metadata();
-        let enforce_header = extract_options.enforce_header_consistency;
 
         let regular_files_vec: Vec<(std::path::PathBuf, usize)> =
             regular_files.into_iter().collect();
@@ -1118,7 +1205,7 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                         };
 
                         let read_options = crate::read::ZipReadOptions::new()
-                            .enforce_header_consistency(enforce_header);
+                            .enforce_header_consistency(enforce_header_consistency);
                         let mut file = archive.by_index_with_options(idx, read_options)?;
 
                         let mut outfile = create_outfile(&outpath, file.unix_mode())?;
@@ -1217,11 +1304,13 @@ impl ZipArchive<std::fs::File> {
     }
 
     /// Extracts a filesystem-backed archive in parallel with custom [`ExtractOptions`].
+    ///
+    /// Root-directory unwrapping can be enabled with [`ExtractOptions::with_root_dir_filter`].
     pub fn par_extract_from_path_with_options<P: AsRef<Path>, Q: AsRef<Path>>(
         &mut self,
         archive_path: P,
         destination: Q,
-        options: ExtractOptions,
+        options: ExtractOptions<impl RootDirFilter>,
     ) -> ZipResult<()> {
         let path_buf = archive_path.as_ref().to_path_buf();
         self.par_extract_with_reader_factory_and_options(
@@ -1244,10 +1333,12 @@ impl<T: AsRef<[u8]> + Sync + Send + Clone> ZipArchive<std::io::Cursor<T>> {
     }
 
     /// Extracts an in-memory archive in parallel with custom [`ExtractOptions`].
+    ///
+    /// Root-directory unwrapping can be enabled with [`ExtractOptions::with_root_dir_filter`].
     pub fn par_extract_with_options<P: AsRef<Path>>(
         &mut self,
         directory: P,
-        options: ExtractOptions,
+        options: ExtractOptions<impl RootDirFilter>,
     ) -> ZipResult<()> {
         let cursor_data = self.reader.get_ref().clone();
         self.par_extract_with_reader_factory_and_options(
