@@ -1,21 +1,29 @@
 use std::io::Write;
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 use std::path::Path;
 use std::path::PathBuf;
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 use tempfile::TempDir;
 use zip::read::root_dir_common_filter;
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 use zip::read::{ExtractOptions, SymlinkExtractAction};
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+fn readable_options() -> SimpleFileOptions {
+    let options = SimpleFileOptions::default();
+    // With zopfli but no flate2, Deflate is write-only, so the default method can't be read back.
+    #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+    let options = options.compression_method(zip::CompressionMethod::Stored);
+    options
+}
+
 fn create_zip_with_root_dir() -> Vec<u8> {
     let buf = Vec::new();
     let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
-    let options = SimpleFileOptions::default();
+    let options = readable_options();
 
     // Create a zip with a single top-level directory that contains everything else
     writer.add_directory("root/", options).unwrap();
@@ -28,11 +36,11 @@ fn create_zip_with_root_dir() -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 fn create_zip_with_symlink_root_dir() -> Vec<u8> {
     let buf = Vec::new();
     let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
-    let options = SimpleFileOptions::default();
+    let options = readable_options();
 
     // Create a zip with a single top-level directory that also contains a symlink
     writer.add_directory("root/", options).unwrap();
@@ -67,7 +75,7 @@ fn create_zip_without_root_dir() -> Vec<u8> {
 fn create_zip_with_root_dir_and_ds_store() -> Vec<u8> {
     let buf = Vec::new();
     let mut writer = ZipWriter::new(std::io::Cursor::new(buf));
-    let options = SimpleFileOptions::default();
+    let options = readable_options();
 
     // Create a zip with a single top-level directory and a .DS_Store file
     writer.start_file(".DS_Store", options).unwrap();
@@ -249,7 +257,7 @@ fn test_extract_without_root_dir_with_ds_store() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 fn test_extract_with_options_unwraps_root_dir() {
     let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
     let temp_dir = TempDir::new().unwrap();
@@ -267,7 +275,7 @@ fn test_extract_with_options_unwraps_root_dir() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 fn test_extract_with_options_follows_size_limit() {
     let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
     let temp_dir = TempDir::new().unwrap();
@@ -291,7 +299,7 @@ fn test_extract_with_options_follows_size_limit() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 fn test_extract_with_filter_carries_fields() {
     let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
     let temp_dir = TempDir::new().unwrap();
@@ -315,7 +323,7 @@ fn test_extract_with_filter_carries_fields() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 fn test_extract_with_symlink_action() {
     let mut archive =
         ZipArchive::new(std::io::Cursor::new(create_zip_with_symlink_root_dir())).unwrap();
@@ -338,7 +346,7 @@ fn test_extract_with_symlink_action() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2"))]
+#[cfg(not(miri))]
 fn test_extract_with_options_capturing_filter() {
     let ignored = String::from(".DS_Store");
     let filter = move |path: &Path| path != Path::new(&ignored);
@@ -361,7 +369,7 @@ fn test_extract_with_options_capturing_filter() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2", feature = "rayon"))]
+#[cfg(all(not(miri), feature = "rayon"))]
 fn test_par_extract_explicit_filter_takes_precedence() {
     let data = create_zip_with_root_dir_and_ds_store();
     let mut archive = ZipArchive::new(std::io::Cursor::new(data.clone())).unwrap();
@@ -383,7 +391,7 @@ fn test_par_extract_explicit_filter_takes_precedence() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2", feature = "rayon"))]
+#[cfg(all(not(miri), feature = "rayon"))]
 fn test_par_extract_falls_back_to_options_filter() {
     let data = create_zip_with_root_dir_and_ds_store();
     let mut archive = ZipArchive::new(std::io::Cursor::new(data.clone())).unwrap();
@@ -403,7 +411,7 @@ fn test_par_extract_falls_back_to_options_filter() {
 }
 
 #[test]
-#[cfg(all(not(miri), feature = "deflate-flate2", feature = "rayon"))]
+#[cfg(all(not(miri), feature = "rayon"))]
 fn test_par_extract_with_options_unwraps_root_dir() {
     let mut archive = ZipArchive::new(std::io::Cursor::new(create_zip_with_root_dir())).unwrap();
     let temp_dir = TempDir::new().unwrap();
