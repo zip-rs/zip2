@@ -130,3 +130,40 @@ fn read_data_descriptor_not_present() {
     // this is not a stream, no data_descriptor
     assert!(data_descriptor.is_none());
 }
+
+#[test]
+fn raw_copy_to_a_stream_writes_a_data_descriptor() {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+    use zip::unstable::format::data_descriptor::{ZipDataDescriptor, ZipDataDescriptorBlock};
+    use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file(
+            "file.txt",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
+    writer.write_all(b"hello").unwrap();
+    let mut source = ZipArchive::new(writer.finish().unwrap()).unwrap();
+
+    let mut writer = ZipWriter::new_stream(Vec::new());
+    writer
+        .raw_copy_file(source.by_index_raw(0).unwrap())
+        .unwrap();
+    let bytes = writer.finish().unwrap().into_inner();
+
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let index = archive.index_for_name("file.txt").unwrap();
+    let data = archive.by_index_with_data_descriptor(index).unwrap();
+    assert!(data.flags().is_using_data_descriptor());
+    assert_eq!(
+        data.data_descriptor().unwrap(),
+        ZipDataDescriptor::ZipDataDescriptorBlock(ZipDataDescriptorBlock {
+            crc32: u32::from_le_bytes([134, 166, 16, 54]),
+            compressed_size: 5,
+            uncompressed_size: 5,
+        })
+    );
+}
