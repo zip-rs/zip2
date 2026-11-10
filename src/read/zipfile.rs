@@ -157,6 +157,15 @@ macro_rules! zip_file_methods {
             &self.get_metadata().file_comment
         }
 
+        /// Get the comment of the file, in the raw (internal) byte representation.
+        ///
+        /// These are the bytes as stored in the central directory, before [`ZipFile::comment`]
+        /// decodes them (as UTF-8 or CP437, depending on the language encoding flag) or replaces
+        /// them with an Info-ZIP Unicode Comment extra field.
+        pub fn comment_raw(&self) -> &[u8] {
+            self.get_metadata().file_comment_raw()
+        }
+
         /// Get the system of the file
         pub fn system(&self) -> System {
             self.get_metadata().system

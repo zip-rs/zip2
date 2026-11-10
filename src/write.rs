@@ -750,6 +750,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size: 0,
             language_encoding: None,
             encrypted_with_descriptor: None,
+            file_comment_raw: None,
         });
         if options.extended_options.validate_extra_fields()
             && let Some(extra_fields) = options.extended_options.extra_fields()
@@ -806,6 +807,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
             file.file_comment = comment;
         }
+        file.file_comment_raw = raw_values.file_comment_raw;
         if let Some(language_encoding) = raw_values.language_encoding {
             file.flags
                 .set(ZipFlags::LanguageEncoding, language_encoding);
@@ -1302,7 +1304,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// `language_encoding` is the copied entry's own flag when `name` is its
-    /// stored name, or `None` for a new name, which derives the flag from it.
+    /// stored name, which keeps its comment as stored too, or `None` for a new
+    /// name, which derives the flag from it and writes the comment as UTF-8.
     ///
     /// An encrypted entry keeps its encrypted and data descriptor flags, and
     /// gets a data descriptor after its bytes when it had one, so it decrypts as
@@ -1323,6 +1326,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             encrypted_with_descriptor: file
                 .encrypted()
                 .then(|| file.flags().is_using_data_descriptor()),
+            file_comment_raw: language_encoding.and_then(|_| file.data.file_comment_raw.clone()),
         };
 
         self.start_entry(name, options, Some(raw_values))?;
@@ -1364,7 +1368,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// The name is copied as stored: the same bytes, under the same language encoding flag. So a
     /// name in a legacy code page (Shift-JIS, GBK, CP866, ...) stays readable by tools that decode
-    /// it, where re-encoding the CP437 reading of [`ZipFile::name`] as UTF-8 would garble it.
+    /// it, where re-encoding the CP437 reading of [`ZipFile::name`] as UTF-8 would garble it. The
+    /// comment is copied as stored too (see [`ZipFile::comment_raw`]).
     ///
     /// ```no_run
     /// use std::fs::File;
@@ -1582,6 +1587,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             uncompressed_size,
             language_encoding: None,
             encrypted_with_descriptor: None,
+            file_comment_raw: None,
         };
 
         self.start_entry(&file_name, options, Some(raw_values))?;
@@ -3183,7 +3189,7 @@ impl ZipFileData {
                 .map_err(std::io::Error::other)?,
             extra_field_length,
             file_comment_length: self
-                .file_comment
+                .file_comment_raw()
                 .len()
                 .try_into()
                 .map_err(std::io::Error::other)?,
@@ -3201,7 +3207,7 @@ impl ZipFileData {
             one_extra_field.write(writer, false)?;
         }
         // file comment
-        writer.write_all(self.file_comment.as_bytes())?;
+        writer.write_all(self.file_comment_raw())?;
         Ok(())
     }
 
@@ -5882,6 +5888,125 @@ mod tests {
                 "rename: {rename}"
             );
         }
+        Ok(())
+    }
+
+    /// `写真` in Shift-JIS, as Japanese Windows tools store it: no language
+    /// encoding flag, so [`ZipFile::comment`] reads it as CP437.
+    const SHIFT_JIS_COMMENT: &[u8] = b"\x8e\xca\x90\x5e";
+
+    /// One stored entry named `a.txt` whose comment is `comment_raw` with the
+    /// language encoding flag clear, made by patching an ASCII placeholder.
+    fn archive_with_unflagged_comment(
+        comment_raw: &[u8],
+    ) -> ZipResult<ZipArchive<Cursor<Vec<u8>>>> {
+        let placeholder = "x".repeat(comment_raw.len());
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(
+            "a.txt",
+            FullFileOptions::default()
+                .compression_method(Stored)
+                .with_file_comment(&*placeholder),
+        )?;
+        writer.write_all(b"data")?;
+        let mut bytes = writer.finish()?.into_inner();
+        let start = bytes
+            .windows(comment_raw.len())
+            .position(|window| window == placeholder.as_bytes())
+            .expect("the comment sits in the central directory");
+        bytes[start..start + comment_raw.len()].copy_from_slice(comment_raw);
+        ZipArchive::new(Cursor::new(bytes))
+    }
+
+    fn comment_raw_and_language_encoding(bytes: Vec<u8>) -> ZipResult<(Vec<u8>, bool)> {
+        let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+        let file = archive.by_index_raw(0)?;
+        let language_encoding = file
+            .flags()
+            .matching(crate::format::flags::ZipFlags::LanguageEncoding);
+        Ok((file.comment_raw().to_vec(), language_encoding))
+    }
+
+    #[test]
+    fn comment_raw_is_the_comment_as_stored() -> ZipResult<()> {
+        let mut archive = archive_with_unflagged_comment(SHIFT_JIS_COMMENT)?;
+        let file = archive.by_index_raw(0)?;
+        assert_eq!(file.comment(), "Ä╩É^");
+        assert_eq!(file.comment_raw(), SHIFT_JIS_COMMENT);
+        drop(file);
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(
+            "a.txt",
+            FullFileOptions::default()
+                .compression_method(Stored)
+                .with_file_comment("写真"),
+        )?;
+        let mut archive = ZipArchive::new(writer.finish()?)?;
+        assert_eq!(archive.by_index_raw(0)?.comment_raw(), "写真".as_bytes());
+        Ok(())
+    }
+
+    #[test]
+    fn raw_copy_file_keeps_a_legacy_code_page_comment_as_stored() -> ZipResult<()> {
+        let bytes = copied(
+            archive_with_unflagged_comment(SHIFT_JIS_COMMENT)?,
+            |writer, file| writer.raw_copy_file(file),
+        )?;
+        assert_eq!(
+            comment_raw_and_language_encoding(bytes)?,
+            (SHIFT_JIS_COMMENT.to_vec(), false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn raw_copy_file_touch_keeps_the_comment_as_stored() -> ZipResult<()> {
+        let bytes = copied(
+            archive_with_unflagged_comment(SHIFT_JIS_COMMENT)?,
+            |writer, file| writer.raw_copy_file_touch(file, DateTime::default(), None),
+        )?;
+        assert_eq!(
+            comment_raw_and_language_encoding(bytes)?,
+            (SHIFT_JIS_COMMENT.to_vec(), false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn raw_copy_file_rename_writes_the_comment_as_utf8() -> ZipResult<()> {
+        let bytes = copied(
+            archive_with_unflagged_comment(SHIFT_JIS_COMMENT)?,
+            |writer, file| writer.raw_copy_file_rename(file, "b.txt"),
+        )?;
+        assert_eq!(
+            comment_raw_and_language_encoding(bytes)?,
+            ("Ä╩É^".as_bytes().to_vec(), true)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn new_append_keeps_a_legacy_code_page_comment_as_stored() -> ZipResult<()> {
+        let source = archive_with_unflagged_comment(SHIFT_JIS_COMMENT)?;
+        let mut writer = ZipWriter::new_append(source.into_inner())?;
+        writer.deep_copy_file("a.txt", "b.txt")?;
+        let mut archive = ZipArchive::new(writer.finish()?)?;
+        let file = archive.by_name("a.txt")?;
+        assert_eq!(file.comment_raw(), SHIFT_JIS_COMMENT);
+        assert!(
+            !file
+                .flags()
+                .matching(crate::format::flags::ZipFlags::LanguageEncoding)
+        );
+        drop(file);
+        // A copy under a new name writes its comment as UTF-8, like its name.
+        let file = archive.by_name("b.txt")?;
+        assert_eq!(file.comment_raw(), "Ä╩É^".as_bytes());
+        assert!(
+            file.flags()
+                .matching(crate::format::flags::ZipFlags::LanguageEncoding)
+        );
         Ok(())
     }
 

@@ -233,16 +233,19 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     let mut file_name_raw = read_variable_length_byte_field(reader, file_name_length as usize)?;
     let extra_fields_raw = read_variable_length_byte_field(reader, extra_field_length as usize)?;
-    let file_comment: Box<str> = if file_comment_length == 0 {
-        Box::default()
+    let (file_comment, file_comment_raw): (Box<str>, _) = if file_comment_length == 0 {
+        (Box::default(), None)
     } else {
         let file_comment_raw =
             read_variable_length_byte_field(reader, file_comment_length as usize)?;
-        if is_utf8 {
+        let file_comment: Box<str> = if is_utf8 {
             String::from_utf8_lossy(&file_comment_raw).into()
         } else {
-            file_comment_raw.from_cp437()?.into()
-        }
+            file_comment_raw.as_slice().from_cp437()?.into()
+        };
+        let file_comment_raw =
+            (*file_comment_raw != *file_comment.as_bytes()).then(|| file_comment_raw.into());
+        (file_comment, file_comment_raw)
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
@@ -258,6 +261,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         uncompressed_size: uncompressed_size.into(),
         flags: ZipFileFlags(flags),
         file_comment,
+        file_comment_raw,
         header_start: offset.into(),
         central_header_start,
         data_start: OnceLock::new(),
