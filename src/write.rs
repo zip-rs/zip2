@@ -749,6 +749,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             compressed_size: 0,
             uncompressed_size: 0,
             language_encoding: None,
+            encrypted_with_descriptor: None,
         });
         if options.extended_options.validate_extra_fields()
             && let Some(extra_fields) = options.extended_options.extra_fields()
@@ -813,6 +814,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             && file.is_non_dir_based_on_unix_mode()
         {
             file.flags |= ZipFlags::UsingDataDescriptor.as_u16();
+        }
+        // A raw copy of an encrypted entry keeps the encrypted and data descriptor
+        // flags it was read with, whatever the default above picked.
+        if let Some(descriptor) = raw_values.encrypted_with_descriptor {
+            file.flags.set(ZipFlags::Encrypted, true);
+            file.flags.set(ZipFlags::UsingDataDescriptor, descriptor);
         }
         file.version_made_by = file.version_made_by.max(file.version_needed() as u8);
         let index = self.insert_file_data(file_name_raw, file)?;
@@ -1296,6 +1303,11 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// `language_encoding` is the copied entry's own flag when `name` is its
     /// stored name, or `None` for a new name, which derives the flag from it.
+    ///
+    /// An encrypted entry keeps its encrypted and data descriptor flags, and
+    /// gets a data descriptor after its bytes when it had one, so it decrypts as
+    /// before: the ZipCrypto header (or AES salt, verifier, and MAC) is in those
+    /// bytes, and neither scheme binds the name.
     fn raw_copy_file_rename_internal<R: Read, T: FileOptionExtension>(
         &mut self,
         mut file: ZipFile<'_, R>,
@@ -1308,6 +1320,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             compressed_size: file.compressed_size(),
             uncompressed_size: file.size(),
             language_encoding,
+            encrypted_with_descriptor: file
+                .encrypted()
+                .then(|| file.flags().is_using_data_descriptor()),
         };
 
         self.start_entry(name, options, Some(raw_values))?;
@@ -1315,6 +1330,18 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.writing_raw = true;
 
         io::copy(&mut file.take_raw_reader()?, self)?;
+        // `finish_file` writes no data descriptor for a raw entry.
+        let auto_large_file = self.auto_large_file;
+        let result = (|| -> ZipResult<()> {
+            let writer = self.inner.try_inner_mut()?;
+            if let Some((_, file)) = self.files.last()
+                && file.is_using_data_descriptor()
+            {
+                file.write_data_descriptor(writer, auto_large_file)?;
+            }
+            Ok(())
+        })();
+        self.ok_or_abort_file(result)?;
         self.finish_file()
     }
 
@@ -1369,6 +1396,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// modified date and unix mode. This allows faster copies of the `ZipFile` since there is no need
     /// to decompress and compress it again. Any `ZipFile` metadata other than the last modified date
     /// and the unix mode is copied and not checked, for example the file CRC.
+    ///
+    /// A ZipCrypto entry with a data descriptor checks its password against the high byte of its
+    /// last modified time, so a new time with a different high byte makes the password look wrong.
     ///
     /// ```no_run
     /// use std::io::{Read, Seek, Write};
@@ -1551,6 +1581,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             compressed_size,
             uncompressed_size,
             language_encoding: None,
+            encrypted_with_descriptor: None,
         };
 
         self.start_entry(&file_name, options, Some(raw_values))?;
@@ -5808,6 +5839,48 @@ mod tests {
                 .flags()
                 .matching(crate::format::flags::ZipFlags::LanguageEncoding);
             assert_eq!(flagged, language_encoding, "{name}");
+        }
+        Ok(())
+    }
+
+    fn decrypted(bytes: Vec<u8>, password: &[u8]) -> ZipResult<Vec<u8>> {
+        use std::io::Read;
+        let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+        let mut file = archive.by_index_decrypt(0, password)?;
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents)?;
+        Ok(contents)
+    }
+
+    #[test]
+    fn raw_copy_file_keeps_a_zipcrypto_entry_decryptable() -> ZipResult<()> {
+        // The writer gives ZipCrypto a data descriptor and checks the password
+        // against the DOS time's high byte, the shape Info-ZIP's `zip -e` writes.
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default()
+            .compression_method(Stored)
+            .last_modified_time(DateTime::from_date_and_time(2024, 5, 6, 13, 26, 52)?)
+            .with_deprecated_encryption(b"Password");
+        writer.start_file("secret.txt", options)?;
+        writer.write_all(b"secret contents")?;
+        let source = ZipArchive::new(Cursor::new(writer.finish()?.into_inner()))?;
+        for rename in [false, true] {
+            let bytes = copied(source.clone(), |writer, file| {
+                if rename {
+                    writer.raw_copy_file_rename(file, "moved.txt")
+                } else {
+                    writer.raw_copy_file(file)
+                }
+            })?;
+            let mut archive = ZipArchive::new(Cursor::new(bytes.clone()))?;
+            let flags = archive.by_index_raw(0)?.flags();
+            assert!(flags.is_encrypted(), "rename: {rename}");
+            assert!(flags.is_using_data_descriptor(), "rename: {rename}");
+            assert_eq!(
+                decrypted(bytes, b"Password")?,
+                b"secret contents",
+                "rename: {rename}"
+            );
         }
         Ok(())
     }

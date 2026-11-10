@@ -38,6 +38,11 @@ pub(crate) struct ZipRawValues {
     /// The copied entry's own language encoding flag, for a copy that keeps the
     /// entry's name bytes as stored. `None` derives the flag from the name.
     pub(crate) language_encoding: Option<bool>,
+    /// `Some` for a copy of an encrypted entry, which keeps its encrypted flag;
+    /// `Some(true)` keeps its data descriptor flag too. For ZipCrypto that flag
+    /// picks the password's check byte (the DOS time's high byte, not the CRC's),
+    /// which sits encrypted in the copied bytes. `None` derives both from the options.
+    pub(crate) encrypted_with_descriptor: Option<bool>,
 }
 
 /// re-export
