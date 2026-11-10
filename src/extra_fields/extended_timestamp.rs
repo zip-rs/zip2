@@ -1,11 +1,12 @@
 //! Extended Timestamp extra field
 //! Defined in <https://libzip.org/specifications/extrafld.txt>
 
+use crate::extra_fields::UsedExtraField;
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
 use core::mem;
-use std::io::Read;
+use std::io::{Read, Write};
 
 /// `ExtendedTimestamp` Flags
 #[rustfmt::skip]
@@ -47,6 +48,39 @@ impl ExtendedTimestamp {
         + mem::size_of::<u32>()
         + mem::size_of::<u32>()
         + mem::size_of::<u32>()) as u16;
+
+    pub(crate) fn full_size(&self, is_local_header: bool) -> usize {
+        let timestamps = usize::from(self.modified.is_some())
+            + if is_local_header {
+                usize::from(self.accessed.is_some()) + usize::from(self.created.is_some())
+            } else {
+                0
+            };
+        4 + 1 + timestamps * mem::size_of::<u32>()
+    }
+
+    pub(crate) fn write<W: Write>(&self, writer: &mut W, is_local_header: bool) -> ZipResult<()> {
+        writer.write_all(&UsedExtraField::ExtendedTimestamp.as_u16().to_le_bytes())?;
+        writer.write_all(&((self.full_size(is_local_header) - 4) as u16).to_le_bytes())?;
+        let flags = (u8::from(self.modified.is_some())
+            * u8::from(ExtendedTimestampFlags::Modified))
+            | (u8::from(self.accessed.is_some()) * u8::from(ExtendedTimestampFlags::Accessed))
+            | (u8::from(self.created.is_some()) * u8::from(ExtendedTimestampFlags::Created));
+        writer.write_all(&[flags])?;
+        if let Some(modified) = self.modified {
+            writer.write_all(&modified.to_le_bytes())?;
+        }
+        if is_local_header {
+            if let Some(accessed) = self.accessed {
+                writer.write_all(&accessed.to_le_bytes())?;
+            }
+            if let Some(created) = self.created {
+                writer.write_all(&created.to_le_bytes())?;
+            }
+        }
+        Ok(())
+    }
+
     /// creates an extended timestamp struct by reading the required bytes from the reader.
     ///
     /// This method assumes that the length has already been read, therefore
@@ -215,6 +249,58 @@ mod tests {
     use super::ExtendedTimestamp;
 
     use std::io::Cursor;
+
+    #[test]
+    fn write_extended_timestamp() {
+        for flags in 0u8..8 {
+            let timestamp = ExtendedTimestamp {
+                modified: (flags & 1 != 0).then_some(1_715_000_001),
+                accessed: (flags & 2 != 0).then_some(1_715_000_003),
+                created: (flags & 4 != 0).then_some(1_715_000_005),
+            };
+            for is_local_header in [true, false] {
+                let field = crate::ExtraField::ExtendedTimestamp(timestamp.clone());
+                let mut bytes = Vec::new();
+                field.write(&mut bytes, is_local_header).unwrap();
+                let count = if is_local_header {
+                    flags.count_ones() as usize
+                } else {
+                    usize::from(timestamp.modified.is_some())
+                };
+                assert_eq!(bytes.len(), 5 + count * 4);
+                assert_eq!(field.size(is_local_header), bytes.len());
+                assert_eq!(&bytes[..2], &[0x55, 0x54]);
+                assert_eq!(
+                    u16::from_le_bytes([bytes[2], bytes[3]]) as usize,
+                    bytes.len() - 4
+                );
+                assert_eq!(bytes[4], flags);
+                let parsed = ExtendedTimestamp::try_from_reader(
+                    &mut Cursor::new(&bytes[4..]),
+                    (bytes.len() - 4) as u16,
+                    is_local_header,
+                )
+                .unwrap();
+                assert_eq!(parsed.modified, timestamp.modified);
+                assert_eq!(
+                    parsed.accessed,
+                    if is_local_header {
+                        timestamp.accessed
+                    } else {
+                        None
+                    }
+                );
+                assert_eq!(
+                    parsed.created,
+                    if is_local_header {
+                        timestamp.created
+                    } else {
+                        None
+                    }
+                );
+            }
+        }
+    }
 
     /// Ensure we don't panic or read garbage data if the field body is empty
     #[test]
