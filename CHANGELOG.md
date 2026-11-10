@@ -23,15 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace std::num and std::cmp with core::num and core::cmp ([#1276](https://github.com/zip-rs/zip2/pull/1276))
 
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-- apply cargo fmt to security patches ([#1275](https://github.com/zip-rs/zip2/pull/1275))
-
 ## [9.4.1](https://github.com/zip-rs/zip2/compare/v9.4.0...v9.4.1) - 2026-11-06
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- Add a OwnedZipFileEntry for #177 ([#1270](https://github.com/zip-rs/zip2/pull/1270))
+- Add an `OwnedZipFileEntry` for #177 ([#1270](https://github.com/zip-rs/zip2/pull/1270))
 
 ### <!-- 2 -->🚜 Refactor
 
@@ -41,33 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 0 -->🚀 Features
 
-- Implement ZipIterable::files_with_reader ([#1267](https://github.com/zip-rs/zip2/pull/1267))
+- Implement `ZipIterable::files_with_reader` ([#1267](https://github.com/zip-rs/zip2/pull/1267))
 
 ## [9.3.0](https://github.com/zip-rs/zip2/compare/v9.2.3...v9.3.0) - 2026-11-03
 
 ### <!-- 0 -->🚀 Features
 
-- *(write)* implement TryFrom<ZipFileBuilder> for PreparedZipFile ([#1258](https://github.com/zip-rs/zip2/pull/1258))
+- *(write)* implement `TryFrom<ZipFileBuilder>` for PreparedZipFile ([#1258](https://github.com/zip-rs/zip2/pull/1258))
 
 ## [9.2.3](https://github.com/zip-rs/zip2/compare/v9.2.2...v9.2.3) - 2026-11-03
 
-### <!-- 1 -->🐛 Bug Fixes
-
-- *(ci)* resolve typos false-positive, fix upath smuggling test, and add Turkish tests ([#1256](https://github.com/zip-rs/zip2/pull/1256))
-
 ### <!-- 2 -->🚜 Refactor
 
-- Replace std:: with core:: where possible ([#1253](https://github.com/zip-rs/zip2/pull/1253))
+- Replace most equivalent uses of std:: with core:: ([#1253](https://github.com/zip-rs/zip2/pull/1253))
 
 ## [9.2.2](https://github.com/zip-rs/zip2/compare/v9.2.0...v9.2.2) - 2026-11-01
 
 ### <!-- 2 -->🚜 Refactor
 
-- Eliminate the use of SwitchWriterFunction (a Box<dyn FnOnce<_>>) ([#1235](https://github.com/zip-rs/zip2/pull/1235))
-
-### <!-- 7 -->⚙️ Miscellaneous Tasks
-
-- Fix build error (can't convert getrandom::Error to io::Error without getrandom/std) ([#1240](https://github.com/zip-rs/zip2/pull/1240))
+- Eliminate use of a `Box<dyn FnOnce<_>>` when starting and finishing an entry ([#1235](https://github.com/zip-rs/zip2/pull/1235))
 
 ## [9.2.0](https://github.com/zip-rs/zip2/compare/v9.1.3...v9.2.0) - 2026-10-31
 
@@ -76,13 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(write)* add parallel compression and batch appending for ZipWriter with Rayon ([#1225](https://github.com/zip-rs/zip2/pull/1225))
 - add index_for_name_raw ([#1210](https://github.com/zip-rs/zip2/pull/1210))
 - *(extract)* multi-threaded parallel extraction engine and safe extent pre-allocation ([#1207](https://github.com/zip-rs/zip2/pull/1207))
-- *(read)* add index-free iterable ZIP reader ([#1218](https://github.com/zip-rs/zip2/pull/1218))
+- *(read)* add `ZipIterable`, an iterable ZIP reader that doesn't store the archive directory in memory ([#1218](https://github.com/zip-rs/zip2/pull/1218))
 
 ### <!-- 1 -->🐛 Bug Fixes
 
-- by_name().get_metadata() and by_index().get_metadata() now succeed even when compression method is unsupported ([#1228](https://github.com/zip-rs/zip2/pull/1228))
-- *(read)* keep ZipIterable::len at the central directory entry count ([#1221](https://github.com/zip-rs/zip2/pull/1221))
-- *(fuzz)* count reopens in copy bases when tracking comment shrink ([#1222](https://github.com/zip-rs/zip2/pull/1222))
+- `by_name().get_metadata()` and `by_index().get_metadata()` now succeed even when compression method is unsupported ([#1228](https://github.com/zip-rs/zip2/pull/1228))
 
 ### <!-- 4 -->⚡ Performance
 
@@ -165,7 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix reference to nonexistent variable on #[cfg(not(any(unix, windows)))] ([#1138](https://github.com/zip-rs/zip2/pull/1138))
 - target lzma-rust2 v0.23 ([#1096](https://github.com/zip-rs/zip2/pull/1096))
 
-### Bench
+### Benchmarks
 
 - add Criterion benchmarks ([#754](https://github.com/zip-rs/zip2/pull/754))
 - add deflate_many_small_files bench for #633 ([#964](https://github.com/zip-rs/zip2/pull/964))
@@ -228,14 +214,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add comment and test for ZipStreamReader and symlinks ([#985](https://github.com/zip-rs/zip2/pull/985))
 - *(write)* add `ZipWriter::hide_file` for in-place entry deletion ([#924](https://github.com/zip-rs/zip2/pull/924))
 - add compression ([#948](https://github.com/zip-rs/zip2/pull/948))
-- add test to in place modification ([#945](https://github.com/zip-rs/zip2/pull/945))
-- move CustomExtraField to own file ([#941](https://github.com/zip-rs/zip2/pull/941))
-- add a test on enum size ([#939](https://github.com/zip-rs/zip2/pull/939))
 - use ZipFileEntry instead of ZipStreamFileMetadata ([#935](https://github.com/zip-rs/zip2/pull/935))
 - add ZipFileEntry with no Reader ([#933](https://github.com/zip-rs/zip2/pull/933))
 - change `aes_mode` to `aes_settings()` in ZipFileData ([#925](https://github.com/zip-rs/zip2/pull/925))
-- cleanup and harmonize extra fields ([#923](https://github.com/zip-rs/zip2/pull/923))
-- Rewrite zip64 extra ([#913](https://github.com/zip-rs/zip2/pull/913))
 
 ### <!-- 1 -->🐛 Bug Fixes
 
