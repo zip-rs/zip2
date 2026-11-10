@@ -5895,6 +5895,9 @@ mod tests {
     /// encoding flag, so [`ZipFile::comment`] reads it as CP437.
     const SHIFT_JIS_COMMENT: &[u8] = b"\x8e\xca\x90\x5e";
 
+    /// [`SHIFT_JIS_COMMENT`] read as CP437, which is what [`ZipFile::comment`] returns for it.
+    const SHIFT_JIS_COMMENT_AS_CP437: &str = "Ä╩É^";
+
     /// One stored entry named `a.txt` whose comment is `comment_raw` with the
     /// language encoding flag clear, made by patching an ASCII placeholder.
     fn archive_with_unflagged_comment(
@@ -5931,7 +5934,7 @@ mod tests {
     fn comment_raw_is_the_comment_as_stored() -> ZipResult<()> {
         let mut archive = archive_with_unflagged_comment(SHIFT_JIS_COMMENT)?;
         let file = archive.by_index_raw(0)?;
-        assert_eq!(file.comment(), "Ä╩É^");
+        assert_eq!(file.comment(), SHIFT_JIS_COMMENT_AS_CP437);
         assert_eq!(file.comment_raw(), SHIFT_JIS_COMMENT);
         drop(file);
 
@@ -5981,7 +5984,7 @@ mod tests {
         )?;
         assert_eq!(
             comment_raw_and_language_encoding(bytes)?,
-            ("Ä╩É^".as_bytes().to_vec(), true)
+            (SHIFT_JIS_COMMENT_AS_CP437.as_bytes().to_vec(), true)
         );
         Ok(())
     }
@@ -6002,7 +6005,7 @@ mod tests {
         drop(file);
         // A copy under a new name writes its comment as UTF-8, like its name.
         let file = archive.by_name("b.txt")?;
-        assert_eq!(file.comment_raw(), "Ä╩É^".as_bytes());
+        assert_eq!(file.comment_raw(), SHIFT_JIS_COMMENT_AS_CP437.as_bytes());
         assert!(
             file.flags()
                 .matching(crate::format::flags::ZipFlags::LanguageEncoding)

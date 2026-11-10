@@ -238,14 +238,28 @@ fn central_header_to_zip_file_inner<R: Read>(
     } else {
         let file_comment_raw =
             read_variable_length_byte_field(reader, file_comment_length as usize)?;
-        let file_comment: Box<str> = if is_utf8 {
-            String::from_utf8_lossy(&file_comment_raw).into()
+        // The raw bytes are kept only when they differ from the decoded comment: valid UTF-8
+        // and ASCII-only CP437 decode to the same bytes, so they skip the comparison.
+        if is_utf8 {
+            match String::from_utf8(file_comment_raw) {
+                Ok(file_comment) => (file_comment.into_boxed_str(), None),
+                Err(e) => {
+                    let file_comment_raw = e.into_bytes();
+                    (
+                        String::from_utf8_lossy(&file_comment_raw).into(),
+                        Some(file_comment_raw.into_boxed_slice()),
+                    )
+                }
+            }
         } else {
-            file_comment_raw.as_slice().from_cp437()?.into()
-        };
-        let file_comment_raw =
-            (*file_comment_raw != *file_comment.as_bytes()).then(|| file_comment_raw.into());
-        (file_comment, file_comment_raw)
+            match file_comment_raw.as_slice().from_cp437()? {
+                std::borrow::Cow::Borrowed(ascii) => (ascii.into(), None),
+                std::borrow::Cow::Owned(file_comment) => (
+                    file_comment.into_boxed_str(),
+                    Some(file_comment_raw.into_boxed_slice()),
+                ),
+            }
+        }
     };
 
     let (version_made_by, system) = System::extract_bytes(version_made_by);
