@@ -104,8 +104,14 @@ fn assert_central_fields(archive: &mut ZipArchive<Cursor<Vec<u8>>>) {
         }
     }
 
-    assert!(found_extended_timestamp, "ExtendedTimestamp extra field missing from central directory");
-    assert!(found_ntfs, "Ntfs extra field missing from central directory");
+    assert!(
+        found_extended_timestamp,
+        "ExtendedTimestamp extra field missing from central directory"
+    );
+    assert!(
+        found_ntfs,
+        "Ntfs extra field missing from central directory"
+    );
 }
 
 #[test]

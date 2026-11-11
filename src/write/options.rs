@@ -274,12 +274,7 @@ impl ExtendedFileOptions {
     }
 
     /// Adds an NTFS extra field (0x000a) with Windows file times (100-nanosecond intervals since 1601-01-01).
-    pub fn add_ntfs_times(
-        &mut self,
-        mtime: u64,
-        atime: u64,
-        ctime: u64,
-    ) -> ZipResult<()> {
+    pub fn add_ntfs_times(&mut self, mtime: u64, atime: u64, ctime: u64) -> ZipResult<()> {
         let ntfs = Ntfs::new(mtime, atime, ctime);
         let mut buf = Vec::new();
         ntfs.write(&mut buf)?;
@@ -687,14 +682,8 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
     }
 
     /// Adds an NTFS extra field (0x000a) with Windows file times (100-nanosecond intervals since 1601-01-01).
-    pub fn with_ntfs_times(
-        mut self,
-        mtime: u64,
-        atime: u64,
-        ctime: u64,
-    ) -> ZipResult<Self> {
-        self.extended_options
-            .add_ntfs_times(mtime, atime, ctime)?;
+    pub fn with_ntfs_times(mut self, mtime: u64, atime: u64, ctime: u64) -> ZipResult<Self> {
+        self.extended_options.add_ntfs_times(mtime, atime, ctime)?;
         Ok(self)
     }
 

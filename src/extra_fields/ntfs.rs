@@ -1,5 +1,5 @@
-use std::io::{Read, Write};
 use core::mem;
+use std::io::{Read, Write};
 
 use crate::{
     extra_fields::UsedExtraField,
