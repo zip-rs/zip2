@@ -1,6 +1,6 @@
 //! Write Options
 
-use crate::extra_fields::ExtendedTimestamp;
+use crate::extra_fields::{ExtendedTimestamp, Ntfs};
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use std::sync::Arc;
@@ -247,6 +247,62 @@ impl ExtendedFileOptions {
             ));
             Ok(())
         }
+    }
+
+    /// Adds an Extended Timestamp extra field (0x5455).
+    ///
+    /// If `modified` is provided, it will be written to both the local file header and central directory.
+    /// `accessed` and `created` will only be stored in the local header.
+    pub fn add_extended_timestamp(
+        &mut self,
+        modified: Option<u32>,
+        accessed: Option<u32>,
+        created: Option<u32>,
+    ) -> ZipResult<()> {
+        let ts = ExtendedTimestamp::new(modified, accessed, created);
+        let mut buf = Vec::new();
+        ts.write(&mut buf, false)?;
+        if buf.len() >= 4 {
+            self.add_extra_field(
+                crate::extra_fields::UsedExtraField::ExtendedTimestamp.as_u16(),
+                &buf[4..],
+                false,
+            )
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Adds an NTFS extra field (0x000a) with Windows file times (100-nanosecond intervals since 1601-01-01).
+    pub fn add_ntfs_times(
+        &mut self,
+        mtime: u64,
+        atime: u64,
+        ctime: u64,
+    ) -> ZipResult<()> {
+        let ntfs = Ntfs::new(mtime, atime, ctime);
+        let mut buf = Vec::new();
+        ntfs.write(&mut buf)?;
+        if buf.len() >= 4 {
+            self.add_extra_field(
+                crate::extra_fields::UsedExtraField::Ntfs.as_u16(),
+                &buf[4..],
+                false,
+            )
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(feature = "nt-time")]
+    /// Adds an NTFS extra field (0x000a) using [`nt_time::FileTime`] timestamps.
+    pub fn add_ntfs_file_times(
+        &mut self,
+        mtime: nt_time::FileTime,
+        atime: nt_time::FileTime,
+        ctime: nt_time::FileTime,
+    ) -> ZipResult<()> {
+        self.add_ntfs_times(mtime.to_raw(), atime.to_raw(), ctime.to_raw())
     }
 }
 
@@ -614,6 +670,46 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
         }
         self
     }
+
+    /// Adds an Extended Timestamp extra field (0x5455) to this entry's options.
+    ///
+    /// The timestamps are specified as UNIX epoch seconds. If `modified` is provided,
+    /// it will be included in the serialized extra field.
+    pub fn with_extended_timestamp(
+        mut self,
+        modified: Option<u32>,
+        accessed: Option<u32>,
+        created: Option<u32>,
+    ) -> ZipResult<Self> {
+        self.extended_options
+            .add_extended_timestamp(modified, accessed, created)?;
+        Ok(self)
+    }
+
+    /// Adds an NTFS extra field (0x000a) with Windows file times (100-nanosecond intervals since 1601-01-01).
+    pub fn with_ntfs_times(
+        mut self,
+        mtime: u64,
+        atime: u64,
+        ctime: u64,
+    ) -> ZipResult<Self> {
+        self.extended_options
+            .add_ntfs_times(mtime, atime, ctime)?;
+        Ok(self)
+    }
+
+    #[cfg(feature = "nt-time")]
+    /// Adds an NTFS extra field (0x000a) using [`nt_time::FileTime`] timestamps.
+    pub fn with_ntfs_file_times(
+        mut self,
+        mtime: nt_time::FileTime,
+        atime: nt_time::FileTime,
+        ctime: nt_time::FileTime,
+    ) -> ZipResult<Self> {
+        self.extended_options
+            .add_ntfs_file_times(mtime, atime, ctime)?;
+        Ok(self)
+    }
 }
 impl FileOptions<'static, 'static, ()> {
     /// Constructs a const `FileOptions` object.
@@ -659,6 +755,40 @@ impl<'k, 'n> FileOptions<'k, 'n, ()> {
             name: self.name,
             external_attributes: self.external_attributes,
         }
+    }
+
+    /// Converts to [`FullFileOptions`] and adds an Extended Timestamp extra field (0x5455).
+    pub fn with_extended_timestamp(
+        self,
+        modified: Option<u32>,
+        accessed: Option<u32>,
+        created: Option<u32>,
+    ) -> ZipResult<FullFileOptions<'k, 'n>> {
+        self.into_full_options()
+            .with_extended_timestamp(modified, accessed, created)
+    }
+
+    /// Converts to [`FullFileOptions`] and adds an NTFS extra field (0x000a).
+    pub fn with_ntfs_times(
+        self,
+        mtime: u64,
+        atime: u64,
+        ctime: u64,
+    ) -> ZipResult<FullFileOptions<'k, 'n>> {
+        self.into_full_options()
+            .with_ntfs_times(mtime, atime, ctime)
+    }
+
+    #[cfg(feature = "nt-time")]
+    /// Converts to [`FullFileOptions`] and adds an NTFS extra field (0x000a) using [`nt_time::FileTime`].
+    pub fn with_ntfs_file_times(
+        self,
+        mtime: nt_time::FileTime,
+        atime: nt_time::FileTime,
+        ctime: nt_time::FileTime,
+    ) -> ZipResult<FullFileOptions<'k, 'n>> {
+        self.into_full_options()
+            .with_ntfs_file_times(mtime, atime, ctime)
     }
 }
 
