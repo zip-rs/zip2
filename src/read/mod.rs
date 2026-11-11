@@ -238,27 +238,19 @@ fn central_header_to_zip_file_inner<R: Read>(
     } else {
         let file_comment_raw =
             read_variable_length_byte_field(reader, file_comment_length as usize)?;
-        // The raw bytes are kept only when they differ from the decoded comment: valid UTF-8
-        // and ASCII-only CP437 decode to the same bytes, so they skip the comparison.
-        if is_utf8 {
-            match String::from_utf8(file_comment_raw) {
-                Ok(file_comment) => (file_comment.into_boxed_str(), None),
-                Err(e) => {
-                    let file_comment_raw = e.into_bytes();
-                    (
-                        String::from_utf8_lossy(&file_comment_raw).into(),
-                        Some(file_comment_raw.into_boxed_slice()),
-                    )
-                }
-            }
+        // The raw bytes are kept only when they differ from the decoded comment, which is
+        // when decoding had to build a new string: invalid UTF-8, or non-ASCII CP437.
+        let file_comment = if is_utf8 {
+            String::from_utf8_lossy(&file_comment_raw)
         } else {
-            match file_comment_raw.as_slice().from_cp437()? {
-                std::borrow::Cow::Borrowed(ascii) => (ascii.into(), None),
-                std::borrow::Cow::Owned(file_comment) => (
-                    file_comment.into_boxed_str(),
-                    Some(file_comment_raw.into_boxed_slice()),
-                ),
-            }
+            file_comment_raw.as_slice().from_cp437()?
+        };
+        match file_comment {
+            std::borrow::Cow::Borrowed(file_comment) => (file_comment.into(), None),
+            std::borrow::Cow::Owned(file_comment) => (
+                file_comment.into_boxed_str(),
+                Some(file_comment_raw.into_boxed_slice()),
+            ),
         }
     };
 
