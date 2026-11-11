@@ -261,7 +261,7 @@ impl ExtendedFileOptions {
     ) -> ZipResult<()> {
         let ts = ExtendedTimestamp::new(modified, accessed, created);
         let mut buf = Vec::new();
-        ts.write(&mut buf, false)?;
+        ts.write(&mut buf, true)?;
         if buf.len() >= 4 {
             self.add_extra_field(
                 crate::extra_fields::UsedExtraField::ExtendedTimestamp.as_u16(),
