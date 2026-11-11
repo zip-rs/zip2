@@ -201,15 +201,14 @@ impl ExtraField {
             ExtraField::Zip64ExtendedInformation(zip64_extra) => {
                 zip64_extra.full_size(is_local_header)
             }
-            ExtraField::Ntfs(_ntfs) => {
+            ExtraField::Ntfs(ntfs) => {
                 // NTFS extra field
-                0
+                ntfs.full_size()
             }
             #[cfg(feature = "aes-crypto")]
             ExtraField::AeXEncryption(aes) => aes.full_size(),
-            ExtraField::ExtendedTimestamp(_extended_timestamp) => {
-                // nothing to do
-                0
+            ExtraField::ExtendedTimestamp(extended_timestamp) => {
+                extended_timestamp.full_size(is_local_header)
             }
             ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
             ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
@@ -246,8 +245,11 @@ impl ExtraField {
             ExtraField::DataStreamAlignment(data_stream_alignment) => {
                 data_stream_alignment.write(writer, is_local_header)?
             }
-            _ => {
-                // nothing to do
+            ExtraField::Ntfs(ntfs) => {
+                ntfs.write(writer)?;
+            }
+            ExtraField::ExtendedTimestamp(extended_timestamp) => {
+                extended_timestamp.write(writer, is_local_header)?;
             }
         }
         Ok(())

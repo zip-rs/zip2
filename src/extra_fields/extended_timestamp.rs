@@ -1,11 +1,12 @@
 //! Extended Timestamp extra field
 //! Defined in <https://libzip.org/specifications/extrafld.txt>
 
+use crate::extra_fields::UsedExtraField;
 use crate::result::invalid;
 use crate::result::{ZipError, ZipResult};
 use crate::unstable::LittleEndianReadExt;
 use core::mem;
-use std::io::Read;
+use std::io::{Read, Write};
 
 /// `ExtendedTimestamp` Flags
 #[rustfmt::skip]
@@ -208,6 +209,65 @@ impl ExtendedTimestamp {
     pub fn cr_time(&self) -> Option<u32> {
         self.created
     }
+
+    /// Number of timestamps the serialized field contains.
+    ///
+    /// The central header only stores the modification time, so the access and
+    /// creation times are left out there.
+    fn time_count(&self, is_local_header: bool) -> usize {
+        let mut count = usize::from(self.modified.is_some());
+        if is_local_header {
+            count += usize::from(self.accessed.is_some());
+            count += usize::from(self.created.is_some());
+        }
+        count
+    }
+
+    /// Size of the serialized extra field, including its 4-byte extra field
+    /// header (tag and data size).
+    pub(crate) fn full_size(&self, is_local_header: bool) -> usize {
+        mem::size_of::<u16>() * 2 + mem::size_of::<u8>() + 4 * self.time_count(is_local_header)
+    }
+
+    /// Serializes the extra field, including its tag and data size.
+    ///
+    /// This keeps the timestamps of a copied entry, whose local header would
+    /// otherwise only carry the rounded, local-time DOS date-time.
+    pub(crate) fn write<W: Write>(&self, write: &mut W, is_local_header: bool) -> ZipResult<()> {
+        // Only the stored timestamps are advertised: the central header keeps
+        // the modification time only, and flags that don't match the data would
+        // make the field unreadable.
+        let mut flags = 0u8;
+        if self.modified.is_some() {
+            flags |= u8::from(ExtendedTimestampFlags::Modified);
+        }
+        if is_local_header {
+            if self.accessed.is_some() {
+                flags |= u8::from(ExtendedTimestampFlags::Accessed);
+            }
+            if self.created.is_some() {
+                flags |= u8::from(ExtendedTimestampFlags::Created);
+            }
+        }
+
+        write.write_all(&UsedExtraField::ExtendedTimestamp.to_le_bytes())?;
+        let data_size = (self.full_size(is_local_header) - mem::size_of::<u16>() * 2) as u16;
+        write.write_all(&data_size.to_le_bytes())?;
+        write.write_all(&[flags])?;
+
+        if let Some(modified) = self.modified {
+            write.write_all(&modified.to_le_bytes())?;
+        }
+        if is_local_header {
+            if let Some(accessed) = self.accessed {
+                write.write_all(&accessed.to_le_bytes())?;
+            }
+            if let Some(created) = self.created {
+                write.write_all(&created.to_le_bytes())?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -382,5 +442,59 @@ mod tests {
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 9, false).unwrap();
         assert_eq!(result.mod_time(), Some(1700000000));
         assert_eq!(cursor.position(), 9);
+    }
+
+    /// A copied entry must be able to serialize the field again, with the same
+    /// timestamps and flags that the source advertised.
+    #[test]
+    fn test_write_local_header() {
+        let field = [
+            0b0000_0111_u8,
+            0x01,
+            0xF1,
+            0x53,
+            0x65,
+            0x02,
+            0xF1,
+            0x53,
+            0x65,
+            0x03,
+            0xF1,
+            0x53,
+            0x65,
+        ];
+        let mut cursor = Cursor::new(&field);
+        let timestamp = ExtendedTimestamp::try_from_reader(&mut cursor, 13, true).unwrap();
+        let mut serialized = Vec::new();
+        timestamp.write(&mut serialized, true).unwrap();
+        assert_eq!(serialized.len(), 4 + field.len());
+        assert_eq!(&serialized[4..], &field[..]);
+    }
+
+    /// The central header stores the modification time only, so its flags must
+    /// not advertise the access and creation times.
+    #[test]
+    fn test_write_central_header() {
+        let field = [
+            0b0000_0111_u8,
+            0x01,
+            0xF1,
+            0x53,
+            0x65,
+            0x02,
+            0xF1,
+            0x53,
+            0x65,
+            0x03,
+            0xF1,
+            0x53,
+            0x65,
+        ];
+        let mut cursor = Cursor::new(&field);
+        let timestamp = ExtendedTimestamp::try_from_reader(&mut cursor, 13, true).unwrap();
+        let mut serialized = Vec::new();
+        timestamp.write(&mut serialized, false).unwrap();
+        assert_eq!(serialized.len(), 4 + 5);
+        assert_eq!(&serialized[4..], &[0b0000_0001, 0x01, 0xF1, 0x53, 0x65]);
     }
 }

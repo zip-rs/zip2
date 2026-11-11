@@ -1,9 +1,11 @@
-use std::io::Read;
+use std::io::{Read, Write};
 
+use crate::extra_fields::UsedExtraField;
 use crate::{
     result::{ZipError, ZipResult},
     unstable::LittleEndianReadExt,
 };
+use core::mem;
 
 /// The NTFS extra field as described in [PKWARE's APPNOTE.TXT v6.3.9].
 ///
@@ -104,5 +106,31 @@ impl Ntfs {
     #[must_use]
     pub fn created_file_time(&self) -> nt_time::FileTime {
         nt_time::FileTime::new(self.ctime)
+    }
+
+    /// Size of the serialized extra field, including its 4-byte extra field
+    /// header (tag and data size).
+    pub(crate) fn full_size(&self) -> usize {
+        mem::size_of::<u16>() * 2 // extra field tag and data size
+            + mem::size_of::<u32>() // reserved for future use
+            + mem::size_of::<u16>() * 2 // attribute tag and attribute size
+            + 3 * mem::size_of::<u64>() // mtime, atime and ctime
+    }
+
+    /// Serializes the extra field, including its tag and data size.
+    ///
+    /// This keeps the file times of a copied entry, which a copy that only
+    /// carries the DOS date-time in the local header would round and shift.
+    pub(crate) fn write<W: Write>(&self, write: &mut W) -> ZipResult<()> {
+        write.write_all(&UsedExtraField::Ntfs.to_le_bytes())?;
+        let data_size = (self.full_size() - mem::size_of::<u16>() * 2) as u16;
+        write.write_all(&data_size.to_le_bytes())?;
+        write.write_all(&0u32.to_le_bytes())?; // reserved for future use
+        write.write_all(&0x0001u16.to_le_bytes())?; // attribute tag: file times
+        write.write_all(&24u16.to_le_bytes())?; // attribute size
+        write.write_all(&self.mtime.to_le_bytes())?;
+        write.write_all(&self.atime.to_le_bytes())?;
+        write.write_all(&self.ctime.to_le_bytes())?;
+        Ok(())
     }
 }
