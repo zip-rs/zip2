@@ -1295,10 +1295,10 @@ impl<W: Write + Seek> ZipWriter<W> {
             let mut buff = buff.into_inner();
             if buff.len() >= 4 {
                 let header_id = u16::from_le_bytes([buff[0], buff[1]]);
-                if matches!(one_extra, ExtraField::ExtendedTimestamp(_)) {
+                if let ExtraField::ExtendedTimestamp(timestamp) = one_extra {
                     // This central-directory representation is also written to the local
                     // header, so only advertise the modification time it can contain.
-                    buff[4] &= 1;
+                    buff[4] = u8::from(timestamp.mod_time().is_some());
                 }
                 #[cfg(feature = "aes-crypto")]
                 if header_id == 0x9901 {
@@ -3324,6 +3324,10 @@ impl ZipFileData {
         #[cfg(feature = "aes-crypto")]
         let mut bytes_written = 0;
         for one_extra_field in local_extra_fields {
+            if let ExtraField::ExtendedTimestamp(timestamp) = one_extra_field {
+                // The central flags must describe this new local header, including on deep copies.
+                timestamp.update_local_header_flags();
+            }
             one_extra_field.write(&mut *writer, true)?;
             #[cfg(feature = "aes-crypto")]
             {

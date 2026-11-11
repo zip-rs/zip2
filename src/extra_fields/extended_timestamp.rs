@@ -38,6 +38,8 @@ impl From<ExtendedTimestampFlags> for u8 {
 /// Extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtendedTimestamp {
+    // Central-directory flags describe the local header, including local-only timestamps.
+    flags: u8,
     modified: Option<u32>,
     accessed: Option<u32>,
     created: Option<u32>,
@@ -59,13 +61,24 @@ impl ExtendedTimestamp {
         4 + 1 + timestamps * mem::size_of::<u32>()
     }
 
+    fn local_flags(&self) -> u8 {
+        (u8::from(self.modified.is_some()) * u8::from(ExtendedTimestampFlags::Modified))
+            | (u8::from(self.accessed.is_some()) * u8::from(ExtendedTimestampFlags::Accessed))
+            | (u8::from(self.created.is_some()) * u8::from(ExtendedTimestampFlags::Created))
+    }
+
+    pub(crate) fn update_local_header_flags(&mut self) {
+        self.flags = self.local_flags();
+    }
+
     pub(crate) fn write<W: Write>(&self, writer: &mut W, is_local_header: bool) -> ZipResult<()> {
         writer.write_all(&UsedExtraField::ExtendedTimestamp.as_u16().to_le_bytes())?;
         writer.write_all(&((self.full_size(is_local_header) - 4) as u16).to_le_bytes())?;
-        let flags = (u8::from(self.modified.is_some())
-            * u8::from(ExtendedTimestampFlags::Modified))
-            | (u8::from(self.accessed.is_some()) * u8::from(ExtendedTimestampFlags::Accessed))
-            | (u8::from(self.created.is_some()) * u8::from(ExtendedTimestampFlags::Created));
+        let flags = if is_local_header {
+            self.local_flags()
+        } else {
+            self.flags
+        };
         writer.write_all(&[flags])?;
         if let Some(modified) = self.modified {
             writer.write_all(&modified.to_le_bytes())?;
@@ -109,7 +122,7 @@ impl ExtendedTimestamp {
             return Self::parse_local_header(reader, len, flags, bytes_to_read);
         }
         // the flags field refer to the local header
-        Self::parse_central_header(reader, bytes_to_read)
+        Self::parse_central_header(reader, flags[0], bytes_to_read)
     }
 
     /// parse the local header
@@ -194,6 +207,7 @@ impl ExtendedTimestamp {
         }
 
         Ok(Self {
+            flags,
             modified,
             accessed,
             created,
@@ -201,7 +215,11 @@ impl ExtendedTimestamp {
     }
 
     /// parse the central header
-    fn parse_central_header<R: Read>(reader: &mut R, mut bytes_to_read: usize) -> ZipResult<Self> {
+    fn parse_central_header<R: Read>(
+        reader: &mut R,
+        flags: u8,
+        mut bytes_to_read: usize,
+    ) -> ZipResult<Self> {
         let modified = if bytes_to_read >= mem::size_of::<u32>() {
             bytes_to_read -= mem::size_of::<u32>();
             Some(reader.read_u32_le()?)
@@ -219,6 +237,7 @@ impl ExtendedTimestamp {
             }
         }
         Ok(Self {
+            flags,
             modified,
             accessed: None,
             created: None,
@@ -254,6 +273,7 @@ mod tests {
     fn write_extended_timestamp() {
         for flags in 0u8..8 {
             let timestamp = ExtendedTimestamp {
+                flags,
                 modified: (flags & 1 != 0).then_some(1_715_000_001),
                 accessed: (flags & 2 != 0).then_some(1_715_000_003),
                 created: (flags & 4 != 0).then_some(1_715_000_005),
@@ -298,6 +318,9 @@ mod tests {
                         None
                     }
                 );
+                let mut rewritten = Vec::new();
+                parsed.write(&mut rewritten, is_local_header).unwrap();
+                assert_eq!(rewritten, bytes);
             }
         }
     }
