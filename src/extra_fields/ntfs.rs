@@ -1,11 +1,11 @@
+use core::mem;
 use std::io::{Read, Write};
 
-use crate::extra_fields::UsedExtraField;
 use crate::{
+    extra_fields::UsedExtraField,
     result::{ZipError, ZipResult},
     unstable::LittleEndianReadExt,
 };
-use core::mem;
 
 /// The NTFS extra field as described in [PKWARE's APPNOTE.TXT v6.3.9].
 ///
@@ -108,6 +108,28 @@ impl Ntfs {
         nt_time::FileTime::new(self.ctime)
     }
 
+    /// Creates a new `Ntfs` extra field with the given 100-nanosecond Windows file times
+    /// (intervals since 1601-01-01 00:00:00 UTC).
+    #[must_use]
+    pub const fn new(mtime: u64, atime: u64, ctime: u64) -> Self {
+        Self {
+            mtime,
+            atime,
+            ctime,
+        }
+    }
+
+    #[cfg(feature = "nt-time")]
+    /// Creates a new `Ntfs` extra field from [`nt_time::FileTime`] timestamps.
+    #[must_use]
+    pub fn from_file_times(
+        mtime: nt_time::FileTime,
+        atime: nt_time::FileTime,
+        ctime: nt_time::FileTime,
+    ) -> Self {
+        Self::new(mtime.to_raw(), atime.to_raw(), ctime.to_raw())
+    }
+
     /// Size of the serialized extra field, including its 4-byte extra field
     /// header (tag and data size).
     pub(crate) fn full_size(&self) -> usize {
@@ -132,5 +154,33 @@ impl Ntfs {
         write.write_all(&self.atime.to_le_bytes())?;
         write.write_all(&self.ctime.to_le_bytes())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Ntfs;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_ntfs_constructors_and_write() {
+        let ntfs = Ntfs::new(100, 200, 300);
+        assert_eq!(ntfs.mtime(), 100);
+        assert_eq!(ntfs.atime(), 200);
+        assert_eq!(ntfs.ctime(), 300);
+        assert_eq!(ntfs.full_size(), 36);
+
+        let mut buf = Vec::new();
+        ntfs.write(&mut buf).unwrap();
+        assert_eq!(buf.len(), 36);
+
+        // Header ID 0x000A, Data Size 32
+        assert_eq!(&buf[0..2], &0x000Au16.to_le_bytes());
+        assert_eq!(&buf[2..4], &32u16.to_le_bytes());
+
+        // Parse it back
+        let mut cursor = Cursor::new(&buf[4..]);
+        let parsed = Ntfs::try_from_reader(&mut cursor, 32).unwrap();
+        assert_eq!(parsed, ntfs);
     }
 }

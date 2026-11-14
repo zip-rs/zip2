@@ -210,6 +210,23 @@ impl ExtendedTimestamp {
         self.created
     }
 
+    /// Creates a new `ExtendedTimestamp` extra field with optional modification, access,
+    /// and creation timestamps (in UNIX epoch seconds).
+    #[must_use]
+    pub const fn new(modified: Option<u32>, accessed: Option<u32>, created: Option<u32>) -> Self {
+        Self {
+            modified,
+            accessed,
+            created,
+        }
+    }
+
+    /// Creates a new `ExtendedTimestamp` extra field with only the modification timestamp set.
+    #[must_use]
+    pub const fn from_mod_time(modified: u32) -> Self {
+        Self::new(Some(modified), None, None)
+    }
+
     /// Number of timestamps the serialized field contains.
     ///
     /// The central header only stores the modification time, so the access and
@@ -444,6 +461,19 @@ mod tests {
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 9, false).unwrap();
         assert_eq!(result.mod_time(), Some(1700000000));
         assert_eq!(cursor.position(), 9);
+    }
+
+    #[test]
+    fn test_constructors() {
+        let ts = ExtendedTimestamp::new(Some(12345), Some(67890), None);
+        assert_eq!(ts.mod_time(), Some(12345));
+        assert_eq!(ts.ac_time(), Some(67890));
+        assert_eq!(ts.cr_time(), None);
+
+        let ts_mod = ExtendedTimestamp::from_mod_time(99999);
+        assert_eq!(ts_mod.mod_time(), Some(99999));
+        assert_eq!(ts_mod.ac_time(), None);
+        assert_eq!(ts_mod.cr_time(), None);
     }
 
     /// A copied entry must be able to serialize the field again, with the same

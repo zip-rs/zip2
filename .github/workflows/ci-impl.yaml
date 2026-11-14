@@ -353,6 +353,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: fmt fuzz
         run: cargo fmt --all --manifest-path ${{ github.workspace }}/fuzz/Cargo.toml -- --check
+      - name: typos-action
+        uses: crate-ci/typos@4c8b7f51ca60df14e3c5ca82770dfbbe6c3dae85 # v1.52.0
   fuzz_regressions:
     # Fast, deterministic, required: replays seed corpus + known-bad inputs with
     # a plain (non-AFL) release build. Seconds, not hours.
