@@ -43,6 +43,9 @@ pub(crate) struct ZipRawValues {
     /// picks the password's check byte (the DOS time's high byte, not the CRC's),
     /// which sits encrypted in the copied bytes. `None` derives both from the options.
     pub(crate) encrypted_with_descriptor: Option<bool>,
+    /// The copied entry's comment as stored, for a copy that keeps it: see
+    /// `ZipFileData::file_comment_raw`. `None` writes the comment from the options.
+    pub(crate) file_comment_raw: Option<Box<[u8]>>,
 }
 
 /// re-export
@@ -70,6 +73,9 @@ pub struct ZipFileData {
     pub uncompressed_size: u64,
     /// File comment
     pub file_comment: Box<str>,
+    /// The file comment as stored, when its bytes differ from `file_comment`'s: a comment in a
+    /// legacy code page, or one an Info-ZIP Unicode Comment extra field replaced.
+    pub(crate) file_comment_raw: Option<Box<[u8]>>,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
     /// Specifies where the central header of the file starts
@@ -172,6 +178,13 @@ impl ZipFileData {
     #[inline]
     pub fn is_using_data_descriptor(&self) -> bool {
         self.flags.is_using_data_descriptor()
+    }
+
+    /// The file comment as stored.
+    pub(crate) fn file_comment_raw(&self) -> &[u8] {
+        self.file_comment_raw
+            .as_deref()
+            .unwrap_or(self.file_comment.as_bytes())
     }
 
     /// Get the starting offset of the data of the compressed file
@@ -502,6 +515,7 @@ impl ZipFileData {
             compressed_size: raw_values.compressed_size,
             uncompressed_size: raw_values.uncompressed_size,
             file_comment: String::with_capacity(0).into_boxed_str(),
+            file_comment_raw: None,
             header_start,
             data_start: OnceLock::new(),
             central_header_start: 0,
@@ -545,6 +559,7 @@ impl ZipFileData {
             compressed_size: compressed_size.into(),
             uncompressed_size: uncompressed_size.into(),
             file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
+            file_comment_raw: None,
             // header_start and data start are not available, but also don't matter, since seeking is
             // not available.
             header_start: 0,
@@ -563,13 +578,15 @@ impl ZipFileData {
     }
 
     /// The general purpose flags to write for this entry under `file_name_raw`. The language
-    /// encoding bit is as stored, except that a non-ASCII comment, which is always written as
-    /// UTF-8, sets it when the name bytes are valid UTF-8 too. Such a comment can come from an
-    /// Info-ZIP Unicode Comment extra field on an unflagged entry; written unflagged, a reader
+    /// encoding bit is as stored, except that a non-ASCII comment written as UTF-8 (one not kept
+    /// as stored) sets it when the name bytes are valid UTF-8 too; written unflagged, a reader
     /// would decode it as CP437 and it would grow on every reopen.
     pub(crate) fn flags(&self, file_name_raw: &[u8]) -> u16 {
         let mut flags = self.flags;
-        if !self.file_comment.is_ascii() && core::str::from_utf8(file_name_raw).is_ok() {
+        if self.file_comment_raw.is_none()
+            && !self.file_comment.is_ascii()
+            && core::str::from_utf8(file_name_raw).is_ok()
+        {
             flags.set(ZipFlags::LanguageEncoding, true);
         }
         get_flags(flags)
@@ -597,8 +614,10 @@ impl ZipFileData {
         self.extra_fields.inner = inner.into_boxed_slice();
     }
 
-    /// Sets the language encoding flag for this entry written under a new name.
+    /// Sets the language encoding flag for this entry written under a new name, which writes its
+    /// comment as UTF-8 too.
     pub(crate) fn set_language_encoding_for(&mut self, file_name_raw: &[u8]) {
+        self.file_comment_raw = None;
         let on = needs_language_encoding(file_name_raw, &self.file_comment);
         self.flags.set(ZipFlags::LanguageEncoding, on);
     }

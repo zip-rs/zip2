@@ -303,7 +303,10 @@ impl ZipFileData {
                     if unicode.crc32 == crc
                         && let Ok(comment) = String::from_utf8(unicode.content.to_vec())
                     {
-                        self.file_comment = comment.into_boxed_str();
+                        let file_comment =
+                            core::mem::replace(&mut self.file_comment, comment.into_boxed_str());
+                        self.file_comment_raw
+                            .get_or_insert_with(|| file_comment.into_boxed_bytes());
                     }
                 }
                 #[allow(clippy::collapsible_match)]
