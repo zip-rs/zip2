@@ -243,8 +243,14 @@ impl ExtendedTimestamp {
     /// Size of the serialized extra field, including its 4-byte extra field
     /// header (tag and data size).
     pub(crate) fn full_size(&self, is_local_header: bool) -> usize {
-        mem::size_of::<u16>() * 2
-            + mem::size_of::<u8>()
+        mem::size_of::<u16>() // magic
+            + mem::size_of::<u16>() // length
+            + self.size()
+    }
+
+    /// Size of the serialized extra field
+    pub(crate) fn size(&self, is_local_header: bool) -> usize {
+        mem::size_of::<u8>()
             + mem::size_of::<u32>() * self.time_count(is_local_header)
     }
 
@@ -270,7 +276,7 @@ impl ExtendedTimestamp {
         }
 
         write.write_all(&UsedExtraField::ExtendedTimestamp.to_le_bytes())?;
-        let data_size = (self.full_size(is_local_header) - mem::size_of::<u16>() * 2) as u16;
+        let data_size = self.size(is_local_header) as u16;
         write.write_all(&data_size.to_le_bytes())?;
         write.write_all(&[flags])?;
 
