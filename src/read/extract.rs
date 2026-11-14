@@ -179,17 +179,25 @@ impl<F> ExtractOptions<F> {
 
 pub(crate) fn make_writable_dir_all<T: AsRef<Path>>(outpath: T) -> Result<(), ZipError> {
     use std::fs;
-    fs::create_dir_all(outpath.as_ref())?;
+    let path = outpath.as_ref();
+    if fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return Err(invalid!(
+            "Destination directory component cannot be a symbolic link"
+        ));
+    }
+    fs::create_dir_all(path)?;
     #[cfg(unix)]
     {
         // Dirs must be writable until all normal files are extracted
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            outpath.as_ref(),
-            std::fs::Permissions::from_mode(
-                0o700 | std::fs::metadata(outpath.as_ref())?.permissions().mode(),
-            ),
-        )?;
+        let meta = fs::symlink_metadata(path)?;
+        if meta.file_type().is_symlink() {
+            return Err(invalid!(
+                "Destination directory component cannot be a symbolic link"
+            ));
+        }
+        let perms = fs::Permissions::from_mode(0o700 | meta.permissions().mode());
+        set_permissions_no_follow_symlink(path, perms)?;
     }
     Ok(())
 }
@@ -350,13 +358,13 @@ pub(crate) fn make_symlink<T>(
 #[cfg(not(any(windows, unix)))]
 pub(crate) fn make_symlink<T>(
     // No symlink is created on these targets, so there is nothing to contain.
-    _base: &Path,
+    base: &Path,
     outpath: &Path,
     target: &[u8],
     #[cfg_attr(not(any(windows, unix)), allow(unused))] existing_files: &IndexMap<Box<[u8]>, T>,
     _symlink_action: SymlinkExtractAction,
 ) -> ZipResult<()> {
-    make_symlink_as_file_utf8(outpath, target, None)?;
+    make_symlink_as_file_utf8(outpath, target, None, Some(base))?;
     Ok(())
 }
 
@@ -364,11 +372,12 @@ pub(crate) fn make_symlink_as_file_utf8(
     outpath: &Path,
     target: &[u8],
     unix_mode: Option<u32>,
+    destination: Option<&Path>,
 ) -> ZipResult<()> {
     let Ok(_) = std::str::from_utf8(target) else {
         return Err(invalid!("Invalid UTF-8 as symlink target"));
     };
-    make_symlink_as_file(outpath, target, unix_mode)?;
+    make_symlink_as_file(outpath, target, unix_mode, destination)?;
     Ok(())
 }
 
@@ -407,6 +416,7 @@ fn delete_by_handle(file: std::fs::File) -> std::io::Result<()> {
 pub(crate) fn create_outfile(
     outpath: &Path,
     unix_mode: Option<u32>,
+    destination: Option<&Path>,
 ) -> std::io::Result<std::fs::File> {
     if let Ok(meta) = std::fs::symlink_metadata(outpath) {
         #[cfg(unix)]
@@ -521,6 +531,29 @@ pub(crate) fn create_outfile(
         ));
     }
 
+    // Validate that no ancestor directory component inside destination has been swapped for a symbolic link.
+    // Traversal stops once the extraction destination is reached, since the destination path itself
+    // may legitimately reside under or be a symbolic link (e.g. /tmp or /var on macOS/Linux).
+    let mut current = outpath.parent();
+    while let Some(parent) = current {
+        if let Some(dest) = destination
+            && (parent == dest
+                || parent.components().eq(dest.components())
+                || !parent.starts_with(dest))
+        {
+            break;
+        }
+        if std::fs::symlink_metadata(parent)
+            .is_ok_and(|parent_meta| parent_meta.file_type().is_symlink())
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "Extracted file parent directory cannot be a symbolic link",
+            ));
+        }
+        current = parent.parent();
+    }
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -561,9 +594,10 @@ pub(crate) fn make_symlink_as_file(
     outpath: &Path,
     target: &[u8],
     unix_mode: Option<u32>,
+    destination: Option<&Path>,
 ) -> std::io::Result<()> {
     use std::io::Write;
-    let mut output = create_outfile(outpath, unix_mode)?;
+    let mut output = create_outfile(outpath, unix_mode, destination)?;
     output.write_all(target)?;
     Ok(())
 }
@@ -574,7 +608,8 @@ pub(crate) fn set_permissions_no_follow_symlink(
     mode: std::fs::Permissions,
 ) -> std::io::Result<()> {
     use std::fs;
-    if fs::symlink_metadata(path)?.file_type().is_symlink() {
+    let meta = fs::symlink_metadata(path)?;
+    if meta.file_type().is_symlink() {
         #[cfg(any(
             target_os = "macos",
             target_os = "freebsd",
@@ -595,10 +630,34 @@ pub(crate) fn set_permissions_no_follow_symlink(
             // Use fchmodat with the flag telling it NOT to follow the symlink
             fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink)?;
         }
+        Ok(())
     } else {
-        fs::set_permissions(path, mode)?;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut opts = fs::OpenOptions::new();
+        opts.read(true).custom_flags(libc::O_NOFOLLOW);
+        if meta.is_dir() {
+            opts.custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY);
+        }
+        match opts.open(path) {
+            Ok(file) => file.set_permissions(mode),
+            Err(err) => {
+                if err.raw_os_error() == Some(libc::ELOOP) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "Cannot set permissions through a symbolic link",
+                    ));
+                }
+                let post_meta = fs::symlink_metadata(path)?;
+                if post_meta.file_type().is_symlink() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "Cannot set permissions through a symbolic link",
+                    ));
+                }
+                fs::set_permissions(path, mode)
+            }
+        }
     }
-    Ok(())
 }
 
 /// Store all entries which specify a numeric "mode" which is familiar to POSIX operating systems.
@@ -846,10 +905,20 @@ impl<R: Read + Seek> ZipArchive<R> {
                         // do nothing
                     }
                     SymlinkExtractAction::ExtractAsFile => {
-                        make_symlink_as_file(&outpath, &target, unix_mode)?;
+                        make_symlink_as_file(
+                            &outpath,
+                            &target,
+                            unix_mode,
+                            Some(directory.as_ref()),
+                        )?;
                     }
                     SymlinkExtractAction::ExtractAsFileUtf8 => {
-                        make_symlink_as_file_utf8(&outpath, &target, unix_mode)?;
+                        make_symlink_as_file_utf8(
+                            &outpath,
+                            &target,
+                            unix_mode,
+                            Some(directory.as_ref()),
+                        )?;
                     }
                     #[cfg(any(unix, windows))]
                     SymlinkExtractAction::ExtractRecursiveInFolder => {
@@ -888,7 +957,8 @@ impl<R: Read + Seek> ZipArchive<R> {
                     files_by_unix_mode.add_mode(outpath, mode);
                 }
             } else {
-                let mut outfile = create_outfile(&outpath, file.unix_mode())?;
+                let mut outfile =
+                    create_outfile(&outpath, file.unix_mode(), Some(directory.as_ref()))?;
                 let uncompressed_len = file.size();
                 let mut preallocated_len = 0u64;
                 if uncompressed_len > 0 && !file.flags().is_using_data_descriptor() {
@@ -1140,10 +1210,20 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                 match symlink_action {
                     SymlinkExtractAction::NoExtract => {}
                     SymlinkExtractAction::ExtractAsFile => {
-                        make_symlink_as_file(&outpath, &target, unix_mode)?;
+                        make_symlink_as_file(
+                            &outpath,
+                            &target,
+                            unix_mode,
+                            Some(directory.as_ref()),
+                        )?;
                     }
                     SymlinkExtractAction::ExtractAsFileUtf8 => {
-                        make_symlink_as_file_utf8(&outpath, &target, unix_mode)?;
+                        make_symlink_as_file_utf8(
+                            &outpath,
+                            &target,
+                            unix_mode,
+                            Some(directory.as_ref()),
+                        )?;
                     }
                     #[cfg(any(unix, windows))]
                     SymlinkExtractAction::ExtractRecursiveInFolder
@@ -1208,7 +1288,8 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
                             .enforce_header_consistency(enforce_header_consistency);
                         let mut file = archive.by_index_with_options(idx, read_options)?;
 
-                        let mut outfile = create_outfile(&outpath, file.unix_mode())?;
+                        let mut outfile =
+                            create_outfile(&outpath, file.unix_mode(), Some(directory.as_ref()))?;
                         let uncompressed_len = file.size();
                         let mut preallocated_len = 0u64;
 
