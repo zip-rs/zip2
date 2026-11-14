@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.6.0](https://github.com/zip-rs/zip2/compare/v9.5.1...v9.6.0) - 2026-11-14
+
+### <!-- 0 -->🚀 Features
+
+- *(extra_fields)* add type-safe constructors and FileOptions builders for ExtendedTimestamp and NTFS ([#1296](https://github.com/zip-rs/zip2/pull/1296))
+- add `ZipFile::comment_raw`, and raw copies keep the comment as stored ([#1289](https://github.com/zip-rs/zip2/pull/1289))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(write)* seek to existing central directory start in ZipWriter::new_append ([#1302](https://github.com/zip-rs/zip2/pull/1302))
+
 ## [9.5.1](https://github.com/zip-rs/zip2/compare/v9.5.0...v9.5.1) - 2026-11-10
 
 ### <!-- 1 -->🐛 Bug Fixes
