@@ -207,10 +207,7 @@ impl ExtraField {
             }
             #[cfg(feature = "aes-crypto")]
             ExtraField::AeXEncryption(aes) => aes.full_size(),
-            ExtraField::ExtendedTimestamp(_extended_timestamp) => {
-                // nothing to do
-                0
-            }
+            ExtraField::ExtendedTimestamp(timestamp) => timestamp.full_size(is_local_header),
             ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
             ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
             ExtraField::Custom(custom) => custom.full_size(is_local_header),
@@ -232,6 +229,9 @@ impl ExtraField {
             }
             ExtraField::Custom(custom) => {
                 custom.write(writer, is_local_header)?;
+            }
+            ExtraField::ExtendedTimestamp(timestamp) => {
+                timestamp.write(writer, is_local_header)?;
             }
             ExtraField::UnicodeComment(unicode_comment) => {
                 let magic = UsedExtraField::UnicodeComment.as_u16();
