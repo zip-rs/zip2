@@ -226,7 +226,7 @@ impl ExtendedTimestamp {
     /// Size of the serialized extra field, including its 4-byte extra field
     /// header (tag and data size).
     pub(crate) fn full_size(&self, is_local_header: bool) -> usize {
-        mem::size_of::<u16>() * 2 + mem::size_of::<u8>() + 4 * self.time_count(is_local_header)
+        mem::size_of::<u16>() * 2 + mem::size_of::<u8>() + mem::size_of::<u32>() * self.time_count(is_local_header)
     }
 
     /// Serializes the extra field, including its tag and data size.
