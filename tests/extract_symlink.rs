@@ -793,6 +793,7 @@ fn test_existing_symlink_in_destination_cannot_escape() -> zip::result::ZipResul
 }
 
 #[test]
+#[cfg(all(any(unix, windows), not(miri)))]
 fn test_ancestor_symlink_swap_rejected_by_extract() -> Result<(), Box<dyn std::error::Error>> {
     use std::fs;
     use std::io::{Cursor, Write};
