@@ -76,7 +76,7 @@ pub(crate) struct SharedBuilder {
     pub(crate) files: FilesByNameMap,
     pub(crate) raw_file_count: usize,
     pub(super) offset: u64,
-    pub(super) dir_start: u64,
+    pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
     #[allow(dead_code)]
     pub(super) config: Config,

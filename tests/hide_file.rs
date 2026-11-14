@@ -170,8 +170,6 @@ fn hide_file_leaves_a_shallow_copy_readable() -> ZipResult<()> {
 
 #[test]
 fn hide_file_same_bytes() {
-    use zip::HasZipMetadata;
-
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for idx in 0..=10 {
         let filename = format!("file_{idx}.txt");
@@ -187,12 +185,9 @@ fn hide_file_same_bytes() {
     let zip_raw = zip.finish_into_readable().unwrap().into_inner();
     let zip_raw_copy = zip_raw.clone().into_inner();
 
-    let (central_idx, zip_modified) = {
-        let mut zip = ZipArchive::new(zip_raw).unwrap();
-        let central_idx = {
-            let file = zip.by_name("file_5.txt").unwrap();
-            file.get_metadata().central_header_start as usize
-        };
+    let (central_dir_start, zip_modified) = {
+        let zip = ZipArchive::new(zip_raw).unwrap();
+        let central_dir_start = zip.central_directory_start() as usize;
 
         let mut zip = ZipWriter::new_append(zip.into_inner()).unwrap();
         zip.hide_file("file_5.txt").unwrap();
@@ -202,8 +197,14 @@ fn hide_file_same_bytes() {
             .unwrap()
             .into_inner()
             .into_inner();
-        (central_idx, readable)
+        (central_dir_start, readable)
     };
-    assert_eq!(central_idx, 787);
-    assert_eq!(zip_modified[0..central_idx], zip_raw_copy[0..central_idx]);
+    assert_eq!(central_dir_start, 507);
+    // All local headers and entry payloads before the central directory stay untouched,
+    // and rewriting the shorter central directory does not grow the archive.
+    assert_eq!(
+        zip_modified[0..central_dir_start],
+        zip_raw_copy[0..central_dir_start]
+    );
+    assert_eq!(zip_modified.len(), zip_raw_copy.len());
 }
