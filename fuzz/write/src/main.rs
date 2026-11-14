@@ -1109,7 +1109,9 @@ mod tests {
             (0xa11e, &[4, 0, 0, 0][..], false),
             (0xd935, &[4, 0, 0, 0][..], false),
         ] {
-            let mut options = FullFileOptions::default().validate_extra_fields(true);
+            let mut options = FullFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored)
+                .validate_extra_fields(true);
             options.add_extra_field(header_id, data, true).unwrap();
             let mut op = file_operation(
                 BasicFileOperation::WriteNormalFile {
