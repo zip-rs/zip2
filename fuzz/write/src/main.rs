@@ -162,7 +162,7 @@ impl FileOperation<'_, '_> {
                 BasicFileOperation::WriteNormalFile { options, .. }
                 | BasicFileOperation::WriteDirectory(options)
                 | BasicFileOperation::WriteSymlinkWithTarget { options, .. } => {
-                    if options.has_encryption() {
+                    if options.has_encryption() || central_extra_fields_shrink_on_reopen(options) {
                         return false;
                     }
                 }
@@ -194,6 +194,34 @@ impl FileOperation<'_, '_> {
         }
         true
     }
+}
+
+/// Whether `options` carries a custom extra field whose central-directory representation shrinks
+/// when parsed back by `ZipArchive` (on `ZipWriter::new_append`) and written out again. A shorter
+/// central directory makes `finalize` zero the old header at `dir_start` and move the footer to
+/// EOF, which breaks sequential `read_zipfile_from_stream`.
+fn central_extra_fields_shrink_on_reopen(options: &FullFileOptions<'_, '_>) -> bool {
+    use zip::extra_fields::ExtraFieldId;
+    options
+        .extra_fields()
+        .iter()
+        .any(|field| match field.header_id {
+            // `ExtraFields::central_extra_fields` omits parsed alignment fields, and
+            // `replace_zip64_extra_field` replaces parsed ZIP64 fields.
+            id if id == ExtraFieldId::DataStreamAlignment.as_u16()
+                || id == ExtraFieldId::AndroidZipAlignment.as_u16()
+                || id == ExtraFieldId::Zip64ExtendedInfo.as_u16() =>
+            {
+                true
+            }
+            // `ExtendedTimestamp::parse_central_header` keeps only the 4-byte `mtime` (when at
+            // least 4 bytes follow `flags`) and re-serializes as 1 byte (`[0]`) or 5 bytes
+            // (`[1, mtime..]`), dropping any other bytes.
+            id if id == ExtraFieldId::ExtendedTimestamp.as_u16() => {
+                field.data.len() != 1 && (field.data.len() != 5 || field.data[0] & 1 == 0)
+            }
+            _ => false,
+        })
 }
 
 #[derive(Arbitrary, Clone, Debug)]
@@ -1067,5 +1095,44 @@ mod tests {
 
         let archive = writer.finish_into_readable().unwrap();
         assert_eq!(archive.len(), 0);
+    }
+
+    #[test]
+    fn shrinking_central_extra_fields_mark_operation_non_streamable() {
+        for (header_id, data, expected_streamable) in [
+            (0x5455, &[0u8][..], true),
+            (0x5455, &[1, 10, 0, 0, 0][..], true),
+            (0x5455, &[47, 117, 255, 255][..], false),
+            (0x5455, &[43, 117][..], false),
+            (0x5455, &[2, 1, 2, 3, 4][..], false),
+            (0x5455, &[3, 10, 0, 0, 0, 20, 0, 0, 0][..], false),
+            (0xa11e, &[4, 0, 0, 0][..], false),
+            (0xd935, &[4, 0, 0, 0][..], false),
+        ] {
+            let mut options = FullFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored)
+                .validate_extra_fields(true);
+            options.add_extra_field(header_id, data, true).unwrap();
+            let mut op = file_operation(
+                BasicFileOperation::WriteNormalFile {
+                    contents: vec![b"hello".to_vec().into_boxed_slice()].into_boxed_slice(),
+                    options,
+                },
+                "a.txt",
+            );
+            op.reopen = ReopenOption::ViaFinishIntoReadable;
+            assert_eq!(
+                op.is_streamable(),
+                expected_streamable,
+                "header_id={header_id:#06x} data={data:?}"
+            );
+
+            let case = FuzzTestCase {
+                initial_junk: Box::new([]),
+                operations: vec![(op, false)].into_boxed_slice(),
+                flush_on_finish_file: false,
+            };
+            case.execute(&mut String::new()).unwrap();
+        }
     }
 }
