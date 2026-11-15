@@ -666,6 +666,12 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
         self
     }
 
+    /// Returns the custom extra fields added to this entry's options.
+    #[must_use]
+    pub fn extra_fields(&self) -> &[CustomExtraField] {
+        &self.extended_options.extra_fields
+    }
+
     /// Adds an Extended Timestamp extra field (0x5455) to this entry's options.
     ///
     /// The timestamps are specified as UNIX epoch seconds. If `modified` is provided,
