@@ -76,3 +76,51 @@ fn test_complexity() {
         }
     }
 }
+
+/// Each EOCD candidate costs a constant number of reads (its locator, itself, and a probe of the
+/// ZIP64 EOCD it points at), so the total stays a small multiple of the input length.
+#[cfg(not(miri))]
+#[test]
+fn test_eocd64_complexity() {
+    /// `records` overlapping ZIP64 EOCD signatures at a 12-byte stride, each declaring a record that
+    /// runs up to the first locator, followed by `pairs` overlapping (locator, EOCD) pairs at a
+    /// 24-byte stride whose locators all point the EOCD64 search at offset 0.
+    fn build(records: usize, pairs: usize) -> Vec<u8> {
+        let first_locator = (records * 12) as u64;
+        let mut v = Vec::new();
+        for i in 0..records {
+            let record_size = (first_locator - (i * 12) as u64).saturating_sub(12);
+            v.extend_from_slice(b"PK\x06\x06");
+            v.extend_from_slice(&record_size.to_le_bytes());
+        }
+        v.extend_from_slice(b"PK\x06\x07");
+        v.extend_from_slice(&0xffff_0000u32.to_le_bytes()); // disk with CD
+        v.extend_from_slice(&0u64.to_le_bytes()); // EOCD64 offset
+        v.extend_from_slice(&0u32.to_le_bytes()); // number of disks
+        for _ in 0..pairs {
+            v.extend_from_slice(b"PK\x05\x06");
+            v.extend_from_slice(b"PK\x06\x07"); // disk numbers; also the next locator's signature
+            v.extend_from_slice(&0u16.to_le_bytes());
+            v.extend_from_slice(&u16::MAX.to_le_bytes()); // number of files: may be ZIP64
+            v.extend_from_slice(&[0u8; 8]); // CD size and offset (the next locator's EOCD64 offset)
+            v.extend_from_slice(&[0u8; 4]); // comment length, then padding
+        }
+        v
+    }
+    for (records, pairs) in [(100, 100), (1000, 500), (4000, 1000)] {
+        let v = build(records, pairs);
+        let mut bytes_read = 0;
+        let mut reader = ReadCountingCursor {
+            inner: std::io::Cursor::new(&v[..]),
+            bytes_read: &mut bytes_read,
+        };
+        assert!(zip::ZipArchive::new(&mut reader).is_err());
+        println!("{records},{pairs},{},{}", v.len(), bytes_read);
+        assert!(
+            bytes_read <= (8 * v.len() + 4096) as u64,
+            "read {} bytes from a {}-byte input",
+            bytes_read,
+            v.len()
+        );
+    }
+}

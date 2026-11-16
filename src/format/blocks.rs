@@ -510,9 +510,13 @@ impl Zip64CentralDirectoryEnd {
     /// Size of ZIP64 EOCD signature + record_size field.
     pub(crate) const RECORD_OVERHEAD: u64 = (size_of::<Magic>() + size_of::<u64>()) as u64;
 
-    pub(crate) fn parse<T: Read + ?Sized>(
+    /// Parses the fixed part of the record, which must end exactly `expected_length` bytes after
+    /// its signature. The extensible data sector is not read; call
+    /// [`Self::read_extensible_data_sector`] once the record has been accepted, so that rejected
+    /// candidates cost O(1) instead of O(`record_size`).
+    pub(crate) fn parse_header<T: Read + ?Sized>(
         reader: &mut T,
-        max_size: u64,
+        expected_length: u64,
     ) -> ZipResult<Zip64CentralDirectoryEnd> {
         let Zip64CDEBlock {
             record_size,
@@ -529,25 +533,9 @@ impl Zip64CentralDirectoryEnd {
 
         if record_size < (Self::MIN_SIZE - size_of::<Magic>()) as u64 {
             return Err(invalid!("Low EOCD64 record size"));
-        } else if record_size.saturating_add(Self::RECORD_OVERHEAD) > max_size {
-            return Err(invalid!("EOCD64 extends beyond EOCD64 locator"));
+        } else if record_size.checked_add(Self::RECORD_OVERHEAD) != Some(expected_length) {
+            return Err(invalid!("Invalid EOCD64: inconsistent length"));
         }
-
-        let zip64_extensible_data_sector = if record_size > (Self::MIN_SIZE as u64) {
-            let mut extensible_data_sector =
-                vec![0u8; record_size as usize - Self::MIN_SIZE].into_boxed_slice();
-            if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Err(invalid!(
-                        "EOCD64 extensible data sector exceeds file boundary"
-                    ));
-                }
-                return Err(e.into());
-            }
-            Some(extensible_data_sector)
-        } else {
-            None
-        };
 
         Ok(Self {
             record_size,
@@ -559,8 +547,30 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-            zip64_extensible_data_sector,
+            zip64_extensible_data_sector: None,
         })
+    }
+
+    /// Reads the extensible data sector that follows the fixed part parsed by
+    /// [`Self::parse_header`]; `reader` must still be positioned right after it.
+    pub(crate) fn read_extensible_data_sector<T: Read + ?Sized>(
+        &mut self,
+        reader: &mut T,
+    ) -> ZipResult<()> {
+        if self.record_size > (Self::MIN_SIZE as u64) {
+            let mut extensible_data_sector =
+                vec![0u8; self.record_size as usize - Self::MIN_SIZE].into_boxed_slice();
+            if let Err(e) = reader.read_exact(&mut extensible_data_sector) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Err(invalid!(
+                        "EOCD64 extensible data sector exceeds file boundary"
+                    ));
+                }
+                return Err(e.into());
+            }
+            self.zip64_extensible_data_sector = Some(extensible_data_sector);
+        }
+        Ok(())
     }
 
     pub(crate) fn into_block_and_extensible_data(self) -> (Zip64CDEBlock, Option<Box<[u8]>>) {
