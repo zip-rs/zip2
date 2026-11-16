@@ -53,8 +53,10 @@ By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time`
 ## Library usage
 
 Reading:
-- [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html#method.new)
-- [`read_zipfile_from_stream_*`](https://docs.rs/zip/latest/zip/read/)
+- [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html#method.new): this struct contains all the files internally (expect duplicates). It needs `Read` and `Seek` traits
+- [`ZipIterable`](https://docs.rs/zip/latest/zip/unstable/read/struct.ZipIterable.html): files available through an iterable `files()` method. Files are not owned internally
+- [`read_zipfile_from_stream_*`](https://docs.rs/zip/latest/zip/read/): method to read a zip from the local header
+- [`ZipStreamReader`](https://docs.rs/zip/latest/zip/unstable/stream/struct.ZipStreamReader.html): method to read a zip with a `Read` trait
 
 Writing:
 - [`ZipWriter::new()`](https://docs.rs/zip/latest/zip/write/struct.ZipWriter.html#method.new) - to create a new archive
@@ -67,7 +69,7 @@ See the [examples directory](https://github.com/zip-rs/zip2/tree/master/examples
 
 - How to [write a file to a zip](https://github.com/zip-rs/zip2/tree/master/examples/write_sample.rs).
 - How to [write a directory of files to a zip](https://github.com/zip-rs/zip2/tree/master/examples/write_dir.rs) (using [walkdir](https://github.com/BurntSushi/walkdir)).
-- How to [extract a zip file](https://github.com/zip-rs/zip2/tree/master/examples/extract.rs).
+- How to [extract manually a zip file](https://github.com/zip-rs/zip2/tree/master/examples/extract.rs).
 - How to [extract a single file from a zip](https://github.com/zip-rs/zip2/tree/master/examples/extract_lorem.rs).
 - How to [read a zip from the standard input](https://github.com/zip-rs/zip2/tree/master/examples/stdin_info.rs).
 - How to [append a directory to an existing archive](https://github.com/zip-rs/zip2/tree/master/examples/append.rs)

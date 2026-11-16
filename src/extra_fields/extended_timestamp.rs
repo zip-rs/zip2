@@ -253,14 +253,10 @@ impl ExtendedTimestamp {
         mem::size_of::<u8>() + mem::size_of::<u32>() * self.time_count(is_local_header)
     }
 
-    /// Serializes the extra field, including its tag and data size.
-    ///
-    /// This keeps the timestamps of a copied entry, whose local header would
-    /// otherwise only carry the rounded, local-time DOS date-time.
-    pub(crate) fn write<W: Write>(&self, write: &mut W, is_local_header: bool) -> ZipResult<()> {
-        // Only the stored timestamps are advertised: the central header keeps
-        // the modification time only, and flags that don't match the data would
-        // make the field unreadable.
+    /// Flags are the same in the central header and the local header. They should reflect the flags
+    /// in the local header
+    #[inline]
+    pub(crate) fn flags(&self) -> u8 {
         let mut flags = 0u8;
         if self.modified.is_some() {
             flags |= u8::from(ExtendedTimestampFlags::Modified);
@@ -271,7 +267,15 @@ impl ExtendedTimestamp {
         if self.created.is_some() {
             flags |= u8::from(ExtendedTimestampFlags::Created);
         }
+        flags
+    }
 
+    /// Serializes the extra field, including its tag and data size.
+    ///
+    /// This keeps the timestamps of a copied entry, whose local header would
+    /// otherwise only carry the rounded, local-time DOS date-time.
+    pub(crate) fn write<W: Write>(&self, write: &mut W, is_local_header: bool) -> ZipResult<()> {
+        let flags = self.flags();
         write.write_all(&UsedExtraField::ExtendedTimestamp.to_le_bytes())?;
         let data_size = self.size(is_local_header) as u16;
         write.write_all(&data_size.to_le_bytes())?;
@@ -527,8 +531,8 @@ mod tests {
         assert_eq!(&serialized[4..], &field[..]);
     }
 
-    /// The central header stores the modification time only, so its flags must
-    /// not advertise the access and creation times.
+    /// The central header stores the modification time only and the flags reflects
+    /// the local header
     #[test]
     fn test_write_central_header() {
         let field = [
@@ -550,7 +554,8 @@ mod tests {
         let timestamp = ExtendedTimestamp::try_from_reader(&mut cursor, 13, true).unwrap();
         let mut serialized = Vec::new();
         timestamp.write(&mut serialized, false).unwrap();
-        assert_eq!(serialized.len(), 4 + 5);
+        assert_eq!(serialized.len(), (2 + 2) + (1 + 4)); // magic, length, flag, date
+        // central header only keeps the modification
         assert_eq!(&serialized[4..], &[0b0000_0111, 0x01, 0xF1, 0x53, 0x65]);
     }
 }
