@@ -54,7 +54,7 @@ By default `aes-crypto`, `bzip2`, `deflate`, `deflate64`, `lzma`, `ppmd`, `time`
 
 Reading:
 - [`ZipArchive::new()`](https://docs.rs/zip/latest/zip/read/struct.ZipArchive.html#method.new): this struct contains all the files internally (expect duplicates). It needs `Read` and `Seek` traits
-- [`ZipIterable`](https://docs.rs/zip/latest/zip/unstable/read/struct.ZipIterable.html): files avaible trough and iterable `files()` method and are not owned
+- [`ZipIterable`](https://docs.rs/zip/latest/zip/unstable/read/struct.ZipIterable.html): files available through an iterable `files()` method. Files are not owned internally
 - [`read_zipfile_from_stream_*`](https://docs.rs/zip/latest/zip/read/): method to read a zip from the local header
 - [`ZipStreamReader`](https://docs.rs/zip/latest/zip/unstable/stream/struct.ZipStreamReader.html): method to read a zip with a `Read` trait
 
