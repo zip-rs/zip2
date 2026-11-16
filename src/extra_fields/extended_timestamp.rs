@@ -265,13 +265,11 @@ impl ExtendedTimestamp {
         if self.modified.is_some() {
             flags |= u8::from(ExtendedTimestampFlags::Modified);
         }
-        if is_local_header {
-            if self.accessed.is_some() {
-                flags |= u8::from(ExtendedTimestampFlags::Accessed);
-            }
-            if self.created.is_some() {
-                flags |= u8::from(ExtendedTimestampFlags::Created);
-            }
+        if self.accessed.is_some() {
+            flags |= u8::from(ExtendedTimestampFlags::Accessed);
+        }
+        if self.created.is_some() {
+            flags |= u8::from(ExtendedTimestampFlags::Created);
         }
 
         write.write_all(&UsedExtraField::ExtendedTimestamp.to_le_bytes())?;
@@ -532,6 +530,6 @@ mod tests {
         let mut serialized = Vec::new();
         timestamp.write(&mut serialized, false).unwrap();
         assert_eq!(serialized.len(), 4 + 5);
-        assert_eq!(&serialized[4..], &[0b0000_0001, 0x01, 0xF1, 0x53, 0x65]);
+        assert_eq!(&serialized[4..], &[0b0000_0111, 0x01, 0xF1, 0x53, 0x65]);
     }
 }
