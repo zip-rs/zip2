@@ -815,25 +815,15 @@ impl<R: Read + Seek> ZipArchive<R> {
         )
     }
 
-    fn extract_internal<P: AsRef<Path>>(
+    fn pre_extract_checks(
         &mut self,
-        directory: P,
-        extract_options: ExtractOptions<impl RootDirFilter>,
+        options: &ExtractOptions<impl RootDirFilter>,
     ) -> ZipResult<()> {
-        use std::fs;
-
-        let ExtractOptions {
-            symlink_action,
-            size_limit,
-            enforce_header_consistency,
-            root_dir_filter,
-        } = extract_options;
-
-        if enforce_header_consistency {
+        if options.enforce_header_consistency {
             self.validate_header_consistency()?;
         }
 
-        if let Some(limit) = size_limit {
+        if let Some(limit) = options.size_limit {
             match self.decompressed_size() {
                 Some(size) if size > u128::from(limit) => {
                     return Err(ZipError::DecompressedSizeLimitExceeded { size, limit });
@@ -842,6 +832,25 @@ impl<R: Read + Seek> ZipArchive<R> {
                 Some(_) => {}
             }
         }
+
+        Ok(())
+    }
+
+    fn extract_internal<P: AsRef<Path>>(
+        &mut self,
+        directory: P,
+        extract_options: ExtractOptions<impl RootDirFilter>,
+    ) -> ZipResult<()> {
+        use std::fs;
+
+        self.pre_extract_checks(&extract_options)?;
+
+        let ExtractOptions {
+            symlink_action,
+            enforce_header_consistency,
+            root_dir_filter,
+            ..
+        } = extract_options;
 
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
@@ -1132,22 +1141,14 @@ impl<R: Read + Seek + Send> ZipArchive<R> {
         F: Fn() -> std::io::Result<R> + Sync + Send,
         Filter: RootDirFilter,
     {
+        self.pre_extract_checks(&extract_options)?;
+
         let ExtractOptions {
             symlink_action,
-            size_limit,
             enforce_header_consistency,
             root_dir_filter,
+            ..
         } = extract_options;
-
-        if let Some(limit) = size_limit {
-            match self.decompressed_size() {
-                Some(size) if size > u128::from(limit) => {
-                    return Err(ZipError::DecompressedSizeLimitExceeded { size, limit });
-                }
-                None => return Err(ZipError::DecompressedSizeUnknown),
-                Some(_) => {}
-            }
-        }
 
         std::fs::create_dir_all(directory)?;
         let directory = directory.canonicalize()?;

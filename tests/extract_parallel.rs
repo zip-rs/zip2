@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io::{Cursor, Write};
+use std::path::PathBuf;
 use tempfile::TempDir;
 use zip::read::ExtractOptions;
 use zip::result::ZipError;
@@ -341,4 +342,82 @@ fn test_par_extract_in_flight_size_limit_stream_exact_accounting() {
         }
         other => panic!("Expected DecompressedSizeLimitExceeded, got {other:?}"),
     }
+}
+
+/// Two entries where `b.txt`'s local header and data sit inside `a.txt`'s stored data.
+fn overlapping_archive() -> Vec<u8> {
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    let mut wb = ZipWriter::new(Cursor::new(Vec::new()));
+    wb.start_file("b.txt", stored).unwrap();
+    wb.write_all(b"inner b\n").unwrap();
+    let b_zip = wb.finish().unwrap().into_inner();
+    let b_cd_start = ZipArchive::new(Cursor::new(b_zip.clone()))
+        .unwrap()
+        .central_directory_start() as usize;
+    let b_local = &b_zip[..b_cd_start];
+
+    let mut wa = ZipWriter::new(Cursor::new(Vec::new()));
+    wa.start_file("a.txt", stored).unwrap();
+    wa.write_all(b_local).unwrap();
+    let mut out = wa.finish().unwrap().into_inner();
+    let b_offset = out
+        .windows(b_local.len())
+        .position(|w| w == b_local)
+        .unwrap();
+    let a_cd_start = ZipArchive::new(Cursor::new(out.clone()))
+        .unwrap()
+        .central_directory_start() as usize;
+    let a_cd = out[a_cd_start..out.len() - 22].to_vec();
+
+    // b.txt's central directory entry, pointed at the copy of its local header inside a.txt.
+    let mut b_cd = b_zip[b_cd_start..b_zip.len() - 22].to_vec();
+    b_cd[42..46].copy_from_slice(&(b_offset as u32).to_le_bytes());
+
+    out.truncate(a_cd_start);
+    out.extend_from_slice(&a_cd);
+    out.extend_from_slice(&b_cd);
+    out.extend_from_slice(b"PK\x05\x06\0\0\0\0\x02\0\x02\0");
+    out.extend_from_slice(&((a_cd.len() + b_cd.len()) as u32).to_le_bytes());
+    out.extend_from_slice(&(a_cd_start as u32).to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+    out
+}
+
+fn fresh_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("zip-par-strict-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+#[test]
+fn par_extract_enforces_header_consistency_like_serial_extract() {
+    let data = overlapping_archive();
+    let strict = || ExtractOptions::default().enforce_header_consistency(true);
+
+    let serial_dir = fresh_dir("serial");
+    let serial = ZipArchive::new(Cursor::new(data.clone()))
+        .unwrap()
+        .extract_with_options(&serial_dir, strict());
+    assert!(
+        serial.is_err(),
+        "serial strict extract should reject overlapping entries"
+    );
+
+    let par_dir = fresh_dir("parallel");
+    let parallel = ZipArchive::new(Cursor::new(data))
+        .unwrap()
+        .par_extract_with_options(&par_dir, strict());
+    let written: Vec<_> = std::fs::read_dir(&par_dir)
+        .map(|d| d.filter_map(|e| e.ok()).map(|e| e.file_name()).collect())
+        .unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&serial_dir);
+    let _ = std::fs::remove_dir_all(&par_dir);
+
+    assert!(
+        parallel.is_err(),
+        "parallel strict extract accepted an archive the serial path rejects ({:?}); wrote {:?}",
+        serial.unwrap_err(),
+        written
+    );
 }
