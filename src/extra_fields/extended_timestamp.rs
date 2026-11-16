@@ -405,7 +405,6 @@ mod tests {
 
     #[test]
     fn test_extended_timestamp() {
-        // in the central header
         let mut cursor = Cursor::new(&[0b0000_0111_u8, 0x00, 0x00, 0x00, 0x01]);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 5, true).unwrap();
         assert_eq!(result.mod_time(), Some(1 << 24));
@@ -463,7 +462,29 @@ mod tests {
         let mut cursor = Cursor::new(&data);
         let result = ExtendedTimestamp::try_from_reader(&mut cursor, 9, false).unwrap();
         assert_eq!(result.mod_time(), Some(1700000000));
+        assert_eq!(result.ac_time(), None); // not in central
+        assert_eq!(result.cr_time(), None); // not in central
         assert_eq!(cursor.position(), 9);
+
+        let mut cursor = Cursor::new(&[
+            0b0000_0111_u8,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x02,
+            0x00,
+            0x00,
+            0x00,
+            0x03,
+        ]);
+        let result = ExtendedTimestamp::try_from_reader(&mut cursor, 13, false).unwrap();
+        assert_eq!(result.mod_time(), Some(1 << 24));
+        assert_eq!(result.ac_time(), None); // not in central
+        assert_eq!(result.cr_time(), None); // not in central
     }
 
     #[test]
