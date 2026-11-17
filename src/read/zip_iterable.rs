@@ -13,7 +13,7 @@
 
 use crate::ZipReadOptions;
 use crate::format::MagicPositionCache;
-use crate::format::blocks::{FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock};
+use crate::format::blocks::{Zip32CentralDirectoryEnd, ZipCentralEntryBlock};
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::magic_finder::{Backwards, MagicFinder};

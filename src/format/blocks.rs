@@ -169,6 +169,18 @@ pub struct ZipCentralEntryBlock {
 
 unsafe impl Pod for ZipCentralEntryBlock {}
 
+impl ZipCentralEntryBlock {
+    /// Parses the 46-byte fixed central-directory header, including its signature.
+    ///
+    /// Checks the signature and converts little-endian fields. Does not consume
+    /// the variable-length name, extra fields, or comment. Callers must validate
+    /// lengths, offsets, and archive policy separately; this does not validate or
+    /// authenticate a complete archive. This is part of the unstable API.
+    pub fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
+        <Self as FixedSizeBlock>::parse(reader)
+    }
+}
+
 impl ZipEntryBlock for ZipCentralEntryBlock {
     fn get_uncompressed_size(&self) -> u32 {
         self.uncompressed_size
@@ -229,6 +241,18 @@ pub struct ZipLocalEntryBlock {
 }
 
 unsafe impl Pod for ZipLocalEntryBlock {}
+
+impl ZipLocalEntryBlock {
+    /// Parses the 30-byte fixed local-file header, including its signature.
+    ///
+    /// Checks the signature and converts little-endian fields. Does not consume
+    /// the variable-length name or extra fields. Callers must validate lengths,
+    /// offsets, and archive policy separately; this does not validate or
+    /// authenticate a complete archive. This is part of the unstable API.
+    pub fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
+        <Self as FixedSizeBlock>::parse(reader)
+    }
+}
 
 impl ZipEntryBlock for ZipLocalEntryBlock {
     fn get_uncompressed_size(&self) -> u32 {
