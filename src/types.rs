@@ -3,7 +3,7 @@
 use crate::datetime::DateTime;
 use crate::extra_fields::{ExtraField, ExtraFields};
 use crate::format::aes::{AesMode, AesVendorVersion};
-use crate::format::blocks::{FixedSizeBlock, ZipLocalEntryBlock};
+use crate::format::blocks::ZipLocalEntryBlock;
 use crate::format::data_descriptor::{
     Zip64DataDescriptorBlock, ZipDataDescriptor, ZipDataDescriptorBlock,
 };

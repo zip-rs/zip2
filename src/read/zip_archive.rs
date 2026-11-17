@@ -2,9 +2,7 @@
 
 use crate::compression::CompressionMethod;
 use crate::format::MagicPositionCache;
-use crate::format::blocks::{
-    FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock, ZipLocalEntryBlock,
-};
+use crate::format::blocks::{Zip32CentralDirectoryEnd, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::config::Config;
