@@ -251,9 +251,6 @@ impl ExtraField {
             ExtraField::Ntfs(ntfs) => {
                 ntfs.write(writer)?;
             }
-            ExtraField::ExtendedTimestamp(extended_timestamp) => {
-                extended_timestamp.write(writer, is_local_header)?;
-            }
         }
         Ok(())
     }
