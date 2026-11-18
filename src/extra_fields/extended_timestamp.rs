@@ -51,7 +51,6 @@ impl ExtendedTimestamp {
         + mem::size_of::<u32>()
         + mem::size_of::<u32>()) as u16;
 
-
     const fn local_flags(&self) -> u8 {
         (self.modified.is_some() as u8 * ExtendedTimestampFlags::Modified as u8)
             | (self.accessed.is_some() as u8 * ExtendedTimestampFlags::Accessed as u8)
