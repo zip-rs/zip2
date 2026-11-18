@@ -564,7 +564,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// # }
     ///```
     pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
-        let central_start = self.finalize()?;
+        let (last_file_end, central_start) = self.finalize()?;
         let inner = self.close_writer()?;
         let comment = mem::take(&mut self.comment);
         let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
@@ -574,6 +574,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             comment,
             zip64_extensible_data_sector,
             inner,
+            last_file_end,
             central_start,
         ))
     }
@@ -1658,12 +1659,13 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn finalize(&mut self) -> ZipResult<u64> {
+    fn finalize(&mut self) -> ZipResult<(u64, u64)> {
         /// Longest stale tail that [`Self::finalize`] blanks in place rather than moving the footer.
         const STALE_FILL_MAX_LEN: u64 = 0xFF00;
         self.finish_file()?;
 
-        let (central_start, is_zip64) = self.write_central_and_footer()?;
+        let (last_file_end, is_zip64) = self.write_central_and_footer()?;
+        let mut central_start = last_file_end;
         if self.seek_possible {
             let writer = self.inner.try_inner_mut()?;
             let footer_end = writer.stream_position()?;
@@ -1685,7 +1687,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 // Data from an aborted file is past the end of the footer.
 
                 // Overwrite the magic so the footer is no longer valid.
-                writer.seek(SeekFrom::Start(central_start))?;
+                writer.seek(SeekFrom::Start(last_file_end))?;
                 writer.write_all(&0_u32.to_le_bytes())?;
                 let start_zip32_cde = footer_end
                     - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
@@ -1714,7 +1716,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 let central_and_footer_size = footer_end - central_start;
                 writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
                 #[cfg_attr(not(debug_assertions), allow(unused_variables))]
-                let (_, new_is_zip64) = self.write_central_and_footer()?;
+                let (new_central_start, new_is_zip64) = self.write_central_and_footer()?;
+                central_start = new_central_start;
                 #[cfg(debug_assertions)]
                 {
                     let archive_end = if new_is_zip64 && new_is_zip64 != is_zip64 {
@@ -1738,7 +1741,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             }
         }
 
-        Ok(central_start)
+        Ok((last_file_end, central_start))
     }
 
     fn write_central_and_footer(&mut self) -> Result<(u64, bool), ZipError> {
@@ -3800,6 +3803,31 @@ mod tests {
             assert_eq!(archive.len(), 1, "comment_len {comment_len}");
             assert_eq!(archive.comment().len(), comment_len);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn finish_into_readable_reports_relocated_central_directory_start() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        for name in ["a", "b"] {
+            writer.start_file(
+                name,
+                SimpleFileOptions {
+                    compression_method: Stored,
+                    ..Default::default()
+                },
+            )?;
+            writer.write_all(name.as_bytes())?;
+        }
+
+        let mut writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.abort_file()?;
+        let archive = writer.finish_into_readable()?;
+        let central_start = archive.central_directory_start();
+        let bytes = archive.into_inner().into_inner();
+        let parsed = ZipArchive::new(Cursor::new(bytes))?;
+
+        assert_eq!(central_start, parsed.central_directory_start());
         Ok(())
     }
 
