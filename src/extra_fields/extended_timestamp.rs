@@ -281,7 +281,7 @@ impl ExtendedTimestamp {
     /// otherwise only carry the rounded, local-time DOS date-time.
     pub(crate) fn write<W: Write>(&self, write: &mut W, is_local_header: bool) -> ZipResult<()> {
         write.write_all(&UsedExtraField::ExtendedTimestamp.as_u16().to_le_bytes())?;
-        write.write_all(&((self.full_size(is_local_header) - 4) as u16).to_le_bytes())?;
+        write.write_all(&(self.size(is_local_header) as u16).to_le_bytes())?;
         let flags = if is_local_header {
             self.local_flags()
         } else {

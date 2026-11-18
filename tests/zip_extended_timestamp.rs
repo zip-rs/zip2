@@ -9,6 +9,13 @@ fn central_extra_data(bytes: &[u8], header_start: u64) -> &[u8] {
     &header[46 + name_len..46 + name_len + extra_len]
 }
 
+fn local_extra_data(bytes: &[u8], header_start: u64) -> &[u8] {
+    let header = &bytes[header_start as usize..];
+    let name_len = u16::from_le_bytes([header[26], header[27]]) as usize;
+    let extra_len = u16::from_le_bytes([header[28], header[29]]) as usize;
+    &header[30 + name_len..30 + name_len + extra_len]
+}
+
 #[test]
 fn raw_copy_preserves_extended_timestamp() {
     use std::io::{Cursor, Read, Write};
@@ -93,8 +100,18 @@ fn raw_copy_stream_timestamp_flags_match_local_contents() {
         let file = read_zipfile_from_stream(&mut source).unwrap().unwrap();
         let mut copy = ZipWriter::new(Cursor::new(Vec::new()));
         copy.raw_copy_file(file).unwrap();
-        let mut copied = Cursor::new(copy.finish().unwrap().into_inner());
-        let file = read_zipfile_from_stream(&mut copied).unwrap().unwrap();
+        let copied = copy.finish().unwrap().into_inner();
+        let mut archive = ZipArchive::new(Cursor::new(&copied)).unwrap();
+        let file = archive.by_index(0).unwrap();
+        for extra in [
+            central_extra_data(&copied, file.central_header_start()),
+            local_extra_data(&copied, file.header_start()),
+        ] {
+            assert_eq!(&extra[..2], &[0x55, 0x54]);
+            assert_eq!(extra[4], u8::from(flags & 1 != 0));
+        }
+        let mut stream = Cursor::new(&copied);
+        let file = read_zipfile_from_stream(&mut stream).unwrap().unwrap();
         let timestamp = file.extra_data_fields().find_map(|field| match field {
             ExtraField::ExtendedTimestamp(timestamp) => Some(timestamp),
             _ => None,

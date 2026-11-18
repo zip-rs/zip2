@@ -1292,19 +1292,17 @@ impl<W: Write + Seek> ZipWriter<W> {
             options = options.with_file_comment(file.comment());
         }
         for one_extra in file.extra_data_fields() {
-            if !preserve_timestamp && matches!(one_extra, ExtraField::ExtendedTimestamp(_)) {
+            if let ExtraField::ExtendedTimestamp(timestamp) = one_extra {
+                if preserve_timestamp {
+                    options = options.with_extended_timestamp(timestamp.mod_time(), None, None)?;
+                }
                 continue;
             }
             let mut buff = Cursor::new(Vec::new());
             one_extra.write(&mut buff, false)?;
-            let mut buff = buff.into_inner();
+            let buff = buff.into_inner();
             if buff.len() >= 4 {
                 let header_id = u16::from_le_bytes([buff[0], buff[1]]);
-                if let ExtraField::ExtendedTimestamp(timestamp) = one_extra {
-                    // This central-directory representation is also written to the local
-                    // header, so only advertise the modification time it can contain.
-                    buff[4] = u8::from(timestamp.mod_time().is_some());
-                }
                 #[cfg(feature = "aes-crypto")]
                 if header_id == 0x9901 {
                     continue;
