@@ -51,47 +51,15 @@ impl ExtendedTimestamp {
         + mem::size_of::<u32>()
         + mem::size_of::<u32>()) as u16;
 
-    pub(crate) fn full_size(&self, is_local_header: bool) -> usize {
-        let timestamps = usize::from(self.modified.is_some())
-            + if is_local_header {
-                usize::from(self.accessed.is_some()) + usize::from(self.created.is_some())
-            } else {
-                0
-            };
-        4 + 1 + timestamps * mem::size_of::<u32>()
-    }
 
-    fn local_flags(&self) -> u8 {
-        (u8::from(self.modified.is_some()) * u8::from(ExtendedTimestampFlags::Modified))
-            | (u8::from(self.accessed.is_some()) * u8::from(ExtendedTimestampFlags::Accessed))
-            | (u8::from(self.created.is_some()) * u8::from(ExtendedTimestampFlags::Created))
+    const fn local_flags(&self) -> u8 {
+        (self.modified.is_some() as u8 * ExtendedTimestampFlags::Modified as u8)
+            | (self.accessed.is_some() as u8 * ExtendedTimestampFlags::Accessed as u8)
+            | (self.created.is_some() as u8 * ExtendedTimestampFlags::Created as u8)
     }
 
     pub(crate) fn update_local_header_flags(&mut self) {
         self.flags = self.local_flags();
-    }
-
-    pub(crate) fn write<W: Write>(&self, writer: &mut W, is_local_header: bool) -> ZipResult<()> {
-        writer.write_all(&UsedExtraField::ExtendedTimestamp.as_u16().to_le_bytes())?;
-        writer.write_all(&((self.full_size(is_local_header) - 4) as u16).to_le_bytes())?;
-        let flags = if is_local_header {
-            self.local_flags()
-        } else {
-            self.flags
-        };
-        writer.write_all(&[flags])?;
-        if let Some(modified) = self.modified {
-            writer.write_all(&modified.to_le_bytes())?;
-        }
-        if is_local_header {
-            if let Some(accessed) = self.accessed {
-                writer.write_all(&accessed.to_le_bytes())?;
-            }
-            if let Some(created) = self.created {
-                writer.write_all(&created.to_le_bytes())?;
-            }
-        }
-        Ok(())
     }
 
     /// creates an extended timestamp struct by reading the required bytes from the reader.
@@ -266,11 +234,14 @@ impl ExtendedTimestamp {
     /// and creation timestamps (in UNIX epoch seconds).
     #[must_use]
     pub const fn new(modified: Option<u32>, accessed: Option<u32>, created: Option<u32>) -> Self {
-        Self {
+        let mut new_self = Self {
+            flags: 0,
             modified,
             accessed,
             created,
-        }
+        };
+        new_self.flags = new_self.local_flags();
+        new_self
     }
 
     /// Creates a new `ExtendedTimestamp` extra field with only the modification timestamp set.
@@ -305,34 +276,19 @@ impl ExtendedTimestamp {
         mem::size_of::<u8>() + mem::size_of::<u32>() * self.time_count(is_local_header)
     }
 
-    /// Flags are the same in the central header and the local header. They should reflect the flags
-    /// in the local header
-    #[inline]
-    pub(crate) fn flags(&self) -> u8 {
-        let mut flags = 0u8;
-        if self.modified.is_some() {
-            flags |= u8::from(ExtendedTimestampFlags::Modified);
-        }
-        if self.accessed.is_some() {
-            flags |= u8::from(ExtendedTimestampFlags::Accessed);
-        }
-        if self.created.is_some() {
-            flags |= u8::from(ExtendedTimestampFlags::Created);
-        }
-        flags
-    }
-
     /// Serializes the extra field, including its tag and data size.
     ///
     /// This keeps the timestamps of a copied entry, whose local header would
     /// otherwise only carry the rounded, local-time DOS date-time.
     pub(crate) fn write<W: Write>(&self, write: &mut W, is_local_header: bool) -> ZipResult<()> {
-        let flags = self.flags();
-        write.write_all(&UsedExtraField::ExtendedTimestamp.to_le_bytes())?;
-        let data_size = self.size(is_local_header) as u16;
-        write.write_all(&data_size.to_le_bytes())?;
+        write.write_all(&UsedExtraField::ExtendedTimestamp.as_u16().to_le_bytes())?;
+        write.write_all(&((self.full_size(is_local_header) - 4) as u16).to_le_bytes())?;
+        let flags = if is_local_header {
+            self.local_flags()
+        } else {
+            self.flags
+        };
         write.write_all(&[flags])?;
-
         if let Some(modified) = self.modified {
             write.write_all(&modified.to_le_bytes())?;
         }
