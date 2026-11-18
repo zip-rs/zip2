@@ -148,7 +148,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let (new_files, dir_start) = match std::sync::Arc::try_unwrap(shared) {
             Ok(metadata) => (
                 prepare_merge_files(metadata.files.into_iter(), w.stream_position()?)?,
-                metadata.dir_start,
+                metadata.last_file_end.unwrap_or(metadata.dir_start),
             ),
             Err(shared) => (
                 prepare_merge_files(
