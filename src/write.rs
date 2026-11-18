@@ -1278,7 +1278,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         file: ZipFile<'_, R>,
         name: S,
     ) -> ZipResult<()> {
-        let options = Self::raw_copy_options(&file)?;
+        let options = Self::raw_copy_options(&file, true)?;
         let file_name = name.to_string();
         self.raw_copy_file_rename_internal(file, file_name.as_bytes(), options, None)
     }
@@ -1286,12 +1286,19 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// The options a raw copy writes `file` with: its own, plus its comment and extra fields.
     fn raw_copy_options<R: Read>(
         file: &ZipFile<'_, R>,
+        preserve_timestamp: bool,
     ) -> ZipResult<FullFileOptions<'static, 'static>> {
         let mut options = file.options().into_full_options();
         if !file.comment().is_empty() {
             options = options.with_file_comment(file.comment());
         }
         for one_extra in file.extra_data_fields() {
+            if let ExtraField::ExtendedTimestamp(timestamp) = one_extra {
+                if preserve_timestamp {
+                    options = options.with_extended_timestamp(timestamp.mod_time(), None, None)?;
+                }
+                continue;
+            }
             let mut buff = Cursor::new(Vec::new());
             one_extra.write(&mut buff, false)?;
             let buff = buff.into_inner();
@@ -1395,7 +1402,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// }
     /// ```
     pub fn raw_copy_file<R: Read>(&mut self, file: ZipFile<'_, R>) -> ZipResult<()> {
-        let options = Self::raw_copy_options(&file)?;
+        let options = Self::raw_copy_options(&file, true)?;
         let file_name_raw = file.name_raw().to_owned();
         let language_encoding = file.flags().matching(ZipFlags::LanguageEncoding);
         self.raw_copy_file_rename_internal(file, &file_name_raw, options, Some(language_encoding))
@@ -1433,7 +1440,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         last_modified_time: DateTime,
         unix_mode: Option<u32>,
     ) -> ZipResult<()> {
-        let mut options = Self::raw_copy_options(&file)?;
+        // Do not let the old extended timestamp override the requested modification time.
+        let mut options = Self::raw_copy_options(&file, false)?;
 
         options = options.last_modified_time(last_modified_time);
 
@@ -3326,6 +3334,10 @@ impl ZipFileData {
         #[cfg(feature = "aes-crypto")]
         let mut bytes_written = 0;
         for one_extra_field in local_extra_fields {
+            if let ExtraField::ExtendedTimestamp(timestamp) = one_extra_field {
+                // The central flags must describe this new local header, including on deep copies.
+                timestamp.update_local_header_flags();
+            }
             one_extra_field.write(&mut *writer, true)?;
             #[cfg(feature = "aes-crypto")]
             {

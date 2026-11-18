@@ -232,6 +232,9 @@ impl ExtraField {
             ExtraField::Custom(custom) => {
                 custom.write(writer, is_local_header)?;
             }
+            ExtraField::ExtendedTimestamp(timestamp) => {
+                timestamp.write(writer, is_local_header)?;
+            }
             ExtraField::UnicodeComment(unicode_comment) => {
                 let magic = UsedExtraField::UnicodeComment.as_u16();
                 writer.write_all(&magic.to_le_bytes())?;
@@ -247,9 +250,6 @@ impl ExtraField {
             }
             ExtraField::Ntfs(ntfs) => {
                 ntfs.write(writer)?;
-            }
-            ExtraField::ExtendedTimestamp(extended_timestamp) => {
-                extended_timestamp.write(writer, is_local_header)?;
             }
         }
         Ok(())
