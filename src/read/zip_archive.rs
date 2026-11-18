@@ -2,9 +2,7 @@
 
 use crate::compression::CompressionMethod;
 use crate::format::MagicPositionCache;
-use crate::format::blocks::{
-    FixedSizeBlock, Zip32CentralDirectoryEnd, ZipCentralEntryBlock, ZipLocalEntryBlock,
-};
+use crate::format::blocks::{Zip32CentralDirectoryEnd, ZipCentralEntryBlock, ZipLocalEntryBlock};
 use crate::format::find_central_directory_end;
 use crate::format::magic::Magic;
 use crate::read::config::Config;
@@ -76,7 +74,7 @@ pub(crate) struct SharedBuilder {
     pub(crate) files: FilesByNameMap,
     pub(crate) raw_file_count: usize,
     pub(super) offset: u64,
-    pub(super) dir_start: u64,
+    pub(crate) dir_start: u64,
     // This isn't yet used anywhere, but it is here for use cases in the future.
     #[allow(dead_code)]
     pub(super) config: Config,

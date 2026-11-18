@@ -10,6 +10,7 @@ use crate::read::magic_finder::{Backwards, Forward, MagicFinder};
 use crate::result::{ZipResult, invalid};
 
 use core::mem;
+use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 
 const MAGIC_LENGTH: usize = mem::size_of::<Magic>();
@@ -47,6 +48,11 @@ pub(crate) struct MagicPositionCache {
     scanned_ranges: Vec<(u64, u64)>,
     /// The magic bytes to search for.
     magic_bytes: [u8; MAGIC_LENGTH],
+    /// For the ZIP64 EOCD cache only: found positions keyed by where the record they start
+    /// would end (`position + [`Zip64CentralDirectoryEnd::RECORD_OVERHEAD`] (12) + record_size`).
+    /// A ZIP64 EOCD record must end exactly at its locator,
+    /// so each locator only needs to look at the records filed under its own offset.
+    by_declared_end: HashMap<u64, Vec<u64>>,
 }
 
 impl MagicPositionCache {
@@ -55,6 +61,7 @@ impl MagicPositionCache {
             positions: Vec::new(),
             scanned_ranges: Vec::new(),
             magic_bytes,
+            by_declared_end: HashMap::new(),
         }
     }
 
@@ -66,9 +73,9 @@ impl MagicPositionCache {
         reader: &mut R,
         start: u64,
         end: u64,
-    ) -> ZipResult<()> {
+    ) -> ZipResult<Vec<u64>> {
         if start >= end {
-            return Ok(());
+            return Ok(vec![]);
         }
 
         let mut uncovered = Vec::new();
@@ -90,12 +97,57 @@ impl MagicPositionCache {
             uncovered.push((cur, end));
         }
 
+        let mut new_positions = Vec::new();
         for (u_start, u_end) in uncovered {
-            self.scan_uncovered(reader, u_start, u_end)?;
+            self.scan_uncovered(reader, u_start, u_end, &mut new_positions)?;
         }
 
         self.merge_scanned_range(start, end);
-        Ok(())
+        Ok(new_positions)
+    }
+
+    /// Scans `[start, end)` for ZIP64 EOCD signatures and returns, in ascending order, those in
+    /// that range whose declared record end is `record_end`. Each signature's `record_size` is
+    /// read once, when it is first found, so the work per call doesn't grow with the number of
+    /// signatures in the range.
+    pub(crate) fn eocd64_candidates_ending_at<R: Read + Seek + ?Sized>(
+        &mut self,
+        reader: &mut R,
+        start: u64,
+        end: u64,
+        record_end: u64,
+    ) -> ZipResult<Vec<u64>> {
+        for pos in self.ensure_scanned_range(reader, start, end)? {
+            reader.seek(SeekFrom::Start(pos + MAGIC_LENGTH as u64))?;
+            let mut record_size = [0u8; 8];
+            match reader.read_exact(&mut record_size) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => continue,
+                Err(e) => return Err(e.into()),
+            }
+            let declared_end = pos
+                .checked_add(Zip64CentralDirectoryEnd::RECORD_OVERHEAD)
+                .and_then(|p| p.checked_add(u64::from_le_bytes(record_size)));
+            if let Some(declared_end) = declared_end {
+                self.by_declared_end
+                    .entry(declared_end)
+                    .or_default()
+                    .push(pos);
+            }
+        }
+        let mut candidates: Vec<u64> = self
+            .by_declared_end
+            .get(&record_end)
+            .map(|positions| {
+                positions
+                    .iter()
+                    .copied()
+                    .filter(|&p| p >= start && p < end)
+                    .collect()
+            })
+            .unwrap_or_default();
+        candidates.sort_unstable();
+        Ok(candidates)
     }
 
     fn scan_uncovered<R: Read + Seek + ?Sized>(
@@ -103,6 +155,7 @@ impl MagicPositionCache {
         reader: &mut R,
         start: u64,
         end: u64,
+        new_positions: &mut Vec<u64>,
     ) -> ZipResult<()> {
         // Overlap backwards by MAGIC_LENGTH - 1 to catch any signature straddling the scan boundary
         let magic_overlap = MAGIC_LENGTH.saturating_sub(1) as u64;
@@ -111,6 +164,7 @@ impl MagicPositionCache {
         while let Some(pos) = finder.next(reader)? {
             if let Err(idx) = self.positions.binary_search(&pos) {
                 self.positions.insert(idx, pos);
+                new_positions.push(pos);
             }
         }
         Ok(())
@@ -332,7 +386,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
             disk_with_central_directory: u32,
             expected_length: u64,
         ) -> ZipResult<Zip64CentralDirectoryEnd> {
-            let z64 = Zip64CentralDirectoryEnd::parse(reader, expected_length)?;
+            let z64 = Zip64CentralDirectoryEnd::parse_header(reader, expected_length)?;
 
             // Consistency check: EOCD64 locator should agree with the EOCD64
             if z64.disk_with_central_directory != disk_with_central_directory {
@@ -386,7 +440,7 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
             };
             reader.seek(SeekFrom::Start(eocd64_offset))?;
 
-            let eocd64 = try_read_eocd64(
+            let mut eocd64 = try_read_eocd64(
                 reader,
                 disk_with_central_directory,
                 locator64_offset.saturating_sub(eocd64_offset),
@@ -402,6 +456,10 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
             {
                 return Ok(None);
             }
+
+            // Only an accepted record pays for reading its extensible data sector. The reader
+            // is still positioned right after the fixed part of the record.
+            eocd64.read_extensible_data_sector(reader)?;
 
             Ok(Some(((eocd64, eocd64_offset).into(), archive_offset)))
         }
@@ -436,13 +494,19 @@ pub(crate) fn find_central_directory_end<R: Read + Seek + ?Sized>(
 
         // Fall back to cache-based search for all EOCD64 positions in range
         if !matches!(archive_offset, ArchiveOffset::Known(_)) {
-            eocd64_cache.ensure_scanned_range(reader, search_start, search_end)?;
-            let start_idx = eocd64_cache
-                .positions
-                .partition_point(|&p| p < search_start);
-            let end_idx = eocd64_cache.positions.partition_point(|&p| p < search_end);
+            // A candidate whose record doesn't end exactly at the locator fails the length check
+            // in `try_read_eocd64`, so only look at the ones that do.
+            let candidates = eocd64_cache.eocd64_candidates_ending_at(
+                reader,
+                search_start,
+                search_end,
+                locator64_offset,
+            )?;
+            if candidates.is_empty() && local_error.is_none() {
+                local_error = Some(invalid!("Invalid EOCD64: inconsistent length"));
+            }
 
-            for &eocd64_offset in &eocd64_cache.positions[start_idx..end_idx] {
+            for eocd64_offset in candidates {
                 match try_candidate(
                     reader,
                     locator64.end_of_central_directory_offset,

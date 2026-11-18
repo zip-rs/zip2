@@ -791,3 +791,114 @@ fn test_existing_symlink_in_destination_cannot_escape() -> zip::result::ZipResul
 
     Ok(())
 }
+
+#[test]
+#[cfg(all(any(unix, windows), not(miri)))]
+fn test_ancestor_symlink_swap_rejected_by_extract() -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs;
+    use std::io::{Cursor, Write};
+    use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let temp_root = tempdir()?;
+    let dest = temp_root.path().join("extract_dest");
+    let outside_victim_dir = temp_root.path().join("victim_dir");
+    fs::create_dir_all(&dest)?;
+    fs::create_dir_all(&outside_victim_dir)?;
+
+    let victim_file = outside_victim_dir.join("victim.txt");
+    fs::write(&victim_file, "IMMUTABLE_DATA")?;
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&outside_victim_dir, dest.join("sub"))?;
+    }
+    #[cfg(windows)]
+    {
+        if std::os::windows::fs::symlink_dir(&outside_victim_dir, dest.join("sub")).is_err() {
+            return Ok(());
+        }
+    }
+
+    let mut zip_data = Vec::new();
+    {
+        let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        writer.start_file("sub/victim.txt", options)?;
+        writer.write_all(b"MALICIOUS_OVERWRITE")?;
+        writer.finish()?;
+    }
+
+    let mut archive = ZipArchive::new(Cursor::new(zip_data))?;
+    let res = archive.extract(&dest);
+    assert!(
+        res.is_err(),
+        "Extraction must reject extracting into an ancestor symlink directory"
+    );
+
+    assert_eq!(
+        fs::read_to_string(&victim_file)?,
+        "IMMUTABLE_DATA",
+        "Victim file was corrupted through an ancestor symlink!"
+    );
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(any(unix, windows), not(miri)))]
+fn test_extraction_destination_under_symlink_succeeds() -> std::io::Result<()> {
+    use std::fs;
+    use std::io::{Cursor, Write};
+    use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+    let temp_root = tempdir()?;
+    let real_dest = temp_root.path().join("real_dest");
+    let symlink_dest = temp_root.path().join("symlink_dest");
+    fs::create_dir_all(&real_dest)?;
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&real_dest, &symlink_dest)?;
+    }
+    #[cfg(windows)]
+    {
+        if std::os::windows::fs::symlink_dir(&real_dest, &symlink_dest).is_err() {
+            // Windows unprivileged environments without SeCreateSymbolicLinkPrivilege
+            return Ok(());
+        }
+    }
+
+    let mut zip_data = Vec::new();
+    {
+        let mut writer = ZipWriter::new(Cursor::new(&mut zip_data));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        writer.start_file("hello.txt", options)?;
+        writer.write_all(b"Hello world!")?;
+        writer.start_file("nested/folder/deep.txt", options)?;
+        writer.write_all(b"Deep file content")?;
+        writer.finish()?;
+    }
+
+    let mut archive = ZipArchive::new(Cursor::new(zip_data))?;
+    let res = archive.extract(&symlink_dest);
+    assert!(
+        res.is_ok(),
+        "Extraction should succeed when the destination itself is or resides under a symlink: {:?}",
+        res.err()
+    );
+
+    assert_eq!(
+        fs::read_to_string(real_dest.join("hello.txt"))?,
+        "Hello world!"
+    );
+    assert_eq!(
+        fs::read_to_string(real_dest.join("nested/folder/deep.txt"))?,
+        "Deep file content"
+    );
+
+    Ok(())
+}

@@ -201,13 +201,15 @@ impl ExtraField {
             ExtraField::Zip64ExtendedInformation(zip64_extra) => {
                 zip64_extra.full_size(is_local_header)
             }
-            ExtraField::Ntfs(_ntfs) => {
+            ExtraField::Ntfs(ntfs) => {
                 // NTFS extra field
-                0
+                ntfs.full_size()
             }
             #[cfg(feature = "aes-crypto")]
             ExtraField::AeXEncryption(aes) => aes.full_size(),
-            ExtraField::ExtendedTimestamp(timestamp) => timestamp.full_size(is_local_header),
+            ExtraField::ExtendedTimestamp(extended_timestamp) => {
+                extended_timestamp.full_size(is_local_header)
+            }
             ExtraField::UnicodeComment(unicode_comment) => unicode_comment.full_size(),
             ExtraField::UnicodePath(unicode_path) => unicode_path.full_size(),
             ExtraField::Custom(custom) => custom.full_size(is_local_header),
@@ -246,8 +248,11 @@ impl ExtraField {
             ExtraField::DataStreamAlignment(data_stream_alignment) => {
                 data_stream_alignment.write(writer, is_local_header)?
             }
-            _ => {
-                // nothing to do
+            ExtraField::Ntfs(ntfs) => {
+                ntfs.write(writer)?;
+            }
+            ExtraField::ExtendedTimestamp(extended_timestamp) => {
+                extended_timestamp.write(writer, is_local_header)?;
             }
         }
         Ok(())
@@ -301,7 +306,10 @@ impl ZipFileData {
                     if unicode.crc32 == crc
                         && let Ok(comment) = String::from_utf8(unicode.content.to_vec())
                     {
-                        self.file_comment = comment.into_boxed_str();
+                        let file_comment =
+                            core::mem::replace(&mut self.file_comment, comment.into_boxed_str());
+                        self.file_comment_raw
+                            .get_or_insert_with(|| file_comment.into_boxed_bytes());
                     }
                 }
                 #[allow(clippy::collapsible_match)]

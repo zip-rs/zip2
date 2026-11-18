@@ -57,3 +57,9 @@ Replayed by `fuzz/replay.sh` in the `fuzz_regressions` CI job. Each must finish 
   `execute` only tracked `comment_len_at_reopen` for top-level reopens, so the harness still expected
   `read_zipfile_from_stream` to work on the junk-padded archive. Harness bug (reproduces on master 9926c64);
   fixed by looking through copy bases for reopens.
+- `reopen-extended-timestamp-extra-field-shrinks.bin`: found 2026-11-14 (run 43566959380, --no-default-features).
+  An entry was written with a `central_only` Extended Timestamp extra field (0x5455) carrying 4 payload bytes
+  (`flags` + 3 undocumented bytes), then reopened with `ZipWriter::new_append` and finished. `parse_central_header`
+  drops trailing bytes when fewer than 4 follow `flags`, so the rewritten central directory shrank by 3 bytes and
+  `finalize` zeroed `dir_start` and moved the footer to EOF. Fixed by treating entries with central-directory
+  extra fields that shrink on reopen as non-streamable.

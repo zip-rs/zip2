@@ -1,0 +1,27 @@
+buckets:
+  - maxSize: 0
+    label: binary change
+    comment: >
+      This PR was automatically labeled as a binary change because zero diff lines were detected.
+  - maxSize: 25
+    label: "size: tiny"
+    comment: null
+  - maxSize: 100
+    label: "size: small"
+    comment: null
+  - maxSize: 300
+    label: "size: medium"
+    comment: null
+  - maxSize: 1000
+    label: "size: large"
+    comment: null
+  - maxSize: 3000
+    label: "size: huge"
+    comment: >
+      This PR's diff size is quite large. 
+      Please consider splitting it into multiple PRs if possible.
+  - maxSize: Infinity
+    label: "size: colossal"
+    comment: >
+      This PR's diff size is quite large. 
+      Please consider splitting it into multiple PRs if possible.

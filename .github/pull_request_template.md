@@ -5,7 +5,6 @@ https://www.cvedetails.com/vulnerability-search.php?f=1&vendor=&product=zip&cwei
 for the gory details), we have some requirements that help ensure we maintain developers' and their clients' trust.
 This implies some requirements that a lot of PRs don't initially meet.
 
-This crate doesn't filter out "ZIP bombs" because extreme compression ratios and shallow file copies have legitimate uses; but
 I expect the tools the crate provides for checking that extraction is safe, such as the `ZipArchive::decompressed_size` method in
 https://github.com/zip-rs/zip2/blob/master/src/read.rs, to remain reliably effective. I also expect all the crate's methods to
 remain panic-free, so that this crate can be used on servers without creating a denial-of-service vulnerability.
@@ -31,7 +30,14 @@ These are our requirements for PRs, in addition to the usual functionality and r
   - `cargo fmt --check --all` must pass.
 - If the above checks force you to add a new `#[allow]` attribute, please place a comment on the same line or just above it, 
   explaining what the exception applies to and why it's needed.
-- It's always better if you add a test in your merge request
+- To ensure this library can be used without unnecessary security risks:
+  - All new and updated methods in src/, except tests, must be panic-free; they must run in no more than O(n log n) time
+    when handling an n-byte ZIP archive as input; and they must allocate only a constant amount of memory unless they need
+    to keep track of all the files in the archive.
+  - Methods that can extract files to the filesystem must have a variant that accepts `ExtractOptions` and honors the
+    choices made in it. They must not make changes to files outside the extraction directory, and they must not change the
+    metadata of the extraction directory itself when it's pre-existing.
+- It's always better if you add a test in your merge request.
 
 Thanks in advance for submitting a bug fix or proposed feature that meets these requirements!
 -->

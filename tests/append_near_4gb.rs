@@ -44,6 +44,12 @@ impl AddressHoleCursor {
                 vec.resize(end, 0);
             }
             vec[offset..end].copy_from_slice(&buf[..=last_nonzero]);
+            // Zero out any already-allocated bytes covered by trailing zeros in `buf`
+            // (for example, when `new_append` overwrites an existing central directory).
+            let trailing_end = (offset + buf.len()).min(vec.len());
+            if end < trailing_end {
+                vec[end..trailing_end].fill(0);
+            }
         } else {
             // buf is all zeros; zero out any already-allocated overlap bytes.
             let existing = vec.len().saturating_sub(offset).min(buf.len());
