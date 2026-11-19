@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.8.0](https://github.com/zip-rs/zip2/compare/v9.7.3...v9.8.0) - 2026-11-19
+
+### <!-- 0 -->🚀 Features
+
+- Add zstd-rs feature, which enables zstd support on more architectures via zstd/rust-backend (new in zstd 0.14.4) ([#1329](https://github.com/zip-rs/zip2/pull/1329))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(test)* prevent livelock in Windows CRC-cleanup TOCTOU race test ([#1331](https://github.com/zip-rs/zip2/pull/1331))
+
 ## [9.7.3](https://github.com/zip-rs/zip2/compare/v9.7.2...v9.7.3) - 2026-11-19
 
 ### <!-- 1 -->🐛 Bug Fixes
