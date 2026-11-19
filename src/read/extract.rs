@@ -201,6 +201,18 @@ fn is_nofollow_error(err: &std::io::Error) -> bool {
     matches!(err.raw_os_error(), Some(libc::ELOOP))
 }
 
+/// Normalize `libc::stat::st_mode` to `libc::mode_t`.
+///
+/// On 32-bit Android targets (e.g. `armv7-linux-androideabi`, `i686-linux-android`),
+/// `libc::stat::st_mode` is `u32` (`c_uint`) while `libc::mode_t` and the `S_IF*`
+/// constants are `u16`.
+#[cfg(unix)]
+// `st.st_mode` already has type `libc::mode_t` on most Unix targets, so the cast is only narrowing on 32-bit Android.
+#[allow(clippy::unnecessary_cast)]
+const fn stat_mode(st: &libc::stat) -> libc::mode_t {
+    st.st_mode as libc::mode_t
+}
+
 /// Descend from `dest` to `dir_path` component by component using `openat` with
 /// `O_DIRECTORY | O_NOFOLLOW`, optionally creating missing components with `mkdirat`
 /// and ensuring owner-rwx (`0o700`) permissions on each visited directory descriptor.
@@ -278,7 +290,7 @@ fn open_dir_beneath(
             if unsafe { libc::fstat(child_fd.as_raw_fd(), &mut st) } != 0 {
                 return Err(Error::last_os_error());
             }
-            let current_mode = st.st_mode & 0o7777;
+            let current_mode = stat_mode(&st) & 0o7777;
             if current_mode & 0o700 != 0o700 {
                 let desired = current_mode | 0o700;
                 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -1039,7 +1051,7 @@ pub(crate) fn remove_outfile_beneath(
         {
             return Err(Error::last_os_error());
         }
-        if (entry_st.st_mode & libc::S_IFMT) != libc::S_IFREG
+        if (stat_mode(&entry_st) & libc::S_IFMT) != libc::S_IFREG
             || entry_st.st_dev != open_st.st_dev
             || entry_st.st_ino != open_st.st_ino
         {
@@ -1198,7 +1210,7 @@ pub(crate) fn move_staged_file_beneath(
         {
             return Err(Error::last_os_error());
         }
-        if (from_st.st_mode & libc::S_IFMT) == libc::S_IFLNK {
+        if (stat_mode(&from_st) & libc::S_IFMT) == libc::S_IFLNK {
             let target = std::fs::read_link(from)?;
             let target_c = cstr(target.as_os_str())?;
             let r_unlink = unsafe { libc::unlinkat(to_dirfd.as_raw_fd(), to_c.as_ptr(), 0) };
@@ -1232,7 +1244,7 @@ pub(crate) fn move_staged_file_beneath(
         if unsafe { libc::fstat(src_fd.as_raw_fd(), &mut src_st) } != 0 {
             return Err(Error::last_os_error());
         }
-        if (src_st.st_mode & libc::S_IFMT) != libc::S_IFREG {
+        if (stat_mode(&src_st) & libc::S_IFMT) != libc::S_IFREG {
             return Err(Error::new(
                 ErrorKind::PermissionDenied,
                 "Staged entry is not a regular file",
@@ -1409,7 +1421,7 @@ fn create_outfile_beneath(
             libc::AT_SYMLINK_NOFOLLOW,
         )
     } == 0
-        && ((pre_st.st_mode & libc::S_IFMT) == libc::S_IFLNK || pre_st.st_nlink > 1)
+        && ((stat_mode(&pre_st) & libc::S_IFMT) == libc::S_IFLNK || pre_st.st_nlink > 1)
     {
         let r = unsafe { libc::unlinkat(dirfd.as_raw_fd(), name.as_ptr(), 0) };
         if r != 0 {
@@ -1449,7 +1461,7 @@ fn create_outfile_beneath(
     if unsafe { libc::fstat(fd.as_raw_fd(), &mut st) } != 0 {
         return Err(Error::last_os_error());
     }
-    if (st.st_mode & libc::S_IFMT) != libc::S_IFREG {
+    if (stat_mode(&st) & libc::S_IFMT) != libc::S_IFREG {
         return Err(Error::new(
             ErrorKind::PermissionDenied,
             "Extracted file cannot be written to a non-regular file",
@@ -1709,7 +1721,7 @@ fn set_permissions_dirfd_entry(
         {
             return Err(Error::last_os_error());
         }
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(any(
@@ -1723,11 +1735,11 @@ fn set_permissions_dirfd_entry(
         use std::io::ErrorKind;
         use std::os::fd::{FromRawFd, OwnedFd};
 
-        if (st.st_mode & libc::S_IFMT) == libc::S_IFLNK {
+        if (stat_mode(&st) & libc::S_IFMT) == libc::S_IFLNK {
             return Ok(());
         }
 
-        let is_dir = (st.st_mode & libc::S_IFMT) == libc::S_IFDIR;
+        let is_dir = (stat_mode(&st) & libc::S_IFMT) == libc::S_IFDIR;
         let base_flags = if is_dir {
             libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC
         } else {
@@ -1805,7 +1817,7 @@ fn set_permissions_dirfd_entry(
             if unsafe { libc::fstat(path_fd.as_raw_fd(), &mut fd_st) } != 0 {
                 return Err(Error::last_os_error());
             }
-            if (fd_st.st_mode & libc::S_IFMT) == libc::S_IFLNK {
+            if (stat_mode(&fd_st) & libc::S_IFMT) == libc::S_IFLNK {
                 return Err(Error::new(
                     ErrorKind::PermissionDenied,
                     "Cannot set permissions through a symbolic link",
