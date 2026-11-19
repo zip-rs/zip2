@@ -120,13 +120,13 @@ jobs:
           cache-base: master
           channel: nightly
           bins: cargo-nextest, cargo-zigbuild
-          targets: x86_64-unknown-freebsd
+          targets: armv7-linux-androideabi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install zig
         if: ${{ !matrix.snap_compatible }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
+      - run: cargo zigbuild --all-features --target armv7-linux-androideabi --all --lib --bins --tests --examples --benches
   check_minimal_versions:
     needs:
       - cargo_semver
