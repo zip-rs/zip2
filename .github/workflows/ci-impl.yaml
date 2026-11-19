@@ -91,7 +91,7 @@ jobs:
       - name: Install zig
         shell: bash
         run: sudo snap install --beta zig --classic
-      - run: cargo zigbuild --all-features --target ${{ matrix.platform }} --all --lib --bins --tests --examples --benches -D warnings
+      - run: cargo zigbuild --all-features --target ${{ matrix.platform }} --all --lib --bins --tests --examples --benches
   check_minimal_versions:
     needs:
       - cargo_semver
