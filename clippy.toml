@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "std::fs::create_dir_all", reason = "Use crate::read::extract::make_writable_dir_all with the destination root to prevent intermediate-directory symlink TOCTOU races" },
+]

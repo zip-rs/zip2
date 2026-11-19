@@ -368,13 +368,19 @@ pub(crate) fn resolve_enclosed<'a>(
     base: &Path,
     start: &Path,
     components: impl IntoIterator<Item = impl Into<Cow<'a, OsStr>>>,
-    create_dirs: bool,
+    mut create_dirs: bool,
+    follow_leaf_symlink: bool,
 ) -> ZipResult<PathBuf> {
     debug_assert!(start.starts_with(base));
 
     let mut current = start.to_path_buf();
     let mut queue: VecDeque<Cow<'a, OsStr>> = components.into_iter().map(Into::into).collect();
     let mut hops = 0usize;
+    // When `follow_leaf_symlink` is false (destination output paths), still validate that any
+    // pre-existing leaf symlink stays enclosed inside `base`, but return the symlink's own
+    // path (without creating missing target directories) so extraction replaces the link rather
+    // than overwriting its target.
+    let mut pinned_leaf: Option<PathBuf> = None;
 
     // Set once a component does not exist (and is not created). A later entry may create it as a
     // symlink, which would change the meaning of any subsequent `..` to the unknown
@@ -425,7 +431,7 @@ pub(crate) fn resolve_enclosed<'a>(
             // symlink whose target does not exist (yet) to be accepted.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 if create_dirs && !queue.is_empty() {
-                    make_writable_dir_all(&current)?;
+                    make_writable_dir_all(&current, Some(base))?;
                 } else {
                     missing = true;
                 }
@@ -436,6 +442,11 @@ pub(crate) fn resolve_enclosed<'a>(
 
         if !meta.is_symlink() {
             continue;
+        }
+
+        if !follow_leaf_symlink && queue.is_empty() && pinned_leaf.is_none() {
+            pinned_leaf = Some(current.clone());
+            create_dirs = false;
         }
 
         hops += 1;
@@ -477,7 +488,7 @@ pub(crate) fn resolve_enclosed<'a>(
             "Path escapes the destination directory and not allowed outside"
         ));
     }
-    Ok(current)
+    Ok(pinned_leaf.unwrap_or(current))
 }
 
 #[cfg(test)]

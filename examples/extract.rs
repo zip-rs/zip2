@@ -1,3 +1,5 @@
+// Test/example setup uses std::fs::create_dir_all directly.
+#![allow(clippy::disallowed_methods)]
 use core::error::Error;
 use std::fs;
 use std::io;

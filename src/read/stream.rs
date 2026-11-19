@@ -509,7 +509,7 @@ impl<R: Read> ZipStreamReader<R> {
         struct Extractor {
             outpath: PathBuf,
             resolved_paths: IndexMap<Box<[u8]>, PathBuf>,
-            file_permissions: std::collections::BTreeMap<PathBuf, u32>,
+            file_permissions: std::collections::BTreeMap<PathBuf, (PathBuf, u32)>,
             buf: Vec<u8>,
         }
         impl ZipStreamVisitor for Extractor {
@@ -570,14 +570,27 @@ impl<R: Read> ZipStreamReader<R> {
                     return Ok(());
                 }
                 if file.is_dir() {
-                    fs::create_dir_all(&outpath)?;
+                    crate::read::extract::make_writable_dir_all(&outpath, Some(&self.outpath))?;
                 } else {
+                    // Keep initial creation owner-only (`0o600`) when Unix permissions exist
+                    // so unauthenticated bytes are not exposed to other users prior to the
+                    // final permission pass / rollback.
+                    let writable_mode = file.unix_mode().map(|_| 0o600);
                     let mut outfile = crate::read::extract::create_outfile(
                         &outpath,
-                        file.unix_mode(),
+                        writable_mode,
                         Some(&self.outpath),
                     )?;
-                    crate::read::extract::copy_into(file, &mut outfile, &mut self.buf)?;
+                    if let Err(e) =
+                        crate::read::extract::copy_into(file, &mut outfile, &mut self.buf)
+                    {
+                        crate::read::extract::cleanup_partial_outfile_beneath(
+                            &self.outpath,
+                            &outpath,
+                            outfile,
+                        );
+                        return Err(e.into());
+                    }
                 }
 
                 Ok(())
@@ -588,11 +601,13 @@ impl<R: Read> ZipStreamReader<R> {
                 // names only select entries this pass already wrote: a name that wasn't
                 // written gets no mode, and the mode goes to the path `visit_file` checked,
                 // never to a path rebuilt from the central directory.
-                if let (Some(outpath), Some(mode)) = (
-                    self.resolved_paths.get(metadata.name_raw()),
-                    metadata.unix_mode(),
-                ) {
-                    self.file_permissions.insert(outpath.clone(), mode);
+                if let Some(outpath) = self.resolved_paths.get(metadata.name_raw()) {
+                    let key = crate::read::extract::normalized_path_key(outpath);
+                    if let Some(mode) = metadata.unix_mode() {
+                        self.file_permissions.insert(key, (outpath.clone(), mode));
+                    } else {
+                        self.file_permissions.remove(&key);
+                    }
                 }
                 Ok(())
             }
@@ -622,20 +637,22 @@ impl<R: Read> ZipStreamReader<R> {
                     .strip_prefix(&written_to)
                     .map_err(|_| invalid!("Entry was not extracted to the staging directory"))?;
                 let from = staging.join(relative);
-                let outpath = crate::path::resolve_enclosed(dest, dest, relative.iter(), true)?;
+                let outpath =
+                    crate::path::resolve_enclosed(dest, dest, relative.iter(), false, false)?;
                 if outpath.starts_with(&*staging) {
                     return Err(invalid!("Entry would be written to the staging directory"));
                 }
                 if fs::symlink_metadata(&from)?.is_dir() {
-                    fs::create_dir_all(&outpath)?;
-                } else if let Err(e) = fs::rename(&from, &outpath) {
-                    if e.kind() != io::ErrorKind::CrossesDevices {
-                        return Err(e.into());
-                    }
-                    fs::copy(&from, &outpath)?;
+                    crate::read::extract::make_writable_dir_all(&outpath, Some(dest))?;
+                } else {
+                    crate::read::extract::move_staged_file_beneath(dest, staging, &from, &outpath)?;
                 }
-                if let Some(mode) = extractor.file_permissions.remove(&*staged) {
-                    extractor.file_permissions.insert(outpath.clone(), mode);
+                let old_key = crate::read::extract::normalized_path_key(staged);
+                if let Some((_, mode)) = extractor.file_permissions.remove(&old_key) {
+                    let new_key = crate::read::extract::normalized_path_key(&outpath);
+                    extractor
+                        .file_permissions
+                        .insert(new_key, (outpath.clone(), mode));
                 }
                 *staged = outpath;
             }
@@ -643,6 +660,8 @@ impl<R: Read> ZipStreamReader<R> {
         }
 
         use std::fs;
+        #[allow(clippy::disallowed_methods)]
+        // Creates the caller-chosen extraction root itself before canonicalizing it; no untrusted archive path is involved.
         fs::create_dir_all(&directory)?;
         let directory = directory.as_ref().canonicalize()?;
 
@@ -675,9 +694,10 @@ impl<R: Read> ZipStreamReader<R> {
                         &directory,
                         relative.iter(),
                         false,
+                        false,
                     )?;
                     if !staged_paths.insert(staged)
-                        || !output_paths.insert(output)
+                        || !output_paths.insert(crate::read::extract::normalized_path_key(&output))
                         || staged_file_identity(staged)?
                             .is_some_and(|identity| !staged_files.insert(identity))
                     {
@@ -696,23 +716,19 @@ impl<R: Read> ZipStreamReader<R> {
         // As `ZipArchive::extract`: children before parents, so a read-only directory does not
         // block setting its contents. Never through a symlink: `set_permissions` follows them.
         // Off Unix, only the read-only flag applies.
-        for (path, mode) in extractor.file_permissions.into_iter().rev() {
+        for (_key, (path, mode)) in extractor.file_permissions.into_iter().rev() {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 crate::read::extract::set_permissions_no_follow_symlink(
                     &path,
                     std::fs::Permissions::from_mode(mode),
+                    Some(&directory),
                 )?;
             }
             #[cfg(not(unix))]
             if mode & 0o222 == 0 {
-                let metadata = fs::symlink_metadata(&path)?;
-                if !metadata.is_symlink() {
-                    let mut permissions = metadata.permissions();
-                    permissions.set_readonly(true);
-                    fs::set_permissions(&path, permissions)?;
-                }
+                crate::read::extract::set_readonly_beneath(&directory, &path)?;
             }
         }
         Ok(())
@@ -727,7 +743,7 @@ fn staged_file_identity(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let metadata = std::fs::metadata(path)?;
+        let metadata = std::fs::symlink_metadata(path)?;
         Ok(Some((metadata.dev(), metadata.ino())))
     }
     #[cfg(windows)]
@@ -736,14 +752,14 @@ fn staged_file_identity(
         use std::io;
         use std::os::windows::fs::OpenOptionsExt;
         use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
         use windows_sys::Win32::Storage::FileSystem::{
-            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+            BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+            GetFileInformationByHandle,
         };
 
         let file = OpenOptions::new()
             .access_mode(0) // 0 means no read/write data access needed, just metadata
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
             .open(path)?;
         let handle = file.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
         // Safety: We provide a valid file handle and a mutable pointer to a zeroed struct.
@@ -1295,6 +1311,22 @@ mod tests {
         reader.extract(&dest)?;
         assert!(dest.path().join("mimetype").exists());
         Ok(())
+    }
+
+    #[cfg(all(any(unix, windows), not(miri)))]
+    #[test]
+    fn staged_file_identity_handles_dangling_symlink() {
+        let dir = tempfile::TempDir::with_prefix("staged_dangling").unwrap();
+        let link = dir.path().join("dangling");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("missing_target", &link).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_file("missing_target", &link).is_err() {
+            return;
+        }
+        let id = crate::read::stream::staged_file_identity(&link)
+            .expect("dangling symlink must not fail with ENOENT");
+        assert!(id.is_some());
     }
 
     #[test]

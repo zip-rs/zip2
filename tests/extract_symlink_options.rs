@@ -1,3 +1,5 @@
+// Test/example setup uses std::fs::create_dir_all directly.
+#![allow(clippy::disallowed_methods)]
 // Create a ZIP with directory traversal attempts
 // zipfile
 //  - file_test

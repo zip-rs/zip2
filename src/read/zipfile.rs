@@ -503,5 +503,11 @@ pub(crate) fn safe_prepare_path_from_metadata<Filter: RootDirFilter>(
         None => &components[..],
     };
 
-    crate::path::resolve_enclosed(base_path, base_path, components.iter().copied(), true)
+    crate::path::resolve_enclosed(
+        base_path,
+        base_path,
+        components.iter().copied(),
+        true,
+        false,
+    )
 }

@@ -1,3 +1,5 @@
+// Test/example setup uses std::fs::create_dir_all directly.
+#![allow(clippy::disallowed_methods)]
 //! Only on native because we cannot use fs with miri CI
 #![cfg(not(miri))]
 
