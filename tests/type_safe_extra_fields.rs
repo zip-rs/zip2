@@ -90,11 +90,13 @@ fn find_extra_field(extra_bytes: &[u8], target_id: u16) -> Option<&[u8]> {
     while pos + 4 <= extra_bytes.len() {
         let header_id = u16::from_le_bytes([extra_bytes[pos], extra_bytes[pos + 1]]);
         let len = u16::from_le_bytes([extra_bytes[pos + 2], extra_bytes[pos + 3]]) as usize;
-        let payload = &extra_bytes[pos + 4..pos + 4 + len];
+        let payload_start = pos + 4;
+        let payload_end = payload_start.checked_add(len)?;
+        let payload = extra_bytes.get(payload_start..payload_end)?;
         if header_id == target_id {
             return Some(payload);
         }
-        pos += 4 + len;
+        pos = payload_end;
     }
     None
 }

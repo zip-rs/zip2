@@ -290,6 +290,14 @@ impl ExtendedFileOptions {
             if extra_fields_len.saturating_add(field_len) > u16::MAX as usize {
                 return Err(invalid!("Extra data field would be longer than allowed"));
             }
+            if self.validate_extra_fields
+                && (!Self::extra_field_parses(header_id, local_payload, false)
+                    || !Self::extra_field_parses(header_id, central_payload, true))
+            {
+                return Err(invalid!(
+                    "Extra field {header_id:#06x} would not be readable: malformed data"
+                ));
+            }
             Arc::make_mut(&mut self.extra_fields).push(CustomExtraField::new_with_central_data(
                 header_id,
                 local_payload.to_vec().into_boxed_slice(),
