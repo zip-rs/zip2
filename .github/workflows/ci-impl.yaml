@@ -68,7 +68,11 @@ jobs:
     name: "zigbuild cross-builds"
     strategy:
       matrix:
-        platform: [x86_64-unknown-freebsd, armv7-linux-androideabi]
+        include:
+        - platform: x86_64-unknown-freebsd
+          snap_compatible: true
+        - platform: armv7-linux-androideabi
+          snap_compatible: false
     runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -89,8 +93,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install zig
+        if: ${{ matrix.snap_compatible }}
         shell: bash
         run: sudo snap install --beta zig --classic
+      - name: Install zig
+        if: ${{ !matrix.snap_compatible }}
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
       - run: cargo zigbuild --all-features --target ${{ matrix.platform }} --all --lib --bins --tests --examples --benches
   check_minimal_versions:
     needs:
