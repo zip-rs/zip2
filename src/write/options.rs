@@ -227,9 +227,16 @@ impl ExtendedFileOptions {
         central_only: bool,
     ) -> ZipResult<()> {
         let data = data.as_ref();
-        let len = data.len() + 4;
-        let extra_fields_len: usize = self.extra_fields.iter().map(|x| x.full_size(false)).sum();
-        if extra_fields_len + len > u16::MAX as usize {
+        let len = data
+            .len()
+            .checked_add(4)
+            .ok_or_else(|| invalid!("Extra data field would be longer than allowed"))?;
+        let extra_fields_len: usize = self
+            .extra_fields
+            .iter()
+            .map(|x| x.full_size(true).max(x.full_size(false)))
+            .sum();
+        if extra_fields_len.saturating_add(len) > u16::MAX as usize {
             Err(invalid!("Extra data field would be longer than allowed"))
         } else if self.validate_extra_fields
             && !Self::extra_field_parses(header_id, data, central_only)
@@ -260,14 +267,35 @@ impl ExtendedFileOptions {
         created: Option<u32>,
     ) -> ZipResult<()> {
         let ts = ExtendedTimestamp::new(modified, accessed, created);
-        let mut buf = Vec::new();
-        ts.write(&mut buf, true)?;
-        if buf.len() >= 4 {
-            self.add_extra_field(
-                crate::extra_fields::UsedExtraField::ExtendedTimestamp.as_u16(),
-                &buf[4..],
-                false,
-            )
+        let mut local_buf = Vec::with_capacity(ts.full_size(true));
+        ts.write(&mut local_buf, true)?;
+        let mut central_buf = Vec::with_capacity(ts.full_size(false));
+        ts.write(&mut central_buf, false)?;
+        let header_id = crate::extra_fields::UsedExtraField::ExtendedTimestamp.as_u16();
+        if local_buf == central_buf {
+            if let Some(payload) = local_buf.get(4..) {
+                self.add_extra_field(header_id, payload, false)
+            } else {
+                Ok(())
+            }
+        } else if let (Some(local_payload), Some(central_payload)) =
+            (local_buf.get(4..), central_buf.get(4..))
+        {
+            let extra_fields_len: usize = self
+                .extra_fields
+                .iter()
+                .map(|x| x.full_size(true).max(x.full_size(false)))
+                .sum();
+            let field_len = local_buf.len().max(central_buf.len());
+            if extra_fields_len.saturating_add(field_len) > u16::MAX as usize {
+                return Err(invalid!("Extra data field would be longer than allowed"));
+            }
+            Arc::make_mut(&mut self.extra_fields).push(CustomExtraField::new_with_central_data(
+                header_id,
+                local_payload.to_vec().into_boxed_slice(),
+                central_payload.to_vec().into_boxed_slice(),
+            ));
+            Ok(())
         } else {
             Ok(())
         }
@@ -675,7 +703,8 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
     /// Adds an Extended Timestamp extra field (0x5455) to this entry's options.
     ///
     /// The timestamps are specified as UNIX epoch seconds. If `modified` is provided,
-    /// it will be included in the serialized extra field.
+    /// it will be written to both the local file header and the central directory.
+    /// `accessed` and `created` will only be stored in the local header.
     pub fn with_extended_timestamp(
         mut self,
         modified: Option<u32>,

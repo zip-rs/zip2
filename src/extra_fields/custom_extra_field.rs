@@ -9,6 +9,10 @@ use std::io::Write;
 pub struct CustomExtraField {
     /// If true, this field will be included in the central directory entry but not the local file header.
     pub(crate) central_only: bool,
+    /// Optional alternate payload for the central directory when the central representation
+    /// differs from the local header (for example, Extended Timestamp `0x5455`, which omits
+    /// access and creation times in the central directory).
+    pub(crate) central_data: Option<Box<[u8]>>,
     /// Header ID of the extra field
     pub header_id: u16,
     /// Data of the extra field
@@ -19,8 +23,22 @@ impl CustomExtraField {
     pub(crate) fn new(central_only: bool, header_id: u16, data: Box<[u8]>) -> Self {
         Self {
             central_only,
+            central_data: None,
             header_id,
             data,
+        }
+    }
+
+    pub(crate) fn new_with_central_data(
+        header_id: u16,
+        local_data: Box<[u8]>,
+        central_data: Box<[u8]>,
+    ) -> Self {
+        Self {
+            central_only: false,
+            central_data: Some(central_data),
+            header_id,
+            data: local_data,
         }
     }
 
@@ -43,6 +61,7 @@ impl CustomExtraField {
         }
         Ok(Self {
             central_only,
+            central_data: None,
             header_id,
             data: data_rest.to_vec().into_boxed_slice(),
         })
@@ -52,18 +71,28 @@ impl CustomExtraField {
         if self.central_only && is_local_header {
             return 0;
         }
-        let size = self.data.len();
-        size_of::<u16>() + size_of::<u16>() + size
+        let payload = if is_local_header {
+            &self.data
+        } else {
+            self.central_data.as_deref().unwrap_or(&self.data)
+        };
+        size_of::<u16>() + size_of::<u16>() + payload.len()
     }
 
     pub(crate) fn write<W: Write>(&self, write: &mut W, is_local_header: bool) -> ZipResult<()> {
         if self.central_only && is_local_header {
             return Ok(());
         }
+        let payload = if is_local_header {
+            &self.data
+        } else {
+            self.central_data.as_deref().unwrap_or(&self.data)
+        };
         write.write_all(&self.header_id.to_le_bytes())?;
-        let size = self.data.len() as u16;
+        let size =
+            u16::try_from(payload.len()).map_err(|_| invalid!("Extra data field is too large"))?;
         write.write_all(&size.to_le_bytes())?;
-        write.write_all(&self.data)?;
+        write.write_all(payload)?;
         Ok(())
     }
 }
@@ -76,6 +105,7 @@ impl arbitrary::Arbitrary<'_> for CustomExtraField {
         use std::io::Cursor;
         let extra_field = CustomExtraField {
             central_only: u.arbitrary()?,
+            central_data: None,
             header_id: u.arbitrary()?,
             data: u.arbitrary()?,
         };

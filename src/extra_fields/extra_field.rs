@@ -374,11 +374,11 @@ mod tests {
         ntfs_extra_field[6] = 24;
         let mut options = FullFileOptions::default();
         options.name = Some(b"test.txt");
-        options.extended_options.extra_fields = vec![CustomExtraField {
-            central_only: false,
-            header_id: 0x000A,
-            data: Box::new(ntfs_extra_field),
-        }]
+        options.extended_options.extra_fields = vec![CustomExtraField::new(
+            false,
+            0x000A,
+            Box::new(ntfs_extra_field),
+        )]
         .into();
         // Compression is disabled on Miri for zlib-backed flate2 backends
         // (zlib-rs / zlib / zlib-ng / zlib-ng-compat) because when it's enabled,
