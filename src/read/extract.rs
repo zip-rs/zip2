@@ -278,8 +278,7 @@ fn open_dir_beneath(
             if unsafe { libc::fstat(child_fd.as_raw_fd(), &mut st) } != 0 {
                 return Err(Error::last_os_error());
             }
-            let current_mode = libc::mode_t::try_from(st.st_mode & 0o7777)
-                .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
+            let current_mode = st.st_mode & 0o7777;
             if current_mode & 0o700 != 0o700 {
                 let desired = current_mode | 0o700;
                 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -1204,9 +1203,9 @@ pub(crate) fn move_staged_file_beneath(
             let target_c = cstr(target.as_os_str())?;
             let r_unlink = unsafe { libc::unlinkat(to_dirfd.as_raw_fd(), to_c.as_ptr(), 0) };
             if r_unlink != 0 {
-                let ue = Error::last_os_error();
-                if ue.raw_os_error() != Some(libc::ENOENT) {
-                    return Err(ue);
+                let unlink_err = Error::last_os_error();
+                if unlink_err.raw_os_error() != Some(libc::ENOENT) {
+                    return Err(unlink_err);
                 }
             }
             if unsafe { libc::symlinkat(target_c.as_ptr(), to_dirfd.as_raw_fd(), to_c.as_ptr()) }
@@ -1667,11 +1666,13 @@ fn set_permissions_dirfd_entry(
     name: &std::ffi::CStr,
     mode: std::fs::Permissions,
 ) -> std::io::Result<()> {
-    use std::io::{Error, ErrorKind};
-    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-    use std::os::unix::fs::PermissionsExt;
+    use std::io::Error;
+    use std::os::fd::AsRawFd;
 
+    // SAFETY: `libc::stat` is a plain C struct where an all-zero bit pattern is valid.
     let mut st: libc::stat = unsafe { core::mem::zeroed() };
+    // SAFETY: `dirfd` is a valid open directory descriptor, `name` is a valid NUL-terminated
+    // C string, and `&mut st` points to a properly aligned writable `libc::stat` buffer.
     if unsafe {
         libc::fstatat(
             dirfd.as_raw_fd(),
@@ -1692,8 +1693,11 @@ fn set_permissions_dirfd_entry(
         target_os = "dragonfly"
     ))]
     {
-        let raw_mode = libc::mode_t::try_from(mode.mode() & 0o7777)
-            .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
+        use std::os::unix::fs::PermissionsExt;
+
+        let raw_mode = libc::mode_t::from((mode.mode() & 0o7777) as u16);
+        // SAFETY: `dirfd` is a valid open directory descriptor and `name` is a valid
+        // NUL-terminated C string.
         if unsafe {
             libc::fchmodat(
                 dirfd.as_raw_fd(),
@@ -1716,6 +1720,9 @@ fn set_permissions_dirfd_entry(
         target_os = "dragonfly"
     )))]
     {
+        use std::io::ErrorKind;
+        use std::os::fd::{FromRawFd, OwnedFd};
+
         if (st.st_mode & libc::S_IFMT) == libc::S_IFLNK {
             return Ok(());
         }
@@ -1769,6 +1776,8 @@ fn set_permissions_dirfd_entry(
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if err.raw_os_error() == Some(libc::EACCES) {
+            use std::os::unix::fs::PermissionsExt;
+
             // `O_RDONLY`/`O_WRONLY` fail with `EACCES` on non-readable/non-writable inodes
             // (e.g., `0o000` or `0o100`). Open with `O_PATH | O_NOFOLLOW`, verify via `fstat`
             // that the pinned descriptor is not a symlink, and apply `fchmodat` on
@@ -1802,8 +1811,7 @@ fn set_permissions_dirfd_entry(
                     "Cannot set permissions through a symbolic link",
                 ));
             }
-            let raw_mode = libc::mode_t::try_from(mode.mode() & 0o7777)
-                .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
+            let raw_mode = libc::mode_t::from((mode.mode() & 0o7777) as u16);
             let proc_path =
                 std::ffi::CString::new(format!("/proc/self/fd/{}", path_fd.as_raw_fd()))
                     .map_err(|_| Error::new(ErrorKind::InvalidInput, "NUL byte in fd path"))?;
@@ -1854,8 +1862,7 @@ pub(crate) fn set_permissions_no_follow_symlink(
             use std::os::unix::fs::PermissionsExt;
 
             // `mode_t` is `u16` on macOS, FreeBSD and DragonFly, but `u32` on NetBSD and OpenBSD.
-            let raw_mode = nix::libc::mode_t::try_from(mode.mode() & 0o7777)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+            let raw_mode = nix::libc::mode_t::from((mode.mode() & 0o7777) as u16);
             let mode = Mode::from_bits_truncate(raw_mode);
 
             // Use fchmodat with the flag telling it NOT to follow the symlink
