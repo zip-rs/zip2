@@ -105,7 +105,7 @@ jobs:
         run: |
           NDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk"
           LATEST_NDK=$(ls -1 "$NDK_ROOT" | sort -V | tail -n 1)
-          if [ -n "$LATEST_NDK" ]; then
+          if [ -z "$LATEST_NDK" ]; then
             echo "Android NDK not found!"
             exit 1
           fi
