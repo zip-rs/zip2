@@ -143,6 +143,24 @@ _miri_compatible_features = [
     "time",
     "zstd-rs"
 ]
+_bsd_compatible_features = [
+    "aes-crypto",
+    "bzip2",
+    "chrono",
+    "deflate-flate2",
+    "flate2/rust_backend",
+    "deflate-zopfli",
+    "jiff-02",
+    "legacy-zip",
+    "lzma",
+    "nt-time",
+    "ppmd",
+    "unreserved",
+    "xz",
+    "time",
+    "zstd",
+    # not "zstd-rs" because it doesn't build for BSD
+]
 
 
 # The following features are not supported on wasm

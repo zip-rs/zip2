@@ -87,7 +87,7 @@ jobs:
       - name: Install zig
         shell: bash
         run: sudo snap install --beta zig --classic
-      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
+      - run: cargo zigbuild --no-default-features --features _bsd_compatible_features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
   android_arm32_cross_build:
     needs:
     - cargo_semver
