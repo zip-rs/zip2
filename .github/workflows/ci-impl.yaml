@@ -102,7 +102,6 @@ jobs:
         with:
           egress-policy: audit
       - name: Set latest preinstalled NDK
-        if: runner.os != 'Windows'
         run: |
           NDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk"
           LATEST_NDK=$(ls -1 "$NDK_ROOT" | sort -V | tail -n 1)
