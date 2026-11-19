@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.7.2](https://github.com/zip-rs/zip2/compare/v9.7.1...v9.7.2) - 2026-11-19
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(write)* write ExtendedTimestamp access and creation times only to local headers ([#1324](https://github.com/zip-rs/zip2/pull/1324))
+- *(extract)* resolve typos check and Linux unreachable-code clippy warnings ([#1325](https://github.com/zip-rs/zip2/pull/1325))
+
 ## [9.7.1](https://github.com/zip-rs/zip2/compare/v9.7.0...v9.7.1) - 2026-11-19
 
 ### <!-- 1 -->🐛 Bug Fixes
