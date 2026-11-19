@@ -43,7 +43,8 @@ The features available are:
 - `ppmd`: Enables the `PPMd` compression algorithm.
 - `time`: Enables features using the [time](https://github.com/time-rs/time) crate.
 - `chrono`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `chrono::NaiveDateTime`.
-- `jiff-02`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `jiff::civil::DateTime`.
+- `jiff-1`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `jiff::civil::DateTime` (jiff 1.x).
+- `jiff-02`: Enables converting last-modified [`zip::DateTime`](https://docs.rs/zip/latest/zip/struct.DateTime.html) to and from `jiff::civil::DateTime` (jiff 0.2.x).
 - `nt-time`: Enables returning timestamps stored in the NTFS extra field as `nt_time::FileTime`.
 - `xz`: Enables the `XZ` compression algorithm.
 - `zstd`: Enables the `Zstandard` compression algorithm.
