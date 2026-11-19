@@ -85,7 +85,9 @@ fn run_race_loop(budget_ms: u128, flips: &AtomicU64, mut step: impl FnMut() -> b
             && flips.load(Ordering::Relaxed) == prev
         {
             std::thread::yield_now();
+            let wait_start = std::time::Instant::now();
             while flips.load(Ordering::Relaxed) == prev
+                && wait_start.elapsed().as_millis() < 50
                 && start.elapsed().as_millis() <= max_wait_ms
             {
                 std::thread::sleep(std::time::Duration::from_millis(1));
@@ -469,7 +471,7 @@ fn concurrent_intermediate_symlink_race_crc_error_cleanup_cannot_delete_canary()
         Arc::clone(&flips),
         canary.clone(),
         race_dir.clone(),
-        false,
+        true,
         false,
     );
 
@@ -485,6 +487,10 @@ fn concurrent_intermediate_symlink_race_crc_error_cleanup_cannot_delete_canary()
             deleted = true;
             return true;
         }
+        // Clean up any leftover partial `race/bad.txt` (e.g. after a Windows sharing
+        // violation during cleanup) before `run_race_loop` waits for the next flip.
+        let _ = std::fs::remove_dir_all(&race_dir);
+        let _ = std::fs::remove_file(&race_dir);
         false
     });
     stop.store(true, Ordering::Relaxed);
