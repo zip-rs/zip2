@@ -59,13 +59,16 @@ jobs:
             sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu libc6-dev-s390x-cross
           )
       - run: cargo miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
-  bsd_platform:
+  zigbuild:
     needs:
     - cargo_semver
     - style_and_docs
     - cargo_fmt
     timeout-minutes: 20
-    name: "BSD checks"
+    name: "zigbuild cross-builds"
+    strategy:
+      matrix:
+        platform: [x86_64-unknown-freebsd, armv7-linux-androideabi]
     runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -82,13 +85,13 @@ jobs:
           cache-base: master
           channel: nightly
           bins: cargo-nextest, cargo-zigbuild
-          targets: x86_64-unknown-freebsd
+          targets: ${{ matrix.platform }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install zig
         shell: bash
         run: sudo snap install --beta zig --classic
-      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
+      - run: cargo zigbuild --all-features --target ${{ matrix.platform }} --all --lib --bins --tests --examples --benches -D warnings
   check_minimal_versions:
     needs:
       - cargo_semver
@@ -496,7 +499,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - bsd_platform
+      - zigbuild
       - miri
       - check_minimal_versions
       - fuzz_regressions
@@ -525,7 +528,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - bsd_platform
+      - zigbuild
       - miri
       - check_minimal_versions
       - fuzz_regressions
@@ -554,7 +557,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - bsd_platform
+      - zigbuild
       - miri
       - check_minimal_versions
       - fuzz_regressions
@@ -584,7 +587,7 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - bsd_platform
+      - zigbuild
       - miri
       - check_minimal_versions
       - fuzz_regressions
