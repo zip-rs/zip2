@@ -59,27 +59,19 @@ jobs:
             sudo apt-get install --no-install-recommends -y gcc-s390x-linux-gnu libc6-dev-s390x-cross
           )
       - run: cargo miri nextest run --manifest-path ${{ github.workspace }}/Cargo.toml --target s390x-unknown-linux-gnu --all ${{ matrix.feature.flags }} --lib --bins --tests --examples
-  zigbuild:
+  bsd_platform:
     needs:
     - cargo_semver
     - style_and_docs
     - cargo_fmt
     timeout-minutes: 20
-    name: "zigbuild cross-builds"
-    strategy:
-      matrix:
-        include:
-        - platform: x86_64-unknown-freebsd
-          snap_compatible: true
-        - platform: armv7-linux-androideabi
-          snap_compatible: false
+    name: "BSD checks"
     runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-
       - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
         with:
           persist-credentials: false
@@ -89,17 +81,53 @@ jobs:
           cache-base: master
           channel: nightly
           bins: cargo-nextest, cargo-zigbuild
-          targets: ${{ matrix.platform }}
+          targets: x86_64-unknown-freebsd
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install zig
-        if: ${{ matrix.snap_compatible }}
         shell: bash
         run: sudo snap install --beta zig --classic
+      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
+  android_arm32_cross_build:
+    needs:
+    - cargo_semver
+    - style_and_docs
+    - cargo_fmt
+    timeout-minutes: 20
+    name: "Android ARM32 Cross-Build"
+    runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'blacksmith-2vcpu-ubuntu-2604' }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - name: Set latest preinstalled NDK
+        if: runner.os != 'Windows'
+        run: |
+          NDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk"
+          LATEST_NDK=$(ls -1 "$NDK_ROOT" | sort -V | tail -n 1)
+          if [ -n "$LATEST_NDK" ]; then
+            echo "Android NDK not found!"
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_ROOT/$LATEST_NDK" >> "$GITHUB_ENV"
+          echo "Using NDK: $LATEST_NDK"
+      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+        with:
+          persist-credentials: false
+      - name: Setup Rust and Cargo
+        uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
+        with:
+          cache-base: master
+          channel: nightly
+          bins: cargo-nextest, cargo-zigbuild
+          targets: x86_64-unknown-freebsd
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install zig
         if: ${{ !matrix.snap_compatible }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-      - run: cargo zigbuild --all-features --target ${{ matrix.platform }} --all --lib --bins --tests --examples --benches
+      - run: cargo zigbuild --all-features --target x86_64-unknown-freebsd --all --lib --bins --tests --examples --benches
   check_minimal_versions:
     needs:
       - cargo_semver
@@ -507,7 +535,8 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - zigbuild
+      - bsd_platform
+      - android_arm32_cross_build
       - miri
       - check_minimal_versions
       - fuzz_regressions
@@ -536,7 +565,8 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - zigbuild
+      - bsd_platform
+      - android_arm32_cross_build
       - miri
       - check_minimal_versions
       - fuzz_regressions
@@ -565,7 +595,8 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - zigbuild
+      - bsd_platform
+      - android_arm32_cross_build
       - miri
       - check_minimal_versions
       - fuzz_regressions
@@ -595,7 +626,8 @@ jobs:
     needs:
       - build_and_test
       - wasm
-      - zigbuild
+      - bsd_platform
+      - android_arm32_cross_build
       - miri
       - check_minimal_versions
       - fuzz_regressions
