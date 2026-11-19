@@ -1666,11 +1666,13 @@ fn set_permissions_dirfd_entry(
     name: &std::ffi::CStr,
     mode: std::fs::Permissions,
 ) -> std::io::Result<()> {
-    use std::io::{Error, ErrorKind};
-    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-    use std::os::unix::fs::PermissionsExt;
+    use std::io::Error;
+    use std::os::fd::AsRawFd;
 
+    // SAFETY: `libc::stat` is a plain C struct where an all-zero bit pattern is valid.
     let mut st: libc::stat = unsafe { core::mem::zeroed() };
+    // SAFETY: `dirfd` is a valid open directory descriptor, `name` is a valid NUL-terminated
+    // C string, and `&mut st` points to a properly aligned writable `libc::stat` buffer.
     if unsafe {
         libc::fstatat(
             dirfd.as_raw_fd(),
@@ -1691,7 +1693,11 @@ fn set_permissions_dirfd_entry(
         target_os = "dragonfly"
     ))]
     {
+        use std::os::unix::fs::PermissionsExt;
+
         let raw_mode = libc::mode_t::from((mode.mode() & 0o7777) as u16);
+        // SAFETY: `dirfd` is a valid open directory descriptor and `name` is a valid
+        // NUL-terminated C string.
         if unsafe {
             libc::fchmodat(
                 dirfd.as_raw_fd(),
@@ -1714,6 +1720,9 @@ fn set_permissions_dirfd_entry(
         target_os = "dragonfly"
     )))]
     {
+        use std::io::ErrorKind;
+        use std::os::fd::{FromRawFd, OwnedFd};
+
         if (st.st_mode & libc::S_IFMT) == libc::S_IFLNK {
             return Ok(());
         }
@@ -1767,6 +1776,8 @@ fn set_permissions_dirfd_entry(
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if err.raw_os_error() == Some(libc::EACCES) {
+            use std::os::unix::fs::PermissionsExt;
+
             // `O_RDONLY`/`O_WRONLY` fail with `EACCES` on non-readable/non-writable inodes
             // (e.g., `0o000` or `0o100`). Open with `O_PATH | O_NOFOLLOW`, verify via `fstat`
             // that the pinned descriptor is not a symlink, and apply `fchmodat` on
