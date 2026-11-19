@@ -213,7 +213,7 @@ jobs:
         rustalias: [msrv, stable, nightly]
         include:
           - rustalias: msrv
-            rust: "1.88.0"
+            rust: "1.89.0"
           - rustalias: stable
             rust: stable
           - rustalias: nightly
