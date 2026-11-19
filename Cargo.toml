@@ -12,7 +12,7 @@ repository = "https://github.com/zip-rs/zip2"
 keywords = ["zip", "archive", "compression"]
 # Any change to rust-version must be reflected also in `README.md` and `.github/workflows/ci-impl.yaml`.
 # The MSRV policy is documented in `README.md`.
-rust-version = "1.88"
+rust-version = "1.89"
 categories = ["compression", "filesystem", "parser-implementations"]
 description = "Library to support the reading and writing of zip files."
 edition = "2024"
@@ -39,7 +39,7 @@ ppmd-rust = { version = "1.5", optional = true }
 pbkdf2 = { version = "0.13", optional = true }
 sha1 = { version = "0.11", optional = true }
 zeroize = { version = "1.9", features = ["derive"] }
-zstd = { version = "^0.14.2", optional = true, default-features = false }
+zstd = { version = "^0.14.4", optional = true, default-features = false }
 zopfli = { version = "^0.8.3", optional = true }
 deflate64 = { version = "^0.1.10", optional = true }
 lzma-rust2 = { version = "^0.25.0", optional = true, default-features = false, features = ["std", "encoder", "optimization", "xz"] }
@@ -125,6 +125,7 @@ default = [
     "xz",
 ]
 zstd = ["dep:zstd"]
+zstd-rs = ["zstd", "zstd/rust-backend"]
 _miri_compatible_features = [
     # Not "aes-crypto" (too slow),
     "bzip2",
@@ -140,8 +141,27 @@ _miri_compatible_features = [
     "unreserved",
     "xz",
     "time",
-    # Not "zstd" (uses C functions),
+    "zstd-rs"
 ]
+_bsd_compatible_features = [
+    "aes-crypto",
+    "bzip2",
+    "chrono",
+    "deflate-flate2",
+    "flate2/rust_backend",
+    "deflate-zopfli",
+    "jiff-02",
+    "legacy-zip",
+    "lzma",
+    "nt-time",
+    "ppmd",
+    "unreserved",
+    "xz",
+    "time",
+    "zstd",
+    # not "zstd-rs" because it doesn't build for BSD
+]
+
 
 # The following features are not supported on wasm
 bzip2-rs = ["dep:bzip2", "bzip2/bzip2-sys", "_bzip2_any"]

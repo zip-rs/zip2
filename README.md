@@ -104,7 +104,7 @@ zip = { version = "latest", default-features = false, features = [
 
 ## MSRV
 
-Our current Minimum Supported Rust Version is **1.88**. When adding features,
+Our current Minimum Supported Rust Version is **1.89**. When adding features,
 we will follow these guidelines:
 
 - We will always support a minor Rust version that has been stable for at least 6 months.
