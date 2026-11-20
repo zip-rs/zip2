@@ -31,9 +31,18 @@ fn maybe_yield() {
 fn pace_racer() {
     #[cfg(unix)]
     {
-        // Prevent fast Unix symlink/unlink spin loops from starving the extractor thread
-        // or saturating shared VFS locks across concurrent test runners.
-        std::thread::sleep(std::time::Duration::from_micros(50));
+        // Mix zero-delay, yield, and short randomized sleeps so the Unix
+        // symlink/unlink loop explores varied race timings without starving
+        // the extractor or saturating shared VFS locks.
+        let r = rand::random::<u8>();
+        match r & 0b11 {
+            0 => {}
+            1 => std::thread::yield_now(),
+            _ => {
+                let micros = 20 + u64::from(r >> 2) * 2; // 20..=146 µs
+                std::thread::sleep(std::time::Duration::from_micros(micros));
+            }
+        }
     }
     #[cfg(not(unix))]
     {

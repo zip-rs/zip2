@@ -123,14 +123,15 @@ fn max_path_len_for(basic: &BasicFileOperation<'_, '_>) -> Option<usize> {
         })
         .unwrap_or(0);
     let suffix_reserve = match basic {
-        BasicFileOperation::WriteDirectory(_) => 1,
-        BasicFileOperation::ShallowCopy(_) | BasicFileOperation::DeepCopy(_) => 5,
+        BasicFileOperation::WriteDirectory(_) => 1, // trailing slash added
+        BasicFileOperation::ShallowCopy(_) | BasicFileOperation::DeepCopy(_) => 5, // trailing "_copy" added
         _ => 0,
     };
     let header_overhead = size_of::<Magic>()
         .checked_add(size_of::<ZipLocalEntryBlock>())?
         .checked_add(extra_len)?
         .checked_add(suffix_reserve)?;
+    // ZipWriter::start_entry rejects entry_len >= u16::MAX (strictly < 65535).
     (usize::from(u16::MAX) - 1).checked_sub(header_overhead)
 }
 
