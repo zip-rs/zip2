@@ -328,6 +328,7 @@ impl<'files, R: Read + Seek + Clone> Iterator for ZipIterableFilesWithReader<'fi
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.size_hint()
+        self.files.size_hint()
     }
+}
 }
