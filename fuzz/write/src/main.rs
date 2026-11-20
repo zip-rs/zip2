@@ -119,13 +119,13 @@ fn max_path_len_for(basic: &BasicFileOperation<'_, '_>) -> Option<usize> {
                 .extra_fields()
                 .iter()
                 .map(|x| x.full_size(true))
-                .sum()
+                .sum::<usize>()
                 .max(
                     options
                         .extra_fields()
                         .iter()
                         .map(|x| x.full_size(false))
-                        .sum()
+                        .sum::<usize>()
                         + options.file_comment().map_or(0, |c| c.len()),
                 )
         })
