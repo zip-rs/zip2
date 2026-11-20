@@ -14,8 +14,6 @@ use tikv_jemallocator::Jemalloc;
 use zip::read::{Config, read_zipfile_from_stream};
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::format::blocks::ZipLocalEntryBlock;
-use zip::unstable::format::blocks::ZipLocalEntryBlock;
-use zip::unstable::format::magic::Magic;
 use zip::unstable::format::magic::Magic;
 use zip::unstable::path_to_string;
 use zip::unstable::read::ZipIterable;
