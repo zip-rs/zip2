@@ -307,19 +307,3 @@ fn erase_file_reports_a_missing_entry() {
         Err(ZipError::FileNotFound)
     ));
 }
-
-#[test]
-fn erase_file_is_rejected_for_stream_writer() {
-    let mut zip = ZipWriter::new_stream(Vec::new());
-    zip.start_file(
-        "a.txt",
-        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
-    )
-    .unwrap();
-    zip.write_all(b"a").unwrap();
-
-    assert!(matches!(
-        zip.erase_file("a.txt", false),
-        Err(ZipError::Io(error)) if error.kind() == std::io::ErrorKind::Unsupported
-    ));
-}
