@@ -1131,7 +1131,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             // Removed file was the last in the archive, so we can overwrite it.
             position_to_resume_writing = removed_file.header_start;
         }
-        let len_with_header = len.saturating_add(data_start.saturating_sub(removed_file.header_start));
+        let len_with_header =
+            len.saturating_add(data_start.saturating_sub(removed_file.header_start));
         writer.seek(SeekFrom::Start(removed_file.header_start))?;
         if randomize {
             let mut buffer = [0u8; 64 * 1024];

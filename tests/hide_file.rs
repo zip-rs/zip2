@@ -234,7 +234,7 @@ fn erase_file_overwrites_payload_with_zeroes_and_keeps_survivors() -> ZipResult<
     let mut zip = ZipWriter::new_append(Cursor::new(baseline.clone()))?;
     zip.erase_file("gone.txt", false)?;
     let erased = zip.finish()?.into_inner();
-    
+
     assert!(
         erased[header_start as usize..(data_start + compressed_size) as usize]
             .iter()
