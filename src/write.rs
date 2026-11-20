@@ -1115,9 +1115,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             ));
         };
         let len = removed_file.compressed_size;
-        let data_end = data_start
+        let mut data_end = data_start
             .checked_add(len)
-            .ok_or(invalid!("File {:?} data range overflows u64", name))?;
+            .ok_or(invalid!("File {:?} data range overflows u64", name))?
+            .checked_add(removed_file.data_descriptor_len() as u64)
+            .ok_or(invalid!("File {:?} data range overflows u64 with data descriptor included", name))?;
         if data_end > position_to_resume_writing {
             return Err(invalid!(
                 "File {:?} data range extends past the end of the archive",

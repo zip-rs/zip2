@@ -50,6 +50,7 @@ pub(crate) struct ZipRawValues {
 
 /// re-export
 pub use crate::format::{DEFAULT_VERSION, MIN_VERSION};
+use crate::format::data_descriptor::ZipDataDescriptor::ZipDataDescriptorBlock;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
@@ -655,6 +656,21 @@ impl ZipFileData {
         }
         self.data_descriptor_block().write(writer)?;
         Ok(())
+    }
+
+    pub(crate) fn data_descriptor_len(
+        &self,
+    ) -> usize {
+        if !self.is_using_data_descriptor() {
+            return 0;
+        }
+        if self.large_file {
+            return Zip64DataDescriptorBlock::SIZE;
+        }
+        if self.compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
+            return Zip64DataDescriptorBlock::SIZE;
+        }
+        ZipDataDescriptorBlock::SIZE
     }
 
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
