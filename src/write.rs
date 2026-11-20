@@ -564,8 +564,40 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// # }
     ///```
     pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
-        let (last_file_end, central_start) = self.finalize()?;
+        let FinalizeResult {
+            last_file_end,
+            central_start,
+            ..
+        } = self.finalize(false)?;
         let inner = self.close_writer()?;
+        let comment = mem::take(&mut self.comment);
+        let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
+        let files = mem::take(&mut self.files);
+        Ok(ZipArchive::from_finalized_writer(
+            files,
+            comment,
+            zip64_extensible_data_sector,
+            inner,
+            last_file_end,
+            central_start,
+        ))
+    }
+
+    /// Write the zip file into the backing stream, truncate it if it can be made shorter, then
+    /// produce a readable archive of that data.
+    pub fn truncating_finish_into_readable<TruncateResult: Into<io::Result<()>>>(
+        mut self,
+        truncate: impl FnOnce(&mut A, u64) -> TruncateResult,
+    ) -> ZipResult<ZipArchive<A>> {
+        let FinalizeResult {
+            last_file_end,
+            central_start,
+            truncate_to,
+        } = self.finalize(true)?;
+        let mut inner = self.close_writer()?;
+        if let Some(truncate_to) = truncate_to {
+            truncate(&mut inner, truncate_to).into()?;
+        }
         let comment = mem::take(&mut self.comment);
         let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
         let files = mem::take(&mut self.files);
@@ -595,6 +627,12 @@ fn validate_extra_fields(extra_fields: &[crate::extra_fields::CustomExtraField])
         }
     }
     Ok(())
+}
+
+struct FinalizeResult {
+    last_file_end: u64,
+    central_start: u64,
+    truncate_to: Option<u64>,
 }
 
 impl<W: Write + Seek> ZipWriter<W> {
@@ -1509,8 +1547,22 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This will return the writer, but one should normally not append any data to the end of the file.
     /// Note that the zipfile will also be finished on drop.
     pub fn finish(mut self) -> ZipResult<W> {
-        let _central_start = self.finalize()?;
+        let _ = self.finalize(false)?;
         self.close_writer()
+    }
+
+    /// Finish the last file and write all other zip-structures. Truncate the underlying writer if
+    /// necessary using the provided method.
+    pub fn truncating_finish<TruncateResult: Into<io::Result<()>>>(
+        mut self,
+        truncate: impl FnOnce(&mut W, u64) -> TruncateResult,
+    ) -> ZipResult<W> {
+        let FinalizeResult { truncate_to, .. } = self.finalize(true)?;
+        let mut inner = self.close_writer()?;
+        if let Some(truncate_to) = truncate_to {
+            truncate(&mut inner, truncate_to).into()?;
+        }
+        Ok(inner)
     }
 
     fn close_writer(&mut self) -> ZipResult<W> {
@@ -1659,13 +1711,14 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn finalize(&mut self) -> ZipResult<(u64, u64)> {
+    fn finalize(&mut self, can_truncate: bool) -> ZipResult<FinalizeResult> {
         /// Longest stale tail that [`Self::finalize`] blanks in place rather than moving the footer.
         const STALE_FILL_MAX_LEN: u64 = 0xFF00;
         self.finish_file()?;
 
         let (last_file_end, is_zip64) = self.write_central_and_footer()?;
         let mut central_start = last_file_end;
+        let mut truncate_to = None;
         if self.seek_possible {
             let writer = self.inner.try_inner_mut()?;
             let footer_end = writer.stream_position()?;
@@ -1674,6 +1727,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             if archive_end <= footer_end
                 && footer_end < stream_end
                 && stream_end - footer_end < STALE_FILL_MAX_LEN
+                && !can_truncate
             {
                 // Stale bytes no longer than the comment are left after it (we can't truncate), but
                 // blank them: they may hold an old footer that a reader would find instead of ours.
@@ -1684,64 +1738,73 @@ impl<W: Write + Seek> ZipWriter<W> {
                 writer.seek(SeekFrom::Start(footer_end))?;
                 io::copy(&mut io::repeat(0xFF).take(stream_end - footer_end), writer)?;
             } else if footer_end < stream_end {
-                // Data from an aborted file is past the end of the footer.
+                if can_truncate {
+                    truncate_to = Some(footer_end);
+                } else {
+                    // Data from an aborted file is past the end of the footer.
 
-                // Overwrite the magic so the footer is no longer valid.
-                writer.seek(SeekFrom::Start(last_file_end))?;
-                writer.write_all(&0_u32.to_le_bytes())?;
-                let start_zip32_cde = footer_end
-                    - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
-                    - self.comment.len() as u64;
-                writer.seek(SeekFrom::Start(start_zip32_cde))?;
-                writer.write_all(&0_u32.to_le_bytes())?;
-                let zip64_extensible_len = self
-                    .zip64_extensible_data_sector
-                    .as_ref()
-                    .map(|e| e.len() as u64)
-                    .unwrap_or(0);
-                if is_zip64 {
-                    let start_zip64_locator = start_zip32_cde
-                        - (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
-                            as u64;
-                    writer.seek(SeekFrom::Start(start_zip64_locator))?;
+                    // Overwrite the magic so the footer is no longer valid.
+                    writer.seek(SeekFrom::Start(last_file_end))?;
                     writer.write_all(&0_u32.to_le_bytes())?;
-                    let start_zip64_cde = start_zip64_locator
-                        - (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE) as u64
-                        - zip64_extensible_len;
-                    writer.seek(SeekFrom::Start(start_zip64_cde))?;
+                    let start_zip32_cde = footer_end
+                        - (size_of::<Magic>() + size_of::<Zip32CDEBlock>()) as u64
+                        - self.comment.len() as u64;
+                    writer.seek(SeekFrom::Start(start_zip32_cde))?;
                     writer.write_all(&0_u32.to_le_bytes())?;
-                }
-
-                // Rewrite the footer at the actual end.
-                let central_and_footer_size = footer_end - central_start;
-                writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
-                #[cfg_attr(not(debug_assertions), allow(unused_variables))]
-                let (new_central_start, new_is_zip64) = self.write_central_and_footer()?;
-                central_start = new_central_start;
-                #[cfg(debug_assertions)]
-                {
-                    let archive_end = if new_is_zip64 && new_is_zip64 != is_zip64 {
-                        let new_size = (size_of::<Magic>()
-                            + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
-                            as u64
-                            + zip64_extensible_len
-                            + (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
+                    let zip64_extensible_len = self
+                        .zip64_extensible_data_sector
+                        .as_ref()
+                        .map(|e| e.len() as u64)
+                        .unwrap_or(0);
+                    if is_zip64 {
+                        let start_zip64_locator = start_zip32_cde
+                            - (size_of::<Magic>() + size_of::<Zip64CentralDirectoryEndLocator>())
                                 as u64;
-                        archive_end + new_size
-                    } else {
-                        archive_end
-                    };
-                    debug_assert!(
-                        self.inner.try_inner_mut()?.stream_position()?
-                            == archive_end + self.comment.len() as u64
-                    );
+                        writer.seek(SeekFrom::Start(start_zip64_locator))?;
+                        writer.write_all(&0_u32.to_le_bytes())?;
+                        let start_zip64_cde = start_zip64_locator
+                            - (size_of::<Magic>() + Zip64CentralDirectoryEnd::MIN_FULL_SIZE) as u64
+                            - zip64_extensible_len;
+                        writer.seek(SeekFrom::Start(start_zip64_cde))?;
+                        writer.write_all(&0_u32.to_le_bytes())?;
+                    }
+
+                    // Rewrite the footer at the actual end.
+                    let central_and_footer_size = footer_end - central_start;
+                    writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
+                    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
+                    let (new_central_start, new_is_zip64) = self.write_central_and_footer()?;
+                    central_start = new_central_start;
+                    #[cfg(debug_assertions)]
+                    {
+                        let archive_end = if new_is_zip64 && new_is_zip64 != is_zip64 {
+                            let new_size = (size_of::<Magic>()
+                                + Zip64CentralDirectoryEnd::MIN_FULL_SIZE)
+                                as u64
+                                + zip64_extensible_len
+                                + (size_of::<Magic>()
+                                    + size_of::<Zip64CentralDirectoryEndLocator>())
+                                    as u64;
+                            archive_end + new_size
+                        } else {
+                            archive_end
+                        };
+                        debug_assert!(
+                            self.inner.try_inner_mut()?.stream_position()?
+                                == archive_end + self.comment.len() as u64
+                        );
+                    }
                 }
             } else {
                 writer.seek(SeekFrom::Start(footer_end))?;
             }
         }
 
-        Ok((last_file_end, central_start))
+        Ok(FinalizeResult {
+            last_file_end,
+            central_start,
+            truncate_to,
+        })
     }
 
     fn write_central_and_footer(&mut self) -> Result<(u64, bool), ZipError> {
@@ -2201,7 +2264,7 @@ impl<W: Write> ZipWriter<StreamWriter<W>> {
 impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed()
-            && let Err(e) = self.finalize()
+            && let Err(e) = self.finalize(false)
         {
             let _ = write!(
                 io::stderr(),
@@ -3436,9 +3499,7 @@ mod tests {
     use crate::write::SimpleFileOptions;
     use crate::zipcrypto::ZipCryptoKeys;
     use core::marker::PhantomData;
-    #[cfg(feature = "deflate-flate2")]
-    use std::io::Read;
-    use std::io::{Cursor, Write};
+    use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;
 
     const SYSTEM_BYTE: u8 = if cfg!(windows) {
@@ -3756,6 +3817,97 @@ mod tests {
                 .finish()?
                 .into_inner();
         }
+        Ok(())
+    }
+
+    #[test]
+    fn truncating_finish_truncates_stale_tail() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a", SimpleFileOptions::default())?;
+        writer.write_all(b"aaaa")?;
+        writer.start_file("b", SimpleFileOptions::default())?;
+        writer.write_all(b"bbbb")?;
+
+        let mut writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.abort_file()?;
+        let mut truncated = false;
+        let output = writer.truncating_finish(|cursor, length| {
+            truncated = true;
+            cursor.get_mut().truncate(length as usize);
+            cursor.set_position(length);
+            Ok::<_, std::io::Error>(())
+        })?;
+
+        assert!(truncated);
+        assert_eq!(output.get_ref().len() as u64, output.position());
+        let mut archive = ZipArchive::new(output)?;
+        assert_eq!(archive.len(), 1);
+        let mut file = archive.by_name("a")?;
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents)?;
+        assert_eq!(contents, b"aaaa");
+        Ok(())
+    }
+
+    #[test]
+    fn truncating_finish_skips_truncate_when_no_stale_tail() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a", SimpleFileOptions::default())?;
+        writer.write_all(b"aaaa")?;
+
+        let mut invoked = false;
+        writer.truncating_finish(|_, _| {
+            invoked = true;
+            Ok::<_, std::io::Error>(())
+        })?;
+        assert!(!invoked);
+        Ok(())
+    }
+
+    #[test]
+    fn truncating_finish_propagates_truncate_error() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a", SimpleFileOptions::default())?;
+        writer.write_all(b"aaaa")?;
+        writer.start_file("b", SimpleFileOptions::default())?;
+        writer.write_all(b"bbbb")?;
+
+        let mut writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.abort_file()?;
+        let result = writer.truncating_finish(|_, _| {
+            Err::<(), _>(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "truncate failed",
+            ))
+        });
+        assert!(matches!(result, Err(crate::result::ZipError::Io(_))));
+        Ok(())
+    }
+
+    #[test]
+    fn truncating_finish_into_readable_truncates_stale_tail() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("a", SimpleFileOptions::default())?;
+        writer.write_all(b"aaaa")?;
+        writer.start_file("b", SimpleFileOptions::default())?;
+        writer.write_all(b"bbbb")?;
+
+        let mut writer = ZipWriter::new_append(writer.finish()?)?;
+        writer.abort_file()?;
+        let mut truncated = false;
+        let mut archive = writer.truncating_finish_into_readable(|cursor, length| {
+            truncated = true;
+            cursor.get_mut().truncate(length as usize);
+            cursor.set_position(length);
+            Ok::<_, std::io::Error>(())
+        })?;
+
+        assert!(truncated);
+        assert_eq!(archive.len(), 1);
+        let mut file = archive.by_name("a")?;
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents)?;
+        assert_eq!(contents, b"aaaa");
         Ok(())
     }
 
