@@ -3187,11 +3187,12 @@ impl ZipFileData {
         let compression_method = self.extern_compression();
         let extra_field_length = u16::try_from(extra_field_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
-        let file_comment_length = u16::try_from(self
-                .file_comment_raw()
-                .len())
+        let file_comment_length = u16::try_from(self.file_comment_raw().len())
             .map_err(|_| invalid!("File comment length exceeds 64KiB"))?;
-        if extra_field_length.checked_add(file_comment_length).is_none() {
+        if extra_field_length
+            .checked_add(file_comment_length)
+            .is_none()
+        {
             return Err(invalid!(
                 "Extra field length in central directory + file comment length exceeds 64KiB"
             ));
