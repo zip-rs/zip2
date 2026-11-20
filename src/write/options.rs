@@ -12,6 +12,7 @@ use crate::format::extra_fields::ExtraFieldId;
 use crate::format::ffi;
 use crate::format::system::System;
 use crate::result::{ZipResult, invalid};
+use crate::write::FileOptionExtension;
 use crate::zipcrypto::ZipCryptoKeys;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -743,6 +744,14 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
         Ok(self)
     }
 }
+
+impl <T: FileOptionExtension> FileOptions<'_, '_, T> {
+    /// Returns the file comment if one is set.
+    pub fn file_comment(&self) -> Option<&str> {
+        self.extended_options.file_comment()
+    }
+}
+
 impl FileOptions<'static, 'static, ()> {
     /// Constructs a const `FileOptions` object.
     ///
