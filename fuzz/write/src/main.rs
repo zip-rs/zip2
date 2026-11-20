@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use tikv_jemallocator::Jemalloc;
 use zip::read::{Config, read_zipfile_from_stream};
 use zip::result::{ZipError, ZipResult};
-use zip::unstable::format::blocks::ZipLocalEntryBlock;
+use zip::unstable::format::blocks::{ZipCentralEntryBlock, ZipLocalEntryBlock};
 use zip::unstable::format::magic::Magic;
 use zip::unstable::path_to_string;
 use zip::unstable::read::ZipIterable;
@@ -113,27 +113,41 @@ fn truncate_to_char_boundary(s: &mut String, max_bytes: usize) {
 }
 
 fn max_path_len_for(basic: &BasicFileOperation<'_, '_>) -> Option<usize> {
-    let extra_len: usize = basic
+    let local_entry_len_without_path = basic
         .options()
         .map(|options| {
             options
                 .extra_fields()
                 .iter()
-                .map(|x| x.full_size(true).max(x.full_size(false)))
-                .sum()
+                .map(|x| x.full_size(true))
+                .sum::<usize>()
         })
-        .unwrap_or(0);
+        .unwrap_or(0)
+        + size_of::<Magic>()
+        + size_of::<ZipLocalEntryBlock>();
+    let central_entry_len_without_path = basic
+        .options()
+        .map(|options| {
+            options
+                .extra_fields()
+                .iter()
+                .map(|x| x.full_size(false))
+                .sum::<usize>()
+                + options.file_comment().map_or(0, |c| c.len())
+        })
+        .unwrap_or(0)
+        + size_of::<Magic>()
+        + size_of::<ZipCentralEntryBlock>();
     let suffix_reserve = match basic {
         BasicFileOperation::WriteDirectory(_) => 1, // trailing slash added
         BasicFileOperation::ShallowCopy(_) | BasicFileOperation::DeepCopy(_) => 5, // trailing "_copy" added
         _ => 0,
     };
-    let header_overhead = size_of::<Magic>()
-        .checked_add(size_of::<ZipLocalEntryBlock>())?
-        .checked_add(extra_len)?
+    let header_overhead = local_entry_len_without_path
+        .max(central_entry_len_without_path)
         .checked_add(suffix_reserve)?;
-    // ZipWriter::start_entry rejects entry_len >= u16::MAX (strictly < 65535).
-    (usize::from(u16::MAX) - 1).checked_sub(header_overhead)
+    // ZipWriter::start_entry rejects entry_len > u16::MAX.
+    usize::from(u16::MAX).checked_sub(header_overhead)
 }
 
 impl<'k, 'n, 'a: 'k + 'n> Arbitrary<'a> for FileOperation<'k, 'n> {
