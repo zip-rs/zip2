@@ -6,11 +6,12 @@ use arbitrary::Unstructured;
 use core::error::Error;
 use sha3::{Digest, Sha3_512};
 use std::fmt;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, copy, sink};
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
 use zip::ZipReadOptions;
-use zip::read::{ZipFile, ZipFileEntry, read_zipfile_from_stream};
+use zip::read::{Config, ZipFile, ZipFileEntry, read_zipfile_from_stream};
+use zip::unstable::read::ZipIterable;
 use zip::unstable::stream::{ZipStreamReader, ZipStreamVisitor};
 
 const MAX_BYTES_TO_READ: u64 = 1 << 24;
@@ -19,7 +20,7 @@ const MAX_BYTES_TO_READ: u64 = 1 << 24;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-fn decompress_all(reader: impl Read + Seek) -> Result<(), Box<dyn Error>> {
+fn decompress_all(reader: impl Read + Seek + Clone) -> Result<(), Box<dyn Error>> {
     let mut zip = zip::ZipArchive::new(reader)?;
 
     for i in 0..zip.len() {
@@ -30,6 +31,16 @@ fn decompress_all(reader: impl Read + Seek) -> Result<(), Box<dyn Error>> {
     reader.seek(SeekFrom::Start(0))?;
     while let Ok(Some(mut file)) = read_zipfile_from_stream(&mut reader) {
         std::io::copy(&mut file, &mut std::io::sink())?;
+    }
+    reader.seek(SeekFrom::Start(0))?;
+    let mut iterable = ZipIterable::try_new(reader, Config::default())?;
+    let mut iterable_with_files = iterable
+        .files_with_cloned_reader(ZipReadOptions::default().enforce_header_consistency(true))?;
+    // https://github.com/zip-rs/zip2/issues/1337: This isn't an actual Iterator
+    while let Some(file_result) = iterable_with_files.next() {
+        if let Ok(mut file) = file_result {
+            let _ = copy(&mut file, &mut sink())?;
+        }
     }
     Ok(())
 }

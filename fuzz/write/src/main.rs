@@ -11,13 +11,14 @@ use std::ops;
 use std::path::PathBuf;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
-use zip::read::read_zipfile_from_stream;
+use zip::read::{Config, read_zipfile_from_stream};
 use zip::result::{ZipError, ZipResult};
 use zip::unstable::format::blocks::ZipLocalEntryBlock;
 use zip::unstable::format::magic::Magic;
 use zip::unstable::path_to_string;
+use zip::unstable::read::ZipIterable;
 use zip::write::FullFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipReadOptions, ZipWriter};
 
 #[cfg(fuzzing)]
 #[global_allocator]
@@ -871,50 +872,67 @@ impl FuzzTestCase<'_, '_> {
                 return Ok(());
             }
         }
-        if final_reopen {
-            writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
+        let mut stream = if final_reopen {
+            writeln!(
+                stringifier,
+                "let mut stream = writer.finish_into_readable()?;"
+            )
+            .map_err(|_| ZipError::InvalidArchive("".into()))?;
+            writer.finish_into_readable()?.into_inner()
+        } else {
+            if !comment_contains_signature {
+                writeln!(
+                    stringifier,
+                    "let mut stream = ZipArchive::new(writer.finish()?)?.into_inner();"
+                )
                 .map_err(|_| ZipError::InvalidArchive("".into()))?;
-            let _ = writer.finish_into_readable()?;
+                ZipArchive::new(writer.finish()?)?.into_inner()
+            } else {
+                writeln!(stringifier, "let mut stream = writer.finish()?;")
+                    .map_err(|_| ZipError::InvalidArchive("".into()))?;
+                writer.finish()?
+            }
+        };
+        writeln!(stringifier, "stream.seek(SeekFrom::Start({junk_len}))?;\n").unwrap();
+        stream.seek(SeekFrom::Start(junk_len as u64))?;
+        if streamable {
+            writeln!(
+                stringifier,
+                "while read_zipfile_from_stream(&mut stream)?.is_some() {{}}\n"
+            )
+            .unwrap();
         } else {
             writeln!(
                 stringifier,
-                "let mut stream = writer.finish()?;\n\
-                    stream.seek(SeekFrom::Start({junk_len}))?;\n"
+                "while matches!(read_zipfile_from_stream(&mut stream), Ok(Some(_))) {{}}\n"
             )
             .unwrap();
-            if streamable {
-                writeln!(
-                    stringifier,
-                    "while read_zipfile_from_stream(&mut stream)?.is_some() {{}}\n"
-                )
-                .unwrap();
-            } else {
-                writeln!(
-                    stringifier,
-                    "while matches!(read_zipfile_from_stream(&mut stream), Ok(Some(_))) {{}}\n"
-                )
-                .unwrap();
-            }
-            let mut stream = writer.finish()?;
-            stream.seek(SeekFrom::Start(junk_len as u64))?;
-            loop {
-                match read_zipfile_from_stream(&mut stream) {
-                    Ok(None) => break,
-                    Ok(Some(mut file)) => {
-                        let _ = copy(&mut file, &mut sink())?;
-                    }
-                    Err(e) => {
-                        if streamable {
-                            return Err(e);
-                        } else {
-                            break;
-                        }
+        }
+        loop {
+            match read_zipfile_from_stream(&mut stream) {
+                Ok(None) => break,
+                Ok(Some(mut file)) => {
+                    let _ = copy(&mut file, &mut sink())?;
+                }
+                Err(e) => {
+                    if streamable {
+                        return Err(e);
+                    } else {
+                        break;
                     }
                 }
             }
-            if !comment_contains_signature {
-                writeln!(stringifier, "let _ = ZipArchive::new(stream)?\n").unwrap();
-                let _ = ZipArchive::new(stream)?;
+        }
+        stream.seek(SeekFrom::Start(junk_len as u64))?;
+        let mut iterable = ZipIterable::try_new(stream, Config::default())?
+            .enforce_header_consistency(!comment_contains_signature);
+        let mut iterable_with_files = iterable
+            .files_with_cloned_reader(ZipReadOptions::default().enforce_header_consistency(true))?;
+        // https://github.com/zip-rs/zip2/issues/1337: This isn't an actual Iterator
+        while let Some(file_result) = iterable_with_files.next() {
+            // FIXME: Find conditions under which we can expect this to succeed (e.g. no encryption).
+            if let Ok(mut file) = file_result {
+                let _ = copy(&mut file, &mut sink())?;
             }
         }
         Ok(())
