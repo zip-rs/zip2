@@ -190,6 +190,10 @@ pub struct ZipIterableFiles<R> {
 }
 
 /// Lending iterator over entries that borrow its body reader.
+///
+/// Currently implements [Iterator] only when [R: Clone]. For backward-compatibility reasons,
+/// the `next()` method that clones the reader must be invoked as [Iterator::next] rather than
+/// [ZipIterableFilesWithReader::next] when invoked explicitly.
 #[derive(Debug)]
 pub struct ZipIterableFilesWithReader<'files, 'options, R> {
     files: &'files mut ZipIterableFiles<R>,
