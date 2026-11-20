@@ -745,7 +745,7 @@ impl FileOptions<'_, '_, ExtendedFileOptions> {
     }
 }
 
-impl <T: FileOptionExtension> FileOptions<'_, '_, T> {
+impl<T: FileOptionExtension> FileOptions<'_, '_, T> {
     /// Returns the file comment if one is set.
     pub fn file_comment(&self) -> Option<&str> {
         self.extended_options.file_comment()
