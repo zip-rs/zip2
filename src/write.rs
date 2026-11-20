@@ -787,9 +787,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         let entry_len: usize = mem::size_of::<Magic>()
             + mem::size_of::<ZipLocalEntryBlock>()
+            + raw_values.file_comment_raw.map_or(0, |x| x.len())
             + file_name_raw.len()
             + extra_fields.iter().map(|x| x.size(false)).sum::<usize>();
-        if entry_len >= (u16::MAX as usize) {
+        if entry_len > (u16::MAX as usize) {
             return Err(invalid!(
                 "ZipLocalBlock + filename + extra fields must be less than 64KiB when combined"
             ));
