@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: size-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   labeler:
     permissions:
@@ -14,7 +18,7 @@ jobs:
       contents: read
     runs-on: ${{ vars.LINUX_RUNNER_CI_PRELIMINARY || 'ubuntu-latest' }}
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
@@ -25,8 +29,8 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout: .github/size-buckets.yml
-          ref: ${{ github.event.pull_request.base.sha }}
-          allow-unsafe-pr-checkout: true
+          sparse-checkout-cone-mode: false
+          ref: ${{ github.sha }}
       - uses: boschresearch/pr-size-labeler@6a93d42dd5199ee28d5f41edc359aa5218b4fa7e # v5.0.4
         with:
           bucketConfigFile: ".github/size-buckets.yml"
