@@ -1115,7 +1115,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             ));
         };
         let len = removed_file.compressed_size;
-        let mut data_end = data_start
+        let data_end = data_start
             .checked_add(len)
             .ok_or(invalid!("File {:?} data range overflows u64", name))?
             .checked_add(removed_file.data_descriptor_len() as u64)
