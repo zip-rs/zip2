@@ -68,6 +68,7 @@ impl CustomExtraField {
     }
 
     /// The number of bytes this field occupies in the local file header or central directory entry.
+    #[must_use]
     pub fn full_size(&self, is_local_header: bool) -> usize {
         if self.central_only && is_local_header {
             return 0;
