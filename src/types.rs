@@ -50,7 +50,6 @@ pub(crate) struct ZipRawValues {
 
 /// re-export
 pub use crate::format::{DEFAULT_VERSION, MIN_VERSION};
-use crate::format::data_descriptor::ZipDataDescriptor::ZipDataDescriptorBlock;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone, Default)]
