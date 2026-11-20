@@ -1739,7 +1739,9 @@ impl<W: Write + Seek> ZipWriter<W> {
                 io::copy(&mut io::repeat(0xFF).take(stream_end - footer_end), writer)?;
             } else if footer_end < stream_end {
                 if can_truncate {
+                    writer.seek(SeekFrom::Start(footer_end))?;
                     truncate_to = Some(footer_end);
+                } else {
                 } else {
                     // Data from an aborted file is past the end of the footer.
 
