@@ -907,9 +907,9 @@ impl FuzzTestCase<'_, '_> {
             }
         }
         stream.seek(SeekFrom::Start(junk_len as u64))?;
-        let mut iterable = ZipIterable::try_new(stream, Config::default())?
-            .enforce_header_consistency(!comment_contains_signature);
+        let mut iterable = ZipIterable::try_new(stream, Config::default())?;
         let mut iterable_with_files = iterable
+            .enforce_header_consistency(!comment_contains_signature)
             .files_with_cloned_reader(ZipReadOptions::default().enforce_header_consistency(true))?;
         // https://github.com/zip-rs/zip2/issues/1337: This isn't an actual Iterator
         while let Some(file_result) = iterable_with_files.next() {
