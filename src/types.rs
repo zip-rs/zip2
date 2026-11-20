@@ -96,11 +96,11 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
-    pub(crate) fn make_reader<'a, R: Read>(
+    pub(crate) fn make_reader<R: Read>(
         &self,
-        limit_reader: Take<&'a mut R>,
+        limit_reader: Take<R>,
         mut options: ZipReadOptions<'_>,
-    ) -> ZipResult<ZipFileReader<'a, R>> {
+    ) -> ZipResult<ZipFileReader<R>> {
         if options.ignore_encryption_flag {
             // Always use no password when we're ignoring the encryption flag.
             options.password = None;
@@ -226,12 +226,12 @@ impl ZipFileData {
         }
     }
 
-    pub(crate) fn find_content<'a, R: Read + Seek + ?Sized>(
+    pub(crate) fn find_content<R: Read + Seek>(
         &self,
-        reader: &'a mut R,
-    ) -> ZipResult<Take<&'a mut R>> {
+        mut reader: R,
+    ) -> ZipResult<Take<R>> {
         // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
-        let data_start = self.data_start(reader)?;
+        let data_start = self.data_start(&mut reader)?;
         self.check_data_end(data_start)?;
         reader.seek(SeekFrom::Start(data_start))?;
 

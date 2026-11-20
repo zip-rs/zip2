@@ -5769,7 +5769,7 @@ mod tests {
         mut source: ZipArchive<Cursor<Vec<u8>>>,
         copy: impl FnOnce(
             &mut ZipWriter<Cursor<Vec<u8>>>,
-            crate::read::ZipFile<'_, Cursor<Vec<u8>>>,
+            crate::read::ZipFile<'_, &mut Cursor<Vec<u8>>>,
         ) -> ZipResult<()>,
     ) -> ZipResult<Vec<u8>> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));

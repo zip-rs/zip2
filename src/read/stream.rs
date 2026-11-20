@@ -891,7 +891,7 @@ pub trait ZipStreamVisitor {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, R>>> {
+pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<ZipFile<'_, &mut R>>> {
     read_zipfile_from_stream_with_options(reader, ZipReadOptions::default())
 }
 
@@ -900,7 +900,7 @@ pub fn read_zipfile_from_stream<R: Read>(reader: &mut R) -> ZipResult<Option<Zip
 pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
     reader: &mut R,
     compressed_size: u64,
-) -> ZipResult<Option<ZipFile<'_, R>>> {
+) -> ZipResult<Option<ZipFile<'_, &mut R>>> {
     let options = ZipReadOptions::default().override_compressed_size(compressed_size);
     read_zipfile_from_stream_with_options(reader, options)
 }
@@ -910,7 +910,7 @@ pub fn read_zipfile_from_stream_with_compressed_size<R: Read>(
 pub fn read_zipfile_from_stream_with_options<'a, R: Read>(
     reader: &'a mut R,
     options: ZipReadOptions<'a>,
-) -> ZipResult<Option<ZipFile<'a, R>>> {
+) -> ZipResult<Option<ZipFile<'a, &'a mut R>>> {
     let result = read_zipfile_from_stream_with_options_internal(reader, options)?;
     match result {
         ReadFromStreamResult::File(file) => Ok(Some(file)),
@@ -930,7 +930,7 @@ enum ReadFromStreamResult<'a, R: Read> {
 fn read_zipfile_from_stream_with_options_internal<'a, R: Read>(
     reader: &'a mut R,
     mut options: ZipReadOptions<'a>,
-) -> ZipResult<ReadFromStreamResult<'a, R>> {
+) -> ZipResult<ReadFromStreamResult<'a, &'a mut R>> {
     // We can't use the typical [`ZipLocalEntryBlock::parse`] method, as we follow separate code paths depending on the
     // "magic" value (since the magic value will be from the central directory header if we've
     // finished iterating over all the actual files).

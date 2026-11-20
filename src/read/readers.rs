@@ -73,16 +73,16 @@ impl<R: Read + ?Sized> Read for SeekableTake<'_, R> {
 }
 
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum CryptoReader<'a, R: Read + ?Sized> {
-    Plaintext(io::Take<&'a mut R>),
-    ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut R>>),
+pub(crate) enum CryptoReader<R: Read> {
+    Plaintext(io::Take<R>),
+    ZipCrypto(ZipCryptoReaderValid<io::Take<R>>),
     #[cfg(feature = "aes-crypto")]
     Aes {
-        reader: crate::aes::AesReaderValid<io::Take<&'a mut R>>,
+        reader: crate::aes::AesReaderValid<io::Take<R>>,
     },
 }
 
-impl<R: Read + ?Sized> core::fmt::Debug for CryptoReader<'_, R> {
+impl<R: Read> core::fmt::Debug for CryptoReader<R> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             CryptoReader::Plaintext(_) => f.write_str("CryptoReader::Plaintext"),
@@ -95,7 +95,7 @@ impl<R: Read + ?Sized> core::fmt::Debug for CryptoReader<'_, R> {
     }
 }
 
-impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
+impl<R: Read> Read for CryptoReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             CryptoReader::Plaintext(r) => r.read(buf),
@@ -124,7 +124,7 @@ impl<R: Read + ?Sized> Read for CryptoReader<'_, R> {
     }
 }
 
-impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
+impl<R: Read> CryptoReader<R> {
     fn is_aes(&self) -> bool {
         #[cfg(feature = "aes-crypto")]
         if let CryptoReader::Aes { .. } = self {
@@ -144,7 +144,7 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
     }
 
     /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> io::Take<&'a mut R> {
+    pub fn into_inner(self) -> io::Take<R> {
         match self {
             CryptoReader::Plaintext(r) => r,
             CryptoReader::ZipCrypto(r) => r.into_inner(),
@@ -154,7 +154,7 @@ impl<'a, R: Read + ?Sized> CryptoReader<'a, R> {
     }
 
     /// Return the underlying reader.
-    pub fn inner(&self) -> &io::Take<&'a mut R> {
+    pub fn inner(&self) -> &io::Take<R> {
         match self {
             CryptoReader::Plaintext(r) => r,
             CryptoReader::ZipCrypto(r) => r.inner(),
@@ -171,18 +171,18 @@ macro_rules! invalid_state {
 }
 
 #[derive(Debug)]
-pub(crate) enum ZipFileReader<'a, R: Read + ?Sized> {
+pub(crate) enum ZipFileReader<R: Read> {
     NoReader,
-    Raw(io::Take<&'a mut R>),
-    Stored(Box<Crc32Reader<CryptoReader<'a, R>>>),
-    Compressed(Box<Crc32Reader<LazyDecompressor<io::BufReader<CryptoReader<'a, R>>>>>),
+    Raw(io::Take<R>),
+    Stored(Box<Crc32Reader<CryptoReader<R>>>),
+    Compressed(Box<Crc32Reader<LazyDecompressor<io::BufReader<CryptoReader<R>>>>>),
     /// A compressed AES entry. The decompressor may report EOF before all of the
     /// ciphertext has been read (a Deflate stream ends at its final block), so at
     /// EOF the rest of the ciphertext is authenticated via [`Self::finish_aes`].
-    CompressedAes(Box<Crc32Reader<LazyDecompressor<io::BufReader<CryptoReader<'a, R>>>>>),
+    CompressedAes(Box<Crc32Reader<LazyDecompressor<io::BufReader<CryptoReader<R>>>>>),
 }
 
-impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
+impl<R: Read> Read for ZipFileReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             ZipFileReader::NoReader => invalid_state!(),
@@ -244,8 +244,8 @@ impl<R: Read + ?Sized> Read for ZipFileReader<'_, R> {
     }
 }
 
-impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
-    pub(crate) fn into_inner(self) -> io::Result<io::Take<&'a mut R>> {
+impl<R: Read> ZipFileReader<R> {
+    pub(crate) fn into_inner(self) -> io::Result<io::Take<R>> {
         match self {
             ZipFileReader::NoReader => invalid_state!(),
             ZipFileReader::Raw(r) => Ok(r),
@@ -257,7 +257,7 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
     }
 
     #[allow(unused)]
-    pub(crate) fn inner(&self) -> io::Result<&io::Take<&'a mut R>> {
+    pub(crate) fn inner(&self) -> io::Result<&io::Take<R>> {
         match self {
             ZipFileReader::NoReader => invalid_state!(),
             ZipFileReader::Raw(r) => Ok(r),
@@ -298,11 +298,11 @@ impl<'a, R: Read + ?Sized> ZipFileReader<'a, R> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
+pub(crate) fn make_crypto_reader<'a, R: Read + 'a>(
     data: &ZipFileData,
-    reader: io::Take<&'a mut R>,
+    reader: io::Take<R>,
     password: Option<&[u8]>,
-) -> ZipResult<CryptoReader<'a, R>> {
+) -> ZipResult<CryptoReader<R>> {
     let reader = match (password, data.aes_settings()) {
         #[cfg(not(feature = "aes-crypto"))]
         (Some(_), Some(_)) => {
@@ -331,16 +331,16 @@ pub(crate) fn make_crypto_reader<'a, R: Read + ?Sized>(
     Ok(reader)
 }
 
-pub(crate) fn make_reader<R: Read + ?Sized>(
+pub(crate) fn make_reader<R: Read>(
     compression_method: CompressionMethod,
     #[cfg_attr(not(any(feature = "lzma", feature = "legacy-zip")), allow(unused))]
     uncompressed_size: u64,
     size_limit: Option<u64>,
     crc32: Option<u32>,
     aes_vendor_version: Option<crate::format::aes::AesVendorVersion>,
-    reader: CryptoReader<'_, R>,
+    reader: CryptoReader<R>,
     #[cfg(feature = "legacy-zip")] flags: u16,
-) -> ZipResult<ZipFileReader<'_, R>> {
+) -> ZipResult<ZipFileReader<R>> {
     // enable the crc32 check when there is a crc32 and the content is not ae2_encrypted
     let (should_disable, crc32) = if let Some(data_crc32) = crc32 {
         (
@@ -395,15 +395,15 @@ mod tests {
         use std::io::Take;
 
         type R = Cursor<Vec<u8>>;
-        let enum_size = size_of::<ZipFileReader<'_, R>>();
+        let enum_size = size_of::<ZipFileReader<R>>();
         // Ensure the enum stays small to optimize memory usage, particularly for archives
         // with many files where many instances may exist simultaneously
         assert!(enum_size <= 32);
 
-        let raw_reader_size = size_of::<Take<&R>>();
-        let stored_reader_size = size_of::<Crc32Reader<CryptoReader<'_, R>>>();
+        let raw_reader_size = size_of::<Take<R>>();
+        let stored_reader_size = size_of::<Crc32Reader<CryptoReader<R>>>();
         let compressed_reader_size =
-            size_of::<Crc32Reader<LazyDecompressor<BufReader<CryptoReader<'_, R>>>>>();
+            size_of::<Crc32Reader<LazyDecompressor<BufReader<CryptoReader<R>>>>>();
         let box_size = size_of::<Box<R>>();
         // eprintln!("enum {enum_size}");
         // eprintln!("raw: {raw_reader_size}");
