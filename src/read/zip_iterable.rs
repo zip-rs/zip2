@@ -331,4 +331,3 @@ impl<'files, R: Read + Seek + Clone> Iterator for ZipIterableFilesWithReader<'fi
         self.files.size_hint()
     }
 }
-}
