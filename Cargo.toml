@@ -32,7 +32,8 @@ crc32fast = "1.5"
 flate2 = { version = "1.1", default-features = false, optional = true }
 hmac = { version = "0.13", optional = true, features = ["zeroize"] }
 indexmap = "2"
-jiff = { version = "^0.2.4", optional = true }
+jiff = { version = "1.0", default-features = false, optional = true }
+jiff-02 = { package = "jiff", version = "^0.2.4", optional = true }
 memchr = "2.7"
 nt-time = { version = "0.13", default-features = false, optional = true }
 ppmd-rust = { version = "1.5", optional = true }
@@ -102,7 +103,8 @@ deflate-flate2 = ["_deflate-any", "dep:flate2"]
 deflate-flate2-zlib-rs = ["deflate-flate2", "flate2/zlib-rs"]
 # Pull in zopfli (write-only DEFLATE, slower than flate2 with better compression ratios)
 deflate-zopfli = ["dep:zopfli", "_deflate-any"]
-jiff-02 = ["dep:jiff"]
+jiff-02 = ["dep:jiff-02"]
+jiff-1 = ["dep:jiff"]
 nt-time = ["dep:nt-time"]
 lzma = ["dep:lzma-rust2"]
 ppmd = ["dep:ppmd-rust"]
@@ -134,6 +136,7 @@ _miri_compatible_features = [
     "flate2/rust_backend",
     "deflate-zopfli",
     "jiff-02",
+    "jiff-1",
     "legacy-zip",
     "lzma",
     "nt-time",
@@ -151,6 +154,7 @@ _bsd_compatible_features = [
     "flate2/rust_backend",
     "deflate-zopfli",
     "jiff-02",
+    "jiff-1",
     "legacy-zip",
     "lzma",
     "nt-time",

@@ -101,38 +101,53 @@ impl TryFrom<DateTime> for chrono::NaiveDateTime {
     }
 }
 
-#[cfg(feature = "jiff-02")]
-impl TryFrom<jiff::civil::DateTime> for DateTime {
-    type Error = DateTimeRangeError;
+// Both jiff dependencies are named `jiff` on docs.rs, so rustdoc links both sets of impls to the
+// same jiff version. The doc comments below link to the right version explicitly.
+macro_rules! impl_jiff_conversions {
+    ($feature:literal, $jiff:ident, $ver:literal) => {
+        #[doc = concat!("Converts jiff ", $ver, ".x [`civil::DateTime`][dt] into a [`DateTime`].")]
+        #[doc = ""]
+        #[doc = concat!("[dt]: https://docs.rs/jiff/", $ver, "/jiff/civil/struct.DateTime.html")]
+        #[cfg(feature = $feature)]
+        impl TryFrom<$jiff::civil::DateTime> for DateTime {
+            type Error = DateTimeRangeError;
 
-    fn try_from(value: jiff::civil::DateTime) -> Result<Self, Self::Error> {
-        Self::from_date_and_time(
-            value.year().try_into()?,
-            value.month() as u8,
-            value.day() as u8,
-            value.hour() as u8,
-            value.minute() as u8,
-            value.second() as u8,
-        )
-    }
+            fn try_from(value: $jiff::civil::DateTime) -> Result<Self, Self::Error> {
+                Self::from_date_and_time(
+                    value.year().try_into()?,
+                    value.month() as u8,
+                    value.day() as u8,
+                    value.hour() as u8,
+                    value.minute() as u8,
+                    value.second() as u8,
+                )
+            }
+        }
+
+        #[doc = concat!("Converts a [`DateTime`] to a jiff ", $ver, ".x [`civil::DateTime`][dt].")]
+        #[doc = ""]
+        #[doc = concat!("[dt]: https://docs.rs/jiff/", $ver, "/jiff/civil/struct.DateTime.html")]
+        #[cfg(feature = $feature)]
+        impl TryFrom<DateTime> for $jiff::civil::DateTime {
+            type Error = $jiff::Error;
+
+            fn try_from(value: DateTime) -> Result<Self, Self::Error> {
+                Self::new(
+                    value.year() as i16,
+                    value.month() as i8,
+                    value.day() as i8,
+                    value.hour() as i8,
+                    value.minute() as i8,
+                    value.second() as i8,
+                    0,
+                )
+            }
+        }
+    };
 }
 
-#[cfg(feature = "jiff-02")]
-impl TryFrom<DateTime> for jiff::civil::DateTime {
-    type Error = jiff::Error;
-
-    fn try_from(value: DateTime) -> Result<Self, Self::Error> {
-        Self::new(
-            value.year() as i16,
-            value.month() as i8,
-            value.day() as i8,
-            value.hour() as i8,
-            value.minute() as i8,
-            value.second() as i8,
-            0,
-        )
-    }
-}
+impl_jiff_conversions!("jiff-02", jiff_02, "0.2");
+impl_jiff_conversions!("jiff-1", jiff, "1");
 
 impl TryFrom<(u16, u16)> for DateTime {
     type Error = DateTimeRangeError;
@@ -614,75 +629,92 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "jiff-02")]
-    #[test]
-    fn datetime_try_from_civil_datetime() {
-        use jiff::civil;
+    macro_rules! jiff_tests {
+        ($feature:literal, $mod:ident, $jiff:ident) => {
+            #[cfg(feature = $feature)]
+            mod $mod {
+                #[test]
+                fn datetime_try_from_civil_datetime() {
+                    use $jiff::civil;
 
-        use super::DateTime;
+                    use crate::DateTime;
 
-        // 2018-11-17 10:38:30
-        let dt = DateTime::try_from(civil::datetime(2018, 11, 17, 10, 38, 30, 0)).unwrap();
-        assert_eq!(dt.year(), 2018);
-        assert_eq!(dt.month(), 11);
-        assert_eq!(dt.day(), 17);
-        assert_eq!(dt.hour(), 10);
-        assert_eq!(dt.minute(), 38);
-        assert_eq!(dt.second(), 30);
+                    // 2018-11-17 10:38:30
+                    let dt =
+                        DateTime::try_from(civil::datetime(2018, 11, 17, 10, 38, 30, 0)).unwrap();
+                    assert_eq!(dt.year(), 2018);
+                    assert_eq!(dt.month(), 11);
+                    assert_eq!(dt.day(), 17);
+                    assert_eq!(dt.hour(), 10);
+                    assert_eq!(dt.minute(), 38);
+                    assert_eq!(dt.second(), 30);
+                }
+
+                #[test]
+                fn datetime_try_from_civil_datetime_bounds() {
+                    use $jiff::civil;
+
+                    use crate::DateTime;
+
+                    // 1979-12-31 23:59:59
+                    assert!(
+                        DateTime::try_from(civil::datetime(1979, 12, 31, 23, 59, 59, 0)).is_err()
+                    );
+
+                    // 1980-01-01 00:00:00
+                    assert!(DateTime::try_from(civil::datetime(1980, 1, 1, 0, 0, 0, 0)).is_ok());
+
+                    // 2107-12-31 23:59:59
+                    assert!(
+                        DateTime::try_from(civil::datetime(2107, 12, 31, 23, 59, 59, 0)).is_ok()
+                    );
+
+                    // 2108-01-01 00:00:00
+                    assert!(DateTime::try_from(civil::datetime(2108, 1, 1, 0, 0, 0, 0)).is_err());
+                }
+
+                #[test]
+                fn civil_datetime_try_from_datetime() {
+                    use $jiff::civil;
+
+                    use crate::DateTime;
+
+                    // 2018-11-17 10:38:30 UTC
+                    let dt = civil::DateTime::try_from(
+                        DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(dt, civil::datetime(2018, 11, 17, 10, 38, 30, 0));
+                }
+
+                #[test]
+                fn civil_datetime_try_from_datetime_bounds() {
+                    use $jiff::civil;
+
+                    use crate::DateTime;
+
+                    // 1980-00-00 00:00:00
+                    assert!(
+                        civil::DateTime::try_from(unsafe {
+                            DateTime::from_msdos_unchecked(0x0000, 0x0000)
+                        })
+                        .is_err()
+                    );
+
+                    // 2107-15-31 31:63:62
+                    assert!(
+                        civil::DateTime::try_from(unsafe {
+                            DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF)
+                        })
+                        .is_err()
+                    );
+                }
+            }
+        };
     }
 
-    #[cfg(feature = "jiff-02")]
-    #[test]
-    fn datetime_try_from_civil_datetime_bounds() {
-        use jiff::civil;
-
-        use super::DateTime;
-
-        // 1979-12-31 23:59:59
-        assert!(DateTime::try_from(civil::datetime(1979, 12, 31, 23, 59, 59, 0)).is_err());
-
-        // 1980-01-01 00:00:00
-        assert!(DateTime::try_from(civil::datetime(1980, 1, 1, 0, 0, 0, 0)).is_ok());
-
-        // 2107-12-31 23:59:59
-        assert!(DateTime::try_from(civil::datetime(2107, 12, 31, 23, 59, 59, 0)).is_ok());
-
-        // 2108-01-01 00:00:00
-        assert!(DateTime::try_from(civil::datetime(2108, 1, 1, 0, 0, 0, 0)).is_err());
-    }
-
-    #[cfg(feature = "jiff-02")]
-    #[test]
-    fn civil_datetime_try_from_datetime() {
-        use jiff::civil;
-
-        use super::DateTime;
-
-        // 2018-11-17 10:38:30 UTC
-        let dt =
-            civil::DateTime::try_from(DateTime::try_from_msdos(0x4D71, 0x54CF).unwrap()).unwrap();
-        assert_eq!(dt, civil::datetime(2018, 11, 17, 10, 38, 30, 0));
-    }
-
-    #[cfg(feature = "jiff-02")]
-    #[test]
-    fn civil_datetime_try_from_datetime_bounds() {
-        use jiff::civil;
-
-        use super::DateTime;
-
-        // 1980-00-00 00:00:00
-        assert!(
-            civil::DateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0x0000, 0x0000) })
-                .is_err()
-        );
-
-        // 2107-15-31 31:63:62
-        assert!(
-            civil::DateTime::try_from(unsafe { DateTime::from_msdos_unchecked(0xFFFF, 0xFFFF) })
-                .is_err()
-        );
-    }
+    jiff_tests!("jiff-02", jiff_02_tests, jiff_02);
+    jiff_tests!("jiff-1", jiff_1_tests, jiff);
 
     #[test]
     fn time_conversion() {
