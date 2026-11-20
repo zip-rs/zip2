@@ -133,7 +133,7 @@ fn max_path_len_for(basic: &BasicFileOperation<'_, '_>) -> Option<usize> {
         .checked_add(extra_len)?
         .checked_add(suffix_reserve)?;
     // ZipWriter::start_entry rejects entry_len >= u16::MAX (strictly < 65535).
-    (usize::from(u16::MAX) - 1).checked_sub(header_overhead)
+    usize::from(u16::MAX).checked_sub(header_overhead)
 }
 
 impl<'k, 'n, 'a: 'k + 'n> Arbitrary<'a> for FileOperation<'k, 'n> {
