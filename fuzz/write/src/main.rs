@@ -108,7 +108,7 @@ impl<'k, 'n, 'a: 'k + 'n> Arbitrary<'a> for FileOperation<'k, 'n> {
         let basic = arbitrary_bounded_basic(u)?;
         let Some(max_path_len) = 65535usize.checked_sub(size_of::<Magic>()
             + size_of::<ZipLocalEntryBlock>()
-            + basic.options().map(|options| options.extra_fields().iter().map(|x| x.full_size(false)).sum::<usize>()).unwrap_or(0))
+            + basic.options().map(|options| options.extra_fields().iter().map(|x| x.full_size(true)).sum::<usize>()).unwrap_or(0))
         else {
             return Err(arbitrary::Error::IncorrectFormat);
         };
