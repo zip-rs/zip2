@@ -26,10 +26,10 @@ use core::num::NonZeroUsize;
 use core::str::{Utf8Error, from_utf8};
 use crc32fast::Hasher;
 use indexmap::IndexMap;
-use std::io::Cursor;
 use std::io::ErrorKind;
 use std::io::SeekFrom;
 use std::io::{self, Read, Seek, Write};
+use std::io::{Cursor, copy};
 use std::path::Path;
 
 pub(crate) mod options;
@@ -410,7 +410,10 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        let metadata = ZipArchive::get_metadata(config, &mut readwriter)?;
+        let mut metadata = ZipArchive::get_metadata(config, &mut readwriter)?;
+        for file in metadata.shared.files.values_mut() {
+            let _ = file.data_start(&mut readwriter)?;
+        }
         // `ZipArchive::get_metadata` leaves `readwriter` at the end of the central directory;
         // seek back to its start so appended entries overwrite it instead of leaving a second one.
         readwriter.seek(SeekFrom::Start(metadata.shared.dir_start))?;
@@ -1084,6 +1087,79 @@ impl<W: Write + Seek> ZipWriter<W> {
             .shift_remove(name.as_bytes())
             .map(|_| ())
             .ok_or(ZipError::FileNotFound)
+    }
+
+    /// Removes an entry from the archive's directory and overwrites it (both contents and local
+    /// header) with zeroes or random bytes. If the entry removed this way is the last one in the
+    /// archive, new entries will be able to overwrite it.
+    ///
+    /// # Parameters
+    /// randomize - If true, the file's content is overwritten with random bytes. If false, it is
+    /// overwritten with zeroes. Random bytes are only recommended when writing to magnetic storage,
+    /// since data overwritten with zeroes there is sometimes recoverable.
+    pub fn erase_file(&mut self, name: &str, randomize: bool) -> ZipResult<()> {
+        if !self.seek_possible {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "ZipWriter's inner writer does not support seeking",
+            )));
+        }
+        self.finish_file()?;
+        let mut writer = self.inner.try_inner_mut()?;
+        let mut position_to_resume_writing = writer.stream_position()?;
+        let mut removed_file = self
+            .files
+            .shift_remove(name.as_bytes())
+            .ok_or(ZipError::FileNotFound)?;
+        let Some(data_start) = removed_file.data_start.take() else {
+            return Err(invalid!(
+                "Can't determine where file {:?} data starts",
+                name
+            ));
+        };
+        let len = removed_file.compressed_size;
+        let data_end = data_start
+            .checked_add(len)
+            .ok_or(invalid!("File {:?} data range overflows u64", name))?;
+        if data_end > position_to_resume_writing {
+            return Err(invalid!(
+                "File {:?} data range extends past the end of the archive",
+                name
+            ));
+        }
+        if data_end == position_to_resume_writing {
+            // Removed file was the last in the archive, so we can overwrite it.
+            position_to_resume_writing = removed_file.header_start;
+        }
+        let len_with_header = len.saturating_add(data_start.saturating_sub(removed_file.header_start));
+        writer.seek(SeekFrom::Start(removed_file.header_start))?;
+        if randomize {
+            let mut buffer = [0u8; 64 * 1024];
+            let mut remaining = len_with_header;
+            while remaining > 0 {
+                let n = remaining.min(buffer.len() as u64) as usize;
+                getrandom::fill(&mut buffer[..n]).map_err(|e| {
+                    ZipError::Io(io::Error::new(
+                        ErrorKind::Unsupported,
+                        format!("getrandom returned error: {}", e),
+                    ))
+                })?;
+                writer.write_all(&buffer[..n])?;
+                remaining -= n as u64;
+            }
+        } else {
+            let copied = copy(&mut io::repeat(0).take(len_with_header), &mut writer)?;
+            if copied < len_with_header {
+                return Err(invalid!(
+                    "Failed to erase file {:?} ({} bytes copied, {} bytes expected)",
+                    name,
+                    copied,
+                    len_with_header
+                ));
+            }
+        }
+        writer.seek(SeekFrom::Start(position_to_resume_writing))?;
+        Ok(())
     }
 
     /// Removes the file currently being written from the archive if there is one, or else removes
