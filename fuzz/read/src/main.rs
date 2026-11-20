@@ -6,11 +6,11 @@ use arbitrary::Unstructured;
 use core::error::Error;
 use sha3::{Digest, Sha3_512};
 use std::fmt;
-use std::io::{copy, sink, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, copy, sink};
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
 use zip::ZipReadOptions;
-use zip::read::{ZipFile, ZipFileEntry, read_zipfile_from_stream, Config};
+use zip::read::{Config, ZipFile, ZipFileEntry, read_zipfile_from_stream};
 use zip::unstable::read::ZipIterable;
 use zip::unstable::stream::{ZipStreamReader, ZipStreamVisitor};
 
@@ -34,7 +34,8 @@ fn decompress_all(reader: impl Read + Seek + Clone) -> Result<(), Box<dyn Error>
     }
     reader.seek(SeekFrom::Start(0))?;
     let mut iterable = ZipIterable::try_new(reader, Config::default())?;
-    let mut iterable_with_files = iterable.files_with_cloned_reader(ZipReadOptions::default().enforce_header_consistency(true))?;
+    let mut iterable_with_files = iterable
+        .files_with_cloned_reader(ZipReadOptions::default().enforce_header_consistency(true))?;
     // https://github.com/zip-rs/zip2/issues/1337: This isn't an actual Iterator
     while let Some(file_result) = iterable_with_files.next() {
         let mut file = file_result?;
