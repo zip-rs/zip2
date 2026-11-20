@@ -827,7 +827,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             + mem::size_of::<ZipLocalEntryBlock>()
             + file_name_raw.len()
             + extra_fields.iter().map(|x| x.size(false)).sum::<usize>();
-        if entry_len >= (u16::MAX as usize) {
+        if entry_len > (u16::MAX as usize) {
             return Err(invalid!(
                 "ZipLocalBlock + filename + extra fields must be less than 64KiB when combined"
             ));
@@ -3220,7 +3220,23 @@ impl ZipFileData {
             .extra_fields
             .central_extra_fields()
             .map(|x| x.size(false))
-            .sum();
+            .sum::<usize>();
+        let extra_field_length = u16::try_from(extra_field_len)
+            .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
+        let file_comment_length = u16::try_from(self.file_comment_raw().len())
+            .map_err(|_| invalid!("File comment length exceeds 64KiB"))?;
+        let header_size = size_of::<Magic>()
+            + size_of::<ZipCentralEntryBlock>()
+            + file_name_raw.len()
+            + extra_field_length as usize
+            + file_comment_length as usize;
+        // APPNOTE 4.4.10: central directory entry must not exceed 65535 bytes
+        if header_size > u16::MAX as usize {
+            return Err(invalid!(
+                "Central directory header size exceeds 64KiB: {}",
+                header_size
+            ));
+        }
         let compressed_size = if self.large_file || sizes_in_zip64 {
             ZIP64_BYTES_THR as u32
         } else {
@@ -3248,8 +3264,6 @@ impl ZipFileData {
         let version_to_extract = self.version_needed();
         let version_made_by = u16::from(self.version_made_by).max(version_to_extract);
         let compression_method = self.extern_compression();
-        let extra_field_length = u16::try_from(extra_field_len)
-            .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
         let block = ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
@@ -3265,11 +3279,7 @@ impl ZipFileData {
                 .try_into()
                 .map_err(std::io::Error::other)?,
             extra_field_length,
-            file_comment_length: self
-                .file_comment_raw()
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
+            file_comment_length,
             disk_number: 0,
             internal_file_attributes: 0,
             external_file_attributes: self.external_attributes,
@@ -3562,6 +3572,129 @@ mod tests {
         }
         let file2 = archive.by_name("foo2.txt")?;
         assert_eq!(file2.comment(), "file2 comment");
+        Ok(())
+    }
+
+    fn writer_with_file_comment_len(comment_len: usize) -> ZipResult<ZipWriter<Cursor<Vec<u8>>>> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = FileOptions {
+            extended_options: ExtendedFileOptions {
+                file_comment: Some("c".repeat(comment_len).into()),
+                validate_extra_fields: false,
+                ..Default::default()
+            },
+            #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+            compression_method: Stored,
+            ..Default::default()
+        };
+        writer.start_file("a", options)?;
+        Ok(writer)
+    }
+
+    #[test]
+    fn central_directory_header_accepts_maximum_size() -> ZipResult<()> {
+        let fixed_header_size = core::mem::size_of::<crate::format::magic::Magic>()
+            + core::mem::size_of::<crate::format::blocks::ZipCentralEntryBlock>();
+        let comment_len = u16::MAX as usize - fixed_header_size - 1;
+        let mut writer = writer_with_file_comment_len(comment_len)?;
+        let result = {
+            let (file_name, file) = writer.files.last_mut().unwrap();
+            file.write_central_directory_header(&mut Vec::new(), file_name)
+        };
+        writer.abort_file()?;
+        result?;
+        Ok(())
+    }
+
+    #[test]
+    fn central_directory_header_rejects_size_over_u16() -> ZipResult<()> {
+        let fixed_header_size = core::mem::size_of::<crate::format::magic::Magic>()
+            + core::mem::size_of::<crate::format::blocks::ZipCentralEntryBlock>();
+        let comment_len = u16::MAX as usize - fixed_header_size;
+        let mut writer = writer_with_file_comment_len(comment_len)?;
+        let result = {
+            let (file_name, file) = writer.files.last_mut().unwrap();
+            file.write_central_directory_header(&mut Vec::new(), file_name)
+        };
+        writer.abort_file()?;
+        let error = result.unwrap_err();
+        assert!(matches!(
+            error,
+            crate::result::ZipError::InvalidArchive(message)
+                if message.starts_with("Central directory header size exceeds 64KiB:")
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn central_directory_header_rejects_large_file_name() -> ZipResult<()> {
+        let local_header_size = size_of::<crate::format::magic::Magic>()
+            + size_of::<crate::format::blocks::ZipLocalEntryBlock>();
+        let file_name = "n".repeat(u16::MAX as usize - local_header_size);
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(file_name, SimpleFileOptions::default())?;
+        let result = {
+            let (file_name, file) = writer.files.last_mut().unwrap();
+            file.write_central_directory_header(&mut Vec::new(), file_name)
+        };
+        writer.abort_file()?;
+        let error = result.unwrap_err();
+        assert!(matches!(
+            error,
+            crate::result::ZipError::InvalidArchive(message)
+                if message.starts_with("Central directory header size exceeds 64KiB:")
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn central_directory_header_size_uses_central_extra_fields() -> ZipResult<()> {
+        let mut extended_options = ExtendedFileOptions::default();
+        extended_options.add_extended_timestamp(Some(1), Some(2), Some(3))?;
+
+        // The local timestamp takes 17 bytes, but only 9 bytes in the central directory.
+        // Alignment is local-only; the comment is central-only.
+        let central_fixed_size = size_of::<crate::format::magic::Magic>()
+            + size_of::<crate::format::blocks::ZipCentralEntryBlock>();
+        let filename = "ab";
+        let central_timestamp_size = 9;
+        let comment_len =
+            u16::MAX as usize - central_fixed_size - filename.len() - central_timestamp_size;
+        let options = FileOptions {
+            extended_options,
+            #[cfg(all(feature = "deflate-zopfli", not(feature = "deflate-flate2")))]
+            compression_method: Stored,
+            ..Default::default()
+        }
+        .with_alignment(16)
+        .with_file_comment("c".repeat(comment_len));
+
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(filename, options)?;
+
+        let local_bytes = writer.get_ref().unwrap().get_ref();
+        let local_extra_size = u16::from_le_bytes([local_bytes[28], local_bytes[29]]) as usize;
+        let local_header_size = 30 + filename.len() + local_extra_size;
+        assert!(
+            local_extra_size > 17,
+            "local-only alignment field is present"
+        );
+        assert!(local_header_size <= u16::MAX as usize);
+        assert!(
+            central_fixed_size + filename.len() + local_extra_size + comment_len
+                > u16::MAX as usize,
+            "combining local extras with the central-only comment would exceed the limit"
+        );
+
+        let mut central_bytes = Vec::new();
+        let result = {
+            let (file_name, file) = writer.files.last_mut().unwrap();
+            file.write_central_directory_header(&mut central_bytes, file_name)
+        };
+        writer.abort_file()?;
+        result?;
+
+        assert_eq!(central_bytes.len(), u16::MAX as usize);
         Ok(())
     }
 
