@@ -25,6 +25,7 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout: .github/size-buckets.yml
+          allow-unsafe-pr-checkout: true
       - uses: boschresearch/pr-size-labeler@6a93d42dd5199ee28d5f41edc359aa5218b4fa7e # v5.0.4
         with:
           bucketConfigFile: ".github/size-buckets.yml"
