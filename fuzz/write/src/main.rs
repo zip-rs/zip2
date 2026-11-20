@@ -13,11 +13,11 @@ use std::path::PathBuf;
 use tikv_jemallocator::Jemalloc;
 use zip::read::read_zipfile_from_stream;
 use zip::result::{ZipError, ZipResult};
+use zip::unstable::format::blocks::ZipLocalEntryBlock;
+use zip::unstable::format::magic::Magic;
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
 use zip::{ZipArchive, ZipWriter};
-use zip::unstable::format::blocks::ZipLocalEntryBlock;
-use zip::unstable::format::magic::Magic;
 
 #[cfg(fuzzing)]
 #[global_allocator]
@@ -43,7 +43,7 @@ pub enum BasicFileOperation<'k, 'n> {
     SetArchiveComment(Box<[u8]>),
 }
 
-impl <'k, 'n> BasicFileOperation<'k, 'n> {
+impl<'k, 'n> BasicFileOperation<'k, 'n> {
     fn options(&self) -> Option<&FullFileOptions<'k, 'n>> {
         match self {
             BasicFileOperation::WriteNormalFile { options, .. } => Some(options),
@@ -106,16 +106,30 @@ pub struct FileOperation<'k, 'n> {
 impl<'k, 'n, 'a: 'k + 'n> Arbitrary<'a> for FileOperation<'k, 'n> {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let basic = arbitrary_bounded_basic(u)?;
-        let Some(max_path_len) = 65535usize.checked_sub(size_of::<Magic>()
-            + size_of::<ZipLocalEntryBlock>()
-            + basic.options().map(|options| options.extra_fields().iter().map(|x| x.full_size(true)).sum::<usize>()).unwrap_or(0))
-        else {
+        let Some(max_path_len) = 65535usize.checked_sub(
+            size_of::<Magic>()
+                + size_of::<ZipLocalEntryBlock>()
+                + basic
+                    .options()
+                    .map(|options| {
+                        options
+                            .extra_fields()
+                            .iter()
+                            .map(|x| x.full_size(true))
+                            .sum::<usize>()
+                    })
+                    .unwrap_or(0),
+        ) else {
             return Err(arbitrary::Error::IncorrectFormat);
         };
         let mut path: String = u.arbitrary()?;
         let reopen = u.arbitrary()?;
         path.truncate(max_path_len);
-        Ok(FileOperation { basic, path: path.into(), reopen })
+        Ok(FileOperation {
+            basic,
+            path: path.into(),
+            reopen,
+        })
     }
 }
 

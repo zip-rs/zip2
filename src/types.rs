@@ -226,10 +226,7 @@ impl ZipFileData {
         }
     }
 
-    pub(crate) fn find_content<R: Read + Seek>(
-        &self,
-        mut reader: R,
-    ) -> ZipResult<Take<R>> {
+    pub(crate) fn find_content<R: Read + Seek>(&self, mut reader: R) -> ZipResult<Take<R>> {
         // TODO: use .get_or_try_init() once stabilized to provide a closure returning a Result!
         let data_start = self.data_start(&mut reader)?;
         self.check_data_end(data_start)?;

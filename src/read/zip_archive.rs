@@ -686,7 +686,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// There are many passwords out there that will also pass the validity checks
     /// we are able to perform. This is a weakness of the `ZipCrypto` algorithm,
     /// due to its fairly primitive approach to cryptography.
-    pub fn by_name_decrypt(&mut self, name: &str, password: &[u8]) -> ZipResult<ZipFile<'_, &mut R>> {
+    pub fn by_name_decrypt(
+        &mut self,
+        name: &str,
+        password: &[u8],
+    ) -> ZipResult<ZipFile<'_, &mut R>> {
         self.by_name_with_optional_password(name, Some(password))
     }
 

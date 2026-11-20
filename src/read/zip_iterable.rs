@@ -321,7 +321,9 @@ impl<'files, R: Read + Seek + Clone> Iterator for ZipIterableFilesWithReader<'fi
 
     fn next(&mut self) -> Option<Self::Item> {
         self.files.next().map(|res| {
-            res.and_then(|entry| entry.with_owned_reader(self.body_reader.clone(), self.options.clone()))
+            res.and_then(|entry| {
+                entry.with_owned_reader(self.body_reader.clone(), self.options.clone())
+            })
         })
     }
 
