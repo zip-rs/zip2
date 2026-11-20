@@ -1091,7 +1091,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Removes an entry from the archive's directory and overwrites it (both contents and local
     /// header) with zeroes or random bytes. If the entry removed this way is the last one in the
-    /// archive, new entries will be able to overwrite it.
+    /// archive, it is still overwritten, but new entries will be able to overwrite it again.
     ///
     /// # Parameters
     /// randomize - If true, the file's content is overwritten with random bytes. If false, it is
