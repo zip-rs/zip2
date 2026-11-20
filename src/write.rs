@@ -4008,8 +4008,7 @@ mod tests {
         let mut writer = ZipWriter::new_append(writer.finish()?)?;
         writer.abort_file()?;
         let result = writer.truncating_finish(|_, _| {
-            Err::<(), _>(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err::<(), _>(std::io::Error::other(
                 "truncate failed",
             ))
         });
