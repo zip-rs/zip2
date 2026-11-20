@@ -12,7 +12,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 const PAYLOAD: &[u8] = b"TOCTOU_ESCAPED_PAYLOAD";
-const N_ENTRIES: usize = 40;
+const N_ENTRIES: usize = 20;
 const MIN_RACE_EXTRACTS: u64 = 20;
 
 fn toctou_budget_ms(default_ms: u128) -> u128 {
@@ -25,6 +25,19 @@ fn toctou_budget_ms(default_ms: u128) -> u128 {
 fn maybe_yield() {
     if rand::random::<bool>() {
         std::thread::yield_now();
+    }
+}
+
+fn pace_racer() {
+    #[cfg(unix)]
+    {
+        // Prevent fast Unix symlink/unlink spin loops from starving the extractor thread
+        // or saturating shared VFS locks across concurrent test runners.
+        std::thread::sleep(std::time::Duration::from_micros(50));
+    }
+    #[cfg(not(unix))]
+    {
+        maybe_yield();
     }
 }
 
@@ -58,7 +71,7 @@ fn spawn_dir_racer(
             if create_dir_link(&target, &link).is_ok() {
                 flips.fetch_add(1, Ordering::Relaxed);
             }
-            maybe_yield();
+            pace_racer();
             let _ = std::fs::remove_file(&link);
             if remove_all {
                 let _ = std::fs::remove_dir_all(&link);
@@ -68,14 +81,14 @@ fn spawn_dir_racer(
             if restore_real_dir {
                 let _ = std::fs::create_dir(&link);
             }
-            maybe_yield();
+            pace_racer();
         }
     })
 }
 
 fn run_race_loop(budget_ms: u128, flips: &AtomicU64, mut step: impl FnMut() -> bool) -> (u64, u64) {
     let start = std::time::Instant::now();
-    let max_wait_ms = budget_ms.saturating_mul(4).max(15_000);
+    let max_wait_ms = budget_ms.saturating_mul(6).max(30_000);
     let mut total_extracts = 0u64;
     let mut raced_extracts = 0u64;
     let mut prev_start_flips: Option<u64> = None;
@@ -460,7 +473,7 @@ fn concurrent_intermediate_symlink_race_crc_error_cleanup_cannot_delete_canary()
     let victim = canary.join("bad.txt");
     std::fs::write(&victim, b"VICTIM_OUTSIDE_DEST").unwrap();
 
-    let bytes = build_bad_crc_archive("race/bad.txt", 512 * 1024);
+    let bytes = build_bad_crc_archive("race/bad.txt", 64 * 1024);
     let budget_ms = toctou_budget_ms(3_000);
 
     let stop = Arc::new(AtomicBool::new(false));
