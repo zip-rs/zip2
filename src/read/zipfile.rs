@@ -28,10 +28,10 @@ use std::path::{Path, PathBuf};
 ///
 /// If your logic depends on the buffer being completely populated, use [`Self::read_exact()`] instead. It will continue reading until the entire buffer is filled or an error occurs.
 #[derive(Debug)]
-pub struct ZipFile<'a, R: Read + ?Sized> {
+pub struct ZipFile<'a, R: Read + 'a> {
     pub(crate) file_name_raw: Cow<'a, [u8]>,
     pub(crate) data: Cow<'a, ZipFileData>,
-    pub(crate) reader: ZipFileReader<'a, R>,
+    pub(crate) reader: ZipFileReader<R>,
 }
 
 /// A zip file Entry with a data descriptor (if present).
@@ -274,9 +274,25 @@ impl<'a> ZipFileEntry<'a> {
     zip_file_methods!();
 
     /// Create a readable
-    pub fn with_reader<R: Read + Seek>(
+    pub fn with_reader<R: Read + Seek + ?Sized>(
         self,
         reader: &'a mut R,
+        options: ZipReadOptions<'_>,
+    ) -> ZipResult<ZipFile<'a, &'a mut R>> {
+        let limit_reader = self.data.find_content(reader)?;
+
+        let reader = self.data.make_reader(limit_reader, options)?;
+        Ok(ZipFile {
+            file_name_raw: self.file_name_raw,
+            data: self.data,
+            reader,
+        })
+    }
+
+    /// Create a readable
+    pub fn with_owned_reader<R: Read + Seek>(
+        self,
+        reader: R,
         options: ZipReadOptions<'_>,
     ) -> ZipResult<ZipFile<'a, R>> {
         let limit_reader = self.data.find_content(reader)?;
@@ -297,7 +313,7 @@ impl HasZipMetadata for ZipFileEntry<'_> {
 }
 
 /// Methods for retrieving information on zip files
-impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
+impl<'a, R: Read + 'a> ZipFile<'a, R> {
     zip_file_methods!();
 
     /// get the corresponding entry
@@ -308,7 +324,7 @@ impl<'a, R: Read + ?Sized> ZipFile<'a, R> {
         }
     }
 
-    pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<&'a mut R>> {
+    pub(crate) fn take_raw_reader(&mut self) -> io::Result<io::Take<R>> {
         replace(&mut self.reader, ZipFileReader::NoReader).into_inner()
     }
 
@@ -415,13 +431,13 @@ impl<R: Read> ZipFile<'_, R> {
     }
 }
 
-impl<R: Read + ?Sized> HasZipMetadata for ZipFile<'_, R> {
+impl<R: Read> HasZipMetadata for ZipFile<'_, R> {
     fn get_metadata(&self) -> &ZipFileData {
         self.data.as_ref()
     }
 }
 
-impl<R: Read + ?Sized> Read for ZipFile<'_, R> {
+impl<R: Read> Read for ZipFile<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.reader.read(buf)
     }
@@ -465,7 +481,7 @@ impl<'a, R> ZipFileSeek<'a, R> {
     zip_file_methods!();
 }
 
-impl<R: Read + ?Sized> Drop for ZipFile<'_, R> {
+impl<R: Read> Drop for ZipFile<'_, R> {
     fn drop(&mut self) {
         // self.data is Owned, this reader is constructed by a streaming reader.
         // In this case, we want to exhaust the reader so that the next file is accessible.

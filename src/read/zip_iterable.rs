@@ -190,6 +190,10 @@ pub struct ZipIterableFiles<R> {
 }
 
 /// Lending iterator over entries that borrow its body reader.
+///
+/// Currently implements [Iterator] only when [R: Clone]. For backward-compatibility reasons,
+/// the `next()` method that clones the reader must be invoked as [Iterator::next] rather than
+/// [ZipIterableFilesWithReader::next] when invoked explicitly.
 #[derive(Debug)]
 pub struct ZipIterableFilesWithReader<'files, 'options, R> {
     files: &'files mut ZipIterableFiles<R>,
@@ -303,7 +307,7 @@ impl<R: Read + Seek> Iterator for ZipIterableFiles<R> {
 
 impl<R: Read + Seek> ZipIterableFilesWithReader<'_, '_, R> {
     /// Read the next entry, borrowing this iterator's body reader until the returned file is dropped.
-    pub fn next(&mut self) -> Option<ZipResult<ZipFile<'_, R>>> {
+    pub fn next(&mut self) -> Option<ZipResult<ZipFile<'_, &mut R>>> {
         self.files.next().map(|res| {
             res.and_then(|entry| entry.with_reader(&mut self.body_reader, self.options.clone()))
         })
@@ -312,6 +316,22 @@ impl<R: Read + Seek> ZipIterableFilesWithReader<'_, '_, R> {
     /// Number of entries that have not been yielded yet.
     #[must_use]
     pub fn size_hint(&self) -> (usize, Option<usize>) {
+        self.files.size_hint()
+    }
+}
+
+impl<'files, R: Read + Seek + Clone> Iterator for ZipIterableFilesWithReader<'files, '_, R> {
+    type Item = ZipResult<ZipFile<'files, R>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.files.next().map(|res| {
+            res.and_then(|entry| {
+                entry.with_owned_reader(self.body_reader.clone(), self.options.clone())
+            })
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
         self.files.size_hint()
     }
 }
