@@ -394,7 +394,7 @@ mod tests {
         use std::io::Cursor;
         use std::io::Take;
 
-        type R = Cursor<Vec<u8>>;
+        type R = &'static mut Cursor<Vec<u8>>;
         let enum_size = size_of::<ZipFileReader<R>>();
         // Ensure the enum stays small to optimize memory usage, particularly for archives
         // with many files where many instances may exist simultaneously
