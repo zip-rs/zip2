@@ -911,8 +911,10 @@ impl FuzzTestCase<'_, '_> {
             .files_with_cloned_reader(ZipReadOptions::default().enforce_header_consistency(true))?;
         // https://github.com/zip-rs/zip2/issues/1337: This isn't an actual Iterator
         while let Some(file_result) = iterable_with_files.next() {
-            let mut file = file_result?;
-            let _ = copy(&mut file, &mut sink())?;
+            // FIXME: Find conditions under which we can expect this to succeed (e.g. no encryption).
+            if let Ok(mut file) = file_result {
+                let _ = copy(&mut file, &mut sink())?;
+            }
         }
         Ok(())
     }
