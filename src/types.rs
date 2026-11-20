@@ -657,9 +657,7 @@ impl ZipFileData {
         Ok(())
     }
 
-    pub(crate) fn data_descriptor_len(
-        &self,
-    ) -> usize {
+    pub(crate) fn data_descriptor_len(&self) -> usize {
         if !self.is_using_data_descriptor() {
             return 0;
         }
