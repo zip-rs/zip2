@@ -787,7 +787,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         };
         let entry_len: usize = mem::size_of::<Magic>()
             + mem::size_of::<ZipLocalEntryBlock>()
-            + raw_values.file_comment_raw.as_ref().map_or(0, |x| x.len())
             + file_name_raw.len()
             + extra_fields.iter().map(|x| x.size(false)).sum::<usize>();
         if entry_len > (u16::MAX as usize) {
@@ -3158,7 +3157,8 @@ impl ZipFileData {
             .extra_fields
             .central_extra_fields()
             .map(|x| x.size(false))
-            .sum();
+            .sum::<usize>()
+            + self.file_comment.len();
         let compressed_size = if self.large_file || sizes_in_zip64 {
             ZIP64_BYTES_THR as u32
         } else {
