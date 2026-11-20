@@ -19,6 +19,8 @@ use zip::unstable::path_to_string;
 use zip::unstable::read::ZipIterable;
 use zip::write::FullFileOptions;
 use zip::{ZipArchive, ZipReadOptions, ZipWriter};
+use zip::unstable::format::blocks::ZipLocalEntryBlock;
+use zip::unstable::format::magic::Magic;
 
 #[cfg(fuzzing)]
 #[global_allocator]
