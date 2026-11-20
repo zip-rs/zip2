@@ -16,6 +16,8 @@ use zip::result::{ZipError, ZipResult};
 use zip::unstable::path_to_string;
 use zip::write::FullFileOptions;
 use zip::{ZipArchive, ZipWriter};
+use zip::unstable::format::blocks::ZipLocalEntryBlock;
+use zip::unstable::format::magic::Magic;
 
 #[cfg(fuzzing)]
 #[global_allocator]
@@ -41,6 +43,20 @@ pub enum BasicFileOperation<'k, 'n> {
     SetArchiveComment(Box<[u8]>),
 }
 
+impl <'k, 'n> BasicFileOperation<'k, 'n> {
+    fn options(&self) -> Option<&FullFileOptions<'k, 'n>> {
+        match self {
+            BasicFileOperation::WriteNormalFile { options, .. } => Some(options),
+            BasicFileOperation::WriteDirectory(options) => Some(options),
+            BasicFileOperation::WriteSymlinkWithTarget { options, .. } => Some(options),
+            BasicFileOperation::ShallowCopy(base) => base.basic.options(),
+            BasicFileOperation::DeepCopy(base) => base.basic.options(),
+            BasicFileOperation::MergeWithOtherFile { .. } => None,
+            BasicFileOperation::SetArchiveComment(_) => None,
+        }
+    }
+}
+
 #[derive(Arbitrary, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ReopenOption {
     DoNotReopen,
@@ -52,7 +68,7 @@ pub enum ReopenOption {
 /// once per level, so an unbounded chain overflows the stack (one 87 KB input nested ~2,400 deep).
 const MAX_OPERATION_DEPTH: usize = 64;
 
-std::thread_local! {
+thread_local! {
     static OPERATION_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -65,7 +81,7 @@ where
     struct DepthGuard;
     impl Drop for DepthGuard {
         fn drop(&mut self) {
-            OPERATION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+            OPERATION_DEPTH.set(OPERATION_DEPTH.get() - 1);
         }
     }
     let depth = OPERATION_DEPTH.with(|depth| {
@@ -79,13 +95,28 @@ where
     BasicFileOperation::arbitrary(u)
 }
 
-#[derive(Arbitrary, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct FileOperation<'k, 'n> {
-    #[arbitrary(with = arbitrary_bounded_basic)]
     basic: BasicFileOperation<'k, 'n>,
     path: PathBuf,
     reopen: ReopenOption,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
+}
+
+impl<'k, 'n, 'a: 'k + 'n> Arbitrary<'a> for FileOperation<'k, 'n> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let basic = arbitrary_bounded_basic(u)?;
+        let Some(max_path_len) = 65535usize.checked_sub(size_of::<Magic>()
+            + size_of::<ZipLocalEntryBlock>()
+            + basic.options().map(|options| options.extra_fields().iter().map(|x| x.full_size(false)).sum::<usize>()).unwrap_or(0))
+        else {
+            return Err(arbitrary::Error::IncorrectFormat);
+        };
+        let mut path: String = u.arbitrary()?;
+        let reopen = u.arbitrary()?;
+        path.truncate(max_path_len);
+        Ok(FileOperation { basic, path: path.into(), reopen })
+    }
 }
 
 impl FileOperation<'_, '_> {
@@ -446,7 +477,7 @@ fn contains_eocd_signature(comment: &[u8]) -> bool {
 /// Returns Ok(true) if everything went okay, Ok(false) if an allowed reopen failure occurred, or
 /// Err if any other failure occurred.
 fn do_operation(
-    writer: &mut zip::ZipWriter<Cursor<Vec<u8>>>,
+    writer: &mut ZipWriter<Cursor<Vec<u8>>>,
     operation: FileOperation<'_, '_>,
     abort: bool,
     flush_on_finish_file: bool,
@@ -753,7 +784,7 @@ impl FuzzTestCase<'_, '_> {
 
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
-        let mut writer = zip::ZipWriter::new(initial_junk);
+        let mut writer = ZipWriter::new(initial_junk);
         let mut files_added = 0;
         let mut final_reopen = false;
         if let Some((last_op, _)) = self.operations.last()
