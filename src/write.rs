@@ -3157,8 +3157,7 @@ impl ZipFileData {
             .extra_fields
             .central_extra_fields()
             .map(|x| x.size(false))
-            .sum::<usize>()
-            + self.file_comment.len();
+            .sum::<usize>();
         let compressed_size = if self.large_file || sizes_in_zip64 {
             ZIP64_BYTES_THR as u32
         } else {
@@ -3188,6 +3187,15 @@ impl ZipFileData {
         let compression_method = self.extern_compression();
         let extra_field_length = u16::try_from(extra_field_len)
             .map_err(|_| invalid!("Extra field length in central directory exceeds 64KiB"))?;
+        let file_comment_length = u16::try_from(self
+                .file_comment_raw()
+                .len())
+            .map_err(|_| invalid!("File comment length exceeds 64KiB"))?;
+        if extra_field_length.checked_add(file_comment_length).is_none() {
+            return Err(invalid!(
+                "Extra field length in central directory + file comment length exceeds 64KiB"
+            ));
+        }
         let block = ZipCentralEntryBlock {
             version_made_by: ((self.system as u16) << 8) | version_made_by,
             version_to_extract,
@@ -3203,11 +3211,7 @@ impl ZipFileData {
                 .try_into()
                 .map_err(std::io::Error::other)?,
             extra_field_length,
-            file_comment_length: self
-                .file_comment_raw()
-                .len()
-                .try_into()
-                .map_err(std::io::Error::other)?,
+            file_comment_length,
             disk_number: 0,
             internal_file_attributes: 0,
             external_file_attributes: self.external_attributes,
