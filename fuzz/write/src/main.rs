@@ -11,11 +11,14 @@ use std::ops;
 use std::path::PathBuf;
 #[cfg(fuzzing)]
 use tikv_jemallocator::Jemalloc;
-use zip::read::read_zipfile_from_stream;
+use zip::read::{Config, read_zipfile_from_stream};
 use zip::result::{ZipError, ZipResult};
+use zip::unstable::format::blocks::{ZipCentralEntryBlock, ZipLocalEntryBlock};
+use zip::unstable::format::magic::Magic;
 use zip::unstable::path_to_string;
+use zip::unstable::read::ZipIterable;
 use zip::write::FullFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::{ZipArchive, ZipReadOptions, ZipWriter};
 
 #[cfg(fuzzing)]
 #[global_allocator]
@@ -41,6 +44,20 @@ pub enum BasicFileOperation<'k, 'n> {
     SetArchiveComment(Box<[u8]>),
 }
 
+impl<'k, 'n> BasicFileOperation<'k, 'n> {
+    fn options(&self) -> Option<&FullFileOptions<'k, 'n>> {
+        match self {
+            BasicFileOperation::WriteNormalFile { options, .. } => Some(options),
+            BasicFileOperation::WriteDirectory(options) => Some(options),
+            BasicFileOperation::WriteSymlinkWithTarget { options, .. } => Some(options),
+            BasicFileOperation::ShallowCopy(base) => base.basic.options(),
+            BasicFileOperation::DeepCopy(base) => base.basic.options(),
+            BasicFileOperation::MergeWithOtherFile { .. } => None,
+            BasicFileOperation::SetArchiveComment(_) => None,
+        }
+    }
+}
+
 #[derive(Arbitrary, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ReopenOption {
     DoNotReopen,
@@ -52,7 +69,7 @@ pub enum ReopenOption {
 /// once per level, so an unbounded chain overflows the stack (one 87 KB input nested ~2,400 deep).
 const MAX_OPERATION_DEPTH: usize = 64;
 
-std::thread_local! {
+thread_local! {
     static OPERATION_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -65,7 +82,7 @@ where
     struct DepthGuard;
     impl Drop for DepthGuard {
         fn drop(&mut self) {
-            OPERATION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+            OPERATION_DEPTH.set(OPERATION_DEPTH.get() - 1);
         }
     }
     let depth = OPERATION_DEPTH.with(|depth| {
@@ -79,13 +96,75 @@ where
     BasicFileOperation::arbitrary(u)
 }
 
-#[derive(Arbitrary, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct FileOperation<'k, 'n> {
-    #[arbitrary(with = arbitrary_bounded_basic)]
     basic: BasicFileOperation<'k, 'n>,
     path: PathBuf,
     reopen: ReopenOption,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
+}
+
+fn truncate_to_char_boundary(s: &mut String, max_bytes: usize) {
+    let mut end = max_bytes.min(s.len());
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
+}
+
+fn max_path_len_for(basic: &BasicFileOperation<'_, '_>) -> Option<usize> {
+    let local_entry_len_without_path = basic
+        .options()
+        .map(|options| {
+            options
+                .extra_fields()
+                .iter()
+                .map(|x| x.full_size(true))
+                .sum::<usize>()
+        })
+        .unwrap_or(0)
+        + size_of::<Magic>()
+        + size_of::<ZipLocalEntryBlock>();
+    let central_entry_len_without_path = basic
+        .options()
+        .map(|options| {
+            options
+                .extra_fields()
+                .iter()
+                .map(|x| x.full_size(false))
+                .sum::<usize>()
+                + options.file_comment().map_or(0, |c| c.len())
+        })
+        .unwrap_or(0)
+        + size_of::<Magic>()
+        + size_of::<ZipCentralEntryBlock>();
+    let suffix_reserve = match basic {
+        BasicFileOperation::WriteDirectory(_) => 1, // trailing slash added
+        BasicFileOperation::ShallowCopy(_) | BasicFileOperation::DeepCopy(_) => 5, // trailing "_copy" added
+        _ => 0,
+    };
+    let header_overhead = local_entry_len_without_path
+        .max(central_entry_len_without_path)
+        .checked_add(suffix_reserve)?;
+    // ZipWriter::start_entry rejects entry_len > u16::MAX.
+    usize::from(u16::MAX).checked_sub(header_overhead)
+}
+
+impl<'k, 'n, 'a: 'k + 'n> Arbitrary<'a> for FileOperation<'k, 'n> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let basic = arbitrary_bounded_basic(u)?;
+        let Some(max_path_len) = max_path_len_for(&basic) else {
+            return Err(arbitrary::Error::IncorrectFormat);
+        };
+        let mut path: String = u.arbitrary()?;
+        let reopen = u.arbitrary()?;
+        truncate_to_char_boundary(&mut path, max_path_len);
+        Ok(FileOperation {
+            basic,
+            path: path.into(),
+            reopen,
+        })
+    }
 }
 
 impl FileOperation<'_, '_> {
@@ -446,7 +525,7 @@ fn contains_eocd_signature(comment: &[u8]) -> bool {
 /// Returns Ok(true) if everything went okay, Ok(false) if an allowed reopen failure occurred, or
 /// Err if any other failure occurred.
 fn do_operation(
-    writer: &mut zip::ZipWriter<Cursor<Vec<u8>>>,
+    writer: &mut ZipWriter<Cursor<Vec<u8>>>,
     operation: FileOperation<'_, '_>,
     abort: bool,
     flush_on_finish_file: bool,
@@ -753,7 +832,7 @@ impl FuzzTestCase<'_, '_> {
 
         let mut initial_junk = Cursor::new(self.initial_junk.into_vec());
         initial_junk.seek(SeekFrom::End(0))?;
-        let mut writer = zip::ZipWriter::new(initial_junk);
+        let mut writer = ZipWriter::new(initial_junk);
         let mut files_added = 0;
         let mut final_reopen = false;
         if let Some((last_op, _)) = self.operations.last()
@@ -807,50 +886,67 @@ impl FuzzTestCase<'_, '_> {
                 return Ok(());
             }
         }
-        if final_reopen {
-            writeln!(stringifier, "let _ = writer.finish_into_readable()?;")
+        let mut stream = if final_reopen {
+            writeln!(
+                stringifier,
+                "let mut stream = writer.finish_into_readable()?;"
+            )
+            .map_err(|_| ZipError::InvalidArchive("".into()))?;
+            writer.finish_into_readable()?.into_inner()
+        } else {
+            if !comment_contains_signature {
+                writeln!(
+                    stringifier,
+                    "let mut stream = ZipArchive::new(writer.finish()?)?.into_inner();"
+                )
                 .map_err(|_| ZipError::InvalidArchive("".into()))?;
-            let _ = writer.finish_into_readable()?;
+                ZipArchive::new(writer.finish()?)?.into_inner()
+            } else {
+                writeln!(stringifier, "let mut stream = writer.finish()?;")
+                    .map_err(|_| ZipError::InvalidArchive("".into()))?;
+                writer.finish()?
+            }
+        };
+        writeln!(stringifier, "stream.seek(SeekFrom::Start({junk_len}))?;\n").unwrap();
+        stream.seek(SeekFrom::Start(junk_len as u64))?;
+        if streamable {
+            writeln!(
+                stringifier,
+                "while read_zipfile_from_stream(&mut stream)?.is_some() {{}}\n"
+            )
+            .unwrap();
         } else {
             writeln!(
                 stringifier,
-                "let mut stream = writer.finish()?;\n\
-                    stream.seek(SeekFrom::Start({junk_len}))?;\n"
+                "while matches!(read_zipfile_from_stream(&mut stream), Ok(Some(_))) {{}}\n"
             )
             .unwrap();
-            if streamable {
-                writeln!(
-                    stringifier,
-                    "while read_zipfile_from_stream(&mut stream)?.is_some() {{}}\n"
-                )
-                .unwrap();
-            } else {
-                writeln!(
-                    stringifier,
-                    "while matches!(read_zipfile_from_stream(&mut stream), Ok(Some(_))) {{}}\n"
-                )
-                .unwrap();
-            }
-            let mut stream = writer.finish()?;
-            stream.seek(SeekFrom::Start(junk_len as u64))?;
-            loop {
-                match read_zipfile_from_stream(&mut stream) {
-                    Ok(None) => break,
-                    Ok(Some(mut file)) => {
-                        let _ = copy(&mut file, &mut sink())?;
-                    }
-                    Err(e) => {
-                        if streamable {
-                            return Err(e);
-                        } else {
-                            break;
-                        }
+        }
+        loop {
+            match read_zipfile_from_stream(&mut stream) {
+                Ok(None) => break,
+                Ok(Some(mut file)) => {
+                    let _ = copy(&mut file, &mut sink())?;
+                }
+                Err(e) => {
+                    if streamable {
+                        return Err(e);
+                    } else {
+                        break;
                     }
                 }
             }
-            if !comment_contains_signature {
-                writeln!(stringifier, "let _ = ZipArchive::new(stream)?\n").unwrap();
-                let _ = ZipArchive::new(stream)?;
+        }
+        stream.seek(SeekFrom::Start(junk_len as u64))?;
+        let mut iterable = ZipIterable::try_new(stream, Config::default())?
+            .enforce_header_consistency(!comment_contains_signature);
+        let mut iterable_with_files = iterable
+            .files_with_cloned_reader(ZipReadOptions::default().enforce_header_consistency(true))?;
+        // https://github.com/zip-rs/zip2/issues/1337: This isn't an actual Iterator
+        while let Some(file_result) = iterable_with_files.next() {
+            // FIXME: Find conditions under which we can expect this to succeed (e.g. no encryption).
+            if let Ok(mut file) = file_result {
+                let _ = copy(&mut file, &mut sink())?;
             }
         }
         Ok(())
@@ -1134,5 +1230,52 @@ mod tests {
             };
             case.execute(&mut String::new()).unwrap();
         }
+    }
+
+    #[test]
+    fn path_clamping_respects_utf8_boundaries_and_entry_header_limits() {
+        for (max_bytes, expected) in [(0, ""), (1, "a"), (2, "a"), (3, "a"), (4, "a"), (5, "a🦀")]
+        {
+            let mut s = String::from("a🦀b");
+            truncate_to_char_boundary(&mut s, max_bytes);
+            assert_eq!(s, expected);
+        }
+
+        let mut options = FullFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .validate_extra_fields(true);
+        options
+            .add_extra_field(0x1234, vec![0xAA; 100], true)
+            .unwrap();
+        let file_op_basic = BasicFileOperation::WriteNormalFile {
+            contents: Box::new([]),
+            options,
+        };
+        let max_file_path_len = max_path_len_for(&file_op_basic).unwrap();
+        let file_case = FuzzTestCase {
+            initial_junk: Box::new([]),
+            operations: vec![(
+                file_operation(file_op_basic, "a".repeat(max_file_path_len)),
+                false,
+            )]
+            .into_boxed_slice(),
+            flush_on_finish_file: false,
+        };
+        file_case.execute(&mut String::new()).unwrap();
+
+        let dir_op_basic = BasicFileOperation::WriteDirectory(
+            FullFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+        );
+        let max_dir_path_len = max_path_len_for(&dir_op_basic).unwrap();
+        let dir_case = FuzzTestCase {
+            initial_junk: Box::new([]),
+            operations: vec![(
+                file_operation(dir_op_basic, "b".repeat(max_dir_path_len)),
+                false,
+            )]
+            .into_boxed_slice(),
+            flush_on_finish_file: false,
+        };
+        dir_case.execute(&mut String::new()).unwrap();
     }
 }

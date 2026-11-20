@@ -36,7 +36,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -72,7 +72,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -111,7 +111,7 @@ jobs:
           fi
           echo "ANDROID_NDK_HOME=$NDK_ROOT/$LATEST_NDK" >> "$GITHUB_ENV"
           echo "Using NDK: $LATEST_NDK"
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -142,7 +142,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -185,7 +185,7 @@ jobs:
             api.deps.dev:443
             api.securityscorecards.dev:443
       - name: 'Checkout Repository'
-        uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+        uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: 'Dependency Review'
@@ -226,7 +226,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -274,7 +274,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -326,7 +326,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -358,7 +358,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
@@ -373,7 +373,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -410,7 +410,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -482,7 +482,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - name: Setup Rust and Cargo
@@ -542,7 +542,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
@@ -572,7 +572,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
@@ -602,7 +602,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
@@ -633,7 +633,7 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: useblacksmith/checkout@2b9fe87d796feea153b455ec2f3125b471a7b0e7 # 1.8.2
+      - uses: useblacksmith/checkout@75c49b6ed30ce59336e9252425796cfcfac155f8 # 1.8.3
         with:
           persist-credentials: false
       - uses: ./.github/actions/fuzz-ci
