@@ -410,10 +410,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This uses the given read configuration to initially read the archive.
     pub fn new_append_with_config(config: Config, mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         readwriter.seek(SeekFrom::Start(0))?;
-        let mut metadata = ZipArchive::get_metadata(config, &mut readwriter)?;
-        for file in metadata.shared.files.values_mut() {
-            let _ = file.data_start(&mut readwriter)?;
-        }
+        let metadata = ZipArchive::get_metadata(config, &mut readwriter)?;
         // `ZipArchive::get_metadata` leaves `readwriter` at the end of the central directory;
         // seek back to its start so appended entries overwrite it instead of leaving a second one.
         readwriter.seek(SeekFrom::Start(metadata.shared.dir_start))?;
