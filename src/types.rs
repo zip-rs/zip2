@@ -657,6 +657,19 @@ impl ZipFileData {
         Ok(())
     }
 
+    pub(crate) fn data_descriptor_len(&self) -> usize {
+        if !self.is_using_data_descriptor() {
+            return 0;
+        }
+        if self.large_file {
+            return Zip64DataDescriptorBlock::SIZE;
+        }
+        if self.compressed_size >= ZIP64_BYTES_THR || self.uncompressed_size >= ZIP64_BYTES_THR {
+            return Zip64DataDescriptorBlock::SIZE;
+        }
+        ZipDataDescriptorBlock::SIZE
+    }
+
     pub(crate) fn data_descriptor_block(&self) -> ZipDataDescriptorBlock {
         ZipDataDescriptorBlock {
             crc32: self.crc32,

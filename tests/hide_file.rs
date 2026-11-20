@@ -208,3 +208,102 @@ fn hide_file_same_bytes() {
     );
     assert_eq!(zip_modified.len(), zip_raw_copy.len());
 }
+
+#[test]
+fn erase_file_overwrites_payload_with_zeroes_and_keeps_survivors() -> ZipResult<()> {
+    let payload = vec![0xa5; 64 * 1024 + 37];
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("gone.txt", stored)?;
+    zip.write_all(&payload)?;
+    zip.start_file("kept.txt", stored)?;
+    zip.write_all(b"keep me")?;
+
+    let mut readable = zip.finish_into_readable()?;
+    let (header_start, data_start, compressed_size) = {
+        let gone = readable.by_name("gone.txt")?;
+        (
+            gone.header_start(),
+            gone.data_start().unwrap(),
+            gone.compressed_size(),
+        )
+    };
+    let baseline = readable.into_inner().into_inner();
+
+    let mut zip = ZipWriter::new_append(Cursor::new(baseline.clone()))?;
+    zip.erase_file("gone.txt", false)?;
+    let erased = zip.finish()?.into_inner();
+
+    assert!(
+        erased[header_start as usize..(data_start + compressed_size) as usize]
+            .iter()
+            .all(|byte| *byte == 0)
+    );
+
+    let mut archive = ZipArchive::new(Cursor::new(erased))?;
+    assert_eq!(archive.len(), 1);
+    assert!(archive.by_name("gone.txt").is_err());
+    let mut contents = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name("kept.txt")?, &mut contents)?;
+    assert_eq!(contents, "keep me");
+    Ok(())
+}
+
+#[test]
+fn erase_file_can_randomize_payload() -> ZipResult<()> {
+    let payload = vec![0x3c; 64 * 1024 + 19];
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("gone.txt", stored)?;
+    zip.write_all(&payload)?;
+    let mut readable = zip.finish_into_readable()?;
+    let (data_start, compressed_size) = {
+        let gone = readable.by_name("gone.txt")?;
+        (gone.data_start().unwrap(), gone.compressed_size())
+    };
+    let baseline = readable.into_inner().into_inner();
+
+    let mut zip = ZipWriter::new_append(Cursor::new(baseline))?;
+    zip.erase_file("gone.txt", true)?;
+    let erased = zip.finish()?.into_inner();
+
+    assert_ne!(
+        &erased[data_start as usize..(data_start + compressed_size) as usize],
+        &payload[..]
+    );
+    assert!(
+        erased[data_start as usize..(data_start + compressed_size) as usize]
+            .iter()
+            .copied()
+            .any(|byte| byte != 0)
+    );
+    let archive = ZipArchive::new(Cursor::new(erased))?;
+    assert_eq!(archive.len(), 0);
+    Ok(())
+}
+
+#[test]
+fn erase_file_can_remove_the_entry_being_written() -> ZipResult<()> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "a.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )?;
+    zip.write_all(b"first")?;
+    zip.erase_file("a.txt", false)?;
+
+    let archive = ZipArchive::new(zip.finish()?)?;
+    assert_eq!(archive.len(), 0);
+    Ok(())
+}
+
+#[test]
+fn erase_file_reports_a_missing_entry() {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    assert!(matches!(
+        zip.erase_file("absent.txt", false),
+        Err(ZipError::FileNotFound)
+    ));
+}
