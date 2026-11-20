@@ -3956,7 +3956,7 @@ mod tests {
     #[test]
     fn truncating_finish_truncates_stale_tail() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.start_file("a", SimpleFileOptions::default())?;
+        writer.start_file("a", SimpleFileOptions::default().compression_method(Stored))?;
         writer.write_all(b"aaaa")?;
         writer.start_file("b", SimpleFileOptions::default())?;
         writer.write_all(b"bbbb")?;
@@ -4020,7 +4020,7 @@ mod tests {
     #[test]
     fn truncating_finish_into_readable_truncates_stale_tail() -> ZipResult<()> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        writer.start_file("a", SimpleFileOptions::default())?;
+        writer.start_file("a", SimpleFileOptions::default().compression_method(Stored))?;
         writer.write_all(b"aaaa")?;
         writer.start_file("b", SimpleFileOptions::default())?;
         writer.write_all(b"bbbb")?;
