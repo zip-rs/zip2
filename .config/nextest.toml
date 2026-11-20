@@ -7,3 +7,10 @@ slow-timeout = { period = "1m", terminate-after = 5 }
 
 [profile.default]
 slow-timeout = { period = "1m", terminate-after = 10 }
+
+[test-groups]
+toctou-race = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "binary(toctou_intermediate_symlink_race) & test(race)"
+test-group = "toctou-race"
