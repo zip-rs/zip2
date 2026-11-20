@@ -103,28 +103,47 @@ pub struct FileOperation<'k, 'n> {
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
+fn truncate_to_char_boundary(s: &mut String, max_bytes: usize) {
+    let mut end = max_bytes.min(s.len());
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
+}
+
+fn max_path_len_for(basic: &BasicFileOperation<'_, '_>) -> Option<usize> {
+    let extra_len: usize = basic
+        .options()
+        .map(|options| {
+            options
+                .extra_fields()
+                .iter()
+                .map(|x| x.full_size(true).max(x.full_size(false)))
+                .sum()
+        })
+        .unwrap_or(0);
+    let suffix_reserve = match basic {
+        BasicFileOperation::WriteDirectory(_) => 1, // trailing slash added
+        BasicFileOperation::ShallowCopy(_) | BasicFileOperation::DeepCopy(_) => 5, // trailing "_copy" added
+        _ => 0,
+    };
+    let header_overhead = size_of::<Magic>()
+        .checked_add(size_of::<ZipLocalEntryBlock>())?
+        .checked_add(extra_len)?
+        .checked_add(suffix_reserve)?;
+    // ZipWriter::start_entry rejects entry_len >= u16::MAX (strictly < 65535).
+    (usize::from(u16::MAX) - 1).checked_sub(header_overhead)
+}
+
 impl<'k, 'n, 'a: 'k + 'n> Arbitrary<'a> for FileOperation<'k, 'n> {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let basic = arbitrary_bounded_basic(u)?;
-        let Some(max_path_len) = 65535usize.checked_sub(
-            size_of::<Magic>()
-                + size_of::<ZipLocalEntryBlock>()
-                + basic
-                    .options()
-                    .map(|options| {
-                        options
-                            .extra_fields()
-                            .iter()
-                            .map(|x| x.full_size(true))
-                            .sum::<usize>()
-                    })
-                    .unwrap_or(0),
-        ) else {
+        let Some(max_path_len) = max_path_len_for(&basic) else {
             return Err(arbitrary::Error::IncorrectFormat);
         };
         let mut path: String = u.arbitrary()?;
         let reopen = u.arbitrary()?;
-        path.truncate(max_path_len);
+        truncate_to_char_boundary(&mut path, max_path_len);
         Ok(FileOperation {
             basic,
             path: path.into(),
@@ -1179,5 +1198,52 @@ mod tests {
             };
             case.execute(&mut String::new()).unwrap();
         }
+    }
+
+    #[test]
+    fn path_clamping_respects_utf8_boundaries_and_entry_header_limits() {
+        for (max_bytes, expected) in [(0, ""), (1, "a"), (2, "a"), (3, "a"), (4, "a"), (5, "a🦀")]
+        {
+            let mut s = String::from("a🦀b");
+            truncate_to_char_boundary(&mut s, max_bytes);
+            assert_eq!(s, expected);
+        }
+
+        let mut options = FullFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .validate_extra_fields(true);
+        options
+            .add_extra_field(0x1234, vec![0xAA; 100], true)
+            .unwrap();
+        let file_op_basic = BasicFileOperation::WriteNormalFile {
+            contents: Box::new([]),
+            options,
+        };
+        let max_file_path_len = max_path_len_for(&file_op_basic).unwrap();
+        let file_case = FuzzTestCase {
+            initial_junk: Box::new([]),
+            operations: vec![(
+                file_operation(file_op_basic, "a".repeat(max_file_path_len)),
+                false,
+            )]
+            .into_boxed_slice(),
+            flush_on_finish_file: false,
+        };
+        file_case.execute(&mut String::new()).unwrap();
+
+        let dir_op_basic = BasicFileOperation::WriteDirectory(
+            FullFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+        );
+        let max_dir_path_len = max_path_len_for(&dir_op_basic).unwrap();
+        let dir_case = FuzzTestCase {
+            initial_junk: Box::new([]),
+            operations: vec![(
+                file_operation(dir_op_basic, "b".repeat(max_dir_path_len)),
+                false,
+            )]
+            .into_boxed_slice(),
+            flush_on_finish_file: false,
+        };
+        dir_case.execute(&mut String::new()).unwrap();
     }
 }
