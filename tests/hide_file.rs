@@ -273,6 +273,11 @@ fn erase_file_can_randomize_payload() -> ZipResult<()> {
         &erased[data_start as usize..(data_start + compressed_size) as usize],
         &payload[..]
     );
+    assert!(
+        erased[data_start as usize..(data_start + compressed_size) as usize]
+            .iter()
+            .any(|byte| byte != 0)
+    );
     let archive = ZipArchive::new(Cursor::new(erased))?;
     assert_eq!(archive.len(), 0);
     Ok(())
