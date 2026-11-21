@@ -257,9 +257,9 @@ fn erase_file_can_randomize_payload() -> ZipResult<()> {
 
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("gone.txt", stored)?;
-    zip.write_all(&payload)?;
+    let (header_start, data_start, compressed_size) = {
     let mut readable = zip.finish_into_readable()?;
-    let (data_start, compressed_size) = {
+        (gone.header_start(), gone.data_start().unwrap(), gone.compressed_size())
         let gone = readable.by_name("gone.txt")?;
         (gone.data_start().unwrap(), gone.compressed_size())
     };
@@ -277,6 +277,13 @@ fn erase_file_can_randomize_payload() -> ZipResult<()> {
         erased[data_start as usize..(data_start + compressed_size) as usize]
             .iter()
             .copied()
+    // The full region from the local header through the last payload byte must be overwritten.
+    assert!(
+        erased[header_start as usize..(data_start + compressed_size) as usize]
+            .iter()
+            .all(|byte| *byte != 0x3c),
+        "original payload byte 0x3c should not survive in the erased region"
+    );
             .any(|byte| byte != 0)
     );
     let archive = ZipArchive::new(Cursor::new(erased))?;
