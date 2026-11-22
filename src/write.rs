@@ -1293,6 +1293,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             options = options.with_file_comment(file.comment());
         }
         for one_extra in file.extra_data_fields() {
+            // The writer computes the copy's own ZIP64 field from its sizes and offset; copying
+            // the source's as well would leave the entry with two.
+            if let ExtraField::Zip64ExtendedInformation(_) = one_extra {
+                continue;
+            }
             if let ExtraField::ExtendedTimestamp(timestamp) = one_extra {
                 if preserve_timestamp {
                     options = options.with_extended_timestamp(timestamp.mod_time(), None, None)?;
