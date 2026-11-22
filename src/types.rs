@@ -658,70 +658,101 @@ impl ZipFileData {
     }
 
     /// Returns the on-disk size of the data descriptor that follows the compressed data,
-    /// by peeking at the bytes at `data_start + compressed_size` and matching them against
-    /// the known signatured and signature-less layouts.
+    /// bounded by `max_end`, by peeking at `data_start + compressed_size` and matching against
+    /// the expected layouts (with and without the optional leading signature).
     ///
     /// Per APPNOTE 4.3.9.3 the leading `PK\x07\x08` signature on a data descriptor is optional.
-    /// This method disambiguates by comparing the full block content, not just the first four
-    /// bytes, which avoids false positives when `crc32 == 0x08074b50`.
-    pub(crate) fn data_descriptor_len<R: Read + Seek>(
+    /// Comparing the full block content (CRC-32 and sizes, not just the first four bytes)
+    /// disambiguates both forms even when `crc32 == 0x08074b50`.
+    pub(crate) fn data_descriptor_len<R: Read + Seek + ?Sized>(
         &self,
         reader: &mut R,
+        data_start: u64,
+        max_end: u64,
     ) -> ZipResult<usize> {
+        const MIN_DESCRIPTOR_SIZE: u64 = (ZipDataDescriptorBlock::SIZE - size_of::<Magic>()) as u64;
+
         if !self.is_using_data_descriptor() {
             return Ok(0);
         }
-        let is_zip64 = self.large_file
-            || self.compressed_size >= ZIP64_BYTES_THR
-            || self.uncompressed_size >= ZIP64_BYTES_THR;
-        let desc_start = match self
-            .data_start
-            .get()
-            .copied()
-            .and_then(|ds| ds.checked_add(self.compressed_size))
-        {
-            Some(pos) => pos,
-            None => {
-                // Overflow: fall back to static sizes.
-                return Ok(if is_zip64 {
-                    Zip64DataDescriptorBlock::SIZE
-                } else {
-                    ZipDataDescriptorBlock::SIZE
-                });
-            }
-        };
-        // Read enough bytes to cover the largest possible descriptor (24 bytes for ZIP64 signatured).
-        let saved_pos = reader.stream_position()?;
-        reader.seek(SeekFrom::Start(desc_start))?;
-        let mut buf = [0u8; Zip64DataDescriptorBlock::SIZE];
-        let n = reader.read(&mut buf).unwrap_or(0);
-        let _ = reader.seek(SeekFrom::Start(saved_pos));
-        if n == 0 {
+        let desc_start = self.check_data_end(data_start)?;
+        let available = max_end.saturating_sub(desc_start);
+        if available < MIN_DESCRIPTOR_SIZE {
             return Ok(0);
         }
-        // Compare the full block content to disambiguate signatured vs. signature-less descriptors.
-        let sig = 0x08074b50_u32.to_le_bytes();
-        let crc_bytes = self.crc32.to_le_bytes();
-        if is_zip64 && n >= Zip64DataDescriptorBlock::SIZE {
-            // Signatured ZIP64: [PK\x07\x08][crc32][compressed_size u64][uncompressed_size u64]
-            if buf[0..4] == sig && buf[4..8] == crc_bytes {
+
+        let to_read = available.min(Zip64DataDescriptorBlock::SIZE as u64) as usize;
+        let mut buf = [0u8; Zip64DataDescriptorBlock::SIZE];
+        let saved_pos = reader.stream_position()?;
+        let read_res = (|| -> std::io::Result<usize> {
+            reader.seek(SeekFrom::Start(desc_start))?;
+            let mut filled = 0;
+            while filled < to_read {
+                match reader.read(&mut buf[filled..to_read]) {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(filled)
+        })();
+        let seek_res = reader.seek(SeekFrom::Start(saved_pos));
+        let n = match (read_res, seek_res) {
+            (Ok(n), Ok(_)) => n,
+            (Err(e), _) => return Err(e.into()),
+            (Ok(_), Err(e)) => return Err(e.into()),
+        };
+
+        let is_zip64 = self.large_file
+            || self.compressed_size >= ZIP64_BYTES_THR
+            || self.uncompressed_size >= ZIP64_BYTES_THR
+            || self
+                .extra_fields
+                .inner
+                .iter()
+                .any(|e| matches!(e, ExtraField::Zip64ExtendedInformation(_)));
+
+        if is_zip64 {
+            let mut expected64 = [0u8; Zip64DataDescriptorBlock::SIZE];
+            expected64[0..4].copy_from_slice(&Zip64DataDescriptorBlock::MAGIC.to_le_bytes());
+            expected64[4..8].copy_from_slice(&self.crc32.to_le_bytes());
+            expected64[8..16].copy_from_slice(&self.compressed_size.to_le_bytes());
+            expected64[16..24].copy_from_slice(&self.uncompressed_size.to_le_bytes());
+
+            if n >= Zip64DataDescriptorBlock::SIZE
+                && buf[..Zip64DataDescriptorBlock::SIZE] == expected64
+            {
                 return Ok(Zip64DataDescriptorBlock::SIZE);
             }
-            // Signature-less ZIP64: [crc32][compressed_size u64][uncompressed_size u64]
-            if buf[0..4] == crc_bytes {
-                return Ok(Zip64DataDescriptorBlock::SIZE - 4);
-            }
-        } else if !is_zip64 && n >= ZipDataDescriptorBlock::SIZE {
-            // Signatured ZIP32: [PK\x07\x08][crc32][compressed_size u32][uncompressed_size u32]
-            if buf[0..4] == sig && buf[4..8] == crc_bytes {
-                return Ok(ZipDataDescriptorBlock::SIZE);
-            }
-            // Signature-less ZIP32: [crc32][compressed_size u32][uncompressed_size u32]
-            if buf[0..4] == crc_bytes {
-                return Ok(ZipDataDescriptorBlock::SIZE - 4);
+            let without_sig_len = Zip64DataDescriptorBlock::SIZE - size_of::<Magic>();
+            if n >= without_sig_len && buf[..without_sig_len] == expected64[size_of::<Magic>()..] {
+                return Ok(without_sig_len);
             }
         }
-        // No recognizable descriptor found (e.g. a 0-byte directory entry with the DD flag set).
+
+        if let (Ok(comp32), Ok(uncomp32)) = (
+            u32::try_from(self.compressed_size),
+            u32::try_from(self.uncompressed_size),
+        ) {
+            let mut expected32 = [0u8; ZipDataDescriptorBlock::SIZE];
+            expected32[0..4].copy_from_slice(&ZipDataDescriptorBlock::MAGIC.to_le_bytes());
+            expected32[4..8].copy_from_slice(&self.crc32.to_le_bytes());
+            expected32[8..12].copy_from_slice(&comp32.to_le_bytes());
+            expected32[12..16].copy_from_slice(&uncomp32.to_le_bytes());
+
+            if n >= ZipDataDescriptorBlock::SIZE
+                && buf[..ZipDataDescriptorBlock::SIZE] == expected32
+            {
+                return Ok(ZipDataDescriptorBlock::SIZE);
+            }
+            let without_sig_len = ZipDataDescriptorBlock::SIZE - size_of::<Magic>();
+            if n >= without_sig_len && buf[..without_sig_len] == expected32[size_of::<Magic>()..] {
+                return Ok(without_sig_len);
+            }
+        }
+
+        // No matching descriptor found (e.g. a 0-byte directory entry with the DD flag set).
         Ok(0)
     }
 
