@@ -362,3 +362,40 @@ fn enforce_header_consistency_still_yields_duplicate_names() {
     assert_eq!(read_entry(second, files), b"second");
     assert!(files.next().is_none());
 }
+
+#[test]
+fn fake_eocd_in_comment_falls_back_to_real_eocd() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
+
+    // 22-byte fake EOCD inside the archive comment declaring 65,535 entries in a size too small
+    // to hold them, with a 0-byte comment so it aligns with EOF.
+    let fake_eocd: [u8; 22] = [
+        0x50, 0x4b, 0x05, 0x06, // EOCD magic
+        0x00, 0x00, // disk number
+        0x00, 0x00, // disk with CD
+        0xff, 0xff, // entries on this disk (65535)
+        0xff, 0xff, // total entries (65535)
+        0x00, 0x05, 0x06, 0x00, // CD size (394,496 bytes < 65535 * 46)
+        0x06, 0x00, 0x00, 0x00, // CD offset
+        0x00, 0x00, // comment length (0)
+    ];
+
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .set_raw_comment(fake_eocd.to_vec().into_boxed_slice())
+        .unwrap();
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("a.txt", stored).unwrap();
+    writer.write_all(b"alpha").unwrap();
+    let bytes = writer.finish().unwrap().into_inner();
+
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default()).unwrap();
+    assert_eq!(archive.len(), 1);
+    let files = archive.files().unwrap();
+    let entry = files.next().unwrap().unwrap();
+    assert_eq!(entry.name().unwrap(), "a.txt");
+    assert_eq!(read_entry(entry, files), b"alpha");
+    assert!(files.next().is_none());
+}

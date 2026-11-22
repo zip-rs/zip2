@@ -73,7 +73,26 @@ impl<R: Read + Seek> ZipIterable<R> {
                 Err(e) => return Err(last_err.unwrap_or(e)),
             };
 
-            match CentralDirectoryInfo::try_from(&cde) {
+            let candidate = CentralDirectoryInfo::try_from(&cde).and_then(|info| {
+                if info.disk_number != info.disk_with_central_directory {
+                    return Err(ZipError::UnsupportedArchive(
+                        "Support for multi-disk files is not implemented",
+                    ));
+                }
+
+                // A central directory header is at least 46 bytes, so this bounds the declared
+                // entry count by the space the directory actually occupies.
+                let max_entries = usize::try_from(info.directory_size / 46).unwrap_or(usize::MAX);
+                if info.number_of_files > max_entries {
+                    return Err(invalid!(
+                        "Central directory declares more entries than its size allows"
+                    ));
+                }
+
+                Ok(info)
+            });
+
+            match candidate {
                 Ok(info) => break info,
                 Err(e) => {
                     // Other readers use a record whose CD ends at it, so don't fall back past it.
@@ -84,22 +103,6 @@ impl<R: Read + Seek> ZipIterable<R> {
                 }
             }
         };
-
-        if central_directory.disk_number != central_directory.disk_with_central_directory {
-            return Err(ZipError::UnsupportedArchive(
-                "Support for multi-disk files is not implemented",
-            ));
-        }
-
-        // A central directory header is at least 46 bytes, so this bounds the declared entry
-        // count by the space the directory actually occupies.
-        let max_entries =
-            usize::try_from(central_directory.directory_size / 46).unwrap_or(usize::MAX);
-        if central_directory.number_of_files > max_entries {
-            return Err(invalid!(
-                "Central directory declares more entries than its size allows"
-            ));
-        }
 
         Ok(Self {
             files: ZipIterableFiles::new(reader, central_directory),
