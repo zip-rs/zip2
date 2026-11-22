@@ -585,9 +585,19 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
     /// Write the zip file into the backing stream, truncate it if it can be made shorter, then
     /// produce a readable archive of that data.
-    pub fn truncating_finish_into_readable<TruncateResult: Into<io::Result<()>>>(
+    ///
+    /// `truncate` is invoked only when stale trailing bytes remain after the written footer, with
+    /// the stream cursor positioned at the new end of the archive (`length`). Both infallible
+    /// callbacks returning `()` and fallible callbacks returning [`io::Result<()>`] are accepted
+    /// via [`TruncateResult`].
+    ///
+    /// Note: if `truncate` returns an `Err`, the backing stream may still contain un-truncated
+    /// trailing bytes (including a stale central directory / end-of-central-directory record from
+    /// before [`ZipWriter::new_append`] or [`ZipWriter::abort_file`]), because finalization
+    /// skipped blanking or relocating the tail in anticipation of truncation.
+    pub fn truncating_finish_into_readable<R: TruncateResult>(
         mut self,
-        truncate: impl FnOnce(&mut A, u64) -> TruncateResult,
+        truncate: impl FnOnce(&mut A, u64) -> R,
     ) -> ZipResult<ZipArchive<A>> {
         let FinalizeResult {
             last_file_end,
@@ -596,7 +606,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         } = self.finalize(true)?;
         let mut inner = self.close_writer()?;
         if let Some(truncate_to) = truncate_to {
-            truncate(&mut inner, truncate_to).into()?;
+            truncate(&mut inner, truncate_to).into_io_result()?;
         }
         let comment = mem::take(&mut self.comment);
         let zip64_extensible_data_sector = mem::take(&mut self.zip64_extensible_data_sector);
@@ -609,6 +619,32 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             last_file_end,
             central_start,
         ))
+    }
+}
+
+/// Conversion from the return value of a truncation callback passed to
+/// [`ZipWriter::truncating_finish`] or [`ZipWriter::truncating_finish_into_readable`] into an
+/// [`io::Result<()>`].
+///
+/// Implemented for `()` and [`io::Result<()>`] so both infallible callbacks (such as
+/// [`Vec::truncate`]) and fallible callbacks (such as [`std::fs::File::set_len`]) work directly
+/// without explicit type annotations.
+pub trait TruncateResult {
+    /// Converts this truncation callback result into an [`io::Result<()>`].
+    fn into_io_result(self) -> io::Result<()>;
+}
+
+impl TruncateResult for () {
+    #[inline]
+    fn into_io_result(self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl TruncateResult for io::Result<()> {
+    #[inline]
+    fn into_io_result(self) -> io::Result<()> {
+        self
     }
 }
 
@@ -1553,14 +1589,24 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Finish the last file and write all other zip-structures. Truncate the underlying writer if
     /// necessary using the provided method.
-    pub fn truncating_finish<TruncateResult: Into<io::Result<()>>>(
+    ///
+    /// `truncate` is invoked only when stale trailing bytes remain after the written footer, with
+    /// the stream cursor positioned at the new end of the archive (`length`). Both infallible
+    /// callbacks returning `()` and fallible callbacks returning [`io::Result<()>`] are accepted
+    /// via [`TruncateResult`].
+    ///
+    /// Note: if `truncate` returns an `Err`, the backing stream may still contain un-truncated
+    /// trailing bytes (including a stale central directory / end-of-central-directory record from
+    /// before [`ZipWriter::new_append`] or [`ZipWriter::abort_file`]), because finalization
+    /// skipped blanking or relocating the tail in anticipation of truncation.
+    pub fn truncating_finish<R: TruncateResult>(
         mut self,
-        truncate: impl FnOnce(&mut W, u64) -> TruncateResult,
+        truncate: impl FnOnce(&mut W, u64) -> R,
     ) -> ZipResult<W> {
         let FinalizeResult { truncate_to, .. } = self.finalize(true)?;
         let mut inner = self.close_writer()?;
         if let Some(truncate_to) = truncate_to {
-            truncate(&mut inner, truncate_to).into()?;
+            truncate(&mut inner, truncate_to).into_io_result()?;
         }
         Ok(inner)
     }
@@ -1739,7 +1785,6 @@ impl<W: Write + Seek> ZipWriter<W> {
                 io::copy(&mut io::repeat(0xFF).take(stream_end - footer_end), writer)?;
             } else if footer_end < stream_end {
                 if can_truncate {
-                    writer.seek(SeekFrom::Start(footer_end))?;
                     writer.seek(SeekFrom::Start(footer_end))?;
                     truncate_to = Some(footer_end);
                 } else {
@@ -3969,8 +4014,6 @@ mod tests {
         let output = writer.truncating_finish(|cursor, length| {
             truncated = true;
             cursor.get_mut().truncate(length as usize);
-            cursor.set_position(length);
-            Ok::<_, std::io::Error>(())
         })?;
 
         assert!(truncated);
@@ -3993,7 +4036,6 @@ mod tests {
         let mut invoked = false;
         writer.truncating_finish(|_, _| {
             invoked = true;
-            Ok::<_, std::io::Error>(())
         })?;
         assert!(!invoked);
         Ok(())
@@ -4009,8 +4051,7 @@ mod tests {
 
         let mut writer = ZipWriter::new_append(writer.finish()?)?;
         writer.abort_file()?;
-        let result =
-            writer.truncating_finish(|_, _| Err::<(), _>(std::io::Error::other("truncate failed")));
+        let result = writer.truncating_finish(|_, _| Err(std::io::Error::other("truncate failed")));
         assert!(matches!(result, Err(crate::result::ZipError::Io(_))));
         Ok(())
     }
@@ -4029,8 +4070,6 @@ mod tests {
         let mut archive = writer.truncating_finish_into_readable(|cursor, length| {
             truncated = true;
             cursor.get_mut().truncate(length as usize);
-            cursor.set_position(length);
-            Ok::<_, std::io::Error>(())
         })?;
 
         assert!(truncated);
@@ -4039,6 +4078,89 @@ mod tests {
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
         assert_eq!(contents, b"aaaa");
+        Ok(())
+    }
+
+    #[test]
+    fn truncating_finish_with_comment_truncates_instead_of_blanking_tail() -> ZipResult<()> {
+        let comment = "c".repeat(256);
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer.set_comment(comment.clone())?;
+        writer.start_file("a", SimpleFileOptions::default().compression_method(Stored))?;
+        writer.write_all(b"aaaa")?;
+        writer.start_file("b", SimpleFileOptions::default().compression_method(Stored))?;
+        writer.write_all(b"bbbb")?;
+        let baseline = writer.finish()?.into_inner();
+        let baseline_len = baseline.len();
+
+        let mut writer = ZipWriter::new_append(Cursor::new(baseline))?;
+        writer.abort_file()?;
+        let mut truncated = false;
+        let output = writer.truncating_finish(|cursor, length| {
+            truncated = true;
+            cursor.get_mut().truncate(length as usize);
+        })?;
+
+        assert!(truncated);
+        assert!(output.get_ref().len() < baseline_len);
+        assert_eq!(output.get_ref().len() as u64, output.position());
+        let mut archive = ZipArchive::new(output)?;
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive.comment(), comment.as_bytes());
+        let mut contents = Vec::new();
+        archive.by_name("a")?.read_to_end(&mut contents)?;
+        assert_eq!(contents, b"aaaa");
+        Ok(())
+    }
+
+    #[cfg(not(miri))]
+    #[test]
+    fn truncating_finish_file_resets_cursor_to_eof() -> ZipResult<()> {
+        use std::io::Seek;
+
+        let mut writer = ZipWriter::new(tempfile::tempfile()?);
+        writer.start_file("a", SimpleFileOptions::default().compression_method(Stored))?;
+        writer.write_all(b"aaaa")?;
+        writer.start_file("b", SimpleFileOptions::default().compression_method(Stored))?;
+        writer.write_all(b"bbbbbbbbbbbbbbbb")?;
+        let full_file = writer.finish()?;
+        let full_len = full_file.metadata()?.len();
+
+        let mut writer = ZipWriter::new_append(full_file)?;
+        writer.abort_file()?;
+        let mut file = writer.truncating_finish(|f, len| f.set_len(len))?;
+        let truncated_len = file.metadata()?.len();
+        assert!(truncated_len < full_len);
+        assert_eq!(file.stream_position()?, truncated_len);
+
+        let mut archive = ZipArchive::new(file)?;
+        assert_eq!(archive.len(), 1);
+        let mut contents = Vec::new();
+        archive.by_name("a")?.read_to_end(&mut contents)?;
+        assert_eq!(contents, b"aaaa");
+        Ok(())
+    }
+
+    #[cfg(not(miri))]
+    #[test]
+    fn truncating_finish_into_readable_file_truncates_and_reads() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(tempfile::tempfile()?);
+        writer.start_file("a", SimpleFileOptions::default().compression_method(Stored))?;
+        writer.write_all(b"aaaa")?;
+        writer.start_file("b", SimpleFileOptions::default().compression_method(Stored))?;
+        writer.write_all(b"bbbbbbbbbbbbbbbb")?;
+        let full_file = writer.finish()?;
+        let full_len = full_file.metadata()?.len();
+
+        let mut writer = ZipWriter::new_append(full_file)?;
+        writer.abort_file()?;
+        let mut archive = writer.truncating_finish_into_readable(|f, len| f.set_len(len))?;
+        assert_eq!(archive.len(), 1);
+        let mut contents = Vec::new();
+        archive.by_name("a")?.read_to_end(&mut contents)?;
+        assert_eq!(contents, b"aaaa");
+        let file = archive.into_inner();
+        assert!(file.metadata()?.len() < full_len);
         Ok(())
     }
 
