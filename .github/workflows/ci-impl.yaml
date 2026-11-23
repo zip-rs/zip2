@@ -312,7 +312,7 @@ jobs:
         rustalias: [stable, nightly]
         manifest: ["Cargo.toml"]
         feature:
-          - { key: optional-dates, flags: "--features chrono,jiff-02,nt-time,legacy-zip" }
+          - { key: optional-dates, flags: "--features chrono,jiff-02,jiff-1,nt-time,legacy-zip" }
           - { key: default, flags: "" }
           - { key: no-default-features, flags: "--no-default-features" }
         include:
