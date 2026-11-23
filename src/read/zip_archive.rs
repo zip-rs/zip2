@@ -265,9 +265,27 @@ impl<R: Read + Seek> ZipArchive<R> {
             };
 
             // Turn EOCD into internal representation.
-            match CentralDirectoryInfo::try_from(&cde)
-                .and_then(|info| Self::read_central_header(&info, config, reader, &mut cd_chains))
-            {
+            let info = match CentralDirectoryInfo::try_from(&cde) {
+                Ok(info) => info,
+                Err(e) => {
+                    // Other readers use a record whose CD ends at it, so don't fall back past it.
+                    if cde.central_directory_abuts_end() {
+                        return Err(e);
+                    }
+                    last_err = Some(e);
+                    continue;
+                }
+            };
+
+            // Keep multi-disk rejection outside the EOCD fallback path so a trailing multi-disk
+            // EOCD cannot be bypassed by falling back to an earlier single-disk EOCD (ZIP cloaking).
+            if info.disk_number != info.disk_with_central_directory {
+                return Err(ZipError::UnsupportedArchive(
+                    "Support for multi-disk files is not implemented",
+                ));
+            }
+
+            match Self::read_central_header(&info, config, reader, &mut cd_chains) {
                 Ok(shared) => {
                     let zip64_extensible_data_sector = if let Some(eocd64) = cde.eocd64 {
                         eocd64.data.zip64_extensible_data_sector
@@ -335,12 +353,6 @@ impl<R: Read + Seek> ZipArchive<R> {
         } else {
             dir_info.number_of_files.min(max_files)
         };
-
-        if dir_info.disk_number != dir_info.disk_with_central_directory {
-            return Err(ZipError::UnsupportedArchive(
-                "Support for multi-disk files is not implemented",
-            ));
-        }
 
         if file_capacity.saturating_mul(size_of::<ZipFileData>()) > isize::MAX as usize {
             return Err(ZipError::UnsupportedArchive("Oversized central directory"));

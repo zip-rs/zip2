@@ -202,3 +202,58 @@ fn test_eocd64_underflow_defense() {
     // Must not panic with integer underflow
     let _ = ZipArchive::new(reader);
 }
+
+/// Verifies that a trailing multi-disk ZIP64 EOCD (`disk_number = 0`,
+/// `disk_with_central_directory = 1`) whose CD does not abut the EOCD hard-fails
+/// with `UnsupportedArchive` instead of falling back to an earlier single-disk EOCD
+/// (which would allow ZIP cloaking).
+#[test]
+fn test_multidisk_zip64_eocd_does_not_fall_back_to_earlier_eocd() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::ZipWriter;
+    use zip::result::ZipError;
+    use zip::write::SimpleFileOptions;
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("a.txt", stored).unwrap();
+    writer.write_all(b"alpha").unwrap();
+    let mut bytes = writer.finish().unwrap().into_inner();
+    let eocd64_offset = bytes.len() as u64;
+
+    // Trailing ZIP64 EOCD declaring disk_number = 0, disk_with_central_directory = 1 (multi-disk)
+    // with a non-abutting central directory offset.
+    bytes.extend_from_slice(&0x0606_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&44u64.to_le_bytes()); // record_size
+    bytes.extend_from_slice(&45u16.to_le_bytes()); // version_made_by
+    bytes.extend_from_slice(&45u16.to_le_bytes()); // version_needed_to_extract
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // disk_number
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // disk_with_central_directory (multi-disk)
+    bytes.extend_from_slice(&1u64.to_le_bytes()); // number_of_files_on_this_disk
+    bytes.extend_from_slice(&1u64.to_le_bytes()); // number_of_files
+    bytes.extend_from_slice(&46u64.to_le_bytes()); // central_directory_size
+    bytes.extend_from_slice(&0u64.to_le_bytes()); // central_directory_offset (non-abutting)
+
+    // ZIP64 Locator matching disk_with_central_directory = 1
+    bytes.extend_from_slice(&0x0706_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // disk_with_central_directory
+    bytes.extend_from_slice(&eocd64_offset.to_le_bytes()); // end_of_central_directory_offset
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // number_of_disks
+
+    // ZIP32 EOCD signaling ZIP64
+    bytes.extend_from_slice(&0x0605_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // disk_number
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // disk_with_central_directory
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // number_of_files_on_this_disk
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // number_of_files
+    bytes.extend_from_slice(&0xffff_ffffu32.to_le_bytes()); // central_directory_size
+    bytes.extend_from_slice(&0xffff_ffffu32.to_le_bytes()); // central_directory_offset
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // comment_length
+
+    let err = ZipArchive::new(Cursor::new(bytes)).unwrap_err();
+    assert!(
+        matches!(err, ZipError::UnsupportedArchive(_)),
+        "expected UnsupportedArchive for multi-disk ZIP64 EOCD, got {err:?}"
+    );
+}
