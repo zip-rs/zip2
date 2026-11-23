@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.8.2](https://github.com/zip-rs/zip2/compare/v9.8.1...v9.8.2) - 2026-11-23
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(read)* validate EOCD candidates inside ZipIterable::try_new fallback loop ([#1347](https://github.com/zip-rs/zip2/pull/1347))
+- *(read)* reject multi-disk EOCD outside ZipArchive fallback loop ([#1350](https://github.com/zip-rs/zip2/pull/1350))
+- raw_copy_file wrote two ZIP64 extra fields when the copy needed its own ([#1349](https://github.com/zip-rs/zip2/pull/1349))
+
 ## [9.8.1](https://github.com/zip-rs/zip2/compare/v9.8.0...v9.8.1) - 2026-11-20
 
 ### <!-- 1 -->🐛 Bug Fixes
