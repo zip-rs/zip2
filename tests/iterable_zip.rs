@@ -445,3 +445,41 @@ fn multidisk_zip64_eocd_does_not_fall_back_to_earlier_eocd() {
         "expected UnsupportedArchive for multi-disk EOCD, got {err:?}"
     );
 }
+
+#[test]
+fn fake_eocd_in_comment_with_inflated_cd_size_falls_back_to_real_eocd() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
+
+    // 22-byte fake EOCD in the archive comment with an inflated `central_directory_size`
+    // (0xFFFF_FFFF) so `number_of_files (10) <= directory_size / 46`, even though fewer than
+    // 10 * 46 bytes physically exist between `directory_start` and the fake EOCD.
+    let fake_eocd: [u8; 22] = [
+        0x50, 0x4b, 0x05, 0x06, // EOCD magic
+        0x00, 0x00, // disk number
+        0x00, 0x00, // disk with CD
+        0x0a, 0x00, // entries on this disk (10)
+        0x0a, 0x00, // total entries (10)
+        0xff, 0xff, 0xff, 0xff, // inflated CD size (passes directory_size / 46)
+        0x06, 0x00, 0x00, 0x00, // CD offset
+        0x00, 0x00, // comment length (0)
+    ];
+
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .set_raw_comment(fake_eocd.to_vec().into_boxed_slice())
+        .unwrap();
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("a.txt", stored).unwrap();
+    writer.write_all(b"alpha").unwrap();
+    let bytes = writer.finish().unwrap().into_inner();
+
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default()).unwrap();
+    assert_eq!(archive.len(), 1);
+    let files = archive.files().unwrap();
+    let entry = files.next().unwrap().unwrap();
+    assert_eq!(entry.name().unwrap(), "a.txt");
+    assert_eq!(read_entry(entry, files), b"alpha");
+    assert!(files.next().is_none());
+}

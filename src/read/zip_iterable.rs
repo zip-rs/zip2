@@ -74,9 +74,20 @@ impl<R: Read + Seek> ZipIterable<R> {
             };
 
             let candidate = CentralDirectoryInfo::try_from(&cde).and_then(|info| {
+                let eocd_pos = cde
+                    .eocd64
+                    .as_ref()
+                    .map_or(cde.eocd.position, |eocd64| eocd64.position);
+                let available_cd_bytes =
+                    eocd_pos.checked_sub(info.directory_start).ok_or_else(|| {
+                        invalid!("Central directory starts past end of central directory")
+                    })?;
+
                 // A central directory header is at least 46 bytes, so this bounds the declared
-                // entry count by the space the directory actually occupies.
-                let max_entries = usize::try_from(info.directory_size / 46).unwrap_or(usize::MAX);
+                // entry count by both the declared directory size and the physical bytes available
+                // before the EOCD record.
+                let max_entries = usize::try_from(info.directory_size.min(available_cd_bytes) / 46)
+                    .unwrap_or(usize::MAX);
                 if info.number_of_files > max_entries {
                     return Err(invalid!(
                         "Central directory declares more entries than its size allows"
