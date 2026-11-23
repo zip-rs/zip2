@@ -74,12 +74,6 @@ impl<R: Read + Seek> ZipIterable<R> {
             };
 
             let candidate = CentralDirectoryInfo::try_from(&cde).and_then(|info| {
-                if info.disk_number != info.disk_with_central_directory {
-                    return Err(ZipError::UnsupportedArchive(
-                        "Support for multi-disk files is not implemented",
-                    ));
-                }
-
                 // A central directory header is at least 46 bytes, so this bounds the declared
                 // entry count by the space the directory actually occupies.
                 let max_entries = usize::try_from(info.directory_size / 46).unwrap_or(usize::MAX);
@@ -103,6 +97,14 @@ impl<R: Read + Seek> ZipIterable<R> {
                 }
             }
         };
+
+        // Keep multi-disk rejection outside the EOCD fallback loop so a trailing multi-disk EOCD
+        // cannot be bypassed by falling back to an earlier single-disk EOCD (ZIP cloaking).
+        if central_directory.disk_number != central_directory.disk_with_central_directory {
+            return Err(ZipError::UnsupportedArchive(
+                "Support for multi-disk files is not implemented",
+            ));
+        }
 
         Ok(Self {
             files: ZipIterableFiles::new(reader, central_directory),

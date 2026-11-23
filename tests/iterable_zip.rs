@@ -399,3 +399,49 @@ fn fake_eocd_in_comment_falls_back_to_real_eocd() {
     assert_eq!(read_entry(entry, files), b"alpha");
     assert!(files.next().is_none());
 }
+
+#[test]
+fn multidisk_zip64_eocd_does_not_fall_back_to_earlier_eocd() {
+    use zip::result::ZipError;
+
+    // Start with a valid single-disk archive, then append a trailing ZIP64 EOCD declaring
+    // `disk_number = 0` and `disk_with_central_directory = 1` (multi-disk) whose CD does not
+    // abut the EOCD. ZipIterable must reject it as unsupported rather than falling back to the
+    // earlier single-disk EOCD (which would allow ZIP cloaking).
+    let mut bytes = raw_zip(&[("a.txt", b"alpha")]);
+    let eocd64_offset = bytes.len() as u64;
+
+    // ZIP64 End of Central Directory record (56 bytes: 4-byte magic + 8-byte record_size + 44 bytes)
+    bytes.extend_from_slice(&0x0606_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&44u64.to_le_bytes()); // record_size
+    bytes.extend_from_slice(&45u16.to_le_bytes()); // version_made_by
+    bytes.extend_from_slice(&45u16.to_le_bytes()); // version_needed_to_extract
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // disk_number
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // disk_with_central_directory (multi-disk)
+    bytes.extend_from_slice(&1u64.to_le_bytes()); // number_of_files_on_this_disk
+    bytes.extend_from_slice(&1u64.to_le_bytes()); // number_of_files
+    bytes.extend_from_slice(&46u64.to_le_bytes()); // central_directory_size
+    bytes.extend_from_slice(&0u64.to_le_bytes()); // central_directory_offset (does not abut eocd64)
+
+    // ZIP64 End of Central Directory locator (20 bytes)
+    bytes.extend_from_slice(&0x0706_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // disk_with_central_directory (matches eocd64)
+    bytes.extend_from_slice(&eocd64_offset.to_le_bytes()); // end_of_central_directory_offset
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // number_of_disks
+
+    // ZIP32 End of Central Directory record (22 bytes) signaling ZIP64
+    bytes.extend_from_slice(&0x0605_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // disk_number
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // disk_with_central_directory
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // number_of_files_on_this_disk
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // number_of_files
+    bytes.extend_from_slice(&0xffff_ffffu32.to_le_bytes()); // central_directory_size
+    bytes.extend_from_slice(&0xffff_ffffu32.to_le_bytes()); // central_directory_offset
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // comment_length
+
+    let err = ZipIterable::try_new(Cursor::new(bytes), Config::default()).unwrap_err();
+    assert!(
+        matches!(err, ZipError::UnsupportedArchive(_)),
+        "expected UnsupportedArchive for multi-disk EOCD, got {err:?}"
+    );
+}
