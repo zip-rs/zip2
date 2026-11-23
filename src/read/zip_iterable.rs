@@ -73,7 +73,31 @@ impl<R: Read + Seek> ZipIterable<R> {
                 Err(e) => return Err(last_err.unwrap_or(e)),
             };
 
-            match CentralDirectoryInfo::try_from(&cde) {
+            let candidate = CentralDirectoryInfo::try_from(&cde).and_then(|info| {
+                let eocd_pos = cde
+                    .eocd64
+                    .as_ref()
+                    .map_or(cde.eocd.position, |eocd64| eocd64.position);
+                let available_cd_bytes =
+                    eocd_pos.checked_sub(info.directory_start).ok_or_else(|| {
+                        invalid!("Central directory starts past end of central directory")
+                    })?;
+
+                // A central directory header is at least 46 bytes, so this bounds the declared
+                // entry count by both the declared directory size and the physical bytes available
+                // before the EOCD record.
+                let max_entries = usize::try_from(info.directory_size.min(available_cd_bytes) / 46)
+                    .unwrap_or(usize::MAX);
+                if info.number_of_files > max_entries {
+                    return Err(invalid!(
+                        "Central directory declares more entries than its size allows"
+                    ));
+                }
+
+                Ok(info)
+            });
+
+            match candidate {
                 Ok(info) => break info,
                 Err(e) => {
                     // Other readers use a record whose CD ends at it, so don't fall back past it.
@@ -85,19 +109,11 @@ impl<R: Read + Seek> ZipIterable<R> {
             }
         };
 
+        // Keep multi-disk rejection outside the EOCD fallback loop so a trailing multi-disk EOCD
+        // cannot be bypassed by falling back to an earlier single-disk EOCD (ZIP cloaking).
         if central_directory.disk_number != central_directory.disk_with_central_directory {
             return Err(ZipError::UnsupportedArchive(
                 "Support for multi-disk files is not implemented",
-            ));
-        }
-
-        // A central directory header is at least 46 bytes, so this bounds the declared entry
-        // count by the space the directory actually occupies.
-        let max_entries =
-            usize::try_from(central_directory.directory_size / 46).unwrap_or(usize::MAX);
-        if central_directory.number_of_files > max_entries {
-            return Err(invalid!(
-                "Central directory declares more entries than its size allows"
             ));
         }
 

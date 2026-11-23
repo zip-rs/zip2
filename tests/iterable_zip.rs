@@ -362,3 +362,124 @@ fn enforce_header_consistency_still_yields_duplicate_names() {
     assert_eq!(read_entry(second, files), b"second");
     assert!(files.next().is_none());
 }
+
+#[test]
+fn fake_eocd_in_comment_falls_back_to_real_eocd() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
+
+    // 22-byte fake EOCD inside the archive comment declaring 65,535 entries in a size too small
+    // to hold them, with a 0-byte comment so it aligns with EOF.
+    let fake_eocd: [u8; 22] = [
+        0x50, 0x4b, 0x05, 0x06, // EOCD magic
+        0x00, 0x00, // disk number
+        0x00, 0x00, // disk with CD
+        0xff, 0xff, // entries on this disk (65535)
+        0xff, 0xff, // total entries (65535)
+        0x00, 0x05, 0x06, 0x00, // CD size (394,496 bytes < 65535 * 46)
+        0x06, 0x00, 0x00, 0x00, // CD offset
+        0x00, 0x00, // comment length (0)
+    ];
+
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .set_raw_comment(fake_eocd.to_vec().into_boxed_slice())
+        .unwrap();
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("a.txt", stored).unwrap();
+    writer.write_all(b"alpha").unwrap();
+    let bytes = writer.finish().unwrap().into_inner();
+
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default()).unwrap();
+    assert_eq!(archive.len(), 1);
+    let files = archive.files().unwrap();
+    let entry = files.next().unwrap().unwrap();
+    assert_eq!(entry.name().unwrap(), "a.txt");
+    assert_eq!(read_entry(entry, files), b"alpha");
+    assert!(files.next().is_none());
+}
+
+#[test]
+fn multidisk_zip64_eocd_does_not_fall_back_to_earlier_eocd() {
+    use zip::result::ZipError;
+
+    // Start with a valid single-disk archive, then append a trailing ZIP64 EOCD declaring
+    // `disk_number = 0` and `disk_with_central_directory = 1` (multi-disk) whose CD does not
+    // abut the EOCD. ZipIterable must reject it as unsupported rather than falling back to the
+    // earlier single-disk EOCD (which would allow ZIP cloaking).
+    let mut bytes = raw_zip(&[("a.txt", b"alpha")]);
+    let eocd64_offset = bytes.len() as u64;
+
+    // ZIP64 End of Central Directory record (56 bytes: 4-byte magic + 8-byte record_size + 44 bytes)
+    bytes.extend_from_slice(&0x0606_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&44u64.to_le_bytes()); // record_size
+    bytes.extend_from_slice(&45u16.to_le_bytes()); // version_made_by
+    bytes.extend_from_slice(&45u16.to_le_bytes()); // version_needed_to_extract
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // disk_number
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // disk_with_central_directory (multi-disk)
+    bytes.extend_from_slice(&1u64.to_le_bytes()); // number_of_files_on_this_disk
+    bytes.extend_from_slice(&1u64.to_le_bytes()); // number_of_files
+    bytes.extend_from_slice(&46u64.to_le_bytes()); // central_directory_size
+    bytes.extend_from_slice(&0u64.to_le_bytes()); // central_directory_offset (does not abut eocd64)
+
+    // ZIP64 End of Central Directory locator (20 bytes)
+    bytes.extend_from_slice(&0x0706_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // disk_with_central_directory (matches eocd64)
+    bytes.extend_from_slice(&eocd64_offset.to_le_bytes()); // end_of_central_directory_offset
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // number_of_disks
+
+    // ZIP32 End of Central Directory record (22 bytes) signaling ZIP64
+    bytes.extend_from_slice(&0x0605_4b50u32.to_le_bytes()); // signature
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // disk_number
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // disk_with_central_directory
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // number_of_files_on_this_disk
+    bytes.extend_from_slice(&0xffffu16.to_le_bytes()); // number_of_files
+    bytes.extend_from_slice(&0xffff_ffffu32.to_le_bytes()); // central_directory_size
+    bytes.extend_from_slice(&0xffff_ffffu32.to_le_bytes()); // central_directory_offset
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // comment_length
+
+    let err = ZipIterable::try_new(Cursor::new(bytes), Config::default()).unwrap_err();
+    assert!(
+        matches!(err, ZipError::UnsupportedArchive(_)),
+        "expected UnsupportedArchive for multi-disk EOCD, got {err:?}"
+    );
+}
+
+#[test]
+fn fake_eocd_in_comment_with_inflated_cd_size_falls_back_to_real_eocd() {
+    use std::io::Write;
+    use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
+
+    // 22-byte fake EOCD in the archive comment with an inflated `central_directory_size`
+    // (0xFFFF_FFFF) so `number_of_files (10) <= directory_size / 46`, even though fewer than
+    // 10 * 46 bytes physically exist between `directory_start` and the fake EOCD.
+    let fake_eocd: [u8; 22] = [
+        0x50, 0x4b, 0x05, 0x06, // EOCD magic
+        0x00, 0x00, // disk number
+        0x00, 0x00, // disk with CD
+        0x0a, 0x00, // entries on this disk (10)
+        0x0a, 0x00, // total entries (10)
+        0xff, 0xff, 0xff, 0xff, // inflated CD size (passes directory_size / 46)
+        0x06, 0x00, 0x00, 0x00, // CD offset
+        0x00, 0x00, // comment length (0)
+    ];
+
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .set_raw_comment(fake_eocd.to_vec().into_boxed_slice())
+        .unwrap();
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("a.txt", stored).unwrap();
+    writer.write_all(b"alpha").unwrap();
+    let bytes = writer.finish().unwrap().into_inner();
+
+    let mut archive = ZipIterable::try_new(Cursor::new(bytes), Config::default()).unwrap();
+    assert_eq!(archive.len(), 1);
+    let files = archive.files().unwrap();
+    let entry = files.next().unwrap().unwrap();
+    assert_eq!(entry.name().unwrap(), "a.txt");
+    assert_eq!(read_entry(entry, files), b"alpha");
+    assert!(files.next().is_none());
+}
