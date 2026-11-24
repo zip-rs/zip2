@@ -264,7 +264,10 @@ impl ZipFileData {
         is_local: bool,
     ) -> HeaderConsistencyMetadata<&'a [u8]> {
         let is_using_data_descriptor = self.is_using_data_descriptor();
-        let (upath, upath_crc32) = crate::read::get_upath(&self.extra_fields);
+        let (upath, upath_crc32) = crate::read::get_upath(
+            &self.extra_fields,
+            self.overridden_header_name.as_deref().unwrap_or(name),
+        );
         // Only the flag bits that change how the data is decoded.
         let decoder_flags = if self.compression_method == CompressionMethod::IMPLODE {
             self.flags.as_u16()

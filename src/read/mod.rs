@@ -379,13 +379,19 @@ impl<'a> ZipReadOptions<'a> {
 }
 
 /// Helper to extract Info-ZIP UnicodePath (0x7075) extra field content and CRC32.
-pub(crate) fn get_upath(extra_fields: &ExtraFields) -> (Option<&[u8]>, Option<u32>) {
+pub(crate) fn get_upath<'a>(
+    extra_fields: &'a ExtraFields,
+    original_name: &[u8],
+) -> (Option<&'a [u8]>, Option<u32>) {
+    // APPNOTE 4.6.9: a stale name CRC makes the optional Unicode path
+    // inapplicable, including during strict local/central identity checks.
+    let crc = crc32fast::hash(original_name);
     extra_fields
         .inner
         .iter()
         .rev()
         .find_map(|f| match f {
-            ExtraField::UnicodePath(u) => Some((&*u.content, u.crc32)),
+            ExtraField::UnicodePath(u) if u.crc32 == crc => Some((&*u.content, u.crc32)),
             _ => None,
         })
         .unzip()

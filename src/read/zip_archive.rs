@@ -1454,6 +1454,43 @@ mod tests {
     }
 
     #[test]
+    fn stale_unicode_path_crc_does_not_override_or_invalidate_header_names() {
+        for name in ["parent/file.txt", "parent/café.txt"] {
+            let mut payload = Cursor::new(Vec::new());
+            let mut writer = ZipWriter::new(&mut payload);
+            let mut options = SimpleFileOptions::default().into_full_options();
+            let mut extra = vec![1];
+            extra.extend_from_slice(&crc32fast::hash(b"old-name").to_le_bytes());
+            extra.extend_from_slice(b"other.txt");
+            options.add_extra_field(0x7075, extra, false).unwrap();
+            writer.start_file(name, options).unwrap();
+            writer.write_all(b"payload").unwrap();
+            writer.finish().unwrap();
+            let bytes = payload.into_inner();
+            let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+            archive.validate_header_consistency().unwrap();
+            assert_eq!(archive.by_index(0).unwrap().name().unwrap(), name);
+            let mut archive = crate::unstable::read::ZipIterable::try_new(
+                Cursor::new(&bytes),
+                Default::default(),
+            )
+            .unwrap()
+            .enforce_header_consistency(true);
+            assert_eq!(
+                archive
+                    .files()
+                    .unwrap()
+                    .next()
+                    .unwrap()
+                    .unwrap()
+                    .name()
+                    .unwrap(),
+                name
+            );
+        }
+    }
+
+    #[test]
     fn test_unicode_path_components_and_ascii_extension_are_consistent() {
         fn assert_unicode_path_consistency(main_name: &str, unicode_path: &str, expected: bool) {
             let mut unicode_path_data = Vec::with_capacity(5 + unicode_path.len());
