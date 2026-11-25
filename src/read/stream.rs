@@ -3,8 +3,8 @@
 use crate::ZipReadOptions;
 use crate::extra_fields::ExtraFields;
 use crate::format::blocks::{
-    FixedSizeBlock, Pod, Zip32CDEBlock, Zip32CentralDirectoryEnd, Zip64CDEBlock,
-    Zip64CDELocatorBlock, ZipCentralEntryBlock, ZipLocalEntryBlock,
+    FixedSizeBlock, Zip32CDEBlock, Zip32CentralDirectoryEnd, Zip64CDEBlock, Zip64CDELocatorBlock,
+    ZipCentralEntryBlock, ZipLocalEntryBlock,
 };
 use crate::format::magic::Magic;
 use crate::read::extract::{MAX_SYMLINK_TARGET_LEN, make_symlink_as_file};
@@ -944,10 +944,7 @@ fn read_zipfile_from_stream_with_options_internal<'a, R: Read>(
         _ => return Err(ZipLocalEntryBlock::WRONG_MAGIC_ERROR),
     }
 
-    let mut block = ZipLocalEntryBlock::zeroed();
-    reader.read_exact(block.as_bytes_mut())?;
-
-    let block = block.from_le();
+    let block = ZipLocalEntryBlock::parse_after_magic(reader)?;
     // parse file_name_raw
     let file_name_length: usize = block.file_name_length.into();
     let mut file_name_raw = vec![0u8; file_name_length];

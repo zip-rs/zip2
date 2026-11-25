@@ -103,7 +103,7 @@ impl CustomExtraField {
 impl arbitrary::Arbitrary<'_> for CustomExtraField {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         use crate::ExtraField;
-        use crate::format::blocks::{Pod, ZipLocalEntryBlock};
+        use crate::format::blocks::{FixedSizeBlock, ZipLocalEntryBlock};
         use std::io::Cursor;
         let extra_field = CustomExtraField {
             central_only: u.arbitrary()?,
