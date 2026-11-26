@@ -65,7 +65,7 @@ time = { version = "^0.3.47", default-features = false, optional = true, feature
 
 # wasm32
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.4", default-features = false, features = ["wasm_js"] }
+getrandom = { version = "0.4", default-features = false, features = ["wasm_js"], optional = true }
 time = { version = "^0.3.47", default-features = false, optional = true, features = [
     "std",
     "wasm-bindgen"
@@ -179,7 +179,7 @@ deflate-flate2-zlib-ng-compat = ["deflate-flate2", "flate2/zlib-ng-compat"]
 
 # Deprecated: Formerly-optional dependencies retained as dummy features for backwards compatibility.
 constant_time_eq = []
-getrandom = []
+getrandom = ["dep:getrandom"]
 zeroize = []
 
 [[bench]]
