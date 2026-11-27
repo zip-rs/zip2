@@ -681,14 +681,15 @@ impl ZipFileData {
             return Ok(0);
         }
 
-        let to_read = available.min(Zip64DataDescriptorBlock::SIZE as u64) as usize;
-        let mut buf = [0u8; Zip64DataDescriptorBlock::SIZE];
-        let saved_pos = reader.stream_position()?;
-        let read_res = (|| -> std::io::Result<usize> {
-            reader.seek(SeekFrom::Start(desc_start))?;
+        fn peek_bytes<R: Read + Seek + ?Sized>(
+            reader: &mut R,
+            start: u64,
+            dst: &mut [u8],
+        ) -> std::io::Result<usize> {
+            reader.seek(SeekFrom::Start(start))?;
             let mut filled = 0;
-            while filled < to_read {
-                match reader.read(&mut buf[filled..to_read]) {
+            while filled < dst.len() {
+                match reader.read(&mut dst[filled..]) {
                     Ok(0) => break,
                     Ok(n) => filled += n,
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
@@ -696,7 +697,12 @@ impl ZipFileData {
                 }
             }
             Ok(filled)
-        })();
+        }
+
+        let to_read = available.min(Zip64DataDescriptorBlock::SIZE as u64) as usize;
+        let mut buf = [0u8; Zip64DataDescriptorBlock::SIZE];
+        let saved_pos = reader.stream_position()?;
+        let read_res = peek_bytes(reader, desc_start, &mut buf[..to_read]);
         let seek_res = reader.seek(SeekFrom::Start(saved_pos));
         let n = match (read_res, seek_res) {
             (Ok(n), Ok(_)) => n,

@@ -6,7 +6,7 @@ use zip::CompressionMethod;
 use zip::ZipArchive;
 use zip::ZipWriter;
 use zip::result::{ZipError, ZipResult};
-use zip::write::{FullFileOptions, SimpleFileOptions};
+use zip::write::{EraseMode, FullFileOptions, SimpleFileOptions};
 
 #[test]
 fn hide_file_drops_the_entry_but_keeps_the_others() -> ZipResult<()> {
@@ -232,7 +232,7 @@ fn erase_file_overwrites_payload_with_zeroes_and_keeps_survivors() -> ZipResult<
     let baseline = readable.into_inner().into_inner();
 
     let mut zip = ZipWriter::new_append(Cursor::new(baseline.clone()))?;
-    zip.erase_file("gone.txt", false)?;
+    zip.erase_file("gone.txt", EraseMode::Zero)?;
     let erased = zip.finish()?.into_inner();
 
     assert!(
@@ -270,7 +270,7 @@ fn erase_file_can_randomize_payload() -> ZipResult<()> {
     let baseline = readable.into_inner().into_inner();
 
     let mut zip = ZipWriter::new_append(Cursor::new(baseline.clone()))?;
-    zip.erase_file("gone.txt", true)?;
+    zip.erase_file("gone.txt", EraseMode::Random)?;
     let erased = zip.finish()?.into_inner();
 
     // Both the local header and the payload must be overwritten with non-zero random bytes.
@@ -305,7 +305,7 @@ fn erase_file_can_remove_the_entry_being_written() -> ZipResult<()> {
         SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
     )?;
     zip.write_all(b"first")?;
-    zip.erase_file("a.txt", false)?;
+    zip.erase_file("a.txt", EraseMode::Zero)?;
 
     let archive = ZipArchive::new(zip.finish()?)?;
     assert_eq!(archive.len(), 0);
@@ -316,7 +316,7 @@ fn erase_file_can_remove_the_entry_being_written() -> ZipResult<()> {
 fn erase_file_reports_a_missing_entry() {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     assert!(matches!(
-        zip.erase_file("absent.txt", false),
+        zip.erase_file("absent.txt", EraseMode::Zero),
         Err(ZipError::FileNotFound)
     ));
 }
@@ -351,7 +351,7 @@ fn erase_file_overwrites_data_descriptor_and_rewinds_last_entry() -> ZipResult<(
         let baseline = readable.into_inner().into_inner();
 
         let mut zip = ZipWriter::new_append(Cursor::new(baseline))?;
-        zip.erase_file("gone.txt", false)?;
+        zip.erase_file("gone.txt", EraseMode::Zero)?;
         let erased = zip.finish()?.into_inner();
 
         let desc_end = data_start as usize + compressed_size as usize + dd_size;
@@ -389,7 +389,7 @@ fn erase_file_overwrites_data_descriptor_and_rewinds_last_entry() -> ZipResult<(
         let baseline = readable.into_inner().into_inner();
 
         let mut zip = ZipWriter::new_append(Cursor::new(baseline))?;
-        zip.erase_file("gone.txt", false)?;
+        zip.erase_file("gone.txt", EraseMode::Zero)?;
         zip.start_file("new.txt", opts)?;
         zip.write_all(b"reused")?;
         let final_buf = zip.finish()?.into_inner();
@@ -536,7 +536,7 @@ fn erase_file_handles_dd_without_signature_and_crc_collision() -> ZipResult<()> 
     };
     let baseline = readable.into_inner().into_inner();
     let mut zip = ZipWriter::new_append(Cursor::new(baseline))?;
-    zip.erase_file("gone.txt", false)?;
+    zip.erase_file("gone.txt", EraseMode::Zero)?;
     let erased = zip.finish()?.into_inner();
     assert!(
         erased[header_start as usize..(data_start + compressed_size + 12) as usize]
@@ -566,7 +566,7 @@ fn erase_file_handles_dd_without_signature_and_crc_collision() -> ZipResult<()> 
     };
     let baseline = readable.into_inner().into_inner();
     let mut zip = ZipWriter::new_append(Cursor::new(baseline))?;
-    zip.erase_file("gone.txt", false)?;
+    zip.erase_file("gone.txt", EraseMode::Zero)?;
     let erased = zip.finish()?.into_inner();
     assert!(
         erased[header_start as usize..(data_start + compressed_size + 12) as usize]
@@ -595,7 +595,7 @@ fn erase_file_handles_dd_without_signature_and_crc_collision() -> ZipResult<()> 
     };
     let baseline = readable.into_inner().into_inner();
     let mut zip = ZipWriter::new_append(Cursor::new(baseline))?;
-    zip.erase_file("gone.txt", false)?;
+    zip.erase_file("gone.txt", EraseMode::Zero)?;
     let erased = zip.finish()?.into_inner();
     assert!(
         erased[header_start as usize..(data_start + compressed_size + 16) as usize]
@@ -623,7 +623,7 @@ fn erase_file_handles_dd_flag_without_descriptor_bytes() -> ZipResult<()> {
     buf[cd_pos + 8] |= 1 << 3;
 
     let mut zip = ZipWriter::new_append(Cursor::new(buf))?;
-    zip.erase_file("dir/", false)?;
+    zip.erase_file("dir/", EraseMode::Zero)?;
     let erased = zip.finish()?.into_inner();
 
     let mut archive = ZipArchive::new(Cursor::new(erased))?;
@@ -645,7 +645,7 @@ fn erase_file_rejects_shallow_copy_overlap_and_preserves_archive() -> ZipResult<
     zip.write_all(b"other file")?;
 
     // Must refuse to overwrite bytes shared with shallow copy "b.txt".
-    assert!(zip.erase_file("a.txt", false).is_err());
+    assert!(zip.erase_file("a.txt", EraseMode::Zero).is_err());
 
     // Archive and all three entries must still be intact.
     let buf = zip.finish()?.into_inner();
@@ -664,7 +664,7 @@ fn erase_file_rejects_shallow_copy_overlap_and_preserves_archive() -> ZipResult<
     // Once the alias is hidden, erasing "a.txt" succeeds cleanly.
     let mut zip = ZipWriter::new_append(Cursor::new(buf))?;
     zip.hide_file("b.txt")?;
-    zip.erase_file("a.txt", false)?;
+    zip.erase_file("a.txt", EraseMode::Zero)?;
     let mut archive = ZipArchive::new(zip.finish()?)?;
     assert_eq!(archive.len(), 1);
     let mut s = String::new();
@@ -691,7 +691,7 @@ fn erase_file_error_restores_writer_position_and_preserves_survivors() -> ZipRes
     buf[corrupt_header..corrupt_header + 4].copy_from_slice(&[0, 0, 0, 0]);
 
     let mut zip = ZipWriter::new_append(Cursor::new(buf))?;
-    assert!(zip.erase_file("corrupt.txt", false).is_err());
+    assert!(zip.erase_file("corrupt.txt", EraseMode::Zero).is_err());
 
     // Finishing after the failed erase_file must not overwrite "last.txt" with the central dir.
     let mut archive = ZipArchive::new(zip.finish()?)?;
@@ -711,7 +711,12 @@ fn erase_file_error_restores_writer_position_and_preserves_survivors() -> ZipRes
 fn erase_file_wipes_stale_central_directory_on_append_finish() -> ZipResult<()> {
     let secret_name = "top_secret_password_list_2026.txt";
     let secret_comment = "TOP_SECRET_FILE_COMMENT";
-    for (with_survivor, randomize) in [(false, false), (false, true), (true, false), (true, true)] {
+    for (with_survivor, mode) in [
+        (false, EraseMode::Zero),
+        (false, EraseMode::Random),
+        (true, EraseMode::Zero),
+        (true, EraseMode::Random),
+    ] {
         let opts = FullFileOptions::default()
             .compression_method(CompressionMethod::Stored)
             .with_file_comment(secret_comment);
@@ -727,20 +732,20 @@ fn erase_file_wipes_stale_central_directory_on_append_finish() -> ZipResult<()> 
         let baseline = zip.finish()?.into_inner();
 
         let mut zip = ZipWriter::new_append(Cursor::new(baseline))?;
-        zip.erase_file(secret_name, randomize)?;
+        zip.erase_file(secret_name, mode)?;
         let erased = zip.finish()?.into_inner();
 
         assert!(
             !erased
                 .windows(secret_name.len())
                 .any(|w| w == secret_name.as_bytes()),
-            "erased filename survived in output (with_survivor={with_survivor}, randomize={randomize})"
+            "erased filename survived in output (with_survivor={with_survivor}, mode={mode:?})"
         );
         assert!(
             !erased
                 .windows(secret_comment.len())
                 .any(|w| w == secret_comment.as_bytes()),
-            "erased file comment survived in output (with_survivor={with_survivor}, randomize={randomize})"
+            "erased file comment survived in output (with_survivor={with_survivor}, mode={mode:?})"
         );
 
         let mut archive = ZipArchive::new(Cursor::new(erased))?;
@@ -762,7 +767,7 @@ fn erase_file_allows_adjacent_preceding_dd_and_rejects_backward_overlap() -> Zip
         ("second.txt", b"second payload", None),
     ]);
     let mut zip = ZipWriter::new_append(Cursor::new(adjacent))?;
-    zip.erase_file("second.txt", false)?;
+    zip.erase_file("second.txt", EraseMode::Zero)?;
     let mut archive = ZipArchive::new(zip.finish()?)?;
     assert_eq!(archive.len(), 1);
     let mut s = String::new();
@@ -852,7 +857,7 @@ fn erase_file_allows_adjacent_preceding_dd_and_rejects_backward_overlap() -> Zip
     buf.extend_from_slice(&0u16.to_le_bytes());
 
     let mut zip = ZipWriter::new_append(Cursor::new(buf))?;
-    assert!(zip.erase_file("inner.txt", false).is_err());
+    assert!(zip.erase_file("inner.txt", EraseMode::Zero).is_err());
 
     let mut archive = ZipArchive::new(zip.finish()?)?;
     assert_eq!(archive.len(), 2);

@@ -253,10 +253,9 @@ pub(crate) mod zip_writer {
         pub(super) flush_on_finish_file: bool,
         pub(super) seek_possible: bool,
         pub(crate) auto_large_file: bool,
-        /// Set when [`ZipWriter::erase_file`] has been called, recording whether to wipe the
-        /// stale gap left when `finalize()` relocates a smaller central directory (`Some(true)`
-        /// for random bytes, `Some(false)` for zeroes).
-        pub(super) erase_stale_tail: Option<bool>,
+        /// Set when [`ZipWriter::erase_file`] has been called, recording how to wipe the
+        /// stale gap left when `finalize()` relocates a smaller central directory.
+        pub(super) erase_stale_tail: Option<super::EraseMode>,
         /// Idle DEFLATE compressor kept between entries to avoid reallocating it (#633).
         #[cfg(feature = "deflate-flate2")]
         pub(super) deflate_cache: DeflateCache<W>,
@@ -454,7 +453,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     }
 
     /// Removes an entry from the archive's directory and overwrites its local header, compressed
-    /// data, and data descriptor (if present) with zeroes or random bytes. If the entry removed
+    /// data, and data descriptor (if present) according to `mode`. If the entry removed
     /// this way is the last one in the archive, it is still overwritten, and new entries will be
     /// able to reuse that space.
     ///
@@ -466,15 +465,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Returns an error without modifying the archive if the writer is non-seekable, `name` is
     /// not found, or the entry's byte range overlaps another surviving entry (for example, a
     /// [`ZipWriter::shallow_copy_file`] alias).
-    ///
-    /// # Parameters
-    /// `randomize` - If `true`, the erased bytes are overwritten with random bytes. If `false`,
-    /// they are overwritten with zeroes. Random bytes are only recommended when writing to
-    /// magnetic storage, since data overwritten with zeroes there is sometimes recoverable.
-    pub fn erase_file(&mut self, name: &str, randomize: bool) -> ZipResult<()> {
-        const MAX_LOCAL_HEADER_SIZE: u64 =
-            (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64 + 2 * u16::MAX as u64;
-
+    pub fn erase_file(&mut self, name: &str, mode: EraseMode) -> ZipResult<()> {
         if !self.seek_possible {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -484,138 +475,18 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         self.finish_file()?;
         let original_position = self.inner.try_inner_mut()?.stream_position()?;
 
-        let validation = (|| -> ZipResult<(usize, u64, u64, u64)> {
-            let target_idx = self
-                .files
-                .get_index_of(name.as_bytes())
-                .ok_or(ZipError::FileNotFound)?;
-            let writer = self.inner.try_inner_mut()?;
-            let data_start = self.files[target_idx].data_start(writer)?;
-            let (header_start, compressed_size) = {
-                let file = &self.files[target_idx];
-                (file.header_start, file.compressed_size)
+        let (target_idx, header_start, data_end, len_with_header) =
+            match self.validate_erase_target(name, original_position) {
+                Ok(validated) => validated,
+                Err(err) => {
+                    // Restore the writer cursor before returning the original validation error so
+                    // subsequent writes / `finish()` / `Drop` do not overwrite surviving entries.
+                    if let Ok(writer) = self.inner.try_inner_mut() {
+                        drop(writer.seek(SeekFrom::Start(original_position)));
+                    }
+                    return Err(err);
+                }
             };
-            if data_start < header_start {
-                return Err(invalid!(
-                    "File {:?} data_start is before header_start in archive",
-                    name
-                ));
-            }
-            let desc_start = data_start
-                .checked_add(compressed_size)
-                .ok_or(invalid!("File {:?} data range overflows u64", name))?;
-            if desc_start > original_position {
-                return Err(invalid!(
-                    "File {:?} data range extends past the end of the archive",
-                    name
-                ));
-            }
-            let max_desc_end = self
-                .files
-                .iter()
-                .enumerate()
-                .filter(|&(idx, _)| idx != target_idx)
-                .map(|(_, (_, other))| other.header_start)
-                .filter(|&start| start >= desc_start)
-                .min()
-                .unwrap_or(original_position)
-                .min(original_position);
-            let descriptor_len =
-                self.files[target_idx].data_descriptor_len(writer, data_start, max_desc_end)?
-                    as u64;
-            let data_end = desc_start.checked_add(descriptor_len).ok_or(invalid!(
-                "File {:?} data range overflows u64 with data descriptor included",
-                name
-            ))?;
-            if data_end > original_position {
-                return Err(invalid!(
-                    "File {:?} data range extends past the end of the archive",
-                    name
-                ));
-            }
-            let len_with_header = data_end.checked_sub(header_start).ok_or(invalid!(
-                "File {:?} data_start is before header_start in archive",
-                name
-            ))?;
-
-            // Reject overwriting bytes shared with any surviving entry (e.g. shallow_copy_file
-            // aliases or malformed overlapping entries). Forward checks are purely in-memory;
-            // backward checks only inspect entries whose maximum possible extent can reach
-            // `header_start`.
-            for (idx, (_, other)) in self.files.iter().enumerate() {
-                if idx == target_idx {
-                    continue;
-                }
-                if other.header_start >= header_start && other.header_start < data_end {
-                    return Err(invalid!(
-                        "File {:?} overlaps another entry in the archive",
-                        name
-                    ));
-                }
-                if other.header_start < header_start {
-                    if other.header_start.saturating_add(other.compressed_size) > header_start {
-                        return Err(invalid!(
-                            "File {:?} overlaps another entry in the archive",
-                            name
-                        ));
-                    }
-                    let max_other_dd = if other.is_using_data_descriptor() {
-                        Zip64DataDescriptorBlock::SIZE as u64
-                    } else {
-                        0
-                    };
-                    let max_other_end = match other.data_start.get().copied() {
-                        Some(other_ds) => other_ds
-                            .saturating_add(other.compressed_size)
-                            .saturating_add(max_other_dd),
-                        None => other
-                            .header_start
-                            .saturating_add(MAX_LOCAL_HEADER_SIZE)
-                            .saturating_add(other.compressed_size)
-                            .saturating_add(max_other_dd),
-                    };
-                    if max_other_end > header_start {
-                        let other_ds = other.data_start(writer)?;
-                        let other_desc_start = other_ds
-                            .checked_add(other.compressed_size)
-                            .ok_or(invalid!("Overlapping entry data range overflows u64"))?;
-                        if other_desc_start > header_start {
-                            return Err(invalid!(
-                                "File {:?} overlaps another entry in the archive",
-                                name
-                            ));
-                        }
-                        if other.is_using_data_descriptor()
-                            && other_desc_start.saturating_add(max_other_dd) > header_start
-                        {
-                            let other_dd =
-                                other.data_descriptor_len(writer, other_ds, original_position)?
-                                    as u64;
-                            if other_desc_start.saturating_add(other_dd) > header_start {
-                                return Err(invalid!(
-                                    "File {:?} overlaps another entry in the archive",
-                                    name
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-
-            Ok((target_idx, header_start, data_end, len_with_header))
-        })();
-
-        let (target_idx, header_start, data_end, len_with_header) = match validation {
-            Ok(validated) => validated,
-            Err(err) => {
-                // Restore the writer cursor before returning the original validation error so
-                // subsequent writes / `finish()` / `Drop` do not overwrite surviving entries.
-                if let Ok(writer) = self.inner.try_inner_mut() {
-                    drop(writer.seek(SeekFrom::Start(original_position)));
-                }
-                return Err(err);
-            }
-        };
 
         let position_to_resume_writing = if data_end == original_position {
             // Removed file was the last in the archive, so new entries can reuse its space.
@@ -626,19 +497,154 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
         // Only remove from the directory after all validation passes.
         self.files.shift_remove_index(target_idx);
-        self.erase_stale_tail = Some(self.erase_stale_tail.unwrap_or(false) || randomize);
+        self.erase_stale_tail = Some(match (self.erase_stale_tail, mode) {
+            (Some(EraseMode::Random), _) | (_, EraseMode::Random) => EraseMode::Random,
+            _ => EraseMode::Zero,
+        });
+
+        fn seek_and_overwrite<W: Write + Seek + ?Sized>(
+            writer: &mut W,
+            start: u64,
+            len: u64,
+            mode: EraseMode,
+        ) -> ZipResult<()> {
+            writer.seek(SeekFrom::Start(start))?;
+            overwrite_range(writer, len, mode)
+        }
 
         let writer = self.inner.try_inner_mut()?;
-        let overwrite_result = (|| -> ZipResult<()> {
-            writer.seek(SeekFrom::Start(header_start))?;
-            overwrite_range(writer, len_with_header, randomize)
-        })();
-        if let Err(err) = overwrite_result {
+        if let Err(err) = seek_and_overwrite(writer, header_start, len_with_header, mode) {
             drop(writer.seek(SeekFrom::Start(original_position)));
             return Err(err);
         }
         writer.seek(SeekFrom::Start(position_to_resume_writing))?;
         Ok(())
+    }
+
+    fn validate_erase_target(
+        &mut self,
+        name: &str,
+        original_position: u64,
+    ) -> ZipResult<(usize, u64, u64, u64)> {
+        const MAX_LOCAL_HEADER_SIZE: u64 =
+            (size_of::<Magic>() + size_of::<ZipLocalEntryBlock>()) as u64 + 2 * u16::MAX as u64;
+
+        let target_idx = self
+            .files
+            .get_index_of(name.as_bytes())
+            .ok_or(ZipError::FileNotFound)?;
+        let writer = self.inner.try_inner_mut()?;
+        let data_start = self.files[target_idx].data_start(writer)?;
+        let (header_start, compressed_size) = {
+            let file = &self.files[target_idx];
+            (file.header_start, file.compressed_size)
+        };
+        if data_start < header_start {
+            return Err(invalid!(
+                "File {:?} data_start is before header_start in archive",
+                name
+            ));
+        }
+        let desc_start = data_start
+            .checked_add(compressed_size)
+            .ok_or(invalid!("File {:?} data range overflows u64", name))?;
+        if desc_start > original_position {
+            return Err(invalid!(
+                "File {:?} data range extends past the end of the archive",
+                name
+            ));
+        }
+        let max_desc_end = self
+            .files
+            .iter()
+            .enumerate()
+            .filter(|&(idx, _)| idx != target_idx)
+            .map(|(_, (_, other))| other.header_start)
+            .filter(|&start| start >= desc_start)
+            .min()
+            .unwrap_or(original_position)
+            .min(original_position);
+        let descriptor_len =
+            self.files[target_idx].data_descriptor_len(writer, data_start, max_desc_end)? as u64;
+        let data_end = desc_start.checked_add(descriptor_len).ok_or(invalid!(
+            "File {:?} data range overflows u64 with data descriptor included",
+            name
+        ))?;
+        if data_end > original_position {
+            return Err(invalid!(
+                "File {:?} data range extends past the end of the archive",
+                name
+            ));
+        }
+        let len_with_header = data_end.checked_sub(header_start).ok_or(invalid!(
+            "File {:?} data_start is before header_start in archive",
+            name
+        ))?;
+
+        // Reject overwriting bytes shared with any surviving entry (e.g. shallow_copy_file
+        // aliases or malformed overlapping entries). Forward checks are purely in-memory;
+        // backward checks only inspect entries whose maximum possible extent can reach
+        // `header_start`.
+        for (idx, (_, other)) in self.files.iter().enumerate() {
+            if idx == target_idx {
+                continue;
+            }
+            if other.header_start >= header_start && other.header_start < data_end {
+                return Err(invalid!(
+                    "File {:?} overlaps another entry in the archive",
+                    name
+                ));
+            }
+            if other.header_start < header_start {
+                if other.header_start.saturating_add(other.compressed_size) > header_start {
+                    return Err(invalid!(
+                        "File {:?} overlaps another entry in the archive",
+                        name
+                    ));
+                }
+                let max_other_dd = if other.is_using_data_descriptor() {
+                    Zip64DataDescriptorBlock::SIZE as u64
+                } else {
+                    0
+                };
+                let max_other_end = match other.data_start.get().copied() {
+                    Some(other_ds) => other_ds
+                        .saturating_add(other.compressed_size)
+                        .saturating_add(max_other_dd),
+                    None => other
+                        .header_start
+                        .saturating_add(MAX_LOCAL_HEADER_SIZE)
+                        .saturating_add(other.compressed_size)
+                        .saturating_add(max_other_dd),
+                };
+                if max_other_end > header_start {
+                    let other_ds = other.data_start(writer)?;
+                    let other_desc_start = other_ds
+                        .checked_add(other.compressed_size)
+                        .ok_or(invalid!("Overlapping entry data range overflows u64"))?;
+                    if other_desc_start > header_start {
+                        return Err(invalid!(
+                            "File {:?} overlaps another entry in the archive",
+                            name
+                        ));
+                    }
+                    if other.is_using_data_descriptor()
+                        && other_desc_start.saturating_add(max_other_dd) > header_start
+                    {
+                        let other_dd =
+                            other.data_descriptor_len(writer, other_ds, original_position)? as u64;
+                        if other_desc_start.saturating_add(other_dd) > header_start {
+                            return Err(invalid!(
+                                "File {:?} overlaps another entry in the archive",
+                                name
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok((target_idx, header_start, data_end, len_with_header))
     }
 }
 
@@ -791,27 +797,45 @@ fn validate_extra_fields(extra_fields: &[crate::extra_fields::CustomExtraField])
     Ok(())
 }
 
-fn overwrite_range<W: Write + ?Sized>(writer: &mut W, len: u64, randomize: bool) -> ZipResult<()> {
-    if randomize {
-        let mut buffer = [0u8; 64 * 1024];
-        let mut remaining = len;
-        while remaining > 0 {
-            let n = remaining.min(buffer.len() as u64) as usize;
-            getrandom::fill(&mut buffer[..n]).map_err(|e| {
-                ZipError::Io(io::Error::new(
-                    ErrorKind::Unsupported,
-                    format!("getrandom returned error: {e}"),
-                ))
-            })?;
-            writer.write_all(&buffer[..n])?;
-            remaining -= n as u64;
+/// How [`ZipWriter::erase_file`] overwrites erased entry bytes (and any stale gap before a
+/// relocated central directory).
+#[non_exhaustive]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum EraseMode {
+    /// Overwrite erased bytes with zeroes (`0x00`).
+    #[default]
+    Zero,
+    /// Overwrite erased bytes with cryptographically random bytes from `getrandom`.
+    ///
+    /// Random bytes are only recommended when writing to magnetic storage, since data overwritten
+    /// with zeroes there is sometimes recoverable.
+    Random,
+}
+
+fn overwrite_range<W: Write + ?Sized>(writer: &mut W, len: u64, mode: EraseMode) -> ZipResult<()> {
+    match mode {
+        EraseMode::Random => {
+            let mut buffer = [0u8; 64 * 1024];
+            let mut remaining = len;
+            while remaining > 0 {
+                let n = remaining.min(buffer.len() as u64) as usize;
+                getrandom::fill(&mut buffer[..n]).map_err(|e| {
+                    ZipError::Io(io::Error::new(
+                        ErrorKind::Unsupported,
+                        format!("getrandom returned error: {e}"),
+                    ))
+                })?;
+                writer.write_all(&buffer[..n])?;
+                remaining -= n as u64;
+            }
         }
-    } else {
-        let copied = copy(&mut io::repeat(0).take(len), writer)?;
-        if copied < len {
-            return Err(invalid!(
-                "Failed to overwrite range ({copied} bytes copied, {len} bytes expected)"
-            ));
+        EraseMode::Zero => {
+            let copied = copy(&mut io::repeat(0).take(len), writer)?;
+            if copied < len {
+                return Err(invalid!(
+                    "Failed to overwrite range ({copied} bytes copied, {len} bytes expected)"
+                ));
+            }
         }
     }
     Ok(())
@@ -1913,13 +1937,13 @@ impl<W: Write + Seek> ZipWriter<W> {
                     .map(|e| e.len() as u64)
                     .unwrap_or(0);
                 let central_and_footer_size = footer_end - central_start;
-                if let Some(randomize) = self.erase_stale_tail {
+                if let Some(mode) = self.erase_stale_tail {
                     // Wipe the entire unused gap [last_file_end .. stream_end - central_and_footer_size),
                     // covering both copy #1's magics and any stale central directory entries
                     // sitting between copy #1 and the relocated copy #2.
                     let gap_len = stream_end - footer_end;
                     writer.seek(SeekFrom::Start(last_file_end))?;
-                    overwrite_range(writer, gap_len, randomize)?;
+                    overwrite_range(writer, gap_len, mode)?;
                 } else {
                     // Overwrite the magic so the footer is no longer valid.
                     writer.seek(SeekFrom::Start(last_file_end))?;
