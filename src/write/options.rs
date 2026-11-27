@@ -174,7 +174,7 @@ impl ExtendedFileOptions {
     /// written to (local and central, or central only).
     pub(crate) fn extra_field_parses(header_id: u16, data: &[u8], central_only: bool) -> bool {
         use crate::extra_fields::{ExtraField, UsedExtraField};
-        use crate::format::blocks::{Pod, ZipLocalEntryBlock};
+        use crate::format::blocks::{FixedSizeBlock, ZipLocalEntryBlock};
         use std::io::Cursor;
 
         if header_id == UsedExtraField::Zip64ExtendedInfo.as_u16() {

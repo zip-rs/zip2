@@ -1,5 +1,7 @@
 //! Zip format
 
+#![forbid(unsafe_code)]
+
 pub mod aes;
 pub mod blocks;
 pub mod compression;

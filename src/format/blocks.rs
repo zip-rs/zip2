@@ -4,143 +4,123 @@ use crate::format::magic::Magic;
 use crate::result::{ZipError, ZipResult, invalid};
 
 use core::any::type_name;
-use core::mem;
-use core::slice;
 use std::io::{self, Read, Write};
 
-/// # Safety
+/// A fixed-size block: a magic, followed by little-endian fields without padding.
 ///
-/// - No padding/uninit bytes
-/// - All bytes patterns must be valid
-/// - No cell, pointers
-///
-/// See `bytemuck::Pod` for more details.
-pub(crate) unsafe trait Pod: Copy + 'static {
-    #[inline]
-    fn zeroed() -> Self {
-        unsafe { mem::zeroed() }
-    }
-
-    #[inline]
-    fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            slice::from_raw_parts(
-                std::ptr::from_ref::<Self>(self).cast::<u8>(),
-                mem::size_of::<Self>(),
-            )
-        }
-    }
-
-    #[inline]
-    fn as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            slice::from_raw_parts_mut(
-                std::ptr::from_mut::<Self>(self).cast::<u8>(),
-                mem::size_of::<Self>(),
-            )
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-struct BlockWithMagic<T: FixedSizeBlock> {
-    magic: Magic,
-    inner: T,
-}
-unsafe impl<T: FixedSizeBlock> Pod for BlockWithMagic<T> {}
-
-impl<T: FixedSizeBlock> BlockWithMagic<T> {
-    fn to_le(mut self) -> Self {
-        self.magic = self.magic.to_le();
-        self.inner = self.inner.to_le();
-        self
-    }
-}
-
-pub(crate) trait FixedSizeBlock: Pod {
+/// Use [`to_and_from_le!`] to implement the encoding.
+pub(crate) trait FixedSizeBlock: Copy + 'static {
     const MAGIC: Magic;
 
     const WRONG_MAGIC_ERROR: ZipError;
 
-    #[allow(clippy::wrong_self_convention)]
-    fn from_le(self) -> Self;
+    /// The magic and the fields, as they're stored in the archive.
+    type Bytes: AsRef<[u8]> + AsMut<[u8]>;
+
+    const ZEROED_BYTES: Self::Bytes;
+
+    /// Decodes the magic, which may be wrong, and the fields.
+    fn from_bytes(bytes: &Self::Bytes) -> (Magic, Self);
+
+    /// Encodes [`Self::MAGIC`] and the fields.
+    fn to_bytes(self) -> Self::Bytes;
+
+    #[inline]
+    fn zeroed() -> Self {
+        let (_, block) = Self::from_bytes(&Self::ZEROED_BYTES);
+        block
+    }
 
     fn parse<R: Read + ?Sized>(reader: &mut R) -> ZipResult<Self> {
-        let mut block_with_magic = BlockWithMagic::zeroed();
-        if let Err(e) = reader.read_exact(block_with_magic.as_bytes_mut()) {
+        let mut bytes = Self::ZEROED_BYTES;
+        if let Err(e) = reader.read_exact(bytes.as_mut()) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Err(invalid!("Unexpected end of {}", type_name::<Self>()));
             }
             return Err(e.into());
         }
-        let BlockWithMagic {
-            magic,
-            inner: block,
-        } = block_with_magic;
-        let magic = Magic::from_le(magic);
+        let (magic, block) = Self::from_bytes(&bytes);
         if magic != Self::MAGIC {
             return Err(Self::WRONG_MAGIC_ERROR);
         }
-        let block = Self::from_le(block);
         Ok(block)
     }
 
-    fn to_le(self) -> Self;
+    /// Parses a block whose magic has already been read and checked.
+    fn parse_after_magic<R: Read + ?Sized>(reader: &mut R) -> io::Result<Self> {
+        let mut bytes = Self::ZEROED_BYTES;
+        let (_, fields) = bytes.as_mut().split_at_mut(size_of::<Magic>());
+        reader.read_exact(fields)?;
+        let (_, block) = Self::from_bytes(&bytes);
+        Ok(block)
+    }
 
     fn write<T: Write + ?Sized>(self, writer: &mut T) -> ZipResult<()> {
-        let block = BlockWithMagic {
-            magic: Self::MAGIC,
-            inner: self,
-        };
-        let block = block.to_le();
-        writer.write_all(block.as_bytes())?;
+        writer.write_all(self.to_bytes().as_ref())?;
         Ok(())
     }
 }
 
-/// Convert all the fields of a struct *from* little-endian representations.
-macro_rules! from_le {
-    ($obj:ident, $field:ident, $type:ty) => {
-        $obj.$field = <$type>::from_le($obj.$field);
-    };
-    ($obj:ident, [($field:ident, $type:ty) $(,)?]) => {
-        from_le![$obj, $field, $type];
-    };
-    ($obj:ident, [($field:ident, $type:ty), $($rest:tt),+ $(,)?]) => {
-        from_le![$obj, $field, $type];
-        from_le!($obj, [$($rest),+]);
-    };
+/// Returns the `N` bytes at `OFFSET`, which are checked to be in bounds at compile time.
+#[inline(always)]
+fn get_bytes<const OFFSET: usize, const N: usize, const LEN: usize>(bytes: &[u8; LEN]) -> [u8; N] {
+    const { assert!(OFFSET + N <= LEN) };
+    let mut field = [0; N];
+    field.copy_from_slice(&bytes[OFFSET..OFFSET + N]);
+    field
 }
 
-/// Convert all the fields of a struct *into* little-endian representations.
-macro_rules! to_le {
-    ($obj:ident, $field:ident, $type:ty) => {
-        $obj.$field = <$type>::to_le($obj.$field);
-    };
-    ($obj:ident, [($field:ident, $type:ty) $(,)?]) => {
-        to_le![$obj, $field, $type];
-    };
-    ($obj:ident, [($field:ident, $type:ty), $($rest:tt),+ $(,)?]) => {
-        to_le![$obj, $field, $type];
-        to_le!($obj, [$($rest),+]);
-    };
+/// Replaces the `N` bytes at `OFFSET`, which are checked to be in bounds at compile time.
+#[inline(always)]
+fn set_bytes<const OFFSET: usize, const N: usize, const LEN: usize>(
+    bytes: &mut [u8; LEN],
+    field: [u8; N],
+) {
+    const { assert!(OFFSET + N <= LEN) };
+    bytes[OFFSET..OFFSET + N].copy_from_slice(&field);
 }
 
 /* TODO: derive macro to generate these fields? */
-/// Implement `from_le()` and `to_le()`, providing the field specification to both macros
-/// and methods.
+/// Implements the encoding of a [`FixedSizeBlock`], given all the fields of a `repr(packed, C)` struct.
 macro_rules! to_and_from_le {
-    ($($args:tt),+ $(,)?) => {
+    ($(($field:ident, $type:ty)),+ $(,)?) => {
+        type Bytes = [u8; size_of::<Magic>() + size_of::<Self>()];
+
+        const ZEROED_BYTES: Self::Bytes = [0; size_of::<Magic>() + size_of::<Self>()];
+
         #[inline(always)]
-        fn from_le(mut self) -> Self {
-            from_le![self, [$($args),+]];
-            self
+        fn from_bytes(bytes: &Self::Bytes) -> (Magic, Self) {
+            use $crate::format::blocks::get_bytes;
+            use core::mem::offset_of;
+
+            // There's no padding.
+            const { assert!(size_of::<Self>() == 0 $(+ size_of::<$type>())+) };
+
+            let magic = Magic::from_le_bytes(get_bytes::<0, _, _>(bytes));
+            let block = Self {
+                $(
+                    $field: <$type>::from_le_bytes(get_bytes::<
+                        { size_of::<Magic>() + offset_of!(Self, $field) }, _, _
+                    >(bytes)),
+                )+
+            };
+            (magic, block)
         }
+
         #[inline(always)]
-        fn to_le(mut self) -> Self {
-            to_le![self, [$($args),+]];
-            self
+        fn to_bytes(self) -> Self::Bytes {
+            use $crate::format::blocks::set_bytes;
+            use core::mem::offset_of;
+
+            let mut bytes = Self::ZEROED_BYTES;
+            set_bytes::<0, _, _>(&mut bytes, Self::MAGIC.to_le_bytes());
+            $(
+                set_bytes::<{ size_of::<Magic>() + offset_of!(Self, $field) }, _, _>(
+                    &mut bytes,
+                    <$type>::to_le_bytes(self.$field),
+                );
+            )+
+            bytes
         }
     };
 }
@@ -166,8 +146,6 @@ pub struct ZipCentralEntryBlock {
     pub external_file_attributes: u32,
     pub offset: u32,
 }
-
-unsafe impl Pod for ZipCentralEntryBlock {}
 
 impl ZipCentralEntryBlock {
     /// Parses the 46-byte fixed central-directory header, including its signature.
@@ -240,8 +218,6 @@ pub struct ZipLocalEntryBlock {
     pub extra_field_length: u16,
 }
 
-unsafe impl Pod for ZipLocalEntryBlock {}
-
 impl ZipLocalEntryBlock {
     /// Parses the 30-byte fixed local-file header, including its signature.
     ///
@@ -297,8 +273,6 @@ pub struct Zip32CDEBlock {
     pub central_directory_offset: u32,
     pub zip_file_comment_length: u16,
 }
-
-unsafe impl Pod for Zip32CDEBlock {}
 
 impl FixedSizeBlock for Zip32CDEBlock {
     const MAGIC: Magic = Magic::CENTRAL_DIRECTORY_END_SIGNATURE;
@@ -416,8 +390,6 @@ pub struct Zip64CDELocatorBlock {
     pub number_of_disks: u32,
 }
 
-unsafe impl Pod for Zip64CDELocatorBlock {}
-
 impl FixedSizeBlock for Zip64CDELocatorBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE;
 
@@ -490,8 +462,6 @@ pub struct Zip64CDEBlock {
     pub central_directory_size: u64,
     pub central_directory_offset: u64,
 }
-
-unsafe impl Pod for Zip64CDEBlock {}
 
 impl FixedSizeBlock for Zip64CDEBlock {
     const MAGIC: Magic = Magic::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE;
@@ -683,10 +653,13 @@ impl CentralDirectoryEndInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::io::{Cursor, ErrorKind};
 
     use crate::{
-        format::blocks::{FixedSizeBlock, Pod},
+        format::blocks::{
+            FixedSizeBlock, Zip32CDEBlock, Zip64CDEBlock, Zip64CDELocatorBlock,
+            ZipCentralEntryBlock, ZipLocalEntryBlock,
+        },
         format::magic::Magic,
         result::{ZipError, invalid},
     };
@@ -696,8 +669,6 @@ mod tests {
     pub struct TestBlock {
         pub file_name_length: u16,
     }
-
-    unsafe impl Pod for TestBlock {}
 
     impl FixedSizeBlock for TestBlock {
         const MAGIC: Magic = Magic::literal(0x01111);
@@ -725,5 +696,155 @@ mod tests {
         use super::Zip64CentralDirectoryEnd;
         assert_eq!(Zip64CentralDirectoryEnd::MIN_SIZE, 44);
         assert_eq!(Zip64CentralDirectoryEnd::MIN_FULL_SIZE, 52);
+    }
+
+    /// `signature`, followed by `len` distinct bytes.
+    ///
+    /// The blocks below hold the same bytes in their fields, so a field with the wrong offset,
+    /// width or byte order changes the result.
+    fn encoded(signature: [u8; 4], len: u8) -> Vec<u8> {
+        signature.into_iter().chain(1..=len).collect()
+    }
+
+    fn write_to_vec<T: FixedSizeBlock>(block: T) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        block.write(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn check_encoding<T: FixedSizeBlock>(block: T, expected: &[u8]) {
+        assert_eq!(expected.len(), size_of::<Magic>() + size_of::<T>());
+        assert_eq!(write_to_vec(block), expected);
+
+        // Parsing is the inverse of writing, and leaves what follows the block unread.
+        let mut reader = Cursor::new([expected, b"rest"].concat());
+        let parsed = T::parse(&mut reader).unwrap();
+        assert_eq!(reader.position(), expected.len() as u64);
+        assert_eq!(write_to_vec(parsed), expected);
+
+        // A truncated block is rejected wherever the cut is.
+        for len in 0..expected.len() {
+            let error = T::parse(&mut &expected[..len]).err().unwrap();
+            assert!(
+                matches!(&error, ZipError::InvalidArchive(m) if m.starts_with("Unexpected end of ")),
+                "{len} bytes: {error:?}"
+            );
+        }
+
+        // So is a block with a different signature.
+        for index in 0..size_of::<Magic>() {
+            let mut bytes = expected.to_vec();
+            bytes[index] ^= 0xff;
+            let error = T::parse(&mut bytes.as_slice()).err().unwrap();
+            assert_eq!(error.to_string(), T::WRONG_MAGIC_ERROR.to_string());
+        }
+    }
+
+    #[test]
+    fn central_entry_block_encoding() {
+        check_encoding(
+            ZipCentralEntryBlock {
+                version_made_by: 0x0201,
+                version_to_extract: 0x0403,
+                flags: 0x0605,
+                compression_method: 0x0807,
+                last_mod_time: 0x0a09,
+                last_mod_date: 0x0c0b,
+                crc32: 0x100f_0e0d,
+                compressed_size: 0x1413_1211,
+                uncompressed_size: 0x1817_1615,
+                file_name_length: 0x1a19,
+                extra_field_length: 0x1c1b,
+                file_comment_length: 0x1e1d,
+                disk_number: 0x201f,
+                internal_file_attributes: 0x2221,
+                external_file_attributes: 0x2625_2423,
+                offset: 0x2a29_2827,
+            },
+            &encoded(*b"PK\x01\x02", 42),
+        );
+    }
+
+    #[test]
+    fn local_entry_block_encoding() {
+        check_encoding(
+            ZipLocalEntryBlock {
+                version_made_by: 0x0201,
+                flags: 0x0403,
+                compression_method: 0x0605,
+                last_mod_time: 0x0807,
+                last_mod_date: 0x0a09,
+                crc32: 0x0e0d_0c0b,
+                compressed_size: 0x1211_100f,
+                uncompressed_size: 0x1615_1413,
+                file_name_length: 0x1817,
+                extra_field_length: 0x1a19,
+            },
+            &encoded(*b"PK\x03\x04", 26),
+        );
+    }
+
+    #[test]
+    fn zip32_cde_block_encoding() {
+        check_encoding(
+            Zip32CDEBlock {
+                disk_number: 0x0201,
+                disk_with_central_directory: 0x0403,
+                number_of_files_on_this_disk: 0x0605,
+                number_of_files: 0x0807,
+                central_directory_size: 0x0c0b_0a09,
+                central_directory_offset: 0x100f_0e0d,
+                zip_file_comment_length: 0x1211,
+            },
+            &encoded(*b"PK\x05\x06", 18),
+        );
+    }
+
+    #[test]
+    fn zip64_cde_locator_block_encoding() {
+        check_encoding(
+            Zip64CDELocatorBlock {
+                disk_with_central_directory: 0x0403_0201,
+                end_of_central_directory_offset: 0x0c0b_0a09_0807_0605,
+                number_of_disks: 0x100f_0e0d,
+            },
+            &encoded(*b"PK\x06\x07", 16),
+        );
+    }
+
+    #[test]
+    fn zip64_cde_block_encoding() {
+        check_encoding(
+            Zip64CDEBlock {
+                record_size: 0x0807_0605_0403_0201,
+                version_made_by: 0x0a09,
+                version_needed_to_extract: 0x0c0b,
+                disk_number: 0x100f_0e0d,
+                disk_with_central_directory: 0x1413_1211,
+                number_of_files_on_this_disk: 0x1c1b_1a19_1817_1615,
+                number_of_files: 0x2423_2221_201f_1e1d,
+                central_directory_size: 0x2c2b_2a29_2827_2625,
+                central_directory_offset: 0x3433_3231_302f_2e2d,
+            },
+            &encoded(*b"PK\x06\x06", 52),
+        );
+    }
+
+    /// Reading the magic separately gives the same block, and the same error as `read_exact` when
+    /// the block is cut short.
+    #[test]
+    fn parse_after_magic() {
+        let bytes = encoded(*b"PK\x03\x04", 26);
+        let fields = &bytes[size_of::<Magic>()..];
+
+        let mut reader = Cursor::new([fields, b"rest"].concat());
+        let block = ZipLocalEntryBlock::parse_after_magic(&mut reader).unwrap();
+        assert_eq!(reader.position(), fields.len() as u64);
+        assert_eq!(write_to_vec(block), bytes);
+
+        for len in 0..fields.len() {
+            let error = ZipLocalEntryBlock::parse_after_magic(&mut &fields[..len]).unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+        }
     }
 }
