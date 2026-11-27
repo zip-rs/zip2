@@ -626,9 +626,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 /// [`ZipWriter::truncating_finish`] or [`ZipWriter::truncating_finish_into_readable`] into an
 /// [`io::Result<()>`].
 ///
-/// Implemented for `()` and [`io::Result<()>`] so both infallible callbacks (such as
-/// [`Vec::truncate`]) and fallible callbacks (such as [`std::fs::File::set_len`]) work directly
-/// without explicit type annotations.
+/// Implemented for `()` and [`io::Result<()>`] so both infallible callbacks and fallible
+/// callbacks (such as [`std::fs::File::set_len`]) work directly without explicit type annotations.
 pub trait TruncateResult {
     /// Converts this truncation callback result into an [`io::Result<()>`].
     fn into_io_result(self) -> io::Result<()>;
@@ -4013,7 +4012,11 @@ mod tests {
         let mut truncated = false;
         let output = writer.truncating_finish(|cursor, length| {
             truncated = true;
-            cursor.get_mut().truncate(length as usize);
+            let len = usize::try_from(length).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "length > usize::MAX")
+            })?;
+            cursor.get_mut().truncate(len);
+            Ok(())
         })?;
 
         assert!(truncated);
@@ -4069,7 +4072,11 @@ mod tests {
         let mut truncated = false;
         let mut archive = writer.truncating_finish_into_readable(|cursor, length| {
             truncated = true;
-            cursor.get_mut().truncate(length as usize);
+            let len = usize::try_from(length).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "length > usize::MAX")
+            })?;
+            cursor.get_mut().truncate(len);
+            Ok(())
         })?;
 
         assert!(truncated);
@@ -4098,7 +4105,11 @@ mod tests {
         let mut truncated = false;
         let output = writer.truncating_finish(|cursor, length| {
             truncated = true;
-            cursor.get_mut().truncate(length as usize);
+            let len = usize::try_from(length).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "length > usize::MAX")
+            })?;
+            cursor.get_mut().truncate(len);
+            Ok(())
         })?;
 
         assert!(truncated);
