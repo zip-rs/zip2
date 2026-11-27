@@ -263,8 +263,54 @@ impl ZipFileData {
         name: &'a [u8],
         is_local: bool,
     ) -> HeaderConsistencyMetadata<&'a [u8]> {
+        const AES_HEADER_ID: u16 =
+            crate::format::extra_fields::ExtraFieldId::AeXEncryption.as_u16();
         let is_using_data_descriptor = self.is_using_data_descriptor();
-        let (upath, upath_crc32) = crate::read::get_upath(&self.extra_fields);
+        let mut upath: Option<&'a [u8]> = None;
+        let mut upath_crc32: Option<u32> = None;
+        let mut has_duplicate_upath = false;
+        let mut seen_zip64 = false;
+        let mut has_duplicate_zip64 = false;
+        let mut seen_aes = false;
+        let mut has_duplicate_aes = false;
+        #[cfg(feature = "aes-crypto")]
+        let mut aes = None;
+
+        for field in self.extra_fields.inner.iter() {
+            match field {
+                ExtraField::UnicodePath(u) => {
+                    if upath.is_some() {
+                        has_duplicate_upath = true;
+                    }
+                    upath = Some(&*u.content);
+                    upath_crc32 = Some(u.crc32);
+                }
+                ExtraField::Zip64ExtendedInformation(_) => {
+                    if seen_zip64 {
+                        has_duplicate_zip64 = true;
+                    } else {
+                        seen_zip64 = true;
+                    }
+                }
+                #[cfg(feature = "aes-crypto")]
+                ExtraField::AeXEncryption(aex) => {
+                    if seen_aes {
+                        has_duplicate_aes = true;
+                    } else {
+                        seen_aes = true;
+                    }
+                    aes = Some(*aex);
+                }
+                ExtraField::Custom(c) if c.header_id == AES_HEADER_ID => {
+                    if seen_aes {
+                        has_duplicate_aes = true;
+                    } else {
+                        seen_aes = true;
+                    }
+                }
+                _ => {}
+            }
+        }
         // Only the flag bits that change how the data is decoded.
         let decoder_flags = if self.compression_method == CompressionMethod::IMPLODE {
             self.flags.as_u16()
@@ -279,6 +325,9 @@ impl ZipFileData {
             has_language_encoding: self.header_language_encoding,
             upath,
             upath_crc32,
+            has_duplicate_upath,
+            has_duplicate_zip64,
+            has_duplicate_aes,
             compression_method: self.compression_method.serialize_to_u16(),
             is_encrypted: self.is_encrypted(),
             is_using_data_descriptor,
@@ -291,16 +340,7 @@ impl ZipFileData {
                 is_pending_data_descriptor: is_local && is_using_data_descriptor,
             },
             #[cfg(feature = "aes-crypto")]
-            aes: self
-                .extra_fields
-                .inner
-                .as_ref()
-                .iter()
-                .rev()
-                .find_map(|f| match f {
-                    ExtraField::AeXEncryption(aes) => Some(*aes),
-                    _ => None,
-                }),
+            aes,
         }
     }
 
@@ -685,11 +725,12 @@ impl ZipFileData {
             Ok(data_start) => {
                 let is_zip64 = self.compressed_size >= ZIP64_BYTES_THR
                     || self.uncompressed_size >= ZIP64_BYTES_THR
-                    || self
-                        .extra_fields
-                        .inner
-                        .iter()
-                        .any(|e| matches!(e, ExtraField::Zip64ExtendedInformation(_)));
+                    || self.extra_fields.inner.iter().any(|e| {
+                        matches!(
+                            e,
+                            ExtraField::Zip64ExtendedInformation(zip64) if zip64.sizes.is_some()
+                        )
+                    });
                 let desc_start = data_start.checked_add(self.compressed_size).ok_or(
                     ZipError::InvalidArchive(Cow::Borrowed("Data descriptor offset overflows u64")),
                 )?;
@@ -754,5 +795,50 @@ mod tests {
             data.file_name_sanitized(&file_name),
             PathBuf::from("path/etc/passwd")
         );
+    }
+
+    #[test]
+    fn consistency_metadata_flags_duplicate_aes_extra_fields() {
+        use super::{ExtraField, ExtraFields, ZipFileData};
+        use crate::extra_fields::CustomExtraField;
+
+        let custom_aes = ExtraField::Custom(CustomExtraField::new(
+            false,
+            0x9901,
+            Box::new([2, 0, b'A', b'E', 3, 0, 0]),
+        ));
+        let clean = ZipFileData::default();
+        let dup_custom = ZipFileData {
+            extra_fields: ExtraFields {
+                inner: Box::new([custom_aes.clone(), custom_aes]),
+            },
+            ..ZipFileData::default()
+        };
+        let clean_meta = clean.consistency_metadata(b"a.txt", false);
+        let dup_meta = dup_custom.consistency_metadata(b"a.txt", true);
+        assert!(dup_meta.has_duplicate_aes);
+        assert!(dup_meta.validate_identity_matches(&clean_meta).is_err());
+
+        #[cfg(feature = "aes-crypto")]
+        {
+            use crate::CompressionMethod;
+            use crate::extra_fields::AexEncryption;
+            use crate::format::aes::{AesMode, AesVendorVersion};
+
+            let aex = ExtraField::AeXEncryption(AexEncryption::new(
+                AesVendorVersion::Ae2,
+                AesMode::Aes256,
+                CompressionMethod::Stored,
+            ));
+            let dup_aex = ZipFileData {
+                extra_fields: ExtraFields {
+                    inner: Box::new([aex.clone(), aex]),
+                },
+                ..ZipFileData::default()
+            };
+            let dup_aex_meta = dup_aex.consistency_metadata(b"a.txt", true);
+            assert!(dup_aex_meta.has_duplicate_aes);
+            assert!(dup_aex_meta.validate_identity_matches(&clean_meta).is_err());
+        }
     }
 }

@@ -1327,13 +1327,31 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// gets a data descriptor after its bytes when it had one, so it decrypts as
     /// before: the ZipCrypto header (or AES salt, verifier, and MAC) is in those
     /// bytes, and neither scheme binds the name.
-    fn raw_copy_file_rename_internal<R: Read, T: FileOptionExtension>(
+    fn raw_copy_file_rename_internal<R: Read>(
         &mut self,
         mut file: ZipFile<'_, R>,
         name: &[u8],
-        options: FileOptions<'_, '_, T>,
+        mut options: FullFileOptions<'static, 'static>,
         language_encoding: Option<bool>,
     ) -> ZipResult<()> {
+        // Drop any Info-ZIP Unicode Path (0x7075) extra field that would rename `name` on
+        // read-back (APPNOTE 4.6.9), matching `deep_copy_file` and `shallow_copy_file`.
+        const UNICODE_PATH: u16 = crate::format::extra_fields::ExtraFieldId::UnicodePath.as_u16();
+        let name_crc = crc32fast::hash(name).to_le_bytes();
+        if options.extended_options.extra_fields.iter().any(|field| {
+            field.header_id == UNICODE_PATH
+                && field.data.len() >= 5
+                && field.data[1..5] == name_crc
+                && field.data[5..] != *name
+        }) {
+            std::sync::Arc::make_mut(&mut options.extended_options.extra_fields).retain(|field| {
+                field.header_id != UNICODE_PATH
+                    || field.data.len() < 5
+                    || field.data[1..5] != name_crc
+                    || field.data[5..] == *name
+            });
+        }
+
         let raw_values = ZipRawValues {
             crc32: file.crc32(),
             compressed_size: file.compressed_size(),
@@ -3003,7 +3021,7 @@ fn update_aes_extra_field<W: Write + Seek>(
         *aes_vendor_version = new_version;
 
         if let Some(aes_start) = aes_extra_field_start {
-            writer.seek(SeekFrom::Start(*aes_start as u64))?;
+            writer.seek(SeekFrom::Start(*aes_start))?;
         } else {
             return Err(invalid!("The AES extra field should have a known start"));
         }
@@ -3020,6 +3038,27 @@ fn update_aes_extra_field<W: Write + Seek>(
 
 impl ZipFileData {
     fn replace_zip64_extra_field(&mut self, zip64: Option<ExtraField>) {
+        const ZIP64_ID: u16 = crate::extra_fields::UsedExtraField::Zip64ExtendedInfo.as_u16();
+        let is_zip64 = |field: &ExtraField| {
+            matches!(
+                field,
+                ExtraField::Zip64ExtendedInformation(_)
+                    | ExtraField::Custom(crate::extra_fields::CustomExtraField {
+                        header_id: ZIP64_ID,
+                        ..
+                    })
+            )
+        };
+
+        let mut zip64_indices = self
+            .extra_fields
+            .inner
+            .iter()
+            .enumerate()
+            .filter_map(|(index, field)| is_zip64(field).then_some(index));
+        let first_index = zip64_indices.next();
+        let second_index = zip64_indices.next();
+
         if let Some(ExtraField::Zip64ExtendedInformation(new_zip64)) = zip64.as_ref() {
             let new_zip64 = *new_zip64;
             if self.extra_fields.inner.is_empty() {
@@ -3027,45 +3066,33 @@ impl ZipFileData {
                     Box::new([ExtraField::Zip64ExtendedInformation(new_zip64)]);
                 return;
             }
-            if let Some(ExtraField::Zip64ExtendedInformation(old_zip64)) =
-                self.extra_fields.inner.first_mut()
-            {
-                *old_zip64 = new_zip64;
+            if let (Some(first), None) = (first_index, second_index) {
+                if first == 0 {
+                    self.extra_fields.inner[0] = ExtraField::Zip64ExtendedInformation(new_zip64);
+                } else {
+                    let moved_field = replace(
+                        &mut self.extra_fields.inner[0],
+                        ExtraField::Zip64ExtendedInformation(new_zip64),
+                    );
+                    self.extra_fields.inner[first] = moved_field;
+                }
                 return;
             }
-            if let Some(zip64_index) =
-                self.extra_fields
-                    .inner
-                    .iter()
-                    .enumerate()
-                    .skip(1)
-                    .find_map(|(index, field)| {
-                        matches!(field, ExtraField::Zip64ExtendedInformation(_)).then_some(index)
-                    })
-            {
-                let moved_field = replace(
-                    &mut self.extra_fields.inner[0],
-                    ExtraField::Zip64ExtendedInformation(new_zip64),
-                );
-                self.extra_fields.inner[zip64_index] = moved_field;
-                return;
-            }
-        }
-
-        if zip64.is_none()
-            && !self
-                .extra_fields
-                .inner
-                .iter()
-                .any(|field| matches!(field, ExtraField::Zip64ExtendedInformation(_)))
-        {
+        } else if zip64.is_none() && first_index.is_none() {
             return;
         }
 
-        let mut inner = take(&mut self.extra_fields.inner).into_vec();
-        inner.retain(|field| !matches!(field, ExtraField::Zip64ExtendedInformation(_)));
+        let removed = usize::from(first_index.is_some()) + usize::from(second_index.is_some());
+        let capacity =
+            self.extra_fields.inner.len().saturating_sub(removed) + usize::from(zip64.is_some());
+        let mut inner = Vec::with_capacity(capacity);
         if let Some(zip64) = zip64 {
-            inner.insert(0, zip64);
+            inner.push(zip64);
+        }
+        for field in take(&mut self.extra_fields.inner).into_vec() {
+            if !is_zip64(&field) {
+                inner.push(field);
+            }
         }
         self.extra_fields.inner = inner.into_boxed_slice();
     }
@@ -3363,7 +3390,11 @@ impl ZipFileData {
                     ..
                 }) = one_extra_field
                 {
-                    *aes_extra_field_start = Some(header_end as usize + bytes_written);
+                    *aes_extra_field_start = Some(
+                        header_end
+                            .checked_add(bytes_written as u64)
+                            .ok_or(invalid!("AES extra field offset overflows u64"))?,
+                    );
                 }
                 bytes_written += one_extra_field.size(true);
             }

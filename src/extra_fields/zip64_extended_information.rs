@@ -230,11 +230,13 @@ impl Zip64ExtendedInformation {
             return Err(invalid!("ZIP64 extra-data field is the wrong length"));
         };
         let mut limited = reader.take(leftover_len as u64);
-        if let Err(e) = copy(&mut limited, &mut sink()) {
-            if e.kind() == ErrorKind::UnexpectedEof {
+        match copy(&mut limited, &mut sink()) {
+            Ok(copied) if copied == leftover_len as u64 => {}
+            Ok(_) => return Err(invalid!("ZIP64 extra field truncated")),
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
                 return Err(invalid!("ZIP64 extra field truncated"));
             }
-            return Err(e.into());
+            Err(e) => return Err(e.into()),
         }
 
         Ok(Self {

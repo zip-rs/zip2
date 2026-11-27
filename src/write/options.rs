@@ -177,6 +177,9 @@ impl ExtendedFileOptions {
         use crate::format::blocks::{Pod, ZipLocalEntryBlock};
         use std::io::Cursor;
 
+        if header_id == UsedExtraField::Zip64ExtendedInfo.as_u16() {
+            return false;
+        }
         let Ok(size) = u16::try_from(data.len()) else {
             return false;
         };

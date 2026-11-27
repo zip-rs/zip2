@@ -378,19 +378,6 @@ impl<'a> ZipReadOptions<'a> {
     }
 }
 
-/// Helper to extract Info-ZIP UnicodePath (0x7075) extra field content and CRC32.
-pub(crate) fn get_upath(extra_fields: &ExtraFields) -> (Option<&[u8]>, Option<u32>) {
-    extra_fields
-        .inner
-        .iter()
-        .rev()
-        .find_map(|f| match f {
-            ExtraField::UnicodePath(u) => Some((&*u.content, u.crc32)),
-            _ => None,
-        })
-        .unzip()
-}
-
 /// Data descriptor / payload metadata (CRC32 and sizes) that can be verified either
 /// immediately or after reading a data descriptor.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -439,6 +426,9 @@ pub(crate) struct HeaderConsistencyMetadata<T: AsRef<[u8]>> {
     pub(crate) has_language_encoding: bool,
     pub(crate) upath: Option<T>,
     pub(crate) upath_crc32: Option<u32>,
+    pub(crate) has_duplicate_upath: bool,
+    pub(crate) has_duplicate_zip64: bool,
+    pub(crate) has_duplicate_aes: bool,
     pub(crate) compression_method: u16,
     pub(crate) is_encrypted: bool,
     pub(crate) is_using_data_descriptor: bool,
@@ -459,6 +449,9 @@ impl HeaderConsistencyMetadata<&[u8]> {
             has_language_encoding: self.has_language_encoding,
             upath: self.upath.map(Into::into),
             upath_crc32: self.upath_crc32,
+            has_duplicate_upath: self.has_duplicate_upath,
+            has_duplicate_zip64: self.has_duplicate_zip64,
+            has_duplicate_aes: self.has_duplicate_aes,
             compression_method: self.compression_method,
             is_encrypted: self.is_encrypted,
             is_using_data_descriptor: self.is_using_data_descriptor,
@@ -477,6 +470,24 @@ impl<T: AsRef<[u8]>> HeaderConsistencyMetadata<T> {
         &self,
         central: &HeaderConsistencyMetadata<T2>,
     ) -> ZipResult<()> {
+        if self.has_duplicate_zip64 || central.has_duplicate_zip64 {
+            return Err(invalid!(
+                "header inconsistency detected: duplicate ZIP64 (0x0001) extra field"
+            ));
+        }
+
+        if self.has_duplicate_upath || central.has_duplicate_upath {
+            return Err(invalid!(
+                "header inconsistency detected: duplicate UnicodePath (0x7075) extra field"
+            ));
+        }
+
+        if self.has_duplicate_aes || central.has_duplicate_aes {
+            return Err(invalid!(
+                "header inconsistency detected: duplicate AES (0x9901) extra field"
+            ));
+        }
+
         let local_effective = self
             .upath
             .as_ref()

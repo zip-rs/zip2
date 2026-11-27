@@ -19,8 +19,8 @@ pub struct AexEncryption {
     pub(crate) aes_mode: AesMode,
     /// inner compression
     pub(crate) compression_method: CompressionMethod,
-    /// aes extra field start index (not written to the archive, therefore ignored by PartialEq)
-    pub(crate) aes_extra_field_start: Option<usize>,
+    /// aes extra field start offset (not written to the archive, therefore ignored by PartialEq)
+    pub(crate) aes_extra_field_start: Option<u64>,
 }
 
 impl PartialEq for AexEncryption {
@@ -175,5 +175,24 @@ mod tests {
         let (aes_mode_options, inner_compression_method) = res.unwrap();
         assert_eq!(aes_mode_options, (AesMode::Aes256, AesVendorVersion::Ae2));
         assert_eq!(inner_compression_method, CompressionMethod::Stored);
+    }
+
+    #[test]
+    fn test_aes_extra_field_start_is_u64() {
+        use super::AexEncryption;
+        use crate::CompressionMethod;
+        use crate::format::aes::{AesMode, AesVendorVersion};
+        use core::any::{Any, TypeId};
+
+        let aex = AexEncryption::new(
+            AesVendorVersion::Ae2,
+            AesMode::Aes256,
+            CompressionMethod::Stored,
+        );
+        assert_eq!(
+            aex.aes_extra_field_start.type_id(),
+            TypeId::of::<Option<u64>>(),
+            "aes_extra_field_start must be Option<u64> to avoid 32-bit truncation past 4 GiB"
+        );
     }
 }
