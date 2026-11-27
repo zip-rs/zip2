@@ -698,7 +698,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// There are many passwords out there that will also pass the validity checks
     /// we are able to perform. This is a weakness of the `ZipCrypto` algorithm,
     /// due to its fairly primitive approach to cryptography.
-    pub fn by_name_decrypt(&mut self, name: &str, password: &[u8]) -> ZipResult<ZipFile<'_, R>> {
+    pub fn by_name_decrypt(
+        &mut self,
+        name: &str,
+        password: &[u8],
+    ) -> ZipResult<ZipFile<'_, &mut R>> {
         self.by_name_with_optional_password(name, Some(password))
     }
 
@@ -706,14 +710,14 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// First try to get the index by the name as a binary representation of the name. If not found,
     /// try to find the name with the decoded version of the name. This is a fallback for name
     /// encoded with CP437.
-    pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile<'_, R>> {
+    pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile<'_, &mut R>> {
         self.by_name_with_optional_password(name, None)
     }
 
     /// Search for a file entry by its raw name bytes, without decoding the name.
     /// The running time of this operation doesn't scale with the number of files in the archive,
     /// only with the length of the name being looked up (since it is hashed).
-    pub fn by_name_raw(&mut self, name: &[u8]) -> ZipResult<ZipFile<'_, R>> {
+    pub fn by_name_raw(&mut self, name: &[u8]) -> ZipResult<ZipFile<'_, &mut R>> {
         let index = self
             .index_for_name_raw(name)
             .ok_or(ZipError::FileNotFound)?;
@@ -783,7 +787,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         path: T,
         password: &[u8],
-    ) -> ZipResult<ZipFile<'_, R>> {
+    ) -> ZipResult<ZipFile<'_, &mut R>> {
         self.index_for_path(path)
             .ok_or(ZipError::FileNotFound)
             .and_then(|index| {
@@ -792,7 +796,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by path
-    pub fn by_path<T: AsRef<Path>>(&mut self, path: T) -> ZipResult<ZipFile<'_, R>> {
+    pub fn by_path<T: AsRef<Path>>(&mut self, path: T) -> ZipResult<ZipFile<'_, &mut R>> {
         self.index_for_path(path)
             .ok_or(ZipError::FileNotFound)
             .and_then(|index| self.by_index_with_options(index, ZipReadOptions::new()))
@@ -849,7 +853,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         &'a mut self,
         name: &str,
         password: Option<&[u8]>,
-    ) -> ZipResult<ZipFile<'a, R>> {
+    ) -> ZipResult<ZipFile<'a, &'a mut R>> {
         let Some(index) = self.index_for_name(name) else {
             return Err(ZipError::FileNotFound);
         };
@@ -877,12 +881,12 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         file_number: usize,
         password: &[u8],
-    ) -> ZipResult<ZipFile<'_, R>> {
+    ) -> ZipResult<ZipFile<'_, &mut R>> {
         self.by_index_with_options(file_number, ZipReadOptions::new().password(Some(password)))
     }
 
     /// Get a contained file by index
-    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
+    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, &mut R>> {
         self.by_index_with_options(file_number, ZipReadOptions::new())
     }
 
@@ -892,7 +896,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index without decompressing it
-    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, R>> {
+    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_, &mut R>> {
         let reader = &mut self.reader;
         let (file_name_raw, data) = self
             .shared
@@ -911,7 +915,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         &'a mut self,
         name: &str,
         options: ZipReadOptions<'_>,
-    ) -> ZipResult<ZipFile<'a, R>> {
+    ) -> ZipResult<ZipFile<'a, &'a mut R>> {
         let Some(index) = self.index_for_name(name) else {
             return Err(ZipError::FileNotFound);
         };
@@ -923,7 +927,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         &mut self,
         file_number: usize,
         options: ZipReadOptions<'_>,
-    ) -> ZipResult<ZipFile<'_, R>> {
+    ) -> ZipResult<ZipFile<'_, &mut R>> {
         let (file_name_raw, data) = self
             .shared
             .files
