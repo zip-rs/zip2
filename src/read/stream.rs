@@ -786,8 +786,19 @@ fn staged_file_identity(
 
 /// A path in `dest` with a random name.
 fn staging_path(dest: &Path) -> io::Result<PathBuf> {
-    let n = getrandom::u64().map_err(io::Error::other)?;
-    Ok(dest.join(format!(".zip-extract-{n:016x}")))
+    #[cfg(not(all(target_arch = "wasm32", not(feature = "getrandom"))))]
+    {
+        let n = getrandom::u64().map_err(io::Error::other)?;
+        Ok(dest.join(format!(".zip-extract-{n:016x}")))
+    }
+    #[cfg(all(target_arch = "wasm32", not(feature = "getrandom")))]
+    {
+        let _ = dest;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "extracting to a staging directory requires the `getrandom` feature",
+        ))
+    }
 }
 
 /// Creates a new, empty directory with a random name in `dest`.
